@@ -227,7 +227,8 @@ public class ParallelToolExecutionTests
         Assert.Equal("Success content", outcomes[0].Content);
 
         Assert.False(outcomes[1].Success);
-        Assert.Contains("Simulated error in handler", outcomes[1].Content);
+        Assert.Contains("An internal error occurred while running the tool (InvalidOperationException)", outcomes[1].Content);
+        Assert.DoesNotContain("Simulated error in handler", outcomes[1].Content);
     }
 
     [Fact]

@@ -18,6 +18,12 @@ namespace Overseer.Services.Tools
         public List<object> FunctionDeclarations { get; set; } = new List<object>();
 
         public bool HasTools => ProviderTools.Count > 0 || FunctionDeclarations.Count > 0;
+
+        /// <summary>
+        /// Names of the tools declared in <see cref="FunctionDeclarations"/>, case-insensitive.
+        /// Null means the declarations are not tracked, and no call is refused for being undeclared.
+        /// </summary>
+        public HashSet<string>? DeclaredToolNames { get; set; }
     }
 
     public class ToolRegistry
@@ -137,6 +143,8 @@ namespace Overseer.Services.Tools
             IEnumerable<string>? allowedToolNames = null)
         {
             var result = new ToolsForRequest();
+            var declaredToolNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            result.DeclaredToolNames = declaredToolNames;
 
             /* A confidential session with egress blocked is offered neither the provider's own
                web search nor any ExternalLookup handler. ToolCategory.ExternalLookup already
@@ -204,6 +212,7 @@ namespace Overseer.Services.Tools
                 // Append function declaration
                 result.FunctionDeclarations.Add(
                     provider.BuildFunctionDeclaration(handler.ToolName, GetAdjustedDescription(handler, context), handler.ParameterSchema));
+                declaredToolNames.Add(handler.ToolName);
             }
 
             return result;

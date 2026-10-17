@@ -293,6 +293,26 @@ misleading on a throttled chat turn. `Retry-After` is set on every rejection.
 All policies partition per user, and tool calls run inside a single request, so they are
 unaffected. The limits start permissive; tighten with evidence, not on principle.
 
+Three further per-user controls, configured under `AiUsageGuard` in `appsettings.json` (`0` turns
+each off). The first two apply to **operator-funded** turns only: a turn with `SystemModelId` set,
+or with no model named when the user has no model of their own (`ChatService` would otherwise take
+the user's default model). A turn on the user's own model keeps only the `ChatRateLimit` policy and
+the 128 MB request-body limit.
+
+| Control | Where | Default | On refusal |
+|---|---|---|---|
+| Message-length cap (`MaxMessageCharacters`) | `POST /api/chat/send` | 100,000 characters | 400 naming the length and the limit |
+| Concurrency gate (`MaxConcurrentTurnsPerUser`, `UserTurnConcurrencyGate`) | `POST /api/chat/send`; the `session/create` handoff turn | 4 answers generating at once | 429 from `send`; the handoff turn is skipped |
+| `session/create` turn limiter (`UserTurnRateLimiter`) | the handoff turn started by `POST /api/session/create` | `ChatPermitsPerMinute` (30/min), its own counter | the turn is skipped; `RateLimitRejected` with `Code` `session-create-turn` |
+
+`session/create` also truncates `InitialPrompt` to `MaxInitialPromptCharacters` (2,000) instead of
+refusing it, because the GnollHack client shows any 400 as a credentials error. When the handoff
+turn is skipped, the session and its handoff token are still returned; only the greeting is
+missing. Every gate slot taken is released in the generation task's `finally`, or at once when no
+task starts.
+
+The daily cost and run ceilings on operator-funded use are in `security-monitoring.md` § 2.
+
 ### 3.8 Telemetry
 
 See `docs/overseer/sentry-logging-architecture.md` §2 for the full rules. In summary:

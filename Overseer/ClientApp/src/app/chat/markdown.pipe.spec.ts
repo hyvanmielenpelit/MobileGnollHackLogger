@@ -437,4 +437,48 @@ The largest mechanical advantage is that priests can pray sooner.`;
       expect(result).not.toContain('blocked-external-image');
     });
   });
+
+  /* An external link opens in a new tab without access to the opener; a link within this site
+     navigates in place. */
+  describe('external links', () => {
+    const render = (input: string): HTMLDivElement => {
+      const container = document.createElement('div');
+      container.innerHTML = pipe.transform(input) as string;
+      return container;
+    };
+
+    it('opens an external markdown link in a new tab', () => {
+      const link = render('[x](https://example.com)').querySelector('a');
+
+      expect(link).toBeTruthy();
+      expect(link!.getAttribute('href')).toBe('https://example.com');
+      expect(link!.getAttribute('target')).toBe('_blank');
+      expect(link!.getAttribute('rel')).toBe('noopener noreferrer');
+    });
+
+    it('opens an external raw <a> in the model output in a new tab', () => {
+      const link = render('See <a href="https://example.com">this</a>.').querySelector('a');
+
+      expect(link).toBeTruthy();
+      expect(link!.getAttribute('target')).toBe('_blank');
+      expect(link!.getAttribute('rel')).toBe('noopener noreferrer');
+    });
+
+    it('leaves a root-relative link to navigate in place', () => {
+      const link = render('[settings](/settings)').querySelector('a');
+
+      expect(link).toBeTruthy();
+      expect(link!.getAttribute('target')).toBeNull();
+      expect(link!.getAttribute('rel')).toBeNull();
+    });
+
+    it('leaves a same-origin absolute link to navigate in place', () => {
+      const link = render(`[settings](${window.location.origin}/settings)`).querySelector('a');
+
+      expect(link).toBeTruthy();
+      expect(link!.getAttribute('href')).toBe(`${window.location.origin}/settings`);
+      expect(link!.getAttribute('target')).toBeNull();
+      expect(link!.getAttribute('rel')).toBeNull();
+    });
+  });
 });

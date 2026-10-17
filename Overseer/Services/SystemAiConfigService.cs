@@ -15,14 +15,17 @@ public class SystemAiConfigService
     private readonly ILogger<SystemAiConfigService> _logger;
     private readonly ISecurityEventRecorder? _securityEvents;
     private readonly ModelPricingService? _pricing;
+    private readonly AiUsageGuard? _usageGuard;
 
+    /// <param name="usageGuard">The per-user daily ceiling on chat access granted through a group or system-wide; null leaves it off.</param>
     public SystemAiConfigService(ApplicationDbContext dbContext, ILogger<SystemAiConfigService> logger, ISecurityEventRecorder? securityEvents = null,
-        ModelPricingService? pricing = null)
+        ModelPricingService? pricing = null, AiUsageGuard? usageGuard = null)
     {
         _dbContext = dbContext;
         _logger = logger;
         _securityEvents = securityEvents;
         _pricing = pricing;
+        _usageGuard = usageGuard;
     }
 
     /// <summary>
@@ -30,7 +33,8 @@ public class SystemAiConfigService
     /// first; a disabled user assignment denies outright; an enabled one must be under its own limits and,
     /// when the user also has enabled group assignments for the configuration, at least one of those must be
     /// under its limits; without a user assignment an enabled group assignment under its limits grants access;
-    /// otherwise only a system-wide configuration does. A limit of null or 0 means no limit.
+    /// otherwise only a system-wide configuration does. A limit of null or 0 means no limit. Chat access through a
+    /// group or a system-wide configuration is also subject to the per-user <see cref="AiUsageGuard"/>.
     /// </summary>
     public async Task<(SystemAiApiConfiguration? Config, string? ErrorMessage)> GetAndCheckSystemConfigAsync(long configId, string userId, int? requiredRoleFilter = null)
     {
@@ -119,7 +123,7 @@ public class SystemAiConfigService
                 return (null, "Model not authorized for this role.");
             }
 
-            return (config, null);
+            return await GuardedAsync(config, userId, checkRole);
         }
 
         if (!config.IsSystemWide)
@@ -131,6 +135,21 @@ public class SystemAiConfigService
         if (requiredRoleFilter.HasValue && (resolvedModelRole & requiredRoleFilter.Value) != requiredRoleFilter.Value)
         {
             return (null, "Model not authorized for this role.");
+        }
+
+        return await GuardedAsync(config, userId, checkRole);
+    }
+
+    /// <summary>The configuration, unless the usage guard refuses this chat access; title checks are not guarded.</summary>
+    private async Task<(SystemAiApiConfiguration? Config, string? ErrorMessage)> GuardedAsync(SystemAiApiConfiguration config, string userId, int checkRole)
+    {
+        if (_usageGuard != null && checkRole == 1)
+        {
+            var refusal = await _usageGuard.CheckAsync(userId, config.Id, config.Provider, config.ModelId);
+            if (refusal != null)
+            {
+                return (null, refusal);
+            }
         }
 
         return (config, null);
@@ -301,6 +320,44 @@ public class SystemAiConfigService
             {
                 _dbContext.Entry(log).State = EntityState.Detached;
             }
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Logs a sub-agent run on an AI:* server key: one role-3 row with configuration id 0 (attribution only), named
+    /// "Server key: model", which the usage guard and the per-user telemetry count. No configuration counter changes.
+    /// </summary>
+    public async Task RecordServerKeyUsageAsync(string userId, string provider, string modelId, int inputTokens, int outputTokens,
+        decimal? estimatedCost, string? pricingSource, CancellationToken ct = default)
+    {
+        // A row without a user cannot be stored; see RecordUsageAsync.
+        if (string.IsNullOrEmpty(userId)) return;
+
+        var log = new SystemAiUsageLog
+        {
+            SystemAiApiConfigurationId = 0,
+            AspNetUserId = userId,
+            TimestampUtc = DateTime.UtcNow,
+            InputTokens = inputTokens,
+            OutputTokens = outputTokens,
+            ModelId = Cut(modelId, 128)!,
+            Provider = Cut(provider, 64)!,
+            ModelDisplayName = Cut($"Server key: {modelId}", 256),
+            RoleContext = 3,
+            EstimatedCost = estimatedCost,
+            PricingSource = estimatedCost == null ? null : Cut(pricingSource, 16)
+        };
+        _dbContext.SystemAiUsageLogs.Add(log);
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            // A rejected log row would fail every later save on this shared context.
+            _dbContext.Entry(log).State = EntityState.Detached;
             throw;
         }
     }

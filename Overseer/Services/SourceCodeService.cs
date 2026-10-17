@@ -60,6 +60,15 @@ namespace Overseer.Services
 
         public bool IsIndexingComplete => _isIndexingComplete;
 
+        /// <summary>Per-match timeout for a regular expression a model supplies.</summary>
+        internal static readonly TimeSpan UserRegexMatchTimeout = TimeSpan.FromMilliseconds(200);
+
+        /// <summary>Total time a model-supplied regular expression may spend across one search.</summary>
+        internal static readonly TimeSpan UserRegexSearchDeadline = TimeSpan.FromSeconds(5);
+
+        internal const string RegexTooSlowMessage =
+            "Error: The regular expression took too long to evaluate and was stopped. Use a simpler pattern, or search for a literal string.";
+
         /// <summary>What the index the tools currently read holds, generated headers included; null until the first pass finishes.</summary>
         public CorpusContentFingerprint? ContentFingerprint { get; private set; }
 
@@ -531,16 +540,16 @@ namespace Overseer.Services
                 try
                 {
                     var options = caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
-                    regex = new Regex(query, options);
+                    regex = new Regex(query, options, UserRegexMatchTimeout);
                 }
                 catch (Exception ex)
                 {
                     return $"Error: Invalid regular expression. {ex.Message}";
                 }
             }
-            
+
             var results = new List<SearchResult>();
-            
+
             var docsToSearch = _documents.Values.AsEnumerable();
             if (!includeNetCode)
             {
@@ -550,33 +559,47 @@ namespace Overseer.Services
             {
                 docsToSearch = docsToSearch.Where(d => d.RelativePath.Contains(fileFilter, StringComparison.OrdinalIgnoreCase));
             }
-            
-            foreach (var doc in docsToSearch)
+
+            // A model-supplied pattern is bounded per match and across the whole search; literal searches are not.
+            var searchStopwatch = Stopwatch.StartNew();
+            try
             {
-                var matches = new List<int>();
-                for (int i = 0; i < doc.ContentLines.Length; i++)
+                foreach (var doc in docsToSearch)
                 {
-                    if (isRegex && regex != null)
+                    if (regex != null && searchStopwatch.Elapsed > UserRegexSearchDeadline)
                     {
-                        if (regex.IsMatch(doc.ContentLines[i]))
+                        return RegexTooSlowMessage;
+                    }
+
+                    var matches = new List<int>();
+                    for (int i = 0; i < doc.ContentLines.Length; i++)
+                    {
+                        if (isRegex && regex != null)
                         {
-                            matches.Add(i);
+                            if (regex.IsMatch(doc.ContentLines[i]))
+                            {
+                                matches.Add(i);
+                            }
+                        }
+                        else
+                        {
+                            var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+                            if (doc.ContentLines[i].Contains(query, comparison))
+                            {
+                                matches.Add(i);
+                            }
                         }
                     }
-                    else
+
+                    if (matches.Any())
                     {
-                        var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-                        if (doc.ContentLines[i].Contains(query, comparison))
-                        {
-                            matches.Add(i);
-                        }
+                        results.Add(new SearchResult { Document = doc, MatchLines = matches });
                     }
                 }
-                
-                if (matches.Any())
-                {
-                    results.Add(new SearchResult { Document = doc, MatchLines = matches });
-                }
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                return RegexTooSlowMessage;
             }
             
             // Sort by number of matches (descending)
@@ -1100,9 +1123,10 @@ namespace Overseer.Services
             {
                 if (namePattern.Contains("*"))
                 {
-                    string pattern = "^" + Regex.Escape(namePattern).Replace("\\*", ".*") + "$";
-                    var regex = new Regex(pattern, RegexOptions.IgnoreCase);
-                    results = results.Where(c => regex.IsMatch(c.Name));
+                    string collapsed = Regex.Replace(namePattern, @"\*+", "*");
+                    string pattern = "^" + Regex.Escape(collapsed).Replace("\\*", ".*") + "$";
+                    var regex = new Regex(pattern, RegexOptions.IgnoreCase, UserRegexMatchTimeout);
+                    results = results.Where(c => IsWildcardMatch(regex, c.Name));
                 }
                 else
                 {
@@ -1111,6 +1135,19 @@ namespace Overseer.Services
             }
             
             return results.OrderBy(c => c.Name).Take(100);
+        }
+
+        /// <summary>A match that times out counts as no match for that constant.</summary>
+        private static bool IsWildcardMatch(Regex regex, string name)
+        {
+            try
+            {
+                return regex.IsMatch(name);
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                return false;
+            }
         }
 
         public string ListFiles(string? pathFilter, bool includeNetCode)

@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Overseer.Services.Tools;
 
@@ -38,7 +39,8 @@ public static class ToolBatchRunner
     /// Runs <paramref name="items"/> concurrently under dual throttles and writes a
     /// ChatEvent-shaped record for each completion to <paramref name="events"/>.
     /// Never throws and never faults: cancellation and handler exceptions are folded
-    /// into a failed <see cref="ToolBatchOutcome"/>. Results preserve input order.
+    /// into a failed <see cref="ToolBatchOutcome"/>, and a handler exception other than
+    /// cancellation is logged to <paramref name="logger"/>. Results preserve input order.
     /// </summary>
     public static async Task<IReadOnlyList<ToolBatchOutcome>> RunAsync(
         IReadOnlyList<ToolBatchItem> items,
@@ -46,7 +48,8 @@ public static class ToolBatchRunner
         int maxParallelTools,
         int maxParallelClientTools,
         ChannelWriter<ToolBatchOutcome> events,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ILogger? logger = null)
     {
         try
         {
@@ -108,13 +111,17 @@ public static class ToolBatchRunner
                     {
                         swQueue.Stop();
                         swTool?.Stop();
+                        if (ex is not OperationCanceledException)
+                        {
+                            logger?.LogError(ex, "Tool {ToolName} ({ToolCallId}) failed in the batch runner.", item.ToolName, item.ToolCallId);
+                        }
                         var outcome = new ToolBatchOutcome
                         {
                             ToolCallId = item.ToolCallId,
                             ToolName = item.ToolName,
                             Content = ex is OperationCanceledException
                                 ? "Tool execution was canceled (request stopped)."
-                                : $"Orchestrator error: {ex.Message}",
+                                : $"Orchestrator error: {ToolErrorText.ForModel(ex)}",
                             Success = false,
                             QueueWaitMs = swQueue.ElapsedMilliseconds,
                             ExecutionMs = swTool?.ElapsedMilliseconds ?? 0,
@@ -136,7 +143,7 @@ public static class ToolBatchRunner
 
             return tasks.Select((t, i) => t.IsCompletedSuccessfully
                 ? t.Result
-                : SynthesizeFailure(items[i], t.Exception)).ToList();
+                : SynthesizeFailure(items[i], t.Exception, logger)).ToList();
         }
         finally
         {
@@ -157,13 +164,18 @@ public static class ToolBatchRunner
                 : (!string.IsNullOrWhiteSpace(res.Content) ? res.Content : "Unknown error"));
     }
 
-    private static ToolBatchOutcome SynthesizeFailure(ToolBatchItem item, Exception? ex)
+    private static ToolBatchOutcome SynthesizeFailure(ToolBatchItem item, Exception? ex, ILogger? logger)
     {
+        var cause = ex is AggregateException { InnerExceptions.Count: 1 } single ? single.InnerExceptions[0] : ex;
+        if (cause != null)
+        {
+            logger?.LogError(cause, "Tool {ToolName} ({ToolCallId}) task faulted in the batch runner.", item.ToolName, item.ToolCallId);
+        }
         return new ToolBatchOutcome
         {
             ToolCallId = item.ToolCallId,
             ToolName = item.ToolName,
-            Content = $"Orchestrator error: {ex?.Message ?? "Task failed"}",
+            Content = $"Orchestrator error: {(cause == null ? "Task failed" : ToolErrorText.ForModel(cause))}",
             Success = false,
             QueueWaitMs = 0,
             ExecutionMs = 0,

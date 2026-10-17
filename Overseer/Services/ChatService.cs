@@ -307,7 +307,19 @@ public class ChatService
             }
             catch (Exception ex)
             {
-                var errEvt = new ChatEvent { Type = "error", Data = ex.Message, SessionId = wireRef };
+                // Reached by the turn's timeout token and ChatHub.CancelGeneration as well as by failures.
+                string errorText;
+                if (ex is OperationCanceledException)
+                {
+                    _logger?.LogInformation(ex, "Chat turn for session {SessionId} was canceled or timed out.", wireRef);
+                    errorText = "The answer was canceled or timed out.";
+                }
+                else
+                {
+                    _logger?.LogError(ex, "Chat turn for session {SessionId} failed.", wireRef);
+                    errorText = "Something went wrong while generating the answer. Please try again.";
+                }
+                var errEvt = new ChatEvent { Type = "error", Data = errorText, SessionId = wireRef };
                 _ongoingChatManager.ProcessEvent(sessionRef, errEvt);
                 await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", errEvt, CancellationToken.None);
             }

@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 using Overseer.Hubs;
 
 namespace Overseer.Services.Tools
@@ -12,10 +13,12 @@ namespace Overseer.Services.Tools
     {
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly ConcurrentDictionary<string, TaskCompletionSource<ToolResult>> _pendingRequests;
+        private readonly ILogger<SignalRClientToolBridge>? _logger;
 
-        public SignalRClientToolBridge(IHubContext<ChatHub> hubContext)
+        public SignalRClientToolBridge(IHubContext<ChatHub> hubContext, ILogger<SignalRClientToolBridge>? logger = null)
         {
             _hubContext = hubContext;
+            _logger = logger;
             _pendingRequests = new ConcurrentDictionary<string, TaskCompletionSource<ToolResult>>();
         }
 
@@ -64,10 +67,11 @@ namespace Overseer.Services.Tools
             }
             catch (Exception ex)
             {
+                _logger?.LogError(ex, "Failed to send client tool request {ToolName} ({RequestId}).", toolName, requestId);
                 return new ToolResult
                 {
                     Success = false,
-                    ErrorMessage = $"Failed to send tool request: {ex.Message}"
+                    ErrorMessage = "Failed to send the tool request to the game client."
                 };
             }
             finally

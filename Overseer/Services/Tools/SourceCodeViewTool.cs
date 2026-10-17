@@ -98,9 +98,9 @@ namespace Overseer.Services.Tools
                     return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "File path is outside of the repository directory" });
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = $"Invalid file path: {ex.Message}" });
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Invalid file path." });
             }
 
             // Check extensions based on mode

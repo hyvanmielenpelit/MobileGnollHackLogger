@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -16,6 +17,7 @@ namespace Overseer.Services
         private readonly IConfiguration _configuration;
         private readonly IMemoryCache _cache;
         private readonly ILogger<GitHubApiService> _logger;
+        private readonly IReadOnlyCollection<string> _allowedOwners;
 
         public GitHubApiService(
             IHttpClientFactory httpClientFactory,
@@ -27,6 +29,34 @@ namespace Overseer.Services
             _configuration = configuration;
             _cache = cache;
             _logger = logger;
+            _allowedOwners = GitHubRepositoryGuard.ResolveAllowedOwners(configuration);
+        }
+
+        /// <summary>Returns an "Error:" result when the owner or repository is invalid or not allowed, otherwise null.</summary>
+        private string? CheckRepository(string owner, string repo)
+        {
+            var error = GitHubRepositoryGuard.ValidateOwnerRepo(owner, repo, _allowedOwners);
+            return error == null ? null : "Error: " + error;
+        }
+
+        /// <summary>
+        /// Adds a validated <c>repo:</c> qualifier, or <c>is:public</c> when there is no filter, so a token
+        /// that can read private repositories never surfaces them through search.
+        /// </summary>
+        private string? ScopeSearchQuery(string query, string? repoFilter, out string scopedQuery)
+        {
+            scopedQuery = query;
+            if (!string.IsNullOrWhiteSpace(repoFilter))
+            {
+                var error = GitHubRepositoryGuard.ValidateRepoFilter(repoFilter, _allowedOwners);
+                if (error != null) return "Error: " + error;
+                scopedQuery += $" repo:{repoFilter}";
+            }
+            else
+            {
+                scopedQuery += " is:public";
+            }
+            return null;
         }
 
         private HttpClient CreateClient()
@@ -150,7 +180,7 @@ namespace Overseer.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "GitHub API call to {Url} failed with exception: {Message}", url, ex.Message);
-                return $"Error: An exception occurred while contacting the GitHub API ({ex.Message}).";
+                return "Error: The GitHub request failed.";
             }
         }
 
@@ -177,6 +207,7 @@ namespace Overseer.Services
 
         public async Task<string> GetRepoSummaryAsync(string owner, string repo, CancellationToken ct)
         {
+            if (CheckRepository(owner, repo) is { } invalid) return invalid;
             string url = $"repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}";
             string rawResult = await FetchFromGitHubAsync(url, ct);
             if (rawResult.StartsWith("Error:")) return rawResult;
@@ -205,6 +236,7 @@ namespace Overseer.Services
 
         public async Task<string> GetCommitsAsync(string owner, string repo, int count, CancellationToken ct)
         {
+            if (CheckRepository(owner, repo) is { } invalid) return invalid;
             count = Math.Clamp(count, 1, 30);
             string url = $"repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}/commits?per_page={count}";
             string rawResult = await FetchFromGitHubAsync(url, ct);
@@ -256,6 +288,7 @@ namespace Overseer.Services
 
         public async Task<string> GetIssuesAsync(string owner, string repo, string state, string? label, int count, CancellationToken ct)
         {
+            if (CheckRepository(owner, repo) is { } invalid) return invalid;
             count = Math.Clamp(count, 1, 30);
             state = string.IsNullOrWhiteSpace(state) ? "open" : state.ToLowerInvariant();
             
@@ -329,6 +362,7 @@ namespace Overseer.Services
 
         public async Task<string> GetIssueDetailAsync(string owner, string repo, int issueNumber, CancellationToken ct)
         {
+            if (CheckRepository(owner, repo) is { } invalid) return invalid;
             string url = $"repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}/issues/{issueNumber}";
             string rawResult = await FetchFromGitHubAsync(url, ct);
             if (rawResult.StartsWith("Error:")) return rawResult;
@@ -411,6 +445,7 @@ namespace Overseer.Services
 
         public async Task<string> GetPullRequestsAsync(string owner, string repo, string state, int count, CancellationToken ct)
         {
+            if (CheckRepository(owner, repo) is { } invalid) return invalid;
             count = Math.Clamp(count, 1, 30);
             state = string.IsNullOrWhiteSpace(state) ? "open" : state.ToLowerInvariant();
             
@@ -461,6 +496,7 @@ namespace Overseer.Services
 
         public async Task<string> GetReleasesAsync(string owner, string repo, int count, CancellationToken ct)
         {
+            if (CheckRepository(owner, repo) is { } invalid) return invalid;
             count = Math.Clamp(count, 1, 30);
             string url = $"repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}/releases?per_page={count}";
             string rawResult = await FetchFromGitHubAsync(url, ct);
@@ -520,9 +556,7 @@ namespace Overseer.Services
         {
             count = Math.Clamp(count, 1, 30);
             
-            var searchQuery = query;
-            if (!string.IsNullOrWhiteSpace(repoFilter))
-                searchQuery += $" repo:{repoFilter}";
+            if (ScopeSearchQuery(query, repoFilter, out var searchQuery) is { } invalid) return invalid;
             if (!string.IsNullOrWhiteSpace(stateFilter))
                 searchQuery += $" state:{stateFilter}";
 
@@ -580,9 +614,7 @@ namespace Overseer.Services
         {
             count = Math.Clamp(count, 1, 30);
             
-            var searchQuery = query;
-            if (!string.IsNullOrWhiteSpace(repoFilter))
-                searchQuery += $" repo:{repoFilter}";
+            if (ScopeSearchQuery(query, repoFilter, out var searchQuery) is { } invalid) return invalid;
 
             string url = $"search/commits?q={Uri.EscapeDataString(searchQuery)}&per_page={count}";
             if (!string.IsNullOrWhiteSpace(sort))

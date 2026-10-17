@@ -60,6 +60,17 @@ public class AgentLoopRunner
         _governor = governor;
     }
 
+    /// <summary>
+    /// Whether <paramref name="toolName"/> was declared to the model in <paramref name="requestTools"/>.
+    /// Untracked declarations (<see cref="ToolsForRequest.DeclaredToolNames"/> null) admit every name.
+    /// </summary>
+    internal static bool IsDeclared(ToolsForRequest requestTools, string toolName)
+        => requestTools.DeclaredToolNames is not { } declared || declared.Contains(toolName);
+
+    /// <summary>The failed result an undeclared tool call gets; no handler runs and no budget is charged.</summary>
+    internal static ToolResult UndeclaredToolResult(string toolName)
+        => new() { Success = false, ErrorMessage = $"Tool '{toolName}' is not available in this conversation." };
+
     public async IAsyncEnumerable<ChatEvent> RunAsync(
         AgentRunRequest request,
         AgentRunBudget? budget,
@@ -509,11 +520,14 @@ public class AgentLoopRunner
 
                 var batchTask = ToolBatchRunner.RunAsync(
                     batchItems,
-                    (item, ct) => _toolExecutor.ExecuteAsync(item.ToolName, item.Arguments, execContext, ct, item.ToolCallId),
+                    (item, ct) => IsDeclared(requestTools, item.ToolName)
+                        ? _toolExecutor.ExecuteAsync(item.ToolName, item.Arguments, execContext, ct, item.ToolCallId)
+                        : Task.FromResult(UndeclaredToolResult(item.ToolName)),
                     maxParallelTools,
                     maxParallelClientTools,
                     outcomeChannel.Writer,
-                    cancellationToken);
+                    cancellationToken,
+                    _logger);
 
                 try
                 {

@@ -56,7 +56,39 @@ model a turn without a model id takes (the GnollHack handoff's initial prompt ar
 next resolved model is tried after a refusal), the title fallback (checked against the role the
 fallback list was built with — 2, or 1 when no title configuration exists), and the sub-agent branches
 1.1 and 2D (a configuration refused in 2A is not retried in 2D). Sub-agent runs on an `AI:*` server key
-have no configuration and stay unchecked and uncounted.
+(branches 1.2 and 2E) have no configuration; they are checked by the usage guard below and recorded as a
+`SystemAiUsageLogs` row with configuration id 0, role 3 and the model name `Server key: <model>`. On a
+turn that runs on a user's own model, only an administrator's sub-agent may fall back to a server key:
+for anyone else 2B and 2C do not stand the server key in for a missing user key, and 2E refuses with
+*"No API key is available for the sub-agent's model. …"*.
+
+### Daily usage guard
+
+`AiUsageGuard` caps what one account can spend on operator-funded models per UTC day. It runs on the
+chat-role check (`checkRole == 1`) of a configuration reached through **group or system-wide access**,
+and on sub-agent runs on a server key. It steps aside for an **enabled per-user assignment** (an
+administrator's explicit grant) and, while `AiUsageGuard:ExemptAdmins` is true, for administrators. A
+dedicated title configuration (role 2) is never guarded; the title fallback is, when no title
+configuration exists, because it is then checked as role 1.
+
+It sums the user's `SystemAiUsageLogs` rows since 00:00 UTC, roles 1–3 (GnollBench roles 4–8 are
+excluded):
+
+| Setting (`AiUsageGuard:*`) | Default | Refuses when | Event code |
+|---|---|---|---|
+| `MaxUserDailyCostUsd` | 50.00 | the sum of `EstimatedCost` reaches it | `guard-cost` |
+| `MaxUserDailyRuns` | 2,000 | the count of role 1 and 3 rows reaches it (bounds unpriced runs) | `guard-runs` |
+
+`0` turns either off. A refusal reads *"You have reached today's limit for AI use in the Overseer. It
+resets at 00:00 UTC."* and is recorded as `QuotaRefused`. To lift the limit for one heavy player, give
+them an explicit per-user assignment, or raise the value.
+
+`AiUsageGuard:AlertUserDailyCostUsd` (20.00) raises an admin alert banner, linking to the AI Telemetry
+tab, when one or more non-admin users' operator-funded spend over the last 24 hours reaches it. It never
+limits anyone.
+
+The request-level controls on operator-funded turns — the message-length cap, the per-user concurrency
+gate and the `session/create` turn limiter — are in `data-privacy-framework.md` § 3.7.
 
 **Ordering never grants access.** A user's model order lives in `UserSystemModelOrder`, separate from
 assignments; `PUT api/settings/systemmodels/reorder` accepts only ids the user can see, the reset
@@ -137,8 +169,9 @@ the request's context, at most 30 writes per IP address a minute.
 | Kind | Written by | User | IP |
 |---|---|---|---|
 | `LoginFailed` (`Detail` `unknown-user` when no account matched), `LoginLockedOut`, `TwoFactorFailed` | Overseer `AuthController` login and 2FA; `SessionController.Create`; website `Login`; game APIs | when matched | yes |
-| `RateLimitRejected` (`Code` = policy) | Overseer and website rate limiters; the game API sign-in throttle (`game-api-signin`) and the session-create throttle (`session-create`), `Detail` = the limit (`pair`, `account` or `ip`) | when signed in | yes |
+| `RateLimitRejected` (`Code` = policy) | Overseer and website rate limiters; the game API sign-in throttle (`game-api-signin`) and the session-create throttle (`session-create`), `Detail` = the limit (`pair`, `account` or `ip`); the `session/create` initial-turn limiter (`session-create-turn`) | when signed in | yes |
 | `QuotaRefused` (`Code` user / group / system), `AccessDenied` (`Code` disabled / not-assigned) | `SystemAiConfigService` | yes | no |
+| `QuotaRefused` (`Code` guard-cost / guard-runs) | `AiUsageGuard`, through `SystemAiConfigService` and `delegate_to_subagent` | yes | no |
 | `ProviderRefusal`, `ProviderSafetyBlock` (`Code` = finish / block reason), `ProviderPolicyRejection` (`Code` = sanitized error code of a final 4xx attempt naming a policy) | after every operator-funded chat turn and sub-agent run (`ProviderRefusalEvents`), incognito included; never for titles | yes | no |
 | `AttachmentRejected` (`Code` count / validation / content / malware / scan-failed) | `ChatService` attachment checks | yes | no |
 | `ChatReported` | `ChatController.ReportMessage`, after the email is sent; the report itself is not stored | yes | no |

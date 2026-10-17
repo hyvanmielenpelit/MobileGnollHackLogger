@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
+using Overseer.Extensions;
 using Overseer.Services.Agents;
 using Overseer.Services.Providers;
 
@@ -193,6 +194,14 @@ public class DelegateToSubAgentTool : IToolHandler
 
             // 1. Resolve Provider, Model, and API Key
             resolved = await ResolveModelAndCredentialsAsync(subAgentDef, scope.ServiceProvider, context, cancellationToken);
+            if (resolved.Refusal != null)
+            {
+                return new ToolResult
+                {
+                    Success = false,
+                    ErrorMessage = resolved.Refusal
+                };
+            }
 
             var providers = scope.ServiceProvider.GetServices<IAiProvider>();
             var aiProvider = providers.FirstOrDefault(p => string.Equals(p.ProviderName, resolved.Provider, StringComparison.OrdinalIgnoreCase));
@@ -503,7 +512,7 @@ public class DelegateToSubAgentTool : IToolHandler
             return new ToolResult
             {
                 Success = false,
-                ErrorMessage = string.IsNullOrWhiteSpace(content) ? $"Subagent execution error: {ex.Message}" : null,
+                ErrorMessage = string.IsNullOrWhiteSpace(content) ? $"Subagent execution error: {ToolErrorText.ForModel(ex)}" : null,
                 Content = content,
                 NestedToolCalls = subAgentResult.ToolCalls,
                 TerminationStatus = "error",
@@ -539,8 +548,9 @@ public class DelegateToSubAgentTool : IToolHandler
 
     /// <summary>
     /// The run's usage row and provider attempt rows. A system configuration writes a usage row; a user's own key
-    /// writes a user-key row unless the session is incognito; an AI:* server key writes no usage row (there is no
-    /// configuration to attribute it to) and attempt rows as System with no configuration id. Never throws.
+    /// writes a user-key row unless the session is incognito; an AI:* server key writes a role-3 usage row with
+    /// configuration id 0, which the usage guard counts, and attempt rows as System with no configuration id.
+    /// Never throws.
     /// </summary>
     private async Task RecordRunTelemetryAsync(SubAgentDefinition def, string toolCallId, ResolvedSubAgentModel resolved,
         ModelPricing? pricing, string? serviceTier, string? thinkingLevel, AgentRunResult run, ToolExecutionContext context)
@@ -574,6 +584,21 @@ public class DelegateToSubAgentTool : IToolHandler
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to record subagent usage for SystemModelId {SystemModelId}", resolved.SystemModelId.Value);
+            }
+        }
+        else if (resolved.IsOperatorFunded && !string.IsNullOrEmpty(userId))
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                await systemAiConfigService.RecordServerKeyUsageAsync(
+                    userId, resolved.Provider, resolved.ModelId, inputTokens, outputTokens,
+                    own?.EstimatedCost, own?.PricingSource);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record subagent server-key usage for {Provider}/{ModelId}", resolved.Provider, resolved.ModelId);
             }
         }
         else if (userFunded && !incognito && !string.IsNullOrEmpty(userId))
@@ -648,6 +673,7 @@ public class DelegateToSubAgentTool : IToolHandler
 
     /// <param name="IsOperatorFunded">True when the operator's account is charged: a system configuration,
     /// or a server key from the AI:* configuration.</param>
+    /// <param name="Refusal">When set, no model may run the sub-agent and this is the message the model sees.</param>
     private sealed record ResolvedSubAgentModel(
         string Provider,
         string ModelId,
@@ -660,7 +686,15 @@ public class DelegateToSubAgentTool : IToolHandler
         string? ServiceTier,
         long? SystemModelId,
         long? UserModelId,
-        bool IsOperatorFunded);
+        bool IsOperatorFunded,
+        string? Refusal = null)
+    {
+        public static ResolvedSubAgentModel Refused(string provider, string modelId, string message) =>
+            new(provider, modelId, string.Empty, string.Empty, null, null, null, null, null, null, null,
+                IsOperatorFunded: false, Refusal: message);
+    }
+
+    internal const string NoKeyMessage = "No API key is available for the sub-agent's model. Add a key under Settings → API Keys or select a system-provided model.";
 
     private async Task<ResolvedSubAgentModel> ResolveModelAndCredentialsAsync(
         SubAgentDefinition definition,
@@ -686,6 +720,33 @@ public class DelegateToSubAgentTool : IToolHandler
                 .Select(s => s.AspNetUserId)
                 .FirstOrDefaultAsync(cancellationToken)
             : context.UserId;
+
+        // Whether the session owner is an administrator; looked up once, when a branch first needs it.
+        bool? isAdminCached = null;
+        async Task<bool> IsAdminAsync()
+        {
+            if (isAdminCached is bool known) return known;
+            bool admin = false;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                var userName = await dbContext.Users
+                    .Where(u => u.Id == userId)
+                    .Select(u => u.UserName)
+                    .FirstOrDefaultAsync(cancellationToken);
+                admin = _configuration.IsAdmin(userName);
+            }
+            isAdminCached = admin;
+            return admin;
+        }
+
+        // The usage guard's refusal of an AI:* server-key run, or null. Skipped when the guard is not registered
+        // or the session has no owner to charge.
+        async Task<string?> GuardServerKeyAsync(string provider, string modelId)
+        {
+            if (string.IsNullOrEmpty(userId)) return null;
+            var guard = scopedServices.GetService<Overseer.Services.Security.AiUsageGuard>();
+            return guard == null ? null : await guard.CheckAsync(userId, null, provider, modelId, cancellationToken);
+        }
 
         // System configurations the limits refused in this resolution; never tried again in a later branch.
         var refusedConfigIds = new HashSet<long>();
@@ -752,7 +813,14 @@ public class DelegateToSubAgentTool : IToolHandler
             string? appSettingKey = _configuration[$"AI:{prefProvider}:APIKey"] ??
                                    (string.Equals(_configuration["AI:Provider"], prefProvider, StringComparison.OrdinalIgnoreCase) ? _configuration["AI:APIKey"] : null);
 
-            if (!string.IsNullOrWhiteSpace(appSettingKey))
+            // A refusal by the usage guard falls through to the user's own key.
+            string? appSettingRefusal = string.IsNullOrWhiteSpace(appSettingKey) ? null : await GuardServerKeyAsync(prefProvider, prefModelId);
+            if (appSettingRefusal != null)
+            {
+                _logger.LogDebug("Subagent could not use the preferred server key: {ErrorMessage}", appSettingRefusal);
+            }
+
+            if (!string.IsNullOrWhiteSpace(appSettingKey) && appSettingRefusal == null)
             {
                 return new ResolvedSubAgentModel(
                     prefProvider,
@@ -872,7 +940,8 @@ public class DelegateToSubAgentTool : IToolHandler
                 // False when the AI:* server key below stands in, which the operator pays for.
                 bool fromUserKey = !string.IsNullOrWhiteSpace(userApiKey);
 
-                if (string.IsNullOrWhiteSpace(userApiKey))
+                // The server key stands in for an administrator only; anyone else falls through to branch 2D.
+                if (string.IsNullOrWhiteSpace(userApiKey) && await IsAdminAsync())
                 {
                     userApiKey = _configuration[$"AI:{activeUserModel.Provider}:APIKey"] ??
                                  (string.Equals(_configuration["AI:Provider"], activeUserModel.Provider, StringComparison.OrdinalIgnoreCase) ? _configuration["AI:APIKey"] : null);
@@ -926,7 +995,8 @@ public class DelegateToSubAgentTool : IToolHandler
                 // False when the AI:* server key below stands in, which the operator pays for.
                 bool fromUserKey = !string.IsNullOrWhiteSpace(userApiKey);
 
-                if (string.IsNullOrWhiteSpace(userApiKey))
+                // The server key stands in for an administrator only; anyone else falls through to branch 2D.
+                if (string.IsNullOrWhiteSpace(userApiKey) && await IsAdminAsync())
                 {
                     userApiKey = _configuration[$"AI:{defaultUserModel.Provider}:APIKey"] ??
                                  (string.Equals(_configuration["AI:Provider"], defaultUserModel.Provider, StringComparison.OrdinalIgnoreCase) ? _configuration["AI:APIKey"] : null);
@@ -1001,6 +1071,18 @@ public class DelegateToSubAgentTool : IToolHandler
         string fallbackProvider = _configuration["AI:Provider"] ?? "OpenAI";
         string fallbackModelId = _configuration["AI:Model"] ?? "gpt-5.4";
         string fallbackApiKey = _configuration[$"AI:{fallbackProvider}:APIKey"] ?? _configuration["AI:APIKey"] ?? "";
+
+        // A turn on the user's own model never reaches the operator's key, unless the owner is an administrator.
+        if (context.ActiveUserModelId.HasValue && !await IsAdminAsync())
+        {
+            return ResolvedSubAgentModel.Refused(fallbackProvider, fallbackModelId, NoKeyMessage);
+        }
+
+        string? fallbackRefusal = await GuardServerKeyAsync(fallbackProvider, fallbackModelId);
+        if (fallbackRefusal != null)
+        {
+            return ResolvedSubAgentModel.Refused(fallbackProvider, fallbackModelId, fallbackRefusal);
+        }
 
         return new ResolvedSubAgentModel(
             fallbackProvider,

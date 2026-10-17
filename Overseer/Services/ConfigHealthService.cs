@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Overseer.Extensions;
 using Overseer.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Linq;
@@ -10,6 +12,7 @@ public class ConfigHealthService
     private readonly IConfiguration _configuration;
     private readonly IServiceScopeFactory? _scopeFactory;
     private readonly ILogger<ConfigHealthService>? _logger;
+    private readonly IOptions<AiUsageGuardOptions>? _usageGuardOptions;
 
     public ConfigHealthService(IConfiguration configuration)
         : this(configuration, null, null)
@@ -19,11 +22,13 @@ public class ConfigHealthService
     public ConfigHealthService(
         IConfiguration configuration,
         IServiceScopeFactory? scopeFactory = null,
-        ILogger<ConfigHealthService>? logger = null)
+        ILogger<ConfigHealthService>? logger = null,
+        IOptions<AiUsageGuardOptions>? usageGuardOptions = null)
     {
         _configuration = configuration;
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _usageGuardOptions = usageGuardOptions;
     }
 
     public IEnumerable<SystemAlert> GetSystemAlerts()
@@ -258,6 +263,49 @@ public class ConfigHealthService
             catch (Exception ex)
             {
                 _logger?.LogWarning(ex, "Failed to evaluate account deletion review alerts in ConfigHealthService");
+            }
+        }
+
+        /* Operator-funded spend per user over the last 24 hours (chat, title and sub-agent rows), administrators
+           excluded. It only alerts; the usage guard is what limits. */
+        decimal spendThreshold = _usageGuardOptions?.Value.AlertUserDailyCostUsd ?? 0m;
+        if (_scopeFactory != null && spendThreshold > 0)
+        {
+            try
+            {
+                using var spendScope = _scopeFactory.CreateScope();
+                var dbContext = spendScope.ServiceProvider.GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+                var now = DateTime.UtcNow;
+                var since = now.AddHours(-24);
+
+                var spenders = dbContext.SystemAiUsageLogs
+                    .Where(l => l.TimestampUtc >= since && (l.RoleContext == 1 || l.RoleContext == 2 || l.RoleContext == 3))
+                    .GroupBy(l => new { l.AspNetUserId, l.AspNetUser.UserName })
+                    .Select(g => new { g.Key.UserName, Total = g.Sum(l => l.EstimatedCost ?? 0m) })
+                    .Where(s => s.Total >= spendThreshold)
+                    .ToList()
+                    .Where(s => !_configuration.IsAdmin(s.UserName))
+                    .ToList();
+
+                if (spenders.Count > 0)
+                {
+                    var money = System.Globalization.CultureInfo.InvariantCulture;
+                    decimal highest = spenders.Max(s => s.Total);
+                    string subject = spenders.Count == 1 ? "1 user" : $"{spenders.Count} users";
+                    alerts.Add(new SystemAlert
+                    {
+                        // The date and count are in the id, so a dismissed alert reappears on a new day or a higher count.
+                        Id = $"ai-spend:{now.ToString("yyyyMMdd", money)}:{spenders.Count}",
+                        Type = "warning",
+                        Message = $"{subject} spent over ${spendThreshold.ToString("0.00", money)} on AI in the last 24 hours (highest: ${highest.ToString("0.00", money)}).",
+                        LinkUrl = "/admin?tab=telemetry",
+                        LinkText = "Review"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to evaluate AI spend alerts in ConfigHealthService");
             }
         }
 

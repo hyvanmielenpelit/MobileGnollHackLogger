@@ -281,6 +281,8 @@ builder.Services.AddScoped<ChatService>();
 builder.Services.AddSingleton<Overseer.Services.ParallelExecutionResolver>();
 builder.Services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
 builder.Services.AddScoped<SystemAiConfigService>();
+builder.Services.Configure<Overseer.Models.AiUsageGuardOptions>(builder.Configuration.GetSection(Overseer.Models.AiUsageGuardOptions.SectionName));
+builder.Services.AddScoped<Overseer.Services.Security.AiUsageGuard>();
 
 // Security: the event recorder drains its queue on a background loop and opens its own scopes.
 builder.Services.AddSingleton<Overseer.Services.Security.SecurityEventRecorder>();
@@ -469,6 +471,10 @@ builder.WebHost.UseSentry(options =>
     options.SendDefaultPii = false;
     options.MaxRequestBodySize = Sentry.Extensibility.RequestSize.None;
 });
+
+// Per-user limits on turns started outside the Chat rate-limit policy, and on concurrent operator-funded turns.
+builder.Services.AddSingleton<Overseer.Security.UserTurnConcurrencyGate>();
+builder.Services.AddSingleton<Overseer.Security.UserTurnRateLimiter>();
 
 // Rate limiters. Every policy partitions per user, so one heavy user cannot throttle another.
 builder.Services.AddRateLimiter(options =>

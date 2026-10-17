@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using MobileGnollHackLogger.Data;
 using System.IO;
@@ -53,7 +54,10 @@ public class SessionController : ControllerBase
         [FromServices] Overseer.Services.Security.OverseerAccessService? overseerAccess = null,
         [FromServices] Overseer.Services.Security.ISecurityEventRecorder? securityEvents = null,
         [FromServices] Overseer.Services.Telemetry.IActivityCounter? activityCounter = null,
-        [FromServices] GnollHackServer.Data.Security.GameApiSignInThrottle? signInThrottle = null)
+        [FromServices] GnollHackServer.Data.Security.GameApiSignInThrottle? signInThrottle = null,
+        [FromServices] Microsoft.Extensions.Options.IOptions<Overseer.Models.AiUsageGuardOptions>? guardOptions = null,
+        [FromServices] Overseer.Security.UserTurnRateLimiter? turnLimiter = null,
+        [FromServices] Overseer.Security.UserTurnConcurrencyGate? turnGate = null)
     {
         var expectedSecret = _configuration["AntiForgeryToken"];
         if (string.IsNullOrEmpty(expectedSecret) || request.AntiForgeryToken != expectedSecret)
@@ -309,30 +313,70 @@ public class SessionController : ControllerBase
             AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(2)
         });
 
+        /* Truncated rather than refused: GnollHack shows any 400 from this endpoint as a
+           credentials problem. */
+        int maxInitialPromptCharacters = guardOptions?.Value.MaxInitialPromptCharacters ?? 0;
+        if (maxInitialPromptCharacters > 0 && request.InitialPrompt != null
+            && request.InitialPrompt.Length > maxInitialPromptCharacters)
+        {
+            request.InitialPrompt = request.InitialPrompt.Substring(0, maxInitialPromptCharacters);
+        }
+
         if (!string.IsNullOrWhiteSpace(request.InitialPrompt))
         {
             var userId = user.Id;
             var sessionRef = Overseer.Services.Privacy.SessionRef.Persistent(session.Id);
             var initialPrompt = request.InitialPrompt;
 
+            /* The handoff turn names no model, so ChatService runs it on the user's own model
+               when they have one; only otherwise is it operator-funded. The rate limit applies
+               to every handoff turn, the concurrency gate to operator-funded ones only. When
+               either refuses, the session and its handoff token are still returned, without the
+               greeting. */
+            bool operatorFunded = turnGate != null
+                && !await _dbContext.UserAiModels.AnyAsync(m => m.AspNetUserId == userId);
+
             var settings = await _dbContext.UserAiSettings.FindAsync(userId);
             int timeoutSeconds = settings?.RequestTimeout ?? _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Default", 300);
-            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-            _ongoingChatManager.TryStart(sessionRef, cts, out _);
 
-            _ = Task.Run(async () =>
+            bool startTurn = true;
+            if (turnLimiter != null && !turnLimiter.TryAcquire(user.UserName ?? userId))
             {
-                try
+                securityEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
+                    SecurityEventKind.RateLimitRejected, UserId: userId, IpAddress: remoteIp, Code: "session-create-turn"));
+                startTurn = false;
+            }
+
+            bool gateEntered = false;
+            if (startTurn && operatorFunded)
+            {
+                gateEntered = turnGate!.TryEnter(userId);
+                startTurn = gateEntered;
+            }
+
+            if (startTurn)
+            {
+                var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+                _ongoingChatManager.TryStart(sessionRef, cts, out _);
+
+                // The gate slot this turn holds, released by the background task's finally.
+                var heldGate = gateEntered ? turnGate : null;
+
+                _ = Task.Run(async () =>
                 {
-                    using var scope = _scopeFactory.CreateScope();
-                    var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
-                    await chatService.GenerateAndBroadcastMessageAsync(sessionRef, initialPrompt, null, userId, true, cts.Token);
-                }
-                finally
-                {
-                    _ongoingChatManager.Complete(sessionRef);
-                }
-            });
+                    try
+                    {
+                        using var scope = _scopeFactory.CreateScope();
+                        var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
+                        await chatService.GenerateAndBroadcastMessageAsync(sessionRef, initialPrompt, null, userId, true, cts.Token);
+                    }
+                    finally
+                    {
+                        _ongoingChatManager.Complete(sessionRef);
+                        heldGate?.Exit(userId);
+                    }
+                });
+            }
         }
 
         return Ok(new

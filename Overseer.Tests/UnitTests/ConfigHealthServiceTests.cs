@@ -14,7 +14,8 @@ namespace Overseer.Tests.UnitTests;
 /// <summary>
 /// The retired-model alert: one per retired catalog entry that enabled system configurations still
 /// name, and none for a configuration that is disabled, custom, on a custom endpoint or simply not in
-/// the catalog.
+/// the catalog. The AI spend alert: one for the users whose operator-funded spend in the last 24 hours reached
+/// the threshold, administrators excluded.
 /// </summary>
 public class ConfigHealthServiceTests
 {
@@ -101,6 +102,106 @@ public class ConfigHealthServiceTests
 
         Assert.DoesNotContain(alerts, a => a.Id.StartsWith("retired-model-", StringComparison.Ordinal));
         Assert.DoesNotContain(alerts, a => a.Message.Contains("my-tuned-flash", StringComparison.Ordinal));
+    }
+
+    // -- AI spend ------------------------------------------------------------------------------------
+
+    private ConfigHealthService CreateSpendService(decimal alertThreshold)
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(_dbOptions));
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { { "Admins", "spend-boss" } })
+            .Build();
+
+        return new ConfigHealthService(configuration, scopeFactory, null,
+            Microsoft.Extensions.Options.Options.Create(new AiUsageGuardOptions { AlertUserDailyCostUsd = alertThreshold }));
+    }
+
+    private void AddSpend(string userId, string userName, params (int Role, decimal? Cost, double HoursAgo)[] rows)
+    {
+        using var db = new ApplicationDbContext(_dbOptions);
+        if (db.Users.Find(userId) == null)
+        {
+            db.Users.Add(new ApplicationUser { Id = userId, UserName = userName, Email = userName + "@example.com" });
+        }
+        foreach (var (role, cost, hoursAgo) in rows)
+        {
+            db.SystemAiUsageLogs.Add(new SystemAiUsageLog
+            {
+                SystemAiApiConfigurationId = 1,
+                AspNetUserId = userId,
+                TimestampUtc = DateTime.UtcNow.AddHours(-hoursAgo),
+                Provider = "OpenAI",
+                ModelId = "gpt-spend",
+                RoleContext = role,
+                EstimatedCost = cost
+            });
+        }
+        db.SaveChanges();
+    }
+
+    private List<SystemAlert> SpendAlerts(decimal alertThreshold) =>
+        CreateSpendService(alertThreshold).GetSystemAlerts().Where(a => a.Id.StartsWith("ai-spend:", StringComparison.Ordinal)).ToList();
+
+    [Fact]
+    public void AiSpend_AtTheThreshold_RaisesOneAlert_WithTheDateAndCountInItsId()
+    {
+        AddSpend("spender-1", "spender-one", (1, 15m, 1), (3, 5m, 20));
+        AddSpend("spender-2", "spender-two", (2, 30m, 2));
+        // Below the threshold once GnollBench and older rows are left out.
+        AddSpend("spender-3", "spender-three", (1, 10m, 1), (4, 100m, 1), (1, 100m, 25));
+
+        var before = DateTime.UtcNow;
+        var alert = Assert.Single(SpendAlerts(20m));
+        var after = DateTime.UtcNow;
+
+        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+        Assert.Contains(alert.Id, new[]
+        {
+            $"ai-spend:{before.ToString("yyyyMMdd", invariant)}:2",
+            $"ai-spend:{after.ToString("yyyyMMdd", invariant)}:2"
+        });
+        Assert.Equal("warning", alert.Type);
+        Assert.Equal("2 users spent over $20.00 on AI in the last 24 hours (highest: $30.00).", alert.Message);
+        Assert.Equal("/admin?tab=telemetry", alert.LinkUrl);
+        Assert.Equal("Review", alert.LinkText);
+    }
+
+    [Fact]
+    public void AiSpend_OneUser_IsCountedInTheSingular()
+    {
+        AddSpend("spender-1", "spender-one", (1, 20m, 1));
+
+        var alert = Assert.Single(SpendAlerts(20m));
+
+        Assert.EndsWith(":1", alert.Id, StringComparison.Ordinal);
+        Assert.StartsWith("1 user spent over $20.00", alert.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AiSpend_BelowTheThreshold_RaisesNoAlert()
+    {
+        AddSpend("spender-1", "spender-one", (1, 19.99m, 1), (1, null, 1));
+
+        Assert.Empty(SpendAlerts(20m));
+    }
+
+    [Fact]
+    public void AiSpend_ByAnAdministrator_RaisesNoAlert()
+    {
+        AddSpend("boss", "spend-boss", (1, 500m, 1));
+
+        Assert.Empty(SpendAlerts(20m));
+    }
+
+    [Fact]
+    public void AiSpend_WithTheAlertTurnedOff_RaisesNoAlert()
+    {
+        AddSpend("spender-1", "spender-one", (1, 500m, 1));
+
+        Assert.Empty(SpendAlerts(0m));
     }
 
     [Fact]

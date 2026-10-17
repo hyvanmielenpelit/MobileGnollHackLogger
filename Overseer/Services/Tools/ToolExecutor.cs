@@ -246,7 +246,7 @@ namespace Overseer.Services.Tools
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error executing tool {ToolName} for Session {SessionId}", toolName, callContext.SessionId);
-                    result = new ToolResult { Success = false, ErrorMessage = $"An error occurred during tool execution: {ex.Message}" };
+                    result = new ToolResult { Success = false, ErrorMessage = $"An error occurred during tool execution: {ToolErrorText.ForModel(ex)}" };
                 }
                 finally
                 {

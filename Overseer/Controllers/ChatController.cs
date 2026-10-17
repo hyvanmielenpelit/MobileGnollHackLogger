@@ -1373,13 +1373,29 @@ public class ChatController : ControllerBase
        refused by Kestrel before the controller allocates anything. */
     [RequestSizeLimit(SendRequestBodyByteLimit)]
     public async Task<IActionResult> Send([FromBody] SendMessageRequest request,
-        [FromServices] Overseer.Services.Telemetry.IActivityCounter? activityCounter = null)
+        [FromServices] Overseer.Services.Telemetry.IActivityCounter? activityCounter = null,
+        [FromServices] Microsoft.Extensions.Options.IOptions<AiUsageGuardOptions>? guardOptions = null,
+        [FromServices] UserTurnConcurrencyGate? turnGate = null)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
         request.Message = System.Text.RegularExpressions.Regex.Replace(
             request.Message ?? "", @"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "").Trim();
+
+        /* Mirrors the order in which ChatService resolves the model: a system model id runs on
+           the operator's key, a user model id on the user's own, and neither takes the user's
+           default model when they have one. Only operator-funded turns are capped and gated. */
+        bool operatorFunded = (guardOptions != null || turnGate != null)
+            && (request.SystemModelId.HasValue
+                || (request.UserModelId == null
+                    && !await _dbContext.UserAiModels.AnyAsync(m => m.AspNetUserId == userId)));
+
+        int maxMessageCharacters = guardOptions?.Value.MaxMessageCharacters ?? 0;
+        if (operatorFunded && maxMessageCharacters > 0 && request.Message.Length > maxMessageCharacters)
+        {
+            return BadRequest($"Your message is {request.Message.Length:N0} characters long. The limit is {maxMessageCharacters:N0} characters. Shorten it, or attach long text as a file.");
+        }
 
         if (string.IsNullOrEmpty(request.Message) && (request.Attachments == null || request.Attachments.Count == 0))
         {
@@ -1493,9 +1509,28 @@ public class ChatController : ControllerBase
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
         int timeoutSeconds = settings?.RequestTimeout ?? _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Default", 300);
         var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-        if (!_ongoingChatManager.TryStart(sessionRef, cts, out _))
-            return Conflict("Generation already in progress for this session.");
 
+        bool gateEntered = false;
+        if (operatorFunded && turnGate != null)
+        {
+            if (!turnGate.TryEnter(userId))
+            {
+                cts.Dispose();
+                return StatusCode(StatusCodes.Status429TooManyRequests,
+                    "You already have answers being generated in other chats. Wait for one to finish and try again.");
+            }
+            gateEntered = true;
+        }
+
+        if (!_ongoingChatManager.TryStart(sessionRef, cts, out _))
+        {
+            if (gateEntered)
+                turnGate!.Exit(userId);
+            return Conflict("Generation already in progress for this session.");
+        }
+
+        // The gate slot this turn holds, released by the detached task's finally.
+        var heldGate = gateEntered ? turnGate : null;
         var message = request.Message;
         var attachments = request.Attachments;
         var userModelId = request.UserModelId;
@@ -1524,6 +1559,7 @@ public class ChatController : ControllerBase
             finally
             {
                 _ongoingChatManager.Complete(sessionRef);
+                heldGate?.Exit(userId);
             }
         });
 

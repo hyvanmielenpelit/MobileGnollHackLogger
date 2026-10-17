@@ -101,7 +101,11 @@ the inclusive rate, and our own failures (excluded from the rate). Benchmark-rol
 GnollBench*: GnollBench reports its own availability.
 
 **Server-key sub-agent runs** (`AI:*` keys) are operator-funded but belong to no configuration: they write
-no usage row, and their attempt rows are *System* with no configuration id.
+a usage row through `SystemAiConfigService.RecordServerKeyUsageAsync` with configuration id 0, role 3,
+the run's tokens and its own estimated cost, and the model name `Server key: <model>`; their attempt rows
+are *System* with no configuration id. Configuration id 0 is attribution only, not a foreign key. The
+model-level aggregates group by provider and model and include these rows; the Users view shows them as a
+*Server key: …* configuration line, and no counter changes for them.
 
 ## 9. Retention
 
@@ -157,6 +161,11 @@ never resets a counter), and the limit source (*user*, *group*, *system-wide*).
 legitimately produce busy hours. Nothing labels, colors, flags, records or acts on a busy hour, and the
 view says so in its own text. The only misuse-related figures are refusals the system or an
 administrator already issued, and the *Blocked* state.
+
+The **spend alert** is a separate, cost-based signal outside this view: when a non-admin user's
+operator-funded estimated cost (roles 1–3) over the last 24 hours reaches
+`AiUsageGuard:AlertUserDailyCostUsd`, the admin page shows an alert banner linking to this tab
+(`security-monitoring.md` § 2). It never limits anyone.
 
 Actions: *Usage charts* (the charts dialog for that user), *Manage limits* (selects the Users tab and
 opens its *Manage User Configs* dialog for the user, where the Rate Limits dialog edits each assignment;

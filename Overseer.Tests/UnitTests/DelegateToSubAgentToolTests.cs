@@ -160,6 +160,7 @@ public class DelegateToSubAgentToolTests
             ThinkingLevel = "high",
             OrderIndex = 0
         });
+        AddUserKey(db, "user10");
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(10), AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
@@ -221,6 +222,7 @@ public class DelegateToSubAgentToolTests
             MaxOutputTokens = null,
             OrderIndex = 0
         });
+        AddUserKey(db, "user20");
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(20), AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
@@ -259,6 +261,7 @@ public class DelegateToSubAgentToolTests
             MaxOutputTokens = 50000,
             OrderIndex = 0
         });
+        AddUserKey(db, "user30");
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(30), AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
@@ -285,6 +288,7 @@ public class DelegateToSubAgentToolTests
             ThinkingLevel = "invalid_thinking_level_xyz",
             OrderIndex = 0
         });
+        AddUserKey(db, "user40");
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(40), AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
@@ -710,6 +714,13 @@ public class DelegateToSubAgentToolTests
         return new CryptoService(config).Encrypt(plain, userId);
     }
 
+    /// <summary>The user's own OpenAI key, so a sub-agent on the user's model row runs on it.</summary>
+    private static void AddUserKey(ApplicationDbContext db, string userId)
+    {
+        var (enc, nonce, tag) = EncryptUserKey("user-key-" + userId, userId);
+        db.UserAiApiKeys.Add(new UserAiApiKey { AspNetUserId = userId, Provider = "OpenAI", EncryptedApiKey = enc, ApiKeyNonce = nonce, ApiKeyTag = tag });
+    }
+
     [Fact]
     public async Task ExecuteAsync_AppSettingsFallback_PricesRunAsOperatorFundedCatalogCost()
     {
@@ -769,9 +780,9 @@ public class DelegateToSubAgentToolTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_ActiveUserModelOnServerKey_IsOperatorFundedAtCatalogPrice()
+    public async Task ExecuteAsync_ActiveUserModelOnServerKey_ForAnAdministrator_IsOperatorFundedAtCatalogPrice()
     {
-        var (tool, db, provider, _) = CreateTestSetup();
+        var (tool, db, provider, _) = CreateTestSetup(customConfig: new Dictionary<string, string?> { { "Admins", "admin302" } });
         var usages = OneUsage();
         provider.UsagePerCall = usages;
         var userModel = new UserAiModel
@@ -779,6 +790,7 @@ public class DelegateToSubAgentToolTests
             Id = 302, AspNetUserId = "user302", Provider = "OpenAI", ModelId = "gpt-5.6-luna", OrderIndex = 0,
             PricingMode = "custom", InputPricePerMillion = 7m, OutputPricePerMillion = 21m
         };
+        db.Users.Add(new ApplicationUser { Id = "user302", UserName = "admin302", Email = "admin302@example.com" });
         db.UserAiModels.Add(userModel);
         db.ChatSession.Add(new ChatSession { Id = 302, AspNetUserId = "user302", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -788,7 +800,7 @@ public class DelegateToSubAgentToolTests
 
         var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
 
-        // No user key for the provider: the run fell back to the AI:APIKey server key.
+        // No user key for the provider: the administrator's run fell back to the AI:APIKey server key.
         Assert.Equal("test-key", provider.LastApiKey);
         var run = Assert.Single(result.DelegatedRunCosts!);
         Assert.True(run.IsOperatorFunded);
@@ -799,6 +811,83 @@ public class DelegateToSubAgentToolTests
         Assert.NotNull(catalogCard);
         Assert.Equal(ModelPricingService.ComputeCost(catalogCard, usages), run.EstimatedCost);
         Assert.NotEqual(ModelPricingService.ComputeCost(pricingService.Resolve(userModel)!, usages), run.EstimatedCost);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ActiveUserModelWithoutAUserKey_ForANonAdministrator_IsRefusedWithoutACall()
+    {
+        var (tool, db, provider, _) = CreateTestSetup(customConfig: new Dictionary<string, string?> { { "Admins", "someone-else" } });
+        provider.UsagePerCall = OneUsage();
+        db.Users.Add(new ApplicationUser { Id = "user307", UserName = "player307", Email = "player307@example.com" });
+        db.UserAiModels.Add(new UserAiModel { Id = 307, AspNetUserId = "user307", Provider = "OpenAI", ModelId = "gpt-5.6-luna", OrderIndex = 0 });
+        db.ChatSession.Add(new ChatSession { Id = 307, AspNetUserId = "user307", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(307), UserId = "user307", ActiveUserModelId = 307, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(DelegateToSubAgentTool.NoKeyMessage, result.ErrorMessage);
+        Assert.Null(result.DelegatedRunCosts);
+        Assert.Null(provider.LastApiKey);
+        Assert.Null(provider.LastModelId);
+        Assert.Empty(await db.SystemAiUsageLogs.ToListAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ServerKeyFallbackOnASystemModelTurn_WritesARole3UsageRowWithConfigurationIdZero()
+    {
+        var (tool, db, provider, _) = CreateTestSetup();
+        provider.UsagePerCall = OneUsage();
+        db.ChatSession.Add(new ChatSession { Id = 308, AspNetUserId = "user308", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // The active system configuration does not exist, so the resolution reaches the AI:* server key.
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(308), UserId = "user308", ActiveSystemModelId = 9308, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.Equal("test-key", provider.LastApiKey);
+        var run = Assert.Single(result.DelegatedRunCosts!);
+        Assert.True(run.IsOperatorFunded);
+        Assert.Null(run.SystemModelId);
+
+        var row = Assert.Single(await db.SystemAiUsageLogs.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, row.SystemAiApiConfigurationId);
+        Assert.Equal(3, row.RoleContext);
+        Assert.Equal("user308", row.AspNetUserId);
+        Assert.Equal("OpenAI", row.Provider);
+        Assert.Equal("gpt-5.6-luna", row.ModelId);
+        Assert.Equal("Server key: gpt-5.6-luna", row.ModelDisplayName);
+        Assert.Equal(run.EstimatedCost, row.EstimatedCost);
+        Assert.Equal(run.PricingSource, row.PricingSource);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ServerKeyFallback_IsRefusedWithTheGuardsMessage_WhenTheUserIsOverTheDailyLimit()
+    {
+        var (tool, db, provider, _) = CreateTestSetup(
+            guardOptions: new Overseer.Models.AiUsageGuardOptions { MaxUserDailyCostUsd = 0m, MaxUserDailyRuns = 1 });
+        db.SystemAiUsageLogs.Add(new SystemAiUsageLog
+        {
+            SystemAiApiConfigurationId = 1, AspNetUserId = "user309", TimestampUtc = DateTime.UtcNow,
+            Provider = "OpenAI", ModelId = "gpt-5.6-luna", RoleContext = 1
+        });
+        db.ChatSession.Add(new ChatSession { Id = 309, AspNetUserId = "user309", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(309), UserId = "user309", ActiveSystemModelId = 9309, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(Overseer.Services.Security.AiUsageGuard.RefusalMessage, result.ErrorMessage);
+        Assert.Null(result.DelegatedRunCosts);
+        Assert.Null(provider.LastApiKey);
     }
 
     [Fact]
@@ -1062,7 +1151,8 @@ public class DelegateToSubAgentToolTests
         Dictionary<string, string?>? customConfig = null,
         ModelMetadataService? mockMetadata = null,
         SubAgentCatalogService? mockCatalog = null,
-        Overseer.Services.ApiKeyAlerts.ApiKeyAlertService? alertService = null)
+        Overseer.Services.ApiKeyAlerts.ApiKeyAlertService? alertService = null,
+        Overseer.Models.AiUsageGuardOptions? guardOptions = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -1125,6 +1215,11 @@ public class DelegateToSubAgentToolTests
         if (alertService != null)
         {
             services.AddSingleton(alertService);
+        }
+        if (guardOptions != null)
+        {
+            services.AddSingleton(new Overseer.Services.Security.AiUsageGuard(
+                db, Microsoft.Extensions.Options.Options.Create(guardOptions), config));
         }
 
         var sp = services.BuildServiceProvider();

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
 
 namespace Overseer.Services.Tools
@@ -20,6 +21,7 @@ namespace Overseer.Services.Tools
         private readonly int _batchSize;
         private readonly int _maxBatches;
         private readonly int _contextPadding;
+        private readonly ILogger<SearchServerDumplogsTool>? _logger;
 
         public string ToolName => "search_server_dumplogs";
         public string Description { get; set; } = "Search server dumplogs for a specific term.";
@@ -28,10 +30,11 @@ namespace Overseer.Services.Tools
 
         public JsonElement ParameterSchema { get; }
 
-        public SearchServerDumplogsTool(IServiceScopeFactory scopeFactory, IConfiguration configuration)
+        public SearchServerDumplogsTool(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<SearchServerDumplogsTool>? logger = null)
         {
             _scopeFactory = scopeFactory;
             _configuration = configuration;
+            _logger = logger;
             _configMaxResults = configuration.GetValue<int>("Tools:search_server_dumplogs:MaxResults", 5);
             _batchSize = configuration.GetValue<int>("Tools:search_server_dumplogs:BatchSize", 100);
             _maxBatches = configuration.GetValue<int>("Tools:search_server_dumplogs:MaxBatches", 5);
@@ -95,11 +98,8 @@ namespace Overseer.Services.Tools
                     {
                         if (cancellationToken.IsCancellationRequested) break;
 
-                        if (string.IsNullOrEmpty(game.Name)) continue;
-
-                        string dir = Path.Combine(dumplogBasePath, game.Name);
-                        string fileName = $"gnollhack.{game.Name}.{game.StartTimeUTC}.txt";
-                        string filePath = Path.Combine(dir, fileName);
+                        string? filePath = BuildDumplogPath(dumplogBasePath, game.Name, game.StartTimeUTC);
+                        if (filePath == null) continue;
 
                         if (File.Exists(filePath))
                         {
@@ -148,8 +148,28 @@ namespace Overseer.Services.Tools
             }
             catch (Exception ex)
             {
-                return new ToolResult { Success = false, ErrorMessage = $"Error searching server dumplogs: {ex.Message}" };
+                _logger?.LogError(ex, "Error searching server dumplogs.");
+                return new ToolResult { Success = false, ErrorMessage = "Error searching server dumplogs." };
             }
+        }
+
+        /// <summary>
+        /// The dumplog file of a game, <c>{basePath}/{name}/gnollhack.{name}.{startTimeUtc}.txt</c>, or null
+        /// when <paramref name="name"/> is not a single safe path segment or the path would leave
+        /// <paramref name="basePath"/>.
+        /// </summary>
+        internal static string? BuildDumplogPath(string basePath, string? name, long startTimeUtc)
+        {
+            if (string.IsNullOrEmpty(name) || name == "." || name == "..") return null;
+            if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.Contains('/') || name.Contains('\\')) return null;
+
+            string filePath = Path.Combine(basePath, name, $"gnollhack.{name}.{startTimeUtc}.txt");
+
+            string root = Path.GetFullPath(basePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            if (!Path.GetFullPath(filePath).StartsWith(root, StringComparison.OrdinalIgnoreCase)) return null;
+
+            return filePath;
         }
     }
 }

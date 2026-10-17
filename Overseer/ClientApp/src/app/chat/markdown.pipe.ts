@@ -204,6 +204,24 @@ function isLocalImageSource(href: string): boolean {
   return true;
 }
 
+/**
+ * Whether a link leaves this site: an http(s) URL, absolute or protocol-relative, whose origin
+ * differs from this one. Relative, root-relative, fragment and mailto: links are not.
+ */
+function isExternalWebLink(href: string): boolean {
+  const url = (href || '').trim();
+  if (!url) return false;
+  if (!url.startsWith('//') && !/^[a-z][a-z0-9+.-]*:/i.test(url)) return false;
+
+  try {
+    const resolved = new URL(url, window.location.href);
+    return (resolved.protocol === 'http:' || resolved.protocol === 'https:') &&
+      resolved.origin !== window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 /** The badge shown in place of a blocked image. */
 function blockedImageBadge(href: string, alt: string): string {
   const label = alt && alt.trim().length > 0 ? alt.trim() : 'external image';
@@ -296,6 +314,18 @@ function installDefangHooks(): boolean {
     if (data.attrName === 'style' && styleCanFetch(data.attrValue)) {
       data.keepAttr = false;
     }
+  });
+
+  /* An external link opens in a new tab, so following it never unloads the chat. It runs after
+     attribute sanitization, so `target` needs no ADD_ATTR entry and a model-supplied target or
+     rel is overwritten. */
+  DOMPurify.addHook('afterSanitizeAttributes', (node: any) => {
+    if (node.nodeName !== 'A' || !isExternalWebLink(node.getAttribute('href'))) {
+      return;
+    }
+
+    node.setAttribute('target', '_blank');
+    node.setAttribute('rel', 'noopener noreferrer');
   });
 
   return true;
