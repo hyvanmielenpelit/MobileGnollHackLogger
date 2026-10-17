@@ -43,9 +43,39 @@ git log <latest_tag>..HEAD --oneline -- Overseer/ Overseer.Tests/ GnollHackServe
 Open `Overseer/Data/release-notes.json` and check the `version` field of the first object in the array (index 0).
 - If the new version you are about to add **already exists** at index 0, **ABORT** the operation and inform the user that this version is already present in the changelog.
 
-## Step 5: Classify the Commits
+## Step 5: Select and Classify the Commits
 
-Review the commit log you fetched. Based on the commit messages and your knowledge of the repository, classify the user-facing changes. 
+Review the commit log you fetched. Based on the commit messages and your knowledge of the repository, first select the changes a regular user can notice, then classify them.
+
+**Audience: the regular Overseer chat user.** The changelog is read by people who use the
+Overseer AI chat, not by administrators. List a change only if a regular user can notice it
+while using the chat. In scope:
+- The chat itself (`/chat`): answers, tools, models a user can pick, attachments, message
+  formatting, sessions, streaming, speed and reliability.
+- The pages a regular user reaches from the chat: Settings (including API keys and models),
+  Privacy, Login, Debug Log and the Changelog itself.
+- **Usage limits a user can run into**: rate limits, request or message size limits, quota or
+  usage-guard messages, and changes to how such a limit is enforced or explained. Describe
+  what the user experiences (for example, "a clearer message when you reach the hourly
+  message limit"), never the internal mechanism or the threshold logic an abuser could use.
+- Security and privacy fixes that protect regular users' data or accounts.
+
+Out of scope, even when the change is large:
+- **The Admin page and everything under it** (`/admin`, `Overseer/ClientApp/src/app/admin/`,
+  the `Admin*Controller` endpoints): user management, default API keys, system
+  configuration, admin alerts, and every admin tab and sub-tab.
+- **GnollBench** — the AI benchmark and all its parts: runs, suites, batteries, scoring
+  profiles, model comparisons, reports and report packs, root cause analyses, Chat
+  Consistency, `Overseer/Services/Benchmarking/` and `Overseer/Services/ChatConsistency/`.
+  A commit whose title starts with `[GnollBench]` is out of scope.
+
+A commit that mixes both is listed only for its user-visible part. For example, an abuse
+hardening commit that adds a usage guard and new admin settings gets one item about the limit
+users may meet, and nothing about the admin settings. A GnollBench finding that led to a
+change in the production chat (a system prompt, a tool, a knowledge base article) is in scope,
+described by its effect on chat answers, without mentioning the benchmark. If no change in
+the range is in scope, **STOP** and tell the user, rather than writing an entry with
+admin-only or GnollBench-only items.
 
 **Classification Rules:**
 - `feature` — Entirely new functionality or capability that did not exist before.
@@ -62,6 +92,7 @@ Do **not** create changelog items for:
 - Code formatting, linting, whitespace-only changes, or minor typos
 - Internal refactoring with no user-visible effect
 - Changes to AI skills, agent rules, or documentation files (e.g., files in `.agents/`, `SKILL.md`, `AGENTS.md`)
+- Admin page and GnollBench changes (see **Audience** above)
 
 *Note: A single release can have multiple items of mixed types. Ensure each item is independently classified.*
 
@@ -85,7 +116,7 @@ Format your compiled changes into a JSON object strictly following this schema:
 
 - **Date:** Use the current date and time in exact UTC ISO-8601 format (e.g., `2026-08-13T15:30:00Z`).
 - **Summary:** Must be a brief, high-level overview of the release, not a repetition of the individual change items.
-- **Text:** Must be written for end users, not developers. Make it clear and easy to understand.
+- **Text:** Must be written for end users, not developers. Make it clear and easy to understand. Do not mention the Admin page, administrators' tools or GnollBench.
 - **Type:** Must be exactly one of: `"feature"`, `"improvement"`, `"fix"`, or `"security"`.
 
 ## Step 7: Prepend to the File
