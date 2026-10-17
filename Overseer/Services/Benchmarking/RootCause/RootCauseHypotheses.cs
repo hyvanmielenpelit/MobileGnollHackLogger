@@ -24,6 +24,10 @@ internal sealed class RootCauseDraft
     public List<string> Models { get; init; } = new();
     public string Statement { get; set; } = string.Empty;
     public string Short { get; set; } = string.Empty;
+
+    /// <summary>The hypothesis' label when the rule states it; null for the label <see cref="RootCauseLabels.Of"/> gives.</summary>
+    public string? Label { get; set; }
+
     public List<string> Loci { get; init; } = new();
     public List<string> For { get; } = new();
     public List<string> Against { get; } = new();
@@ -80,7 +84,8 @@ internal sealed class RootCauseDraft
 
 /// <summary>
 /// The hypothesis rule tables of § A4: the pair rules (HQ1–HQ9, HS1–HS6, HC1–HC5) between two models,
-/// of which HQ3 spans every model and HQ5 is stated once per model, the within-model rules (WQ1–WQ6, WS1–WS5,
+/// of which HQ3 spans every model and HQ5 spans every model of a comparison and is stated once per model of a
+/// per-model sheet, the within-model rules (WQ1–WQ6, WS1–WS5,
 /// WC1–WC3) of one model, the nulls H0-Q, H0-S, H0-C and
 /// H0-W, the control limit, the robustness checks and the grading of § A2. Each rule fires on its
 /// pre-declared condition and computes its evidence for and against; <see cref="Grade"/> turns the
@@ -382,10 +387,13 @@ public static class RootCauseHypotheses
     public const string WithinOnlyAxisReason = "Only hypotheses about one model's own breakdown fired on this axis; none compares the models.";
 
     /// <summary>The reason of an axis whose only candidate hypotheses are price effects, which the price cards show rather than the runs.</summary>
-    public const string PriceOnlyAxisReason = "Only price-per-token differences fired on this axis; they are known from the price cards, not a cause the runs found.";
+    public const string PriceOnlyAxisReason = "The runs show no cost mechanism beyond the price cards: every hypothesis that fired on this axis is a price-card difference.";
 
     /// <summary>The reason of an axis whose price effects stand beside other hypotheses that were all ruled out.</summary>
-    public const string PriceCardsAxisReason = "Known from the price cards: the differences in price per token account for the gap, which the price cards show rather than a cause the runs found; every other hypothesis on this axis was ruled out.";
+    public const string PriceCardsAxisReason = "No cost mechanism beyond the price cards remains: every other hypothesis on this axis was ruled out.";
+
+    /// <summary>The short statement's lead of HC4 in a grouped pair, where the caching effect itself leads: <c>Caching, input price: Model A</c>.</summary>
+    public const string CachingPriceShort = "Caching, input price";
 
     /// <summary>The refuted-if statement of a price effect (<see cref="RootCauseDraft.PriceEffect"/>), which no run can change.</summary>
     public const string PriceEffectRefutedIf = "Not testable by a run: the share follows from the price cards and these runs' token counts.";
@@ -402,43 +410,10 @@ public static class RootCauseHypotheses
     /// other candidate is graded Low or higher, the axis is not established and its best hypothesis is the
     /// highest-ranked price effect, with <see cref="PriceOnlyAxisReason"/> when it stands alone and
     /// <see cref="PriceCardsAxisReason"/> when the others were ruled out. Otherwise the reason names the best
-    /// hypothesis' grade and the grade reasons that applied to it, each one clause, and the status carries a
-    /// <see cref="RootCauseAxisStatus.PriceNote"/> when price effects cover larger differences than its pair
-    /// (<see cref="PriceNote"/>).
+    /// hypothesis' grade and the grade reasons that applied to it, each one clause.
     /// </summary>
     internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept, bool hasPairs)
-    {
-        var status = StatusOf(axis, kept, hasPairs);
-        var best = status.BestHypothesis == null ? default : kept.FirstOrDefault(k => k.Hypothesis.Key == status.BestHypothesis);
-        if (best.Hypothesis != null && !best.Hypothesis.PriceEffect)
-        {
-            status.PriceNote = PriceNote(axis, best.Draft, kept.Where(k => k.Hypothesis.Axis == axis && k.Hypothesis.PriceEffect).ToList());
-        }
-        return status;
-    }
-
-    /// <summary>
-    /// <c>Price per token, known from the price cards, explains the largest cost differences (HC2.1–HC2.7; 103% of the
-    /// largest).</c>: the price effects graded Low or higher whose pair's difference (<see cref="RootCauseDraft.Scale"/>) is
-    /// larger than <paramref name="best"/>'s, by their keys as ranges, with the share of the largest of them where it has
-    /// one; null when none is, or when the best hypothesis has no difference to compare.
-    /// </summary>
-    internal static string? PriceNote(string axis, RootCauseDraft best, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> priceEffects)
-    {
-        ArgumentNullException.ThrowIfNull(best);
-        if (best.Scale is not double own) return null;
-        var larger = priceEffects
-            .Where(k => k.Hypothesis.PriceEffect
-                        && RootCauseGrades.Rank(k.Hypothesis.Grade) >= RootCauseGrades.Rank(RootCauseGrades.Low)
-                        && k.Draft.Scale is double scale && Math.Abs(scale) > Math.Abs(own))
-            .ToList();
-        if (larger.Count == 0) return null;
-
-        var largest = larger.OrderByDescending(k => Math.Abs(k.Draft.Scale!.Value)).First();
-        string share = largest.Hypothesis.Share is double s ? "; " + Pct(s) + " of the largest" : string.Empty;
-        return "Price per token, known from the price cards, explains the largest " + RootCauseAxes.Name(axis).ToLowerInvariant()
-               + " differences (" + KeyRanges(larger.Select(k => k.Hypothesis.Key).ToList()) + share + ").";
-    }
+        => StatusOf(axis, kept, hasPairs);
 
     /// <summary>
     /// Hypothesis keys as ranges of consecutive numbers of one rule, each rule where its first key stands:
@@ -1130,12 +1105,15 @@ public static class RootCauseHypotheses
         string A = ctx.Name(a.Token), B = ctx.Name(b.Token);
         string decompositionKey = "rca.cost." + pair.First + "." + pair.Second;
         string total = BenchmarkReportFormat.Usd(Math.Abs(cost.Difference ?? 0));
-        var volume = cost.Components.FirstOrDefault(c => c.Key == "all" && c.Effect == "volume");
-        var price = cost.Components.FirstOrDefault(c => c.Key == "all" && c.Effect == "price");
+        var volume = cost.Components.FirstOrDefault(c => c.Key == RootCauseCostKeys.All && c.Effect == RootCauseCostKeys.Volume);
+        var price = cost.Components.FirstOrDefault(c => c.Key == RootCauseCostKeys.All && c.Effect == RootCauseCostKeys.Price);
         if (volume?.Share == null || price?.Share == null) yield break;
+        // A grouped pair's caching effect, when both list prices split it from the price card.
+        var caching = cost.Grouped ? cost.Components.FirstOrDefault(c => c.Key == RootCauseCostKeys.All && c.Effect == RootCauseCostKeys.Caching && c.Share.HasValue) : null;
+        bool cachingLeads = caching != null && caching.Share!.Value > volume.Share!.Value && caching.Share.Value > price.Share!.Value;
 
-        // The component (volume plus price) with the largest share.
-        var byComponent = RootCauseSegments.CostComponents
+        // The component (volume plus price) with the largest share: one of the five, or of a grouped pair's two groups.
+        var byComponent = (cost.Grouped ? RootCauseCostKeys.Groups : RootCauseSegments.CostComponents)
             .Select(k => (Key: k, Share: cost.Components.Where(c => c.Key == k).Sum(c => c.Share ?? 0)))
             .OrderByDescending(x => x.Share)
             .ToList();
@@ -1170,11 +1148,35 @@ public static class RootCauseHypotheses
             return d;
         }
 
-        if (volume.Share!.Value >= price.Share!.Value)
+        // A's cache-read share against the models' median, and whether it is well below it; null when either is missing.
+        (string Line, bool Low)? CacheReadLine()
+        {
+            double? shareA = ctx.CacheReadShare(a);
+            var cacheShares = ctx.Models.Select(ctx.CacheReadShare).Where(v => v.HasValue).Select(v => v!.Value).ToList();
+            double? median = RootCauseStatistics.Median(cacheShares);
+            if (shareA is not double s || median is not double m) return null;
+            return (A + "'s cache-read share is " + Pct(s) + " against the models' median of " + Pct(m) + ".", s <= m - 0.20);
+        }
+
+        // The lead among the volume, price and (grouped) caching effects: HC1, HC2 or HC4.
+        if (cachingLeads)
+        {
+            var inputCaching = cost.Components.FirstOrDefault(c => c.Key == RootCauseCostKeys.Input && c.Effect == RootCauseCostKeys.Caching) ?? caching;
+            var d = Make("HC4", "Prompt caching raises " + A + "'s price per input token against " + B + ".", CachingPriceShort + ": " + A,
+                "The volume or the price-card effect is larger.", "the caching effect stays the largest", inputCaching, RootCauseLoci.Chat, RootCauseLoci.Provider);
+            d.Against.Add("The volume effect is " + SharePct(volume) + " and the price-card effect " + SharePct(price) + " of the difference.");
+            // The caching effect is measured itself, so the cache-read share is context and rules nothing out.
+            if (CacheReadLine() is { } cacheRead) (cacheRead.Low ? d.For : d.Against).Add(cacheRead.Line);
+            d.FactKeys.Add(ctx.Key(a.Token, "tokens.cacheReadShare"));
+            d.NextRunKind = RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+        else if (volume.Share!.Value >= price.Share!.Value)
         {
             var d = Make("HC1", A + " costs more than " + B + " mainly from token volume.", "Token volume: " + A,
                 "The price effect is larger.", "the volume effect stays the larger", volume, RootCauseLoci.Model, RootCauseLoci.Chat);
             d.Against.Add("The price effect is " + SharePct(price) + " of the difference.");
+            if (caching != null) d.Against.Add("The caching effect is " + SharePct(caching) + " of the difference.");
             d.NextRunKind = RootCauseRunKinds.Replicate;
             yield return d;
         }
@@ -1188,6 +1190,7 @@ public static class RootCauseHypotheses
                 d.ConfirmIf = LowerFirst(PriceEffectRefutedIf).TrimEnd('.');
             }
             d.Against.Add("The volume effect is " + SharePct(volume) + " of the difference.");
+            if (caching != null) d.Against.Add("The caching effect is " + SharePct(caching) + " of the difference.");
             d.FactKeys.Add(ctx.Key(a.Token, "price.output.perMillion"));
             d.CheckKind = "configuration";
             d.CheckText = "Compare the two models' price cards; the price effect follows from them.";
@@ -1196,8 +1199,8 @@ public static class RootCauseHypotheses
         }
 
         // HC3 needs both models' thinking apart from their output: for a provider that counts it inside output,
-        // the lead component would be the other model's thinking alone.
-        if (leadComponent == RootCauseSegments.Reasoning && a.Evidence.ReasoningReported && b.Evidence.ReasoningReported)
+        // the lead component would be the other model's thinking alone. A grouped pair has no reasoning component.
+        if (!cost.Grouped && leadComponent == RootCauseSegments.Reasoning && a.Evidence.ReasoningReported && b.Evidence.ReasoningReported)
         {
             var reasoningVolume = cost.Components.First(c => c.Key == RootCauseSegments.Reasoning && c.Effect == "volume");
             var d = Make("HC3", "Reasoning tokens drive " + A + "'s higher cost against " + B + ".", "Reasoning cost: " + A,
@@ -1207,21 +1210,18 @@ public static class RootCauseHypotheses
             yield return d;
         }
 
-        if (leadComponent == RootCauseSegments.UncachedInput)
+        // In a pair split by component, a lead of uncached input points to weak caching (in a grouped pair, the caching lead above).
+        if (!cost.Grouped && leadComponent == RootCauseSegments.UncachedInput)
         {
             var uncached = cost.Components.First(c => c.Key == RootCauseSegments.UncachedInput && c.Effect == "volume");
             var d = Make("HC4", "Weak prompt caching raises " + A + "'s cost against " + B + ".", "Weak caching: " + A,
                 "The cache-read share is comparable to the other models'.", "the cache-read share stays low", uncached, RootCauseLoci.Chat, RootCauseLoci.Provider);
-            double? shareA = ctx.CacheReadShare(a);
-            var cacheShares = ctx.Models.Select(ctx.CacheReadShare).Where(v => v.HasValue).Select(v => v!.Value).ToList();
-            double? median = RootCauseStatistics.Median(cacheShares);
-            if (shareA is double s && median is double m)
+            if (CacheReadLine() is { } cacheRead)
             {
-                string line = A + "'s cache-read share is " + Pct(s) + " against the models' median of " + Pct(m) + ".";
-                if (s <= m - 0.20) d.For.Add(line);
+                if (cacheRead.Low) d.For.Add(cacheRead.Line);
                 else
                 {
-                    d.Against.Add(line);
+                    d.Against.Add(cacheRead.Line);
                     d.NotSupported = true;
                 }
             }
@@ -1234,12 +1234,16 @@ public static class RootCauseHypotheses
             yield return d;
         }
 
-        // HC5: tool rounds multiply input tokens.
+        // HC5: tool rounds multiply input tokens; a grouped pair's input volume is its input group's.
         double inputVolume = cost.Components
-            .Where(c => c.Effect == "volume" && c.Key is RootCauseSegments.UncachedInput or RootCauseSegments.CacheRead or RootCauseSegments.CacheWrite)
+            .Where(c => c.Effect == RootCauseCostKeys.Volume && (cost.Grouped
+                ? c.Key == RootCauseCostKeys.Input
+                : c.Key is RootCauseSegments.UncachedInput or RootCauseSegments.CacheRead or RootCauseSegments.CacheWrite))
             .Sum(c => c.Share ?? 0);
         double outputVolume = cost.Components
-            .Where(c => c.Effect == "volume" && c.Key is RootCauseSegments.Output or RootCauseSegments.Reasoning)
+            .Where(c => c.Effect == RootCauseCostKeys.Volume && (cost.Grouped
+                ? c.Key == RootCauseCostKeys.Output
+                : c.Key is RootCauseSegments.Output or RootCauseSegments.Reasoning))
             .Sum(c => c.Share ?? 0);
         if (inputVolume > outputVolume && inputVolume > price.Share!.Value)
         {
@@ -1326,9 +1330,9 @@ public static class RootCauseHypotheses
         + "which tests the style effect under this configuration and is indicative for the other models.";
 
     /// <summary>
-    /// HQ5 once per model: Completeness was <paramref name="model"/>'s lowest dimension under the concise response
-    /// style. It fires when the model's response-style conflict is true and it is the worse side of an analyzed
-    /// pair on the Intelligence Index; null otherwise. It is about the model alone, so it is a within-model
+    /// HQ5 once per model of a per-model sheet: Completeness was <paramref name="model"/>'s lowest dimension under the
+    /// concise response style. It fires when the model's response-style conflict is true and it is the worse side of an
+    /// analyzed pair on the Intelligence Index; null otherwise. It is about the model alone, so it is a within-model
     /// hypothesis, observed rather than measured, and one Detailed run of the reference model settles it.
     /// </summary>
     internal static RootCauseDraft? StyleConflict(RootCauseContext ctx, RootCauseModelInput model)
@@ -1361,6 +1365,53 @@ public static class RootCauseHypotheses
         draft.Caps.Add((RootCauseGrades.Low, "no run with the other response style exists to compare"));
         draft.FactKeys.Add(ctx.Key(model.Token, "style.responseStyleConflict"));
         return draft;
+    }
+
+    /// <summary>
+    /// HQ5 once for a comparison: Completeness was the lowest dimension of N of M models under the concise response style.
+    /// It is about the instrument, not a pair, so it is shaped as HQ3 is: a document-wide hypothesis (<see cref="IsDocumentWide"/>)
+    /// of kind <c>pair</c> in group <c>all</c>, naming every model whose response-style conflict is true, which answers no
+    /// research question. It fires when at least two models have the conflict, or the one model of a single-model
+    /// document has it; null otherwise. Observed rather than measured, it is capped at Low, and one Detailed run of the
+    /// reference model settles it.
+    /// </summary>
+    internal static RootCauseDraft? SharedStyleConflict(RootCauseContext ctx)
+    {
+        var conflicted = ctx.Models.Where(m => m.StyleConflict && m.QualityIndex.HasValue).ToList();
+        if (conflicted.Count == 0 || (conflicted.Count < 2 && ctx.Models.Count != 1)) return null;
+
+        string counts = Inv(conflicted.Count) + " of " + Inv(ctx.Models.Count);
+        var draft = new RootCauseDraft
+        {
+            Id = "HQ5",
+            Axis = RootCauseAxes.Intelligence,
+            Kind = "pair",
+            Group = "all",
+            Statement = "Completeness was the lowest dimension of " + counts + " models under the concise response style.",
+            Short = "Concise style: all models",
+            Label = "the concise response style, " + counts + " models",
+            RefutedIf = StyleRefutedIf,
+            ConfirmIf = "a Detailed run raises Completeness",
+            Quantified = false,
+            NextRunKind = RootCauseRunKinds.StylePair
+        };
+        draft.Models.AddRange(conflicted.Select(m => m.Token));
+        draft.Loci.Add(RootCauseLoci.Chat);
+        draft.For.Add("The response-style conflict is true for " + BenchmarkReportFormat.LetterList(conflicted.Select(m => ctx.Name(m.Token)).ToList())
+                      + ": Completeness is the lowest dimension of each, well below Accuracy.");
+        draft.Caps.Add((RootCauseGrades.Low, "no run with the other response style exists to compare"));
+        foreach (var model in conflicted) draft.FactKeys.Add(ctx.Key(model.Token, "style.responseStyleConflict"));
+        return draft;
+    }
+
+    /// <summary>
+    /// A hypothesis about every model rather than a pair or one model: HQ3, and the comparison's single HQ5 (kind
+    /// <c>pair</c>). Its <see cref="RootCauseHypothesis.Models"/> lists every model it names, so it is never read as a pair.
+    /// </summary>
+    public static bool IsDocumentWide(RootCauseHypothesis hypothesis)
+    {
+        ArgumentNullException.ThrowIfNull(hypothesis);
+        return hypothesis.Id == "HQ3" || (hypothesis.Id == "HQ5" && hypothesis.Kind == "pair");
     }
 
     // ---------------------------------------------------------------------------------------------

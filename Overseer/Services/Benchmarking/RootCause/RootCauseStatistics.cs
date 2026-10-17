@@ -208,6 +208,28 @@ public static class RootCauseStatistics
         return (volume, delta - volume);
     }
 
+    /// <summary>
+    /// The LMDI split of <c>total = volume × list price × caching factor</c> between two sides into a volume, a list-price
+    /// and a caching effect that sum exactly to <c>totalFirst − totalSecond</c>: with <c>L = L(total₁, total₂)</c>, the
+    /// volume effect is <c>L · ln(volume₁ / volume₂)</c>, the list-price effect <c>L · ln(list₁ / list₂)</c> and the caching
+    /// effect the remainder, what sets each side's effective price apart from its list price. A side whose total, volume
+    /// or list price is not positive falls back to <see cref="Lmdi"/>: its price effect becomes the list-price effect and
+    /// the caching effect is 0.
+    /// </summary>
+    public static (double Volume, double List, double Caching) Lmdi3(
+        double totalFirst, double totalSecond, double volumeFirst, double volumeSecond, double listFirst, double listSecond)
+    {
+        if (totalFirst <= 0 || totalSecond <= 0 || volumeFirst <= 0 || volumeSecond <= 0 || listFirst <= 0 || listSecond <= 0)
+        {
+            var (v, p) = Lmdi(totalFirst, totalSecond, volumeFirst, volumeSecond);
+            return (v, p, 0);
+        }
+        double l = LogMean(totalFirst, totalSecond);
+        double volume = l * Math.Log(volumeFirst / volumeSecond);
+        double list = l * Math.Log(listFirst / listSecond);
+        return (volume, list, totalFirst - totalSecond - volume - list);
+    }
+
     /// <summary>Average ranks from 1, ties sharing the mean of their ranks.</summary>
     public static double[] Ranks(IReadOnlyList<double> values)
     {

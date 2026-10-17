@@ -7,8 +7,9 @@ using Overseer.Services.Benchmarking.RootCause;
 using Xunit;
 
 /// <summary>
-/// The exact decompositions of the root-cause engine: the LMDI speed and cost splits of a pair, a
-/// model's own time and cost shares, the intelligence weight split and the points at risk.
+/// The exact decompositions of the root-cause engine: the LMDI speed and cost splits of a pair (a cost split by
+/// component, or by input and output when the two sides bill different components, and its cost ratio at equal
+/// prices), a model's own time and cost shares, the intelligence weight split and the points at risk.
 /// </summary>
 public class RootCauseDecompositionTests
 {
@@ -180,25 +181,36 @@ public class RootCauseDecompositionTests
         Assert.Equal(0, effects[9], 12);
     }
 
+    /// <summary>A model of a two-model comparison context with <paramref name="items"/> as its cost items.</summary>
+    private static RootCauseModelInput CostModel(string token, List<RootCauseItem> items, bool reasoningReported) => new()
+    {
+        Token = token,
+        Letter = token,
+        Label = "Model label " + token,
+        Provider = reasoningReported ? "Provider " + token : "Anthropic",
+        ModelId = "model-" + token.ToLowerInvariant(),
+        Evidence = new RootCauseModelEvidence { Priced = true, RunsPerSuite = 1, ReasoningReported = reasoningReported, CostItems = items }
+    };
+
+    /// <summary><paramref name="items"/> as a provider that counts thinking inside output records them: reasoning moved into output.</summary>
+    private static List<RootCauseItem> Folded(List<RootCauseItem> items)
+        => items.Select(i => CostItem(i.Key,
+            new[] { i.Tokens[0], i.Tokens[1], i.Tokens[2], i.Tokens[3] + i.Tokens[4], 0 },
+            new[] { i.Cost[0], i.Cost[1], i.Cost[2], i.Cost[3] + i.Cost[4], 0 })).ToList();
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void APairWithUnreportedReasoning_WritesOneOutputRow_ThatStillSumsExactly(bool bothReport)
+    public void APairSplitByComponent_WithUnreportedReasoning_WritesOneOutputRow_ThatStillSumsExactly(bool bothReport)
     {
+        // Both report their reasoning, or neither does: the two bill the same components either way.
         var (reported, unreported) = ReasoningItems();
-        RootCauseModelInput Model(string token, List<RootCauseItem> items, bool reasoningReported) => new()
-        {
-            Token = token,
-            Letter = token,
-            Label = "Model label " + token,
-            Provider = reasoningReported ? "Provider " + token : "Anthropic",
-            ModelId = "model-" + token.ToLowerInvariant(),
-            Evidence = new RootCauseModelEvidence { Priced = true, RunsPerSuite = 1, ReasoningReported = reasoningReported, CostItems = items }
-        };
-        var a = Model("A", reported, reasoningReported: true);
-        var b = Model("B", unreported, reasoningReported: bothReport);
+        var a = CostModel("A", bothReport ? reported : Folded(reported), reasoningReported: bothReport);
+        var b = CostModel("B", bothReport ? reported.Select(i => CostItem(i.Key, i.Tokens.Select(t => t / 2).ToArray(), i.Cost.Select(c => c * 0.4).ToArray())).ToList() : unreported,
+            reasoningReported: bothReport);
         var ctx = new RootCauseContext(new RootCauseInput { Scope = RootCauseEngine.ComparisonScope, Models = new[] { a, b }, ReferenceToken = "A" });
         var cost = RootCauseDecomposition.Cost("A", a.Evidence, "B", b.Evidence);
+        Assert.False(cost.Grouped);
 
         var written = ctx.WrittenCostPair(new RootCausePair("A", "B"), cost);
 
@@ -207,6 +219,7 @@ public class RootCauseDecompositionTests
             Assert.Same(cost, written);
             return;
         }
+        Assert.Equal(cost.VolumeRatio, written.VolumeRatio);
         Assert.DoesNotContain(written.Components, c => c.Key is RootCauseSegments.Output or RootCauseSegments.Reasoning);
         var merged = written.Components.Where(c => c.Key == RootCauseSegments.OutputWithThinking).ToList();
         Assert.Equal(new[] { "volume", "price" }, merged.Select(c => c.Effect));
@@ -218,6 +231,22 @@ public class RootCauseDecompositionTests
 
         // The rules still read the five components as decomposed.
         Assert.Contains(cost.Components, c => c.Key == RootCauseSegments.Reasoning);
+    }
+
+    [Fact]
+    public void APairWhereOnlyOneSideReportsReasoning_IsGrouped_AndWrittenAsDecomposed()
+    {
+        var (reported, unreported) = ReasoningItems();
+        var a = CostModel("A", reported, reasoningReported: true);
+        var b = CostModel("B", unreported, reasoningReported: false);
+        var ctx = new RootCauseContext(new RootCauseInput { Scope = RootCauseEngine.ComparisonScope, Models = new[] { a, b }, ReferenceToken = "A" });
+        var cost = RootCauseDecomposition.Cost("A", a.Evidence, "B", b.Evidence);
+
+        Assert.True(cost.Grouped);
+        Assert.Same(cost, ctx.WrittenCostPair(new RootCausePair("A", "B"), cost));
+        Assert.Equal(new[] { "input", "output" }, cost.Components.Where(c => c.Key != "all").Select(c => c.Key).Distinct());
+        Assert.Equal(cost.Difference!.Value, cost.Components.Where(c => c.Key != "all").Sum(c => c.Amount), 12);
+        Assert.Equal("output (with reasoning), token volume", cost.Components.First(c => c.Key == "output").Label);
     }
 
     /// <summary>
@@ -233,37 +262,117 @@ public class RootCauseDecompositionTests
             Enumerable.Range(1, 12).Select(i => Priced("q" + i, new double[] { 1500 + 10 * (i % 4), 15000 + 200 * i, 0, 400 + 5 * i, 600 + 15 * (i % 3) }, secondCard)).ToList());
     }
 
+    /// <summary>Priced evidence of <paramref name="items"/> on <paramref name="card"/>, USD per million tokens by cost component.</summary>
+    private static RootCauseModelEvidence Carded(List<RootCauseItem> items, double[] card, bool reasoningReported = true)
+        => new() { Priced = true, ReasoningReported = reasoningReported, CostItems = items, PricesPerMillion = card.Select(p => (double?)p).ToArray() };
+
+    /// <summary>The cost ratio of a decomposed pair rebuilt from its factors: volume at equal prices, price and, when grouped, caching.</summary>
+    private static double FactorProduct(RootCausePairDecomposition pair)
+    {
+        double Factor(string effect) => pair.Components.FirstOrDefault(c => c.Key == "all" && c.Effect == effect) is { } c
+            ? RootCauseDecomposition.EffectRatio(c.Amount, pair.FirstTotal, pair.SecondTotal)!.Value
+            : 1.0;
+        return pair.VolumeRatio!.Value * Factor("price") * Factor("caching");
+    }
+
     [Fact]
-    public void ACrossProviderPairOnIdenticalCards_HasNoPriceEffect_SoItsVolumeShareIsExactlyOneInEveryResample()
+    public void ACrossProviderPairOnIdenticalCards_IsGrouped_WithNoPriceCardEffect_AndItsCachingApartFromVolume()
     {
         double[] card = { 0.10, 0.01, 0.125, 0.50, 0.50 };
         var (first, second) = CrossProviderItems(card, card);
 
-        var result = RootCauseDecomposition.Cost("A", new RootCauseModelEvidence { Priced = true, CostItems = first }, "B", new RootCauseModelEvidence { Priced = true, CostItems = second });
+        var result = RootCauseDecomposition.Cost("A", Carded(first, card), "B", Carded(second, card));
 
-        var volume = Assert.Single(result.Components, c => c.Key == "all" && c.Effect == "volume");
-        var price = Assert.Single(result.Components, c => c.Key == "all" && c.Effect == "price");
-        Assert.Equal(1.0, volume.Share!.Value, 9);
-        Assert.Equal(1.0, volume.ShareLower!.Value, 9);
-        Assert.Equal(1.0, volume.ShareUpper!.Value, 9);
-        Assert.Equal(0.0, price.Amount, 12);
+        Assert.True(result.Grouped);
+        Assert.Equal(0.0, Assert.Single(result.Components, c => c.Key == "all" && c.Effect == "price").Amount, 12);
+        Assert.Equal(0.0, Assert.Single(result.Components, c => c.Key == "input" && c.Effect == "price").Amount, 12);
+        var caching = Assert.Single(result.Components, c => c.Key == "input" && c.Effect == "caching");
+        Assert.True(Math.Abs(caching.Amount) > 1e-9);
+        Assert.Equal(caching.Amount, Assert.Single(result.Components, c => c.Key == "all" && c.Effect == "caching").Amount, 12);
+        Assert.Equal(result.Difference!.Value, result.Components.Where(c => c.Key != "all").Sum(c => c.Amount), 12);
+        Assert.Equal(result.FirstTotal!.Value / result.SecondTotal!.Value, FactorProduct(result), 9);
     }
 
     [Fact]
-    public void ACrossProviderPairOnDifferentCards_KeepsAPriceEffect_ThoughCacheWritesAndReasoningAreZeroOnOneSide()
+    public void ACrossProviderPairOnDifferentCards_SplitsTheInputPriceIntoThePriceCardAndCaching()
     {
         double[] firstCard = { 0.10, 0.01, 0.125, 0.50, 0.50 };
         double[] secondCard = { 0.15, 0.015, 0.1875, 0.75, 0.75 };
         var (first, second) = CrossProviderItems(firstCard, secondCard);
 
-        var result = RootCauseDecomposition.Cost("A", new RootCauseModelEvidence { Priced = true, CostItems = first }, "B", new RootCauseModelEvidence { Priced = true, CostItems = second });
+        var result = RootCauseDecomposition.Cost("A", Carded(first, firstCard), "B", Carded(second, secondCard));
 
+        Assert.True(result.Grouped);
         var price = Assert.Single(result.Components, c => c.Key == "all" && c.Effect == "price");
         Assert.True(Math.Abs(price.Amount) > 1e-6);
         Assert.True(price.ShareUpper!.Value - price.ShareLower!.Value > 0);
-        // The components zero on one side carry no price effect: their whole difference is volume.
-        Assert.Equal(0.0, result.Components.Single(c => c.Key == RootCauseSegments.CacheWrite && c.Effect == "price").Amount, 12);
-        Assert.Equal(0.0, result.Components.Single(c => c.Key == RootCauseSegments.Reasoning && c.Effect == "price").Amount, 12);
+        // The input's price-card effect is the list-price ratio alone.
+        double l = RootCauseStatistics.LogMean(first.Average(i => i.Cost[0] + i.Cost[1] + i.Cost[2]), second.Average(i => i.Cost[0] + i.Cost[1] + i.Cost[2]));
+        Assert.Equal(l * Math.Log(0.10 / 0.15), Assert.Single(result.Components, c => c.Key == "input" && c.Effect == "price").Amount, 12);
+        Assert.NotNull(Assert.Single(result.Components, c => c.Key == "input" && c.Effect == "caching").ShareLower);
+    }
+
+    [Fact]
+    public void AnAnthropicShapedSide_AgainstAnOpenAIShapedSide_IsGrouped_AndNoBillingComponentCountsAsVolume()
+    {
+        // The first writes to the cache, bills no uncached input and counts its thinking inside output; the second
+        // writes nothing to the cache and reports its reasoning apart. Their cards differ in the list input price.
+        double[] firstCard = { 5, 0.5, 6.25, 25, 25 };
+        double[] secondCard = { 2, 0.2, 0, 10, 10 };
+        var first = Enumerable.Range(1, 12).Select(i =>
+        {
+            double[] tokens = { 0, 30000 + 200 * i, 4000 + 50 * (i % 4), 1200 + 20 * i, 0 };
+            return CostItem("q" + i, tokens, tokens.Select((t, k) => t * firstCard[k] / 1_000_000).ToArray());
+        }).ToList();
+        var second = Enumerable.Range(1, 12).Select(i =>
+        {
+            double[] tokens = { 6000 + 30 * i, 25000 + 100 * i, 0, 500 + 10 * i, 700 + 15 * (i % 3) };
+            return CostItem("q" + i, tokens, tokens.Select((t, k) => t * secondCard[k] / 1_000_000).ToArray());
+        }).ToList();
+        Assert.False(RootCauseDecomposition.Comparable(first, second, firstReasoningReported: false, secondReasoningReported: true));
+
+        var result = RootCauseDecomposition.Cost("A", Carded(first, firstCard, reasoningReported: false), "B", Carded(second, secondCard));
+
+        Assert.True(result.Grouped);
+        Assert.All(result.Components, c => Assert.Contains(c.Key, new[] { "input", "output", "all" }));
+        Assert.True(Math.Abs(Assert.Single(result.Components, c => c.Key == "input" && c.Effect == "price").Amount) > 1e-6);
+        Assert.True(Math.Abs(Assert.Single(result.Components, c => c.Key == "input" && c.Effect == "caching").Amount) > 1e-6);
+        Assert.Equal(new[] { "volume", "price", "caching" }, result.Components.Where(c => c.Key == "all").Select(c => c.Effect));
+        Assert.Equal(result.Difference!.Value, result.Components.Where(c => c.Key == "all").Sum(c => c.Amount), 12);
+        Assert.Equal("input, price card", Assert.Single(result.Components, c => c.Key == "input" && c.Effect == "price").Label);
+        Assert.Equal("input, caching", Assert.Single(result.Components, c => c.Key == "input" && c.Effect == "caching").Label);
+        Assert.Equal(result.FirstTotal!.Value / result.SecondTotal!.Value, FactorProduct(result), 9);
+
+        // Without a list input price on one side, the input splits into volume and price alone.
+        var unlisted = RootCauseDecomposition.Cost("A", Carded(first, firstCard, reasoningReported: false),
+            "B", new RootCauseModelEvidence { Priced = true, CostItems = second });
+        Assert.True(unlisted.Grouped);
+        Assert.DoesNotContain(unlisted.Components, c => c.Effect == "caching");
+        Assert.Equal(unlisted.FirstTotal!.Value / unlisted.SecondTotal!.Value, FactorProduct(unlisted), 9);
+    }
+
+    [Fact]
+    public void ASameProviderPair_StaysSplitByComponent_AndItsVolumeRatioTimesItsPriceRatioIsTheCostRatio()
+    {
+        double[] card = { 2, 0.2, 2.5, 10, 10 };
+        double[] dearCard = { 3, 0.3, 3.75, 15, 15 };
+        List<RootCauseItem> Items(double[] priced, double scale) => Enumerable.Range(1, 8).Select(i =>
+        {
+            double[] tokens = { (3000 + 20 * i) * scale, 9000 * scale, 500 + 5 * i, (800 + 10 * i) * scale, 400 * scale };
+            return CostItem("q" + i, tokens, tokens.Select((t, k) => t * priced[k] / 1_000_000).ToArray());
+        }).ToList();
+
+        var result = RootCauseDecomposition.Cost("A", Carded(Items(dearCard, 1.4), dearCard), "B", Carded(Items(card, 1.0), card));
+
+        Assert.False(result.Grouped);
+        Assert.Equal(10, result.Components.Count(c => c.Key != "all"));
+        Assert.Equal(new[] { "volume", "price" }, result.Components.Where(c => c.Key == "all").Select(c => c.Effect));
+        Assert.NotNull(result.VolumeRatio);
+        Assert.True(result.VolumeRatio > 1.0);
+        Assert.Equal(result.FirstTotal!.Value / result.SecondTotal!.Value, FactorProduct(result), 9);
+
+        // A difference left undecomposed has no ratio.
+        Assert.Null(RootCauseDecomposition.Cost("A", Carded(Items(dearCard, 1.4), dearCard), "B", Carded(Items(card, 1.0), card), decompose: false).VolumeRatio);
     }
 
     [Fact]

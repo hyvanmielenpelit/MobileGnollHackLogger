@@ -10,7 +10,8 @@ using Xunit;
 /// The grading of the root-cause hypotheses (§ A2): every grade boundary, the null cap, the control
 /// limit, the per-axis keep limits and the hypothesis a research question reserves (question 1 only one about the
 /// pair itself, the slowest model its preferred partner's), the amount a hypothesis explains, the axis status
-/// with and without pairs and beside a price effect, its price note, and the noun phrase of a check a draft proposes.
+/// with and without pairs and beside a price effect, the noun phrase of a check a draft proposes, and the cost rules of
+/// a pair split into input and output.
 /// </summary>
 public class RootCauseHypothesesTests
 {
@@ -487,7 +488,7 @@ public class RootCauseHypothesesTests
     }
 
     [Fact]
-    public void TheAxisStatus_NotesThePriceEffects_ThatCoverLargerDifferencesThanItsBestHypothesis()
+    public void TheAxisStatus_BesidePriceEffectsThatCoverLargerDifferences_IsSetByItsBestHypothesis()
     {
         var volumeChecks = AllPassed();
         volumeChecks[1] = Check(RootCauseHypotheses.Replicates, RootCauseCheckStatuses.Failed);
@@ -499,21 +500,19 @@ public class RootCauseHypothesesTests
         var kept = RootCauseHypotheses.Keep(new[] { volume, largest, larger, smaller, ruledOut }.Select(d => (Grade(d), d)).ToList());
         Assert.Equal(new[] { "HC2.1", "HC2.2", "HC2.3" }, new[] { largest, larger, smaller }.Select(d => kept.Single(k => ReferenceEquals(k.Draft, d)).Hypothesis.Key));
 
-        // The axis status is unchanged; the note names the two price effects whose pairs differ more than HC1.1's.
+        // The price effects leave the status to HC1.1, whatever differences they cover.
         var status = RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, kept, hasPairs: true);
         Assert.Equal(RootCauseStatuses.Probable, status.Status);
         Assert.Equal("HC1.1", status.BestHypothesis);
-        Assert.Equal("Price per token, known from the price cards, explains the largest cost differences (HC2.1–HC2.2; 103% of the largest).", status.PriceNote);
+        Assert.DoesNotContain("price card", status.Reason, StringComparison.Ordinal);
 
-        // No price effect covers a larger difference: no note.
-        var none = RootCauseHypotheses.Keep(new[] { volume, smaller }.Select(d => (Grade(d), d)).ToList());
-        Assert.Null(RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, none, hasPairs: true).PriceNote);
-
-        // The price effect is the axis's best hypothesis itself: no note.
+        // The price effect is the axis's best hypothesis itself: the axis says the runs show nothing beyond the cards.
         var alone = RootCauseHypotheses.Keep(new[] { largest }.Select(d => (Grade(d), d)).ToList());
         var priceOnly = RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, alone, hasPairs: true);
+        Assert.Equal(RootCauseStatuses.NotEstablished, priceOnly.Status);
         Assert.Equal(RootCauseHypotheses.PriceOnlyAxisReason, priceOnly.Reason);
-        Assert.Null(priceOnly.PriceNote);
+        Assert.Equal("The runs show no cost mechanism beyond the price cards: every hypothesis that fired on this axis is a price-card difference.", priceOnly.Reason);
+        Assert.Equal("No cost mechanism beyond the price cards remains: every other hypothesis on this axis was ruled out.", RootCauseHypotheses.PriceCardsAxisReason);
     }
 
     [Theory]
@@ -591,10 +590,10 @@ public class RootCauseHypothesesTests
 
     /// <summary>
     /// One of two compared models with twelve timed and priced questions: its output tokens per question, its
-    /// reasoning cost per question, and whether its provider reports reasoning apart from output (when it does
-    /// not, its reasoning tokens are not recorded and its reasoning cost slot is 0).
+    /// reasoning cost per question and the <paramref name="reasoningTokens"/> it buys, and whether its provider reports
+    /// reasoning apart from output (when it does not, its reasoning tokens are not recorded and its reasoning cost slot is 0).
     /// </summary>
-    private static RootCauseModelInput Timed(string token, double outputTokens, double reasoningCost, bool reasoningReported)
+    private static RootCauseModelInput Timed(string token, double outputTokens, double reasoningCost, bool reasoningReported, double reasoningTokens = 5000)
     {
         var questions = Enumerable.Range(1, 12).ToList();
         return new RootCauseModelInput
@@ -643,7 +642,7 @@ public class RootCauseHypothesesTests
                 {
                     Key = "q" + q,
                     Band = "Simple",
-                    Tokens = new double[] { 1000, 0, 0, outputTokens, reasoningCost > 0 ? 5000 : 0 },
+                    Tokens = new double[] { 1000, 0, 0, outputTokens, reasoningCost > 0 ? reasoningTokens : 0 },
                     Cost = new double[] { 0.001, 0, 0, outputTokens * 4e-6 * (1 + 0.01 * (q % 4)), reasoningCost * (1 + 0.01 * (q % 4)) }
                 }).ToList()
             }
@@ -679,13 +678,96 @@ public class RootCauseHypothesesTests
     [InlineData(false, false)]
     public void HC3_FiresOnlyWhenBothModelsReportTheirThinking(bool otherReports, bool fires)
     {
-        // Model A's reasoning tokens carry its higher cost; Model B's thinking, if it has any, is inside its output.
-        var ctx = Compared(Timed("A", 500, 0.02, reasoningReported: true), Timed("B", 1500, 0, reasoningReported: otherReports));
+        // Model A's reasoning tokens carry its higher cost. Model B reports a little reasoning of its own, or counts its
+        // thinking inside its output, which splits the pair into input and output.
+        var ctx = Compared(Timed("A", 500, 0.02, reasoningReported: true),
+            Timed("B", 1500, otherReports ? 0.001 : 0, reasoningReported: otherReports, reasoningTokens: 250));
 
         var drafts = RootCauseHypotheses.PairRules(ctx, new RootCausePair("A", "B"), new Dictionary<string, bool>());
 
         Assert.Contains(drafts, d => d.Axis == RootCauseAxes.Cost && d.Models[0] == "A");
         Assert.Equal(fires, drafts.Any(d => d.Id == "HC3"));
+        Assert.Equal(!otherReports, ctx.CostPair(new RootCausePair("A", "B"))!.Grouped);
+    }
+
+    // --- A pair split into input and output ----------------------------------------------------------------
+
+    /// <summary>
+    /// One of two compared models on twelve priced questions, billed on <paramref name="card"/> (USD per million tokens, by
+    /// cost component): an Anthropic-shaped side writes to the cache and counts its thinking inside output; the other
+    /// writes nothing to the cache and reports its reasoning apart. Both read the same input and output token totals.
+    /// </summary>
+    private static RootCauseModelInput Billed(string token, bool anthropic, double[] card)
+    {
+        var questions = Enumerable.Range(1, 12).ToList();
+        return new RootCauseModelInput
+        {
+            Token = token,
+            Letter = token,
+            Label = "Model label " + token,
+            Provider = anthropic ? "Anthropic" : "OpenAI",
+            ModelId = "model-" + token.ToLowerInvariant(),
+            ThinkingLevel = "high",
+            EntryKey = "run:" + token,
+            Evidence = new RootCauseModelEvidence
+            {
+                RunCount = 1,
+                RunsPerSuite = 1,
+                Priced = true,
+                ReasoningReported = !anthropic,
+                PricesPerMillion = card.Select(p => (double?)p).ToArray(),
+                Answers = questions.Select(q => new RootCauseAnswerRecord
+                {
+                    RunId = 1,
+                    ItemKey = "q" + q + "@1",
+                    QuestionKey = "q" + q,
+                    Band = "Simple",
+                    Ok = true,
+                    ReasoningReported = !anthropic
+                }).ToList(),
+                CostItems = questions.Select(q =>
+                {
+                    double[] tokens = anthropic
+                        ? new double[] { 0, 10000, 10000 * (1 + 0.01 * (q % 3)), 1000, 0 }
+                        : new double[] { 10000, 10000, 0, 500, 500 * (1 + 0.01 * (q % 3)) };
+                    return new RootCauseItem
+                    {
+                        Key = "q" + q,
+                        Band = "Simple",
+                        Tokens = tokens,
+                        Cost = tokens.Select((t, k) => t * card[k] / 1_000_000).ToArray()
+                    };
+                }).ToList()
+            }
+        };
+    }
+
+    [Fact]
+    public void InAGroupedPair_ACachingLeadGivesHC4_AndAListPriceLeadGivesAnHC2PriceEffect()
+    {
+        var pair = new RootCausePair("A", "B");
+        double[] card = { 3, 0.3, 3.75, 15, 15 };
+
+        // One card: Model A's cache writes, billed above the list input price, raise its price per input token.
+        var caching = Compared(Billed("A", anthropic: true, card), Billed("B", anthropic: false, card));
+        var cost = caching.CostPair(pair)!;
+        Assert.True(cost.Grouped);
+        var drafts = RootCauseHypotheses.PairRules(caching, pair, new Dictionary<string, bool>()).Where(d => d.Axis == RootCauseAxes.Cost).ToList();
+        var hc4 = Assert.Single(drafts, d => d.Id == "HC4");
+        Assert.Equal("Prompt caching raises Model A's price per input token against Model B.", hc4.Statement);
+        Assert.Equal(cost.Components.Single(c => c.Key == RootCauseCostKeys.Input && c.Effect == RootCauseCostKeys.Caching).Share, hc4.Share);
+        Assert.Contains("rca.cost.A.B.input.caching.share", hc4.FactKeys);
+        Assert.False(hc4.PriceEffect);
+        Assert.DoesNotContain(drafts, d => d.Id is "HC1" or "HC2" or "HC3");
+
+        // Model A's card is twice as dear: the price-card effect leads, a price effect.
+        var listPrice = Compared(Billed("A", anthropic: true, card.Select(p => 2 * p).ToArray()), Billed("B", anthropic: false, card));
+        Assert.True(listPrice.CostPair(pair)!.Grouped);
+        var listDrafts = RootCauseHypotheses.PairRules(listPrice, pair, new Dictionary<string, bool>()).Where(d => d.Axis == RootCauseAxes.Cost).ToList();
+        var hc2 = Assert.Single(listDrafts, d => d.Id == "HC2");
+        Assert.True(hc2.PriceEffect);
+        Assert.Contains(hc2.Against, line => line.StartsWith("The caching effect is ", StringComparison.Ordinal));
+        Assert.DoesNotContain(listDrafts, d => d.Id is "HC1" or "HC3" or "HC4");
     }
 
     [Fact]

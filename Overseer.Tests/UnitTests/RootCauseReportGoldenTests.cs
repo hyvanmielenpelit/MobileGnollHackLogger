@@ -138,7 +138,9 @@ public class RootCauseReportGoldenTests
                 {
                     Role = "Panel member A", Label = "Gemini 3.8 Flash", Score = 80, Comment = "Mostly right.",
                     Evidence = new List<string> { "Accuracy: Matches rubric.", " completeness: matches RUBRIC. ", "Completeness: Omits the Luck adjustment." }
-                }
+                },
+                // A score split above the disagreement threshold, so the compact format prints the panel's notes.
+                new() { Role = "Panel member B", Label = "Claude 5.5 Haiku", Score = 50, Comment = "Half right." }
             };
             item.ClaimRulings = new List<BenchmarkReportContentClaimRuling>
             {
@@ -188,7 +190,7 @@ public class RootCauseReportGoldenTests
             + "No cause can be graded above Probable (Moderate) until a second run of each suite is made, apart from a price effect, "
             + "which follows from the price cards.\n", summary);
         Assert.Contains(sheet.RootCause!.Hypotheses, h => h.Id == "HC2" && h.Grade != RootCauseGrades.NotSupported);
-        Assert.Contains("| Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |\n", summary);
+        Assert.Contains("| Model | Intelligence | Median time | Cost per question |\n", summary);
 
         // The research questions are still computed, but the Summary prints none of them.
         Assert.NotEmpty(sheet.RootCause!.Questions);
@@ -232,7 +234,7 @@ public class RootCauseReportGoldenTests
         string text = BenchmarkReportPackRenderer.Render(Document(name), anonymized ? FullAnonymized : FullNamed);
         string profiles = Section(text, "## Why each model scored as it did");
 
-        Assert.Contains("| Model | Index | Strengths | Lost points on | Flags |\n", profiles);
+        Assert.Contains("- *Strengths:* ", profiles);
         Assert.Empty(Overseer.Services.Benchmarking.RootCause.RootCauseClaimSupport.CausalPhrases(profiles));
     }
 

@@ -216,6 +216,21 @@ export const REPORT_PACK_PEERLESS_REFUSAL =
   'A comparison report compares one model with at least one other. To write a run\'s or a battery run\'s own '
   + 'reports, use the AI Reports tab of its report.';
 
+/**
+ * The server's refusal of a document whose prompt is too large for the writer, word for word
+ * (`AdminBenchmarkReportPacksController.ContextWindowRefusal`).
+ */
+export function reportPackContextWindowRefusal(
+  estimate: BenchmarkReportPackAudienceEstimateDto,
+  writerDisplayName: string | null | undefined
+): string {
+  const share = Math.round((estimate.contextWindowShare ?? 0) * 100);
+  return `The ${audienceLabel(estimate.audience)} prompt is about `
+    + `${Math.round(estimate.estimatedInputTokens).toLocaleString('en-US')} tokens, ${share} % of the context window `
+    + `of ${writerDisplayName ?? 'the writer'}; above ${Math.round(REPORT_PACK_CONTEXT_REFUSAL_SHARE * 100)} % it is `
+    + 'not written. Cover fewer models, or choose a writer with a larger context window.';
+}
+
 /** Why Generate is unavailable when every listed document is written and none is chosen to be rewritten. */
 export const REPORT_PACK_ALL_WRITTEN_REASON =
   'Every document listed is already written. Check Rewrite on one to replace it, or delete it.';
@@ -627,6 +642,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   private tickSub: Subscription | null = null;
   private writersSub: Subscription | null = null;
   private listSub: Subscription | null = null;
+  /** The comparison whose document list is in flight; null when none is. */
+  private listRequestComparisonId: number | null = null;
   private destroyed = false;
   private lastBusy = false;
   /** The documents already announced by `documentWritten`, and the jobs by `jobFinished`. */
@@ -749,6 +766,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (context) {
       this.applyRememberedWriter();
       this.schedulePreview();
+      this.refreshListItems(true);
       this.loadActiveJob(this.generation);
     } else {
       this.refreshDocumentsView();
@@ -1041,11 +1059,12 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   // The documents of this comparison
   // -------------------------------------------------------------------------------------------
 
+  /** The preview estimates every document, so a check recomputes the total, the warning and the refusal here. */
   onDocumentCheck(change: { key: string; checked: boolean }): void {
     this.checks.set(change.key, change.checked);
     this.startError = null;
     this.refreshDocumentsView();
-    this.schedulePreview();
+    this.cdr.markForCheck();
   }
 
   onDocumentDeleted(documentId: number): void {
@@ -1095,29 +1114,43 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** The written documents' list entries, for their flags and chart counts: fetched when one is missing, or when forced. */
+  /**
+   * The written documents' list entries, for their flags and chart counts. Forced, they are fetched as soon
+   * as the comparison has a number, without waiting for the preview; otherwise when a listed document is
+   * missing and no list of the comparison is in flight. The entries merge into the rows in either order.
+   */
   private refreshListItems(force = false): void {
     const comparisonId = this.currentComparisonId ?? this.preview?.comparisonId ?? null;
-    if (comparisonId === null || this.destroyed) {
+    if (comparisonId === null || this.destroyed || !this.currentContext) {
       return;
     }
-    const ids = this.allRows().map(row => row.document?.documentId).filter((id): id is number => typeof id === 'number');
-    if (ids.length === 0 || (!force && ids.every(id => this.listItems.has(id)))) {
-      return;
+    if (!force) {
+      if (this.listRequestComparisonId === comparisonId) {
+        return;
+      }
+      const ids = this.allRows().map(row => row.document?.documentId).filter((id): id is number => typeof id === 'number');
+      if (ids.every(id => this.listItems.has(id))) {
+        return;
+      }
     }
     const generation = this.generation;
     this.listSub?.unsubscribe();
+    this.listRequestComparisonId = comparisonId;
     this.listSub = this.benchmarkService.listReportDocuments({ comparisonId }).subscribe({
       next: items => {
         if (generation !== this.generation) {
           return;
         }
+        this.listRequestComparisonId = null;
         this.listItems = new Map((items ?? []).map(item => [item.id, item]));
         this.refreshDocumentsView();
         this.cdr.markForCheck();
       },
       error: () => {
         // The rows stay without their flags and chart counts.
+        if (generation === this.generation) {
+          this.listRequestComparisonId = null;
+        }
       }
     });
   }
@@ -1307,9 +1340,22 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     return this.writers.find(writer => writer.id === this.writerId) ?? null;
   }
 
-  /** Why the documents cannot be written as chosen, as the current preview says; null while it is pending. */
+  /**
+   * Why the documents cannot be written as chosen: the current preview's refusal, else the context-window
+   * refusal of the first checked document too large for the writer; null while the preview is pending.
+   */
   get refusal(): string | null {
-    return this.answeredPreview?.refusal ?? null;
+    const preview = this.answeredPreview;
+    if (!preview) {
+      return null;
+    }
+    if (preview.refusal) {
+      return preview.refusal;
+    }
+    const over = this.checkedEstimates.find(item => item.estimate.exceedsContextWindow === true);
+    return over
+      ? reportPackContextWindowRefusal(over.estimate, preview.writerDisplayName ?? this.selectedWriter?.displayName)
+      : null;
   }
 
   /** The preview's same-provider warning, or the one a 409 carried. Generate then asks first. */
@@ -1330,9 +1376,9 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * The request body, or null while it cannot be built. A preview asks for every chosen model and the
-   * document types checked (all of them before the list is known), with or without a writer; a start
-   * asks for what is checked, and names the written documents it replaces. A layout preview asks for
+   * The request body, or null while it cannot be built. A preview asks for every chosen model and every
+   * document type of the scope, with or without a writer, so the checks never change it; a start asks for
+   * what is checked, and names the written documents it replaces. A layout preview asks for
    * the first chosen model alone in per-model scope. `batteryRunIds` is sent only for a comparison of
    * battery results, so a run comparison's request is unchanged by it.
    */
@@ -1345,11 +1391,10 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (!options.preview && this.writerId === null) {
       return null;
     }
-    const ready = this.documentsView.state === 'ready';
     const checked = this.checkedRows;
-    const audiences = ready || !options.preview
-      ? this.audiences.map(option => option.audience).filter(audience => checked.some(row => row.audience === audience))
-      : this.audiences.map(option => option.audience);
+    const audiences = options.preview
+      ? this.audiences.map(option => option.audience)
+      : this.audiences.map(option => option.audience).filter(audience => checked.some(row => row.audience === audience));
     const batteryRunIds = context.batteryRunIds ?? [];
     const base = {
       runIds: [...context.runIds],
@@ -1393,7 +1438,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
 
   /**
    * Asks for the preview after the debounce. Changing the scope or the models lists the documents
-   * afresh; changing the checks or the writer keeps the list and estimates again.
+   * afresh; changing the writer or the reference keeps the list and estimates again.
    */
   schedulePreview(): void {
     const request = this.buildRequest({ preview: true });
@@ -1443,7 +1488,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.previewListSignature = ticket.listSignature;
     this.previewError = null;
     this.refreshDocumentsView();
-    // The checks follow the documents just listed: a request for other documents is asked again.
+    // A request that changed since this one was sent (models, scope, reference or writer) is asked again.
     const now = this.buildRequest({ preview: true });
     if (now && JSON.stringify(now) !== ticket.signature) {
       this.schedulePreview();
@@ -1482,7 +1527,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
       return { state: 'failed', total: null, parts: [] };
     }
     const preview = this.answeredPreview;
-    if (!preview || preview.refusal) {
+    if (!preview || this.refusal) {
       return null;
     }
     const range = this.estimateTotalUsd;
@@ -2378,6 +2423,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.clearPollTimer();
     this.listSub?.unsubscribe();
     this.listSub = null;
+    this.listRequestComparisonId = null;
     for (const key of Object.keys(this.subscriptions)) {
       this.subscriptions[key]?.unsubscribe();
       this.subscriptions[key] = undefined;

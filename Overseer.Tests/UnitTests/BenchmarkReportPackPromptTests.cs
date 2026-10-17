@@ -1105,15 +1105,13 @@ public class BenchmarkReportPackPromptTests
         int start = message.IndexOf("CHECK BEFORE YOU ANSWER (", StringComparison.Ordinal);
         Assert.True(start > 0);
         var lines = message[start..].Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal(14, lines.Length);
-        Assert.StartsWith("- Rule 40, what code prints:", lines[10]);
-        Assert.StartsWith("- Rule 41, unavailable figures:", lines[11]);
-        Assert.StartsWith("- Rule 42, next runs in code's order:", lines[12]);
-        Assert.StartsWith("- Rule 43, one model's figure:", lines[13]);
-        Assert.StartsWith("- Rule 40, what code prints: the conclusions never cite ", lines[10]);
-        Assert.DoesNotContain("rca.question.", lines[10]);
-        Assert.DoesNotContain("answers", lines[10]);
-        Assert.Contains("{{rca.run.1.summary}} comes first", lines[12]);
+        Assert.Equal(13, lines.Length);
+        Assert.DoesNotContain(lines, l => l.StartsWith("- Rule 40", StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, l => l.Contains("priceNote", StringComparison.Ordinal));
+        Assert.StartsWith("- Rule 41, unavailable figures:", lines[10]);
+        Assert.StartsWith("- Rule 42, next runs in code's order:", lines[11]);
+        Assert.StartsWith("- Rule 43, one model's figure:", lines[12]);
+        Assert.Contains("{{rca.run.1.summary}} comes first", lines[11]);
         Assert.StartsWith("- Rule 3, digits:", lines[1]);
         Assert.StartsWith("- Rule 16, rankings", lines[2]);
         Assert.StartsWith("- Every model at once:", lines[3]);
@@ -1146,8 +1144,10 @@ public class BenchmarkReportPackPromptTests
         var built = RootCauseReportFixture.ComparisonFacts();
         var sheet = built.Sheet!;
         var keys = sheet.Facts.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+        // A price effect's tokens never reach the writer, so they cannot stand for a mechanism here.
+        var hidden = Overseer.Services.Benchmarking.RootCause.RootCauseFacts.RootCauseWriterHidden(sheet.RootCause);
         var mechanisms = keys
-            .Where(k => IsGrade(k) && !k.StartsWith(hypothesis + "H0", StringComparison.Ordinal))
+            .Where(k => IsGrade(k) && !k.StartsWith(hypothesis + "H0", StringComparison.Ordinal) && !hidden(k))
             .Select(k => k[..^"grade".Length])
             .Where(p => keys.Contains(p + "label"))
             .OrderBy(p => p, StringComparer.Ordinal)
@@ -1199,15 +1199,16 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("is what the price cards show, never the cause the runs found", headline);
         Assert.Contains("say what most explains the differences between the models, naming at most two causes, the most consequential first.", headline);
         Assert.Contains("Never restate a ranking the At a glance table shows (which model scored highest or lowest, was fastest, slowest or cheapest). "
-            + "Never mention price per token in the headline: the conclusions state it.", headline);
+            + "Never mention price per token or the price cards in the headline.", headline);
         Assert.Contains("Under the headline, code prints its own findings — answers without tools, a weakness every model shares, the grader family, "
-            + "value for money, thinking levels and the notable findings: do not repeat them.", headline);
+            + "value for money, thinking levels, the unexpected results and the notable findings: do not repeat them.", headline);
         Assert.DoesNotContain("When the axis has a price note", headline);
         Assert.DoesNotContain("the headline (printed as the Key finding) and the conclusions say", system);
-        Assert.Contains("When {{rca.axis.<axis>.priceNote}} exists, the conclusions say that price per token explains the largest gaps", system);
+        Assert.DoesNotContain("priceNote", system);
+        Assert.DoesNotContain("price note", system);
         string conclusions = Assert.Single(system.Split('\n'), l => l.StartsWith("- " + BenchmarkReportSlots.Conclusions + ":", StringComparison.Ordinal));
         Assert.Contains("take the axes in the order intelligence, speed, cost;", conclusions);
-        Assert.Contains("never call it the axis's root cause", conclusions);
+        Assert.Contains("Never mention price per token or the price cards.", conclusions);
 
         // Prove is a certainty word now, so the instructions never use it.
         Assert.DoesNotContain("configuration proves", system);
@@ -1305,7 +1306,7 @@ public class BenchmarkReportPackPromptTests
         // A share stands beside its own hypothesis; a group is described by its rule's span.
         Assert.Contains("A share belongs to its own hypothesis: put it beside that hypothesis's .ref only, never beside a range or a list, and never write 'led by' a share.", system);
         Assert.Contains("{{rca.rule.<id>.shareSpan}}", system);
-        Assert.Contains("the best hypothesis explains its own pair; when other hypotheses of the same rule exist, name them by their ref range with the rule's shareSpan", system);
+        Assert.DoesNotContain("the best hypothesis explains its own pair", system);
         Assert.DoesNotContain("explains its own pair only.", system);
 
         if (comparison)
@@ -1353,11 +1354,119 @@ public class BenchmarkReportPackPromptTests
 
         Assert.DoesNotContain("the measured signals of the model's profile", system);
         Assert.DoesNotContain("rca.question.", system);
-        Assert.Contains("The conclusions table prints each axis's price note: never cite rca.axis.<axis>.priceNote here, and mention the price cards once", system);
+        Assert.Contains("Never mention price per token or the price cards. When the cost axis has no hypothesis beyond the price cards, "
+            + "say that the runs show no cost mechanism beyond them, with no causal word.", system);
+        Assert.DoesNotContain("The conclusions table prints each axis's price note", system);
         Assert.Contains("say that the first run to make is {{rca.run.1.summary}} and what it settles, then the others in the order NEXT RUNS gives", system);
         Assert.DoesNotContain("say which run to make first", system);
         Assert.Contains("A share span already says 'of each gap': never put 'across' or 'for' directly before it.", system);
         Assert.Contains("never estimate it, and never cite its token, which prints 'not available'.", system);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TheRootCauseEvidenceSlots_SayWhatStandsOut_AndNeverWhyItMattersForChoosingAModel(bool comparison)
+    {
+        string system = BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(comparison);
+        string Slot(string slot) => Assert.Single(system.Split('\n'), l => l.StartsWith("- " + slot + ":", StringComparison.Ordinal));
+
+        foreach (string slot in new[] { BenchmarkReportSlots.EvidenceIntelligence, BenchmarkReportSlots.EvidenceSpeed, BenchmarkReportSlots.EvidenceCost })
+        {
+            string line = Slot(slot);
+            Assert.DoesNotContain("why it matters", line);
+            Assert.Contains("Say what stands out: a pattern several models share, a model that departs from the others, or a result the settings or the price cards would not predict.", line);
+            Assert.Contains("add no sentence about what a pattern means for choosing a model or for a deployment.", line);
+        }
+        Assert.DoesNotContain("why it matters", system);
+
+        // Cost evidence reports what the price cards do not explain, by the volume ratio at equal prices.
+        string cost = Slot(BenchmarkReportSlots.EvidenceCost);
+        Assert.Contains("what the price cards do not explain — token volume per question, the share of thinking, caching, and model calls per answer —", cost);
+        Assert.Contains("never give a spend ratio or a price-per-token difference; cite a pair's rca.cost.<F>.<S>.volumeRatio token for its token volume at equal prices.", cost);
+        Assert.DoesNotContain("volume against price", cost);
+
+        foreach (string slot in new[] { BenchmarkReportSlots.HypothesesIntelligence, BenchmarkReportSlots.HypothesesSpeed, BenchmarkReportSlots.HypothesesCost })
+        {
+            Assert.Contains("Give the grade word only (graded Moderate); the How sure box already says why every grade is capped. "
+                + "Never mention a price-card difference: Overseer prints them in one line.", Slot(slot));
+        }
+
+        Assert.Contains("A count across models, questions, answers or pairs, written as 'N of M' or 'N of the M', comes only from a fact token; never write it in words. "
+            + "A plain count with no total, such as 'three pairs', may be a number word", system);
+        Assert.Contains("\"against\" is a measured fact that cuts against the statement; never restate the statement's own evidence or counts; leave it empty when there is none.", system);
+        Assert.Contains("- " + BenchmarkReportSlots.UnexpectedResults + ": optional, and only when the data holds an UNEXPECTED RESULTS block", system);
+    }
+
+    /// <summary>The fixture comparison's sheet with its <c>rca.anomaly.*</c> facts replaced by <paramref name="anomalies"/>.</summary>
+    private static (BenchmarkReportFactSheet Sheet, BenchmarkReportContentSnapshot Content) AnomalySheet(params BenchmarkReportFact[] anomalies)
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var sheet = built.Sheet!;
+        sheet.Facts = sheet.Facts
+            .Where(f => !f.Key.StartsWith("rca.anomaly.", StringComparison.Ordinal))
+            .Concat(anomalies)
+            .OrderBy(f => f.Key, StringComparer.Ordinal)
+            .ToList();
+        return (sheet, built.Content!);
+    }
+
+    private static BenchmarkReportFact AnomalyFact(string key, System.Text.Json.Nodes.JsonNode? value, string display)
+        => new() { Key = key, Value = value, Display = display };
+
+    [Fact]
+    public void TheUnexpectedResultsInstruction_AppearsOnlyWhenTheSheetCountsAnUnexpectedResult()
+    {
+        var (none, noneContent) = AnomalySheet(AnomalyFact("rca.anomaly.count", System.Text.Json.Nodes.JsonValue.Create(0), "none"));
+        var withoutAnomaly = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, none, noneContent);
+        Assert.Equal(0, BenchmarkReportPackPrompt.RootCauseAnomalyCount(none));
+        Assert.DoesNotContain("UNEXPECTED RESULTS (", withoutAnomaly.UserMessage);
+        Assert.DoesNotContain("- " + BenchmarkReportSlots.UnexpectedResults + ": At most", withoutAnomaly.UserMessage);
+
+        var (one, oneContent) = AnomalySheet(
+            AnomalyFact("rca.anomaly.count", System.Text.Json.Nodes.JsonValue.Create(1), "1 unexpected result"),
+            AnomalyFact("rca.anomaly.1.ref", System.Text.Json.Nodes.JsonValue.Create("U1"), "U1"),
+            AnomalyFact("rca.anomaly.1.summary", System.Text.Json.Nodes.JsonValue.Create("Model A scored below the cheaper Model B."), "Model A scored below the cheaper Model B."));
+        var withAnomaly = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, one, oneContent);
+        Assert.Equal(1, BenchmarkReportPackPrompt.RootCauseAnomalyCount(one));
+        string message = withAnomaly.UserMessage;
+        Assert.Contains("UNEXPECTED RESULTS (", message);
+        Assert.Contains("- {{rca.anomaly.1.ref}}: {{rca.anomaly.1.summary}}\n", message);
+        Assert.Contains("- " + BenchmarkReportSlots.UnexpectedResults + ": At most " + BenchmarkReportPackValidator.RootCauseUnexpectedResultsMaxWords
+            + " words, under the code-printed Unexpected results section, which already prints each result's configuration, graders, dimensions, questions and the run that settles it: do not repeat them. "
+            + "Say what the grader comments and excerpts show about each unexpected result, citing its rca.anomaly.<n>.ref token and at least one question reference. "
+            + "State what was recorded; use no causal word. When nothing in the comments bears on them, leave the slot empty.", message);
+        Assert.Contains("rca.anomaly.<n>.* describe the unexpected results", message);
+
+        // The system prompt carries no data: it is the same with and without unexpected results.
+        Assert.Equal(withoutAnomaly.SystemPrompt, withAnomaly.SystemPrompt);
+        Assert.Equal(80, BenchmarkReportPackValidator.RootCauseSlotMaxWords(BenchmarkReportSlots.UnexpectedResults, completion: false));
+    }
+
+    [Fact]
+    public void APriceEffect_NeverReachesTheRootCauseWriter()
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var sheet = built.Sheet!;
+        var result = sheet.RootCause!;
+        var keys = sheet.Facts.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+        bool HasRef(Overseer.Services.Benchmarking.RootCause.RootCauseHypothesis h) => keys.Contains("rca.hypothesis." + h.Key + ".ref");
+
+        var target = result.Hypotheses.First(h => h.Kind != "null" && !h.PriceEffect && HasRef(h));
+        target.PriceEffect = true;
+        string prefix = "rca.hypothesis." + target.Key + ".";
+        var other = result.Hypotheses.FirstOrDefault(h => !h.PriceEffect && HasRef(h));
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, built.Content!).UserMessage;
+
+        // Its facts stay off FACTS, HYPOTHESES, CLAIM SUPPORT and the checks; the sheet still holds them.
+        Assert.DoesNotContain(prefix, message);
+        Assert.Contains(sheet.Facts, f => f.Key.StartsWith(prefix, StringComparison.Ordinal));
+        Assert.Contains("price-card difference", message);
+        if (other != null)
+        {
+            Assert.Contains("\nrca.hypothesis." + other.Key + ".ref = ", message);
+        }
     }
 
     [Fact]

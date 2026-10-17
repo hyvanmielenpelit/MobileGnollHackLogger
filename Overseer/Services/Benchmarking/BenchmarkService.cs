@@ -7424,6 +7424,7 @@ public class BenchmarkService
         {
             run.FinalScore = parseResult.Result.FinalScore;
             run.AssessmentJson = parseResult.RawJson;
+            run.SynthesisFingerprint = BenchmarkReportRenderService.SynthesisSha256(run.AssessmentJson, run.CoAssessorSynthesisJson);
             run.AssessmentText = parseResult.Result.OverallComments;
             run.AssessmentParseFailed = false;
         }
@@ -7431,6 +7432,7 @@ public class BenchmarkService
         {
             run.FinalScore = null;
             run.AssessmentJson = runResult.FinalText;
+            run.SynthesisFingerprint = BenchmarkReportRenderService.SynthesisSha256(run.AssessmentJson, run.CoAssessorSynthesisJson);
             run.AssessmentText = null;
             run.AssessmentParseFailed = true;
         }
@@ -7508,6 +7510,7 @@ public class BenchmarkService
         {
             run.CoAssessorFinalScore = coParse.Result.FinalScore;
             run.CoAssessorSynthesisJson = coParse.RawJson;
+            run.SynthesisFingerprint = BenchmarkReportRenderService.SynthesisSha256(run.AssessmentJson, run.CoAssessorSynthesisJson);
             run.CoAssessorSynthesisText = coParse.Result.OverallComments;
             run.CoAssessorSynthesisParseFailed = false;
         }
@@ -7515,6 +7518,7 @@ public class BenchmarkService
         {
             run.CoAssessorFinalScore = null;
             run.CoAssessorSynthesisJson = coResult.FinalText;
+            run.SynthesisFingerprint = BenchmarkReportRenderService.SynthesisSha256(run.AssessmentJson, run.CoAssessorSynthesisJson);
             run.CoAssessorSynthesisText = null;
             run.CoAssessorSynthesisParseFailed = true;
         }

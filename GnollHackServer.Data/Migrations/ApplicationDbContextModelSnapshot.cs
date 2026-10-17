@@ -2105,6 +2105,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int>("SuiteReviewedQuestionCountAtStart")
                         .HasColumnType("int");
 
+                    b.Property<string>("SynthesisFingerprint")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
                     b.Property<int?>("TerminalFailureAnswerCount")
                         .HasColumnType("int");
 

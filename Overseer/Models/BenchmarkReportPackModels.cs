@@ -173,6 +173,7 @@ public static class BenchmarkReportSlots
     public const string AnswerWorst = "answerWorst";                       // The questions: why the lowest model scored lowest
     public const string AnswerSpeed = "answerSpeed";                       // The questions: why the slowest model is slowest
     public const string AnswerCost = "answerCost";                         // The questions: why the most expensive model costs most
+    public const string UnexpectedResults = "unexpectedResults";           // Unexpected results, optional
 
     /// <summary>
     /// A Root Cause Analysis' answer slots, one per research question, in question order. Slots of documents
@@ -207,6 +208,7 @@ public static class BenchmarkReportSlots
         [EvidenceIntelligence] = "Evidence: intelligence",
         [EvidenceSpeed] = "Evidence: speed",
         [EvidenceCost] = "Evidence: cost",
+        [UnexpectedResults] = "Unexpected results",
         [HypothesesIntelligence] = "Hypotheses: intelligence",
         [HypothesesSpeed] = "Hypotheses: speed",
         [HypothesesCost] = "Hypotheses: cost",
@@ -1426,6 +1428,13 @@ public class BenchmarkReportPackAudienceEstimateDto
     /// when the window is unknown. Above <c>0.9</c> the start is refused.
     /// </summary>
     public double? ContextWindowShare { get; set; }
+
+    /// <summary>
+    /// <see cref="ContextWindowShare"/> is above the share at which a start is refused; false when the
+    /// window is unknown. The preview estimates every offered document, so the client refuses from the
+    /// checked ones.
+    /// </summary>
+    public bool ExceedsContextWindow { get; set; }
 }
 
 public class BenchmarkReportPackPreviewDto

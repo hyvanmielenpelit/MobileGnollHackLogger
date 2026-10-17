@@ -14,7 +14,9 @@ using Overseer.Services;
 /// <summary>
 /// The next runs and checks of § A5. Code proposes a run only for a hypothesis below High, and not ruled out,
 /// that a run can settle, and a replicate for every null that stands; a hypothesis with a suite or corpus locus,
-/// a shared failure and a price effect become checks. Every run
+/// a shared failure and a price effect become checks. An unexpected result across two thinking levels joins a
+/// thinking-level pair of the model expected ahead at the other's level, or a configuration check without one, and
+/// every other unexpected result joins the replicate. Every run
 /// carries its launcher settings, copied from the analyzed runs unless its kind changes them, and is
 /// ordered C, then B, then M. <see cref="LoadCatalogAsync"/> is the settings derivation's only database
 /// access; <see cref="Build"/> is pure.
@@ -228,6 +230,9 @@ public static class RootCauseNextRuns
         public string? Decides { get; set; }
         public int Insertion { get; init; }
 
+        /// <summary>The unexpected results the plan settles, each with the kind of run it was planned for.</summary>
+        public List<(RootCauseAnomaly Anomaly, string Kind)> Anomalies { get; } = new();
+
         /// <summary>A time-of-day repeat was folded into the plan: its runs start at different times of day.</summary>
         public bool TimeOfDay { get; set; }
     }
@@ -377,6 +382,51 @@ public static class RootCauseNextRuns
             plan.Hypotheses.Add((h, d));
         }
 
+        // An unexpected result across two thinking levels is settled by the model expected ahead at the other's level;
+        // any other by the replicate.
+        var anomalyChecks = new List<(RootCauseAnomaly Anomaly, RootCauseCheck Check)>();
+        foreach (var anomaly in ctx.Anomalies)
+        {
+            var expected = ctx.Model(anomaly.Expected);
+            var other = ctx.Model(anomaly.Other);
+            if (!RootCauseContext.SameSetting(expected.ThinkingLevel, other.ThinkingLevel))
+            {
+                var pair = ThinkingPair(ctx, expected, new[] { expected }, null, GetOrAdd, other.ThinkingLevel);
+                if (pair != null)
+                {
+                    pair.Anomalies.Add((anomaly, RootCauseRunKinds.ThinkingPair));
+                    continue;
+                }
+
+                string level = RootCauseContext.SettingText(other.ThinkingLevel);
+                string text = "No configured, enabled Benchmark-role configuration of " + ctx.Name(expected.Token) + " exists at " + level
+                              + " thinking; add one to test " + anomaly.Ref + ".";
+                var check = checks.FirstOrDefault(c => c.Text == text);
+                if (check == null)
+                {
+                    int number = checks.Count + 1;
+                    check = new RootCauseCheck
+                    {
+                        Number = number,
+                        Kind = "configuration",
+                        Text = text,
+                        Summary = CheckSummary(number, "a new configuration of " + ctx.Name(expected.Token) + " at " + level + " thinking")
+                    };
+                    checks.Add(check);
+                }
+                anomalyChecks.Add((anomaly, check));
+                continue;
+            }
+
+            var replicateRun = GetOrAdd("replicate", RootCauseRunKinds.Replicate, p =>
+            {
+                p.Batch = true;
+                p.RunsPerModel = ReplicateRuns;
+            });
+            foreach (var m in new[] { expected, other, anchor }) AddModel(replicateRun, m);
+            replicateRun.Anomalies.Add((anomaly, RootCauseRunKinds.Replicate));
+        }
+
         if (ctx.NeedsControlRun) Control(ctx, anchor, GetOrAdd, checks);
 
         // Purposes of replicates: B when every hypothesis it settles points to the harness.
@@ -401,6 +451,11 @@ public static class RootCauseNextRuns
             var run = ToRun(ctx, anchor, plan, runs.Count + 1, bestKeys, systemFirst);
             runs.Add(run);
             foreach (var (h, _) in plan.Hypotheses) h.NextRunNumber ??= run.Number;
+            foreach (var (anomaly, _) in plan.Anomalies) anomaly.SettledByRun ??= run.Number;
+        }
+        foreach (var (anomaly, check) in anomalyChecks)
+        {
+            if (anomaly.SettledByRun == null) anomaly.SettledByCheck ??= check.Number;
         }
 
         return (runs, checks);
@@ -408,7 +463,7 @@ public static class RootCauseNextRuns
 
     /// <summary>
     /// Folds every time-of-day repeat and thinking-level pair whose analyzed models all belong to a replicate of
-    /// <see cref="ReplicateRuns"/> or more runs per suite into that replicate: it settles their hypotheses too,
+    /// <see cref="ReplicateRuns"/> or more runs per suite into that replicate: it settles their hypotheses and unexpected results too,
     /// runs the plan's models from the catalog as well, starts each run at a different time of day when a
     /// time-of-day repeat was folded, and takes the most urgent purpose among them (the chat, then the benchmark,
     /// then model selection).
@@ -432,6 +487,10 @@ public static class RootCauseNextRuns
             {
                 if (!replicate.Hypotheses.Any(x => x.Hypothesis.Key == hypothesis.Hypothesis.Key)) replicate.Hypotheses.Add(hypothesis);
             }
+            foreach (var item in plan.Anomalies)
+            {
+                if (!replicate.Anomalies.Any(x => ReferenceEquals(x.Anomaly, item.Anomaly))) replicate.Anomalies.Add(item);
+            }
             if (plan.Kind == RootCauseRunKinds.TimeStratum) replicate.TimeOfDay = true;
             if (RootCausePurposes.Order(plan.Purpose) < RootCausePurposes.Order(replicate.Purpose)) replicate.Purpose = plan.Purpose;
             plans.Remove(plan.Key);
@@ -454,11 +513,14 @@ public static class RootCauseNextRuns
     /// <summary>
     /// The model at two thinking levels: the pair already analyzed when the hypothesis names one model at two
     /// levels; else the model and an analyzed model of the same id at another level, the nearest level first;
-    /// else its configuration and another configured one of the same model id at another level.
+    /// else its configuration and another configured one of the same model id at another level. With
+    /// <paramref name="targetLevel"/>, the other level must be that one.
     /// </summary>
     private static Plan? ThinkingPair(RootCauseContext ctx, RootCauseModelInput worse, IReadOnlyList<RootCauseModelInput> models,
-        RootCauseHypothesis hypothesis, Func<string, string, Action<Plan>, Plan> getOrAdd)
+        RootCauseHypothesis? hypothesis, Func<string, string, Action<Plan>, Plan> getOrAdd, string? targetLevel = null)
     {
+        bool AtTarget(string? level) => targetLevel == null || RootCauseContext.SameSetting(level, targetLevel);
+
         var sameModel = models.Where(m => string.Equals(m.ModelId?.Trim(), worse.ModelId?.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
         if (sameModel.Count >= 2)
         {
@@ -470,7 +532,8 @@ public static class RootCauseNextRuns
         var sibling = ctx.Models
             .Where(m => m.Token != worse.Token
                         && string.Equals(m.ModelId?.Trim(), worse.ModelId?.Trim(), StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(m.ThinkingLevel?.Trim(), worse.ThinkingLevel?.Trim(), StringComparison.OrdinalIgnoreCase))
+                        && !string.Equals(m.ThinkingLevel?.Trim(), worse.ThinkingLevel?.Trim(), StringComparison.OrdinalIgnoreCase)
+                        && AtTarget(m.ThinkingLevel))
             .OrderBy(m => Math.Abs(RootCauseHypotheses.ThinkingRank(m.ThinkingLevel) - RootCauseHypotheses.ThinkingRank(worse.ThinkingLevel)))
             .ThenBy(m => m.Token, StringComparer.Ordinal)
             .FirstOrDefault();
@@ -486,7 +549,8 @@ public static class RootCauseNextRuns
         var other = ctx.Input.Catalog.Configurations
             .Where(c => c.Id != own
                         && string.Equals(c.ModelId?.Trim(), worse.ModelId?.Trim(), StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(c.ThinkingLevel?.Trim(), worse.ThinkingLevel?.Trim(), StringComparison.OrdinalIgnoreCase))
+                        && !string.Equals(c.ThinkingLevel?.Trim(), worse.ThinkingLevel?.Trim(), StringComparison.OrdinalIgnoreCase)
+                        && AtTarget(c.ThinkingLevel))
             .OrderBy(c => Math.Abs(RootCauseHypotheses.ThinkingRank(c.ThinkingLevel) - RootCauseHypotheses.ThinkingRank(worse.ThinkingLevel)))
             .ThenBy(c => c.Id)
             .FirstOrDefault();
@@ -677,8 +741,10 @@ public static class RootCauseNextRuns
         };
         if (plan.TimeOfDay && plan.Kind == RootCauseRunKinds.Replicate) run.PredictedTier += "; time of day differs, which the speed comparison discloses";
 
-        run.DecidesItems = plan.Decides != null ? new List<string> { plan.Decides } : Decides(plan.Hypotheses);
-        run.Decides = string.Join(" ", run.DecidesItems);
+        var decides = plan.Decides != null ? new List<string> { plan.Decides } : Decides(plan.Hypotheses);
+        decides.AddRange(AnomalyDecides(plan.Anomalies));
+        run.DecidesItems = decides;
+        run.Decides = string.Join(" ", decides);
 
         var (cost, minutes, estimated) = Estimate(ctx, plan, batch);
         run.EstimatedCostUsd = cost;
@@ -704,6 +770,24 @@ public static class RootCauseNextRuns
         return groups.Select(g =>
             "Confirms " + BenchmarkReportFormat.LetterList(g.Keys) + " if " + g.Confirm
             + "; refutes " + (g.Keys.Count == 1 ? "it" : "each") + " if " + g.Refute + ".").ToList();
+    }
+
+    /// <summary>
+    /// What a run shows about its unexpected results: one sentence per kind of run they were planned for, in their order:
+    /// <c>Shows whether U1 holds with both models at the same thinking level.</c>, <c>Shows whether U2 and U3 repeat over three
+    /// runs per model.</c>
+    /// </summary>
+    private static IEnumerable<string> AnomalyDecides(IReadOnlyList<(RootCauseAnomaly Anomaly, string Kind)> anomalies)
+    {
+        foreach (var group in anomalies.GroupBy(a => a.Kind, StringComparer.Ordinal))
+        {
+            var refs = group.Select(a => a.Anomaly.Ref).Distinct(StringComparer.Ordinal).ToList();
+            bool one = refs.Count == 1;
+            string what = BenchmarkReportFormat.LetterList(refs);
+            yield return group.Key == RootCauseRunKinds.ThinkingPair
+                ? "Shows whether " + what + (one ? " holds" : " hold") + " with both models at the same thinking level."
+                : "Shows whether " + what + (one ? " repeats" : " repeat") + " over " + CountWord(ReplicateRuns) + " runs per model.";
+        }
     }
 
     /// <summary>

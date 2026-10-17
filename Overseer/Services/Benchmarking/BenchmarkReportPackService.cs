@@ -436,7 +436,9 @@ public sealed class BenchmarkReportPackPreparation
     /// covered entry is not in the comparison or is Excluded, the covered models are fewer than two or
     /// more than twelve, or the reference is not a covered model
     /// (<see cref="BenchmarkComparisonReportFacts.ReferenceRefusal"/>). Over <paramref name="comparison"/>
-    /// when it is given; computed from the request otherwise. Makes no model call.
+    /// when it is given; computed from the request otherwise. <paramref name="releaseDate"/> gives a model's
+    /// catalog release date (provider, model id → ISO date or null); without it the release prior is not
+    /// evaluated. Makes no model call.
     /// </summary>
     public static async Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareComparisonAsync(
         ApplicationDbContext db,
@@ -447,7 +449,8 @@ public sealed class BenchmarkReportPackPreparation
         CancellationToken ct,
         IConfiguration? configuration = null,
         BenchmarkPairedTestsService? pairedTests = null,
-        BenchmarkModelComparisonDto? comparison = null)
+        BenchmarkModelComparisonDto? comparison = null,
+        Func<string, string, string?>? releaseDate = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (MixesSources(request)) return (null, BenchmarkBatteryModelComparison.MixedSourcesError);
@@ -474,6 +477,7 @@ public sealed class BenchmarkReportPackPreparation
 
         bool batteries = string.Equals(comparison.SubjectKind, BenchmarkModelComparisonSubjectKinds.Batteries, StringComparison.Ordinal);
         var catalog = await RootCauseNextRuns.LoadCatalogAsync(db, configuration, ct);
+        var releaseDates = ReleaseDatesOf(restricted.Entries, releaseDate);
         BenchmarkComparisonReportFactsResult built;
         List<BenchmarkRun> runs;
         if (batteries)
@@ -492,7 +496,8 @@ public sealed class BenchmarkReportPackPreparation
                 AnswerExcerptChars = answerExcerptChars,
                 ComparisonId = comparisonId,
                 CandidatePricing = pricing,
-                Catalog = catalog
+                Catalog = catalog,
+                ReleaseDates = releaseDates
             });
         }
         else
@@ -514,7 +519,7 @@ public sealed class BenchmarkReportPackPreparation
             }
             built = BenchmarkComparisonReportFacts.BuildFromRuns(
                 comparison, covered, runs.ToDictionary(r => r.Id), answerExcerptChars, reference, allPairs, pairedUnavailable, comparisonId, availability,
-                referenceKey, await CandidatePricingAsync(db, runs, comparison), catalog);
+                referenceKey, await CandidatePricingAsync(db, runs, comparison), catalog, releaseDates);
         }
         if (built.Sheet == null || built.Content == null) return (null, built.Refusal ?? "The fact sheet could not be computed.");
         if (runs.Count == 0) return (null, "The covered models' runs no longer exist.");
@@ -540,6 +545,24 @@ public sealed class BenchmarkReportPackPreparation
     }
 
     /// <summary>
+    /// The known release date of each entry's model, keyed by <see cref="RootCauseEvidence.ReleaseDateKey"/>;
+    /// null without a lookup. Blank dates are left out.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string>? ReleaseDatesOf(
+        IEnumerable<BenchmarkModelComparisonEntryDto> entries, Func<string, string, string?>? releaseDate)
+    {
+        if (releaseDate == null) return null;
+        var dates = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var entry in entries)
+        {
+            if (string.IsNullOrWhiteSpace(entry.Provider) || string.IsNullOrWhiteSpace(entry.ModelId)) continue;
+            string? date = releaseDate(entry.Provider, entry.ModelId);
+            if (!string.IsNullOrWhiteSpace(date)) dates[RootCauseEvidence.ReleaseDateKey(entry.Provider, entry.ModelId)] = date.Trim();
+        }
+        return dates;
+    }
+
+    /// <summary>
     /// The preparation a request's documents are written from, with no model call: the covered set of a
     /// comparison-scope request (<see cref="PrepareComparisonAsync"/>), else the first subject of a
     /// model-scope request. What a preview, an estimate or a layout preview renders from.
@@ -552,12 +575,14 @@ public sealed class BenchmarkReportPackPreparation
         int? comparisonId,
         CancellationToken ct,
         IConfiguration? configuration = null,
-        BenchmarkPairedTestsService? pairedTests = null)
+        BenchmarkPairedTestsService? pairedTests = null,
+        Func<string, string, string?>? releaseDate = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.Scope == BenchmarkReportScope.Comparison)
         {
-            return PrepareComparisonAsync(db, comparisonService, request, answerExcerptChars, comparisonId, ct, configuration, pairedTests);
+            return PrepareComparisonAsync(db, comparisonService, request, answerExcerptChars, comparisonId, ct, configuration, pairedTests,
+                releaseDate: releaseDate);
         }
 
         var subjects = request.ModelSubjectKeys();
@@ -769,7 +794,8 @@ public sealed class BenchmarkReportPackPreparation
     /// The paired-test families of the covered models, from the service the wizard's Paired tests view
     /// uses, requested for the covered models only: against the reference <paramref name="referenceKey"/>,
     /// and over all pairs from three to <see cref="BenchmarkComparisonReportFacts.AllPairsMaxEntries"/>
-    /// models. A refusal or a failure is the reason the sheet states instead.
+    /// models. Both are computed over <paramref name="restricted"/>, so the comparison is not computed
+    /// again. A refusal or a failure is the reason the sheet states instead.
     /// </summary>
     private static async Task<(BenchmarkPairedComparisonDto? Reference, BenchmarkPairedComparisonDto? AllPairs, string? Unavailable)> PairedFamiliesAsync(
         BenchmarkPairedTestsService pairedTests, BenchmarkModelComparisonDto restricted, BenchmarkModelComparisonPricingBasis basis,
@@ -792,14 +818,14 @@ public sealed class BenchmarkReportPackPreparation
 
         try
         {
-            var (reference, error) = await pairedTests.CompareAsync(request, ct);
+            var (reference, error) = await pairedTests.CompareAsync(request, restricted, ct);
             if (reference == null) return (null, null, error ?? "The paired tests could not be computed.");
 
             BenchmarkPairedComparisonDto? allPairs = null;
             if (BenchmarkComparisonReportFacts.UsesAllPairs(lettered.Count))
             {
                 request.Mode = BenchmarkPairedComparisonMode.AllPairs;
-                (allPairs, _) = await pairedTests.CompareAsync(request, ct);
+                (allPairs, _) = await pairedTests.CompareAsync(request, restricted, ct);
             }
             return (reference, allPairs, null);
         }
@@ -922,6 +948,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     private readonly BenchmarkReportChartStore? _charts;
     private readonly IServiceScopeFactory? _scopeFactory;
     private readonly Charts.RootCauseChartPublisher? _rootCauseCharts;
+    private readonly ModelMetadataService _modelMetadata;
 
     /// <summary>The tokens a repair turn's message adds to the first call's input, for the estimates.</summary>
     public const int RepairMessageEstimatedTokens = 1000;
@@ -934,6 +961,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     /// Draws a stored Root Cause Analysis's server charts; without one, a publisher over
     /// <paramref name="charts"/>, and none when that is absent too.
     /// </param>
+    /// <param name="modelMetadata">The model catalog the release dates come from; a fresh one when null.</param>
     public BenchmarkReportPackService(
         ApplicationDbContext db,
         AgentLoopRunner agentLoopRunner,
@@ -947,7 +975,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         ILogger<BenchmarkReportPackService> logger,
         BenchmarkReportChartStore? charts = null,
         IServiceScopeFactory? scopeFactory = null,
-        Charts.RootCauseChartPublisher? rootCauseCharts = null)
+        Charts.RootCauseChartPublisher? rootCauseCharts = null,
+        ModelMetadataService? modelMetadata = null)
     {
         _db = db;
         _agentLoopRunner = agentLoopRunner;
@@ -962,6 +991,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         _charts = charts;
         _scopeFactory = scopeFactory;
         _rootCauseCharts = rootCauseCharts ?? (charts != null ? new Charts.RootCauseChartPublisher(charts) : null);
+        _modelMetadata = modelMetadata ?? new ModelMetadataService();
     }
 
     /// <summary>
@@ -1248,7 +1278,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         {
             return await BenchmarkReportPackPreparation.PrepareComparisonAsync(
                 _db, _comparisonService, job.Request, excerptChars, job.ComparisonId, ct, _configuration,
-                new BenchmarkPairedTestsService(_db, _comparisonService, null, _pricingService));
+                new BenchmarkPairedTestsService(_db, _comparisonService, null, _pricingService),
+                releaseDate: (p, m) => _modelMetadata.GetMetadata(p, m).ReleaseDate);
         }
 
         var request = SubjectRequest(job.Request, subjectKey);
@@ -3078,7 +3109,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         SpeedIndex = run.SpeedIndex,
         ScoringMethodVersion = run.ScoringMethodVersion,
         RerunCompletedAtUtc = run.RerunCompletedAtUtc,
-        SynthesisSha256 = BenchmarkReportRenderService.SynthesisSha256(run.AssessmentJson, run.CoAssessorSynthesisJson)
+        SynthesisSha256 = run.SynthesisFingerprint
+            ?? BenchmarkReportRenderService.SynthesisSha256(run.AssessmentJson, run.CoAssessorSynthesisJson)
     };
 
     private static string Truncate(string? value, int max)

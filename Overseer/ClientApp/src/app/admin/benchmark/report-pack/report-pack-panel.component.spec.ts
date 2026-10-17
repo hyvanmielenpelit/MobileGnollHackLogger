@@ -45,7 +45,8 @@ import {
   REPORT_PACK_STORAGE_KEY,
   REPORT_PACK_UNEVEN_MODELS_REASON,
   ReportPackContext,
-  ReportPackPanelComponent
+  ReportPackPanelComponent,
+  reportPackContextWindowRefusal
 } from './report-pack-panel.component';
 
 const { ExecutiveSummary, RootCauseAnalysis } = BenchmarkReportAudience;
@@ -126,7 +127,10 @@ const CONFIGS: SystemAiConfigDto[] = [
 ];
 
 function estimate(audience: BenchmarkReportAudience, cost: number | null, subjectKey = 'comparison:12', share = 0.1): BenchmarkReportPackAudienceEstimateDto {
-  return { audience, promptChars: 20000, estimatedInputTokens: 6000, estimatedOutputTokens: 1500, estimatedCostUsd: cost, subjectKey, contextWindowShare: share };
+  return {
+    audience, promptChars: 20000, estimatedInputTokens: 6000, estimatedOutputTokens: 1500, estimatedCostUsd: cost, subjectKey,
+    contextWindowShare: share, exceedsContextWindow: share > 0.9
+  };
 }
 
 const COMPARISON_ESTIMATES = [estimate(ExecutiveSummary, 0.05), estimate(RootCauseAnalysis, 0.16)];
@@ -145,6 +149,18 @@ function writtenDoc(audience: BenchmarkReportAudience, documentId: number, subje
     durationMs: 65000,
     costUsd: 0.04
   };
+}
+
+/** A written document's entry in the comparison's list, flagged as written before the comparison changed. */
+function listItem(id: number, audience: BenchmarkReportAudience = ExecutiveSummary): BenchmarkReportDocumentListItemDto {
+  return {
+    id,
+    title: `Comparison #12 — Gemini Flash vs Claude Opus vs GPT Sol group: document ${id}`,
+    audience,
+    runChangedSinceGeneration: true,
+    chartFigureKeys: [],
+    allowedDisclosures: []
+  } as unknown as BenchmarkReportDocumentListItemDto;
 }
 
 /** A comparison-scope preview over every model. */
@@ -647,8 +663,14 @@ describe('ReportPackPanelComponent', () => {
   // Documents of this comparison
   // -------------------------------------------------------------------------------------------
 
-  it('lists the chosen set\'s documents, a written one unchecked, and estimates again without it', fakeAsync(() => {
+  it('asks one preview for every document, lists the documents without waiting for it, and estimates the checked ones', fakeAsync(() => {
+    fixture.componentRef.setInput('comparisonId', 12);
     openPanel();
+    // The comparison's list goes out at once; the preview waits out its debounce.
+    const list = http.expectOne(r => r.url === DOCUMENTS_URL);
+    expect(list.request.params.get('comparisonId')).toBe('12');
+    http.expectNone(PREVIEW_URL);
+
     const first = chooseWriter(7, comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
     expect(first.request.body.audiences).toEqual(ALL_AUDIENCES);
 
@@ -656,34 +678,89 @@ describe('ReportPackPanelComponent', () => {
     expect(executive.querySelector('.cds-status')!.textContent!.trim()).toBe('Written');
     expect(docCheck(`comparison|${ExecutiveSummary}`).checked).toBe(false);
     expect(docCheck(`comparison|${RootCauseAnalysis}`).checked).toBe(true);
-    expect(text('#rp-estimate')).toBe('Estimating…');
-
-    const second = answerPreview(comparisonPreview({
-      estimates: COMPARISON_ESTIMATES.slice(1),
-      writtenDocuments: [writtenDoc(ExecutiveSummary, 41)]
-    }));
-    expect(second.request.body.audiences).toEqual([RootCauseAnalysis]);
+    // The same preview estimates the documents checked; nothing is asked again.
     expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.16');
     expect(generateButton().disabled).toBe(false);
-
-    // The written document's flags and charts come from the comparison's list.
-    const list = http.expectOne(r => r.url === DOCUMENTS_URL);
-    expect(list.request.params.get('comparisonId')).toBe('12');
+    http.expectNone(r => r.url === DOCUMENTS_URL);
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
     http.expectNone(PREVIEW_URL);
+
+    list.flush([]);
+    fixture.detectChanges();
+    http.expectNone(r => r.url === DOCUMENTS_URL);
+    fixture.destroy();
+  }));
+
+  it('lists the documents by the preview\'s comparison number once it answers, when the panel has none', fakeAsync(() => {
+    openPanel();
+    http.expectNone(r => r.url === DOCUMENTS_URL);
+    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+
+    const list = http.expectOne(r => r.url === DOCUMENTS_URL);
+    expect(list.request.params.get('comparisonId')).toBe('12');
+    fixture.destroy();
+  }));
+
+  it('makes no request when a document is checked or unchecked, and updates the total', fakeAsync(() => {
+    openPanel();
+    chooseWriter(7);
+    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.21');
+
+    docCheck(`comparison|${ExecutiveSummary}`).click();
+    fixture.detectChanges();
+    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.16');
+    expect(generateButton().disabled).toBe(false);
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectNone(PREVIEW_URL);
+
+    docCheck(`comparison|${ExecutiveSummary}`).click();
+    fixture.detectChanges();
+    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.21');
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectNone(PREVIEW_URL);
+    http.expectNone(r => r.url === DOCUMENTS_URL);
+    fixture.destroy();
+  }));
+
+  it('merges the list into the documents when it answers before the preview', fakeAsync(() => {
+    fixture.componentRef.setInput('comparisonId', 12);
+    openPanel();
+    http.expectOne(r => r.url === DOCUMENTS_URL).flush([listItem(41)]);
+    fixture.detectChanges();
+
+    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+    expect(docRow(`comparison|${ExecutiveSummary}`).querySelector('.cds-changed')!.textContent!.trim())
+      .toBe('Comparison changed since written');
+    // Every listed document has its entry: the list is not asked for again.
+    http.expectNone(r => r.url === DOCUMENTS_URL);
+    fixture.destroy();
+  }));
+
+  it('merges the list into the documents when it answers after the preview', fakeAsync(() => {
+    fixture.componentRef.setInput('comparisonId', 12);
+    openPanel();
+    const list = http.expectOne(r => r.url === DOCUMENTS_URL);
+
+    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+    expect(docRow(`comparison|${ExecutiveSummary}`).querySelector('.cds-changed')).toBeNull();
+    // The list in flight is not asked for again.
+    http.expectNone(r => r.url === DOCUMENTS_URL);
+
+    list.flush([listItem(41)]);
+    fixture.detectChanges();
+    expect(docRow(`comparison|${ExecutiveSummary}`).querySelector('.cds-changed')!.textContent!.trim())
+      .toBe('Comparison changed since written');
     fixture.destroy();
   }));
 
   it('rewrites a written document when Rewrite is checked, naming it to be replaced', fakeAsync(() => {
     openPanel();
     chooseWriter(7, comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
-    answerPreview(comparisonPreview({ estimates: COMPARISON_ESTIMATES.slice(1), writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
 
     docCheck(`comparison|${ExecutiveSummary}`).click();
     fixture.detectChanges();
-    const again = answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
-    expect(again.request.body.audiences).toEqual(ALL_AUDIENCES);
-    expect(again.request.body.replaceDocumentIds).toBeUndefined();
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectNone(PREVIEW_URL);
 
     generateButton().click();
     const start = http.expectOne(START_URL);
@@ -706,7 +783,6 @@ describe('ReportPackPanelComponent', () => {
     openPanel();
     const all = [writtenDoc(ExecutiveSummary, 41), writtenDoc(RootCauseAnalysis, 42)];
     chooseWriter(7, comparisonPreview({ writtenDocuments: all }));
-    answerPreview(comparisonPreview({ estimates: [], writtenDocuments: all }));
 
     const button = generateButton();
     expect(button.disabled).toBe(false);
@@ -731,8 +807,7 @@ describe('ReportPackPanelComponent', () => {
     const first = chooseWriter(7, preview);
     expect(first.request.body.scope).toBe(BenchmarkReportScope.Model);
     expect(first.request.body.subjectKeys).toEqual(['run:1', 'group:4']);
-    const second = answerPreview(preview);
-    expect(second.request.body.audiences).toEqual([ExecutiveSummary]);
+    expect(first.request.body.audiences).toEqual(ALL_AUDIENCES);
 
     expect(Array.from(host.querySelectorAll('.cds-group-title')).map(title => title.textContent!.trim()))
       .toEqual(['Gemini Flash (medium)', 'GPT Sol group (medium)']);
@@ -770,7 +845,6 @@ describe('ReportPackPanelComponent', () => {
       docCheck(`group:4|${audience}`).click();
       fixture.detectChanges();
     }
-    answerPreview(modelPreview(['run:1', 'group:4']));
     expect(generateButton().disabled).toBe(false);
 
     // One of them checked again: not the same documents as Gemini Flash's.
@@ -778,12 +852,11 @@ describe('ReportPackPanelComponent', () => {
     fixture.detectChanges();
     expect(text('#rp-generate-blocked')).toBe(REPORT_PACK_UNEVEN_MODELS_REASON);
     expect(generateButton().disabled).toBe(true);
-    answerPreview(modelPreview(['run:1', 'group:4']));
-    expect(text('#rp-generate-blocked')).toBe(REPORT_PACK_UNEVEN_MODELS_REASON);
 
     docCheck(`group:4|${ExecutiveSummary}`).click();
     fixture.detectChanges();
-    answerPreview(modelPreview(['run:1', 'group:4']));
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectNone(PREVIEW_URL);
     generateButton().click();
     expect(http.expectOne(START_URL).request.body.subjectKeys).toEqual(['run:1']);
     fixture.destroy();
@@ -792,7 +865,6 @@ describe('ReportPackPanelComponent', () => {
   it('shows the comparison\'s flags and chart counts for written documents, from the list by comparison number', fakeAsync(() => {
     fixture.componentRef.setInput('comparisonId', 12);
     openPanel();
-    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
     answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
 
     const list = http.expectOne(r => r.url === DOCUMENTS_URL);
@@ -822,7 +894,6 @@ describe('ReportPackPanelComponent', () => {
 
   it('lists the documents again after a delete, and tells the host', fakeAsync(() => {
     openPanel();
-    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
     answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
     let changes = 0;
     component.documentsChanged.subscribe(() => changes++);
@@ -985,7 +1056,7 @@ describe('ReportPackPanelComponent', () => {
   // The estimate
   // -------------------------------------------------------------------------------------------
 
-  it('requests the preview with the comparison request, the scope, the models, the documents and the writer', fakeAsync(() => {
+  it('requests the preview with the comparison request, the scope, the models, every document type and the writer', fakeAsync(() => {
     openPanel();
     const request = chooseWriter(7);
 
@@ -1102,7 +1173,7 @@ describe('ReportPackPanelComponent', () => {
     chooseWriter(7);
 
     // Two quick changes make one request.
-    docCheck(`comparison|${RootCauseAnalysis}`).click();
+    component.selectWriter(8);
     fixture.detectChanges();
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS / 2);
     chooseModels(['run:1', 'run:2']);
@@ -1112,13 +1183,14 @@ describe('ReportPackPanelComponent', () => {
     tick(1);
     const older = http.expectOne(PREVIEW_URL);
     expect(older.request.body.coveredEntryKeys).toEqual(['run:1', 'run:2']);
+    expect(older.request.body.writerModelConfigurationId).toBe(8);
 
     // A newer choice drops the request in flight; its answer never lands.
-    component.selectWriter(8);
+    component.selectWriter(7);
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
     const newer = http.expectOne(PREVIEW_URL);
     expect(older.cancelled).toBe(true);
-    expect(newer.request.body.writerModelConfigurationId).toBe(8);
+    expect(newer.request.body.writerModelConfigurationId).toBe(7);
     newer.flush(comparisonPreview({ coversAllEntries: false }));
     fixture.detectChanges();
     expect(host.querySelectorAll('.cds-row').length).toBe(2);
@@ -1141,10 +1213,51 @@ describe('ReportPackPanelComponent', () => {
     // An unchecked document's prompt does not count.
     docCheck(`comparison|${RootCauseAnalysis}`).click();
     fixture.detectChanges();
-    answerPreview(comparisonPreview({ estimates: [estimate(ExecutiveSummary, 0.05)] }));
     expect(q('.rp-context-warning')).toBeNull();
     fixture.destroy();
   }));
+
+  it('refuses a checked document too large for the writer, and nothing for an unchecked one', fakeAsync(() => {
+    openPanel();
+    const tooLarge = { ...estimate(RootCauseAnalysis, 0.16, 'comparison:12', 0.934), estimatedInputTokens: 186800 };
+    chooseWriter(7, comparisonPreview({ estimates: [estimate(ExecutiveSummary, 0.05), tooLarge] }));
+
+    // Checked: refused here in the server's words, as a server refusal is.
+    const refusal = 'The Root Cause Analysis prompt is about 186,800 tokens, 93 % of the context window of Claude Opus writer; '
+      + 'above 90 % it is not written. Cover fewer models, or choose a writer with a larger context window.';
+    expect(reportPackContextWindowRefusal(tooLarge, 'Claude Opus writer')).toBe(refusal);
+    expect(text('.rp-refusal')).toBe(refusal);
+    expect(q('.rp-refusal')!.getAttribute('role')).toBe('alert');
+    expect(q('.rp-writer-selector .selector-trigger')!.getAttribute('aria-describedby')).toContain('rp-writer-refusal');
+    expect(q('.rp-context-warning')).toBeNull();
+    expect(generateButton().disabled).toBe(true);
+    expect(text('#rp-generate-blocked')).toBe('The documents cannot be written as chosen; the reason is shown under the report writer.');
+    generateButton().click();
+    http.expectNone(START_URL);
+
+    // Unchecked: nothing is refused, and Generate writes the rest without asking the server again.
+    docCheck(`comparison|${RootCauseAnalysis}`).click();
+    fixture.detectChanges();
+    expect(q('.rp-refusal')).toBeNull();
+    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.05');
+    expect(generateButton().disabled).toBe(false);
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectNone(PREVIEW_URL);
+
+    // Checked again: refused again.
+    docCheck(`comparison|${RootCauseAnalysis}`).click();
+    fixture.detectChanges();
+    expect(text('.rp-refusal')).toBe(refusal);
+    expect(generateButton().disabled).toBe(true);
+    fixture.destroy();
+  }));
+
+  it('names the writer generically in the context-window refusal when the preview has no writer name', () => {
+    const refusal = reportPackContextWindowRefusal(
+      { ...estimate(ExecutiveSummary, 0.05, 'comparison:12', 0.957), estimatedInputTokens: 1234567 }, null);
+    expect(refusal).toBe('The Executive Summary prompt is about 1,234,567 tokens, 96 % of the context window of the writer; '
+      + 'above 90 % it is not written. Cover fewer models, or choose a writer with a larger context window.');
+  });
 
   // -------------------------------------------------------------------------------------------
   // The same-provider writer (D3)
@@ -2077,7 +2190,6 @@ describe('ReportPackPanelComponent', () => {
   it('holds the chart picker between the documents and Report writer, its segments following the documents checked', fakeAsync(() => {
     openPanel();
     answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(RootCauseAnalysis, 43)] }));
-    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(RootCauseAnalysis, 43)] }));
     const selections: ReportChartSelection[] = [];
     component.chartSelectionChange.subscribe(selection => selections.push(selection));
 
@@ -2435,7 +2547,6 @@ describe('ReportPackPanelComponent', () => {
         { ...writtenDoc(RootCauseAnalysis, 42), referenceEntryKey: null }
       ];
       chooseWriter(7, comparisonPreview({ writtenDocuments: written }));
-      answerPreview(comparisonPreview({ estimates: COMPARISON_ESTIMATES.slice(2), writtenDocuments: written }));
 
       expect(text('#rp-written-references-title')).toBe('Reference of the written documents');
       const rows = Array.from(host.querySelectorAll('.rp-written-reference'));

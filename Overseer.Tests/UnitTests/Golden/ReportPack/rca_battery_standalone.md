@@ -19,9 +19,11 @@
 
 ### At a glance
 
-| Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |
-|---|---|---|---|---|---|
-| **GPT-5.6 Luna** | 80 (77–83), rank 2 | 12.3 s | $0.036 | Confirmed critical errors, 5.6 points | 1 critical error |
+| Model | Intelligence | Median time | Cost per question |
+|---|---|---|---|
+| **GPT-5.6 Luna** | 80 (77–83), rank 2 | 12.3 s | $0.036 |
+
+Why each model scored as it did gives, for each model, its strengths, where it gained and lost points, its flags and the hypotheses about it.
 
 ### How sure are we?
 
@@ -41,22 +43,23 @@ The terms the summary and the conclusions use, each in plain words. A term is al
 | 95% interval | The range the true value most likely lies in. |
 | Answers without tools | Answers the model wrote without looking anything up. |
 | Confound | Another difference between two models that could account for a result. |
-| Critical error | A mistake serious enough to cap the answer's score. |
-| Dimension | One of the four things graded: accuracy, completeness, conciseness, readability. |
 | Grade words | How sure the document is of a cause, strongest to weakest. |
 | Holm adjustment | A correction for running many comparisons at once. |
 | Hypothesis | A possible cause that code tested against the data. |
 | Intelligence Index | The overall answer-quality score, out of a hundred. |
 | Median and mean | The middle value, and the plain average. |
-| Points at risk | The most index points a failure signal could have cost. |
 | Robustness check | A test of whether a result survives a small change. |
 | Runs per suite | How many times each model answered each suite. |
 
 ## Why each model scored as it did
 
-| Model | Index | Strengths | Lost points on | Flags |
-|---|---|---|---|---|
-| **GPT-5.6 Luna** | 80 | None ranked first or second | Confirmed critical errors: 5.6 index points on 1 question (S2-Q3); weakest dimension Completeness, 2.0 points below Accuracy | 1 critical error (S2-Q3) |
+**GPT-5.6 Luna**: Intelligence 80 (77–83), rank 2.
+
+- *Strengths:* None ranked first or second.
+- *Gained points on:* Not measured with fewer than 3 models.
+- *Lost points on:* Confirmed critical errors: 5.6 index points on 1 question (S2-Q3); weakest dimension Completeness, 2.0 points below Accuracy.
+- *Flags:* 1 critical error (S2-Q3).
+- *Hypotheses:* WQ2.1: GPT-5.6 Luna's points lost in suite 2; WQ3.1: GPT-5.6 Luna's critical errors.
 
 *Each entry is a count, a share or a rank measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (the most index points a failure signal could have cost), with its questions (Appendix A). Flags: critical errors (a mistake serious enough to cap the answer's score).*
 
@@ -147,7 +150,7 @@ The cost tables split the cost per question into volume and price.
 
 *How to read a hypothesis ID such as HQ1.2: H compares two models, W looks inside one model, and H0 is a null hypothesis (the starting assumption that a difference is only chance). Q, S and C stand for intelligence, speed and cost. Appendix C gives each hypothesis's evidence for and against.*
 
-A real difference was found for 1 comparison: within GPT-5.6 Luna's own questions.
+Every tested difference is real (H0-W.1).
 
 The strongest hypothesis in the table: GPT-5.6 Luna's points are lost mostly in suite 2 (where its points go, not a comparison). Its grade and the evidence against it stand beside it.
 
@@ -225,7 +228,7 @@ The benchmark asks single questions, so longer conversations are not measured.
 ## Appendices
 
 - **A. Intelligence detail:** The compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, the paired tests the body does not give and the per-question matrix.
-- **B. Speed and cost decompositions:** Calls, latency, tokens and every component of each decomposed difference.
+- **B. Speed and cost decompositions:** Calls, latency, tokens and the share of each component in each decomposed difference.
 - **C. Hypothesis details:** Each hypothesis's evidence for and against, grade reasons and robustness checks, and the null hypotheses.
 - **D. Run settings:** Every launcher setting of each run to make next.
 - **E. Known facts:** The counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.
@@ -2164,7 +2167,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 9,
+    "engineVersion": 10,
     "evidence": [
       {
         "atRisk": [
@@ -2920,6 +2923,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 202 · format version 21 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 202 · format version 22 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

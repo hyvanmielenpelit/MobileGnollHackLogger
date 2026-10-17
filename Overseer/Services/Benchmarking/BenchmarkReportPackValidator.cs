@@ -50,7 +50,8 @@ public sealed record BenchmarkReportSlotWordCount(
 /// <item>Structure: headline and required slots present and non-empty (a peer-only slot only when
 /// the sheet has peers); no unknown slots; no lists the audience does not use; item texts non-empty.</item>
 /// <item>Tokens: <c>{{key}}</c> names a fact, <c>{{peer:X}}</c> a peer letter, <c>{{subject}}</c> the subject;
-/// written exactly, without inner spaces; no stray braces.</item>
+/// written exactly, without inner spaces; no stray braces. In a Root Cause Analysis a fact kept from its writer
+/// (<see cref="RootCauseFacts.RootCauseWriterHidden(RootCauseResult?)"/>) is unknown.</item>
 /// <item>No bare digit once tokens, known names, the fixed phrase <c>95% interval</c> (<see cref="IntervalLevelRegex"/>)
 /// and <c>Q&lt;n&gt;</c> / <c>R&lt;n&gt;</c> references (on a battery sheet also <c>S&lt;suite&gt;-Q&lt;n&gt;</c>) are masked.</item>
 /// <item>Every question number exists in the subject's exam; topics cover every question where required
@@ -126,11 +127,21 @@ public sealed record BenchmarkReportSlotWordCount(
 /// beside a count token, what its display already says it counts; rule 31's run of counts is flagged only where one of
 /// them is bare.</para>
 ///
-/// <para>Rules 40 to 43 are warnings. Rule 40 (<see cref="RootCauseCodePrintedRule"/>) flags, in a Root Cause Analysis, an
-/// the conclusions citing an axis's price note, which Overseer prints beside them; rule 41 (<see cref="UnavailableTokenRule"/>), in a Root Cause Analysis or a comparison-scope document, a token of a
+/// <para>Rules 40 to 43 are warnings. Rule 40 (<see cref="RootCauseCodePrintedRule"/>) flags, in a Root Cause Analysis,
+/// the unexpected results citing an unexpected result's fact other than its reference, which Overseer prints in their
+/// section; rule 41 (<see cref="UnavailableTokenRule"/>), in a Root Cause Analysis or a comparison-scope document, a token of a
 /// fact without a value, which prints "not available"; rule 42 (<see cref="RootCauseNextRunsOrderRule"/>) a Root Cause
 /// Analysis' next runs written in another order than code's; and rule 43 (<see cref="BorrowedModelFigureRule"/>), in a
 /// comparison-scope Root Cause Analysis, one model's figure given for another model whose own figure differs.</para>
+///
+/// <para>Rules 44 and 45 are Root Cause Analysis warnings too. Rule 44 (<see cref="NumberWordCountRule"/>) flags, in every
+/// prose string, a count across a total written in words (<c>eight of the nine models</c>); rule 45
+/// (<see cref="RootCauseNullRestatedRule"/>) a sentence of a hypotheses slot that restates the nulls Overseer prints beside
+/// it.</para>
+///
+/// <para>A Root Cause Analysis' optional slot, <see cref="BenchmarkReportSlots.UnexpectedResults"/>, is checked as a required
+/// slot is when it holds text, but never fails the document: on a sheet without an unexpected result
+/// (<see cref="BenchmarkReportPackPrompt.RootCauseAnomalyCount"/>) its text is a rule-7 issue and is removed.</para>
 ///
 /// <para>A chat consistency sheet (<see cref="BenchmarkReportFactSheet.IsChatConsistency"/>) is checked
 /// against its audience's chat consistency slots and word caps, with the claim discipline of rules
@@ -328,8 +339,9 @@ public static class BenchmarkReportPackValidator
     private static readonly Regex CountRepetitionWordRegex = new("\u0001\\d+\u0002|[A-Za-z][A-Za-z'-]*", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// Rule 40: in a Root Cause Analysis, an answer slot cites <c>rca.question.&lt;n&gt;.signals</c>, or the conclusions cite
-    /// <c>rca.axis.&lt;axis&gt;.priceNote</c>, both of which Overseer prints beside the section. A warning.
+    /// Rule 40: in a Root Cause Analysis, the unexpected results cite an unexpected result's fact other than its
+    /// <c>rca.anomaly.&lt;n&gt;.ref</c> (its summary, prior, configuration, graders, what settles it, whether it was tested),
+    /// which Overseer prints in the Unexpected results section. A warning.
     /// </summary>
     public const int RootCauseCodePrintedRule = 40;
 
@@ -351,6 +363,41 @@ public static class BenchmarkReportPackValidator
     /// is missing. A warning.
     /// </summary>
     public const int BorrowedModelFigureRule = 43;
+
+    /// <summary>
+    /// Rule 44: in a Root Cause Analysis, a count across a total written in words: a number word, <c>all</c> or <c>every</c>,
+    /// then <c>of</c> or <c>of the</c> and a second number word (<see cref="NumberWordCountRegex"/>). A warning.
+    /// </summary>
+    public const int NumberWordCountRule = 44;
+
+    /// <summary>
+    /// Rule 45: in a Root Cause Analysis' hypotheses slot, a sentence holding a phrase of <see cref="NullRestatedPhrases"/>,
+    /// which restates the nulls Overseer prints beside the paragraph. A warning.
+    /// </summary>
+    public const int RootCauseNullRestatedRule = 45;
+
+    /// <summary>The number words rule 44 reads, the hyphenated tens such as <c>twenty-one</c> included.</summary>
+    private const string NumberWordPattern =
+        "(?:(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-(?:one|two|three|four|five|six|seven|eight|nine))?"
+        + "|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|hundred)";
+
+    /// <summary>Rule 44: <c>eight of the nine</c>, <c>all of the nine</c>, <c>three of four</c>, as whole words, ignoring case.</summary>
+    private static readonly Regex NumberWordCountRegex = new(
+        @"(?<![\p{L}\p{N}-])(?:" + NumberWordPattern + @"|all|every)\s+of\s+(?:the\s+)?" + NumberWordPattern + @"(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>The phrases rule 45 reads as restating a null, matched as whole words with their plurals, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> NullRestatedPhrases = new[] { "null", "real difference", "may be chance" };
+
+    private static readonly Regex NullRestatedRegex = new(
+        @"(?<![\p{L}\p{N}-])(?:nulls?|real\s+differences?|may\s+be\s+chance)(?![\p{L}\p{N}-])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>The hypotheses slots rule 45 reads.</summary>
+    private static readonly IReadOnlySet<string> HypothesesSlots = new HashSet<string>(StringComparer.Ordinal)
+    {
+        BenchmarkReportSlots.HypothesesIntelligence, BenchmarkReportSlots.HypothesesSpeed, BenchmarkReportSlots.HypothesesCost
+    };
 
     /// <summary>Rule 43: a model's figure key, with its family, its letter and the rest of the key.</summary>
     private static readonly Regex ModelScopedKeyRegex = new(
@@ -376,6 +423,9 @@ public static class BenchmarkReportPackValidator
     public const int RootCauseNextRunsMaxWords = 50;
     public const int RootCauseLimitationsMaxWords = 120;
 
+    /// <summary>The optional unexpected results of a Root Cause Analysis.</summary>
+    public const int RootCauseUnexpectedResultsMaxWords = 80;
+
     /// <summary>Each observation of a Root Cause Analysis.</summary>
     public const int RootCauseObservationMaxWords = 35;
 
@@ -388,7 +438,7 @@ public static class BenchmarkReportPackValidator
             or HypeWordRule or ZeroTokenNegationRule or ModelCoverageRule or ChatInconclusiveMdeRule
             or ChatRepetitionRule or ComparisonTokenShapeRule or RootCauseAxisStatusRule or BareModelLetterRule
             or RootCauseShareBesideRefRule or CountRepetitionRule or RootCauseCodePrintedRule or UnavailableTokenRule
-            or RootCauseNextRunsOrderRule or BorrowedModelFigureRule;
+            or RootCauseNextRunsOrderRule or BorrowedModelFigureRule or NumberWordCountRule or RootCauseNullRestatedRule;
 
     /// <summary>Words rule 19 reads as a negation, matched as whole words, ignoring case.</summary>
     public static readonly IReadOnlyList<string> NegationWords = new[] { "no", "none", "never", "without", "zero" };
@@ -709,6 +759,7 @@ public static class BenchmarkReportPackValidator
         BenchmarkReportSlots.Conclusions => RootCauseConclusionsMaxWords,
         BenchmarkReportSlots.NextRuns => RootCauseNextRunsMaxWords,
         BenchmarkReportSlots.Limitations => RootCauseLimitationsMaxWords,
+        BenchmarkReportSlots.UnexpectedResults => RootCauseUnexpectedResultsMaxWords,
         _ => null
     };
 
@@ -821,12 +872,32 @@ public static class BenchmarkReportPackValidator
                 Issue(notes, 7, location, $"{SlotName(slot)} has {WordCount(text).ToString(CultureInfo.InvariantCulture)} words; the limit is {cap.ToString(CultureInfo.InvariantCulture)}.");
             }
         }
+        foreach (string slot in ctx.OptionalSlots)
+        {
+            if (!sections.TryGetValue(slot, out string? text) || string.IsNullOrWhiteSpace(text)) continue;
+            string location = SectionLocation(slot);
+            if (OptionalSlotUnused(ctx, slot) is string unused)
+            {
+                Issue(notes, 7, location, unused);
+                continue;
+            }
+
+            var paragraphs = SplitParagraphs(text);
+            for (int p = 0; p < paragraphs.Count; p++)
+            {
+                notes.AddRange(WithText(ParagraphIssues(ctx, slot, paragraphs[p], ParagraphLocation(slot, p)), paragraphs[p]));
+            }
+            if (ctx.SlotCap(slot) is int cap && WordCount(text) > cap)
+            {
+                Issue(notes, 7, location, $"{SlotName(slot)} has {WordCount(text).ToString(CultureInfo.InvariantCulture)} words; the limit is {cap.ToString(CultureInfo.InvariantCulture)}.");
+            }
+        }
         CheckChatHoursCited(ctx, output.Headline, sections, notes);
         CheckChatMdeCited(ctx, output.Headline, sections, notes);
         CheckRootCauseConclusions(ctx, sections, notes);
         CheckRootCauseNextRuns(ctx, sections, notes);
 
-        foreach (string key in ExtraSlots(ctx.RequiredSlots, sections))
+        foreach (string key in ExtraSlots(ctx.KnownSlots, sections))
         {
             Issue(notes, 1, SectionLocation(key), UnknownSlotMessage(ctx, key));
         }
@@ -1066,11 +1137,42 @@ public static class BenchmarkReportPackValidator
                 CheckChatSlot(ctx, slot, copy.Sections[slot], location, notes);
             }
         }
+        // An optional slot loses its faulty paragraphs and its sentences over the cap, and is left out when none remain.
+        foreach (string slot in ctx.OptionalSlots)
+        {
+            if (!sections.TryGetValue(slot, out string? text) || string.IsNullOrWhiteSpace(text)) continue;
+            string location = SectionLocation(slot);
+            if (OptionalSlotUnused(ctx, slot) is string unused)
+            {
+                Dropped(notes, 7, location, unused, text);
+                continue;
+            }
+
+            var paragraphs = SplitParagraphs(text);
+            var kept = new List<(int Index, string Text)>();
+            for (int p = 0; p < paragraphs.Count; p++)
+            {
+                var issues = ParagraphIssues(ctx, slot, paragraphs[p], ParagraphLocation(slot, p));
+                if (issues.Any(Blocks))
+                {
+                    notes.AddRange(WithText(MarkDropped(issues), paragraphs[p]));
+                    continue;
+                }
+                notes.AddRange(WithText(issues, paragraphs[p]));
+                kept.Add((p, paragraphs[p]));
+            }
+
+            bool trimmed = ctx.SlotCap(slot) is int cap && TrimToCap(slot, kept, cap, _ => false, notes);
+            if (kept.Count > 0)
+            {
+                copy.Sections[slot] = kept.Count == paragraphs.Count && !trimmed ? text : string.Join("\n\n", kept.Select(k => k.Text));
+            }
+        }
         CheckChatHoursCited(ctx, copy.Headline, copy.Sections, notes);
         CheckChatMdeCited(ctx, copy.Headline, copy.Sections, notes);
         CheckRootCauseConclusions(ctx, copy.Sections, notes);
 
-        foreach (string key in ExtraSlots(ctx.RequiredSlots, sections))
+        foreach (string key in ExtraSlots(ctx.KnownSlots, sections))
         {
             Dropped(notes, 1, SectionLocation(key), UnknownSlotMessage(ctx, key), sections[key]);
         }
@@ -1276,8 +1378,9 @@ public static class BenchmarkReportPackValidator
     }
 
     /// <summary>
-    /// The word count of every capped slot the document requires, in slot order: raw writer words, a token counting as
-    /// one, as rule 7 counts them, with each paragraph's count. A slot the output lacks or leaves empty has no count.
+    /// The word count of every capped slot the document requires, in slot order, then of each optional slot the output
+    /// fills: raw writer words, a token counting as one, as rule 7 counts them, with each paragraph's count. A required
+    /// slot the output lacks or leaves empty has no count.
     /// </summary>
     public static IReadOnlyList<BenchmarkReportSlotWordCount> SlotWordCounts(
         BenchmarkReportAudience audience,
@@ -1289,12 +1392,13 @@ public static class BenchmarkReportPackValidator
         var titles = BenchmarkReportRuleCatalog.SlotTitlesFor(audience);
         var sections = output?.Sections ?? new Dictionary<string, string>();
         var counts = new List<BenchmarkReportSlotWordCount>();
-        foreach (string slot in ctx.RequiredSlots)
+        foreach (string slot in ctx.KnownSlots)
         {
             if (ctx.SlotCap(slot) is not int cap) continue;
 
             string location = SectionLocation(slot);
             bool present = sections.TryGetValue(slot, out string? text) && !string.IsNullOrWhiteSpace(text);
+            if (!present && ctx.OptionalSlots.Contains(slot, StringComparer.Ordinal)) continue;
             counts.Add(new BenchmarkReportSlotWordCount(
                 slot,
                 location,
@@ -1363,7 +1467,28 @@ public static class BenchmarkReportPackValidator
         CheckChatClaims(ctx, slot, paragraph, location, issues);
         CheckRootCauseClaims(ctx, slot, paragraph, location, issues);
         CheckCodePrinted(ctx, slot, paragraph, location, issues);
+        CheckNullsRestated(ctx, slot, paragraph, location, issues);
         return issues;
+    }
+
+    /// <summary>
+    /// Rule 45 on one paragraph of a Root Cause Analysis' hypotheses slot: each sentence holding a phrase of
+    /// <see cref="NullRestatedPhrases"/>, read with its tokens blanked.
+    /// </summary>
+    private static void CheckNullsRestated(Context ctx, string slot, string paragraph, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        if (!ctx.RootCause || !HypothesesSlots.Contains(slot) || string.IsNullOrWhiteSpace(paragraph)) return;
+
+        foreach (var (plain, _) in TokenSentences(paragraph))
+        {
+            var phrases = NullRestatedRegex.Matches(plain)
+                .Select(m => Regex.Replace(m.Value.ToLowerInvariant(), @"\s+", " "))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (phrases.Count == 0) continue;
+            Issue(notes, RootCauseNullRestatedRule, location,
+                $"A sentence restates the nulls with \"{string.Join("\", \"", phrases)}\": Overseer prints the nulls beside this paragraph; remove the sentence.");
+        }
     }
 
     /// <summary>
@@ -1383,9 +1508,13 @@ public static class BenchmarkReportPackValidator
             .ToList();
         if (badTokens.Count > 0)
         {
-            Issue(notes, 2, location, ctx.Comparison
+            var priceCards = badTokens.Where(t => ctx.RootCauseWriterHidden(t[2..^2].Trim())).ToList();
+            string hiddenNote = priceCards.Count == 0 ? string.Empty
+                : $" {string.Join(", ", priceCards)} {(priceCards.Count == 1 ? "is" : "are")} a price-card difference, which Overseer prints in one line: leave {(priceCards.Count == 1 ? "it" : "them")} out.";
+            Issue(notes, 2, location, (ctx.Comparison
                 ? $"Unknown token{Plural(badTokens.Count)} {string.Join(", ", badTokens)}: use {{{{model:X}}}} with a letter from MODELS, or {{{{key}}}} with a fact key written exactly as listed, without spaces inside the braces."
-                : $"Unknown token{Plural(badTokens.Count)} {string.Join(", ", badTokens)}: use {{{{subject}}}}, {{{{peer:X}}}} with a letter from PEERS, or {{{{key}}}} with a fact key written exactly as listed, without spaces inside the braces.");
+                : $"Unknown token{Plural(badTokens.Count)} {string.Join(", ", badTokens)}: use {{{{subject}}}}, {{{{peer:X}}}} with a letter from PEERS, or {{{{key}}}} with a fact key written exactly as listed, without spaces inside the braces.")
+                + hiddenNote);
         }
         if (stripped.Contains("{{", StringComparison.Ordinal) || stripped.Contains("}}", StringComparison.Ordinal))
         {
@@ -1573,6 +1702,20 @@ public static class BenchmarkReportPackValidator
         if (ctx.RootCause && ctx.Comparison)
         {
             CheckBorrowedModelFigures(ctx, text, location, notes);
+        }
+
+        // Rule 44: a count across a total written in words.
+        if (ctx.RootCause)
+        {
+            var counts = NumberWordCountRegex.Matches(stripped)
+                .Select(m => Regex.Replace(m.Value, @"\s+", " "))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (counts.Count > 0)
+            {
+                Issue(notes, NumberWordCountRule, location,
+                    $"Writes the count{Plural(counts.Count)} \"{string.Join("\", \"", counts)}\" in words: write this count as a fact token, or leave the total out.");
+            }
         }
 
         // Rule 17: hype and filler words.
@@ -2730,22 +2873,25 @@ public static class BenchmarkReportPackValidator
     private static HashSet<string> CitedTokens(string text)
         => TokenRegex.Matches(text).Select(m => m.Groups[1].Value.Trim()).ToHashSet(StringComparer.Ordinal);
 
+    /// <summary>An unexpected result's fact, <c>rca.anomaly.&lt;n&gt;.&lt;part&gt;</c>, for rule 40.</summary>
+    private static readonly Regex AnomalyPartKeyRegex = new(@"^rca\.anomaly\.\d+\.(?<part>[A-Za-z]+)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     /// <summary>
-    /// Rule 40 on one paragraph of a Root Cause Analysis: the conclusions citing an axis's price note
-    /// (<c>rca.axis.&lt;axis&gt;.priceNote</c>), which Overseer prints beside the section.
+    /// Rule 40 on one paragraph of a Root Cause Analysis: the unexpected results citing an unexpected result's fact other
+    /// than its <c>.ref</c> (<see cref="AnomalyPartKeyRegex"/>), which Overseer prints in the Unexpected results section.
     /// </summary>
     private static void CheckCodePrinted(Context ctx, string slot, string paragraph, string location, List<BenchmarkReportValidationNote> notes)
     {
         if (!ctx.RootCause || string.IsNullOrWhiteSpace(paragraph)) return;
-        if (!string.Equals(slot, BenchmarkReportSlots.Conclusions, StringComparison.Ordinal)) return;
+        if (!string.Equals(slot, BenchmarkReportSlots.UnexpectedResults, StringComparison.Ordinal)) return;
 
         var printed = CitedTokens(paragraph)
-            .Where(k => k.StartsWith("rca.axis.", StringComparison.Ordinal) && k.EndsWith(".priceNote", StringComparison.Ordinal))
+            .Where(k => AnomalyPartKeyRegex.Match(k) is { Success: true } m && m.Groups["part"].Value != "ref" && ctx.FactKeys.Contains(k))
             .OrderBy(k => k, StringComparer.Ordinal);
         foreach (string key in printed)
         {
             Issue(notes, RootCauseCodePrintedRule, location,
-                $"{{{{{key}}}}} is printed by Overseer beside this section; remove it and say in your own words what matters.");
+                $"{{{{{key}}}}} is printed by Overseer in the Unexpected results section; remove it, cite the result by its .ref token and say what the grader comments show.");
         }
     }
 
@@ -2976,11 +3122,41 @@ public static class BenchmarkReportPackValidator
                 Against = (h.Against ?? new List<string>()).Where(t => !string.IsNullOrWhiteSpace(t)).ToList(),
                 RefutedIf = h.RefutedIf,
                 Confidence = RootCauseGrades.Low,
-                Evidence = new List<string>(h.Evidence ?? new List<string>())
+                Evidence = WithCitedQuestions(ctx, h)
             });
         }
 
         return kept;
+    }
+
+    /// <summary>
+    /// A writer hypothesis' evidence, then every question its texts refer to that the data has and the evidence lacks, in
+    /// the order the texts name them: <c>Q7</c>, or on a battery sheet <c>S2-Q7</c>.
+    /// </summary>
+    private static List<string> WithCitedQuestions(Context ctx, BenchmarkReportWriterHypothesis h)
+    {
+        var evidence = new List<string>(h.Evidence ?? new List<string>());
+        var listed = new HashSet<string>(evidence.Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => id.Trim()), StringComparer.Ordinal);
+        var texts = new List<string?> { h.Statement };
+        texts.AddRange(h.For ?? new List<string>());
+        texts.AddRange(h.Against ?? new List<string>());
+        texts.Add(h.RefutedIf);
+
+        foreach (string? text in texts)
+        {
+            if (string.IsNullOrWhiteSpace(text)) continue;
+            string stripped = TokenRegex.Replace(text, " ");
+            var references = ctx.Battery
+                ? BatteryRefRegex.Matches(stripped).Select(m => m.Value).Where(ctx.IsReference)
+                : QuestionRefRegex.Matches(stripped)
+                    .Where(m => int.TryParse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int n) && ctx.Questions.Contains(n))
+                    .Select(m => m.Value);
+            foreach (string reference in references)
+            {
+                if (listed.Add(reference)) evidence.Add(reference);
+            }
+        }
+        return evidence;
     }
 
     /// <summary>
@@ -3408,10 +3584,19 @@ public static class BenchmarkReportPackValidator
     private static bool IsConflicting(BenchmarkReportFindingRow row)
         => string.Equals(row.Status?.Trim(), "Conflicting", StringComparison.OrdinalIgnoreCase);
 
-    private static IEnumerable<string> ExtraSlots(IReadOnlyList<string> requiredSlots, Dictionary<string, string> sections)
+    private static IEnumerable<string> ExtraSlots(IReadOnlyList<string> knownSlots, Dictionary<string, string> sections)
         => sections.Keys
-            .Where(k => !requiredSlots.Contains(k, StringComparer.Ordinal))
+            .Where(k => !knownSlots.Contains(k, StringComparer.Ordinal))
             .OrderBy(k => k, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Why an optional slot that holds text should be empty: the unexpected results of a sheet without one. Null when
+    /// the slot may hold text.
+    /// </summary>
+    private static string? OptionalSlotUnused(Context ctx, string slot)
+        => string.Equals(slot, BenchmarkReportSlots.UnexpectedResults, StringComparison.Ordinal) && ctx.AnomalyCount == 0
+            ? "There are no unexpected results; leave the slot empty."
+            : null;
 
     private static string UnknownSlotMessage(Context ctx, string key)
         => ctx.Spec.PeerOnlySlots.Contains(key, StringComparer.Ordinal)
@@ -3545,6 +3730,10 @@ public static class BenchmarkReportPackValidator
                 ? Spec.ComparisonSlotsFor(hasNotableFindings: BenchmarkNotableFindings.CountOf(sheet) > 0)
                 : Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
             RequiredSlots = slots;
+            OptionalSlots = RootCause ? new[] { BenchmarkReportSlots.UnexpectedResults } : Array.Empty<string>();
+            KnownSlots = RequiredSlots.Concat(OptionalSlots).ToList();
+            AnomalyCount = RootCause ? BenchmarkReportPackPrompt.RootCauseAnomalyCount(sheet) : 0;
+            _rootCauseHidden = RootCause ? RootCauseFacts.RootCauseWriterHidden(sheet.RootCause) : _ => false;
             FactKeys = new HashSet<string>(sheet.Facts.Select(f => f.Key), StringComparer.Ordinal);
             _availableFacts = new HashSet<string>(sheet.Facts.Where(f => f.Available).Select(f => f.Key), StringComparer.Ordinal);
             _trueFacts = new HashSet<string>(
@@ -3664,8 +3853,24 @@ public static class BenchmarkReportPackValidator
         private readonly IReadOnlySet<string> _chatHiddenKeys;
         private readonly Dictionary<string, string> _factDisplays;
         private readonly HashSet<string> _availableFacts;
+        private readonly Func<string?, bool> _rootCauseHidden;
 
         public BenchmarkReportAudienceSpec Spec { get; }
+
+        /// <summary>
+        /// A Root Cause Analysis fact kept from its writer (<see cref="RootCauseFacts.RootCauseWriterHidden(RootCauseResult?)"/>):
+        /// a price effect's, which rule 2 reads as unknown. False on every other document.
+        /// </summary>
+        public bool RootCauseWriterHidden(string key) => _rootCauseHidden(key);
+
+        /// <summary>The slots a document may leave out: a Root Cause Analysis' unexpected results; none on every other document.</summary>
+        public IReadOnlyList<string> OptionalSlots { get; }
+
+        /// <summary><see cref="RequiredSlots"/> and <see cref="OptionalSlots"/>: every slot the document may fill.</summary>
+        public IReadOnlyList<string> KnownSlots { get; }
+
+        /// <summary>The sheet's unexpected results (<see cref="BenchmarkReportPackPrompt.RootCauseAnomalyCount"/>); 0 outside a Root Cause Analysis.</summary>
+        public int AnomalyCount { get; }
 
         /// <summary>A chat consistency fact kept from the writer: <see cref="BenchmarkChatConsistencyReportFacts.WriterHidden(string)"/>, or one of this sheet's <see cref="BenchmarkChatConsistencyReportFacts.WriterHiddenKeys"/>.</summary>
         public bool ChatWriterHidden(string key)
@@ -3776,18 +3981,19 @@ public static class BenchmarkReportPackValidator
         /// <summary>The sheet holds a fact keyed <paramref name="key"/>, without a value.</summary>
         public bool IsUnavailableFact(string key) => FactKeys.Contains(key) && !_availableFacts.Contains(key);
 
+        /// <summary>Rule 2: the token names a model, the subject, a peer or a fact of the sheet that is not kept from the writer.</summary>
         public bool IsValidToken(string inner)
         {
             if (Comparison)
             {
                 if (inner.StartsWith("model:", StringComparison.Ordinal)) return PeerLetters.Contains(inner.Substring("model:".Length));
                 if (inner == "subject" || inner.StartsWith("peer:", StringComparison.Ordinal)) return false;
-                return FactKeys.Contains(inner);
+                return FactKeys.Contains(inner) && !_rootCauseHidden(inner);
             }
 
             if (inner == "subject") return true;
             if (inner.StartsWith("peer:", StringComparison.Ordinal)) return PeerLetters.Contains(inner.Substring("peer:".Length));
-            return FactKeys.Contains(inner);
+            return FactKeys.Contains(inner) && !_rootCauseHidden(inner);
         }
 
         public string MaskKnownNames(string text) => _knownNames?.Replace(text, " ") ?? text;

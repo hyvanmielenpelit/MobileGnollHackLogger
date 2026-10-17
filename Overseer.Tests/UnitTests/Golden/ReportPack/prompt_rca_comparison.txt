@@ -30,7 +30,6 @@ GRADES AND STATUSES (code assigned them; never change one in words):
 - Each axis has a status, its rca.axis.<axis>.status fact: Root cause established (a non-null hypothesis is High and its null is rejected), Probable cause (the best hypothesis is Moderate), or Not established.
 - A price-per-token difference read off the price cards is graded Known from the price cards, with its grade: it supports a sentence about cost but no certainty word, and it never makes an axis's root cause established.
 - A price effect is known from the price cards: give it no refutation.
-- When {{rca.axis.<axis>.priceNote}} exists, the conclusions say that price per token explains the largest gaps on that axis, and that the best hypothesis explains its own pair; when other hypotheses of the same rule exist, name them by their ref range with the rule's shareSpan (rca.rule.<id>.shareSpan).
 - A Low hypothesis is a lead, not a cause; a Not supported one is refuted by its own test. Never present either as a finding.
 
 WHAT THE BENCHMARK DOES NOT MEASURE:
@@ -40,15 +39,16 @@ WHAT THE BENCHMARK DOES NOT MEASURE:
 
 SLOTS (the keys of "sections"; each holds Markdown paragraphs, printed under the code-rendered part of its section, and is required):
 - scope: At most 120 words, under the code-rendered design, which already prints the grading panel and the harness version: do not repeat them. Say what this design can and cannot decide: how many models and runs it rests on, citing {{comparison.runsPerSuite}} and {{comparison.suiteCount}}, whether they share graders and settings, citing {{comparison.configDifferences}} for the settings, and which entries are degraded or excluded. State it; use no causal word.
-- evidenceIntelligence: At most 100 words, under the intelligence evidence tables: where the points were lost, which failure signals several models share and which only one shows, what the per-question results show. Say what stands out and why it matters for choosing a model; do not restate the table rows; one sentence per point. State what was measured; use no causal word.
-- evidenceSpeed: At most 100 words, under the timing decomposition: which components make up the time per question and how they differ between the models or the groups of questions. Say what stands out and why it matters for choosing a model; do not restate the table rows; one sentence per point. State what was measured; use no causal word.
-- evidenceCost: At most 100 words, under the cost decomposition: which components make up the cost per question, volume against price, and how they differ. Say what stands out and why it matters for choosing a model; do not restate the table rows; one sentence per point. State what was measured; use no causal word.
-- hypothesesIntelligence: At most 120 words, under that axis's hypothesis table and its list of nulls, which Overseer prints beside the paragraph: never repeat them, and never list hypothesis or null references. Say, in this order: which mechanism leads the axis, with its share, or for several hypotheses of one rule the rule's shareSpan, and its grade; and what would refute it. Overseer prints the nulls that stand and those rejected beside the paragraph: do not count or restate them. Cite each hypothesis you discuss by its rca.hypothesis.<id>.<n>.ref token, after saying in your own words what it is about, in the sentence that discusses it.
-- hypothesesSpeed: At most 120 words, under that axis's hypothesis table and its list of nulls, which Overseer prints beside the paragraph: never repeat them, and never list hypothesis or null references. Say, in this order: which mechanism leads the axis, with its share, or for several hypotheses of one rule the rule's shareSpan, and its grade; and what would refute it. Overseer prints the nulls that stand and those rejected beside the paragraph: do not count or restate them. Cite each hypothesis you discuss by its rca.hypothesis.<id>.<n>.ref token, after saying in your own words what it is about, in the sentence that discusses it.
-- hypothesesCost: At most 120 words, under that axis's hypothesis table and its list of nulls, which Overseer prints beside the paragraph: never repeat them, and never list hypothesis or null references. Say, in this order: which mechanism leads the axis, with its share, or for several hypotheses of one rule the rule's shareSpan, and its grade; and what would refute it. Overseer prints the nulls that stand and those rejected beside the paragraph: do not count or restate them. Cite each hypothesis you discuss by its rca.hypothesis.<id>.<n>.ref token, after saying in your own words what it is about, in the sentence that discusses it.
-- conclusions: At most 120 words: take the axes in the order intelligence, speed, cost; for each, write its status once, as 'Cost: {{rca.axis.cost.status}}.', and never repeat beside it the words the token prints (Root cause established, Probable cause, Not established); then give its root cause with that hypothesis's rca.hypothesis.<id>.<n>.ref token and grade, or why it is not established and what would establish it. A price-per-token difference (a hypothesis graded Known from the price cards) is what the price cards show: say so, and never call it the axis's root cause. The conclusions table prints each axis's price note: never cite rca.axis.<axis>.priceNote here, and mention the price cards once, as the cause the price cards show, with that rule's ref range.
+- evidenceIntelligence: At most 100 words, under the intelligence evidence tables: where the points were lost, which failure signals several models share and which only one shows, what the per-question results show. Say what stands out: a pattern several models share, a model that departs from the others, or a result the settings or the price cards would not predict. Do not restate the table rows, and add no sentence about what a pattern means for choosing a model or for a deployment. One sentence per point. State what was measured; use no causal word.
+- evidenceSpeed: At most 100 words, under the timing decomposition: which components make up the time per question and how they differ between the models or the groups of questions. Say what stands out: a pattern several models share, a model that departs from the others, or a result the settings or the price cards would not predict. Do not restate the table rows, and add no sentence about what a pattern means for choosing a model or for a deployment. One sentence per point. State what was measured; use no causal word.
+- evidenceCost: At most 100 words, under the cost decomposition: what the price cards do not explain — token volume per question, the share of thinking, caching, and model calls per answer — and how it differs between the models. Never say that a model with dearer prices costs more, and never give a spend ratio or a price-per-token difference; cite a pair's rca.cost.<F>.<S>.volumeRatio token for its token volume at equal prices. Say what stands out: a pattern several models share, a model that departs from the others, or a result the settings or the price cards would not predict. Do not restate the table rows, and add no sentence about what a pattern means for choosing a model or for a deployment. One sentence per point. State what was measured; use no causal word.
+- hypothesesIntelligence: At most 120 words, under that axis's hypothesis table and its list of nulls, which Overseer prints beside the paragraph: never repeat them, and never list hypothesis or null references. Say, in this order: which mechanism leads the axis, with its share, or for several hypotheses of one rule the rule's shareSpan, and its grade; and what would refute it. Overseer prints the nulls that stand and those rejected beside the paragraph: do not count or restate them. Cite each hypothesis you discuss by its rca.hypothesis.<id>.<n>.ref token, after saying in your own words what it is about, in the sentence that discusses it. Give the grade word only (graded Moderate); the How sure box already says why every grade is capped. Never mention a price-card difference: Overseer prints them in one line.
+- hypothesesSpeed: At most 120 words, under that axis's hypothesis table and its list of nulls, which Overseer prints beside the paragraph: never repeat them, and never list hypothesis or null references. Say, in this order: which mechanism leads the axis, with its share, or for several hypotheses of one rule the rule's shareSpan, and its grade; and what would refute it. Overseer prints the nulls that stand and those rejected beside the paragraph: do not count or restate them. Cite each hypothesis you discuss by its rca.hypothesis.<id>.<n>.ref token, after saying in your own words what it is about, in the sentence that discusses it. Give the grade word only (graded Moderate); the How sure box already says why every grade is capped. Never mention a price-card difference: Overseer prints them in one line.
+- hypothesesCost: At most 120 words, under that axis's hypothesis table and its list of nulls, which Overseer prints beside the paragraph: never repeat them, and never list hypothesis or null references. Say, in this order: which mechanism leads the axis, with its share, or for several hypotheses of one rule the rule's shareSpan, and its grade; and what would refute it. Overseer prints the nulls that stand and those rejected beside the paragraph: do not count or restate them. Cite each hypothesis you discuss by its rca.hypothesis.<id>.<n>.ref token, after saying in your own words what it is about, in the sentence that discusses it. Give the grade word only (graded Moderate); the How sure box already says why every grade is capped. Never mention a price-card difference: Overseer prints them in one line.
+- conclusions: At most 120 words: take the axes in the order intelligence, speed, cost; for each, write its status once, as 'Cost: {{rca.axis.cost.status}}.', and never repeat beside it the words the token prints (Root cause established, Probable cause, Not established); then give its root cause with that hypothesis's rca.hypothesis.<id>.<n>.ref token and grade, or why it is not established and what would establish it. Never mention price per token or the price cards. When the cost axis has no hypothesis beyond the price cards, say that the runs show no cost mechanism beyond them, with no causal word.
 - nextRuns: In at most 50 words, say that the first run to make is {{rca.run.1.summary}} and what it settles, then the others in the order NEXT RUNS gives, each by its rca.run.<n>.summary token; cite a check only by its rca.check.<n>.summary token, after the runs unless NEXT RUNS puts it first. When NEXT RUNS lists no run, say which check to make first and what it settles, citing its rca.check.<n>.summary token. Never propose a run code did not.
 - limitations: At most 120 words, after the code-printed list of limits, which already says what the benchmark does not measure, the one run per suite, the harness version and what it did not record, and the graders' providers: do not repeat them. Add only what those bullets do not say, such as missing telemetry or what a degraded entry means for this analysis.
+- unexpectedResults: optional, and only when the data holds an UNEXPECTED RESULTS block, which gives its instruction and its cap; otherwise leave the key out.
 
 WORD BUDGET (every {{token}} is one word, however long its value; count each section before answering and aim at least one sentence under its cap):
 - scope, 120 words
@@ -63,9 +63,9 @@ WORD BUDGET (every {{token}} is one word, however long its value; count each sec
 - limitations, 120 words
 
 FIELDS AND LISTS:
-- headline: in one plain sentence of at most 35 words, say what most explains the differences between the models, naming at most two causes, the most consequential first. Take the axes in the order intelligence, speed, cost, and lead with the first whose status is Root cause established or Probable cause; cost may lead only when neither other axis has one. A price-per-token difference (a hypothesis graded Known from the price cards) is what the price cards show, never the cause the runs found: never lead with it, and never call it the root cause. Never restate a ranking the At a glance table shows (which model scored highest or lowest, was fastest, slowest or cheapest). Never mention price per token in the headline: the conclusions state it. Under the headline, code prints its own findings — answers without tools, a weakness every model shares, the grader family, value for money, thinking levels and the notable findings: do not repeat them. A reader with no statistics should understand it. A certainty word in it needs its status or High hypothesis token in the sentence. Name a cause for 'the gaps' only when the best hypotheses cover more than one pair; when you name a cause, give its share, or for several hypotheses of one rule its rca.rule.<id>.shareSpan beside their ref range.
+- headline: in one plain sentence of at most 35 words, say what most explains the differences between the models, naming at most two causes, the most consequential first. Take the axes in the order intelligence, speed, cost, and lead with the first whose status is Root cause established or Probable cause; cost may lead only when neither other axis has one. A price-per-token difference (a hypothesis graded Known from the price cards) is what the price cards show, never the cause the runs found: never lead with it, and never call it the root cause. Never restate a ranking the At a glance table shows (which model scored highest or lowest, was fastest, slowest or cheapest). Never mention price per token or the price cards in the headline. Under the headline, code prints its own findings — answers without tools, a weakness every model shares, the grader family, value for money, thinking levels, the unexpected results and the notable findings: do not repeat them. A reader with no statistics should understand it. A certainty word in it needs its status or High hypothesis token in the sentence. Name a cause for 'the gaps' only when the best hypotheses cover more than one pair; when you name a cause, give its share, or for several hypotheses of one rule its rca.rule.<id>.shareSpan beside their ref range.
 - observations: at most eight items, each at most 35 words: a fact the graders recorded in the excerpts and comments the data gives, stated with no causal word. Each item gives the question in "questions" and cites at least one evidence id in "evidence": a question reference or a fact key.
-- writerHypotheses: at most four items: hypotheses of your own that the code's rule table does not cover, drawn from the grader comments and excerpts. Each has "axis" (intelligence, speed or cost), "models" (the letters of the models it names), "locus" (one or more of model, chat, harness, suite, corpus and provider), "statement", "for" (one or more pieces of evidence), "against" (what speaks against it; may be empty), "refutedIf" (the result that would refute it), "confidence" (always "Low": code has not tested it) and "evidence" (the fact keys and question references it rests on). Each text is at most 40 words. Leave the list empty when you have none.
+- writerHypotheses: at most four items: hypotheses of your own that the code's rule table does not cover, drawn from the grader comments and excerpts. Each has "axis" (intelligence, speed or cost), "models" (the letters of the models it names), "locus" (one or more of model, chat, harness, suite, corpus and provider), "statement", "for" (one or more pieces of evidence), "against" (what speaks against it), "refutedIf" (the result that would refute it), "confidence" (always "Low": code has not tested it) and "evidence" (the fact keys and question references it rests on). "against" is a measured fact that cuts against the statement; never restate the statement's own evidence or counts; leave it empty when there is none. Each text is at most 40 words. Leave the list empty when you have none.
 - questionTopics: one entry for every question you cite anywhere in the document that is listed under QUESTIONS NEEDING A TOPIC. Each topic names what the question is about in at most twelve words, without quoting it.
 - strengths, weaknesses and models: leave them out. Code writes each model's profile.
 
@@ -74,7 +74,7 @@ NUMBERS AND NAMES:
 - Refer to a model only as {{model:X}}, where X is its letter from MODELS, for example {{model:A}}. There is no {{subject}} and no {{peer:X}} token.
 - Never write a model's letter on its own, as in Model H or Models H and I: in every slot and list, your own hypotheses included, a model is named only through its {{model:X}} token. Only the "models" field of a writer hypothesis takes bare letters.
 - Any other {{...}} token is an error.
-- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as "1st". Number words such as "three" are allowed for a plain count, but prefer a fact token for any figure.
+- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as "1st". A count across models, questions, answers or pairs, written as 'N of M' or 'N of the M', comes only from a fact token; never write it in words. A plain count with no total, such as 'three pairs', may be a number word, but prefer a fact token for any figure.
 - Never write a hypothesis id, a run number or a check number in the prose: cite the hypothesis by its rca.hypothesis.<id>.<n>.ref token, a run by its rca.run.<n>.summary token and a check by its rca.check.<n>.summary token. A hypothesis's label (rca.hypothesis.<id>.<n>.label) appears only in the tables; never cite it in the prose.
 - {{rca.check.<n>}} is a whole sentence the document prints in its Checks list; inside your own sentence cite a check by {{rca.check.<n>.summary}}, and never repeat {{rca.check.<n>}} under What to run next.
 - A model's figure token describes that model only, and a pair's token that pair only. A statement about every compared model cites a comparison.* fact, never one model's or one pair's: the runs and suites as {{comparison.runsPerSuite}} and {{comparison.suiteCount}}, the configuration as {{comparison.configDifferences}}.
@@ -83,7 +83,7 @@ NUMBERS AND NAMES:
 - A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took one and a half times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.
 - A count token already says what it counts, as in 'N of M answers without a tool call': write it as a noun phrase and never repeat its words beside it, before or after.
 - Never join two fact tokens with 'to', or with 'from … to', unless both print a bare figure in the same unit, such as two percentages; and never repeat beside a token the words it already prints.
-- A hypothesis's statement, a known fact, a check (rca.check.<n>) and an axis's price note (rca.axis.<axis>.priceNote) read as whole sentences: cite each as a sentence of its own.
+- A hypothesis's statement, a known fact, a check (rca.check.<n>) and an unexpected result's summary (rca.anomaly.<n>.summary) read as whole sentences: cite each as a sentence of its own.
 - Never write a version number, in digits or in words. For the harness a model's runs used, cite its model.X.run.harnessVersion token; to say that older harness versions did not record a figure, say so without a number.
 - Refer to a question exactly as the QUESTION MATRIX does, for example Q7. This is the only form in which a digit may appear.
 - Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader).
@@ -100,7 +100,7 @@ PLAIN LANGUAGE (the headline and the conclusions are read by people without stat
 - Describe a group of hypotheses of one rule by the rule's span of shares, {{rca.rule.<id>.shareSpan}}, beside their ref range: 'longer waits per call, {{rca.rule.<id>.shareSpan}} ({{rca.hypothesis.<id>.1.ref}}–{{rca.hypothesis.<id>.3.ref}})'. A share span already says 'of each gap': never put 'across' or 'for' directly before it.
 - A control is only an earlier run of another model that answered the same questions under the same graders and settings, as CONTROLS lists it; never call a measurement, a count, a figure or a check a control, and in a comparison, which has none, never use the word.
 - A token whose value is a whole sentence (a statement, a known fact, a check, a profile flag) stands as a sentence of its own, or follows a colon. Never put it after 'at', 'with', 'as' or 'and' inside another sentence.
-- Say what a null hypothesis's result means in these words: a null that "stands (may be chance)", or one that is "rejected (a real difference)". Never explain a rejected null through its grade or with a double negative.
+- Outside the hypotheses slots, say what a null hypothesis's result means in these words: a null that "stands (may be chance)", or one that is "rejected (a real difference)". Never explain a rejected null through its grade or with a double negative.
 - Do not gloss terms; the document glosses them.
 - Prefer verbs to chains of nouns: 'the model waits longest before it starts writing', not 'deliberation time before output'.
 
@@ -130,6 +130,7 @@ TERMS (the document glosses each of these terms; use them without a gloss of you
 - Leave-one-out check
 - Confound
 - Locus
+- Unexpected result
 - Points at risk
 - Isolated miss
 - Median and mean
@@ -150,7 +151,7 @@ TERMS (the document glosses each of these terms; use them without a gloss of you
 - Response style
 
 CLAIM DISCIPLINE (code checks every sentence; a paragraph or item that breaks one of the first four rules is removed, and the others ask for a revision):
-- Causal words (because, due to, caused, causes, explains, driven by, root cause, leads to, results in) never appear in the scope, the evidence slots or the observations.
+- Causal words (because, due to, caused, causes, explains, driven by, root cause, leads to, results in) never appear in the scope, the evidence slots, the unexpected results or the observations.
 - In the hypotheses slots, the conclusions and the next runs, a causal word needs, in the same sentence, a token of the hypothesis it states (rca.hypothesis.<id>.<n>.*, normally its .ref) or of its axis (rca.axis.<axis>.*), as CLAIM SUPPORT lists them. In the next runs, the rca.run.<n>.* token of the run the sentence describes serves as well. That hypothesis is graded Low or higher, and the sentence is hedged (may, might, could, possibly, probably, likely, perhaps, suggests, suggest, consistent with) when it is Low; a Not supported hypothesis is cited only to rule a cause out ('is not due to').
 - A grade's reason, which code gives under each hypothesis as its reasons, is written without a causal word: 'graded Moderate, with one run per suite', never 'graded Moderate because each model ran once per suite'.
 - Certainty words (established, confirmed, proven, prove, proves, proved, definitely, certainly, root cause was found) need, in the same sentence, a token of a hypothesis graded High or the status token of an axis whose root cause is established, as CLAIM SUPPORT lists them. Elsewhere write probable, consistent with or not established; 'not established' is always allowed. Describe a paired test's result as what the paired test finds, never as established or confirmed.
@@ -168,7 +169,7 @@ EVIDENCE:
 - A statement that several models did, or left out, the same thing must hold for each of them in their excerpts and grader comments. Where only one grader charged it, attribute it to that grader.
 
 WEIGHING THE EVIDENCE:
-- Weigh the null hypothesis first: say whether it stands for a pair or a contrast before you discuss a mechanism for it.
+- Weigh the null hypothesis first: say whether it stands for a pair or a contrast before you discuss a mechanism for it, except in the hypotheses slots, where Overseer prints the nulls and a sentence about them is flagged.
 - A share whose interval overlaps another component's share does not single out one component.
 - Points at risk are an upper bound on what a failure signal could have cost: never call them points lost because of that signal.
 - A difference between suites, or between difficulty bands, compares different questions. Never explain it by what a suite or a question contains; say only where the model scored lower.
@@ -283,9 +284,12 @@ FACTS (write {{key}} to place a figure; key = value as printed)
 Difficulty bands are assessed difficulty; the authored bands are model.X.bands.authored.*.
 rca.speed.<F>.<S>.*, rca.cost.<F>.<S>.* and rca.quality.<F>.<S>.* compare model F with model S as F minus S: a positive .total means that F took longer, cost more or scored higher. Speed is model time per question. A .total prints the amount alone, so say in your own words which model differs from which and in which direction.
 rca.speed.<F>.<S>.decomposed and rca.cost.<F>.<S>.decomposed = false: that pair's difference is not split into parts, because it may be chance.
+rca.cost.<F>.<S>.volumeRatio is the cost ratio of F to S at equal prices: what F's token volume costs against S's once both pay the same price per token, printed as a multiple followed by 'times'. It is not a ratio of token counts, and the price cards play no part in it: cite it for a pair's token volume.
+rca.cost.<F>.<S>.grouped says how that pair's cost is split: by token kind, or, where the two models are not billed for the same token kinds, into input (uncached input, cache reads and cache writes) and output (with reasoning), each into token volume and price card, and the input also into caching.
 rca.atRisk.* are index points at risk: an upper bound on what a failure signal could have cost, never points lost. Each .total is counted against the model's median answer.
 model.X.price.<component>.perMillion are prices per million tokens on the pricing basis {{rca.pricingBasis}}, which the document states once: never repeat the basis beside a price.
 model.X.tokens.cacheReadShare is the share of the model's input tokens read from the cache, printed as a bare percentage.
+rca.anomaly.<n>.* describe the unexpected results, each a result that goes against what the models' price tiers or release dates predict: .ref prints its id and is a noun phrase, .summary is a whole sentence, .prior names the prediction, .confounds the settings that differ, .graders each grader's scores, .settledBy the run or check that settles it and .tested whether the pair had a paired test. rca.anomaly.count counts them, rca.anomaly.priorsChecked says which predictions could be checked, and rca.anomaly.untestedPairs counts the pairs without a paired test.
 comparison.configDifferences = no configuration key other than the model
 comparison.models = 5
 comparison.pricedOn = 2026-09-21
@@ -1168,6 +1172,9 @@ pair.D.E.speed.short = 0.89 times as long, not established
 questions.anyCriticalError = 1 of 6 questions with a critical error from any model
 questions.sharedLow = 0 of 6 questions that every model scored low
 questions.wideSpread = 6 of 6 questions with a wide spread between models
+rca.anomaly.count = none
+rca.anomaly.priorsChecked = unavailable: No two models share a provider.
+rca.anomaly.untestedPairs = 0 pairs
 rca.atRisk.A.budgetOrDefect = 0.0 index points
 rca.atRisk.A.criticalError = 0.0 index points
 rca.atRisk.A.noTool = 9.8 index points
@@ -1213,6 +1220,7 @@ rca.cost.A.B.cacheWrite.price.interval = 0–0%
 rca.cost.A.B.cacheWrite.price.share = 0%
 rca.cost.A.B.cacheWrite.volume.interval = 0–0%
 rca.cost.A.B.cacheWrite.volume.share = 0%
+rca.cost.A.B.grouped = split by token kind
 rca.cost.A.B.output.price.interval = 18–18%
 rca.cost.A.B.output.price.share = 18%
 rca.cost.A.B.output.volume.interval = 10–10%
@@ -1226,6 +1234,7 @@ rca.cost.A.B.uncachedInput.price.interval = 44–46%
 rca.cost.A.B.uncachedInput.price.share = 45%
 rca.cost.A.B.uncachedInput.volume.interval = 6–7%
 rca.cost.A.B.uncachedInput.volume.share = 7%
+rca.cost.A.B.volumeRatio = 0.9 times
 rca.cost.A.C.all.price.interval = 70–71%
 rca.cost.A.C.all.price.share = 71%
 rca.cost.A.C.all.volume.interval = 29–30%
@@ -1238,6 +1247,7 @@ rca.cost.A.C.cacheWrite.price.interval = 0–0%
 rca.cost.A.C.cacheWrite.price.share = 0%
 rca.cost.A.C.cacheWrite.volume.interval = 0–0%
 rca.cost.A.C.cacheWrite.volume.share = 0%
+rca.cost.A.C.grouped = split by token kind
 rca.cost.A.C.output.price.interval = 17–18%
 rca.cost.A.C.output.price.share = 18%
 rca.cost.A.C.output.volume.interval = 10–10%
@@ -1251,6 +1261,7 @@ rca.cost.A.C.uncachedInput.price.interval = 43–45%
 rca.cost.A.C.uncachedInput.price.share = 44%
 rca.cost.A.C.uncachedInput.volume.interval = 7–8%
 rca.cost.A.C.uncachedInput.volume.share = 8%
+rca.cost.A.C.volumeRatio = 0.8 times
 rca.cost.A.D.all.price.interval = 69–70%
 rca.cost.A.D.all.price.share = 70%
 rca.cost.A.D.all.volume.interval = 30–31%
@@ -1263,6 +1274,7 @@ rca.cost.A.D.cacheWrite.price.interval = 0–0%
 rca.cost.A.D.cacheWrite.price.share = 0%
 rca.cost.A.D.cacheWrite.volume.interval = 0–0%
 rca.cost.A.D.cacheWrite.volume.share = 0%
+rca.cost.A.D.grouped = split by token kind
 rca.cost.A.D.output.price.interval = 17–18%
 rca.cost.A.D.output.price.share = 17%
 rca.cost.A.D.output.volume.interval = 10–10%
@@ -1276,6 +1288,7 @@ rca.cost.A.D.uncachedInput.price.interval = 42–44%
 rca.cost.A.D.uncachedInput.price.share = 43%
 rca.cost.A.D.uncachedInput.volume.interval = 8–9%
 rca.cost.A.D.uncachedInput.volume.share = 8%
+rca.cost.A.D.volumeRatio = 0.7 times
 rca.cost.A.E.all.price.interval = 68–69%
 rca.cost.A.E.all.price.share = 69%
 rca.cost.A.E.all.volume.interval = 31–32%
@@ -1288,6 +1301,7 @@ rca.cost.A.E.cacheWrite.price.interval = 0–0%
 rca.cost.A.E.cacheWrite.price.share = 0%
 rca.cost.A.E.cacheWrite.volume.interval = 0–0%
 rca.cost.A.E.cacheWrite.volume.share = 0%
+rca.cost.A.E.grouped = split by token kind
 rca.cost.A.E.output.price.interval = 17–17%
 rca.cost.A.E.output.price.share = 17%
 rca.cost.A.E.output.volume.interval = 10–10%
@@ -1301,6 +1315,7 @@ rca.cost.A.E.uncachedInput.price.interval = 42–43%
 rca.cost.A.E.uncachedInput.price.share = 42%
 rca.cost.A.E.uncachedInput.volume.interval = 9–9%
 rca.cost.A.E.uncachedInput.volume.share = 9%
+rca.cost.A.E.volumeRatio = 0.7 times
 rca.cost.D.E.all.price.interval = 64–65%
 rca.cost.D.E.all.price.share = 65%
 rca.cost.D.E.all.volume.interval = 35–36%
@@ -1313,6 +1328,7 @@ rca.cost.D.E.cacheWrite.price.interval = 0–0%
 rca.cost.D.E.cacheWrite.price.share = 0%
 rca.cost.D.E.cacheWrite.volume.interval = 0–0%
 rca.cost.D.E.cacheWrite.volume.share = 0%
+rca.cost.D.E.grouped = split by token kind
 rca.cost.D.E.output.price.interval = 16–16%
 rca.cost.D.E.output.price.share = 16%
 rca.cost.D.E.output.volume.interval = 10–11%
@@ -1326,6 +1342,7 @@ rca.cost.D.E.uncachedInput.price.interval = 38–39%
 rca.cost.D.E.uncachedInput.price.share = 39%
 rca.cost.D.E.uncachedInput.volume.interval = 12–13%
 rca.cost.D.E.uncachedInput.volume.share = 12%
+rca.cost.D.E.volumeRatio = 0.9 times
 rca.hypothesis.H0-C.1.against = No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted).
 rca.hypothesis.H0-C.1.axis = Cost
 rca.hypothesis.H0-C.1.for = none recorded
@@ -1525,76 +1542,6 @@ rca.hypothesis.H0-W.2.nextRun = next run 1
 rca.hypothesis.H0-W.2.ref = H0-W.2
 rca.hypothesis.H0-W.2.refutedIf = A Mann–Whitney contrast is established after the Holm adjustment.
 rca.hypothesis.H0-W.2.statement = The contrasts between groups of Model E's own questions are within sampling noise.
-rca.hypothesis.HC2.1.against = The volume effect is 31% (31–32%) of the difference.
-rca.hypothesis.HC2.1.axis = Cost
-rca.hypothesis.HC2.1.for = Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference.
-rca.hypothesis.HC2.1.grade = Known from the price cards (High)
-rca.hypothesis.HC2.1.gradeReasons = every condition of the grade is met
-rca.hypothesis.HC2.1.interval = 68–69%
-rca.hypothesis.HC2.1.label = Model E's higher price per token, compared with Model A
-rca.hypothesis.HC2.1.locus = model
-rca.hypothesis.HC2.1.models = Model E and Model A
-rca.hypothesis.HC2.1.priceCard = known from the price cards, not a cause the runs found
-rca.hypothesis.HC2.1.ref = HC2.1
-rca.hypothesis.HC2.1.refutedIf = Not testable by a run: the share follows from the price cards and these runs' token counts.
-rca.hypothesis.HC2.1.share = 69%
-rca.hypothesis.HC2.1.statement = Model E costs more than Model A mainly from its price per token.
-rca.hypothesis.HC2.2.against = The volume effect is 30% (30–31%) of the difference.
-rca.hypothesis.HC2.2.axis = Cost
-rca.hypothesis.HC2.2.for = Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference.
-rca.hypothesis.HC2.2.grade = Known from the price cards (High)
-rca.hypothesis.HC2.2.gradeReasons = every condition of the grade is met
-rca.hypothesis.HC2.2.interval = 69–70%
-rca.hypothesis.HC2.2.label = Model D's higher price per token, compared with Model A
-rca.hypothesis.HC2.2.locus = model
-rca.hypothesis.HC2.2.models = Model D and Model A
-rca.hypothesis.HC2.2.priceCard = known from the price cards, not a cause the runs found
-rca.hypothesis.HC2.2.ref = HC2.2
-rca.hypothesis.HC2.2.refutedIf = Not testable by a run: the share follows from the price cards and these runs' token counts.
-rca.hypothesis.HC2.2.share = 70%
-rca.hypothesis.HC2.2.statement = Model D costs more than Model A mainly from its price per token.
-rca.hypothesis.HC2.3.against = The volume effect is 29% (29–30%) of the difference.
-rca.hypothesis.HC2.3.axis = Cost
-rca.hypothesis.HC2.3.for = Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference.
-rca.hypothesis.HC2.3.grade = Known from the price cards (High)
-rca.hypothesis.HC2.3.gradeReasons = every condition of the grade is met
-rca.hypothesis.HC2.3.interval = 70–71%
-rca.hypothesis.HC2.3.label = Model C's higher price per token, compared with Model A
-rca.hypothesis.HC2.3.locus = model
-rca.hypothesis.HC2.3.models = Model C and Model A
-rca.hypothesis.HC2.3.priceCard = known from the price cards, not a cause the runs found
-rca.hypothesis.HC2.3.ref = HC2.3
-rca.hypothesis.HC2.3.refutedIf = Not testable by a run: the share follows from the price cards and these runs' token counts.
-rca.hypothesis.HC2.3.share = 71%
-rca.hypothesis.HC2.3.statement = Model C costs more than Model A mainly from its price per token.
-rca.hypothesis.HC2.4.against = The volume effect is 35% (35–36%) of the difference.
-rca.hypothesis.HC2.4.axis = Cost
-rca.hypothesis.HC2.4.for = Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference.
-rca.hypothesis.HC2.4.grade = Known from the price cards (High)
-rca.hypothesis.HC2.4.gradeReasons = every condition of the grade is met
-rca.hypothesis.HC2.4.interval = 64–65%
-rca.hypothesis.HC2.4.label = Model E's higher price per token, compared with Model D
-rca.hypothesis.HC2.4.locus = model
-rca.hypothesis.HC2.4.models = Model E and Model D
-rca.hypothesis.HC2.4.priceCard = known from the price cards, not a cause the runs found
-rca.hypothesis.HC2.4.ref = HC2.4
-rca.hypothesis.HC2.4.refutedIf = Not testable by a run: the share follows from the price cards and these runs' token counts.
-rca.hypothesis.HC2.4.share = 65%
-rca.hypothesis.HC2.4.statement = Model E costs more than Model D mainly from its price per token.
-rca.hypothesis.HC2.5.against = The volume effect is 28% (27–29%) of the difference.
-rca.hypothesis.HC2.5.axis = Cost
-rca.hypothesis.HC2.5.for = Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference.
-rca.hypothesis.HC2.5.grade = Known from the price cards (High)
-rca.hypothesis.HC2.5.gradeReasons = every condition of the grade is met
-rca.hypothesis.HC2.5.interval = 71–73%
-rca.hypothesis.HC2.5.label = Model B's higher price per token, compared with Model A
-rca.hypothesis.HC2.5.locus = model
-rca.hypothesis.HC2.5.models = Model B and Model A
-rca.hypothesis.HC2.5.priceCard = known from the price cards, not a cause the runs found
-rca.hypothesis.HC2.5.ref = HC2.5
-rca.hypothesis.HC2.5.refutedIf = Not testable by a run: the share follows from the price cards and these runs' token counts.
-rca.hypothesis.HC2.5.share = 72%
-rca.hypothesis.HC2.5.statement = Model B costs more than Model A mainly from its price per token.
 rca.hypothesis.HC4.1.against = Model E's cache-read share is 28% against the models' median of 26%.
 rca.hypothesis.HC4.1.axis = Cost
 rca.hypothesis.HC4.1.for = Uncached input, token volume accounts for 9% (9–9%) of the $0.038 per-question cost difference.
@@ -1783,24 +1730,29 @@ rca.known.8 = Model C answered 2 of 6 scored questions without a tool call.
 rca.known.9 = Model C has 1 critical error in 6 scored answers.
 rca.pricingBasis = Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.
 rca.profile.A.flags = none
+rca.profile.A.gainedPointsOn = answers above the other models' median by 10 or more: +15.5 index points on 5 questions (Q1, Q2, Q4 and 2 more)
 rca.profile.A.lostPointsOn = answers without tools: 9.8 index points on 1 question (Q3)
 rca.profile.A.strength.1 = tied for first of 5 models on Accuracy
 rca.profile.A.strength.2 = tied for first of 5 models on Completeness
 rca.profile.A.weakestDimension = unavailable: No dimension is below the model's Accuracy.
 rca.profile.B.flags = none
+rca.profile.B.gainedPointsOn = answers above the other models' median by 10 or more: +13.1 index points on 4 questions (Q1, Q2, Q3 and 1 more)
 rca.profile.B.lostPointsOn = low-scoring answers, mostly Accuracy: 2.8 index points on 2 questions (Q3 and Q4)
 rca.profile.B.strength.1 = tied for first of 5 models on Accuracy
 rca.profile.B.strength.2 = tied for first of 5 models on Completeness
 rca.profile.B.weakestDimension = unavailable: No dimension is below the model's Accuracy.
 rca.profile.C.flag.1 = 1 critical error (Q3)
 rca.profile.C.flags = 1 critical error (Q3)
+rca.profile.C.gainedPointsOn = no answer 10 or more above the other models' median
 rca.profile.C.lostPointsOn = confirmed critical errors: 7.2 index points on 1 question (Q3)
 rca.profile.C.weakestDimension = unavailable: No dimension is below the model's Accuracy.
 rca.profile.D.flags = none
+rca.profile.D.gainedPointsOn = no answer 10 or more above the other models' median
 rca.profile.D.lostPointsOn = answers without tools: 6.3 index points on 1 question (Q3)
 rca.profile.D.weakestDimension = unavailable: No dimension is below the model's Accuracy.
 rca.profile.E.flag.1 = 1 isolated miss (Q1)
 rca.profile.E.flags = 1 isolated miss (Q1)
+rca.profile.E.gainedPointsOn = no answer 10 or more above the other models' median
 rca.profile.E.lostPointsOn = low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4)
 rca.profile.E.lowestRank = last of 5 models on Accuracy
 rca.profile.E.weakestDimension = unavailable: No dimension is below the model's Accuracy.
@@ -1834,8 +1786,6 @@ rca.quality.D.E.dimension.conciseness.points = +1.4 points
 rca.quality.D.E.dimension.readability.points = +1.4 points
 rca.quality.D.E.other.points = +0.8 points
 rca.quality.D.E.total = +15.0 index points
-rca.rule.HC2.count = 5 pairs
-rca.rule.HC2.shareSpan = 65% to 72% of each gap
 rca.rule.HC4.count = 4 pairs
 rca.rule.HC4.shareSpan = 8% to 12% of each gap
 rca.rule.WC1.count = 3 models
@@ -1964,7 +1914,7 @@ NOTABLE FINDINGS (detected by code from the facts; cite one as {{notable.N.summa
 AXES (each axis's status; never change one)
 - Intelligence: {{rca.axis.intelligence.status}} = Not established; best hypothesis {{rca.axis.intelligence.best}} = HQ3.1; Suggestive (Low) because it is observed, not measured.
 - Speed: {{rca.axis.speed.status}} = Not established; best hypothesis {{rca.axis.speed.best}} = none; Only hypotheses about one model's own breakdown fired on this axis; none compares the models.
-- Cost: {{rca.axis.cost.status}} = Not established; best hypothesis {{rca.axis.cost.best}} = HC2.1; Known from the price cards: the differences in price per token account for the gap, which the price cards show rather than a cause the runs found; every other hypothesis on this axis was ruled out.
+- Cost: {{rca.axis.cost.status}} = Not established; best hypothesis {{rca.axis.cost.best}} = HC2.1; No cost mechanism beyond the price cards remains: every other hypothesis on this axis was ruled out.
 
 KNOWN FACTS (what a test, a count, a decomposition or the configuration shows; each is a sentence)
 - {{rca.known.1}} (decomposition; rests on: rca.cost.A.B.uncachedInput.price.share): Uncached input, price per token accounts for 45% (44–46%) of the per-question cost difference between Model A and Model B.
@@ -2103,6 +2053,7 @@ Speed:
   share: 70% (69–71%)
   robustness: Replicates failed: Model A ran only once per suite.; Leave one question out passed: The deciding share keeps its sign and stays the largest without the question that contributes most.
 Cost:
+  (five price-card differences left out: Overseer prints them in one line; never mention them)
 - rca.hypothesis.H0-C.1.* (null; Model A and Model B): The cost per question difference between Model A and Model B is within sampling noise.
   locus: — | grade: Not supported | reasons: its own test rules it out: no family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)
   for: none recorded
@@ -2177,41 +2128,6 @@ Cost:
   refuted if: The cache-read share is comparable to the other models'.
   share: 8% (7–8%)
   robustness: Leave one question out passed: The deciding share keeps its sign and stays the largest without the question that contributes most.; Replicates failed: Both models ran only once per suite.; Configuration passed: No configuration key differs beyond the model.
-- rca.hypothesis.HC2.1.* (pair; Model E and Model A): Model E costs more than Model A mainly from its price per token.
-  locus: model | grade: High | reasons: every condition of the grade is met
-  for: Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference.
-  against: The volume effect is 31% (31–32%) of the difference.
-  refuted if: Not testable by a run: the share follows from the price cards and these runs' token counts.
-  share: 69% (68–69%)
-  robustness: Leave one question out passed: The deciding share keeps its sign and stays the largest without the question that contributes most.; Configuration passed: No configuration key differs beyond the model.
-- rca.hypothesis.HC2.2.* (pair; Model D and Model A): Model D costs more than Model A mainly from its price per token.
-  locus: model | grade: High | reasons: every condition of the grade is met
-  for: Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference.
-  against: The volume effect is 30% (30–31%) of the difference.
-  refuted if: Not testable by a run: the share follows from the price cards and these runs' token counts.
-  share: 70% (69–70%)
-  robustness: Leave one question out passed: The deciding share keeps its sign and stays the largest without the question that contributes most.; Configuration passed: No configuration key differs beyond the model.
-- rca.hypothesis.HC2.3.* (pair; Model C and Model A): Model C costs more than Model A mainly from its price per token.
-  locus: model | grade: High | reasons: every condition of the grade is met
-  for: Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference.
-  against: The volume effect is 29% (29–30%) of the difference.
-  refuted if: Not testable by a run: the share follows from the price cards and these runs' token counts.
-  share: 71% (70–71%)
-  robustness: Leave one question out passed: The deciding share keeps its sign and stays the largest without the question that contributes most.; Configuration passed: No configuration key differs beyond the model.
-- rca.hypothesis.HC2.4.* (pair; Model E and Model D): Model E costs more than Model D mainly from its price per token.
-  locus: model | grade: High | reasons: every condition of the grade is met
-  for: Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference.
-  against: The volume effect is 35% (35–36%) of the difference.
-  refuted if: Not testable by a run: the share follows from the price cards and these runs' token counts.
-  share: 65% (64–65%)
-  robustness: Leave one question out passed: The deciding share keeps its sign and stays the largest without the question that contributes most.; Configuration passed: No configuration key differs beyond the model.
-- rca.hypothesis.HC2.5.* (pair; Model B and Model A): Model B costs more than Model A mainly from its price per token.
-  locus: model | grade: High | reasons: every condition of the grade is met
-  for: Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference.
-  against: The volume effect is 28% (27–29%) of the difference.
-  refuted if: Not testable by a run: the share follows from the price cards and these runs' token counts.
-  share: 72% (71–73%)
-  robustness: Leave one question out passed: The deciding share keeps its sign and stays the largest without the question that contributes most.; Configuration passed: No configuration key differs beyond the model.
 
 NEXT RUNS (proposed by code, in the order to make them: the chat, then the benchmark, then model selection)
 - {{rca.run.1.summary}} | predicted comparability: Model comparison with the analyzed runs; a replicate (Tier A) of each model's own runs | settles: rca.hypothesis.H0-Q.1.*, rca.hypothesis.H0-Q.2.*, rca.hypothesis.H0-Q.3.*, rca.hypothesis.H0-Q.4.*, rca.hypothesis.H0-Q.5.*, rca.hypothesis.H0-W.1.*, rca.hypothesis.H0-W.2.*, rca.hypothesis.H0-S.1.*, rca.hypothesis.H0-S.2.*, rca.hypothesis.H0-S.3.*, rca.hypothesis.H0-S.4.*, rca.hypothesis.H0-S.5.*, rca.hypothesis.WS3.1.*, rca.hypothesis.WS3.2.*, rca.hypothesis.WS3.3.*
@@ -2222,8 +2138,8 @@ CHECKS (what a run cannot settle: a rubric, a corpus, a configuration or the gra
   summary {{rca.check.1.summary}} = Check 1, a review of the rubric of Q3
 
 CLAIM SUPPORT (derived from FACTS: what a sentence must cite for each kind of claim)
-- Causal words never appear in: scope, evidenceIntelligence, evidenceSpeed, evidenceCost, and the observations.
-- Causal words in hypothesesIntelligence, hypothesesSpeed, hypothesesCost, conclusions, nextRuns need, in the same sentence, one of: rca.hypothesis.H0-Q.1.*, rca.hypothesis.H0-Q.2.*, rca.hypothesis.H0-Q.3.*, rca.hypothesis.H0-Q.4.*, rca.hypothesis.H0-Q.5.*, rca.hypothesis.H0-S.1.*, rca.hypothesis.H0-S.2.*, rca.hypothesis.H0-S.3.*, rca.hypothesis.H0-S.4.*, rca.hypothesis.H0-S.5.*, rca.hypothesis.H0-W.1.*, rca.hypothesis.H0-W.2.*, rca.hypothesis.HC2.1.*, rca.hypothesis.HC2.2.*, rca.hypothesis.HC2.3.*, rca.hypothesis.HC2.4.*, rca.hypothesis.HC2.5.*, rca.hypothesis.HQ3.1.*, rca.hypothesis.WC1.1.*, rca.hypothesis.WC1.2.*, rca.hypothesis.WC1.3.*, rca.hypothesis.WS3.1.*, rca.hypothesis.WS3.2.*, rca.hypothesis.WS3.3.*, rca.axis.intelligence.*, rca.axis.speed.*, rca.axis.cost.*; cite a hypothesis by its .ref token. In nextRuns, an rca.run.<n>.* token counts as well.
+- Causal words never appear in: scope, evidenceIntelligence, evidenceSpeed, evidenceCost, unexpectedResults, and the observations.
+- Causal words in hypothesesIntelligence, hypothesesSpeed, hypothesesCost, conclusions, nextRuns need, in the same sentence, one of: rca.hypothesis.H0-Q.1.*, rca.hypothesis.H0-Q.2.*, rca.hypothesis.H0-Q.3.*, rca.hypothesis.H0-Q.4.*, rca.hypothesis.H0-Q.5.*, rca.hypothesis.H0-S.1.*, rca.hypothesis.H0-S.2.*, rca.hypothesis.H0-S.3.*, rca.hypothesis.H0-S.4.*, rca.hypothesis.H0-S.5.*, rca.hypothesis.H0-W.1.*, rca.hypothesis.H0-W.2.*, rca.hypothesis.HQ3.1.*, rca.hypothesis.WC1.1.*, rca.hypothesis.WC1.2.*, rca.hypothesis.WC1.3.*, rca.hypothesis.WS3.1.*, rca.hypothesis.WS3.2.*, rca.hypothesis.WS3.3.*, rca.axis.intelligence.*, rca.axis.speed.*, rca.axis.cost.*; cite a hypothesis by its .ref token. In nextRuns, an rca.run.<n>.* token counts as well.
 - The tokens of a Not supported hypothesis support only a negated cause (not due to, not because).
 - Certainty words need, in the same sentence, one of: none: no hypothesis is graded High and no axis has an established root cause, so use no certainty word and write probable or not established
 - The conclusions cite: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}}, {{rca.axis.cost.status}}
@@ -2363,11 +2279,10 @@ CHECK BEFORE YOU ANSWER (one check per claim rule, each with an example from thi
 - Every model at once: a statement about all the compared models cites a comparison.* fact, as in 'Each model rests on {{comparison.runsPerSuite}} across {{comparison.suiteCount}}.' Never stretch one model's token, such as {{model.A.runs}}, or one pair's token over every model.
 - Rule 31, sentence shapes: {{rca.hypothesis.HQ3.1.statement}} stands alone as a sentence of its own, as does every known fact and check; inside your own sentence, a check is cited by its rca.check.<n>.summary token; a label such as {{rca.hypothesis.HQ3.1.label}} is a noun phrase, never a sentence of its own; the prose cites a hypothesis by its .ref token, after your own words for what it is about, and several of one rule once, as a range such as {{rca.hypothesis.WS2.1.ref}}–{{rca.hypothesis.WS2.3.ref}}; a share follows its cause as '{{rca.hypothesis.WS2.1.share}} of the gap'; never put a parenthesis inside another, or a model token inside parentheses; never join two worded facts with 'to'.
 - Rule 39, counts: {{model.A.profile.noToolAnswers}} already prints 'without a tool call', so write it as a noun phrase with none of those words beside it; never add 'with', 'without' or 'that' words after it that repeat it.
-- Rule 38, shares: a share stands beside its own hypothesis's .ref only, as '{{rca.hypothesis.WS2.1.share}} of the gap ({{rca.hypothesis.WS2.1.ref}})'; describe a group of hypotheses by '{{rca.rule.HC2.shareSpan}} ({{rca.hypothesis.HC2.1.ref}}–{{rca.hypothesis.HC2.5.ref}})'; never put a share beside a range or a list, and never write 'led by' a share.
+- Rule 38, shares: a share stands beside its own hypothesis's .ref only, as '{{rca.hypothesis.WS2.1.share}} of the gap ({{rca.hypothesis.WS2.1.ref}})'; describe a group of hypotheses by '{{rca.rule.HC4.shareSpan}} ({{rca.hypothesis.HC4.1.ref}}–{{rca.hypothesis.HC4.4.ref}})'; never put a share beside a range or a list, and never write 'led by' a share.
 - Rule 33, causes: 'Part of the gap may be due to <what it is about, in your own words> ({{rca.hypothesis.HQ3.1.ref}}).' In the next runs, the run's own rca.run token serves too.
 - Rule 34, certainty: no hypothesis is graded High and no axis is established, so use no certainty word; write probable or not established.
 - Rule 36, statuses: the conclusions cite {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}.
-- Rule 40, what code prints: the conclusions never cite an axis's rca.axis.<axis>.priceNote token; Overseer prints it beside the section, so say in your own words what matters.
 - Rule 41, unavailable figures: {{model.A.band.advanced.score}} has no value and prints 'not available', so never cite it; where leaving the figure out would mislead, say in plain words that it is unavailable and why.
 - Rule 42, next runs in code's order: {{rca.run.1.summary}} comes first; a check may come before it, since the first run is a model-selection run.
 - Rule 43, one model's figure: {{rca.atRisk.A.budgetOrDefect}} gives {{model:A}}'s figure only; for another model cite that model's own token, and give one token for several models only when they share its value.

@@ -462,9 +462,10 @@ public static partial class BenchmarkReportPackPrompt
 
         Line(sb, "FACTS (write {{key}} to place a figure; key = value as printed)");
         Line(sb, "Difficulty bands are assessed difficulty; the authored bands are bands.authored.*.");
-        // Root-cause facts are for the Root Cause Analysis alone.
+        // Root-cause facts are for the Root Cause Analysis alone, less the facts kept from its writer.
+        var rootCauseHidden = global::Overseer.Services.Benchmarking.RootCause.RootCauseFacts.RootCauseWriterHidden(sheet.RootCause);
         var facts = sheet.Facts
-            .Where(f => audience == BenchmarkReportAudience.RootCauseAnalysis || !BenchmarkReportFacts.WriterHidden(f.Key))
+            .Where(f => audience == BenchmarkReportAudience.RootCauseAnalysis ? !rootCauseHidden(f.Key) : !BenchmarkReportFacts.WriterHidden(f.Key))
             .OrderBy(f => f.Key, StringComparer.Ordinal)
             .ToList();
         if (facts.Count == 0)

@@ -233,6 +233,27 @@ public class BenchmarkRunReportDocumentServiceTests
     }
 
     [Fact]
+    public async Task TheList_FillsTheRunsMissingSynthesisFingerprint_AndReachesTheSameVerdictFromIt()
+    {
+        await using var h = await Harness.CreateAsync();
+        await h.Service.ScheduleIfDue(h.RunId);
+        Assert.Null((await h.RunAsync()).SynthesisFingerprint);
+
+        await using var db = new ApplicationDbContext(h.Options);
+        var render = new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance);
+        var listed = await render.ListAsync(null, h.RunId, null, Ct);
+
+        Assert.Equal(2, listed.Count);
+        Assert.Equal(
+            BenchmarkReportRenderService.SynthesisSha256(Harness.AssessmentJson, null),
+            (await h.RunAsync()).SynthesisFingerprint);
+
+        // Listing again reads the filled column and reaches the same verdicts as the hash did.
+        var again = await render.ListAsync(null, h.RunId, null, Ct);
+        Assert.Equal(listed.Select(d => (d.Id, d.RunChangedSinceGeneration)), again.Select(d => (d.Id, d.RunChangedSinceGeneration)));
+    }
+
+    [Fact]
     public async Task ScheduledJob_OfAnAcknowledgedLaunch_MarksItsDocumentsAcknowledged()
     {
         await using var h = await Harness.CreateAsync(withWriter: false);

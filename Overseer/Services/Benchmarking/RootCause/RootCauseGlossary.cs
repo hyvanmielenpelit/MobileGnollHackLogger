@@ -43,6 +43,7 @@ public static class RootCauseGlossary
     public const string LeaveOneOut = "leaveOneOut";
     public const string Confound = "confound";
     public const string Locus = "locus";
+    public const string UnexpectedResult = "unexpectedResult";
     public const string PointsAtRisk = "pointsAtRisk";
     public const string IsolatedMiss = "isolatedMiss";
     public const string MedianAndMean = "medianAndMean";
@@ -143,6 +144,9 @@ public static class RootCauseGlossary
         new RootCauseTerm(Locus, "Locus",
             "Where a hypothesis places the cause: the model itself; the Overseer chat prompt or its tools (chat); the grading (harness); a question or its rubric (suite); the data a tool reads (corpus); or the serving (provider).",
             "where a cause lies: model, chat, grading, questions, data or provider"),
+        new RootCauseTerm(UnexpectedResult, "Unexpected result",
+            "A result that goes against what the models' price tiers or release dates predict.",
+            "a result against what price tiers or release dates predict"),
         new RootCauseTerm(PointsAtRisk, "Points at risk",
             "The index points a model lost on its answers below its own median answer, each answer counted once under its first signal, such as no tool call, a defect or a critical error. "
             + "They are an upper bound on what each signal costs, not an estimate of its effect.",

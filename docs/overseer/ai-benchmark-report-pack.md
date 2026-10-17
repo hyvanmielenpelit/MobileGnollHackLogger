@@ -322,12 +322,12 @@ the retired audiences (§ 17); their numbers stay unused.
 | # | Rule |
 |---|---|
 | 1 | The output is JSON of the expected shape, and every required slot is present and non-empty |
-| 2 | Every `{{…}}` token exists: a fact key, `{{subject}}` or a known peer letter |
+| 2 | Every `{{…}}` token exists: a fact key, `{{subject}}` or a known peer letter. In a Root Cause Analysis a fact kept from its writer (`RootCauseFacts.RootCauseWriterHidden`: a price effect's `rca.hypothesis.<id>.<n>.*`, and `rca.rule.<id>.*` of a rule whose hypotheses are all price effects, § 17) counts as unknown, and the message adds that it is a price-card difference Overseer prints in one line |
 | 3 | No bare digits in prose after masking tokens, question references, known names and the fixed phrase *95% interval* |
 | 4 | Every question number exists, and the question topics cover every question where the document requires them (the Root Cause Analysis: every question it cites) |
 | 5 | *Retired* (evidence for the retired audiences' recommendations) |
 | 6 | A strength may not cite a weakness row and a weakness may not cite a strength row; a finding citing only Conflicting rows must say the graders disagree |
-| 7 | Length limits: headline at most 35 words; a question topic at most 12 words; in the Executive Summary at most 3 strengths and 3 weaknesses, each at most 30 words, *What this means for use as a game assistant* (`meaning`) at most 90 words, *How reliable this result is* (`confidence`) at most 60 words and the *How it compares* paragraph (`comparison`) at most 70 words; the Root Cause Analysis caps are in § 17. A cap counts the writer's raw text, in which every `{{token}}` is one word however long its value; the prompt of every audience says so |
+| 7 | Length limits: headline at most 35 words; a question topic at most 12 words; in the Executive Summary at most 3 strengths and 3 weaknesses, each at most 30 words, *What this means for use as a game assistant* (`meaning`) at most 90 words, *How reliable this result is* (`confidence`) at most 60 words and the *How it compares* paragraph (`comparison`) at most 70 words; the Root Cause Analysis caps are in § 17. The Root Cause Analysis' optional `unexpectedResults` slot is checked like a required slot when it holds text; on a sheet with no unexpected result, text in it is a rule-7 issue (*"There are no unexpected results; leave the slot empty."*) and is removed. A cap counts the writer's raw text, in which every `{{token}}` is one word however long its value; the prompt of every audience says so |
 | 8 | No headings, tables or HTML inside any text |
 | 9 | No run of 8 or more words shared with any question, rubric, answer or grader-evidence text, the claim verifier's claims and rationales, or a comparison's *weakest answers* grader comments (`ModelNotes`, § 15) |
 | 10 | No peer names, model ids or providers in prose |
@@ -351,20 +351,23 @@ the retired audiences (§ 17); their numbers stay unused.
 | 28 | **C7**, Provider Issue Report only: a model or serving term (`ChatModelServingTerms`) needs a provider-side attribution token, except in `affectedModel` and `sampleRequestIds`; and `ruledOut` cites a token of every `events.<n>` (`ChatProviderReportRule`). An error; the second half cannot drop text and marks the document *Completed with warnings* |
 | 29 | **C8**, *readable text*, chat consistency only: the headline and every paragraph hold no run of twelve or more hex digits, no JSON (`{"`), no `OverseerEventKinds` identifier (`CandidateSystemPromptSha256`, `CorpusIndexFingerprintsJson`…) as a whole word, and no token of a fact kept from the writer (`BenchmarkChatConsistencyReportFacts.WriterHidden`: `analysis.inputSha256` and an older sheet's raw `events.<n>.from` / `.to`; and the sheet's own `WriterHiddenKeys`, § 16) (`ChatReadableTextRule`). One note names every offending token. An error: the paragraph is dropped |
 | 30 | **C9**, *repetition*, chat consistency only: read with every fact token replaced by its display value, the headline and every paragraph hold no *A and A, respectively* whose two operands are the same words, ignoring case, and no full stop followed by a lower-case *and* inside one sentence — a sentence-valued fact spliced into a sentence — outside abbreviations such as *e.g.*, *i.e.*, *etc.*, *vs.*, *cf.*, *approx.*, *incl.* and *resp.* (`ChatRepetitionRule`). One note per kind, quoting the offending text. A **warning**: it asks for the repair turn and marks the document *Completed with warnings*, but never drops a paragraph |
-| 31 | *Token shape* (`ComparisonTokenShapeRule`), comparison scope and every Root Cause Analysis (both scopes), not a per-model Executive Summary: read with every token resolved to its display (a model token to *Model X*), the text holds **(a)** no full stop followed by a lower-case letter, outside abbreviations such as *e.g.* and *vs.* — a sentence-valued fact continued after its full stop; **(b)** no sentence-valued fact (a display that starts with a capital and ends with a full stop, every `notable.<n>.summary` among them) placed anywhere but at the start of a sentence, a paragraph or a list item, or just before `)`; **(c)** no clause-valued fact (*"Model A took 1.49 times as long as Model F …"*) right after a model or its own verb (*"Model A took {{…}}"*); and **(d)** no run of two or more *N of M* counts of which at least one is bare (its display is exactly its `BenchmarkReportFormat.CountHead`, as a display stored before format 23 is; a run of counts that each say what they count reads, format 23), two or more `rca.axis.<axis>.status` tokens, or two or more hypothesis grade tokens, separated only by commas, semicolons or *and* (in or out of parentheses), which leaves the reader guessing what each one is; and, in a Root Cause Analysis only, **(e)** no sentence-shaped fact (`RootCauseClaimSupport.IsSentenceShaped`: a hypothesis's statement, *for*, *against*, *refuted if* and grade reasons, a known fact, a check, a question's text and signals, a profile's joined flags, a notable finding's summary, an axis's price note) after words of the writer's own sentence — it stands alone, or after a colon or a list marker; a label, a single flag and a check's `.summary` are noun phrases and exempt, and the fix for `{{rca.check.<n>}}` says to cite `{{rca.check.<n>.summary}}` inside a sentence instead. **(a)** names the token whose full stop the writer continued (the last token ending before it). A token display that starts a sentence is sentence-cased (`BenchmarkReportSentenceCase.UpperFirst`) before the check, as the renderer prints it, so (a) fires only on the writer's own lower-case word, never on a fact such as *"none recorded."*; the abbreviations come from `BenchmarkReportSentenceCase.Abbreviations`. One note per token occurrence: where (a) fires on a token (b) or (e) also flags, only (a) is recorded, with (b)'s fix appended. Excerpts widen to the nearest whitespace, so they never cut a word in half. In a Root Cause Analysis a parenthesis inside another is flagged too; its message names the token whose display brought the inner parenthesis (*"{{pair.A.C.configDifferences}} prints its own parentheses: write it outside parentheses, as a clause of its own."*), and adds *"never put a model token inside parentheses"* only when a model token sits inside the outer one. A **warning**: it asks for the repair turn and keeps the text |
+| 31 | *Token shape* (`ComparisonTokenShapeRule`), comparison scope and every Root Cause Analysis (both scopes), not a per-model Executive Summary: read with every token resolved to its display (a model token to *Model X*), the text holds **(a)** no full stop followed by a lower-case letter, outside abbreviations such as *e.g.* and *vs.* — a sentence-valued fact continued after its full stop; **(b)** no sentence-valued fact (a display that starts with a capital and ends with a full stop, every `notable.<n>.summary` among them) placed anywhere but at the start of a sentence, a paragraph or a list item, or just before `)`; **(c)** no clause-valued fact (*"Model A took 1.49 times as long as Model F …"*) right after a model or its own verb (*"Model A took {{…}}"*); and **(d)** no run of two or more *N of M* counts of which at least one is bare (its display is exactly its `BenchmarkReportFormat.CountHead`, as a display stored before format 23 is; a run of counts that each say what they count reads, format 23), two or more `rca.axis.<axis>.status` tokens, or two or more hypothesis grade tokens, separated only by commas, semicolons or *and* (in or out of parentheses), which leaves the reader guessing what each one is; and, in a Root Cause Analysis only, **(e)** no sentence-shaped fact (`RootCauseClaimSupport.IsSentenceShaped`: a hypothesis's statement, *for*, *against*, *refuted if* and grade reasons, a known fact, a check, a question's text and signals, a profile's joined flags, an unexpected result's summary, a notable finding's summary; an axis's price note up to format 25) after words of the writer's own sentence — it stands alone, or after a colon or a list marker; a label, a single flag, a check's `.summary` and an unexpected result's `rca.anomaly.<n>.ref` are noun phrases and exempt, and the fix for `{{rca.check.<n>}}` says to cite `{{rca.check.<n>.summary}}` inside a sentence instead. **(a)** names the token whose full stop the writer continued (the last token ending before it). A token display that starts a sentence is sentence-cased (`BenchmarkReportSentenceCase.UpperFirst`) before the check, as the renderer prints it, so (a) fires only on the writer's own lower-case word, never on a fact such as *"none recorded."*; the abbreviations come from `BenchmarkReportSentenceCase.Abbreviations`. One note per token occurrence: where (a) fires on a token (b) or (e) also flags, only (a) is recorded, with (b)'s fix appended. Excerpts widen to the nearest whitespace, so they never cut a word in half. In a Root Cause Analysis a parenthesis inside another is flagged too; its message names the token whose display brought the inner parenthesis (*"{{pair.A.C.configDifferences}} prints its own parentheses: write it outside parentheses, as a clause of its own."*), and adds *"never put a model token inside parentheses"* only when a model token sits inside the outer one. A **warning**: it asks for the repair turn and keeps the text |
 | 32–36 | Root Cause Analysis only: the claim discipline of § 17 (`RootCauseEvidenceCausalRule`, `RootCauseCausalClaimRule`, `RootCauseCertaintyRule`, `RootCauseWriterHypothesisRule`, `RootCauseAxisStatusRule`; 36 is a warning) |
 | 37 | *Bare model letter* (`BareModelLetterRule`), comparison scope only: read with every token stripped, the prose holds no *Model X* or *Models X and Y* (`\bModels? [A-Z]{1,2}\b`, case-sensitive) — a model is named only through its `{{model:X}}` token, in every slot and list, the writer's hypotheses included. A **warning**: it asks for the repair turn and keeps the text; a named copy renders a bare letter that resolves to a peer as the model's name |
 | 38 | *Share beside another hypothesis* (`RootCauseShareBesideRefRule`), Root Cause Analysis only: a `{{rca.hypothesis.<id>.<n>.share}}` token whose nearest following parenthesis, at most six words on in the same sentence and read on the writer's own text, cites any hypothesis reference other than its own `.ref` alone — a range or a list (*"45% of the gap (HQ1.1–HQ1.3)"*). The message names the share and the references and points to `{{rca.rule.<id>.shareSpan}}` where the sheet has it. A **warning**: it asks for the repair turn and keeps the text |
 | 39 | *Words repeated beside a count* (`CountRepetitionRule`), every scope: a count token whose qualifier (`BenchmarkReportFormat.CountQualifier`) shares a content word with the writer's own words within five words before it or four after it, in the same sentence. A content word has four letters or more, is no word of `CountRepetitionStopWords` (*with, that, this, from, each, their, were, which*) and no counted noun (*answers, questions, runs, attempts, calls, checks*), and two words match when the first five letters of one begin the other (*tools*, *tool*). The message quotes what the token prints and the repeated words. A **warning**: it asks for the repair turn and keeps the text |
-| 40 | *Repeats what code prints* (`RootCauseCodePrintedRule`), Root Cause Analysis only: the conclusions cite an axis's `{{rca.axis.<axis>.priceNote}}`, which Overseer prints beside them (the conclusions table), so the token printed it twice. A **warning**: it asks for the repair turn and keeps the text. Before format 25 it also flagged an answer slot citing its question's `{{rca.question.<n>.signals}}`; there are no answer slots now |
+| 40 | *Repeats what code prints* (`RootCauseCodePrintedRule`), Root Cause Analysis only: the `unexpectedResults` slot cites a fact of an unexpected result other than its reference — `rca.anomaly.<n>.summary`, `.prior`, `.confounds`, `.graders`, `.settledBy` or `.tested` — which Overseer prints in the *Unexpected results* section; the writer cites a result by `{{rca.anomaly.<n>.ref}}` alone and says what the grader comments show. A **warning**: it asks for the repair turn and keeps the text. Up to format 25 it flagged the conclusions citing an axis's `{{rca.axis.<axis>.priceNote}}`, and before format 25 an answer slot citing its question's `{{rca.question.<n>.signals}}`; neither fact nor slot exists now |
 | 41 | *Unavailable figure cited* (`UnavailableTokenRule`), every Root Cause Analysis and every comparison-wide document: a token of a fact the sheet holds without a value, which prints *not available* (*"… are not available and not available"*). The writer says in plain words that a figure is unavailable and why, and never cites its token. A **warning**: it asks for the repair turn and keeps the text |
 | 42 | *Next runs out of order* (`RootCauseNextRunsOrderRule`), Root Cause Analysis only, on the `nextRuns` slot: read in order of first appearance, the `rca.run.<n>.*` tokens ascend, the first is run 1 where the sheet has one, and no `rca.check.<n>.*` token comes before the first run unless run 1's `rca.run.1.purpose` is model selection. The message names code's order (*"Write the runs in code's order: {{rca.run.1.summary}} first, then {{rca.run.2.summary}}; a check comes after them."*). A **warning**: it asks for the repair turn and keeps the text |
 | 43 | *Figure of one model given for another* (`BorrowedModelFigureRule`), comparison-wide Root Cause Analysis only: a model's figure token — `model.<X>.*`, `rca.atRisk.<X>.*` or `rca.within.<X>.*` — followed in its sentence, before the next fact token, by *for* and a list of model tokens (*"for {{model:E}}, {{model:F}} and {{model:G}}"*), where a listed model other than X has no such fact, has it without a value, or has another display. A list whose models share the display passes. The message gives each differing model's own token and display. A **warning**: it asks for the repair turn and keeps the text |
+| 44 | *A count written in words* (`NumberWordCountRule`), Root Cause Analysis only, in every prose string: read with the tokens stripped, a number word (*zero* to *nineteen*, the tens with their hyphenated units such as *twenty-one*, *hundred*), *all* or *every*, then *of* or *of the* and a second number word, as whole words ignoring case (*"eight of the nine models"*, *"all of the nine"*). A count across a total comes from a fact token; a plain count with no total (*"three pairs"*) passes. The message quotes each count. A **warning**: it asks for the repair turn and keeps the text |
+| 45 | *Nulls restated in a hypotheses paragraph* (`RootCauseNullRestatedRule`), Root Cause Analysis only, in `hypothesesIntelligence`, `hypothesesSpeed` and `hypothesesCost`: a sentence, read with its tokens blanked, holding *null*, *real difference* or *may be chance* (`NullRestatedPhrases`, whole words with their plurals, ignoring case), which restates the nulls Overseer prints beside the paragraph. One note per sentence, quoting the phrases. A **warning**: it asks for the repair turn and keeps the text |
 
 Rules 2, 3, 8, 9, 10, 11, 12, 16, 17 and 19 apply to every prose string: the headline, each paragraph of
 each slot, and the text of every item and topic. Rule 13 applies to each paragraph of the Executive
-Summary's `confidence` slot, rule 14 to the headline, rules 16 and 19 sentence by sentence, and rule 31
-to each prose string of a comparison-scope document or a Root Cause Analysis.
+Summary's `confidence` slot, rule 14 to the headline, rules 16 and 19 sentence by sentence, rule 31
+to each prose string of a comparison-scope document or a Root Cause Analysis, and rule 44 to each prose
+string of a Root Cause Analysis.
 
 **Readability.** The system prompt of every audience adds: one idea per sentence; sentences of at most
 about 25 words; active voice; a count from the facts rather than *many* or *several*; the category of a
@@ -757,6 +760,29 @@ The child table **`BenchmarkReportDocumentRuns (DocumentId, RunId)`** stores eac
 and flag *Run changed since this document was written* (`runChangedSinceGeneration`) when a run was
 re-scored or re-run afterwards.
 
+**The synthesis fingerprint is a column of the run** (2026-10-17, migration
+`AddBenchmarkRunSynthesisFingerprint`): `BenchmarkRuns.SynthesisFingerprint`, `nvarchar(16)`, nullable,
+holds that same hash (`BenchmarkReportRenderService.SynthesisSha256`), so neither the lists nor a job reads
+and hashes every run's whole synthesis JSON. `BenchmarkService` sets it right after each assignment to
+`AssessmentJson` or `CoAssessorSynthesisJson` (the final synthesis, parsed or not, and the co-assessor's),
+the only places either column is written; the job's fingerprint at generation reads the column and hashes
+the JSON only when it is null. A row written before the column existed stays null until a list needs it:
+`CurrentFingerprintsAsync` selects the column, reads the JSON of the null rows in one second query, hashes
+each, and writes it back with one `ExecuteUpdateAsync` per run filtered on a still-null fingerprint, so no
+entity is tracked and no `SaveChangesAsync` runs on the read path; two concurrent backfills write the same
+value. (A provider that cannot translate a set-based update, the in-memory test provider, writes it through
+the change tracker.)
+
+**The lists read each stored fact sheet once.** `BenchmarkReportDocumentFactsCache`, a singleton over the
+global `IMemoryCache` (one size unit per entry, a 30-minute sliding expiry), keeps what a list reads from a
+document's `FactsJson` — the peers and their letters, the covered models' labels, covers-all-entries —
+by document id. `ListAsync` no longer selects `FactsJson`: it takes each row's facts from the cache, reads
+the misses' `FactsJson` in one query and parses each once, and logs *"Listed N report documents, H fact
+sheets from the cache, in T ms."* at `Information`. The preview's other covered sets read the same cache,
+with one query for the misses. `FactsJson` is written once, with the row, and never updated in place, so
+an entry stays right while its document exists; the delete endpoints remove a deleted document's entry,
+and an entry whose row is gone is never read, since the lists look entries up by the rows they found.
+
 Each **peer** run gets a row too, with `IsPeer = true` and the same fingerprint fields. A run is never
 both subject and peer of one document; if it were, the subject row would win. List responses compare
 the peer rows the same way and flag *Comparison changed* (`peersChangedSinceGeneration`) when a peer run
@@ -1045,6 +1071,29 @@ answer slots and the prompt THE QUESTIONS and the `rca.question.*` facts, and *W
 findings code ranks, the grader-family sentence among them (§ 17). The writer prompt changes, and so its
 SHA-256. Rule 40 keeps only its price-note half. A document stored earlier renders without its question
 boxes; its stored answers are not shown.
+
+**Root Cause Analysis cost insights, unexpected results and a shorter report (2026-10-17)** moves
+comparison-wide documents to **format 26** (`ComparisonReportFormatVersion` 25 → 26) and per-model
+documents to **format 22** (`ReportFormatVersion` 21 → 22), and `RootCauseEngine.Version` 9 → 10; chat
+consistency documents stay at 6, and the PDF layout (11), the Word layout (3) and
+`BenchmarkReportChartLayout.CurrentVersion` do not move. The writer prompt of the Root Cause Analysis
+changes, and so its SHA-256. The engine splits a cost pair whose two sides are not billed for the same
+token kinds into input and output, with the price card and caching apart from token volume, and gives
+every decomposed cost pair its cost ratio at equal prices (`rca.cost.<F>.<S>.volumeRatio`); it adds the
+same model at adjacent thinking levels and the pairs of unexpected results to the analyzed pairs, stores
+the unexpected results (U1, U2, …), states HQ5 once for a comparison, and gives each profile where the
+model gained points, leaving a weakness every model shares out of where it lost them; the price note is
+gone (§ 17). A price-card difference is left out of the hypotheses tables, figure R4 and the writer's
+facts, and named in one line. The Root Cause Analysis gains an *Unexpected results* section; *What we
+found* adds the unexpected results and token volume, states value for money without a cost multiple and
+the thinking levels in one bullet; *At a glance* prints the figures alone; *Why each model scored as it
+did* is one block per model; each axis' nulls are one sentence; the Conclusions state a reason every axis
+shares once; and Appendices A, B, C, F and G and the grader-findings table print what they share once
+(§ 17). The writer gets an optional `unexpectedResults` slot, and rules 44 and 45 are added as warnings
+(§ 3). The Executive Summaries of both scopes are unchanged apart from their footers. A document stored earlier
+keeps its stored result: written under engine 9 or earlier, it has no unexpected results (the section is
+left out), no gained-points entry, no `Grouped` or `VolumeRatio` on its cost pairs (the *At equal prices*
+cells read *—*) and its five-component cost split; its price note is no longer printed.
 
 **Comparison format version 14** (2026-10-14) moves comparison-wide documents only
 (`ComparisonReportFormatVersion` 13 → 14); per-model documents stay at 12 and chat consistency documents
@@ -1899,7 +1948,13 @@ The request of the preview, the start and the layout preview is
 
 - `POST /api/admin/benchmark/report-packs/preview`: The fact sheets and prompts without a model call.
   Model scope: the first subject, its peers, the estimated tokens, cost and `contextWindowShare` per
-  document and subject, the same-provider warning and any refusal. Every estimate is a **range**: its
+  document and subject, the same-provider warning and any refusal. The preview estimates **every document
+  its scope offers** (`ScopeAudiences`), whatever `audiences` asks for, each estimate with
+  `exceedsContextWindow` (its `contextWindowShare` above `ContextWindowRefusalShare`, 0.9; false when the
+  window is unknown), while `estimatedTotalCostUsd` and `estimatedTotalCostWithRepairUsd` sum only the
+  requested documents; so a check change needs no new preview, and the client refuses a checked document
+  too large for the writer itself (§ 12). The preview therefore never answers the context-window refusal;
+  the start still does, over the requested documents. Every estimate is a **range**: its
   low end (`estimatedCostUsd`, `estimatedTotalCostUsd`) counts the first call only, its high end
   (`estimatedCostWithRepairUsd`, `estimatedTotalCostWithRepairUsd`,
   `BenchmarkReportPackService.EstimateCostWithRepair`) adds one repair turn per document, which resends
@@ -1917,8 +1972,30 @@ The request of the preview, the start and the layout preview is
   `coversAllEntries`, `coveredSetKey`, `coveredModels`, `subjectDocuments` (each subject's or covered
   model's per-model documents) and `writerContextWindowTokens`. A refusal of comparison scope —
   a covered entry outside the comparison or Excluded, fewer than 2 or more than 12 covered models, a
-  writer that is a covered model, a prompt above 90 % of the writer's context window — is answered 200
-  in `refusal`.
+  writer that is a covered model — is answered 200 in `refusal`.
+
+  **The preparation cache.** The comparison, the paired tests, the fact sheet and the prompts are
+  computed once per preparation and kept in `BenchmarkReportPackPreviewCache`, a singleton over the global
+  `IMemoryCache` (one size unit per entry, a 15-minute absolute expiry), so a writer change answers
+  quickly. An entry (`BenchmarkReportPackPreviewEntry`) holds what the preview and Start's
+  pre-flight read — the subject, peers, covered models, covered set, counts and each offered document's
+  prompt length in characters — never the preparation itself; model scope keeps one entry per subject.
+  The key (`BenchmarkReportPackPreviewCache.KeyAsync`) is a SHA-256 over: the request's scope, sources in
+  order, pricing basis, covered models and reference (never its writer, `audiences`,
+  `acknowledgeSameProvider` or `replaceDocumentIds`), and today's UTC date on the *Current* basis; the
+  model-scope subject; `AnswerExcerptChars`, the battery detail and prompt limits, the
+  `Benchmark:ReportPack` and `RecommendedModels` settings; both report format versions and
+  `RootCauseEngine.Version`; the numbered comparison's id; the latest baseline model setting; each group's
+  name and members; each battery run's state, members and latest analysis; for each source run its
+  scoring, `SynthesisFingerprint`, status, re-run, re-assessment, repair and provider-ledger figures, and
+  its answers' count, quality sum and latest grading and re-run times; and the enabled Benchmark-role
+  configurations with the configurations the runs name, with their pricing. Anything else can make an
+  entry up to 15 minutes stale. In comparison scope, on a miss the comparison is computed once and handed to the paired tests
+  (a `BenchmarkPairedTestsService.CompareAsync` overload that takes it, used for both families, whose
+  result is not put in the wizard's paired-test cache), so it is no longer computed three times. Start's
+  pre-flight reads the cache too; the job always prepares fresh. Each preview logs one `Information`
+  line, *"Report Pack <scope> preview: preparation cache hit|miss|not used; key … ms, compare … ms,
+  preparation … ms, lists … ms, estimate … ms."*
 - `POST /api/admin/benchmark/report-packs`: Start a job. Returns 202 `{ jobId }`. The job's view carries
   `scope` and `comparisonId`, and each document row its `subjectKey` and `subjectLabel` (a model's label,
   or *Comparison #12*, with *· 2 of 5 models* for a subset).
@@ -2467,8 +2544,12 @@ its report."*
     rows start checked, written ones unchecked. The other sets' rows have no checkbox. Under a written
     Root Cause Analysis row sit its recommended runs and checks (`root-cause-runs`, each run with **Set
     up this run**) and a **Redraw charts** action (§ 17). The list follows
-    the preview, asked 300 ms after the last change of scope, models, checks or writer, an answer for an
-    older choice dropped. While it is awaited, the section is busy and shows a small spinner
+    the preview, asked 300 ms after the last change of scope, models, reference or writer, an answer for an
+    older choice dropped; a preview always asks for every document type, so checking or unchecking a row
+    sends no request. The flags and chart counts come from the documents list
+    (`GET report-documents?comparisonId=`, § 9), fetched as soon as the context names the comparison, in
+    parallel with the first preview (after the preview, when only the preview supplies the number), and
+    merged into the rows in either arrival order. While it is awaited, the section is busy and shows a small spinner
     (`app-loading-indicator`) with *Looking up the documents already written…*, which appears only if
     the lookup takes longer than 0.3 s.
   - **Charts in PDF and Word**: the chart picker with its per-figure width select (no visible caption;
@@ -2487,7 +2568,11 @@ its report."*
     checked rows as a range, *first call only, to one repair turn per document* (§ 9); while it is
     computed it reads *Estimating…* beside a small spinner, shown at once; with an amber
     warning when a checked document's prompt would fill 70 % or more of the writer's context window
-    (refused from 90 %, § 15).
+    (refused from 90 %, § 15). A check change recomputes the total, the warning and the context-window
+    refusal from the checked rows' estimates, with no request: a checked estimate with
+    `exceedsContextWindow` shows the server's refusal wording (`reportPackContextWindowRefusal`, word for
+    word `ContextWindowRefusal`) in `.rp-refusal` and makes Generate unavailable, exactly as a refusal from
+    the server does; an unchecked one refuses nothing.
   - **Preview layout** and **Generate**, two gold `.btn-gh` buttons in one action row at the bottom of
     the sidebar, Generate last. At the default sidebar width they stack, Preview layout above Generate,
     both full width; from a sidebar about 34 rem wide they sit side by side. The keep-open note is in
@@ -3396,8 +3481,10 @@ reference family names the reference instead of assuming model A.
   that is not one of the covered, non-Excluded entries.
 - **The writer's context window.** Each estimate carries `contextWindowShare`, the estimated input
   tokens over the writer configuration's context window from the model catalog. Step 3 warns in amber
-  from **70 %**; the preview reports, and the start refuses with **400**, a prompt above **90 %**
-  (`ContextWindowRefusalShare`), in both scopes.
+  from **70 %**; above **90 %** (`ContextWindowRefusalShare`) the estimate carries
+  `exceedsContextWindow`, step 3 refuses while that document is checked, and the start refuses it with
+  **400**, in both scopes. The preview estimates every offered document and leaves the refusal to the
+  client, which alone knows which rows are checked (§§ 9, 12).
 - **Already written.** A requested document already written for this covered set (comparison scope) or
   subject (model scope) and not named in `replaceDocumentIds` — **409**; an id in `replaceDocumentIds`
   that this job does not write again — **400**.
@@ -3421,8 +3508,8 @@ behind a confirmation.
 
 ### The rendered documents
 
-`ReportFormatVersion` for comparison scope is **20** (`ComparisonReportFormatVersion`); per-model
-documents are at 15 (§ 7). Both comparison document types open with the document type as a bold kicker
+`ReportFormatVersion` for comparison scope is **26** (`ComparisonReportFormatVersion`); per-model
+documents are at 22 (§ 7). Both comparison document types open with the document type as a bold kicker
 (*EXECUTIVE SUMMARY*, *ROOT CAUSE ANALYSIS*), then the comparison's name as the H1
 (`BenchmarkPdfDocumentInfo.ComparisonDocumentHeading`: *Comparison #12 — Spring model sweep*), then a
 *Comparison:* line with only what the name does not say (*5 models · computed 2026-09-21*); the stored
@@ -3907,7 +3994,7 @@ chat consistency:
 
 | Origin | Subject | What it is set against |
 |---|---|---|
-| Comparison Report Pack (`ComparisonRootCauseAnalysis`) | The covered models, as equals | Each other: the pair rules, the reference and the first and last model on each axis |
+| Comparison Report Pack (`ComparisonRootCauseAnalysis`) | The covered models, as equals | Each other: the pair rules, the reference, the first and last model on each axis, one model at adjacent thinking levels and the pairs of unexpected results |
 | Per-model Report Pack | One entry of a comparison | Its peers, the comparison's other non-excluded entries |
 | Run completion (`run:<id>`) | One run | Its **controls**: earlier runs of other models on the same exam |
 | Battery completion (`battery:<id>`) | One battery run | Its controls: earlier battery runs of other models on the same battery revision |
@@ -3927,7 +4014,13 @@ The facts are computed for every comparison and model-scope sheet, so a later Ro
 stored subject reads the same sheet; the Executive Summary's prompt never sees them
 (`RootCauseFacts.WriterHidden`: every `rca.*` fact, a per-model sheet's `profile.*`, the
 `pair.<L>.<M>.dimension.*` and `.configDifferences` facts, and the evidence facts below, bare or under a
-`model.<L>.` prefix).
+`model.<L>.` prefix). The Root Cause Analysis writer, in turn, never sees a price effect's facts
+(`RootCauseFacts.RootCauseWriterHidden(result)`, engine version 10): every
+`rca.hypothesis.<id>.<n>.*` of a hypothesis marked `PriceEffect`, and `rca.rule.<id>.*` of a rule whose
+hypotheses are all price effects. They stay on the sheet for the rendered blocks; the prompt counts them on
+their axis instead of listing them, leaves them out of the runs, checks, configuration differences, known
+facts' *rests on* lists, CLAIM SUPPORT and CHECK examples, and the validator reads their tokens as unknown
+(rule 2), in the Root Cause Analysis only.
 
 ### Principles
 
@@ -3994,10 +4087,12 @@ measurement. Its answers carry `ReasoningReported = false`: `tokens.reasoningPer
 *Unavailable* (*"This provider counts thinking inside its output tokens and does not report it
 separately."*), and `cost.component.output.perQuestion` and `tokens.outputPerQuestion` end *(thinking
 included)*. The cost rows and the chart's R3 segments show one *output, thinking included* component
-(`RootCauseSegments.OutputWithThinking`). The pair decompositions keep their five components for the
-rules; a written cost pair in which either side does not report merges output and reasoning into one row
-whose effects are the sums, so it still sums exactly (`RootCauseContext.WrittenCostPair`). HS3 is not
-established for such a pair and says why; HC3 does not fire.
+(`RootCauseSegments.OutputWithThinking`). A cost pair of one side that reports reasoning and one that
+does not is split into input and output from engine version 10 (*Decompositions* below). A pair split by
+component in which neither side reports keeps its five components for the rules, and its written form
+merges output and reasoning into one row whose effects are the sums, so it still sums exactly
+(`RootCauseContext.WrittenCostPair`; a grouped pair is written as it is). HS3 is not established for such
+a pair and says why; HC3 does not fire.
 
 **Grader-family gaps** come from the panel diagnostics, unchanged (`BenchmarkPanelDiagnostics.BuildFamilyGaps`,
 copied by `RootCauseEvidence.FamilyGaps`): per provider pair, the quality gap under member A, under member
@@ -4029,6 +4124,16 @@ can be refuted on a battery where a run-level comparison would leave it standing
 plus the leader and the last model on each axis — and within one model by group (difficulty band, or
 suite on a battery), the overall model on one side and the group on the other:
 
+**Pair coverage** (`RootCauseContext.BuildPairs`, engine version 10). After the reference pairs and the
+axis extremes, a comparison adds **the same model at adjacent thinking levels** — for each model id at two
+or more levels, each adjacent pair in thinking order — so HQ8 can fire for siblings that are neither the
+reference nor an extreme, and then **the pairs of the unexpected results** not yet present, in their
+order, at most `RootCauseEngine.MaxAnomalyPairs` (6) (*Unexpected results* below; they are found before the
+pairs are built). An added pair has a paired test only where the all-pairs family exists (3 to
+`BenchmarkComparisonReportFacts.AllPairsMaxEntries`, 6, models); otherwise its rules rest on the bootstrap
+intervals, as for any untested pair. The reference and extreme pairs keep their hypothesis numbers except
+where the per-group and per-axis caps now keep another set.
+
 **Only an established difference is decomposed** (engine version 2). A speed or cost difference between
 two models is split into components only when it is established: its family's paired test, or, where no
 family tests the pair, its bootstrap interval excluding zero (`RootCauseContext.DifferenceEstablished`).
@@ -4041,7 +4146,32 @@ difference not established*, and the HS and HC rules do not fire on it.
   tokens* (with the reasoning share) and *decode rate*. Facts `rca.speed.<T>.<T>.<component>.share` and
   `.interval`, and `.total`.
 - **Cost.** `cost = Σ_k tokens_k × price_k`. LMDI splits the difference into a *volume* and a *price*
-  effect per component. Facts `rca.cost.<T>.<T>.<component>.<volume|price>.share`.
+  effect per component. Facts `rca.cost.<T>.<T>.<component>.<volume|price>.share`. From engine version 10
+  the split depends on whether the pair is **comparable** (`RootCauseDecomposition.Comparable`): over the
+  shared questions, each of the five components has positive mean tokens on both sides or on neither, and
+  both sides report reasoning apart from output or neither does. A comparable pair keeps the five
+  components (`Grouped` false). Any other pair — typically two providers that bill different token kinds:
+  one with no cache writes, the other with no uncached input, one folding thinking into output — is
+  **grouped** (`RootCausePairDecomposition.Grouped`): **input** (uncached input, cache reads and cache
+  writes) and **output** (output and reasoning), in tokens and in cost, each split into token volume and
+  price; with both sides' uncached-input list prices known, the input's price effect is split again by a
+  three-factor LMDI (`RootCauseStatistics.Lmdi3`: volume `L·ln(v₁/v₂)`, list price `L·ln(p₁/p₂)`, caching
+  the remainder, so the three sum exactly; a non-positive input falls back to the two-factor split) into
+  the **price card** (`input/price`) and **caching** (`input/caching`, what sets the effective price per
+  input token apart from the list price: the cache discounts and surcharges). The labels read *input,
+  token volume*, *input, price card*, *input, caching*, *output (with reasoning), token volume* and
+  *output (with reasoning), price card*; the all-components rows are `all/volume`, `all/price` and, grouped
+  with both list prices, `all/caching`. So a billing-scheme difference is no longer counted as token volume,
+  which had made claims such as *"costs more mainly from token volume"* between providers artifacts. Every
+  decomposed pair also gets **`VolumeRatio`**, its cost ratio at equal prices, `exp(all/volume ÷
+  L(total₁, total₂))`: an LMDI volume index, not a ratio of token counts, and with the price ratio and (grouped)
+  the caching ratio, formed the same way, it multiplies exactly to `total₁ ÷ total₂`. Facts
+  `rca.cost.<T>.<T>.grouped` (*"split into input and output, because the two models are not billed for the
+  same token kinds"* or *"split by token kind"*), `.volumeRatio` (*"2.4 times"*: one decimal below 10, whole
+  from 10, `RootCauseFacts.RatioDisplay`), and `.input.<volume|price|caching>.share`,
+  `.output.<volume|price>.share`, `.all.caching.share`. The bootstrap intervals, the leave-one-out and
+  across-suites checks cover the grouped components as they cover the others; the within-model cost shares
+  are unchanged.
 - **Intelligence.** The index difference split by the scoring weights into dimension contributions,
   plus `other` (the critical-error cap and difficulty weighting), summing exactly to the difference:
   `rca.quality.<T>.<T>.dimension.<d>.points`. The **at-risk points** of each failure signal — answers
@@ -4050,7 +4180,8 @@ difference not established*, and the HS and HC rules do not fire on it.
   each answer once (`rca.atRisk.<T>.<segment>`). They are labeled *upper bound, not a causal estimate*.
 
 LMDI uses the logarithmic mean `L(a,b) = (a − b) / (ln a − ln b)`, with `L(a,a) = a`; a zero component
-takes the standard limit, its whole difference going to volume. Two models priced on the same card (on
+takes the standard limit, its whole difference going to volume (between two sides that bill different
+components that limit is what the grouped split avoids). Two models priced on the same card (on
 the catalog basis, GPT-6 Luna and Claude 5.5 Haiku have identical cards) have no price effect in any
 component, so their volume share is exactly 100 % in every resample, *100% (100–100%)*: a correct
 reading, not a defect of the zero-component limit. Every share has a 95 % percentile
@@ -4113,17 +4244,24 @@ price cards — catalog pricing, or neither side's prices differing between runs
 (`RootCauseHypothesis.PriceEffect`, the fact `rca.hypothesis.<id>.<n>.priceCard`). It is what the price
 cards show, not a cause the runs found, so it never sets an axis' status. When another candidate of the
 axis is graded Low or higher, that one is the axis' best and sets the status. When none is, the axis
-reads *Not established* and its best hypothesis is the highest-ranked price effect, which the conclusions
-row and the `rca.axis.<axis>.best` fact name. The reason is *"Only price-per-token differences fired on
-this axis; they are known from the price cards, not a cause the runs found."* (`PriceOnlyAxisReason`)
-when price effects alone fired, and *"Known from the price cards: the differences in price per token
-account for the gap, which the price cards show rather than a cause the runs found; every other
-hypothesis on this axis was ruled out."* (`PriceCardsAxisReason`) when the others were all ruled out. A
-price effect keeps its grade, sorts after every other hypothesis of its axis, and prints as *Known from
-the price cards (High)* (`RootCauseGrades.PriceCardWordWithGrade`, also the `.grade` display). It still
-answers question 4 and supports a causal sentence about cost (rule 33), but not a certainty word (rule
-34), and it is exempt from the single-run cap. A stored result without the flag keeps the status it was
-written with.
+reads *Not established* and its best hypothesis is the highest-ranked price effect, which the
+`rca.axis.<axis>.best` fact names; from format 26 the conclusions table prints *—* as that row's best
+hypothesis, since a price-card difference is no mechanism the runs found. The reason is
+*"The runs show no cost mechanism beyond the price cards: every hypothesis that fired on this axis is a
+price-card difference."* (`PriceOnlyAxisReason`) when price effects alone fired, and *"No cost mechanism
+beyond the price cards remains: every other hypothesis on this axis was ruled out."*
+(`PriceCardsAxisReason`) when the others were all ruled out (engine version 10; before, both said that
+price per token accounts for the gap). A price effect keeps its grade, sorts after every other hypothesis
+of its axis, and prints as *Known from the price cards (High)* (`RootCauseGrades.PriceCardWordWithGrade`,
+also the `.grade` display). It still answers question 4 and supports a causal sentence about cost (rule
+33), but not a certainty word (rule 34), and it is exempt from the single-run cap. A stored result without
+the flag keeps the status it was written with.
+
+**Price effects are set aside** (engine version 10, format 26). What the price cards already say is not
+repeated as a finding: the hypotheses tables and figure R4 leave price effects out, and one line under an
+axis' table counts them (*"5 cost differences follow mainly from the price cards (HC2.1–HC2.5); Appendix C
+lists them."*), which stands alone when nothing else fired; Appendix C keeps them; the writer never sees
+their facts (`RootCauseWriterHidden`, above).
 
 **A price effect is not refutable by a run** (engine version 7): its *refuted if* reads *"Not testable
 by a run: the share follows from the price cards and these runs' token counts."* (`PriceEffectRefutedIf`),
@@ -4131,15 +4269,15 @@ and its *confirmed if* says the same; a
 non-price HC2 keeps *"The volume effect is larger."* The prompt tells the writer to give a price effect
 no refutation.
 
-**The price note** (engine version 7). When an axis's best hypothesis is not a price effect, and a price
-effect on the same axis covers a pair whose absolute difference is larger than the best hypothesis's
-pair's, `RootCauseAxisStatus.PriceNote` says so, listing the price effects graded Low or higher that
-cover such a pair, as ranges, with the best hypothesis's share of the largest — *"Price per token, known
-from the price cards, explains the largest cost differences (HC2.1–HC2.2; 103% of the largest)."* — as
-the fact `rca.axis.<axis>.priceNote` (sentence-shaped; labeled *Root cause, Cost: price note*). The Conclusions table's *Why* cell appends it, and the prompt asks the
-conclusions to say that price per token explains the largest gaps on that axis and that the best
-hypothesis explains its own pair only; from format 25 the Key finding never mentions price per token. The
-axis status itself is unchanged.
+**The price note** (engine versions 7 to 9) is gone from engine version 10. It said, when an axis's best
+hypothesis was not a price effect and a price effect covered a larger difference, that *"Price per token,
+known from the price cards, explains the largest cost differences (HC2.1–HC2.2; 103% of the largest)."*,
+as the fact `rca.axis.<axis>.priceNote`, which the Conclusions' *Why* cell appended and the conclusions
+were asked to restate. That is what the price cards say. `RootCauseAxisStatus.PriceNote`, the fact, its
+label and its sentence shape are removed, and a document stored with one no longer prints it. The writer
+is told never to mention price per token or the price cards in the headline or the conclusions; when the
+cost axis has nothing beyond the price cards, the conclusions say that the runs show no cost mechanism
+beyond them.
 
 ### The hypothesis rules
 
@@ -4156,7 +4294,7 @@ differs; excluded and degraded entries take part only on the axes they are compa
 | HQ2 | Intelligence | A's shortfall is concentrated in confirmed critical errors | model | Critical-error at-risk points at least half the gap | Caps unresolved or overturned (method 13); the shortfall is spread across many questions |
 | HQ3 | Intelligence | Shared failures on specific questions point to the instrument, not the models | suite / corpus / chat | `sharedLow` questions; every model or nearly every model below 50 | One model answered well |
 | HQ4 | Intelligence | The order depends on the graders | harness | Judge-dependent pair; a scoring grader (member A, member B, or the assessor of a single-assessor run) whose provider matches exactly one side — the reference reader, second reader and claim verifier never count; panel disagreement rate at least twice the median. For a pair of the members' own two providers with an available interaction contrast it is **quantified**: share 0.5 × \|contrast\| ÷ the pair's gap, interval from the halved contrast bounds, established when the contrast's interval excludes zero | Both members and the reference reader order the two alike, and the pair is not judge-dependent (`PanelAgreementCheck` plus both reader indices); without a reader the rule is not refuted |
-| HQ5 | Intelligence | Completeness was A's lowest dimension under the concise style. **Once per model**, not per pair (`RootCauseHypotheses.StyleConflict`, engine version 6): kind `within`, group `style:<token>`, about A alone, for each model whose `responseStyleConflict` is true and that is the lower-scoring side of some analyzed pair | chat | `responseStyleConflict` true | A run of the reference model with the detailed response style shows that Completeness is no longer its lowest dimension, which tests the style effect under this configuration and is indicative for the other models (never graded above *Low*: no comparison run covers style; it states a condition, not a cause, as `server_benchmark_to_chat_transfer` § 3 requires) |
+| HQ5 | Intelligence | In comparison scope, **once for the document** (`RootCauseHypotheses.SharedStyleConflict`, engine version 10): *"Completeness was the lowest dimension of N of M models under the concise response style."*, shaped as HQ3 is — kind `pair`, group `all`, every model with the conflict in `Models`, label *"the concise response style, N of M models"* — so it answers no research question and names no model's block (`RootCauseHypotheses.IsDocumentWide`); it fires when at least two models have the conflict, or the one model of a single-model document, with no worse-side gate, since it is about the instrument. In model scope, **once per model** (`StyleConflict`, engine version 6): Completeness was A's lowest dimension under the concise style, kind `within`, group `style:<token>`, for each model whose `responseStyleConflict` is true and that is the lower-scoring side of some analyzed pair. Both forms are capped Low, with fact keys each model's `style.responseStyleConflict` | chat | `responseStyleConflict` true | A run of the reference model with the detailed response style shows that Completeness is no longer its lowest dimension, which tests the style effect under this configuration and is indicative for the other models (never graded above *Low*: no comparison run covers style; it states a condition, not a cause, as `server_benchmark_to_chat_transfer` § 3 requires) |
 | HQ6 | Intelligence | A guessed where it should have abstained | model | `wrongInsteadOfAbstaining` higher, with Wilson intervals not overlapping (the measure is *Unavailable* under 3 incorrect or not-attempted outcomes) | Intervals overlap |
 | HQ7 | Intelligence | Budget, truncation or output defects cost A points | harness / provider | `toolLimitHits`, `truncated`, `outputDefects` at-risk points, at least 1 and above B's | Zero signals; points at risk under 1 |
 | HQ8 | Intelligence | A's lower thinking level explains the gap | model | Same model at two levels in the set; the dimension test at the lower level | Thinking-level inversion (the notable finding) |
@@ -4167,11 +4305,11 @@ differs; excluded and degraded entries take part only on the axes they are compa
 | HS4 | Speed | A is slower mainly from a slower decode rate | provider | Decode-rate share largest | Token share larger |
 | HS5 | Speed | Own waits or retries inflated A's time | harness / provider | `ownWaitShare` or `retriesPerAnswer` above the median | Under 5 % of the gap |
 | HS6 | Speed | Served tier differed from the requested tier | provider | `servedTierMismatch` | No mismatch |
-| HC1 | Cost | A costs more mainly from token volume | model / chat | Volume effect largest; tokens per question ratio established | Price effect larger |
-| HC2 | Cost | A costs more mainly from per-token price | model | Price effect largest. Under catalog pricing, or when neither side's prices differ between runs, it carries no *Replicates* check but a *configuration* check (*"Compare the two models' price cards; the price effect follows from them."*), the single-run grade cap exempts it, and it is a **price effect**: *Known from the price cards*, never an axis' root cause (*Confidence grades and axis status*) | Volume larger |
-| HC3 | Cost | Reasoning tokens drive A's cost | model | Reasoning component largest; both sides report reasoning separately | — |
-| HC4 | Cost | Weak prompt caching raises A's cost | chat / provider | `cacheReadShare` below the median by 20 points or more, and the uncached-input component is largest | Cache-read share comparable |
-| HC5 | Cost | More tool rounds multiply A's input tokens | chat / model | Input-volume effect largest and `modelCallsPerAnswer` higher | Calls per answer comparable |
+| HC1 | Cost | A costs more mainly from token volume | model / chat | Volume effect largest among the all-components effects (volume, price and, grouped, caching); tokens per question ratio established | Price effect larger; a grouped pair's caching effect is listed against it |
+| HC2 | Cost | A costs more mainly from per-token price | model | Price effect largest (in a grouped pair, the price-card effect, with caching apart). Under catalog pricing, or when neither side's prices differ between runs, it carries no *Replicates* check but a *configuration* check (*"Compare the two models' price cards; the price effect follows from them."*), the single-run grade cap exempts it, and it is a **price effect**: *Known from the price cards*, never an axis' root cause (*Confidence grades and axis status*) | Volume larger |
+| HC3 | Cost | Reasoning tokens drive A's cost | model | Reasoning component largest; both sides report reasoning separately; a pair split by component only | — |
+| HC4 | Cost | Weak prompt caching raises A's cost | chat / provider | Split by component: `cacheReadShare` below the median by 20 points or more, and the uncached-input component is largest. Grouped (engine version 10): the caching effect is the largest all-components effect, stated *"Prompt caching raises A's price per input token against B."* (short *Caching, input price*), its share the `input/caching` component; the cache-read share line is context, under *For* when it is 20 points or more below the median and under *Against* otherwise | Split by component: cache-read share comparable. Grouped: the volume or the price-card effect is larger |
+| HC5 | Cost | More tool rounds multiply A's input tokens | chat / model | Input-volume effect largest (grouped: the input group's) and `modelCallsPerAnswer` higher | Calls per answer comparable |
 
 **Within-model rules** (`RootCauseHypotheses.WithinRules`) apply to a model on its own, in every scope:
 in comparison scope to the reference and to the first and last model on each axis, in model scope to the
@@ -4293,7 +4431,9 @@ was the better side). With none, its status is null. As its first signal it take
 runner-up (*"most of the lead over {runner-up} is Completeness (+2.7 of +4.4 points)"*, or *"the largest
 part"* under half), computed beside the analyzed pairs when that pair is not one of them; then its
 strengths. Questions 2 to 4 take the pair hypotheses where the model is the **worse** side and its own
-within-model hypotheses. HQ3 (shared failures) answers none of them.
+within-model hypotheses. HQ3 (shared failures) and, in comparison scope, the single HQ5 answer none of
+them (`RootCauseHypotheses.IsDocumentWide`). Question 1's strengths among its signals include the
+gained-points entry only when it names questions.
 
 **The partner a question is answered against** (`RootCauseProfiles.PartnerPreference`, engine version
 6) is, nearest first: the same model at another thinking level (the nearest level first), then the
@@ -4336,15 +4476,30 @@ an answer that cited the signals is never shown with them twice.
 **Model profiles** (`RootCauseProfiles.Build`), `rca.profile.<T>.*`, are code-written from facts already
 on the sheet, so they cannot be dropped by a rule and never use a causal word:
 
+- **Gained points on** (`.gainedPointsOn`, engine version 10), the mirror of *Lost points on*, measured
+  against the other models rather than the model's own median: with at least
+  `BenchmarkComparisonModelProfile.MatrixMinModels` (3) models with per-question means, each question the
+  model scored where at least `IsolatedMissMinOthers` (2) other models scored it has the margin *own −
+  median(others)*; a question with a margin of `RootCauseProfiles.GainMargin` (10) or more is gained, and
+  the points are the gained margins' sum divided by the model's question count, in index points
+  (*"answers above the other models' median by 10 or more: +1.8 index points on 4 questions (S2-Q1,
+  S1-Q4, S2-Q9 and 1 more)"*, questions by margin, largest first; *"no answer 10 or more above the other
+  models' median"* when none is). It is first among the strengths; with fewer than three models it is
+  absent;
 - **Lost points on** (`.lostPointsOn`): the largest segment of the model's index points at risk —
   answers without tools; budget, tool-limit, truncation or output defects; confirmed critical errors;
   other low-scoring answers — with its points and questions. The last of these is named by the dimension
   that lost more on its answers, Accuracy or Completeness, each weighted by the scoring profile
-  (*"low-scoring answers, mostly Completeness: 2.2 index points on 17 questions"*); when the two tie it
-  keeps the plain label;
+  (*"low-scoring answers, mostly Accuracy: 2.2 index points on 17 questions"*); when the two tie it
+  keeps the plain label. From engine version 10 the dimension is left out (*"low-scoring answers: 2.2
+  index points on 17 questions"*) when it is the **shared lowest dimension**,
+  `RootCauseResult.SharedLowestDimension`: the dimension with the lowest mean for every model with all four
+  dimensions (at least two such models, each with some spread), the test the shared-weakness finding
+  applies. A model whose low-scoring answers lose mostly the other dimension keeps it;
 - **Weakest dimension** (`.weakestDimension`): the dimension furthest below the model's Accuracy, and the
   gap; and `.lowestRank` when the model is last on a dimension;
-- **Strengths** (`.strength.<n>`): the model's dimension ranks when first or second;
+- **Strengths** (`.strength.<n>`): the model's dimension ranks when first or second, numbered without the
+  gained-points entry, so the keys did not move;
 - **Flags** (`.flag.<n>`, joined in `.flags`): critical errors with their questions; answers without
   tools above the median; panel disagreement under the notable findings' rule
   (`BenchmarkNotableFindings.DisagreementConcentration`: at least 3 disagreements on the answers both
@@ -4353,8 +4508,103 @@ on the sheet, so they cannot be dropped by a rule and never use a causal word:
   median of 6%"*), which HQ4 uses too; isolated misses (three or more models); output defects and
   tool-limit hits. A flag is a noun phrase, so the writer can cite it inside a sentence.
 
-At most two strengths and three weaknesses per model; every entry is a measured count, share or rank
-with its questions.
+At most three strengths (`MaxStrengths`: the gained-points entry, then at most two dimension ranks) and
+three weaknesses per model; every entry is a measured count, share or rank with its questions.
+
+**Why each model scored as it did** (format 26, per-model format 22) prints the profiles as **one block
+per model**, in rank order, because the entries no longer fit a table. A bold lead line gives the name as
+the row names it (with its role marks in comparison scope) and the Index cell as *At a glance* prints it
+(*"**Orion Max (reference)**: Intelligence 85 (82–88), rank 1–2 (tied)."*, or *Intelligence not
+available*); then one run-in-labeled bullet per kind, the text after each label sentence-cased:
+
+- *Strengths:* the dimension ranks, joined by `;`, or *None ranked first or second*;
+- *Gained points on:* the entry's text; *"Not measured with fewer than 3 models."* when the document has
+  fewer than three profiles;
+- *Lost points on:* the weaknesses as the table's cell printed them — *Lost points on* first, then
+  *weakest dimension …*, then the last rank — or *No answer below the model's median* first when there is
+  no lost-points entry;
+- *Against the reference:* comparison scope only, from the `QualitySplits` entry of the model and the
+  reference, model minus reference: the signed Index difference, then the dimensions of at least 0.05
+  points, largest first (*"-4.1 index points: Accuracy -5.0, Completeness +1.2."*), the critical-error cap
+  and difficulty weighting named only when they are the largest part; *The reference.* on the
+  reference's own block; left out when the pair has no split;
+- *Flags:* as the table's cell, or *None*;
+- *Hypotheses:* the kept non-null intelligence hypotheses about the model, in rank order, at most three
+  (`RcaMaxModelHypotheses`): a pair hypothesis with the model as its worse side, or a within-model one, a
+  document-wide one never; each as the conclusions name it; left out when there is none;
+- *Unexpected results:* the references of the unexpected results naming the model on either side,
+  *"U1, U2 (Unexpected results)."*; left out when there is none.
+
+The note under the blocks keeps the flag glosses and rules, and adds a sentence on *Gained points on*
+where an entry exists, one on *Against the reference* where a non-reference block printed it, and, when
+the shared lowest dimension is set, *"Completeness is the weakest dimension of every model (What we
+found), so a Lost points entry that would say 'mostly Completeness' leaves it out."* The *Hypothesis* and
+*Unexpected result* terms join the glossary when their lines are printed.
+
+### Unexpected results
+
+A comparison-scope analysis looks for results that go against what the models' price tiers or release
+dates predict (`RootCauseAnomalies.Find`, engine version 10, run before the pairs are built). Every pair of
+analyzed models of **one provider with different model ids** is checked against three priors
+(`RootCausePriors`), each predicting an order:
+
+| Prior | Applies when | Predicts |
+|---|---|---|
+| Price tier, quality (`PriceTierQuality`) | Both list output prices known, the dearer at least `RootCauseEngine.TierPriceRatio` (1.5) times the cheaper | The dearer tier scores at least as high |
+| Newer release, quality (`NewerRelease`) | One model line — the model id split on `-` without its version-number segments (`gpt-6-luna` and `gpt-5.6-luna` are both `gpt-luna`, `RootCauseAnomalies.ModelLine`) — at one thinking level, both catalog release dates known and different | The newer release scores at least as high |
+| Price tier, speed (`PriceTierSpeed`) | As the first, neither model speed-degraded, both median model times known | The cheaper tier answers at least as fast |
+
+A result is **unexpected** when the reversal is established, or when it reaches
+`RootCauseEngine.AnomalyMinPoints` (2.0) Intelligence Index points against a quality prior, or
+`AnomalyTimeRatio` (1.25) times the median model time against the speed prior. **Established** reads the
+pair's paired test where it has one (`Tested`): established and favoring the model the prior did not
+expect. The all-pairs family exists only for 3 to 6 models, so in a larger comparison two non-reference
+models have no test; then established means, for quality, that the two 95% intervals do not overlap
+(touching bounds overlap, as `OrderEstablished` reads them), and for speed that the bootstrap interval of
+the pair's time difference excludes zero. The results are ordered by prior, quality first, then by gap,
+and numbered **U1, U2, …** (`RootCauseResult.Anomalies`); several results with one model on the same side
+stay separate. `RootCauseResult.PriorsChecked` records which priors at least one pair could be checked
+against. Both are null in model scope and in a result stored before engine version 10.
+
+**Release dates** reach the engine in comparison scope only: `PrepareComparisonAsync` and
+`PrepareForRequestAsync` take an optional lookup (provider, model id → ISO date), which
+`AdminBenchmarkReportPacksController` and the job (`BenchmarkReportPackService`, which now receives a
+`ModelMetadataService`) fill from `ModelMetadataService.GetMetadata(...).ReleaseDate`, the model catalog's
+date; the preparation maps `provider|modelId` (lower case, `RootCauseEvidence.ReleaseDateKey`) to each
+covered entry's known date, through `BenchmarkComparisonReportFacts` into `RootCauseInput.ReleaseDates`.
+Without a lookup the release prior is not checked.
+
+**What each result records** (`RootCauseAnomaly`), for the reader to weigh rather than as a cause: the
+configuration keys other than the model that differ (`Confounds`); both models' Index under panel member
+A, panel member B and the reference reader, and which member splits them further (`Graders`); the two
+dimensions with the largest difference, with both values; for a quality prior, the three questions the
+other model scored furthest above the expected one, with both scores and the other models' median; for
+the speed prior, the leading component of the pair's speed decomposition with its share; the keys of at
+most two kept pair hypotheses of the two models on the prior's axis, not ruled out, best first; and what
+settles it. **Settled by** (`RootCauseNextRuns`): a result across two thinking levels joins a
+thinking-level pair of the model the prior expected ahead at the other model's level, or, with no such
+configuration, a *configuration* check naming the result (*"No configured, enabled Benchmark-role
+configuration of … exists at … thinking; add one to test U1."*); every other result joins the replicate
+with both models and the reference. A thinking-level pair folded into the replicate takes its results along. The run's *Decides* adds *"Shows whether U1 holds with both models at the same thinking
+level."* or *"Shows whether U2 and U3 repeat over three runs per model."*, and the result records the run or
+the check (`SettledByRun`, `SettledByCheck`).
+
+**Its summary** (`RootCauseAnomalies.Summary`) is one sentence: *"Claude 5.5 Opus (medium) scored 79,
+below the cheaper Claude 5.5 Haiku (xhigh) at 81; not established, the intervals overlap."*, *older* for
+the release prior, *"… was slower than the dearer …: a median model time of 38.7 s against 23.3 s; …"*
+for speed. It ends in one of six ways: *established by the paired test* or *not established by the
+paired test* (tested); *established, the intervals do not overlap* or, for speed, *established, the 95%
+interval of the time difference excludes zero* (untested and established); *not established, the
+intervals overlap*; or *not established, and the pair had no paired test* when no interval comparison
+applies.
+
+**Facts** (comparison scope): `rca.anomaly.count`, `rca.anomaly.priorsChecked` (the priors checked, in
+words, or unavailable with why: *"No two models share a provider."*, or that no two models of one provider
+have list prices in different tiers or release dates within one line), `rca.anomaly.untestedPairs`, and per
+result `rca.anomaly.<n>.ref` (a noun phrase), `.summary` (sentence-shaped), `.prior`, `.confounds`,
+`.graders`, `.settledBy` (*"next run 1"*, *"check 2"*) and `.tested`. Each has a label; the glossary term
+*Unexpected result* reads *"A result that goes against what the models' price tiers or release dates
+predict."*
 
 ### The control limit
 
@@ -4466,7 +4716,8 @@ control run with no configured recommended model of another provider, each with 
 whose *Replicates* check failed. **A null that stands** (any `H0` not rejected, `H0-W` included) joins
 the replicate with its models, confirming *"if the paired test still finds no difference with three runs
 per model"* (engine version 5), so no analyzed model is left out of it. A hypothesis graded *Not
-supported* proposes nothing.
+supported* proposes nothing. An unexpected result (engine version 10) joins a thinking-level pair, a
+configuration check or the replicate, as *Unexpected results* above says.
 
 **Every check has a noun phrase** (engine version 7): `RootCauseCheck.Summary`, the fact
 `rca.check.<n>.summary`, written *"Check N, <noun phrase>"* in the shape of a run's summary — *"Check 1,
@@ -4480,7 +4731,7 @@ check inside its own sentence by the summary (it is not sentence-shaped, rule 31
 |---|---|---|---|
 | `replicate` | Any graded pair limited by a single run per suite, or an `H0` that stands | Model batch, same target (suite or battery), *Runs per Suite* / *Runs per model* 3, the hypothesis' models plus the reference (or the subject) | M; B when every hypothesis it settles points first to the `harness` |
 | `thinkingPair` | HQ8, HS3, HC3, WS2, only for a hypothesis about **one** model id (a hypothesis comparing two different models takes the replicate, or nothing) | Model batch of the same model at two thinking levels: an **analyzed** sibling first (same model id, another level, nearest rank), else the model's configuration and the nearest configured, enabled Benchmark-role configuration of the same model id at another level | M |
-| `stylePair` | HQ5 | **At most one per document**: one single run of the reference model at the other *Response Style* (*Detailed* after *Concise*, or the reverse), everything else unchanged, serving every HQ5; always **Optional** (an isolated pair showed no style effect, and the controlled verbose pair was declined on 2026-09-27) | C |
+| `stylePair` | HQ5 | **At most one per document**: one single run of the reference model at the other *Response Style* (*Detailed* after *Concise*, or the reverse), everything else unchanged, serving every HQ5 (in comparison scope the one HQ5.1); always **Optional** (an isolated pair showed no style effect, and the controlled verbose pair was declined on 2026-09-27) | C |
 | `panelSwap` | HQ4, HQ9, WQ6 | The same models graded by a panel from two other providers than the analyzed graders' (configured graders only) | B |
 | `timeStratum` | HS2, HS4, HS5, HS6, WS1, WS5 | The model's run repeated, *Number of Runs* 3, each started at a different time of day (the run's note says so) | C |
 | `control` | A run- or battery-completion document with fewer than 2 qualifying controls; a per-model pack whose subject has fewer than 2 comparable peers | Model batch, same target and graders, **without the subject** (its run already exists): the currently recommended model (`RecommendedModels` in `Overseer/appsettings.json`) of each other provider that has a configured, enabled Benchmark-role configuration, up to the controls needed. A finished run of it becomes a control automatically | B |
@@ -4579,18 +4830,19 @@ conclusions are callouts (§ 7). The comparison form (`ComparisonRootCauseAnalys
 
 | Section | Code-rendered | Writer slot (word cap) |
 |---|---|---|
-| *Summary* | `### What we found`: the headline in a *Key finding* callout, then, from format 25, up to five findings code ranks (below). Up to format 24, `### The questions`: each question asked, in a *Question* callout with the question in bold and *Answer strength: Probable (Moderate) — see HQ2.1, HS2.1*. `### At a glance`: *Model · Intelligence (index, interval, rank) · Median time · Cost per question · Where it lost most points · Flags*. `### How sure are we?`: a *Caveat* callout with the grade words in plain order (*"How sure each answer is. **Established (High)**: measured, still clear after the correction for many comparisons, …"*) and the run-level cap stated once (*"Each model ran only once per suite, so this document cannot tell whether its results would repeat. No cause can be graded above Probable (Moderate) until a second run of each suite is made."*) | `headline` (35): in one plain sentence, what most explains the differences between the models, naming at most two causes; up to format 24 also `answerBest`, `answerWorst`, `answerSpeed`, `answerCost` (60 each), in their question's callout |
+| *Summary* | `### What we found`: the headline in a *Key finding* callout, then, from format 25, up to five findings code ranks, seven from format 26 (below). Up to format 24, `### The questions`: each question asked, in a *Question* callout with the question in bold and *Answer strength: Probable (Moderate) — see HQ2.1, HS2.1*. `### At a glance`: from format 26 the figures alone, *Model · Intelligence (index, interval, rank) · Median time · Cost per question*, and one line under it, *"Why each model scored as it did gives, for each model, its strengths, where it gained and lost points, its difference from the reference by dimension, its flags and the hypotheses about it."* (up to format 25 also *Where it lost most points · Flags*). `### How sure are we?`: a *Caveat* callout with the grade words in plain order (*"How sure each answer is. **Established (High)**: measured, still clear after the correction for many comparisons, …"*) and the run-level cap stated once (*"Each model ran only once per suite, so this document cannot tell whether its results would repeat. No cause can be graded above Probable (Moderate) until a second run of each suite is made."*) | `headline` (35): in one plain sentence, what most explains the differences between the models, naming at most two causes; up to format 24 also `answerBest`, `answerWorst`, `answerSpeed`, `answerCost` (60 each), in their question's callout |
 | *Key terms* | Format 18: a two-sentence lead, then *Term · What it means*, one row per term the document actually uses, alphabetical, with the term's short gloss (`RootCause/RootCauseGlossary.cs`, the one term registry). Each less familiar term is also glossed in parentheses where template text first uses it (the render `Context`'s `GlossedTerms`), for example *Holm-adjusted across 4 tests (a correction for running many comparisons at once)* | — |
-| *Why each model scored as it did* | The profile table, one row per model in rank order: *Model · Index · Strengths · Lost points on · Flags*, with a note that every entry is measured and none says why | — |
+| *Why each model scored as it did* | From format 26, one block per model in rank order — the Index lead line, then *Strengths*, *Gained points on*, *Lost points on*, *Against the reference*, *Flags*, *Hypotheses* and *Unexpected results* (§ 17, *The research questions and the model profiles*) — with a note that every entry is measured and none says why; up to format 25 the table *Model · Index · Strengths · Lost points on · Flags* | — |
+| *Unexpected results* | Format 26, comparison scope: one block per result, its summary in bold with its reference (*"**U1. Claude 5.5 Opus (medium) scored 79, …**"*), then *Configuration* (or *"none: only the model differs"*), *Graders*, *Dimensions*, *Where* (quality: each question with both scores and the other models' median in parentheses) or *Time* (speed: the leading component and its share, Appendix B), *Hypotheses* and *Settled by* (*Run 1* or *Check 2*, What to run next), each where it has content; then, when any pair had no paired test, *"N of these pairs had no paired test: the paired tests cover the reference pairs, and every pair only up to 6 models (Appendix A). Established here means the two 95% intervals do not overlap."* With none: *"No unexpected results: every ordering the priors predict either holds or is within noise. Checked: <priors>."*, or *"No unexpected results could be looked for: no two models share a provider."* (or the other reason `rca.anomaly.priorsChecked` gives). Left out of a model-scope document and of a result stored before engine version 10 | `unexpectedResults` (80), **optional**, under the section: what the grader comments and excerpts show about each result, citing its `rca.anomaly.<n>.ref` and at least one question; no causal word (rule 32); asked for only when the sheet has an unexpected result |
 | *Scope and design* | `### Setup and method`, the grader roster, the availability table (one sentence when every model's is unrecorded); the compared models and configuration differences move to Appendix A | `scope` (120) |
-| *Evidence: intelligence* | A five-column scoreboard (*Model · Intelligence Index · 95% interval · Rank · Critical errors*, a tied rank as its span, such as *5–9 (tied)*), the dimensions table, figure R1, `### Paired tests against <reference>` with the adjustment family stated once under it, `### What the graders recorded` (the `observations`), one grouped response-style line | `evidenceIntelligence` (100), no causal words: what stands out and why it matters for choosing a model |
+| *Evidence: intelligence* | A five-column scoreboard (*Model · Intelligence Index · 95% interval · Rank · Critical errors*, a tied rank as its span, such as *5–9 (tied)*), the dimensions table, figure R1, `### Paired tests against <reference>` with the adjustment family stated once under it, `### What the graders recorded` (the `observations`), one grouped response-style line | `evidenceIntelligence` (100), no causal words: what stands out — a pattern several models share, a model that departs from the others, or a result the settings or the price cards would not predict — and, from format 26, no sentence on what it means for choosing a model or a deployment (up to format 25: *"and why it matters for choosing a model"*) |
 | *Evidence: speed* | `### Where the time goes` and figure R2, the paired tests, `### Time differences between the models`: one line per decomposed pair (its leading component in seconds and its share with interval), the pairs not decomposed in one line | `evidenceSpeed` (100) |
-| *Evidence: cost* | The same, in dollars (figure R3) | `evidenceCost` (100) |
-| *Hypotheses* | Per axis a table of the kept non-null hypotheses — *Hypothesis (id and label) · Statement · Grade · Share · Settled by* — the null hypotheses in one sentence (where it stands, where a paired result rejects it), the id legend under the first table (H0 null, H between two models, W within one; Q, S, C), figure R4; the writer's hypotheses in a *Not tested by code* caveat callout | `hypothesesIntelligence`, `hypothesesSpeed`, `hypothesesCost` (120 each), each after its axis' table |
-| *Conclusions* | The table *Axis · Status · Best hypothesis · Why* | `conclusions` (120), in a *Conclusion* callout |
+| *Evidence: cost* | The same, in dollars (figure R3). From format 26 the paired cost tests read *Pair · Spend ratio (95% interval) · At equal prices · Result*: *At equal prices* is the decomposed pair's `VolumeRatio`, oriented to the row, to two decimals (*—* when not decomposed), and *Result* prints *may be chance* when the test is not established, *not tested* when it was not made, and nothing when established; the note adds *"Spend ratios include the price cards. At equal prices is the token-volume ratio, the part the price cards do not set."* Under *Cost differences between the models* the pairs the price card leads (its all-components effect the largest) are one line, *"Mostly the price cards: A vs B; C vs D."*, and every other pair names its leading component that is not a price effect | `evidenceCost` (100): what the price cards do not explain — token volume per question, the share of thinking, caching and model calls per answer — never that a dearer model costs more, nor a spend ratio or a price-per-token difference; a pair's token volume is cited by its `rca.cost.<F>.<S>.volumeRatio` |
+| *Hypotheses* | Per axis a table of the kept non-null hypotheses that are not price effects — *Hypothesis (id and label) · Statement · Grade · Share · Settled by* — then, from format 26, one line for the price effects (*"5 cost differences follow mainly from the price cards (HC2.1–HC2.5); Appendix C lists them."*, standing in for the table when nothing else fired) and the axis' null hypotheses in **one sentence** (`RcaNullsSentence`): *"Every tested difference is real (H0-C.1–H0-C.10)."*, *"No tested difference could be shown to be real; each may be chance."*, or *"3 differences may be chance: A vs B; …; the other 7 are real."*, naming at most five (`RcaNullPairsMax`) and then *"and N more (Appendix C)"*; the id legend under the first table (H0 null, H between two models, W within one; Q, S, C), figure R4; the writer's hypotheses in a *Not tested by code* caveat callout | `hypothesesIntelligence`, `hypothesesSpeed`, `hypothesesCost` (120 each), each after its axis' table: the grade word only, never a price-card difference, and never a restatement of the nulls (rule 45) |
+| *Conclusions* | The table *Axis · Status · Best hypothesis · Why*. From format 26 it has no price note; an axis whose best hypothesis is a price effect prints *—* as its best hypothesis; and when two or more axes all have the same reason and it contains *because*, each *Why* cell keeps the part before it (the grade) and one sentence under the table states the reason once (*"Each grade is capped at Probable (Moderate) because each model ran only once per suite."*), the reasons compared by code, never hard-coded | `conclusions` (120), in a *Conclusion* callout; never mentions price per token or the price cards, and says, when the cost axis has nothing beyond them, that the runs show no cost mechanism beyond the price cards |
 | *What to run next* | The order (C, B, M), a priority table *# · Run · Purpose · Models · Settles (hypothesis ids, at most eight, then "and N more (Appendix D)") · Estimate*, then `### Checks` | `nextRuns` (50): which run to make first and what it settles |
 | *Limitations and threats to validity* | One merged, deduplicated list; the availability threats grouped by reason (*"Provider availability is not recorded for any of the 9 models (runs before harness 56), …"*) | `limitations` (120) |
-| *Appendices* | The list of A–H, then **A** Intelligence detail (compared models, configuration differences, failure profile, grader findings, panel agreement, points at risk, the index difference by dimension, every paired test, the per-question matrix); **B** Speed and cost decompositions (decomposed pairs only); **C** Hypothesis details (*For*, *Against*, *Grade reasons*, *Refuted if*, *Robustness*, *Settled by* per hypothesis; the nulls as one table *Hypothesis · Pair · Paired result · Grade*, the grade read as *Stands — may be chance* or *Rejected — a real difference*); **D** Run settings (each run's *Launcher field · Setting* table); **E** Known facts; **F** Reproducibility; **G** Question details (every claim-verifier ruling that is not a supported answer sentence, then *"N further answer sentences supported."*; a grader evidence line that only says *&lt;Dimension&gt;: Matches rubric.* is left out); **H** Glossary: from format 18 every term the document uses, alphabetical, with its full definition from `RootCauseGlossary` (before, nine fixed bullets) | `questionTopics` for every question cited whose text the writer was given |
+| *Appendices* | The list of A–H, then **A** Intelligence detail (compared models, configuration differences, failure profile, grader findings, panel agreement, points at risk, the index difference by dimension, every paired test, the per-question matrix); **B** Speed and cost decompositions (decomposed pairs only); **C** Hypothesis details (*For*, *Against*, *Grade reasons*, *Refuted if*, *Robustness*, *Settled by* per hypothesis; the nulls as one table *Hypothesis · Pair · Paired result · Grade*, the grade read as *Stands — may be chance* or *Rejected — a real difference*); **D** Run settings (each run's *Launcher field · Setting* table); **E** Known facts; **F** Reproducibility; **G** Question details (every claim-verifier ruling that is not a supported answer sentence, then *"N further answer sentences supported."*; a grader evidence line that only says *&lt;Dimension&gt;: Matches rubric.* is left out). Format 26 shortens A, B, C, F and G (*Appendices from format 26*, below); **H** Glossary: from format 18 every term the document uses, alphabetical, with its full definition from `RootCauseGlossary` (before, nine fixed bullets) | `questionTopics` for every question cited whose text the writer was given |
 | *Fact sheet*, *Removed content*, *Evaluation terms* | As before (the fact sheet in the Markdown copy only, with no section at all in the PDF and Word); *Removed content* names each removal's location in words and its rule, and at Full disclosure prints the removed text with its tokens resolved under the document's peer naming (withheld names, ids and providers as letters in an anonymized copy) | — |
 
 **From format 20** (per-model format 15) the table above changes as follows (format 25 replaces the
@@ -4659,8 +4911,8 @@ formats 16–24 (per-model 15–20) renders the same way: its stored answers sta
 not shown, and a question cited only in one of them is not among Appendix G's cited questions
 (`BenchmarkReportPackValidator.CitedQuestions` skips `RootCauseAnswerSlots`). Under the Key finding,
 *What we found* prints the findings code ranks (`RcaFindings`), in the project's order of priority and at
-most five (`RcaMaxFindings`), each only when its gate passes, so none restates an extreme the *At a
-glance* table shows:
+most seven (`RcaMaxFindings`; five up to format 25), each only when its gate passes, so none restates an
+extreme the *At a glance* table shows. Items 4 and 7 are new in format 26:
 
 1. **Answers without tools.** A model that answered at least 20 % of its scored answers without a tool
    call and, with two or more models, at least twice the other models' median share, with the most any
@@ -4674,32 +4926,92 @@ glance* table shows:
    not tell the models apart"*. The lowest-dimension sentence under *Evidence: intelligence* is unchanged.
 3. **Grader family.** The sentence that was in *How sure are we?*, whose caveat now ends *"The order
    between models of those two providers depends on the panel's balance; see What we found."*
-4. **Value for money.** With three or more priced models (a degraded cost is not priced) and one uniquely
-   cheapest, the other priced models split against it into those established to score higher, each with
-   its cost ratio, the rest, by count with the dearest, and those established lower, each with its ratio;
-   printed when a model is established higher or one of the rest costs at least 3 times as much.
-5. **Thinking levels.** One provider's model id at two thinking levels
+4. **Unexpected results** (comparison scope). One bullet when there is any (§ 17, *Unexpected results*),
+   the results of one prior with the same model expected ahead in one clause, their references as ranges:
+   *"Unexpected: Claude 5.5 Opus (medium) scored below the cheaper Claude 5.5 Haiku (xhigh) (U1); Claude
+   5.5 Haiku (xhigh) was slower than the dearer Claude 5.5 Opus (medium), Claude 5.5 Sonnet (high) and
+   Claude 5.5 Sonnet (medium) (U2–U4). See Unexpected results."* (*below the older* for the release
+   prior).
+5. **Value for money.** With three or more priced models (a degraded cost is not priced) and one uniquely
+   cheapest, the other priced models split against it into those established to score higher, those
+   established lower and the rest, by count, with **no cost multiple** from format 26, since the price
+   cards give them: *"GPT-6 Luna (high) costs the least per question. Only GPT-6 Astra (medium) is
+   established to score higher, and Claude 5.5 Sonnet (medium) scores lower; for the other 6 models the
+   order is not established."* The cost ratio still gates it: printed when a model is established higher
+   or one of the rest costs at least 3 times as much.
+6. **Thinking levels.** One provider's model id at two thinking levels
    (`BenchmarkNotableFindings.SameModel`, `CompareLevels`) where the higher level is not established above
    the lower and takes or costs at least 1.5 times as much; at most two pairs, the largest time ratio
-   first. It takes precedence over a *Thinking level inversion* notable finding on the same pair.
-6. **Notable findings** (comparison scope): the sheet's stored ones, in their order, at most two, printed
+   first, from format 26 as clauses of **one bullet** joined by `;`. A ratio is the pair's paired time or
+   cost test where one was made (the all-pairs family first, then the reference family,
+   `RcaPairedRatio`), else the ratio of the median times or the mean costs. It takes precedence over a
+   *Thinking level inversion* notable finding on the same pair.
+7. **Token volume.** With three or more models with the figure, each model whose input tokens per question
+   are at least `RcaVolumeContrast` (2.0) times the other models' median, with its model calls per answer
+   against theirs, or, where only its output tokens (reasoning included) are, those; at most two models,
+   the largest multiple first, in one bullet: *"Claude 5.5 Haiku (xhigh) read 231,442 input tokens per
+   question, 2.4 times the other models' median, at 5.6 model calls per answer against their median of
+   3.4."* The gate is high because providers count tokens differently.
+8. **Notable findings** (comparison scope): the sheet's stored ones, in their order, at most two, printed
    as *Also worth knowing* prints them, leaving out grader-disagreement concentration, judge-dependent
    order and answer length, a *Cheaper and better* finding about the cheapest model and a *Thinking level
    inversion* on a pair the thinking-level bullet printed.
-7. **Differences from the reference** (comparison scope): what the paired tests establish against the
+9. **Differences from the reference** (comparison scope): what the paired tests establish against the
    reference, the models the 95 % intervals separate from it, and the other differences, which may be
    chance; printed only when one of those is at least 3 index points, and not when the value-for-money
    bullet printed with the reference as the cheapest model.
 
-"Established" in 4 and 5 is `RcaQualityVerdict`, read as the notable findings and the tied ranks read it:
+"Established" in 5 and 6 is `RcaQualityVerdict`, read as the notable findings and the tied ranks read it:
 a paired intelligence test that establishes the order (all-pairs family first, then the reference family),
 otherwise Intelligence Index intervals that do not overlap. A ratio prints with one decimal below 10
 (*2.3 times*) and whole from 10 (*67 times*) (`RcaTimes`); models are named as the copy names them.
 
 The Key finding (the `headline`) names at most two causes, the most consequential first, never restates
-a ranking the *At a glance* table shows, never mentions price per token (the conclusions state it), and
-does not repeat what code prints under it. *Key terms* keeps the *Hypothesis* row: the Conclusions
-register it.
+a ranking the *At a glance* table shows, never mentions price per token or the price cards, and does not
+repeat what code prints under it, the unexpected results included. *Key terms* keeps the *Hypothesis*
+row: the Conclusions register it.
+
+**Appendices from format 26** (per-model format 22) print what they share once:
+
+- **A.** *Configuration differences* leaves out each pair's `pair.<L>.<M>.configDifferences` line that a
+  listed configuration fact of Appendix E rests on, and adds one line, *"The configuration differences
+  between the analyzed pairs are Appendix E's known facts 3–5."*; the *Open confounds of …* lines stay.
+  In comparison scope *Grader findings by category* (`FindingsTable(onlyDifferingRows: true)`) leaves out
+  each model whose count in every category equals that column's most common value (held by at least two
+  models and by no other value as often), names them under the table (*"Left out, with the most common
+  count in every category: …"*), and prints *"Every model had the most common count in every category."*
+  instead of the table when none is left.
+- **B.** *Speed differences, decomposed* and *Cost differences, decomposed* are **one row per decomposed
+  pair**, each cell a share with its 95% interval: speed *Pair · Questions · Difference ·
+  Model calls · Time to first token · Output tokens · Decode rate · Other* (*Other* is the time outside
+  the model calls), cost *Pair · Questions · Difference · Token volume · Price card · Caching · Leading
+  component*, the first three splitting the whole difference (*Caching* only for a grouped pair, *—*
+  otherwise) and the last the largest component with its share. A column zero or missing in every row is
+  dropped with one sentence (`DropConstantColumns`). The calls, latency and tokens tables stay.
+- **C.** A rule that fired for several pairs on an axis is **one entry**: its keys as a range, the pair
+  count and locus, and its statement as a pattern (*"The first model costs more than the second model
+  mainly from its price per token."*); the fields every partner shares (*For*, *Against*, *Grade
+  reasons*, *Refuted if*, *Robustness*, *Open confounds*) once; a table *Hypothesis · Pair · Share (95%
+  interval) · Grade · Settled by*; then, per partner, only the fields that differ. A hypothesis alone, a
+  within-model or document-wide one, or one whose statement does not name both models prints as before.
+  Price effects are listed here.
+- **F.** In comparison scope a hash prefix every model shares (the system prompt, the tool guides, each
+  on its own) is printed once, on an *All models* line before the models (`ComparisonReproducibility`
+  with `sharedOnce`), and each model's line keeps its run ids, dates and any hash that differs.
+- **G.** In comparison scope each answer gives its graders in the **compact format**
+  (`ComparisonQuestionDetails` with `compactGraders`): one line, *"Graders: Panel member A 95, panel
+  member B 92, reference reader 93."*, each critical error with the grader that flagged it and its quote,
+  the claim verifier's rulings as before, each panel member's comment and fault lines only for a **panel
+  disagreement** — both members' scores more than `BenchmarkService.SecondOpinionDisagreementPoints` (15)
+  apart, or a critical error only one member flagged, marked *(panel disagreement)* after the answer's
+  heading — and the reference reader's comment only when its score is more than 15 points from the panel
+  mean. The introduction adds a sentence saying so. At most `RcaMaxDetailedQuestions` (8) questions are
+  detailed, in priority order — those with a critical error, then those an observation or a writer's
+  hypothesis cites, then the rest, each by the widest spread between models, then by number — and the
+  others are named in one line, *"Also cited, in the question matrix only (Appendix A): S1-Q9, S2-Q14."*
+
+Each option is a parameter of the shared comparison renderer that defaults to the earlier behavior, so the
+comparison Executive Summary does not change.
 
 The table below is the structure **before format 16**, kept for reading a PDF or Word file downloaded
 then. A stored document opened now renders in the structure above (§ 7):
@@ -4767,10 +5079,27 @@ against speed and Intelligence against cost may be chosen as well (§ 13).
 **The prompt** (`BenchmarkReportPackPrompt.RootCause.cs`, in comparison and model-scope forms). The system
 prompt states the method, the grades, the control limit, the slot rules and the claim rules 32–36 in
 plain words. The user message lists SCOPE, MODELS (or SUBJECT and PEERS, and the controls),
-CONFIGURATION DIFFERENCES, FACTS (`rca.*` included, except the `rca.question.*` facts from format 25), KNOWN FACTS, HYPOTHESES (each with for, against,
-grade, reasons and refuted if), NEXT RUNS, CHECKS, **CLAIM SUPPORT** (per claim kind, the exact token keys
-that qualify), the question matrix or per-question results, and the weakest answers and questions. The
-writer weighs; it does not re-grade.
+CONFIGURATION DIFFERENCES, FACTS (`rca.*` included, except the `rca.question.*` facts from format 25 and
+the price effects' facts from format 26), KNOWN FACTS, HYPOTHESES (each with for, against, grade, reasons
+and refuted if; from format 26 an axis' price effects are counted, *"(five price-card differences left
+out: Overseer prints them in one line; never mention them)"*, not listed), NEXT RUNS, CHECKS, from format
+26 **UNEXPECTED RESULTS** (each result's `.ref` and `.summary` tokens, then the instruction of the
+optional `unexpectedResults` slot, printed only when `rca.anomaly.count` is above zero, so the system
+prompt stays free of data), **CLAIM SUPPORT** (per claim kind, the exact token keys that qualify), the
+question matrix or per-question results, and the weakest answers and questions. The writer weighs; it does
+not re-grade.
+
+**Prompt rules of format 26.** The evidence slots say what stands out — a pattern several models share, a
+model that departs from the others, or a result the settings or the price cards would not predict — with
+no sentence on what it means for choosing a model or a deployment; the cost slot asks for what the price
+cards do not explain, never that a dearer model costs more, and cites `volumeRatio` for token volume; the
+hypotheses slots give the grade word only, never mention a price-card difference and leave the nulls to
+Overseer; the headline and the conclusions never mention price per token or the price cards; GRADES has
+no price-note line; a writer hypothesis' *against* is a measured fact that cuts against the statement,
+never its own evidence restated, and empty when there is none; and a count across models, questions,
+answers or pairs written *N of M* comes only from a fact token, a plain count with no total such as
+*three pairs* staying a number word (rule 44). FACTS notes explain `volumeRatio`, `.grouped` and the
+`rca.anomaly.*` facts.
 
 ### Claim discipline
 
@@ -4780,10 +5109,10 @@ names exactly the tokens the validator accepts.
 
 | Rule | Check | Effect |
 |---|---|---|
-| 32 (`RootCauseEvidenceCausalRule`) | A causal word (`RootCauseClaimSupport.CausalWords`: *because*, *due to*, *caused*, *causes*, *explains*, *driven by*, *root cause*, *leads to*, *results in*, whole words and phrases ignoring case) in `scope`, an `evidence*` slot or an observation | The paragraph or item is dropped |
+| 32 (`RootCauseEvidenceCausalRule`) | A causal word (`RootCauseClaimSupport.CausalWords`: *because*, *due to*, *caused*, *causes*, *explains*, *driven by*, *root cause*, *leads to*, *results in*, whole words and phrases ignoring case) in `scope`, an `evidence*` slot, `unexpectedResults` (format 26) or an observation | The paragraph or item is dropped |
 | 33 (`RootCauseCausalClaimRule`) | A causal word in a `hypotheses*` slot, `conclusions` or `nextRuns` with no token of a hypothesis graded **Low or higher** (`rca.hypothesis.<id>.<n>.*`, its `.label` included) or of an axis (`rca.axis.<axis>.*`) in the same sentence; in `nextRuns` only, an `rca.run.<n>.*` token serves as well, since the run order is decided by code. A causal word resting only on hypotheses graded Low needs a hedge word (`HedgeWords`: *may*, *might*, *could*, *possibly*, *probably*, *likely*, *perhaps*, *suggests*, *suggest*, *consistent with*) in the sentence. A **negated** causal word (directly after *not*, *never* or *cannot*, with *be*, *been*, *the* or *a* allowed between; *not only* asserts a cause and does not count) rules a cause out and may cite any hypothesis, *Not supported* included | The paragraph is dropped |
 | 34 (`RootCauseCertaintyRule`) | A certainty word (`CertaintyWords`: *established*, *confirmed*, *proven*, *prove*, *proves*, *proved*, *definitely*, *certainly*, *root cause was found*), anywhere, without a token of a *High* hypothesis that is not a price effect (its `.priceCard` fact not true), or the `rca.axis.<axis>.status` token of an axis whose root cause is established, in the same sentence; a certainty word after *not*, *never* or *cannot* does not count (*does not prove* passes) | The paragraph or item is dropped |
-| 35 (`RootCauseWriterHypothesisRule`) | A `writerHypotheses` item without an axis, a statement, evidence for, a refuted-if statement or a known locus (`model`, `chat`, `harness`, `suite`, `corpus`, `provider`), with a confidence other than *Low*, or citing a model or fact that does not exist; each of its texts is capped at 40 words | The item is dropped |
+| 35 (`RootCauseWriterHypothesisRule`) | A `writerHypotheses` item without an axis, a statement, evidence for, a refuted-if statement or a known locus (`model`, `chat`, `harness`, `suite`, `corpus`, `provider`), with a confidence other than *Low*, or citing a model or fact that does not exist; each of its texts is capped at 40 words. A kept item's `evidence` gains, after its own entries, every question reference its texts name that the data has (`Q7`, or `S2-Q7` on a battery), from format 26 | The item is dropped |
 | 36 (`RootCauseAxisStatusRule`) | `conclusions` does not cite each axis' `rca.axis.<axis>.status` | A **warning**, checked over the kept text |
 
 A hypothesis' **label** is a noun phrase that appears in tables; the writer cites a hypothesis in prose
@@ -4819,9 +5148,14 @@ which has none, never use the word."*; in comparison scope the scope, intelligen
 limitations slots name no controls and no control limit, and the prompt's TERMS leave out *Control*.
 
 The caps (`BenchmarkReportPackValidator.RootCauseSlotMaxWords`): the headline 35 words; `scope` and `limitations` 120; `nextRuns` 50; each `evidence*` slot 100;
-each `hypotheses*` slot and `conclusions` 120; at most 8 observations of at most 35 words; at most 4
+each `hypotheses*` slot and `conclusions` 120; the optional `unexpectedResults` 80
+(`RootCauseUnexpectedResultsMaxWords`, format 26); at most 8 observations of at most 35 words; at most 4
 writer hypotheses. Rules 2–4, 7–12, 16, 17, 19 and 31 apply as to every comparison document (§ 3), rule 4
-asking for a topic for every question the document cites whose text the writer was given.
+asking for a topic for every question the document cites whose text the writer was given, and the
+warnings of rules 38 to 45 apply as § 3 states. The **optional slot** is the one slot a Root Cause
+Analysis may leave out (`OptionalSlots`; it is not in `RequiredSlots`, and the parser reads it as a known
+slot): filled, its paragraphs are checked and dropped as a required slot's are and it is trimmed to its
+cap; filled on a sheet with no unexpected result, it is removed with a rule-7 note.
 
 **The prompt** states each claim rule once, in CLAIM DISCIPLINE, rule 16 with a worked example for
 quality and one for cost; the system prompt points to a *CHECK BEFORE YOU ANSWER* block at the end of
@@ -4861,7 +5195,7 @@ drawing them in the browser, which cannot reach run- and battery-completion docu
 | `r1-points-at-risk` | Where the points were lost | 2 | Each model (stand-alone: the subject, then one row per difficulty band, or per suite on a battery) | A stacked horizontal bar of at-risk index points: answers without tools · budget, truncation or output defects · confirmed critical errors · other low-scoring answers. The bar's end is labeled with the total; the axis is points out of 100 |
 | `r2-speed-decomposition` | Where the time goes | 3 | Each model (stand-alone: the subject, then per band or suite) | A stacked bar of the median seconds per question, split among time to first token · output generation · tool execution · own waits and retries · other in proportion to each segment's mean, so the segments sum to the median exactly |
 | `r3-cost-decomposition` | Where the cost goes | 4 | Each model (stand-alone: the subject, then per band or suite) | A stacked bar of cost per question: uncached input · cache reads · cache writes · visible output · reasoning; a model whose provider counts thinking inside output has one *output, thinking included* segment, in the visible-output color slot |
-| `r4-hypothesis-confidence` | How sure each hypothesis is | 6 | One row per non-null hypothesis shown in the document's tables, grouped by axis (null hypotheses are not plotted) | A filled dot at its grade on an ordinal axis (Not supported · Low · Moderate · High), the hypothesis id and its short statement as the row label; the named variant prints each model's name where the statement says *Model X*. Where the hypothesis has a share, a second column shows a bar with its 95 % interval whisker |
+| `r4-hypothesis-confidence` | How sure each hypothesis is | 6 | One row per non-null hypothesis shown in the document's tables, grouped by axis (null hypotheses are not plotted, and from engine version 10 neither are price effects, the caption then adding *"; price-card differences are left out"*) | A filled dot at its grade on an ordinal axis (Not supported · Low · Moderate · High), the hypothesis id and its short statement as the row label; the named variant prints each model's name where the statement says *Model X*. Where the hypothesis has a share, a second column shows a bar with its 95 % interval whisker |
 
 Rules common to all four:
 
@@ -4931,9 +5265,10 @@ publisher never uploads one (§ 13).
   one shortening turn: at most three per document, or four when the first reply was unreadable (§ 3).
 - **Prompt rules of engine version 7.** The writer names an axis before its status token (*Speed:
   {{rca.axis.speed.status}}*) and never puts two status or grade tokens side by side; cites a check
-  inside a sentence by `{{rca.check.<n>.summary}}`; says, where `{{rca.axis.<axis>.priceNote}}` exists,
-  that price per token explains the largest gaps on that axis and the best hypothesis its own pair only;
-  gives a price effect no refutation; and uses a model's figure token for that model only, citing each
+  inside a sentence by `{{rca.check.<n>.summary}}`; said, up to format 25 where
+  `{{rca.axis.<axis>.priceNote}}` existed, that price per token explains the largest gaps on that axis and
+  the best hypothesis its own pair only (from format 26 there is no price note, and the writer never
+  mentions the price cards); gives a price effect no refutation; and uses a model's figure token for that model only, citing each
   model's token or a count across them for several.
 
 ### Retirement of audiences 2 and 3

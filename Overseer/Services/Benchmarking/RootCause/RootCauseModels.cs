@@ -241,6 +241,61 @@ public static class RootCauseSegments
 }
 
 /// <summary>
+/// The keys and effects of a cost decomposition's components beyond <see cref="RootCauseSegments.CostComponents"/>: the two
+/// groups of a grouped pair (<see cref="RootCausePairDecomposition.Grouped"/>), <see cref="All"/> for every component, and
+/// the effects a component splits into.
+/// </summary>
+public static class RootCauseCostKeys
+{
+    /// <summary>A grouped pair's input: uncached input, cache reads and cache writes.</summary>
+    public const string Input = "input";
+
+    /// <summary>A grouped pair's output: output and reasoning. The same key as <see cref="RootCauseSegments.Output"/>, read with <see cref="RootCausePairDecomposition.Grouped"/>.</summary>
+    public const string Output = "output";
+
+    /// <summary>Every component.</summary>
+    public const string All = "all";
+
+    public const string Volume = "volume";
+    public const string Price = "price";
+
+    /// <summary>A grouped pair's input only: what sets its effective price per input token apart from the list price, the cache discounts and surcharges.</summary>
+    public const string Caching = "caching";
+
+    /// <summary>The groups of a grouped pair, in table order.</summary>
+    public static readonly IReadOnlyList<string> Groups = new[] { Input, Output };
+
+    /// <summary>
+    /// A component's words with its effect, as a decomposition table prints them: <c>cache reads, token volume</c>;
+    /// in a grouped pair <c>input, price card</c> or <c>output (with reasoning), token volume</c>; for every component
+    /// <c>token volume, all components</c>.
+    /// </summary>
+    public static string Label(string key, string effect, bool grouped)
+    {
+        if (key == All)
+        {
+            return effect switch
+            {
+                Volume => "token volume, all components",
+                Caching => "caching, all components",
+                _ => "price per token, all components"
+            };
+        }
+        if (grouped && key is Input or Output)
+        {
+            string group = key == Input ? "input" : "output (with reasoning)";
+            return group + effect switch
+            {
+                Volume => ", token volume",
+                Caching => ", caching",
+                _ => ", price card"
+            };
+        }
+        return RootCauseSegments.Label(key) + (effect == Volume ? ", token volume" : ", price per token");
+    }
+}
+
+/// <summary>
 /// Everything the root-cause engine computed for one document: evidence, known facts, hypotheses with
 /// their grades, the status of each axis, the next runs and checks, the controls used and the
 /// chart-ready rows. Stored as <c>BenchmarkReportFactSheet.RootCause</c>; its <c>rca.*</c> facts are a
@@ -327,8 +382,9 @@ public sealed class RootCauseResult
     public List<RootCausePairDecomposition> SpeedPairs { get; set; } = new();
 
     /// <summary>
-    /// The LMDI cost decomposition of each analyzed pair; output and reasoning as one component when either side
-    /// does not report reasoning separately.
+    /// The LMDI cost decomposition of each analyzed pair: by the input and output groups when the two sides do not bill
+    /// the same components (<see cref="RootCausePairDecomposition.Grouped"/>); otherwise by component, output and
+    /// reasoning as one component when neither side reports reasoning separately.
     /// </summary>
     public List<RootCausePairDecomposition> CostPairs { get; set; } = new();
 
@@ -346,6 +402,26 @@ public sealed class RootCauseResult
 
     /// <summary>Each model's measured profile, in <see cref="Models"/> order.</summary>
     public List<RootCauseModelProfile> Profiles { get; set; } = new();
+
+    /// <summary>
+    /// The dimension with the lowest mean for every model with all four dimensions (<c>Completeness</c>, …); null when
+    /// fewer than two models have all four or their lowest dimensions differ, and in a result written before engine version 10.
+    /// A <see cref="RootCauseProfiles.LostPointsOn"/> entry leaves out <c>mostly &lt;dimension&gt;</c> when it would name this one.
+    /// </summary>
+    public string? SharedLowestDimension { get; set; }
+
+    /// <summary>
+    /// The unexpected results: orderings of two models of one provider that go against a prior of
+    /// <see cref="RootCausePriors"/>, quality priors first, then by gap, numbered U1, U2, …. Empty when there is none;
+    /// null in model scope and in a result written before engine version 10.
+    /// </summary>
+    public List<RootCauseAnomaly>? Anomalies { get; set; }
+
+    /// <summary>
+    /// The priors of <see cref="RootCausePriors"/> at least one pair of models could be checked against, in
+    /// <see cref="RootCausePriors.All"/> order; empty when none could; null where <see cref="Anomalies"/> is null.
+    /// </summary>
+    public List<string>? PriorsChecked { get; set; }
 
     /// <summary>The highest grade the run counts allow, in a sentence; null when every model has two or more runs per suite.</summary>
     public string? GradeCap { get; set; }
@@ -440,7 +516,10 @@ public sealed class RootCauseModelProfile
     /// <summary>The mean dimension scores, accuracy to readability; null where missing.</summary>
     public List<double?> Dimensions { get; set; } = new();
 
-    /// <summary>At most two: a dimension the model ranks first or second on.</summary>
+    /// <summary>
+    /// At most three: where the model gained points against the other models (<see cref="RootCauseProfiles.GainedPointsOn"/>,
+    /// with three or more models), then at most two dimensions it ranks first or second on.
+    /// </summary>
     public List<RootCauseProfileEntry> Strengths { get; set; } = new();
 
     /// <summary>At most three: where it lost most points, its weakest dimension, a dimension it ranks last on.</summary>
@@ -454,7 +533,7 @@ public sealed class RootCauseModelProfile
 public sealed class RootCauseProfileEntry
 {
     /// <summary>
-    /// <c>strength</c>, <c>lostPointsOn</c>, <c>weakestDimension</c>, <c>lowestRank</c>, <c>criticalErrors</c>,
+    /// <c>gainedPointsOn</c>, <c>strength</c>, <c>lostPointsOn</c>, <c>weakestDimension</c>, <c>lowestRank</c>, <c>criticalErrors</c>,
     /// <c>noTool</c>, <c>panelDisagreement</c>, <c>isolatedMisses</c> or <c>outputDefects</c>.
     /// </summary>
     public string Kind { get; set; } = string.Empty;
@@ -705,13 +784,6 @@ public sealed class RootCauseAxisStatus
     public string? BestHypothesis { get; set; }
 
     public string Reason { get; set; } = string.Empty;
-
-    /// <summary>
-    /// <c>Price per token, known from the price cards, explains the largest cost differences (HC2.1–HC2.7; 103% of the
-    /// largest).</c>: set when the best hypothesis is no price effect and a price effect of the axis covers a larger
-    /// difference than the best hypothesis's pair; null otherwise, and in a result written before engine version 7.
-    /// </summary>
-    public string? PriceNote { get; set; }
 }
 
 /// <summary>A check a run cannot settle: a rubric, a corpus or a configuration to look at.</summary>
@@ -905,6 +977,21 @@ public sealed class RootCausePairDecomposition
     /// stated, the components are not.
     /// </summary>
     public bool NotEstablished { get; set; }
+
+    /// <summary>
+    /// Cost only: the two sides do not bill the same components, so the components are the input and output groups of
+    /// <see cref="RootCauseCostKeys"/> instead of the five of <see cref="RootCauseSegments.CostComponents"/>. False when
+    /// the pair is not decomposed, and in a result written before engine version 10.
+    /// </summary>
+    public bool Grouped { get; set; }
+
+    /// <summary>
+    /// Cost only: the cost ratio at equal prices, <c>exp(all/volume ÷ L(FirstTotal, SecondTotal))</c>, an LMDI volume
+    /// index rather than a ratio of token counts. With the price ratio <c>exp(all/price ÷ L)</c> and, when grouped, the
+    /// caching ratio <c>exp(all/caching ÷ L)</c>, the product is exactly <c>FirstTotal ÷ SecondTotal</c>. Null when the
+    /// pair is not decomposed, and in a result written before engine version 10.
+    /// </summary>
+    public double? VolumeRatio { get; set; }
 }
 
 /// <summary>One component of a decomposition.</summary>
@@ -912,11 +999,11 @@ public sealed class RootCauseComponent
 {
     /// <summary>
     /// Speed: <c>callCount</c>, <c>perCallLatency</c>, <c>outputTokens</c>, <c>decodeRate</c>, <c>gap</c>;
-    /// cost: a cost component; intelligence: a dimension or <c>other</c>.
+    /// cost: a cost component, a group of a grouped pair or <c>all</c>; intelligence: a dimension or <c>other</c>.
     /// </summary>
     public string Key { get; set; } = string.Empty;
 
-    /// <summary>Cost only: <c>volume</c> or <c>price</c>; null otherwise.</summary>
+    /// <summary>Cost only: <c>volume</c>, <c>price</c> or, in a grouped pair, <c>caching</c> (<see cref="RootCauseCostKeys"/>); null otherwise.</summary>
     public string? Effect { get; set; }
 
     public string Label { get; set; } = string.Empty;
@@ -944,6 +1031,176 @@ public sealed class RootCauseQualitySplit
 
     /// <summary>One per dimension, then <c>other</c> (the critical-error cap and difficulty weighting); they sum exactly to the difference.</summary>
     public List<RootCauseComponent> Components { get; set; } = new();
+}
+
+/// <summary>
+/// The priors behind the unexpected results: each predicts an ordering of two models of the same provider, with
+/// different model ids. The price tiers are set by the list output price, the dearer at least
+/// <see cref="RootCauseEngine.TierPriceRatio"/> times the cheaper; the release order holds within one model line
+/// (<see cref="RootCauseAnomalies.ModelLine"/>) at one thinking level.
+/// </summary>
+public static class RootCausePriors
+{
+    /// <summary>The dearer price tier scores at least as high.</summary>
+    public const string PriceTierQuality = "PriceTierQuality";
+
+    /// <summary>The cheaper price tier answers at least as fast.</summary>
+    public const string PriceTierSpeed = "PriceTierSpeed";
+
+    /// <summary>The newer release scores at least as high.</summary>
+    public const string NewerRelease = "NewerRelease";
+
+    /// <summary>In document order: the quality priors first.</summary>
+    public static readonly IReadOnlyList<string> All = new[] { PriceTierQuality, NewerRelease, PriceTierSpeed };
+
+    /// <summary><see cref="RootCauseAxes.Speed"/> for the speed prior, <see cref="RootCauseAxes.Intelligence"/> otherwise.</summary>
+    public static string Axis(string? prior) => prior == PriceTierSpeed ? RootCauseAxes.Speed : RootCauseAxes.Intelligence;
+
+    /// <summary>The prior as a noun phrase: <c>the price-tier order of quality</c>.</summary>
+    public static string Name(string? prior) => prior switch
+    {
+        PriceTierQuality => "the price-tier order of quality",
+        PriceTierSpeed => "the price-tier order of speed",
+        NewerRelease => "the release order of quality",
+        _ => prior ?? string.Empty
+    };
+
+    /// <summary>What the prior predicts, as a clause: <c>the dearer price tier scores at least as high</c>.</summary>
+    public static string Prediction(string? prior) => prior switch
+    {
+        PriceTierQuality => "the dearer price tier scores at least as high",
+        PriceTierSpeed => "the cheaper price tier answers at least as fast",
+        NewerRelease => "the newer release of a model line scores at least as high",
+        _ => prior ?? string.Empty
+    };
+}
+
+/// <summary>
+/// One unexpected result: two models of one provider whose order on an axis goes against a prior of
+/// <see cref="RootCausePriors"/>, by an established reversal or by at least <see cref="RootCauseEngine.AnomalyMinPoints"/>
+/// index points (quality) or <see cref="RootCauseEngine.AnomalyTimeRatio"/> times the median model time (speed), with
+/// what the engine measured about the pair.
+/// </summary>
+public sealed class RootCauseAnomaly
+{
+    /// <summary>1-based, the <c>n</c> of <c>rca.anomaly.&lt;n&gt;.*</c>.</summary>
+    public int Number { get; set; }
+
+    /// <summary><c>U1</c>, <c>U2</c>, ….</summary>
+    public string Ref { get; set; } = string.Empty;
+
+    /// <summary>One of <see cref="RootCausePriors"/>.</summary>
+    public string Prior { get; set; } = string.Empty;
+
+    /// <summary>The prior's axis, <see cref="RootCausePriors.Axis"/>.</summary>
+    public string Axis { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The token of the model the prior expects ahead: the dearer tier (price tier, quality), the cheaper tier (price
+    /// tier, speed) or the newer release.
+    /// </summary>
+    public string Expected { get; set; } = string.Empty;
+
+    /// <summary>The token of the other model, which came out ahead or level.</summary>
+    public string Other { get; set; } = string.Empty;
+
+    /// <summary>The two models' Intelligence Index (quality priors) or median model time in milliseconds (speed prior).</summary>
+    public double? ExpectedValue { get; set; }
+
+    public double? OtherValue { get; set; }
+
+    /// <summary>The two models' list output prices, USD per million tokens; null for the release prior.</summary>
+    public double? ExpectedOutputPrice { get; set; }
+
+    public double? OtherOutputPrice { get; set; }
+
+    /// <summary>The two models' release dates (ISO); null for the price-tier priors.</summary>
+    public string? ExpectedReleaseDate { get; set; }
+
+    public string? OtherReleaseDate { get; set; }
+
+    /// <summary>Whether the pair had a paired test on the prior's axis.</summary>
+    public bool Tested { get; set; }
+
+    /// <summary>Quality priors: whether the two models' 95% intervals overlap (touching bounds overlap); null for the speed prior, or when an interval is missing.</summary>
+    public bool? IntervalsOverlap { get; set; }
+
+    /// <summary>
+    /// The reversal is established: a paired test of the pair is established and favors <see cref="Other"/>; without a
+    /// test, the two 95% intervals do not overlap (quality), or the 95% bootstrap interval of the time difference
+    /// excludes zero (speed).
+    /// </summary>
+    public bool Established { get; set; }
+
+    /// <summary>Quality: <see cref="Other"/>'s index minus <see cref="Expected"/>'s, in index points. Speed: <see cref="Expected"/>'s median model time divided by <see cref="Other"/>'s.</summary>
+    public double Gap { get; set; }
+
+    /// <summary>The configuration keys other than the model that differ, <see cref="Expected"/>'s value first: <c>thinking level (medium vs xhigh)</c>.</summary>
+    public List<string> Confounds { get; set; } = new();
+
+    /// <summary>The two models' index under each panel member alone and under the reference reader; null when none is recorded.</summary>
+    public RootCauseAnomalyGraders? Graders { get; set; }
+
+    /// <summary>At most two dimensions with the largest difference between the pair, largest first.</summary>
+    public List<RootCauseAnomalyDimension> Dimensions { get; set; } = new();
+
+    /// <summary>Quality priors: at most three questions on which <see cref="Other"/> scored furthest above <see cref="Expected"/>, furthest first.</summary>
+    public List<RootCauseAnomalyQuestion> Questions { get; set; } = new();
+
+    /// <summary>
+    /// Speed prior: the component carrying the largest share of the pair's time difference, as the pair's speed
+    /// decomposition states it (the share is of the difference, first model minus second); null when it is not decomposed.
+    /// </summary>
+    public RootCauseComponent? SpeedComponent { get; set; }
+
+    /// <summary>The keys of at most two kept, not ruled out, pair hypotheses of the two models on the prior's axis, best first.</summary>
+    public List<string> Hypotheses { get; set; } = new();
+
+    /// <summary>The number of the recommended run that settles it; null when a check, or nothing, does.</summary>
+    public int? SettledByRun { get; set; }
+
+    /// <summary>The number of the check that settles it; null when a run, or nothing, does.</summary>
+    public int? SettledByCheck { get; set; }
+}
+
+/// <summary>The two models of an unexpected result under each grader alone, and the panel member whose split is larger.</summary>
+public sealed class RootCauseAnomalyGraders
+{
+    public double? ExpectedMemberA { get; set; }
+    public double? ExpectedMemberB { get; set; }
+    public double? ExpectedReader { get; set; }
+    public double? OtherMemberA { get; set; }
+    public double? OtherMemberB { get; set; }
+    public double? OtherReader { get; set; }
+
+    /// <summary>
+    /// <c>A</c> or <c>B</c>: the panel member under which the two models lie further apart; null when either member
+    /// lacks an index for either model, or the two splits are equal.
+    /// </summary>
+    public string? LargerSplit { get; set; }
+}
+
+/// <summary>One dimension of an unexpected result: its name and both models' mean scores.</summary>
+public sealed class RootCauseAnomalyDimension
+{
+    /// <summary><c>Accuracy</c>, <c>Completeness</c>, <c>Conciseness</c> or <c>Readability</c>.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    public double Expected { get; set; }
+    public double Other { get; set; }
+}
+
+/// <summary>One question of an unexpected result: both models' mean scores and the other models' median.</summary>
+public sealed class RootCauseAnomalyQuestion
+{
+    /// <summary><c>Q7</c>, or a battery's <c>S2-Q7</c>.</summary>
+    public string Reference { get; set; } = string.Empty;
+
+    public double Expected { get; set; }
+    public double Other { get; set; }
+
+    /// <summary>The median score of the other analyzed models that scored the question; null when none did.</summary>
+    public double? OthersMedian { get; set; }
 }
 
 /// <summary>One model's own figures, for the evidence tables.</summary>

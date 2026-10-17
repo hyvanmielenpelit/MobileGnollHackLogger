@@ -67,6 +67,7 @@ public static class BenchmarkReportPackParser
         BenchmarkReportSlots.HypothesesCost,
         BenchmarkReportSlots.Conclusions,
         BenchmarkReportSlots.Limitations,
+        BenchmarkReportSlots.UnexpectedResults,
         BenchmarkReportSlots.AnswerBest,
         BenchmarkReportSlots.AnswerWorst,
         BenchmarkReportSlots.AnswerSpeed,

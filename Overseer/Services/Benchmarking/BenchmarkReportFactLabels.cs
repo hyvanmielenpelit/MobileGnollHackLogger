@@ -113,6 +113,9 @@ public static class BenchmarkReportFactLabels
         ["rca.control.modelSpecific"] = "Questions only the model under test missed",
         ["rca.systemFirst"] = "System hypotheses first",
         ["rca.pricingBasis"] = "Pricing basis of the cost decomposition",
+        ["rca.anomaly.count"] = "Unexpected results",
+        ["rca.anomaly.priorsChecked"] = "Unexpected results: priors checked",
+        ["rca.anomaly.untestedPairs"] = "Unexpected results: pairs without a paired test",
 
         // Battery (BenchmarkBatteryReportFacts)
         ["battery.memberRuns"] = "Member runs",
@@ -716,10 +719,23 @@ public static class BenchmarkReportFactLabels
     /// <summary>The unindexed parts of a model profile's facts (<c>rca.profile.&lt;T&gt;.&lt;part&gt;</c>).</summary>
     private static readonly IReadOnlyDictionary<string, string> ProfileParts = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        ["gainedPointsOn"] = "gained points on",
         ["lostPointsOn"] = "lost points on",
         ["weakestDimension"] = "weakest dimension",
         ["lowestRank"] = "lowest rank",
         ["flags"] = "flags",
+    };
+
+    /// <summary>The parts of an unexpected result's facts (<c>rca.anomaly.&lt;n&gt;.&lt;part&gt;</c>).</summary>
+    private static readonly IReadOnlyDictionary<string, string> AnomalyParts = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["ref"] = "reference",
+        ["summary"] = "summary",
+        ["prior"] = "prior it goes against",
+        ["confounds"] = "configuration differences",
+        ["graders"] = "scores under each grader alone",
+        ["settledBy"] = "settled by",
+        ["tested"] = "paired test made",
     };
 
     /// <summary>The parts of a control's facts (<c>rca.controls.&lt;n&gt;.&lt;part&gt;</c>).</summary>
@@ -787,13 +803,12 @@ public static class BenchmarkReportFactLabels
 
         switch (parts[1])
         {
-            // rca.axis.<axis>.status, rca.axis.<axis>.best, rca.axis.<axis>.priceNote
+            // rca.axis.<axis>.status, rca.axis.<axis>.best
             case "axis" when parts.Length == 4 && RootCauseAxisNames.TryGetValue(parts[2], out var axis):
                 label = parts[3] switch
                 {
                     "status" => "Root cause, " + axis + ": status",
                     "best" => "Root cause, " + axis + ": best hypothesis",
-                    "priceNote" => "Root cause, " + axis + ": price note",
                     _ => string.Empty
                 };
                 return label.Length > 0;
@@ -861,7 +876,9 @@ public static class BenchmarkReportFactLabels
                 }
                 return false;
 
-            // rca.cost.<F>.<S>.total, .decomposed, rca.cost.<F>.<S>.<component>.<volume|price>.share or .interval
+            // rca.cost.<F>.<S>.total, .decomposed, .grouped, .volumeRatio,
+            // rca.cost.<F>.<S>.<component>.<volume|price>.share or .interval (component: a cost component, input or output
+            // of a grouped pair, or all), rca.cost.<F>.<S>.<input|all>.caching.share or .interval
             case "cost" when parts.Length >= 5 && TokenName(parts[2]) is string first && TokenName(parts[3]) is string second:
                 if (parts.Length == 5 && parts[4] == "total")
                 {
@@ -873,11 +890,34 @@ public static class BenchmarkReportFactLabels
                     label = "Cost difference per question, " + first + " against " + second + ": split into parts";
                     return true;
                 }
-                if (parts.Length == 7 && parts[5] is "volume" or "price" && parts[6] is "share" or "interval"
-                    && (parts[4] == "all" || CostComponentNames.ContainsKey(parts[4])))
+                if (parts.Length == 5 && parts[4] == "grouped")
                 {
-                    string component = parts[4] == "all" ? "every component" : CostComponentNames[parts[4]];
-                    label = "Cost decomposition, " + first + " against " + second + ": " + component + ", " + (parts[5] == "volume" ? "token volume" : "price per token")
+                    label = "Cost difference per question, " + first + " against " + second + ": split into input and output";
+                    return true;
+                }
+                if (parts.Length == 5 && parts[4] == "volumeRatio")
+                {
+                    label = "Cost difference per question, " + first + " against " + second + ": cost ratio at equal prices";
+                    return true;
+                }
+                if (parts.Length == 7 && parts[6] is "share" or "interval"
+                    && ((parts[5] is "volume" or "price" && (parts[4] is "all" or "input" || CostComponentNames.ContainsKey(parts[4])))
+                        || (parts[5] == "caching" && parts[4] is "all" or "input")))
+                {
+                    string component = parts[4] switch
+                    {
+                        "all" => "every component",
+                        "input" => "input (uncached input, cache reads and cache writes)",
+                        "output" => "output (visible output, or output with reasoning in an input-and-output split)",
+                        _ => CostComponentNames[parts[4]]
+                    };
+                    string effect = parts[5] switch
+                    {
+                        "volume" => "token volume",
+                        "caching" => "caching",
+                        _ => "price per token"
+                    };
+                    label = "Cost decomposition, " + first + " against " + second + ": " + component + ", " + effect
                             + (parts[6] == "share" ? " share" : " share, 95% interval");
                     return true;
                 }
@@ -938,6 +978,11 @@ public static class BenchmarkReportFactLabels
             // rca.rule.<id>.shareSpan, rca.rule.<id>.count
             case "rule" when parts.Length == 4 && parts[2].Length > 0 && parts[3] is "shareSpan" or "count":
                 label = "Hypotheses of rule " + parts[2] + (parts[3] == "shareSpan" ? ": span of their shares" : ": how many");
+                return true;
+
+            // rca.anomaly.<n>.<part>
+            case "anomaly" when parts.Length == 4 && IsIndex(parts[2]) && AnomalyParts.TryGetValue(parts[3], out var anomalyPart):
+                label = "Unexpected result " + parts[2] + ": " + anomalyPart;
                 return true;
 
             // rca.controls.<n>.<part>

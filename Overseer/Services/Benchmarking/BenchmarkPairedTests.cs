@@ -1177,8 +1177,25 @@ public class BenchmarkPairedTestsService
     // --- The wizard ------------------------------------------------------------------------------------
 
     /// <summary>The Paired tests view of the Model Comparison wizard. A null result carries the refusal.</summary>
-    public async Task<(BenchmarkPairedComparisonDto? Result, string? Error)> CompareAsync(
+    public Task<(BenchmarkPairedComparisonDto? Result, string? Error)> CompareAsync(
         BenchmarkPairedComparisonRequest? request, CancellationToken ct = default)
+        => CompareCoreAsync(request, computed: null, ct);
+
+    /// <summary>
+    /// As <see cref="CompareAsync(BenchmarkPairedComparisonRequest?, CancellationToken)"/>, over
+    /// <paramref name="comparison"/>, a comparison already computed on the request's pricing basis whose
+    /// entries include the request's sources, instead of computing it again. Only the entries of the
+    /// request's sources take part, in the request's order: its runs, then its groups, then its battery runs.
+    /// </summary>
+    public Task<(BenchmarkPairedComparisonDto? Result, string? Error)> CompareAsync(
+        BenchmarkPairedComparisonRequest? request, BenchmarkModelComparisonDto comparison, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(comparison);
+        return CompareCoreAsync(request, comparison, ct);
+    }
+
+    private async Task<(BenchmarkPairedComparisonDto? Result, string? Error)> CompareCoreAsync(
+        BenchmarkPairedComparisonRequest? request, BenchmarkModelComparisonDto? computed, CancellationToken ct)
     {
         var runIds = (request?.RunIds ?? new List<long>()).Distinct().ToList();
         var groupIds = (request?.GroupIds ?? new List<long>()).Distinct().ToList();
@@ -1206,17 +1223,36 @@ public class BenchmarkPairedTestsService
             return (cached, null);
         }
 
-        var (comparison, error) = await _comparison.CompareAsync(new BenchmarkModelComparisonRequest
+        BenchmarkModelComparisonDto comparison;
+        List<BenchmarkModelComparisonEntryDto> comparable;
+        if (computed == null)
         {
-            RunIds = runIds,
-            GroupIds = groupIds,
-            BatteryRunIds = batteryRunIds,
-            PricingBasis = basis
-        }, ct);
+            var (fresh, error) = await _comparison.CompareAsync(new BenchmarkModelComparisonRequest
+            {
+                RunIds = runIds,
+                GroupIds = groupIds,
+                BatteryRunIds = batteryRunIds,
+                PricingBasis = basis
+            }, ct);
 
-        if (comparison == null) return (null, error ?? "The comparison could not be computed.");
-
-        var comparable = comparison.Entries.Where(e => !e.Excluded).ToList();
+            if (fresh == null) return (null, error ?? "The comparison could not be computed.");
+            comparison = fresh;
+            comparable = comparison.Entries.Where(e => !e.Excluded).ToList();
+        }
+        else
+        {
+            comparison = computed;
+            var byKey = computed.Entries
+                .GroupBy(e => e.Key, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+            comparable = runIds.Select(id => "run:" + id.ToString(CultureInfo.InvariantCulture))
+                .Concat(groupIds.Select(id => "group:" + id.ToString(CultureInfo.InvariantCulture)))
+                .Concat(batteryRunIds.Select(id => "battery:" + id.ToString(CultureInfo.InvariantCulture)))
+                .Select(key => byKey.GetValueOrDefault(key))
+                .Where(e => e != null && !e.Excluded)
+                .Select(e => e!)
+                .ToList();
+        }
 
         string? invalid = BenchmarkPairedTests.Validate(comparable.Count, mode);
         if (invalid != null) return (null, invalid);
@@ -1236,7 +1272,9 @@ public class BenchmarkPairedTestsService
         string reference = requestedReference ?? BenchmarkPairedTests.DefaultReferenceKey(entries);
         var result = BenchmarkPairedTests.Build(entries, comparison.SubjectKind, basis, mode, reference, DateTime.UtcNow);
 
-        _cache?.Set(cacheKey, result);
+        // A result over a comparison computed elsewhere may carry that comparison's entry flags, so only
+        // the wizard's own computation is kept for the wizard.
+        if (computed == null) _cache?.Set(cacheKey, result);
 
         _logger?.LogInformation(
             "Computed paired tests over {EntryCount} comparable entries in {Mode} mode on the {Basis} pricing basis.",

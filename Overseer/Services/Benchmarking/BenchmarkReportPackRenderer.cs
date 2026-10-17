@@ -122,9 +122,17 @@ public static partial class BenchmarkReportPackRenderer
     /// answer strength, and a response-style conflict reads as a noun phrase. From version 21 the Root Cause Analysis' Summary
     /// has no research questions and its writer output no answer slots, and What we found prints the findings code ranks:
     /// answers without tools, a weakness every model shares, the grader family, value for money, thinking levels, the notable
-    /// findings and the differences from the reference.
+    /// findings and the differences from the reference. From version 22 the Root Cause Analysis' cost decomposition splits a
+    /// pair whose billing components are not comparable into input and output, with the price card and caching apart from
+    /// token volume, and gives each pair's cost ratio at equal prices; a cost difference the price cards explain is left out of
+    /// the hypotheses tables and the hypotheses chart and named in one line, and the Conclusions print no price note. What we
+    /// found states value for money without a cost multiple, the thinking levels in one bullet and a model's token volume
+    /// against the others'; At a glance prints the figures alone, Why each model scored as it did is one block per model with
+    /// where it gained points, a Lost points entry leaves out a weakness every model shares, each axis' null hypotheses are one
+    /// sentence, and the writer is asked for no price-card or choosing-a-model sentence and no count written in words.
+    /// The PDF layout, the Word layout and the chart layout did not change with version 22.
     /// </summary>
-    public const int ReportFormatVersion = 21;
+    public const int ReportFormatVersion = 22;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
@@ -152,8 +160,24 @@ public static partial class BenchmarkReportPackRenderer
     /// From version 25 the Root Cause Analysis' Summary has no research questions and its writer output no answer slots, and
     /// What we found prints the findings code ranks: answers without tools, a weakness every model shares, the grader family,
     /// value for money, thinking levels, the notable findings and the differences from the reference.
+    /// From version 26 the Root Cause Analysis' cost decomposition splits a pair whose billing components are not comparable
+    /// into input and output, with the price card and caching apart from token volume, and the cost tests give each pair's
+    /// ratio at equal prices; a cost difference the price cards explain is left out of the hypotheses tables and the hypotheses
+    /// chart and named in one line, and the Conclusions print no price note and state a reason every axis shares once. The
+    /// pairs add each model's adjacent thinking levels and the unexpected-result pairs; an Unexpected results section explains
+    /// each result that goes against the price-tier and release-date priors, and the response-style conflict is one hypothesis
+    /// for the document. What we found adds the unexpected results and a model's token volume, states value for money without
+    /// a cost multiple and the thinking levels in one bullet with the paired-test ratios; At a glance prints the figures alone,
+    /// and Why each model scored as it did is one block per model with where it gained points, its difference from the
+    /// reference by dimension, the hypotheses about it and its unexpected results, a Lost points entry leaving out a weakness
+    /// every model shares. Each axis' null hypotheses are one sentence, Appendix A states a configuration difference once,
+    /// Appendix B is one row per pair, Appendix C one entry per rule, Appendix G details at most a set number of questions in
+    /// the compact grader format and names the others, Appendix F prints a hash every model shares once, and the grader
+    /// findings table leaves out the models with the most common count in every category. The writer has an unexpected-results
+    /// slot and is asked for no price-card or choosing-a-model sentence and no count written in words.
+    /// The PDF layout, the Word layout and the chart layout did not change with version 26.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 25;
+    public const int ComparisonReportFormatVersion = 26;
 
     /// <summary>The comparison format version whose answer excerpts were first allotted in rounds across the questions.</summary>
     private const int RoundExcerptsFormatVersion = 20;
@@ -2893,7 +2917,7 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>Everything one render reads, deserialized once.</summary>
-    private sealed class Context
+    internal sealed class Context
     {
         public required BenchmarkReportDocument Document { get; init; }
         public required BenchmarkReportRenderOptions Options { get; init; }

@@ -32,15 +32,17 @@ public class BenchmarkReportRenderService
     private readonly BenchmarkReportChartStore _charts;
     private readonly RootCauseChartPublisher _publisher;
     private readonly ILogger<BenchmarkReportRenderService> _logger;
+    private readonly BenchmarkReportDocumentFactsCache _factsCache;
 
     public BenchmarkReportRenderService(
         ApplicationDbContext db, BenchmarkReportChartStore charts, ILogger<BenchmarkReportRenderService> logger,
-        RootCauseChartPublisher? publisher = null)
+        RootCauseChartPublisher? publisher = null, BenchmarkReportDocumentFactsCache? factsCache = null)
     {
         _db = db;
         _charts = charts;
         _logger = logger;
         _publisher = publisher ?? new RootCauseChartPublisher(charts);
+        _factsCache = factsCache ?? BenchmarkReportDocumentFactsCache.None;
     }
 
     public static string AudienceName(BenchmarkReportAudience audience) => audience switch
@@ -84,6 +86,7 @@ public class BenchmarkReportRenderService
         BenchmarkReportDocumentListFilter filter, string? subjectKey, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(filter);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         int limit = Math.Clamp(filter.Take ?? 200, 1, MaxListSize);
         long? suiteId = filter.SuiteId;
         long? runId = filter.RunId;
@@ -108,16 +111,17 @@ public class BenchmarkReportRenderService
                 d.SuiteId, d.SuiteName, d.WriterDisplayName, d.WriterProvider, d.WriterModelId, d.WriterThinkingLevel,
                 d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
                 d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd,
-                d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson,
+                d.ComparisonKey, d.ComparisonRequestJson,
                 d.Scope, d.ComparisonId, d.CoveredEntryKeysJson, d.CoveredSetKey, d.ReferenceEntryKey, d.ChatConsistencyAnalysisId,
                 Runs = d.Runs.Select(r => new { r.RunId, r.IsPeer, r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256 }).ToList()
             })
             .ToListAsync(ct);
 
+        var (factsById, factsHits) = await _factsCache.GetAsync(_db, rows.Select(r => r.Id).ToList(), ct);
         var current = await CurrentFingerprintsAsync(rows.SelectMany(r => r.Runs.Select(x => x.RunId)).Distinct().ToList(), ct);
         var comparisonNames = await ComparisonNamesAsync(rows.Select(r => r.ComparisonId), ct);
 
-        return rows.Select(d =>
+        var items = rows.Select(d =>
         {
             var stored = d.Runs.Select(r => new StoredRun(r.RunId, r.IsPeer,
                 new RunFingerprint(r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256))).ToList();
@@ -133,11 +137,17 @@ public class BenchmarkReportRenderService
             item.PeersChangedSinceGeneration = AnyChanged(stored.Where(r => r.IsPeer), current);
             item.MissingRunIds = missing;
             item.ChatConsistencyAnalysisId = d.ChatConsistencyAnalysisId;
-            FillComparison(item, d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson);
-            FillScope(item, d.Scope, d.ComparisonId, DisplayNameOf(comparisonNames, d.ComparisonId), d.CoveredEntryKeysJson, d.CoveredSetKey, d.ReferenceEntryKey, d.FactsJson);
+            var facts = factsById.TryGetValue(d.Id, out var found) ? found : StoredFacts.Empty;
+            FillComparison(item, d.ComparisonKey, d.ComparisonRequestJson, facts);
+            FillScope(item, d.Scope, d.ComparisonId, DisplayNameOf(comparisonNames, d.ComparisonId), d.CoveredEntryKeysJson, d.CoveredSetKey, d.ReferenceEntryKey, facts);
             FillCharts(item);
             return item;
         }).ToList();
+
+        _logger.LogInformation(
+            "Listed {RowCount} report documents, {CacheHits} fact sheets from the cache, in {ElapsedMs} ms.",
+            items.Count, factsHits, stopwatch.ElapsedMilliseconds);
+        return items;
     }
 
     /// <summary>The display name of each existing comparison among <paramref name="ids"/>, read in one query.</summary>
@@ -163,9 +173,8 @@ public class BenchmarkReportRenderService
     /// </summary>
     private static void FillScope(
         BenchmarkReportDocumentListItemDto item, BenchmarkReportScope scope, int? comparisonId, string? comparisonName,
-        string? coveredEntryKeysJson, string? coveredSetKey, string? referenceEntryKey, string? factsJson)
+        string? coveredEntryKeysJson, string? coveredSetKey, string? referenceEntryKey, StoredFacts facts)
     {
-        var facts = ReadFacts(factsJson);
         item.Scope = scope;
         item.ComparisonId = comparisonId;
         item.ComparisonName = comparisonId == null ? null : comparisonName;
@@ -342,7 +351,7 @@ public class BenchmarkReportRenderService
         => runs.Any(r => !current.TryGetValue(r.RunId, out var now) || now != r.Fingerprint);
 
     /// <summary>The comparison's identity and shape, read from the stored request and fact sheet.</summary>
-    private static void FillComparison(BenchmarkReportDocumentListItemDto item, string? comparisonKey, string? comparisonRequestJson, string? factsJson)
+    private static void FillComparison(BenchmarkReportDocumentListItemDto item, string? comparisonKey, string? comparisonRequestJson, StoredFacts facts)
     {
         item.ComparisonKey = comparisonKey;
 
@@ -362,9 +371,8 @@ public class BenchmarkReportRenderService
             item.PricingBasis = request.PricingBasis.ToString();
         }
 
-        var (peerCount, peerLetters) = PeersOf(factsJson);
-        item.PeerCount = peerCount;
-        item.PeerLetters = peerLetters;
+        item.PeerCount = facts.PeerCount;
+        item.PeerLetters = new Dictionary<string, string>(facts.PeerLetters, StringComparer.Ordinal);
     }
 
     /// <summary>The chart set's figures and settings hash, from its manifest alone; none when it has no charts.</summary>
@@ -462,9 +470,10 @@ public class BenchmarkReportRenderService
             d.SuiteId, d.SuiteName, d.WriterDisplayName, d.WriterProvider, d.WriterModelId, d.WriterThinkingLevel,
             d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
             d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd);
-        FillComparison(dto, d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson);
+        var facts = ReadFacts(d.FactsJson);
+        FillComparison(dto, d.ComparisonKey, d.ComparisonRequestJson, facts);
         var comparisonNames = await ComparisonNamesAsync(new[] { d.ComparisonId }, ct);
-        FillScope(dto, d.Scope, d.ComparisonId, DisplayNameOf(comparisonNames, d.ComparisonId), d.CoveredEntryKeysJson, d.CoveredSetKey, d.ReferenceEntryKey, d.FactsJson);
+        FillScope(dto, d.Scope, d.ComparisonId, DisplayNameOf(comparisonNames, d.ComparisonId), d.CoveredEntryKeysJson, d.CoveredSetKey, d.ReferenceEntryKey, facts);
         FillCharts(dto);
         FillRootCause(dto, d.Audience, d.FactsJson, d.Id);
         return dto;
@@ -549,6 +558,7 @@ public class BenchmarkReportRenderService
     public async Task<bool> DeleteAsync(long id, CancellationToken ct)
     {
         if (!await DeleteDocumentAsync(_db, id, ct)) return false;
+        _factsCache.Remove(id);
 
         if (_charts.IsConfigured)
         {
@@ -715,7 +725,11 @@ public class BenchmarkReportRenderService
         return true;
     }
 
-    /// <summary>The scoring fingerprint of each run that still exists.</summary>
+    /// <summary>
+    /// The scoring fingerprint of each run that still exists, its synthesis part read from
+    /// <see cref="BenchmarkRun.SynthesisFingerprint"/>. A run whose column is still null has its two
+    /// synthesis columns read and hashed in one second query, and the hash written back.
+    /// </summary>
     private async Task<Dictionary<long, RunFingerprint>> CurrentFingerprintsAsync(List<long> runIds, CancellationToken ct)
     {
         if (runIds.Count == 0) return new Dictionary<long, RunFingerprint>();
@@ -724,13 +738,54 @@ public class BenchmarkReportRenderService
             .AsNoTracking()
             .IgnoreAutoIncludes()
             .Where(r => runIds.Contains(r.Id))
-            .Select(r => new { r.Id, r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.AssessmentJson, r.CoAssessorSynthesisJson })
+            .Select(r => new { r.Id, r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisFingerprint })
             .ToListAsync(ct);
+
+        var unfilled = runs.Where(r => r.SynthesisFingerprint == null).Select(r => r.Id).ToList();
+        var filled = new Dictionary<long, string>();
+        if (unfilled.Count > 0)
+        {
+            var syntheses = await _db.BenchmarkRuns
+                .AsNoTracking()
+                .IgnoreAutoIncludes()
+                .Where(r => unfilled.Contains(r.Id))
+                .Select(r => new { r.Id, r.AssessmentJson, r.CoAssessorSynthesisJson })
+                .ToListAsync(ct);
+            foreach (var synthesis in syntheses)
+            {
+                string fingerprint = SynthesisSha256(synthesis.AssessmentJson, synthesis.CoAssessorSynthesisJson);
+                filled[synthesis.Id] = fingerprint;
+                await BackfillSynthesisFingerprintAsync(synthesis.Id, fingerprint, ct);
+            }
+        }
 
         return runs.ToDictionary(
             r => r.Id,
             r => new RunFingerprint(r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc,
-                SynthesisSha256(r.AssessmentJson, r.CoAssessorSynthesisJson)));
+                r.SynthesisFingerprint ?? filled.GetValueOrDefault(r.Id) ?? SynthesisSha256(null, null)));
+    }
+
+    /// <summary>
+    /// Writes a run's missing <see cref="BenchmarkRun.SynthesisFingerprint"/> as one set-based update that
+    /// leaves a value already written alone; no entity is tracked. Two concurrent backfills write the same
+    /// value. A provider that cannot translate a set-based update (the in-memory test provider) writes it
+    /// through the change tracker.
+    /// </summary>
+    private async Task BackfillSynthesisFingerprintAsync(long runId, string fingerprint, CancellationToken ct)
+    {
+        if (_db.Database.IsRelational())
+        {
+            await _db.BenchmarkRuns
+                .Where(r => r.Id == runId && r.SynthesisFingerprint == null)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.SynthesisFingerprint, fingerprint), ct);
+            return;
+        }
+
+        var run = _db.ChangeTracker.Entries<BenchmarkRun>().Select(e => e.Entity).FirstOrDefault(r => r.Id == runId)
+            ?? await _db.BenchmarkRuns.IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
+        if (run == null || run.SynthesisFingerprint != null) return;
+        run.SynthesisFingerprint = fingerprint;
+        await _db.SaveChangesAsync(ct);
     }
 
     private List<BenchmarkReportValidationNote> DeserializeNotes(string json, long id)

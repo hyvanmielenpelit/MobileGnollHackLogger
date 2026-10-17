@@ -854,7 +854,8 @@ public static class RootCauseEvidence
     /// the advisory verification-cleared Overall Index. The index under each panel member alone and under the
     /// reference reader come from the comparison's panel diagnostics; <paramref name="memberAIndex"/>,
     /// <paramref name="memberBIndex"/> and <paramref name="referenceReaderIndex"/>, when given, win over them (a
-    /// battery's declared-weights composites, on the Overall Index's scale).
+    /// battery's declared-weights composites, on the Overall Index's scale). The release date is the entry's in
+    /// <paramref name="releaseDates"/>, keyed by <see cref="ReleaseDateKey"/>; null without one.
     /// </summary>
     public static RootCauseModelInput ModelInput(
         BenchmarkModelComparisonEntryDto entry,
@@ -869,12 +870,17 @@ public static class RootCauseEvidence
         double? verificationClearedIndex = null,
         double? memberAIndex = null,
         double? memberBIndex = null,
-        double? referenceReaderIndex = null)
+        double? referenceReaderIndex = null,
+        IReadOnlyDictionary<string, string>? releaseDates = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
         ArgumentNullException.ThrowIfNull(comparison);
         var panel = comparison.PanelDiagnostics is { Applicable: true } diagnostics
             ? diagnostics.Entries.FirstOrDefault(e => string.Equals(e.EntryKey, entry.Key, StringComparison.Ordinal))
+            : null;
+        string? releaseDate = releaseDates != null && releaseDates.TryGetValue(ReleaseDateKey(entry.Provider, entry.ModelId), out var date)
+                              && !string.IsNullOrWhiteSpace(date)
+            ? date.Trim()
             : null;
 
         return new RootCauseModelInput
@@ -890,6 +896,7 @@ public static class RootCauseEvidence
             MaxOutputTokens = entry.MaxOutputTokens,
             ParallelMode = entry.ParallelExecutionMode,
             HarnessVersion = BenchmarkReportFacts.EntryHarnessVersion(runs),
+            ReleaseDate = releaseDate,
             EntryKey = entry.Key,
             IsSubject = isSubject,
             RunIds = entry.RunIds.OrderBy(id => id).ToList(),
@@ -913,6 +920,10 @@ public static class RootCauseEvidence
             Evidence = evidence
         };
     }
+
+    /// <summary>The key of a model's release date in <see cref="RootCauseInput.ReleaseDates"/>: <c>provider|modelId</c>, trimmed, in lower case.</summary>
+    public static string ReleaseDateKey(string? provider, string? modelId)
+        => ((provider ?? string.Empty).Trim() + "|" + (modelId ?? string.Empty).Trim()).ToLowerInvariant();
 
     /// <summary>
     /// The comparison's grader-family gaps, copied from its panel diagnostics as they are, in their order; empty

@@ -8,7 +8,7 @@ using Xunit;
 
 /// <summary>
 /// The root-cause statistics: Spearman's ρ with its Fisher-z interval, the Mann–Whitney test, the
-/// fixed-seed bootstrap and the exact LMDI split.
+/// fixed-seed bootstrap and the exact two- and three-factor LMDI splits.
 /// </summary>
 public class RootCauseStatisticsTests
 {
@@ -121,6 +121,32 @@ public class RootCauseStatisticsTests
     {
         Assert.Equal((30.0, 0.0), RootCauseStatistics.Lmdi(30, 0, 10, 0));
         Assert.Equal((-12.0, 0.0), RootCauseStatistics.Lmdi(0, 12, 0, 4));
+    }
+
+    [Theory]
+    [InlineData(120.0, 80.0, 40.0, 20.0, 3.0, 2.0)]
+    [InlineData(80.0, 120.0, 20.0, 40.0, 2.0, 3.0)]
+    [InlineData(50.0, 50.0, 10.0, 25.0, 1.0, 1.0)]
+    public void Lmdi3_VolumeListAndCaching_SumExactlyToTheDifference(double totalA, double totalB, double volumeA, double volumeB, double listA, double listB)
+    {
+        var (volume, list, caching) = RootCauseStatistics.Lmdi3(totalA, totalB, volumeA, volumeB, listA, listB);
+
+        double l = RootCauseStatistics.LogMean(totalA, totalB);
+        Assert.Equal(totalA - totalB, volume + list + caching, 12);
+        Assert.Equal(l * Math.Log(volumeA / volumeB), volume, 12);
+        Assert.Equal(l * Math.Log(listA / listB), list, 12);
+        // The caching effect is what sets the effective price (total ÷ volume) apart from the list price.
+        Assert.Equal(l * Math.Log(totalA / volumeA / listA / (totalB / volumeB / listB)), caching, 9);
+    }
+
+    [Fact]
+    public void Lmdi3_ANonPositiveInput_FallsBackToTheTwoFactorSplit_WithoutCaching()
+    {
+        // A zero total or volume: the whole difference goes to volume, as Lmdi.
+        Assert.Equal((30.0, 0.0, 0.0), RootCauseStatistics.Lmdi3(30, 0, 10, 0, 2, 2));
+        // A missing list price: Lmdi's price effect becomes the list-price effect.
+        var (volume, price) = RootCauseStatistics.Lmdi(120, 80, 40, 20);
+        Assert.Equal((volume, price, 0.0), RootCauseStatistics.Lmdi3(120, 80, 40, 20, 0, 2));
     }
 
     [Fact]

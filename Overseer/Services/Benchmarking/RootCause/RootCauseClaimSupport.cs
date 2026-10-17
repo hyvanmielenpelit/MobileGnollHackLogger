@@ -64,7 +64,8 @@ public sealed class RootCauseClaimSupport
     /// <summary>The slots that state what was measured: a causal word there drops the paragraph (rule 32), as it drops an observation.</summary>
     public static readonly IReadOnlyList<string> ObservationSlots = new[]
     {
-        BenchmarkReportSlots.Scope, BenchmarkReportSlots.EvidenceIntelligence, BenchmarkReportSlots.EvidenceSpeed, BenchmarkReportSlots.EvidenceCost
+        BenchmarkReportSlots.Scope, BenchmarkReportSlots.EvidenceIntelligence, BenchmarkReportSlots.EvidenceSpeed, BenchmarkReportSlots.EvidenceCost,
+        BenchmarkReportSlots.UnexpectedResults
     };
 
     /// <summary>The slots that weigh the hypotheses: a causal word there needs a hypothesis or axis token in its sentence (rule 33).</summary>
@@ -192,15 +193,16 @@ public sealed class RootCauseClaimSupport
     /// <summary>The kinds of fact <see cref="IsSentenceShaped"/> marks, in words, for the prompt and the validator's notes.</summary>
     public const string SentenceShapedKinds =
         "a hypothesis's statement, evidence for or against, refuted-if statement or grade reasons; a known fact; a check; "
-        + "an axis's price note; a research question or its signals; a model's list of flags; and a notable finding's summary";
+        + "a research question or its signals; a model's list of flags; an unexpected result's summary; and a notable finding's summary";
 
     /// <summary>
     /// Whether a fact's display is a sentence, a clause or a list of clauses rather than a noun phrase, so the
     /// writer must give it a sentence of its own, or write it after a colon, never after a word of its own
     /// sentence: <c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.statement</c>, <c>.for</c>, <c>.against</c>,
     /// <c>.refutedIf</c> and <c>.gradeReasons</c>; <c>rca.known.&lt;n&gt;</c>; <c>rca.check.&lt;n&gt;</c>;
-    /// <c>rca.axis.&lt;axis&gt;.priceNote</c>; <c>rca.question.&lt;n&gt;.text</c> and <c>.signals</c>;
-    /// <c>rca.profile.&lt;T&gt;.flags</c>; and <c>notable.&lt;n&gt;.summary</c>. A hypothesis' label, a check's <c>rca.check.&lt;n&gt;.summary</c>, each single flag and
+    /// <c>rca.question.&lt;n&gt;.text</c> and <c>.signals</c>;
+    /// <c>rca.profile.&lt;T&gt;.flags</c>; <c>rca.anomaly.&lt;n&gt;.summary</c>; and <c>notable.&lt;n&gt;.summary</c>. A hypothesis' label, a check's
+    /// <c>rca.check.&lt;n&gt;.summary</c>, an unexpected result's <c>rca.anomaly.&lt;n&gt;.ref</c>, each single flag and
     /// <c>style.responseStyleConflict</c> are noun phrases and are never marked.
     /// </summary>
     public static bool IsSentenceShaped(string key)
@@ -216,9 +218,9 @@ public sealed class RootCauseClaimSupport
         {
             "hypothesis" => parts.Length == 5 && SentenceShapedHypothesisParts.Contains(parts[4]),
             "known" or "check" => parts.Length == 3,
-            "axis" => parts.Length == 4 && parts[3] == "priceNote",
             "question" => parts.Length == 4 && parts[3] is "text" or "signals",
             "profile" => parts.Length == 4 && parts[3] == "flags",
+            "anomaly" => parts.Length == 4 && parts[3] == "summary",
             _ => false
         };
     }

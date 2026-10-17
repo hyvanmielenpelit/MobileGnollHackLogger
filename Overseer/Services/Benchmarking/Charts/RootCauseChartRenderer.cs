@@ -34,7 +34,7 @@ public sealed record DrawnChart(string Key, string Title, string Caption, string
 ///
 /// <para>R1–R3 name each segment in a key by its color and print a segment's value inside it where the value
 /// fits; the axis title stands on its own row under the ticks. R4 shows the hypotheses the body's tables show,
-/// the null hypotheses left out.</para>
+/// the null hypotheses and the price effects (<see cref="RootCauseHypothesis.PriceEffect"/>) left out.</para>
 /// </summary>
 public static class RootCauseChartRenderer
 {
@@ -143,9 +143,13 @@ public static class RootCauseChartRenderer
             "Cost per question in US dollars, split by token kind" + GroupSuffix(result.CostRows)
             + (string.IsNullOrWhiteSpace(result.PricingBasis) ? "" : "; pricing basis: " + result.PricingBasis.Trim().TrimEnd('.'))
             + ". " + drawnBy);
-        AddHypotheses(plans, (result.Hypotheses ?? new List<RootCauseHypothesis>()).Where(h => h != null && h.Kind != "null").ToList(),
+        // R4 leaves out the null hypotheses and the price effects, which the price cards show.
+        var charted = (result.Hypotheses ?? new List<RootCauseHypothesis>()).Where(h => h != null && h.Kind != "null").ToList();
+        bool priceEffects = charted.Any(h => h.PriceEffect);
+        AddHypotheses(plans, charted.Where(h => !h.PriceEffect).ToList(),
             ModelNames(result, anonymized),
-            "The confidence grade of each hypothesis in the tables, and its share of the difference with its 95% interval where it has one. " + drawnBy);
+            "The confidence grade of each hypothesis in the tables, and its share of the difference with its 95% interval where it has one"
+            + (priceEffects ? "; price-card differences are left out" : string.Empty) + ". " + drawnBy);
         return plans;
     }
 

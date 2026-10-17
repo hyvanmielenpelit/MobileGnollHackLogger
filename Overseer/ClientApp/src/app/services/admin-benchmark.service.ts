@@ -3412,6 +3412,8 @@ export interface BenchmarkReportPackAudienceEstimateDto {
   subjectKey?: string | null;
   /** Estimated input tokens as a share of the writer's context window; null when the window is unknown. Above 0.9 is refused. */
   contextWindowShare?: number | null;
+  /** The share is above 0.9, so a start that asks for this document is refused. Absent reads as false. */
+  exceedsContextWindow?: boolean;
 }
 
 export interface BenchmarkReportPackPreviewDto {

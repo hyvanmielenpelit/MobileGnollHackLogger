@@ -16,6 +16,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
@@ -91,6 +93,9 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     private readonly BenchmarkRunReportDocumentService? _runReportDocuments;
     private readonly BenchmarkComparisonIdentityService _comparisonIdentity;
     private readonly ModelMetadataService _modelMetadata;
+    private readonly BenchmarkReportPackPreviewCache? _previewCache;
+    private readonly BenchmarkReportDocumentFactsCache _factsCache;
+    private readonly ILogger<AdminBenchmarkReportPacksController> _logger;
 
     public AdminBenchmarkReportPacksController(
         ApplicationDbContext db,
@@ -103,8 +108,14 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         IConfiguration configuration,
         BenchmarkRunReportDocumentService? runReportDocuments = null,
         BenchmarkComparisonIdentityService? comparisonIdentity = null,
-        ModelMetadataService? modelMetadata = null)
+        ModelMetadataService? modelMetadata = null,
+        BenchmarkReportPackPreviewCache? previewCache = null,
+        BenchmarkReportDocumentFactsCache? factsCache = null,
+        ILogger<AdminBenchmarkReportPacksController>? logger = null)
     {
+        _previewCache = previewCache;
+        _factsCache = factsCache ?? BenchmarkReportDocumentFactsCache.None;
+        _logger = logger ?? NullLogger<AdminBenchmarkReportPacksController>.Instance;
         _db = db;
         _jobManager = jobManager;
         _complianceGuard = complianceGuard;
@@ -123,9 +134,12 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// documents already written for this comparison and that subject, and each subject's documents; a
     /// subject with no peer is refused with no estimate. Comparison scope: the covered models with their
     /// letters, this covered set's documents, the comparison's other covered sets and its per-model
-    /// documents. Both: the numbered comparison when it is identified, each document's estimated cost,
-    /// prompt size and share of the writer's context window, the same-provider warning and any
-    /// refusal. Computes the fact sheets and the prompts. Battery results mixed with runs or groups, and
+    /// documents. Both: the numbered comparison when it is identified, every offered document's
+    /// estimated cost, prompt size and share of the writer's context window, flagged when it is above
+    /// <see cref="ContextWindowRefusalShare"/> (the client refuses from the checked documents; Start
+    /// refuses over the requested ones), the totals over the requested documents, the same-provider
+    /// warning and any other refusal. Computes the fact sheets and the prompts, or reads them from
+    /// <see cref="BenchmarkReportPackPreviewCache"/>. Battery results mixed with runs or groups, and
     /// a comparison-scope reference model that is not a covered model, are a 400; a request the client
     /// aborts is a 499.
     /// </summary>
@@ -206,7 +220,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
             var numbered = await FindComparisonAsync(body, ct);
             var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareForRequestAsync(
-                _db, _comparisonService, body, excerptChars, numbered?.Id, ct, _configuration, PairedTests());
+                _db, _comparisonService, body, excerptChars, numbered?.Id, ct, _configuration, PairedTests(), ReleaseDate);
             if (prep == null)
             {
                 string message = refusal ?? "The document could not be prepared.";
@@ -318,27 +332,31 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
     private async Task<BenchmarkReportPackPreviewDto> ModelPreviewAsync(BenchmarkReportPackRequest request, CancellationToken ct)
     {
+        var timings = new PreviewTimings();
         int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
         var subjects = request.ModelSubjectKeys();
         string first = subjects.Count > 0 ? subjects[0] : request.SubjectKey ?? string.Empty;
 
-        var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(
-            _db, _comparisonService, SubjectRequest(request, first), excerptChars, ct, _configuration);
-        if (prep == null)
+        var firstEntry = await ModelEntryAsync(request, first, excerptChars, comparison: null, timings, ct);
+        if (firstEntry.Entry == null)
         {
-            return new BenchmarkReportPackPreviewDto { SubjectKey = first, Refusal = refusal };
+            LogPreview(BenchmarkReportScope.Model, timings);
+            return new BenchmarkReportPackPreviewDto { SubjectKey = first, Refusal = firstEntry.Refusal };
         }
+        var entry = firstEntry.Entry;
+        var comparison = firstEntry.Comparison;
 
         var preview = new BenchmarkReportPackPreviewDto
         {
-            SubjectKey = prep.Subject.Key,
-            SubjectLabel = prep.Sheet.SubjectLabel,
-            SubjectState = prep.Sheet.SubjectState,
-            SuiteName = prep.Sheet.SuiteName,
-            Peers = PeerDtos(prep.Sheet),
+            SubjectKey = entry.Subject.Key,
+            SubjectLabel = entry.SubjectLabel,
+            SubjectState = entry.SubjectState,
+            SuiteName = entry.SuiteName,
+            Peers = entry.Peers.ToList(),
             Scope = BenchmarkReportScope.Model,
-            ComparisonEntryCount = prep.ComparisonEntryCount
+            ComparisonEntryCount = entry.ComparisonEntryCount
         };
+        var lists = System.Diagnostics.Stopwatch.StartNew();
         var numbered = await FindComparisonAsync(request, ct);
         preview.ComparisonId = numbered?.Id;
         preview.ComparisonName = numbered?.DisplayName;
@@ -346,33 +364,38 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         if (preview.Peers.Count == 0)
         {
             preview.Refusal = BenchmarkReportPackPreparation.PeerlessReportRefusal;
+            timings.ListsMs += lists.ElapsedMilliseconds;
+            LogPreview(BenchmarkReportScope.Model, timings);
             return preview;
         }
-        preview.WrittenDocuments = await WrittenDocumentsAsync(prep.Subject.Key, request, ct);
+        preview.WrittenDocuments = await WrittenDocumentsAsync(entry.Subject.Key, request, ct);
+        timings.ListsMs += lists.ElapsedMilliseconds;
 
-        var preps = new List<BenchmarkReportPackPreparation> { prep };
+        var entries = new List<BenchmarkReportPackPreviewEntry> { entry };
         foreach (string key in subjects.Skip(1))
         {
-            var (next, nextRefusal) = await BenchmarkReportPackPreparation.PrepareAsync(
-                _db, _comparisonService, SubjectRequest(request, key), excerptChars, ct, _configuration, prep.Comparison);
-            if (next == null)
+            var next = await ModelEntryAsync(request, key, excerptChars, comparison, timings, ct);
+            comparison ??= next.Comparison;
+            if (next.Entry == null)
             {
-                preview.Refusal ??= nextRefusal;
+                preview.Refusal ??= next.Refusal;
                 break;
             }
-            if (!BenchmarkReportPackPreparation.HasPeers(next.Comparison, next.Subject))
+            if (!next.Entry.HasPeers)
             {
                 preview.Refusal ??= BenchmarkReportPackPreparation.PeerlessReportRefusal;
                 break;
             }
-            preps.Add(next);
+            entries.Add(next.Entry);
         }
 
-        preview.CoveredModels = preps
-            .Select(p => new BenchmarkReportCoveredModelDto { EntryKey = p.Subject.Key, Label = p.Subject.Label, Provider = p.Subject.Provider })
+        preview.CoveredModels = entries
+            .Select(e => new BenchmarkReportCoveredModelDto { EntryKey = e.Subject.Key, Label = e.Subject.Label, Provider = e.Subject.Provider })
             .ToList();
+        lists.Restart();
         preview.SubjectDocuments = await SubjectDocumentsAsync(
-            numbered?.Id, ComparisonKeyOf(request), preps.Select(p => (p.Subject.Key, p.Subject.Label)).ToList(), ct);
+            numbered?.Id, ComparisonKeyOf(request), entries.Select(e => (e.Subject.Key, e.Subject.Label)).ToList(), ct);
+        timings.ListsMs += lists.ElapsedMilliseconds;
 
         SystemAiApiConfiguration? writer = null;
         if (request.WriterModelConfigurationId > 0)
@@ -380,81 +403,114 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
             preview.WriterDisplayName = writer?.DisplayName;
             preview.WriterContextWindowTokens = ContextWindowOf(writer);
-            preview.Refusal ??= preps.Select(p => WriterRefusal(writer, p.Subject)).FirstOrDefault(r => r != null);
-            var sharing = preps.FirstOrDefault(p => _complianceGuard.IsSameProvider(writer?.Provider, p.Subject.Provider));
+            preview.Refusal ??= entries.Select(e => WriterRefusal(writer, e.Subject)).FirstOrDefault(r => r != null);
+            var sharing = entries.FirstOrDefault(e => _complianceGuard.IsSameProvider(writer?.Provider, e.Subject.Provider));
             if (preview.Refusal == null && sharing != null)
             {
                 preview.SameProviderWarning = BenchmarkReportPackPreparation.SameProviderWarning(sharing.Subject, writer!);
             }
         }
 
+        var estimate = System.Diagnostics.Stopwatch.StartNew();
         var (audiences, audienceRefusal) = RequestedReportAudiences(request, BenchmarkReportScope.Model);
         preview.Refusal ??= audienceRefusal;
-        if (audienceRefusal != null) audiences.Clear();
-        foreach (var p in preps)
+        if (audienceRefusal == null)
         {
-            preview.Estimates.AddRange(EstimateAudiences(p, writer, audiences, p.Subject.Key));
+            foreach (var subjectEntry in entries)
+            {
+                preview.Estimates.AddRange(EstimateAudiences(
+                    BenchmarkReportScope.Model, subjectEntry.PromptChars, writer, OfferedAudiences(BenchmarkReportScope.Model), subjectEntry.Subject.Key));
+            }
         }
-        preview.Refusal ??= ContextWindowRefusal(preview.Estimates, writer);
-        preview.EstimatedTotalCostUsd = TotalCost(preview.Estimates);
-        preview.EstimatedTotalCostWithRepairUsd = TotalCostWithRepair(preview.Estimates);
+        SetTotals(preview, audienceRefusal == null ? audiences : new List<BenchmarkReportAudience>());
+        timings.EstimateMs += estimate.ElapsedMilliseconds;
 
+        LogPreview(BenchmarkReportScope.Model, timings);
         return preview;
     }
 
     private async Task<BenchmarkReportPackPreviewDto> ComparisonPreviewAsync(BenchmarkReportPackRequest request, CancellationToken ct)
     {
+        var timings = new PreviewTimings();
         var preview = new BenchmarkReportPackPreviewDto { Scope = BenchmarkReportScope.Comparison };
-
-        var (comparison, error) = await _comparisonService.CompareAsync(BenchmarkReportPackPreparation.ComparisonRequest(request), ct);
-        if (comparison == null)
-        {
-            preview.Refusal = error ?? "The comparison could not be computed.";
-            return preview;
-        }
-
-        preview.ComparisonEntryCount = comparison.Entries.Count(e => !e.Excluded);
+        int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
         var numbered = await FindComparisonAsync(request, ct);
-        preview.ComparisonId = numbered?.Id;
-        preview.ComparisonName = numbered?.DisplayName;
         string comparisonKey = ComparisonKeyOf(request);
 
-        var covered = BenchmarkComparisonReportFacts.CoveredKeysOf(comparison, request.CoveredEntryKeys);
-        string? refusal = BenchmarkComparisonReportFacts.CoveredRefusal(comparison, covered)
-            ?? BenchmarkComparisonReportFacts.BoundsRefusal(covered.Count)
-            ?? BenchmarkComparisonReportFacts.ReferenceRefusalOf(comparison, covered, request.ReferenceEntryKey);
-        if (refusal != null)
+        var stage = System.Diagnostics.Stopwatch.StartNew();
+        string? cacheKey = _previewCache == null
+            ? null
+            : await BenchmarkReportPackPreviewCache.KeyAsync(_db, request, null, excerptChars, numbered?.Id, _configuration, ct);
+        BenchmarkReportPackPreviewEntry? entry = null;
+        if (cacheKey != null && _previewCache!.TryGet(cacheKey, out var cached)) entry = cached;
+        timings.Hit = cacheKey == null ? null : entry != null;
+        timings.KeyMs = stage.ElapsedMilliseconds;
+
+        if (entry == null)
         {
-            preview.Refusal = refusal;
-            preview.OtherModelSets = await CoveredSetsAsync(numbered?.Id, comparisonKey, exceptSetKey: null, ct);
-            return preview;
+            stage.Restart();
+            var (comparison, error) = await _comparisonService.CompareAsync(BenchmarkReportPackPreparation.ComparisonRequest(request), ct);
+            timings.CompareMs = stage.ElapsedMilliseconds;
+            if (comparison == null)
+            {
+                preview.Refusal = error ?? "The comparison could not be computed.";
+                LogPreview(BenchmarkReportScope.Comparison, timings);
+                return preview;
+            }
+
+            preview.ComparisonEntryCount = comparison.Entries.Count(e => !e.Excluded);
+            preview.ComparisonId = numbered?.Id;
+            preview.ComparisonName = numbered?.DisplayName;
+
+            var covered = BenchmarkComparisonReportFacts.CoveredKeysOf(comparison, request.CoveredEntryKeys);
+            string? refusal = BenchmarkComparisonReportFacts.CoveredRefusal(comparison, covered)
+                ?? BenchmarkComparisonReportFacts.BoundsRefusal(covered.Count)
+                ?? BenchmarkComparisonReportFacts.ReferenceRefusalOf(comparison, covered, request.ReferenceEntryKey);
+            if (refusal != null)
+            {
+                preview.Refusal = refusal;
+                preview.OtherModelSets = await CoveredSetsAsync(numbered?.Id, comparisonKey, exceptSetKey: null, ct);
+                LogPreview(BenchmarkReportScope.Comparison, timings);
+                return preview;
+            }
+
+            stage.Restart();
+            var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareComparisonAsync(
+                _db, _comparisonService, request, excerptChars, numbered?.Id, ct, _configuration, PairedTests(), comparison, ReleaseDate);
+            if (prep == null)
+            {
+                timings.PrepareMs = stage.ElapsedMilliseconds;
+                preview.Refusal = prepRefusal;
+                preview.OtherModelSets = await CoveredSetsAsync(numbered?.Id, comparisonKey, exceptSetKey: null, ct);
+                LogPreview(BenchmarkReportScope.Comparison, timings);
+                return preview;
+            }
+            entry = PreviewEntryOf(prep);
+            timings.PrepareMs = stage.ElapsedMilliseconds;
+            if (cacheKey != null) _previewCache!.Set(cacheKey, entry);
+        }
+        else
+        {
+            preview.ComparisonEntryCount = entry.ComparableEntryCount;
+            preview.ComparisonId = numbered?.Id;
+            preview.ComparisonName = numbered?.DisplayName;
         }
 
-        int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
-        var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareComparisonAsync(
-            _db, _comparisonService, request, excerptChars, numbered?.Id, ct, _configuration, PairedTests(), comparison);
-        if (prep == null)
-        {
-            preview.Refusal = prepRefusal;
-            preview.OtherModelSets = await CoveredSetsAsync(numbered?.Id, comparisonKey, exceptSetKey: null, ct);
-            return preview;
-        }
+        preview.SubjectKey = entry.SheetSubjectKey;
+        preview.SubjectLabel = entry.SubjectLabel;
+        preview.SubjectState = entry.SubjectState;
+        preview.SuiteName = entry.SuiteName;
+        preview.Peers = entry.Peers.ToList();
+        preview.CoversAllEntries = entry.CoversAllEntries;
+        preview.CoveredSetKey = entry.CoveredSetKey;
+        preview.CoveredModels = entry.CoveredModels.ToList();
 
-        preview.SubjectKey = prep.Sheet.SubjectKey;
-        preview.SubjectLabel = prep.Sheet.SubjectLabel;
-        preview.SubjectState = prep.Sheet.SubjectState;
-        preview.SuiteName = prep.Sheet.SuiteName;
-        preview.Peers = PeerDtos(prep.Sheet);
-        preview.CoversAllEntries = prep.CoversAllEntries;
-        preview.CoveredSetKey = prep.CoveredSetKey;
-        preview.CoveredModels = prep.Sheet.Peers
-            .OrderBy(p => p.Letter.Length).ThenBy(p => p.Letter, StringComparer.Ordinal)
-            .Select(p => new BenchmarkReportCoveredModelDto { EntryKey = p.EntryKey, Label = p.Label, Provider = p.Provider, Letter = p.Letter })
-            .ToList();
-        preview.WrittenDocuments = await CoveredSetDocumentsAsync(numbered?.Id, comparisonKey, prep.CoveredSetKey, ct);
-        preview.OtherModelSets = await CoveredSetsAsync(numbered?.Id, comparisonKey, prep.CoveredSetKey, ct);
+        stage.Restart();
+        preview.WrittenDocuments = await CoveredSetDocumentsAsync(numbered?.Id, comparisonKey, entry.CoveredSetKey, ct);
+        preview.OtherModelSets = await CoveredSetsAsync(numbered?.Id, comparisonKey, entry.CoveredSetKey, ct);
         preview.SubjectDocuments = await SubjectDocumentsAsync(
-            numbered?.Id, comparisonKey, prep.Covered.Select(e => (e.Key, e.Label)).ToList(), ct);
+            numbered?.Id, comparisonKey, entry.Covered.Select(e => (e.Key, e.Label)).ToList(), ct);
+        timings.ListsMs = stage.ElapsedMilliseconds;
 
         SystemAiApiConfiguration? writer = null;
         if (request.WriterModelConfigurationId > 0)
@@ -462,22 +518,155 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
             preview.WriterDisplayName = writer?.DisplayName;
             preview.WriterContextWindowTokens = ContextWindowOf(writer);
-            preview.Refusal = ComparisonWriterRefusal(writer, prep.Covered);
-            var sharing = SharingProvider(writer, prep.Covered);
+            preview.Refusal = ComparisonWriterRefusal(writer, entry.Covered);
+            var sharing = SharingProvider(writer, entry.Covered);
             if (preview.Refusal == null && sharing.Count > 0)
             {
                 preview.SameProviderWarning = BenchmarkReportPackPreparation.SameProviderWarning(sharing, writer!);
             }
         }
 
+        stage.Restart();
         var (audiences, audienceRefusal) = RequestedReportAudiences(request, BenchmarkReportScope.Comparison);
         preview.Refusal ??= audienceRefusal;
-        if (audienceRefusal != null) audiences.Clear();
-        preview.Estimates.AddRange(EstimateAudiences(prep, writer, audiences, prep.Sheet.SubjectKey));
-        preview.Refusal ??= ContextWindowRefusal(preview.Estimates, writer);
-        preview.EstimatedTotalCostUsd = TotalCost(preview.Estimates);
-        preview.EstimatedTotalCostWithRepairUsd = TotalCostWithRepair(preview.Estimates);
+        if (audienceRefusal == null)
+        {
+            preview.Estimates.AddRange(EstimateAudiences(
+                BenchmarkReportScope.Comparison, entry.PromptChars, writer, OfferedAudiences(BenchmarkReportScope.Comparison), entry.SheetSubjectKey));
+        }
+        SetTotals(preview, audienceRefusal == null ? audiences : new List<BenchmarkReportAudience>());
+        timings.EstimateMs = stage.ElapsedMilliseconds;
+
+        LogPreview(BenchmarkReportScope.Comparison, timings);
         return preview;
+    }
+
+    /// <summary>The milliseconds of one preview's stages, and whether its preparations came from the cache.</summary>
+    private sealed class PreviewTimings
+    {
+        public bool? Hit { get; set; }
+        public long KeyMs { get; set; }
+        public long CompareMs { get; set; }
+        public long PrepareMs { get; set; }
+        public long ListsMs { get; set; }
+        public long EstimateMs { get; set; }
+    }
+
+    private void LogPreview(BenchmarkReportScope scope, PreviewTimings timings)
+        => _logger.LogInformation(
+            "Report Pack {Scope} preview: preparation cache {CacheResult}; key {KeyMs} ms, compare {CompareMs} ms, preparation {PrepareMs} ms, lists {ListsMs} ms, estimate {EstimateMs} ms.",
+            scope, timings.Hit switch { true => "hit", false => "miss", null => "not used" },
+            timings.KeyMs, timings.CompareMs, timings.PrepareMs, timings.ListsMs, timings.EstimateMs);
+
+    /// <summary>
+    /// A model-scope subject's preview entry: from the preparation cache, else prepared over
+    /// <paramref name="comparison"/> (computed when it is null) and stored there. Returns the refusal
+    /// instead when the subject cannot be prepared, and the comparison it computed, if any.
+    /// </summary>
+    private async Task<(BenchmarkReportPackPreviewEntry? Entry, string? Refusal, BenchmarkModelComparisonDto? Comparison)> ModelEntryAsync(
+        BenchmarkReportPackRequest request, string subjectKey, int excerptChars, BenchmarkModelComparisonDto? comparison,
+        PreviewTimings timings, CancellationToken ct)
+    {
+        var subjectRequest = SubjectRequest(request, subjectKey);
+        var stage = System.Diagnostics.Stopwatch.StartNew();
+        string? cacheKey = null;
+        if (_previewCache != null)
+        {
+            cacheKey = await BenchmarkReportPackPreviewCache.KeyAsync(_db, subjectRequest, subjectKey, excerptChars, null, _configuration, ct);
+            bool hit = _previewCache.TryGet(cacheKey, out var cached);
+            timings.Hit = (timings.Hit ?? true) && hit;
+            timings.KeyMs += stage.ElapsedMilliseconds;
+            if (hit) return (cached, null, comparison);
+        }
+
+        if (comparison == null)
+        {
+            stage.Restart();
+            var (computed, _, compareRefusal) = await BenchmarkReportPackPreparation.CompareAsync(_comparisonService, subjectRequest, ct);
+            timings.CompareMs += stage.ElapsedMilliseconds;
+            if (computed == null) return (null, compareRefusal, null);
+            comparison = computed;
+        }
+
+        stage.Restart();
+        var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(
+            _db, _comparisonService, subjectRequest, excerptChars, ct, _configuration, comparison);
+        timings.PrepareMs += stage.ElapsedMilliseconds;
+        if (prep == null) return (null, refusal, comparison);
+
+        var entry = PreviewEntryOf(prep);
+        if (cacheKey != null) _previewCache!.Set(cacheKey, entry);
+        return (entry, null, comparison);
+    }
+
+    /// <summary>
+    /// A comparison-scope preparation's preview entry for Start's pre-flight: from the preparation cache,
+    /// else prepared over <paramref name="comparison"/> and stored there; the refusal instead when it
+    /// cannot be prepared.
+    /// </summary>
+    private async Task<(BenchmarkReportPackPreviewEntry? Entry, string? Refusal)> ComparisonEntryAsync(
+        BenchmarkReportPackRequest request, BenchmarkModelComparisonDto comparison, int excerptChars, int? comparisonId, CancellationToken ct)
+    {
+        string? cacheKey = null;
+        if (_previewCache != null)
+        {
+            cacheKey = await BenchmarkReportPackPreviewCache.KeyAsync(_db, request, null, excerptChars, comparisonId, _configuration, ct);
+            if (_previewCache.TryGet(cacheKey, out var cached)) return (cached, null);
+        }
+
+        var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareComparisonAsync(
+            _db, _comparisonService, request, excerptChars, comparisonId, ct, _configuration, PairedTests(), comparison, ReleaseDate);
+        if (prep == null) return (null, refusal);
+
+        var entry = PreviewEntryOf(prep);
+        if (cacheKey != null) _previewCache!.Set(cacheKey, entry);
+        return (entry, null);
+    }
+
+    /// <summary>What the preview and Start's pre-flight read from a preparation, with each offered document's prompt length.</summary>
+    private static BenchmarkReportPackPreviewEntry PreviewEntryOf(BenchmarkReportPackPreparation prep)
+        => new()
+        {
+            Scope = prep.Scope,
+            Subject = prep.Subject,
+            HasPeers = BenchmarkReportPackPreparation.HasPeers(prep.Comparison, prep.Subject),
+            SheetSubjectKey = prep.Sheet.SubjectKey,
+            SubjectLabel = prep.Sheet.SubjectLabel,
+            SubjectState = prep.Sheet.SubjectState,
+            SuiteId = prep.Sheet.SuiteId,
+            SuiteName = prep.Sheet.SuiteName,
+            Peers = PeerDtos(prep.Sheet),
+            CoveredModels = prep.Sheet.Peers
+                .OrderBy(p => p.Letter.Length).ThenBy(p => p.Letter, StringComparer.Ordinal)
+                .Select(p => new BenchmarkReportCoveredModelDto { EntryKey = p.EntryKey, Label = p.Label, Provider = p.Provider, Letter = p.Letter })
+                .ToList(),
+            Covered = prep.Covered,
+            CoveredEntryKeys = prep.CoveredEntryKeys,
+            CoveredSetKey = prep.CoveredSetKey,
+            CoversAllEntries = prep.CoversAllEntries,
+            ComparisonEntryCount = prep.ComparisonEntryCount,
+            ComparableEntryCount = prep.Comparison.Entries.Count(e => !e.Excluded),
+            ReferenceEntryKey = prep.ReferenceEntryKey,
+            PromptChars = OfferedAudiences(prep.Scope).ToDictionary(a => a, a => PromptCharsOf(prep, a))
+        };
+
+    /// <summary>The audiences a document of the scope is written for, in audience order.</summary>
+    private static IReadOnlyList<BenchmarkReportAudience> OfferedAudiences(BenchmarkReportScope scope)
+        => ScopeAudiences.TryGetValue(scope, out var list) ? list : Array.Empty<BenchmarkReportAudience>();
+
+    /// <summary>The length of a document's writer prompt, system prompt plus user message, in characters.</summary>
+    private static int PromptCharsOf(BenchmarkReportPackPreparation prep, BenchmarkReportAudience audience)
+    {
+        var prompt = BenchmarkReportPackPrompt.Build(audience, prep.Sheet, prep.Content);
+        return prompt.SystemPrompt.Length + prompt.UserMessage.Length;
+    }
+
+    /// <summary>The preview's totals over the estimates of <paramref name="requested"/>, the documents the request would write.</summary>
+    private static void SetTotals(BenchmarkReportPackPreviewDto preview, IReadOnlyCollection<BenchmarkReportAudience> requested)
+    {
+        var written = preview.Estimates.Where(e => requested.Contains(e.Audience)).ToList();
+        preview.EstimatedTotalCostUsd = TotalCost(written);
+        preview.EstimatedTotalCostWithRepairUsd = TotalCostWithRepair(written);
     }
 
     /// <summary>
@@ -530,12 +719,12 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             {
                 int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
                 var estimates = new List<BenchmarkReportPackAudienceEstimateDto>();
+                var timings = new PreviewTimings();
                 foreach (var subject in subjects)
                 {
-                    var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareAsync(
-                        _db, _comparisonService, SubjectRequest(request, subject.Key), excerptChars, ct, _configuration, comparison);
-                    if (prep == null) return BadRequest(new { error = prepRefusal });
-                    estimates.AddRange(EstimateAudiences(prep, writer, audiences, subject.Key));
+                    var (entry, prepRefusal, _) = await ModelEntryAsync(request, subject.Key, excerptChars, comparison, timings, ct);
+                    if (entry == null) return BadRequest(new { error = prepRefusal });
+                    estimates.AddRange(EstimateAudiences(BenchmarkReportScope.Model, entry.PromptChars, writer, audiences, subject.Key));
                 }
                 if (ContextWindowRefusal(estimates, writer) is string contextRefusal) return BadRequest(new { error = contextRefusal });
             }
@@ -645,11 +834,10 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
         var numberedBefore = await FindComparisonAsync(request, ct);
         int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
-        var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareComparisonAsync(
-            _db, _comparisonService, request, excerptChars, numberedBefore?.Id, ct, _configuration, PairedTests(), comparison);
+        var (prep, prepRefusal) = await ComparisonEntryAsync(request, comparison, excerptChars, numberedBefore?.Id, ct);
         if (prep == null) return BadRequest(new { error = prepRefusal });
 
-        if (ContextWindowRefusal(EstimateAudiences(prep, writer, audiences, prep.Sheet.SubjectKey), writer) is string contextRefusal)
+        if (ContextWindowRefusal(EstimateAudiences(BenchmarkReportScope.Comparison, prep.PromptChars, writer, audiences, prep.SheetSubjectKey), writer) is string contextRefusal)
         {
             return BadRequest(new { error = contextRefusal });
         }
@@ -705,8 +893,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         job.Scope = BenchmarkReportScope.Comparison;
         job.SubjectKey = subjectKey;
         job.SubjectLabel = subjectLabel;
-        job.SuiteId = prep.Sheet.SuiteId;
-        job.SuiteName = prep.Sheet.SuiteName;
+        job.SuiteId = prep.SuiteId;
+        job.SuiteName = prep.SuiteName;
         job.Request.Scope = BenchmarkReportScope.Comparison;
         job.Request.CoveredEntryKeys = prep.CoveredEntryKeys.ToList();
         job.Request.Audiences = audiences;
@@ -1068,7 +1256,9 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 return Conflict(new { error = "Wait for the writing to finish, or cancel it, before deleting a report." });
             }
 
-            return await BenchmarkReportRenderService.DeleteDocumentAsync(_db, documentId, ct) ? NoContent() : NotFound();
+            if (!await BenchmarkReportRenderService.DeleteDocumentAsync(_db, documentId, ct)) return NotFound();
+            _factsCache.Remove(documentId);
+            return NoContent();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -1206,6 +1396,9 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
     /// <summary>The paired-test service the wizard's Paired tests view uses, with price cards, without its response cache.</summary>
     private BenchmarkPairedTestsService PairedTests() => new(_db, _comparisonService, null, _pricingService);
+
+    /// <summary>A model's catalog release date (ISO); empty when the catalog does not know it.</summary>
+    private string? ReleaseDate(string provider, string modelId) => _modelMetadata.GetMetadata(provider, modelId).ReleaseDate;
 
     /// <summary>The writer configuration's context window in tokens from the model catalog; null when unknown.</summary>
     private int? ContextWindowOf(SystemAiApiConfiguration? writer)
@@ -1393,17 +1586,26 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 .Where(d => d.Scope == BenchmarkReportScope.Comparison && d.CoveredSetKey != null))
             .ToListAsync(ct);
 
+        var groups = stored
+            .Where(d => d.CoveredSetKey != exceptSetKey)
+            .GroupBy(d => d.CoveredSetKey!)
+            .Select(g => (Group: g, Newest: g.OrderByDescending(d => d.CreatedAtUtc).ThenByDescending(d => d.Id).First()))
+            .ToList();
+        if (groups.Count == 0) return new List<BenchmarkReportPackCoveredSetDto>();
+
+        var newestIds = groups.Select(g => g.Newest.Id).ToList();
+        var (factsById, _) = await _factsCache.GetAsync(_db, newestIds, ct);
+        var coveredKeysById = await _db.BenchmarkReportDocuments
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(d => newestIds.Contains(d.Id))
+            .Select(d => new { d.Id, d.CoveredEntryKeysJson })
+            .ToDictionaryAsync(d => d.Id, d => d.CoveredEntryKeysJson, ct);
+
         var sets = new List<(BenchmarkReportPackCoveredSetDto Set, DateTime Newest)>();
-        foreach (var group in stored.Where(d => d.CoveredSetKey != exceptSetKey).GroupBy(d => d.CoveredSetKey!))
+        foreach (var (group, newest) in groups)
         {
-            var newest = group.OrderByDescending(d => d.CreatedAtUtc).ThenByDescending(d => d.Id).First();
-            var source = await _db.BenchmarkReportDocuments
-                .AsNoTracking()
-                .IgnoreAutoIncludes()
-                .Where(d => d.Id == newest.Id)
-                .Select(d => new { d.FactsJson, d.CoveredEntryKeysJson })
-                .FirstAsync(ct);
-            var facts = BenchmarkReportRenderService.ReadFacts(source.FactsJson);
+            var facts = factsById.TryGetValue(newest.Id, out var found) ? found : BenchmarkReportRenderService.StoredFacts.Empty;
 
             sets.Add((new BenchmarkReportPackCoveredSetDto
             {
@@ -1411,7 +1613,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 SubjectKey = newest.SubjectKey,
                 CoversAllEntries = facts.CoversAllEntries,
                 CoveredModels = BenchmarkReportRenderService.CoveredModels(
-                    BenchmarkReportScope.Comparison, newest.SubjectKey, null, source.CoveredEntryKeysJson, facts),
+                    BenchmarkReportScope.Comparison, newest.SubjectKey, null, coveredKeysById.GetValueOrDefault(newest.Id), facts),
                 Documents = NewestPerAudience(group)
             }, newest.CreatedAtUtc));
         }
@@ -1462,16 +1664,30 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         BenchmarkReportPackPreparation prep, SystemAiApiConfiguration? writer, IEnumerable<BenchmarkReportAudience> audiences,
         string? subjectKey = null)
     {
+        var requested = audiences.ToList();
+        var chars = requested.Distinct().ToDictionary(a => a, a => PromptCharsOf(prep, a));
+        return EstimateAudiences(prep.Scope, chars, writer, requested, subjectKey);
+    }
+
+    /// <summary>
+    /// As <see cref="EstimateAudiences(BenchmarkReportPackPreparation, SystemAiApiConfiguration?, IEnumerable{BenchmarkReportAudience}, string?)"/>,
+    /// from each document's prompt length in <paramref name="promptChars"/>; each estimate says whether it
+    /// is above <see cref="ContextWindowRefusalShare"/> of the window.
+    /// </summary>
+    private BenchmarkReportPackAudienceEstimateDto[] EstimateAudiences(
+        BenchmarkReportScope scope, IReadOnlyDictionary<BenchmarkReportAudience, int> promptChars, SystemAiApiConfiguration? writer,
+        IEnumerable<BenchmarkReportAudience> audiences, string? subjectKey)
+    {
         int maxOutputTokens = BenchmarkReportPackPreparation.MaxOutputTokens(_configuration);
         var pricing = writer != null ? _pricingService.Resolve(writer) : null;
         int? window = ContextWindowOf(writer);
-        var outputs = prep.Scope == BenchmarkReportScope.Comparison ? ComparisonEstimatedOutputTokens : EstimatedOutputTokens;
+        var outputs = scope == BenchmarkReportScope.Comparison ? ComparisonEstimatedOutputTokens : EstimatedOutputTokens;
         return audiences.Select(audience =>
         {
-            var prompt = BenchmarkReportPackPrompt.Build(audience, prep.Sheet, prep.Content);
-            int chars = prompt.SystemPrompt.Length + prompt.UserMessage.Length;
+            int chars = promptChars[audience];
             int input = (chars + 3) / 4;
             int output = Math.Min(maxOutputTokens, outputs[audience]);
+            double? share = window is int size ? (double)input / size : null;
             return new BenchmarkReportPackAudienceEstimateDto
             {
                 Audience = audience,
@@ -1481,7 +1697,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 EstimatedOutputTokens = output,
                 EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.EstimateSingleRequestCost(pricing, input, output),
                 EstimatedCostWithRepairUsd = pricing == null ? null : (double)BenchmarkReportPackService.EstimateCostWithRepair(pricing, input, output),
-                ContextWindowShare = window is int size ? (double)input / size : null
+                ContextWindowShare = share,
+                ExceedsContextWindow = share is double value && value > ContextWindowRefusalShare
             };
         }).ToArray();
     }

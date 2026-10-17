@@ -331,6 +331,10 @@ builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRunReportD
 // Singleton for the same reason: it writes a battery run's documents after the battery finishes.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkBatteryReportDocumentService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkReportRenderService>();
+// Singletons over the global memory cache: the document lists' parsed fact sheets, and the Report
+// Pack preview's preparations.
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkReportDocumentFactsCache>();
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkReportPackPreviewCache>();
 // Singleton: its per-document write locks must be shared by every request.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkReportChartStore>();
 // Singleton like the chart store it writes through; it holds no other state.

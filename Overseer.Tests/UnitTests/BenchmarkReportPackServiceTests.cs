@@ -875,8 +875,11 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(3, preview.ComparisonEntryCount);
         Assert.True(preview.CoversAllEntries);
         Assert.Equal(new[] { "A", "B", "C" }, preview.CoveredModels.Select(m => m.Letter));
-        Assert.Equal(new[] { 3800 }, preview.Estimates.Select(e => e.EstimatedOutputTokens));
+        // Every offered document is estimated, the unrequested Root Cause Analysis included.
+        Assert.Equal(new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis }, preview.Estimates.Select(e => e.Audience));
+        Assert.Equal(new[] { 3800, 14000 }, preview.Estimates.Select(e => e.EstimatedOutputTokens));
         Assert.All(preview.Estimates, e => Assert.Equal(preview.SubjectKey, e.SubjectKey));
+        Assert.All(preview.Estimates, e => Assert.False(e.ExceedsContextWindow));
         Assert.Equal(3, preview.SubjectDocuments.Count);
         Assert.Empty(preview.OtherModelSets);
         Assert.Null(preview.WriterContextWindowTokens);
@@ -1018,7 +1021,8 @@ public class BenchmarkReportPackServiceTests
         Assert.Null(preview.SameProviderWarning);
         Assert.Equal($"run:{h.Seeded.RunIds[0]}", preview.SubjectKey);
         Assert.Equal("A", Assert.Single(preview.Peers).Letter);
-        Assert.True(Assert.Single(preview.Estimates).EstimatedInputTokens > 0);
+        Assert.Equal(new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis }, preview.Estimates.Select(e => e.Audience));
+        Assert.All(preview.Estimates, e => Assert.True(e.EstimatedInputTokens > 0));
         Assert.Empty(preview.WrittenDocuments);
         Assert.Equal(0, h.Provider.Calls);
     }
@@ -1076,6 +1080,126 @@ public class BenchmarkReportPackServiceTests
         var sameModel = (BenchmarkReportPackPreviewDto)Assert.IsType<OkObjectResult>(
             await h.Controller().Preview(h.Request(writerId: h.SameModel.Id), CancellationToken.None)).Value!;
         Assert.Contains("cannot write its own report", sameModel.Refusal);
+    }
+
+    [Fact]
+    public async Task Preview_FlagsEachDocumentAboveTheContextWindow_AndOnlyStartRefusesARequestedOne()
+    {
+        await using var h = await Harness.CreateAsync(maxRunsPerHour: 0);
+        var both = new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis };
+        var sized = (BenchmarkReportPackPreviewDto)Assert.IsType<OkObjectResult>(
+            await h.Controller().Preview(h.Request(audiences: both), CancellationToken.None)).Value!;
+        var ordered = sized.Estimates.OrderBy(e => e.EstimatedInputTokens).ToList();
+        Assert.Equal(2, ordered.Count);
+        var small = ordered[0];
+        var large = ordered[1];
+        Assert.True(large.EstimatedInputTokens > small.EstimatedInputTokens + 100, "The two prompts are too close in size for this test.");
+
+        // A window between the two: the smaller prompt fits within the refusal share, the larger does not.
+        int window = (int)Math.Ceiling(
+            (small.EstimatedInputTokens + large.EstimatedInputTokens) / 2.0 / AdminBenchmarkReportPacksController.ContextWindowRefusalShare);
+        var controller = h.Controller(new FixedWindowMetadata(window));
+
+        // The preview estimates both documents, the unrequested one included, and refuses neither.
+        var preview = (BenchmarkReportPackPreviewDto)Assert.IsType<OkObjectResult>(
+            await controller.Preview(h.Request(audiences: new[] { small.Audience }), CancellationToken.None)).Value!;
+        Assert.Null(preview.Refusal);
+        Assert.Equal(window, preview.WriterContextWindowTokens);
+        Assert.Equal(both, preview.Estimates.Select(e => e.Audience));
+        Assert.False(Assert.Single(preview.Estimates, e => e.Audience == small.Audience).ExceedsContextWindow);
+        Assert.True(Assert.Single(preview.Estimates, e => e.Audience == large.Audience).ExceedsContextWindow);
+
+        // Start refuses over the requested documents only: the smaller one goes on to the spend cap.
+        var fits = Assert.IsAssignableFrom<ObjectResult>(
+            await controller.Start(h.Request(audiences: new[] { small.Audience }), CancellationToken.None));
+        Assert.Equal(429, fits.StatusCode);
+        var tooLarge = Assert.IsType<BadRequestObjectResult>(
+            await controller.Start(h.Request(audiences: new[] { large.Audience }), CancellationToken.None));
+        Assert.Contains("of the context window of Writer One", ErrorOf(tooLarge.Value));
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task Preview_ThatDiffersOnlyInTheWriter_PreparesOnce_AndARescoredRunIsPreparedAgain()
+    {
+        await using var h = await Harness.CreateAsync();
+        var ct = TestContext.Current.CancellationToken;
+        using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
+        var cache = new BenchmarkReportPackPreviewCache(memory);
+        var both = new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis };
+
+        async Task<BenchmarkReportPackPreviewDto> PreviewAsync(BenchmarkReportPackRequest request)
+            => (BenchmarkReportPackPreviewDto)Assert.IsType<OkObjectResult>(
+                await h.Controller(previewCache: cache).Preview(request, CancellationToken.None)).Value!;
+
+        var first = await PreviewAsync(h.Request(writerId: h.Writer.Id));
+        Assert.Null(first.Refusal);
+        Assert.Equal(1, memory.Count);
+
+        // The answers' text is outside the key, so a preview prepared again would show it.
+        var answers = await h.Db.BenchmarkRunAnswers.Where(a => a.BenchmarkRunId == h.Seeded.RunIds[0]).ToListAsync(ct);
+        foreach (var answer in answers) answer.AnswerText += " " + new string('x', 300);
+        await h.Db.SaveChangesAsync(ct);
+
+        var second = await PreviewAsync(h.Request(writerId: h.SameProvider.Id, audiences: both));
+        Assert.Equal(1, memory.Count);
+        Assert.Equal(first.Estimates.Select(e => e.PromptChars), second.Estimates.Select(e => e.PromptChars));
+        Assert.Equal(first.Peers.Select(p => p.EntryKey), second.Peers.Select(p => p.EntryKey));
+        Assert.Contains("same provider", second.SameProviderWarning);
+
+        // A rescored run is a new key.
+        var run = await h.Db.BenchmarkRuns.SingleAsync(r => r.Id == h.Seeded.RunIds[0], ct);
+        run.QualityIndex = (run.QualityIndex ?? 0) + 1;
+        await h.Db.SaveChangesAsync(ct);
+        var rescored = await PreviewAsync(h.Request());
+        Assert.Null(rescored.Refusal);
+        Assert.Equal(2, memory.Count);
+
+        // The comparison scope keys the same way.
+        var comparison = await PreviewAsync(h.ComparisonRequest(writerId: h.Writer.Id));
+        Assert.Null(comparison.Refusal);
+        Assert.Equal(3, memory.Count);
+        var again = await PreviewAsync(h.ComparisonRequest(writerId: h.SameProvider.Id, audiences: both));
+        Assert.Equal(3, memory.Count);
+        Assert.Equal(comparison.CoveredModels.Select(m => m.Letter), again.CoveredModels.Select(m => m.Letter));
+        Assert.Equal(comparison.Estimates.Select(e => e.PromptChars), again.Estimates.Select(e => e.PromptChars));
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    /// <summary>The model catalog with every model's context window set to one size.</summary>
+    private sealed class FixedWindowMetadata(int window) : ModelMetadataService
+    {
+        public override ModelMetadata GetMetadata(string provider, string modelId)
+        {
+            var metadata = base.GetMetadata(provider, modelId);
+            metadata.ContextWindowSize = window;
+            return metadata;
+        }
+    }
+
+    [Fact]
+    public void ReleaseDatesOf_KeysEachKnownDate_LeavesOutBlankOnes_AndIsNullWithoutALookup()
+    {
+        var entries = new[]
+        {
+            new BenchmarkModelComparisonEntryDto { Key = "a", Provider = "OpenAI", ModelId = "gpt-6-luna" },
+            new BenchmarkModelComparisonEntryDto { Key = "b", Provider = "OpenAI", ModelId = "gpt-5.6-luna" },
+            new BenchmarkModelComparisonEntryDto { Key = "c", Provider = "Anthropic", ModelId = "unknown-model" }
+        };
+        string? Lookup(string provider, string modelId) => modelId switch
+        {
+            "gpt-6-luna" => "2026-08-01",
+            "gpt-5.6-luna" => " 2026-03-15 ",
+            _ => string.Empty
+        };
+
+        var dates = BenchmarkReportPackPreparation.ReleaseDatesOf(entries, Lookup);
+
+        Assert.NotNull(dates);
+        Assert.Equal(2, dates!.Count);
+        Assert.Equal("2026-08-01", dates[Overseer.Services.Benchmarking.RootCause.RootCauseEvidence.ReleaseDateKey("OpenAI", "gpt-6-luna")]);
+        Assert.Equal("2026-03-15", dates[Overseer.Services.Benchmarking.RootCause.RootCauseEvidence.ReleaseDateKey("OpenAI", "gpt-5.6-luna")]);
+        Assert.Null(BenchmarkReportPackPreparation.ReleaseDatesOf(entries, null));
     }
 
     // --- Documents controller ---------------------------------------------------------------------------
@@ -1299,6 +1423,50 @@ public class BenchmarkReportPackServiceTests
     }
 
     [Fact]
+    public async Task List_BackfillsAMissingSynthesisFingerprint_AndFlagsAReRunSynthesis()
+    {
+        await using var h = await Harness.CreateAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+        await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, ct);
+        using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
+        var render = new BenchmarkReportRenderService(h.Db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance,
+            factsCache: new BenchmarkReportDocumentFactsCache(memory));
+        long runId = h.Seeded.RunIds[0];
+        long peerRunId = h.Seeded.RunIds[1];
+
+        async Task<string?> StoredFingerprintAsync(long id)
+        {
+            await using var db = new ApplicationDbContext(h.Options);
+            return await db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().Where(r => r.Id == id).Select(r => r.SynthesisFingerprint).SingleAsync(ct);
+        }
+
+        Assert.Null(await StoredFingerprintAsync(runId));
+        Assert.Null(await StoredFingerprintAsync(peerRunId));
+
+        var fresh = Assert.Single(await render.ListAsync(null, runId, null, ct));
+        Assert.False(fresh.RunChangedSinceGeneration);
+        Assert.False(fresh.PeersChangedSinceGeneration);
+        Assert.Equal(1, fresh.PeerCount);
+        Assert.Equal(BenchmarkReportRenderService.SynthesisSha256(null, null), await StoredFingerprintAsync(runId));
+        Assert.Equal(BenchmarkReportRenderService.SynthesisSha256(null, null), await StoredFingerprintAsync(peerRunId));
+        Assert.Equal(1, memory.Count);
+
+        // A re-run final synthesis writes both columns, as the assessment does.
+        var run = await h.Db.BenchmarkRuns.SingleAsync(r => r.Id == runId, ct);
+        run.AssessmentJson = "{\"finalScore\":81,\"findings\":[]}";
+        run.SynthesisFingerprint = BenchmarkReportRenderService.SynthesisSha256(run.AssessmentJson, run.CoAssessorSynthesisJson);
+        await h.Db.SaveChangesAsync(ct);
+
+        var rerun = Assert.Single(await render.ListAsync(null, runId, null, ct));
+        Assert.True(rerun.RunChangedSinceGeneration);
+        Assert.False(rerun.PeersChangedSinceGeneration);
+        Assert.Equal(fresh.PeerLetters, rerun.PeerLetters);
+        Assert.Equal(1, memory.Count);
+    }
+
+    [Fact]
     public async Task List_FlagsADocumentWhosePeerWasRescoredOrDeleted_AndDescribesItsComparison()
     {
         await using var h = await Harness.CreateAsync();
@@ -1472,15 +1640,17 @@ public class BenchmarkReportPackServiceTests
     // --- The download path cannot reach a model (D13) -------------------------------------------------
 
     [Fact]
-    public void TheRenderService_TakesOnlyTheDbContextTheChartStoreALoggerAndTheChartPublisher()
+    public void TheRenderService_TakesOnlyTheDbContextTheChartStoreALoggerTheChartPublisherAndTheFactsCache()
     {
-        // The chart publisher draws with QuestPDF from the stored fact sheet; it holds no provider either.
+        // The chart publisher draws with QuestPDF from the stored fact sheet, and the facts cache holds parsed
+        // fact sheets; neither holds a provider.
         var constructor = Assert.Single(typeof(BenchmarkReportRenderService).GetConstructors());
         Assert.Equal(
             new[]
             {
                 typeof(ApplicationDbContext), typeof(BenchmarkReportChartStore), typeof(ILogger<BenchmarkReportRenderService>),
-                typeof(Overseer.Services.Benchmarking.Charts.RootCauseChartPublisher)
+                typeof(Overseer.Services.Benchmarking.Charts.RootCauseChartPublisher),
+                typeof(BenchmarkReportDocumentFactsCache)
             },
             constructor.GetParameters().Select(p => p.ParameterType));
     }
@@ -2513,7 +2683,8 @@ public class BenchmarkReportPackServiceTests
             return job;
         }
 
-        public AdminBenchmarkReportPacksController Controller() => new(
+        public AdminBenchmarkReportPacksController Controller(
+            ModelMetadataService? metadata = null, BenchmarkReportPackPreviewCache? previewCache = null) => new(
             Db,
             Jobs,
             new BenchmarkComplianceGuard(Configuration, Db),
@@ -2521,7 +2692,9 @@ public class BenchmarkReportPackServiceTests
             new ModelPricingService(new ModelMetadataService(), Db),
             new EndpointPolicy(Configuration),
             scopeFactory: null!,
-            Configuration);
+            Configuration,
+            modelMetadata: metadata,
+            previewCache: previewCache);
 
         /// <summary>
         /// Stores a fixture document of <paramref name="audience"/> about the request's subject, keyed by

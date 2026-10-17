@@ -961,16 +961,214 @@ public class RootCauseValidatorTests
             .Where(n => n.Rule == rule)
             .ToList();
 
-    [Fact]
-    public void Rule40_TheConclusionsCitingAPriceNote_IsAWarning_ButAHypothesesParagraphMayCiteIt()
+    /// <summary><see cref="QuestionSheet"/> with one unexpected result: its count, reference and summary.</summary>
+    private static BenchmarkReportFactSheet AnomalySheet()
     {
         var sheet = QuestionSheet();
-        sheet.Facts.Add(TextFact("rca.axis.cost.priceNote", "Price per token explains the largest cost gaps."));
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "rca.anomaly.count", Value = System.Text.Json.Nodes.JsonValue.Create(1), Display = "1 unexpected result" });
+        sheet.Facts.Add(TextFact("rca.anomaly.1.ref", "U1"));
+        sheet.Facts.Add(TextFact("rca.anomaly.1.summary", "Model B scored below the cheaper Model A; not established, the intervals overlap."));
+        return sheet;
+    }
 
-        Assert.Single(RuleNotes(sheet, BenchmarkReportPackValidator.RootCauseCodePrintedRule, BenchmarkReportSlots.Conclusions,
-            "Cost: {{rca.axis.cost.status}}. {{rca.axis.cost.priceNote}}"));
-        Assert.Empty(RuleNotes(sheet, BenchmarkReportPackValidator.RootCauseCodePrintedRule, BenchmarkReportSlots.HypothesesCost,
-            "{{rca.axis.cost.priceNote}} The other hypotheses are weaker."));
+    [Fact]
+    public void Rule40_TheUnexpectedResultsCitingAResultsSummary_IsAWarning_ButItsReferenceAndOtherSlotsAreNot()
+    {
+        var sheet = AnomalySheet();
+
+        var note = Assert.Single(RuleNotes(sheet, BenchmarkReportPackValidator.RootCauseCodePrintedRule, BenchmarkReportSlots.UnexpectedResults,
+            "The grader comments on {{rca.anomaly.1.ref}} name a missing step. {{rca.anomaly.1.summary}}"));
+        Assert.StartsWith("{{rca.anomaly.1.summary}} is printed by Overseer in the Unexpected results section", note.Message, StringComparison.Ordinal);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+        Assert.Empty(RuleNotes(sheet, BenchmarkReportPackValidator.RootCauseCodePrintedRule, BenchmarkReportSlots.UnexpectedResults,
+            "The grader comments on {{rca.anomaly.1.ref}} name a missing step."));
+        Assert.Empty(RuleNotes(sheet, BenchmarkReportPackValidator.RootCauseCodePrintedRule, BenchmarkReportSlots.Conclusions,
+            "Cost: {{rca.axis.cost.status}}. {{rca.anomaly.1.summary}}"));
+
+        // A reference the sheet does not hold is an unknown token.
+        var unknown = Assert.Single(RuleNotes(sheet, 2, BenchmarkReportSlots.UnexpectedResults, "The grader comments on {{rca.anomaly.2.ref}} name a missing step."));
+        Assert.Contains("{{rca.anomaly.2.ref}}", unknown.Message, StringComparison.Ordinal);
+    }
+
+    // --- The optional unexpected results ------------------------------------------------------------
+
+    [Fact]
+    public void TheUnexpectedResults_AreOptional_AndCappedAtEightyWords()
+    {
+        var sheet = AnomalySheet();
+        const string slot = BenchmarkReportSlots.UnexpectedResults;
+        Assert.Equal(80, BenchmarkReportPackValidator.RootCauseUnexpectedResultsMaxWords);
+
+        // Left out or empty, the slot is no issue; it is never an unknown slot.
+        Assert.DoesNotContain(ValidateSections(sheet, new Dictionary<string, string>()), n => n.Location.StartsWith("sections." + slot, StringComparison.Ordinal));
+        var filled = ValidateSections(sheet, new Dictionary<string, string> { [slot] = Filler(80) });
+        Assert.DoesNotContain(filled, n => n.Location.StartsWith("sections." + slot, StringComparison.Ordinal) && n.Rule is 1 or 7);
+
+        var over = ValidateSections(sheet, new Dictionary<string, string> { [slot] = Filler(81) });
+        var note = Assert.Single(over, n => n.Rule == 7 && n.Location == "sections." + slot);
+        Assert.EndsWith("has 81 words; the limit is 80.", note.Message, StringComparison.Ordinal);
+
+        // A kept slot is copied; one over its cap loses its last sentences.
+        var output = new BenchmarkReportWriterOutput { Headline = "The models differ on every axis." };
+        output.Sections[slot] = "The grader comments on {{rca.anomaly.1.ref}} name a missing step.";
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Rca, output, sheet, new BenchmarkReportContentSnapshot());
+        Assert.Equal(output.Sections[slot], cleaned.Output.Sections[slot]);
+
+        output.Sections[slot] = Filler(40) + " " + Filler(41);
+        cleaned = BenchmarkReportPackValidator.DropInvalid(Rca, output, sheet, new BenchmarkReportContentSnapshot());
+        Assert.Equal(Filler(40), cleaned.Output.Sections[slot]);
+        Assert.Contains(cleaned.Notes, n => n.Rule == 7 && n.Dropped && n.Location == "sections." + slot + "[p1]");
+    }
+
+    [Fact]
+    public void TheUnexpectedResults_OfASheetWithoutOne_AreARule7Issue_AndAreRemoved()
+    {
+        const string slot = BenchmarkReportSlots.UnexpectedResults;
+        const string text = "The grader comments name a missing step.";
+
+        var note = Assert.Single(ValidateSections(QuestionSheet(), new Dictionary<string, string> { [slot] = text }),
+            n => n.Location.StartsWith("sections." + slot, StringComparison.Ordinal));
+        Assert.Equal(7, note.Rule);
+        Assert.Equal("There are no unexpected results; leave the slot empty.", note.Message);
+
+        var output = new BenchmarkReportWriterOutput { Headline = "The models differ on every axis." };
+        output.Sections[slot] = text;
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Rca, output, QuestionSheet(), new BenchmarkReportContentSnapshot());
+        Assert.False(cleaned.Output.Sections.ContainsKey(slot));
+        var dropped = Assert.Single(cleaned.Notes, n => n.Location == "sections." + slot);
+        Assert.True(dropped.Dropped);
+        Assert.Equal(text, dropped.Text);
+
+        // An empty slot stays silent.
+        Assert.DoesNotContain(ValidateSections(QuestionSheet(), new Dictionary<string, string> { [slot] = " " }),
+            n => n.Location.StartsWith("sections." + slot, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheUnexpectedResults_AreAnObservationSlot_WhereACausalWordIsRemoved()
+    {
+        Assert.Contains(BenchmarkReportSlots.UnexpectedResults, RootCauseClaimSupport.ObservationSlots);
+        Assert.Contains(RuleNotes(AnomalySheet(), BenchmarkReportPackValidator.RootCauseEvidenceCausalRule, BenchmarkReportSlots.UnexpectedResults,
+            "The grader comments on {{rca.anomaly.1.ref}} show a gap because of a missing step."), n => !BenchmarkReportPackValidator.IsWarningRule(n.Rule));
+    }
+
+    // --- Rule 2: a price effect's token is unknown to the Root Cause Analysis writer ---------------------
+
+    [Fact]
+    public void Rule2_APriceEffectsToken_IsUnknown_WhereTheSheetsResultHidesIt()
+    {
+        var sheet = QuestionSheet();
+        sheet.RootCause = new RootCauseResult
+        {
+            Hypotheses = new List<RootCauseHypothesis>
+            {
+                new() { Id = "HC2", Number = 1, Key = "HC2.1", Axis = RootCauseAxes.Cost, Kind = "pair", PriceEffect = true },
+                new() { Id = "HQ1", Number = 1, Key = "HQ1.1", Axis = RootCauseAxes.Intelligence, Kind = "pair" },
+            }
+        };
+        const string priceCards = "Price per token differs between the models ({{rca.hypothesis.HC2.1.ref}}).";
+
+        var note = Assert.Single(RuleNotes(sheet, 2, BenchmarkReportSlots.HypothesesCost, priceCards));
+        Assert.Contains("{{rca.hypothesis.HC2.1.ref}}", note.Message, StringComparison.Ordinal);
+        Assert.Contains("is a price-card difference, which Overseer prints in one line: leave it out.", note.Message, StringComparison.Ordinal);
+        Assert.Empty(RuleNotes(sheet, 2, BenchmarkReportSlots.HypothesesIntelligence, "Critical errors may account for part of the gap ({{rca.hypothesis.HQ1.1.ref}})."));
+
+        // A sheet whose result marks no price effect, or that has none, hides nothing.
+        Assert.Empty(RuleNotes(QuestionSheet(), 2, BenchmarkReportSlots.HypothesesCost, priceCards));
+    }
+
+    // --- Rules 44 and 45: counts in words, nulls restated ------------------------------------------------
+
+    [Theory]
+    [InlineData("Completeness is the lowest dimension for eight of the nine models.", "eight of the nine")]
+    [InlineData("All of the nine models lose most on Completeness.", "All of the nine")]
+    [InlineData("Three of four answers cite no tool.", "Three of four")]
+    [InlineData("Twenty-one of thirty questions were answered well.", "Twenty-one of thirty")]
+    public void Rule44_ACountAcrossATotalWrittenInWords_IsAWarning(string paragraph, string count)
+    {
+        var note = Assert.Single(RuleNotes(QuestionSheet(), BenchmarkReportPackValidator.NumberWordCountRule, BenchmarkReportSlots.EvidenceIntelligence, paragraph));
+
+        Assert.Contains("\"" + count + "\"", note.Message, StringComparison.Ordinal);
+        Assert.EndsWith("write this count as a fact token, or leave the total out.", note.Message, StringComparison.Ordinal);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+    }
+
+    [Theory]
+    [InlineData("The evidence covers three pairs.")]
+    [InlineData("One of the models answered without tools.")]
+    [InlineData("Completeness is the lowest dimension for {{rca.axis.cost.status}} of the models.")]
+    [InlineData("Someone of note checked the tone.")]
+    public void Rule44_LeavesAPlainCountAlone(string paragraph)
+    {
+        Assert.Empty(RuleNotes(QuestionSheet(), BenchmarkReportPackValidator.NumberWordCountRule, BenchmarkReportSlots.EvidenceIntelligence, paragraph));
+    }
+
+    [Fact]
+    public void Rule44_ReadsEveryProseField_OfARootCauseAnalysisOnly()
+    {
+        const string count = "eight of the nine models";
+        Assert.Single(RuleNotes(QuestionSheet(), BenchmarkReportPackValidator.NumberWordCountRule, BenchmarkReportSlots.Conclusions,
+            "Intelligence: {{rca.axis.intelligence.status}}. It holds for " + count + "."));
+
+        var output = Writer(comparison: true);
+        output.Observations![0].Text = "The graders recorded the same gap for " + count + ".";
+        Assert.Contains(Validate(true, output), n => n.Rule == BenchmarkReportPackValidator.NumberWordCountRule && n.Location.StartsWith("observations", StringComparison.Ordinal));
+
+        Assert.DoesNotContain(ValidateExecutive("The models agree for " + count + "."), n => n.Rule == BenchmarkReportPackValidator.NumberWordCountRule);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportSlots.HypothesesIntelligence, true)]
+    [InlineData(BenchmarkReportSlots.HypothesesCost, true)]
+    [InlineData(BenchmarkReportSlots.Conclusions, false)]
+    [InlineData(BenchmarkReportSlots.EvidenceIntelligence, false)]
+    public void Rule45_ANullRestatedInAHypothesesParagraph_IsAWarning(string slot, bool flagged)
+    {
+        var notes = RuleNotes(QuestionSheet(), BenchmarkReportPackValidator.RootCauseNullRestatedRule, slot, "The null hypothesis stands for this pair.");
+
+        if (!flagged)
+        {
+            Assert.Empty(notes);
+            return;
+        }
+        var note = Assert.Single(notes);
+        Assert.Equal("sections." + slot + "[p1]", note.Location);
+        Assert.EndsWith("Overseer prints the nulls beside this paragraph; remove the sentence.", note.Message, StringComparison.Ordinal);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+    }
+
+    [Fact]
+    public void Rule45_FlagsEachSentenceThatRestatesTheNulls_AndLeavesTheOthersAlone()
+    {
+        const string slot = BenchmarkReportSlots.HypothesesSpeed;
+        var notes = RuleNotes(QuestionSheet(), BenchmarkReportPackValidator.RootCauseNullRestatedRule, slot,
+            "Longer outputs may explain the gap ({{rca.hypothesis.HS1.1.ref}}). The other gaps may be chance. One pair shows a real difference.");
+
+        Assert.Equal(2, notes.Count);
+        Assert.Contains(notes, n => n.Message.Contains("\"may be chance\"", StringComparison.Ordinal));
+        Assert.Contains(notes, n => n.Message.Contains("\"real difference\"", StringComparison.Ordinal));
+        Assert.Empty(RuleNotes(QuestionSheet(), BenchmarkReportPackValidator.RootCauseNullRestatedRule, slot,
+            "Longer outputs may explain the gap ({{rca.hypothesis.HS1.1.ref}})."));
+    }
+
+    // --- A writer hypothesis' evidence ------------------------------------------------------------------
+
+    [Fact]
+    public void AWriterHypothesis_GainsAsEvidenceEveryQuestionItsTextsCite()
+    {
+        var (sheet, content) = Scope(comparison: true);
+        var output = Writer(comparison: true);
+        var hypothesis = output.WriterHypotheses![0];
+        var numbers = sheet.Questions.Select(q => q.Number).Distinct().OrderBy(n => n).ToList();
+        string listed = Assert.Single(hypothesis.Evidence);
+        string added = "Q" + numbers.First(n => "Q" + n != listed);
+        hypothesis.Against = new List<string> { "The answers to " + added + " kept the step the rubric asks for." };
+
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Rca, output, sheet, content);
+
+        var kept = Assert.Single(cleaned.Output.WriterHypotheses!);
+        Assert.Equal(new[] { listed, added }, kept.Evidence);
+        Assert.Equal(new[] { listed }, hypothesis.Evidence);
     }
 
     [Fact]
@@ -1058,24 +1256,27 @@ public class RootCauseValidatorTests
     }
 
     [Fact]
-    public void Rules40To43_AreInTheCatalog_AsWarningsWithDigitFreeFixes()
+    public void Rules40To45_AreInTheCatalog_AsWarningsWithDigitFreeFixes()
     {
-        foreach (int rule in new[]
-                 {
-                     BenchmarkReportPackValidator.RootCauseCodePrintedRule, BenchmarkReportPackValidator.UnavailableTokenRule,
-                     BenchmarkReportPackValidator.RootCauseNextRunsOrderRule, BenchmarkReportPackValidator.BorrowedModelFigureRule
-                 })
+        var rules = new[]
+        {
+            BenchmarkReportPackValidator.RootCauseCodePrintedRule, BenchmarkReportPackValidator.UnavailableTokenRule,
+            BenchmarkReportPackValidator.RootCauseNextRunsOrderRule, BenchmarkReportPackValidator.BorrowedModelFigureRule,
+            BenchmarkReportPackValidator.NumberWordCountRule, BenchmarkReportPackValidator.RootCauseNullRestatedRule
+        };
+        foreach (int rule in rules)
         {
             Assert.True(BenchmarkReportPackValidator.IsWarningRule(rule));
             var info = BenchmarkReportRuleCatalog.Get(rule);
             Assert.NotNull(info);
+            Assert.Contains(BenchmarkReportRuleCatalog.All, r => r.Rule == rule);
             Assert.Equal(BenchmarkReportRuleSeverity.Warning, info!.Severity);
             Assert.DoesNotContain(info.Fix, char.IsDigit);
         }
-        Assert.Equal(new[] { 40, 41, 42, 43 }, new[]
-        {
-            BenchmarkReportPackValidator.RootCauseCodePrintedRule, BenchmarkReportPackValidator.UnavailableTokenRule,
-            BenchmarkReportPackValidator.RootCauseNextRunsOrderRule, BenchmarkReportPackValidator.BorrowedModelFigureRule
-        });
+        Assert.Equal(new[] { 40, 41, 42, 43, 44, 45 }, rules);
+        Assert.Equal("A count written in words", BenchmarkReportRuleCatalog.Name(BenchmarkReportPackValidator.NumberWordCountRule));
+        Assert.Equal("Write this count as a fact token, or leave the total out.", BenchmarkReportRuleCatalog.Get(BenchmarkReportPackValidator.NumberWordCountRule).Fix);
+        Assert.Equal("Nulls restated in a hypotheses paragraph", BenchmarkReportRuleCatalog.Name(BenchmarkReportPackValidator.RootCauseNullRestatedRule));
+        Assert.Equal("Overseer prints the nulls beside this paragraph; remove the sentence.", BenchmarkReportRuleCatalog.Get(BenchmarkReportPackValidator.RootCauseNullRestatedRule).Fix);
     }
 }

@@ -845,17 +845,34 @@ public static partial class BenchmarkReportPackRenderer
         return total + " (" + string.Join(", ", perSuite) + ")";
     }
 
-    private static void ComparisonReproducibility(StringBuilder sb, Context ctx, string heading = "## Reproducibility appendix")
+    /// <summary>
+    /// Each covered model's runs, run dates and hash prefixes, then the graders, the comparison signature and the pricing
+    /// basis. With <paramref name="sharedOnce"/> and at least two models, a hash prefix every model shares is printed once,
+    /// on an <c>All models</c> line before the models, and each model's line keeps only the hashes no other line states.
+    /// </summary>
+    internal static void ComparisonReproducibility(StringBuilder sb, Context ctx, string heading = "## Reproducibility appendix", bool sharedOnce = false)
     {
         var (pricing, _) = PricingBasisText(ctx.Sheet);
         Heading(sb, heading);
-        foreach (var peer in OrderedPeers(ctx.Sheet))
+        var peers = OrderedPeers(ctx.Sheet);
+        string Hash(BenchmarkReportPeer peer, string key) => D(ctx, ModelKey(peer.Letter, key));
+        bool Shared(string key) => sharedOnce && peers.Count >= 2 && peers.All(p => string.Equals(Hash(p, key), Hash(peers[0], key), StringComparison.Ordinal));
+        bool sharedPrompt = Shared("run.promptSha256");
+        bool sharedGuides = Shared("run.toolGuidesSha256");
+
+        var shared = new List<string>();
+        if (sharedPrompt) shared.Add(Label("run.promptSha256") + " `" + Hash(peers[0], "run.promptSha256") + "`");
+        if (sharedGuides) shared.Add((shared.Count > 0 ? LowerFirst(Label("run.toolGuidesSha256")) : Label("run.toolGuidesSha256"))
+            + " `" + Hash(peers[0], "run.toolGuidesSha256") + "`");
+        if (shared.Count > 0) Line(sb, "- **All models:** " + string.Join("; ", shared));
+
+        foreach (var peer in peers)
         {
             string identity = ctx.Anonymized ? string.Empty : " (" + peer.Provider + " " + peer.ModelId + ", thinking level " + (peer.ThinkingLevel ?? "not set") + ")";
             Line(sb, "- **" + ProseName(ctx, peer) + "**" + identity + ": " + Label("run.ids") + " " + D(ctx, ModelKey(peer.Letter, "run.ids"))
                 + "; " + Label("run.dates").ToLowerInvariant() + " " + D(ctx, ModelKey(peer.Letter, "run.dates"))
-                + "; " + Label("run.promptSha256") + " `" + D(ctx, ModelKey(peer.Letter, "run.promptSha256")) + "`"
-                + "; " + Label("run.toolGuidesSha256") + " `" + D(ctx, ModelKey(peer.Letter, "run.toolGuidesSha256")) + "`");
+                + (sharedPrompt ? string.Empty : "; " + Label("run.promptSha256") + " `" + Hash(peer, "run.promptSha256") + "`")
+                + (sharedGuides ? string.Empty : "; " + Label("run.toolGuidesSha256") + " `" + Hash(peer, "run.toolGuidesSha256") + "`"));
         }
         Line(sb, "- **Grader models:** " + (ctx.Sheet.Graders.Count == 0
             ? "not recorded"
@@ -873,25 +890,41 @@ public static partial class BenchmarkReportPackRenderer
     /// <paramref name="grading"/>, the graders and the claim verifier. A grader's no-fault evidence line is left out,
     /// and the answer sentences the verifier supported are counted rather than listed. <paramref name="only"/>, when
     /// given, keeps the questions it holds.
+    ///
+    /// <para>The questions are detailed by number, or with <paramref name="order"/> in its order, the questions it does not
+    /// list following by number. With <paramref name="maxQuestions"/>, only the first that many are detailed, and the
+    /// numbers of the others are returned in the same order; otherwise, and when every question fits, the result is empty.
+    /// With <paramref name="compactGraders"/>, each answer gives its graders as <see cref="CompactGraders"/> does.</para>
     /// </summary>
-    private static void ComparisonQuestionDetails(
-        StringBuilder sb, Context ctx, bool grading, int level, IReadOnlySet<int>? only = null, string? title = null)
+    internal static IReadOnlyList<int> ComparisonQuestionDetails(
+        StringBuilder sb, Context ctx, bool grading, int level, IReadOnlySet<int>? only = null, string? title = null,
+        bool compactGraders = false, IReadOnlyList<int>? order = null, int? maxQuestions = null)
     {
         string prefix = new('#', level);
-        var questions = (ctx.Content.Questions ?? new List<BenchmarkReportContentQuestion>())
+        var position = new Dictionary<int, int>();
+        if (order != null)
+        {
+            for (int i = 0; i < order.Count; i++) position.TryAdd(order[i], i);
+        }
+        var eligible = (ctx.Content.Questions ?? new List<BenchmarkReportContentQuestion>())
             .Where(q => only == null || only.Contains(q.Number))
             .Where(q => ctx.Content.Runs.Any(r => r.Questions.Any(a => a.Number == q.Number)))
-            .OrderBy(q => q.Number)
+            .OrderBy(q => position.TryGetValue(q.Number, out int at) ? at : int.MaxValue)
+            .ThenBy(q => q.Number)
             .ToList();
-        if (questions.Count == 0) return;
+        int detailed = maxQuestions is int cap ? Math.Clamp(cap, 0, eligible.Count) : eligible.Count;
+        var questions = eligible.Take(detailed).ToList();
+        IReadOnlyList<int> leftOut = eligible.Skip(detailed).Select(q => q.Number).ToList();
+        if (questions.Count == 0) return leftOut;
 
         Heading(sb, prefix + " " + (title ?? (grading ? "Question details" : "Questions and answers")));
-        Line(sb, ctx.Document.ReportFormatVersion >= RoundExcerptsFormatVersion
+        Line(sb, (ctx.Document.ReportFormatVersion >= RoundExcerptsFormatVersion
             ? "*Each answer shown is one the writer was given as an excerpt. The excerpts were given in rounds, one per question in each round and at most "
               + "three per question, taking the suites in turn: the questions with critical errors or refuted sentences first, then the widest spread "
               + "between models, then those every model scored low; within a question, a critical error or refuted sentence first, then the lowest score."
-              + " Rubrics are shown without their source paragraphs.*"
-            : "*Each answer shown is one the writer was given as an excerpt; the excerpts were chosen for the questions with critical errors or refuted sentences first, then the widest spread between models, then those every model scored low.*");
+              + " Rubrics are shown without their source paragraphs."
+            : "*Each answer shown is one the writer was given as an excerpt; the excerpts were chosen for the questions with critical errors or refuted sentences first, then the widest spread between models, then those every model scored low.")
+            + (grading && compactGraders ? " " + CompactGradersNote : string.Empty) + "*");
         Line(sb);
 
         foreach (var question in questions)
@@ -923,27 +956,35 @@ public static partial class BenchmarkReportPackRenderer
             {
                 var item = run.Questions.First(q => q.Number == question.Number);
                 var peer = ctx.Sheet.Peers.FirstOrDefault(p => string.Equals(p.Letter, run.Letter, StringComparison.Ordinal));
-                Heading(sb, prefix + "## " + (peer != null ? ProseName(ctx, peer) : "Model " + run.Letter) + ", run " + Inv(run.RunId));
+                bool disagreement = grading && compactGraders && PanelDisagreement(item);
+                Heading(sb, prefix + "## " + (peer != null ? ProseName(ctx, peer) : "Model " + run.Letter) + ", run " + Inv(run.RunId)
+                    + (disagreement ? " (panel disagreement)" : string.Empty));
 
                 AnswerExcerptBlock(sb, item);
                 CriticalErrorResolutionLine(sb, item);
                 if (!grading) continue;
 
-                Line(sb, "**Graders:**");
-                Line(sb);
-                if (item.Graders.Count == 0) Line(sb, "- No grader verdict was recorded.");
-                foreach (var grader in item.Graders)
+                if (compactGraders)
                 {
-                    var graderOnSheet = ctx.Sheet.Graders.FirstOrDefault(g => string.Equals(g.Role, grader.Role, StringComparison.Ordinal));
-                    Line(sb, "- **" + grader.Role + " (" + (GraderWithheld(ctx, graderOnSheet) ? WithheldGrader : grader.Label) + "):** "
-                        + (grader.Score.HasValue ? "score " + Inv(grader.Score.Value) + "." : "not scored.")
-                        + (string.IsNullOrWhiteSpace(grader.Comment) ? string.Empty : " " + OneLine(grader.Comment)));
-                    foreach (var evidence in grader.Evidence.Where(e => !IsNoFaultEvidence(e)))
-                    {
-                        Line(sb, "  - " + OneLine(evidence));
-                    }
+                    CompactGraders(sb, ctx, item, disagreement);
                 }
-                Line(sb);
+                else
+                {
+                    Line(sb, "**Graders:**");
+                    Line(sb);
+                    if (item.Graders.Count == 0) Line(sb, "- No grader verdict was recorded.");
+                    foreach (var grader in item.Graders)
+                    {
+                        Line(sb, "- **" + grader.Role + " (" + GraderLabel(ctx, grader) + "):** "
+                            + (grader.Score.HasValue ? "score " + Inv(grader.Score.Value) + "." : "not scored.")
+                            + (string.IsNullOrWhiteSpace(grader.Comment) ? string.Empty : " " + OneLine(grader.Comment)));
+                        foreach (var evidence in grader.Evidence.Where(e => !IsNoFaultEvidence(e)))
+                        {
+                            Line(sb, "  - " + OneLine(evidence));
+                        }
+                    }
+                    Line(sb);
+                }
 
                 Line(sb, "**Claim verifier:**");
                 Line(sb);
@@ -967,6 +1008,104 @@ public static partial class BenchmarkReportPackRenderer
                 Line(sb);
             }
         }
+
+        return leftOut;
+    }
+
+    /// <summary>The note on the compact grader format, closing the question details' introduction.</summary>
+    private static string CompactGradersNote
+        => "Each answer gives its graders' scores on one line and every critical error with the grader that flagged it; the panel members' "
+           + "comments and notes are shown only for a panel disagreement (scores more than " + Inv(BenchmarkService.SecondOpinionDisagreementPoints)
+           + " points apart, or a critical error only one member flagged), and the reference reader's comment only when its score is more than "
+           + Inv(BenchmarkService.SecondOpinionDisagreementPoints) + " points from the panel mean.";
+
+    /// <summary>The start of a grader's evidence line that quotes a critical error (<see cref="BenchmarkReportContent"/>).</summary>
+    private const string CriticalErrorEvidencePrefix = "Critical error: ";
+
+    /// <summary>A grader's evidence line quoting a critical error.</summary>
+    private static bool IsCriticalErrorEvidence(string evidence)
+        => OneLine(evidence).TrimStart().StartsWith(CriticalErrorEvidencePrefix, StringComparison.Ordinal);
+
+    /// <summary>A grader's name as the question details print it: its label, or the withheld wording when its provider is withheld.</summary>
+    private static string GraderLabel(Context ctx, BenchmarkReportContentGrader grader)
+    {
+        var graderOnSheet = ctx.Sheet.Graders.FirstOrDefault(g => string.Equals(g.Role, grader.Role, StringComparison.Ordinal));
+        return GraderWithheld(ctx, graderOnSheet) ? WithheldGrader : grader.Label;
+    }
+
+    /// <summary>
+    /// The answer is a panel disagreement, as <see cref="BenchmarkCriticalErrorResolver"/> decides it: both panel members
+    /// scored it and their scores are more than <see cref="BenchmarkService.SecondOpinionDisagreementPoints"/> apart, or
+    /// only one of them flagged a critical error.
+    /// </summary>
+    private static bool PanelDisagreement(BenchmarkReportContentQuestion item)
+    {
+        var memberA = item.Graders.FirstOrDefault(g => g.Role == BenchmarkReportFacts.PanelMemberARole);
+        var memberB = item.Graders.FirstOrDefault(g => g.Role == BenchmarkReportFacts.PanelMemberBRole);
+        if (memberA == null || memberB == null) return false;
+
+        bool apart = memberA.Score is int a && memberB.Score is int b && Math.Abs(a - b) > BenchmarkService.SecondOpinionDisagreementPoints;
+        return apart || memberA.Evidence.Any(IsCriticalErrorEvidence) != memberB.Evidence.Any(IsCriticalErrorEvidence);
+    }
+
+    /// <summary>
+    /// An answer's graders in the compact format: <c>**Graders:** Panel member A 95, panel member B 92, reference reader 93.</c>,
+    /// then each critical error with the grader that flagged it and its quote; with <paramref name="disagreement"/>, each
+    /// panel member's comment and the evidence lines that record a fault; and the reference reader's comment when its score
+    /// is more than <see cref="BenchmarkService.SecondOpinionDisagreementPoints"/> from the panel members' mean (the
+    /// assessor's score in a run without a panel).
+    /// </summary>
+    private static void CompactGraders(StringBuilder sb, Context ctx, BenchmarkReportContentQuestion item, bool disagreement)
+    {
+        if (item.Graders.Count == 0)
+        {
+            Line(sb, "**Graders:** No grader verdict was recorded.");
+            Line(sb);
+            return;
+        }
+
+        Line(sb, "**Graders:** " + string.Join(", ", item.Graders.Select((g, i) => (i == 0 ? g.Role : LowerFirst(g.Role)) + " "
+            + (g.Score.HasValue ? Inv(g.Score.Value) : "not scored"))) + ".");
+        Line(sb);
+
+        var lines = new List<string>();
+        foreach (var grader in item.Graders)
+        {
+            foreach (var evidence in grader.Evidence.Where(IsCriticalErrorEvidence))
+            {
+                string quote = OneLine(evidence).TrimStart()[CriticalErrorEvidencePrefix.Length..].Trim();
+                lines.Add("- **Critical error (" + LowerFirst(grader.Role) + "):** " + quote);
+            }
+        }
+
+        bool IsMember(BenchmarkReportContentGrader g)
+            => g.Role is BenchmarkReportFacts.PanelMemberARole or BenchmarkReportFacts.PanelMemberBRole or BenchmarkReportFacts.AssessorRole;
+        var memberScores = item.Graders.Where(g => IsMember(g) && g.Score.HasValue).Select(g => (double)g.Score!.Value).ToList();
+        double? panelMean = memberScores.Count > 0 ? memberScores.Average() : null;
+
+        foreach (var grader in item.Graders)
+        {
+            if (IsMember(grader))
+            {
+                if (!disagreement || grader.Role == BenchmarkReportFacts.AssessorRole) continue;
+                lines.Add("- **" + grader.Role + " (" + GraderLabel(ctx, grader) + "):** "
+                    + (string.IsNullOrWhiteSpace(grader.Comment) ? "No comment recorded." : OneLine(grader.Comment)));
+                lines.AddRange(grader.Evidence
+                    .Where(e => !IsNoFaultEvidence(e) && !IsCriticalErrorEvidence(e))
+                    .Select(e => "  - " + OneLine(e)));
+            }
+            else if (grader.Role is BenchmarkReportFacts.ReferenceReaderRole or BenchmarkReportFacts.SecondReaderRole
+                     && grader.Score is int score && panelMean is double mean
+                     && Math.Abs(score - mean) > BenchmarkService.SecondOpinionDisagreementPoints
+                     && !string.IsNullOrWhiteSpace(grader.Comment))
+            {
+                lines.Add("- **" + grader.Role + " (" + GraderLabel(ctx, grader) + "):** " + OneLine(grader.Comment));
+            }
+        }
+
+        if (lines.Count == 0) return;
+        foreach (string line in lines) Line(sb, line);
+        Line(sb);
     }
 
     /// <summary>A grader's evidence line that records no fault: <c>Accuracy: Matches rubric.</c>, ignoring case.</summary>
@@ -1325,9 +1464,11 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// Each covered model's runs with structured grader findings and, of them, how many raised a weakness of
     /// each category; a sentence instead when no run of any model recorded them. A category no model's runs raised
-    /// is left out, and the note says so.
+    /// is left out, and the note says so. With <paramref name="onlyDifferingRows"/>, a model whose every count equals its
+    /// column's most common value (held by at least two models, and by no other value as often) is left out and named under
+    /// the table; when that leaves no model, a sentence replaces the table.
     /// </summary>
-    private static void FindingsTable(StringBuilder sb, Context ctx)
+    internal static void FindingsTable(StringBuilder sb, Context ctx, bool onlyDifferingRows = false)
     {
         var categories = new (string Key, string Name)[]
         {
@@ -1361,12 +1502,51 @@ public static partial class BenchmarkReportPackRenderer
         }
 
         var (shown, shownRows, dropped) = DropConstantColumns(header, rows, keepFirst);
+        string leftOutSentence = string.Empty;
+        if (onlyDifferingRows)
+        {
+            // The counts start at Runs with findings, which DropConstantColumns always keeps.
+            int firstCount = keepFirst - 1;
+            var modes = Enumerable.Range(firstCount, shown.Count - firstCount)
+                .Select(c => UniqueMode(shownRows.Select(r => r[c]).ToList()))
+                .ToList();
+            bool Common(List<string> cells) => modes.Select((mode, k) => mode != null && string.Equals(cells[firstCount + k], mode, StringComparison.Ordinal)).All(x => x);
+
+            var common = shownRows.Select(Common).ToList();
+            if (common.All(x => x))
+            {
+                Line(sb, "Every model had the most common count in every category.");
+                Line(sb);
+                return;
+            }
+
+            var leftOutModels = models.Where((_, i) => common[i]).Select(p => ProseName(ctx, p)).ToList();
+            shownRows = shownRows.Where((_, i) => !common[i]).ToList();
+            if (leftOutModels.Count > 0)
+            {
+                leftOutSentence = "Left out, with the most common count in every category: " + BenchmarkReportFormat.LetterList(leftOutModels) + ".";
+            }
+        }
+
         TableHeaderOf(sb, shown);
         foreach (var cells in shownRows) Line(sb, "| " + string.Join(" | ", cells) + " |");
         Line(sb);
         string droppedSentence = DroppedColumnsSentence(dropped);
-        Line(sb, "*" + FindingsTableNote + (droppedSentence.Length > 0 ? " " + droppedSentence : string.Empty) + "*");
+        Line(sb, "*" + FindingsTableNote + (droppedSentence.Length > 0 ? " " + droppedSentence : string.Empty)
+            + (leftOutSentence.Length > 0 ? " " + leftOutSentence : string.Empty) + "*");
         Line(sb);
+    }
+
+    /// <summary>The value most of <paramref name="cells"/> hold, when at least two hold it and no other value is as common; else null.</summary>
+    private static string? UniqueMode(IReadOnlyList<string> cells)
+    {
+        var counts = cells
+            .GroupBy(c => c, StringComparer.Ordinal)
+            .Select(g => (Value: g.Key, Count: g.Count()))
+            .OrderByDescending(g => g.Count)
+            .ToList();
+        if (counts.Count == 0 || counts[0].Count < 2) return null;
+        return counts.Count > 1 && counts[1].Count == counts[0].Count ? null : counts[0].Value;
     }
 
     /// <summary>A copy of the sheet with every covered model's name, model id and provider replaced by its letter.</summary>

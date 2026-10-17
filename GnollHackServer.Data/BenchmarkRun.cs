@@ -859,6 +859,15 @@ public class BenchmarkRun
 
     public bool CoAssessorSynthesisParseFailed { get; set; }
 
+    /// <summary>
+    /// The first 16 hex characters of the SHA-256 over <see cref="AssessmentJson"/> and
+    /// <see cref="CoAssessorSynthesisJson"/>, set wherever either is written
+    /// (<c>BenchmarkReportRenderService.SynthesisSha256</c>). Null on a row written before the
+    /// column existed; readers fill it on first use.
+    /// </summary>
+    [MaxLength(16)]
+    public string? SynthesisFingerprint { get; set; }
+
     // Token totals and duration
     public long TotalInputTokens { get; set; }
     public long TotalOutputTokens { get; set; }

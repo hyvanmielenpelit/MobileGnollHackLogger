@@ -124,6 +124,9 @@ public sealed class BenchmarkComparisonReportFactsInput
 
     /// <summary>The configurations and recommended models the next runs are derived from; null for none.</summary>
     public RootCauseCatalog? Catalog { get; init; }
+
+    /// <summary>The catalog release date (ISO) of each model, keyed by <see cref="RootCauseEvidence.ReleaseDateKey"/>; null when unknown.</summary>
+    public IReadOnlyDictionary<string, string>? ReleaseDates { get; init; }
 }
 
 /// <summary>A comparison-scope sheet and its content, or the reason none can be built.</summary>
@@ -316,7 +319,8 @@ public static class BenchmarkComparisonReportFacts
         IReadOnlyDictionary<string, ProviderAvailabilitySummary>? availability = null,
         string? referenceKey = null,
         IReadOnlyDictionary<long, ModelPricing?>? candidatePricing = null,
-        RootCauseCatalog? catalog = null)
+        RootCauseCatalog? catalog = null,
+        IReadOnlyDictionary<string, string>? releaseDates = null)
     {
         ArgumentNullException.ThrowIfNull(comparison);
         ArgumentNullException.ThrowIfNull(coveredKeys);
@@ -363,7 +367,8 @@ public static class BenchmarkComparisonReportFacts
             AnswerExcerptChars = answerExcerptChars,
             ComparisonId = comparisonId,
             CandidatePricing = candidatePricing,
-            Catalog = catalog
+            Catalog = catalog,
+            ReleaseDates = releaseDates
         });
     }
 
@@ -582,7 +587,8 @@ public static class BenchmarkComparisonReportFacts
             FamilyGaps = RootCauseEvidence.FamilyGaps(panelComparison),
             Catalog = input.Catalog ?? new RootCauseCatalog(),
             Battery = batteries,
-            Questions = RootCauseEvidence.QuestionRefs(questions)
+            Questions = RootCauseEvidence.QuestionRefs(questions),
+            ReleaseDates = input.ReleaseDates
         });
         sheet.RootCause = rootCause;
         RootCauseFacts.Add(facts, rootCause, t => "Model " + t);

@@ -23,6 +23,75 @@ public sealed class RootCauseAtRisk
 }
 
 /// <summary>
+/// How a pair's cost is split (<see cref="RootCauseDecomposition.CostSplitOf(RootCauseModelEvidence, RootCauseModelEvidence)"/>): by the five components of
+/// <see cref="RootCauseSegments.CostComponents"/> when the two sides bill the same components, otherwise by the input and
+/// output groups of <see cref="RootCauseCostKeys"/>, with each side's input list price in USD per token for the caching effect.
+/// </summary>
+public sealed class RootCauseCostSplit
+{
+    /// <summary>The split by component.</summary>
+    public static readonly RootCauseCostSplit Detailed = new(false, null, null);
+
+    public RootCauseCostSplit(bool grouped, double? inputListFirst, double? inputListSecond)
+    {
+        Grouped = grouped;
+        InputListFirst = inputListFirst;
+        InputListSecond = inputListSecond;
+        Caching = grouped && inputListFirst is > 0 && inputListSecond is > 0;
+
+        if (!grouped)
+        {
+            Keys = RootCauseSegments.CostComponents
+                .SelectMany(k => new[] { (k, RootCauseCostKeys.Volume), (k, RootCauseCostKeys.Price) })
+                .ToList();
+            Components = RootCauseSegments.CostComponents;
+        }
+        else
+        {
+            var keys = new List<(string Key, string Effect)> { (RootCauseCostKeys.Input, RootCauseCostKeys.Volume), (RootCauseCostKeys.Input, RootCauseCostKeys.Price) };
+            if (Caching) keys.Add((RootCauseCostKeys.Input, RootCauseCostKeys.Caching));
+            keys.Add((RootCauseCostKeys.Output, RootCauseCostKeys.Volume));
+            keys.Add((RootCauseCostKeys.Output, RootCauseCostKeys.Price));
+            Keys = keys;
+            Components = RootCauseCostKeys.Groups;
+        }
+        Effects = Caching
+            ? new[] { RootCauseCostKeys.Volume, RootCauseCostKeys.Price, RootCauseCostKeys.Caching }
+            : new[] { RootCauseCostKeys.Volume, RootCauseCostKeys.Price };
+    }
+
+    /// <summary>The components are the input and output groups.</summary>
+    public bool Grouped { get; }
+
+    public double? InputListFirst { get; }
+    public double? InputListSecond { get; }
+
+    /// <summary>Grouped with an input list price on both sides: the input group's price effect is split into its list price and caching.</summary>
+    public bool Caching { get; }
+
+    /// <summary>The component and effect of each value <see cref="RootCauseDecomposition.CostEffects(IReadOnlyList{RootCauseItem}, IReadOnlyList{RootCauseItem}, RootCauseCostSplit, IReadOnlyList{int}?)"/> returns, in order.</summary>
+    public IReadOnlyList<(string Key, string Effect)> Keys { get; }
+
+    /// <summary>The components, in table order: the five cost components, or the two groups.</summary>
+    public IReadOnlyList<string> Components { get; }
+
+    /// <summary>The effects of the all-components rows: volume and price, and caching with <see cref="Caching"/>.</summary>
+    public IReadOnlyList<string> Effects { get; }
+
+    /// <summary>The sum of the <paramref name="effects"/> of <paramref name="key"/> and <paramref name="effect"/>, each null for any.</summary>
+    public double Sum(IReadOnlyList<double> effects, string? key, string? effect)
+    {
+        ArgumentNullException.ThrowIfNull(effects);
+        double sum = 0;
+        for (int k = 0; k < Keys.Count && k < effects.Count; k++)
+        {
+            if ((key == null || Keys[k].Key == key) && (effect == null || Keys[k].Effect == effect)) sum += effects[k];
+        }
+        return sum;
+    }
+}
+
+/// <summary>
 /// The exact decompositions of the root-cause engine (§ A3): the logarithmic-mean Divisia index (LMDI)
 /// of a speed or cost difference between two models, the share of each component of one model's time or
 /// cost, the Intelligence Index difference split by the scoring weights, and the points at risk.
@@ -32,7 +101,10 @@ public sealed class RootCauseAtRisk
 /// <c>callCount</c>, <c>perCallLatency</c>, <c>outputTokens</c>, <c>decodeRate</c> and <c>gap</c>. Cost:
 /// <c>cost = Σ_k tokens_k × price_k</c>, each component's difference split into a volume and a price
 /// effect, the price being the effective price (cost ÷ tokens) of the model's own answers, which carries
-/// the long-context card and the served tier. Every split is exact: its effects sum to the difference.
+/// the long-context card and the served tier. A pair whose two sides do not bill the same components
+/// (<see cref="Comparable"/>) is split by the input and output groups instead, the input's price effect
+/// split again into its list price and caching (<see cref="RootCauseStatistics.Lmdi3"/>). Every split is
+/// exact: its effects sum to the difference.
 /// Shares carry 95% bootstrap intervals over the shared questions (<see cref="RootCauseStatistics.Seed"/>,
 /// <see cref="RootCauseStatistics.Resamples"/>, percentile).</para>
 /// </summary>
@@ -162,8 +234,98 @@ public static class RootCauseDecomposition
     }
 
     /// <summary>
-    /// The cost decomposition of two models over the questions both have token counts and prices for;
-    /// without <paramref name="decompose"/>, only the difference and its interval, as <see cref="Speed"/>.
+    /// The cost effects of one set of shared items under <paramref name="split"/>, first minus second, in
+    /// <see cref="RootCauseCostSplit.Keys"/> order, and the total. A detailed split is <see cref="CostEffects(IReadOnlyList{RootCauseItem}, IReadOnlyList{RootCauseItem}, IReadOnlyList{int}?)"/>;
+    /// a grouped one splits the input group (uncached input, cache reads and writes) into volume, list price and,
+    /// with both list prices, caching, and the output group (output and reasoning) into volume and price.
+    /// </summary>
+    public static (double[] Effects, double Total, double FirstTotal, double SecondTotal) CostEffects(
+        IReadOnlyList<RootCauseItem> first, IReadOnlyList<RootCauseItem> second, RootCauseCostSplit split, IReadOnlyList<int>? sample = null)
+    {
+        ArgumentNullException.ThrowIfNull(split);
+        if (!split.Grouped) return CostEffects(first, second, sample);
+
+        var indices = sample ?? Enumerable.Range(0, first.Count).ToList();
+        // The first three cost components are the input, the last two the output.
+        static double Input(double[] v) => v[0] + v[1] + v[2];
+        static double Output(double[] v) => v[3] + v[4];
+        double inTokensA = indices.Average(i => Input(first[i].Tokens)), inTokensB = indices.Average(i => Input(second[i].Tokens));
+        double inCostA = indices.Average(i => Input(first[i].Cost)), inCostB = indices.Average(i => Input(second[i].Cost));
+        double outTokensA = indices.Average(i => Output(first[i].Tokens)), outTokensB = indices.Average(i => Output(second[i].Tokens));
+        double outCostA = indices.Average(i => Output(first[i].Cost)), outCostB = indices.Average(i => Output(second[i].Cost));
+
+        var effects = new List<double>(5);
+        if (split.Caching)
+        {
+            var (volume, list, caching) = RootCauseStatistics.Lmdi3(inCostA, inCostB, inTokensA, inTokensB, split.InputListFirst!.Value, split.InputListSecond!.Value);
+            effects.Add(volume);
+            effects.Add(list);
+            effects.Add(caching);
+        }
+        else
+        {
+            var (volume, price) = RootCauseStatistics.Lmdi(inCostA, inCostB, inTokensA, inTokensB);
+            effects.Add(volume);
+            effects.Add(price);
+        }
+        var (outVolume, outPrice) = RootCauseStatistics.Lmdi(outCostA, outCostB, outTokensA, outTokensB);
+        effects.Add(outVolume);
+        effects.Add(outPrice);
+
+        double firstTotal = inCostA + outCostA, secondTotal = inCostB + outCostB;
+        return (effects.ToArray(), firstTotal - secondTotal, firstTotal, secondTotal);
+    }
+
+    /// <summary>
+    /// Whether two sides bill the same components over their shared items: each of the five components has positive
+    /// mean tokens on both sides or on neither, and both sides report reasoning apart from output or neither does.
+    /// </summary>
+    public static bool Comparable(IReadOnlyList<RootCauseItem> first, IReadOnlyList<RootCauseItem> second, bool firstReasoningReported, bool secondReasoningReported)
+    {
+        if (firstReasoningReported != secondReasoningReported) return false;
+        if (first.Count == 0 || second.Count == 0) return true;
+        for (int k = 0; k < RootCauseSegments.CostComponents.Count; k++)
+        {
+            if ((first.Average(i => i.Tokens[k]) > 0) != (second.Average(i => i.Tokens[k]) > 0)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>How the cost of two models is split over the questions both have token counts for (<see cref="Comparable"/>).</summary>
+    public static RootCauseCostSplit CostSplitOf(RootCauseModelEvidence first, RootCauseModelEvidence second)
+    {
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentNullException.ThrowIfNull(second);
+        var (a, b) = Shared(first.CostItems, second.CostItems);
+        return CostSplitOf(a, b, first, second);
+    }
+
+    private static RootCauseCostSplit CostSplitOf(IReadOnlyList<RootCauseItem> a, IReadOnlyList<RootCauseItem> b, RootCauseModelEvidence first, RootCauseModelEvidence second)
+        => Comparable(a, b, first.ReasoningReported, second.ReasoningReported)
+            ? RootCauseCostSplit.Detailed
+            : new RootCauseCostSplit(true, InputListPrice(first), InputListPrice(second));
+
+    /// <summary>The card's uncached input price in USD per token, the input group's list price; null without one.</summary>
+    private static double? InputListPrice(RootCauseModelEvidence evidence)
+        => evidence.PricesPerMillion.Length > 0 && evidence.PricesPerMillion[0] is double perMillion ? perMillion / 1_000_000 : null;
+
+    /// <summary>
+    /// <c>exp(effect ÷ L(firstTotal, secondTotal))</c>: the factor of the cost ratio that <paramref name="effect"/>, an
+    /// LMDI effect of the pair, accounts for. Null when either total is missing or not positive.
+    /// </summary>
+    public static double? EffectRatio(double effect, double? firstTotal, double? secondTotal)
+    {
+        if (firstTotal is not double t1 || secondTotal is not double t2) return null;
+        double l = RootCauseStatistics.LogMean(t1, t2);
+        return l > 0 ? Math.Exp(effect / l) : null;
+    }
+
+    /// <summary>
+    /// The cost decomposition of two models over the questions both have token counts and prices for, by
+    /// component or, when the two do not bill the same components, by the input and output groups
+    /// (<see cref="CostSplitOf(RootCauseModelEvidence, RootCauseModelEvidence)"/>), with its
+    /// <see cref="RootCausePairDecomposition.VolumeRatio"/>; without <paramref name="decompose"/>, only the
+    /// difference and its interval, as <see cref="Speed"/>.
     /// </summary>
     public static RootCausePairDecomposition Cost(
         string firstToken, RootCauseModelEvidence first, string secondToken, RootCauseModelEvidence second, bool decompose = true)
@@ -183,64 +345,59 @@ public static class RootCauseDecomposition
             return result;
         }
 
-        var (effects, total, firstTotal, secondTotal) = CostEffects(a, b);
+        var split = CostSplitOf(a, b, first, second);
+        var (effects, total, firstTotal, secondTotal) = CostEffects(a, b, split);
         result.Difference = total;
         result.FirstTotal = firstTotal;
         result.SecondTotal = secondTotal;
-        if (!decompose) return DifferenceOnly(result, a.Count, sample => CostEffects(a, b, sample).Total);
+        if (!decompose) return DifferenceOnly(result, a.Count, sample => CostEffects(a, b, split, sample).Total);
 
-        var intervals = RootCauseStatistics.Bootstrap(a.Count, effects.Length + 3, sample =>
+        // Each component's share, then each all-components effect's, then the difference.
+        var keys = split.Keys;
+        var allEffects = split.Effects;
+        int width = keys.Count + allEffects.Count + 1;
+        var intervals = RootCauseStatistics.Bootstrap(a.Count, width, sample =>
         {
-            var (e, t, _, _) = CostEffects(a, b, sample);
-            var values = new double?[e.Length + 3];
+            var (e, t, _, _) = CostEffects(a, b, split, sample);
+            var values = new double?[width];
             for (int k = 0; k < e.Length; k++) values[k] = t == 0 ? null : e[k] / t;
-            values[e.Length] = t == 0 ? null : VolumeTotal(e) / t;
-            values[e.Length + 1] = t == 0 ? null : PriceTotal(e) / t;
-            values[e.Length + 2] = t;
+            for (int j = 0; j < allEffects.Count; j++) values[keys.Count + j] = t == 0 ? null : split.Sum(e, null, allEffects[j]) / t;
+            values[width - 1] = t;
             return values;
         });
 
-        for (int k = 0; k < 5; k++)
+        for (int k = 0; k < keys.Count; k++)
         {
-            string component = RootCauseSegments.CostComponents[k];
-            for (int j = 0; j < 2; j++)
+            result.Components.Add(new RootCauseComponent
             {
-                int index = 2 * k + j;
-                result.Components.Add(new RootCauseComponent
-                {
-                    Key = component,
-                    Effect = j == 0 ? "volume" : "price",
-                    Label = RootCauseSegments.Label(component) + (j == 0 ? ", token volume" : ", price per token"),
-                    Amount = effects[index],
-                    Share = total == 0 ? null : effects[index] / total,
-                    ShareLower = intervals[index]?.Lower,
-                    ShareUpper = intervals[index]?.Upper
-                });
-            }
+                Key = keys[k].Key,
+                Effect = keys[k].Effect,
+                Label = RootCauseCostKeys.Label(keys[k].Key, keys[k].Effect, split.Grouped),
+                Amount = effects[k],
+                Share = total == 0 ? null : effects[k] / total,
+                ShareLower = intervals[k]?.Lower,
+                ShareUpper = intervals[k]?.Upper
+            });
         }
 
-        result.Components.Add(new RootCauseComponent
+        for (int j = 0; j < allEffects.Count; j++)
         {
-            Key = "all",
-            Effect = "volume",
-            Label = "token volume, all components",
-            Amount = VolumeTotal(effects),
-            Share = total == 0 ? null : VolumeTotal(effects) / total,
-            ShareLower = intervals[effects.Length]?.Lower,
-            ShareUpper = intervals[effects.Length]?.Upper
-        });
-        result.Components.Add(new RootCauseComponent
-        {
-            Key = "all",
-            Effect = "price",
-            Label = "price per token, all components",
-            Amount = PriceTotal(effects),
-            Share = total == 0 ? null : PriceTotal(effects) / total,
-            ShareLower = intervals[effects.Length + 1]?.Lower,
-            ShareUpper = intervals[effects.Length + 1]?.Upper
-        });
-        result.DifferenceLower = intervals[effects.Length + 2]?.Lower;
-        result.DifferenceUpper = intervals[effects.Length + 2]?.Upper;
+            double amount = split.Sum(effects, null, allEffects[j]);
+            result.Components.Add(new RootCauseComponent
+            {
+                Key = RootCauseCostKeys.All,
+                Effect = allEffects[j],
+                Label = RootCauseCostKeys.Label(RootCauseCostKeys.All, allEffects[j], split.Grouped),
+                Amount = amount,
+                Share = total == 0 ? null : amount / total,
+                ShareLower = intervals[keys.Count + j]?.Lower,
+                ShareUpper = intervals[keys.Count + j]?.Upper
+            });
+        }
+        result.DifferenceLower = intervals[width - 1]?.Lower;
+        result.DifferenceUpper = intervals[width - 1]?.Upper;
+        result.Grouped = split.Grouped;
+        result.VolumeRatio = EffectRatio(split.Sum(effects, null, RootCauseCostKeys.Volume), firstTotal, secondTotal);
         return result;
     }
 
@@ -257,10 +414,6 @@ public static class RootCauseDecomposition
         result.UnavailableReason = NotEstablishedReason;
         return result;
     }
-
-    private static double VolumeTotal(double[] effects) => effects.Where((_, i) => i % 2 == 0).Sum();
-
-    private static double PriceTotal(double[] effects) => effects.Where((_, i) => i % 2 == 1).Sum();
 
     // ---------------------------------------------------------------------------------------------
     // One model's own time and cost
