@@ -1,0 +1,25 @@
+/* Shown when a guarded navigation was canceled because the sign-in check could not reach the server. */
+.auth-connection-problem {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-glass);
+  border-left: 4px solid var(--color-warning);
+  border-radius: 8px;
+  color: var(--font-color);
+  font-size: 14px;
+  line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}

@@ -1,23 +1,42 @@
-import { RedirectFunction, Routes } from '@angular/router';
+import { CanActivateFn, RedirectFunction, Routes } from '@angular/router';
 import { LoginComponent } from './login/login.component';
 import { ChatComponent } from './chat/chat.component';
 import type { SettingsComponent } from './settings/settings.component';
 import { inject } from '@angular/core';
-import { AuthService } from './services/auth.service';
+import { AuthService, AuthUser } from './services/auth.service';
 import { Router } from '@angular/router';
-import { map, catchError, of } from 'rxjs';
+import { map } from 'rxjs';
 
-const settingsCanActivate = [(route: any, state: any) => {
-  const auth = inject(AuthService);
-  const router = inject(Router);
-  return auth.checkAuth().pipe(
-    map(user => {
-      if (user) return true;
-      return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
-    }),
-    catchError(() => of(router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })))
-  );
-}];
+/**
+ * Allows a cached user that `allows` at once and revalidates the session in the background;
+ * otherwise waits for a sign-in check. Only a signed-out verdict leads to the login page: a check
+ * that could not reach the server cancels the navigation and raises the connection-problem notice.
+ */
+export const requireSignedIn = (allows: (user: AuthUser) => boolean = () => true): CanActivateFn =>
+  (_route, state) => {
+    const auth = inject(AuthService);
+    const router = inject(Router);
+    const toLogin = (returnUrl: string) => router.createUrlTree(['/login'], { queryParams: { returnUrl } });
+
+    const cached = auth.currentUser;
+    if (cached && allows(cached)) {
+      auth.revalidate()?.subscribe(result => {
+        if (result.kind === 'signedOut') router.navigateByUrl(toLogin(router.url));
+      });
+      return true;
+    }
+
+    return auth.checkAuth().pipe(
+      map(result => {
+        if (result.kind === 'signedIn' && allows(result.user)) return true;
+        if (result.kind === 'unknown') {
+          auth.connectionProblemUrl.set(state.url);
+          return false;
+        }
+        return toLogin(state.url);
+      })
+    );
+  };
 
 const settingsCanDeactivate = [(component: SettingsComponent) => {
   return component.canDeactivate ? component.canDeactivate() : true;
@@ -32,59 +51,29 @@ export const routes: Routes = [
   {
     path: 'admin',
     loadComponent: () => import('./admin/admin.component').then(m => m.AdminComponent),
-    canActivate: [(route: any, state: any) => {
-      const auth = inject(AuthService);
-      const router = inject(Router);
-      return auth.checkAuth().pipe(
-        map(user => {
-          if (user && user.isAdmin) return true;
-          return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
-        }),
-        catchError(() => of(router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })))
-      );
-    }]
+    canActivate: [requireSignedIn(u => !!u.isAdmin)]
   },
-  { 
-    path: 'debug-log', 
+  {
+    path: 'debug-log',
     loadComponent: () => import('./debug-log/debug-log.component').then(m => m.DebugLogComponent),
-    canActivate: [(route: any, state: any) => {
-      const auth = inject(AuthService);
-      const router = inject(Router);
-      return auth.checkAuth().pipe(
-        map(user => {
-          if (user) return true;
-          return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
-        }),
-        catchError(() => of(router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })))
-      );
-    }]
+    canActivate: [requireSignedIn()]
   },
-  { 
-    path: 'chat', 
+  {
+    path: 'chat',
     component: ChatComponent,
     data: { reuse: true },
-    canActivate: [(route: any, state: any) => {
-      const auth = inject(AuthService);
-      const router = inject(Router);
-      return auth.checkAuth().pipe(
-        map(user => {
-          if (user) return true;
-          return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
-        }),
-        catchError(() => of(router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })))
-      );
-    }]
+    canActivate: [requireSignedIn()]
   },
   {
     path: 'settings',
     loadComponent: () => import('./settings/settings.component').then(m => m.SettingsComponent),
-    canActivate: settingsCanActivate,
+    canActivate: [requireSignedIn()],
     canDeactivate: settingsCanDeactivate
   },
   {
     path: 'settings/:section',
     loadComponent: () => import('./settings/settings.component').then(m => m.SettingsComponent),
-    canActivate: settingsCanActivate,
+    canActivate: [requireSignedIn()],
     canDeactivate: settingsCanDeactivate
   },
   { path: 'api-keys', redirectTo: redirectKeepingQuery('/settings/api-keys') },

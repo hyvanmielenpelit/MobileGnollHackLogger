@@ -1,1 +1,7 @@
+@if (auth.connectionProblemUrl(); as url) {
+  <div class="auth-connection-problem" role="alert">
+    <span>Overseer could not reach the server to confirm your sign-in. You have not been signed out.</span>
+    <button type="button" class="btn-gh btn-gh-small" (click)="retryNavigation(url)">Retry</button>
+  </div>
+}
 <router-outlet />

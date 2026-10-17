@@ -2,6 +2,7 @@ import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/cor
 import { RouterModule, Router, NavigationEnd, NavigationCancel, NavigationError } from '@angular/router';
 import { filter, take } from 'rxjs';
 import { ClientBridgeService } from './services/client-bridge.service';
+import { AuthService } from './services/auth.service';
 
 @Component({
     selector: 'app-root',
@@ -13,6 +14,7 @@ import { ClientBridgeService } from './services/client-bridge.service';
 export class AppComponent implements OnInit {
   private router = inject(Router);
   private clientBridge = inject(ClientBridgeService);
+  protected auth = inject(AuthService);
 
   ngOnInit() {
     this.router.events.pipe(
@@ -29,10 +31,16 @@ export class AppComponent implements OnInit {
     this.router.events.pipe(
       filter((event): event is NavigationEnd => event instanceof NavigationEnd)
     ).subscribe((event: NavigationEnd) => {
+      this.auth.connectionProblemUrl.set(null);
       if (this.clientBridge.isEmbedded()) {
         const path = event.urlAfterRedirects;
         this.clientBridge.notifyUrlChanged(path);
       }
     });
+  }
+
+  retryNavigation(url: string) {
+    this.auth.connectionProblemUrl.set(null);
+    this.router.navigateByUrl(url);
   }
 }
