@@ -714,6 +714,48 @@ public class RootCauseValidatorTests
         Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.OverlapHedgeRule && n.Location.Contains("overview", StringComparison.Ordinal));
     }
 
+    /// <summary>The rule 16 notes of an overview paragraph on the fixture comparison, where A and B overlap.</summary>
+    private static List<BenchmarkReportValidationNote> OverviewRankingNotes(string overview)
+        => ValidateExecutive(overview)
+            .Where(n => n.Rule == BenchmarkReportPackValidator.OverlapHedgeRule && n.Location.Contains("overview", StringComparison.Ordinal))
+            .ToList();
+
+    [Fact]
+    public void Rule16_AComparativeWithNoModelBeforeIt_RanksNothing()
+    {
+        Assert.Empty(OverviewRankingNotes(
+            "In the speed results, models at higher thinking settings made many tool calls on hard questions, such as {{model:A}} on Q1 and {{model:B}} on Q2."));
+    }
+
+    [Fact]
+    public void Rule16_ASettingComparative_RanksNothing()
+    {
+        Assert.Empty(OverviewRankingNotes("{{model:A}} ran at a higher thinking level than {{model:B}}."));
+        Assert.Empty(OverviewRankingNotes("{{model:A}} ran at a higher-priced tier than {{model:B}}."));
+    }
+
+    [Fact]
+    public void Rule16_AMechanismThatLeadsTheAxis_RanksNothing()
+    {
+        Assert.Empty(OverviewRankingNotes("Answering without tools leads the intelligence axis for {{model:B}} against {{model:A}}."));
+    }
+
+    [Fact]
+    public void Rule16_ARankingWithItsSubjectAfterACompareClause_IsStillRead()
+    {
+        var note = Assert.Single(OverviewRankingNotes("Compared with {{model:B}}, {{model:A}} scored higher."));
+
+        Assert.Contains("Ranks {{model:A}} against {{model:B}}, whose intervals overlap", note.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rule16_SpeedIsASpeedWord()
+    {
+        Assert.Contains("speed", BenchmarkReportPackValidator.SpeedWords);
+        Assert.DoesNotContain(OverviewRankingNotes("{{model:A}} ranks higher on speed than {{model:B}}."),
+            n => n.Message.Contains("intervals overlap", StringComparison.Ordinal));
+    }
+
     // --- Rule 31: fact shapes (v1) -------------------------------------------------------------------
 
     [Theory]
@@ -1149,6 +1191,62 @@ public class RootCauseValidatorTests
         Assert.Contains(notes, n => n.Message.Contains("\"real difference\"", StringComparison.Ordinal));
         Assert.Empty(RuleNotes(QuestionSheet(), BenchmarkReportPackValidator.RootCauseNullRestatedRule, slot,
             "Longer outputs may explain the gap ({{rca.hypothesis.HS1.1.ref}})."));
+    }
+
+    [Fact]
+    public void Rule45_ReadsNonNull()
+    {
+        Assert.Contains("non-null", BenchmarkReportPackValidator.NullRestatedPhrases);
+        var note = Assert.Single(RuleNotes(QuestionSheet(), BenchmarkReportPackValidator.RootCauseNullRestatedRule, BenchmarkReportSlots.HypothesesCost,
+            "No non-null mechanism hypothesis fired on the cost axis."));
+
+        Assert.Contains("\"non-null\"", note.Message, StringComparison.Ordinal);
+    }
+
+    // --- A quiet axis: no hypothesis other than a null or a price effect ------------------------------
+
+    /// <summary>
+    /// <see cref="QuestionSheet"/> with a result whose cost axis holds only a price effect and a null, while the
+    /// intelligence and speed axes each hold a hypothesis that fired.
+    /// </summary>
+    private static BenchmarkReportFactSheet QuietCostSheet()
+    {
+        var sheet = QuestionSheet();
+        sheet.RootCause = new RootCauseResult
+        {
+            Hypotheses = new List<RootCauseHypothesis>
+            {
+                new() { Id = "H0-C", Number = 1, Key = "H0-C.1", Axis = RootCauseAxes.Cost, Kind = "null" },
+                new() { Id = "HC2", Number = 1, Key = "HC2.1", Axis = RootCauseAxes.Cost, Kind = "pair", PriceEffect = true },
+                new() { Id = "HQ1", Number = 1, Key = "HQ1.1", Axis = RootCauseAxes.Intelligence, Kind = "pair" },
+                new() { Id = "HS1", Number = 1, Key = "HS1.1", Axis = RootCauseAxes.Speed, Kind = "pair" },
+            }
+        };
+        return sheet;
+    }
+
+    [Fact]
+    public void QuietAxis_HypothesesSlotMayBeLeftOut()
+    {
+        var sheet = QuietCostSheet();
+        Assert.Equal(new[] { RootCauseAxes.Cost }, BenchmarkReportPackPrompt.RootCauseQuietAxes(sheet.RootCause));
+
+        // Left out, the quiet axis's slot raises no rule 1 note; the other hypotheses slots still do.
+        var notes = ValidateSections(sheet, new Dictionary<string, string>());
+        Assert.DoesNotContain(notes, n => n.Location.StartsWith("sections." + BenchmarkReportSlots.HypothesesCost, StringComparison.Ordinal));
+        Assert.Contains(notes, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.HypothesesIntelligence);
+        Assert.Contains(notes, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.HypothesesSpeed);
+
+        var output = new BenchmarkReportWriterOutput { Headline = "The models differ on every axis." };
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Rca, output, sheet, new BenchmarkReportContentSnapshot());
+        Assert.DoesNotContain(cleaned.Notes, n => n.Location.StartsWith("sections." + BenchmarkReportSlots.HypothesesCost, StringComparison.Ordinal));
+        Assert.False(cleaned.Output.Sections.ContainsKey(BenchmarkReportSlots.HypothesesCost));
+
+        // Written anyway, it is checked as before, and it is no unknown slot.
+        var written = RuleNotes(sheet, BenchmarkReportPackValidator.RootCauseNullRestatedRule, BenchmarkReportSlots.HypothesesCost, "The null hypothesis stands for this pair.");
+        Assert.Equal("sections." + BenchmarkReportSlots.HypothesesCost + "[p1]", Assert.Single(written).Location);
+        Assert.DoesNotContain(ValidateSections(sheet, new Dictionary<string, string> { [BenchmarkReportSlots.HypothesesCost] = "The cost axis shows nothing more." }),
+            n => n.Rule == 1 && n.Location.StartsWith("sections." + BenchmarkReportSlots.HypothesesCost, StringComparison.Ordinal));
     }
 
     // --- A writer hypothesis' evidence ------------------------------------------------------------------

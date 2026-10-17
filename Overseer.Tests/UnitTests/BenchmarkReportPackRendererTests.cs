@@ -1531,12 +1531,12 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion26()
+    public void AComparisonDocument_IsCurrentAtFormatVersion27()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(26, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 26 · ", text);
+        Assert.Equal(27, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 27 · ", text);
         Assert.Contains(" · models named*", text);
     }
 
@@ -2713,7 +2713,7 @@ public class BenchmarkReportPackRendererTests
             result.Hypotheses.Insert(1, new RootCauseHypothesis
             {
                 Id = "HQ5", Number = 1, Key = "HQ5.1", Axis = RootCauseAxes.Intelligence, Kind = "pair", Models = new List<string> { "C", "D" },
-                ModelsText = "Model C and Model D", Statement = "Completeness was the lowest dimension of 2 of 5 models under the concise response style.",
+                ModelsText = "Model C and Model D", Statement = "Completeness was the lowest dimension, at least 13 points below Accuracy, for 2 of 5 models under the concise response style.",
                 Label = "the concise response style, 2 of 5 models", Grade = RootCauseGrades.Low
             });
             result.Anomalies = new List<RootCauseAnomaly>
@@ -3026,6 +3026,37 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
+    public void AQuietAxis_PrintsItsLine_AndNoNotWrittenForTheSlotTheWriterLeftOut()
+    {
+        var document = RcaDocument(
+            s =>
+            {
+                foreach (var h in s.RootCause!.Hypotheses.Where(h => h.Axis == RootCauseAxes.Cost && h.Kind != "null")) h.PriceEffect = true;
+            },
+            writer: w =>
+            {
+                w.Sections.Remove(BenchmarkReportSlots.HypothesesCost);
+                w.Sections.Remove(BenchmarkReportSlots.HypothesesSpeed);
+            });
+        string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
+        string section = RcaSection(text, "## Hypotheses");
+        string Axis(string axis) => RcaSection(section, "### " + RootCauseAxes.Name(axis));
+
+        // Only price effects and nulls fired on cost: the line says so, and the left-out slot prints nothing.
+        string cost = Axis(RootCauseAxes.Cost);
+        Assert.Contains(" cost differences follow mainly from the price cards (", cost);
+        Assert.Contains("\nNo hypothesis other than a null or a price-card difference fired on this axis.\n", cost);
+        Assert.DoesNotContain("No hypothesis other than a null fired on this axis.", cost);
+        Assert.DoesNotContain("*Not written.*", cost);
+        Assert.DoesNotContain("| Hypothesis |", cost);
+
+        // Speed has hypotheses that fired, so its missing slot still shows.
+        string speed = Axis(RootCauseAxes.Speed);
+        Assert.Contains("*Not written.*", speed);
+        Assert.DoesNotContain("No hypothesis other than a null", speed);
+    }
+
+    [Fact]
     public void TheConclusions_StateAReasonEveryAxisShares_OnceUnderTheTable()
     {
         const string reason = "Probable (Moderate) because each model ran only once per suite.";
@@ -3252,7 +3283,7 @@ public class BenchmarkReportPackRendererTests
 
         string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
 
-        Assert.Contains(" · generated under format version 19 · rendered with format version 26 · ", text);
+        Assert.Contains(" · generated under format version 19 · rendered with format version 27 · ", text);
         Assert.DoesNotContain("Grader family:", text);
         foreach (string resolution in new[] { "agreed by both members", "upheld by the claim verifier", "overturned by the claim verifier", "unresolved (averaged)", "single assessor" })
         {
@@ -3464,10 +3495,10 @@ public class BenchmarkReportPackRendererTests
     {
         Assert.Equal(6, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
         Assert.Equal(6, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
-        Assert.Equal(22, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(26, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
-        Assert.Equal(22, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(26, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(23, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
+        Assert.Equal(27, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(23, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(27, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
         Assert.Contains(" · format version 6 · ", text);

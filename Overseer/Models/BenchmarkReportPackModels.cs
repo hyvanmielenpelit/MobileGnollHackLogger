@@ -1561,6 +1561,45 @@ public class BenchmarkReportPackSubjectDocumentsDto
     public List<BenchmarkReportPackWrittenDocumentDto> Documents { get; set; } = new();
 }
 
+/// <summary>
+/// The answer of <c>POST report-packs/documents</c>: the stored Report Pack documents a request's
+/// step-3 list shows, with the same lists as <see cref="BenchmarkReportPackPreviewDto"/> and nothing
+/// prepared.
+/// </summary>
+public class BenchmarkReportPackDocumentsDto
+{
+    /// <summary>The scope listed, as requested.</summary>
+    public BenchmarkReportScope Scope { get; set; } = BenchmarkReportScope.Model;
+
+    /// <summary>The numbered comparison, when it has been identified; null before.</summary>
+    public int? ComparisonId { get; set; }
+
+    /// <summary>
+    /// Comparison scope: the key of the covered set the request names
+    /// (<see cref="BenchmarkReportDocument.CoveredSetKey"/>); null for model scope and for a request
+    /// without covered entry keys.
+    /// </summary>
+    public string? CoveredSetKey { get; set; }
+
+    /// <summary>
+    /// Comparison scope: the documents of <see cref="CoveredSetKey"/>, the newest per audience, in
+    /// audience order; empty without it and for model scope.
+    /// </summary>
+    public List<BenchmarkReportPackWrittenDocumentDto> WrittenDocuments { get; set; } = new();
+
+    /// <summary>
+    /// Comparison scope: every covered set of the comparison with documents but <see cref="CoveredSetKey"/>,
+    /// as <see cref="BenchmarkReportPackPreviewDto.OtherModelSets"/>; empty for model scope.
+    /// </summary>
+    public List<BenchmarkReportPackCoveredSetDto> OtherModelSets { get; set; } = new();
+
+    /// <summary>
+    /// Model scope: each subject's per-model documents, the newest per audience, in subject order, each
+    /// labeled by its entry key; empty for comparison scope.
+    /// </summary>
+    public List<BenchmarkReportPackSubjectDocumentsDto> SubjectDocuments { get; set; } = new();
+}
+
 public class BenchmarkReportPackStartResponse
 {
     public string JobId { get; set; } = string.Empty;

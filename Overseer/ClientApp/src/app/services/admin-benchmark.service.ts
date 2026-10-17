@@ -3495,6 +3495,22 @@ export interface BenchmarkReportPackSubjectDocumentsDto {
   documents: BenchmarkReportPackWrittenDocumentDto[];
 }
 
+/** The stored documents of a preview request, listed with nothing prepared: the preview's lists. */
+export interface BenchmarkReportPackDocumentsDto {
+  /** The scope listed, as requested. */
+  scope: BenchmarkReportScope;
+  /** The numbered comparison, once identified; null before. */
+  comparisonId: number | null;
+  /** Comparison scope: the key of the covered set the request names; null for per-model scope and without covered keys. */
+  coveredSetKey: string | null;
+  /** Comparison scope: the documents of that covered set, the newest per audience. */
+  writtenDocuments: BenchmarkReportPackWrittenDocumentDto[];
+  /** Comparison scope: every other covered set of this comparison that has documents. */
+  otherModelSets: BenchmarkReportPackCoveredSetDto[];
+  /** Per-model scope: each subject's documents, labeled by its entry key. */
+  subjectDocuments: BenchmarkReportPackSubjectDocumentsDto[];
+}
+
 export interface BenchmarkReportPackStartResponse {
   jobId: string;
 }
@@ -4921,6 +4937,11 @@ export class AdminBenchmarkService {
   // Report packs. Preview makes no model call; start begins a background job.
   previewReportPack(request: BenchmarkReportPackRequest): Observable<BenchmarkReportPackPreviewDto> {
     return this.http.post<BenchmarkReportPackPreviewDto>('/api/admin/benchmark/report-packs/preview', request);
+  }
+
+  /** The stored documents of a preview request, with nothing prepared: answers before the preview on a cold cache. */
+  listReportPackDocuments(request: BenchmarkReportPackRequest): Observable<BenchmarkReportPackDocumentsDto> {
+    return this.http.post<BenchmarkReportPackDocumentsDto>('/api/admin/benchmark/report-packs/documents', request);
   }
 
   /**

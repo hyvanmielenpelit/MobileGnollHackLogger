@@ -1825,12 +1825,6 @@ public static partial class BenchmarkReportPackRenderer
     {
         Heading(sb, "## Hypotheses");
 
-        var slots = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [RootCauseAxes.Intelligence] = BenchmarkReportSlots.HypothesesIntelligence,
-            [RootCauseAxes.Speed] = BenchmarkReportSlots.HypothesesSpeed,
-            [RootCauseAxes.Cost] = BenchmarkReportSlots.HypothesesCost
-        };
         bool legend = false;
         foreach (string axis in RootCauseAxes.All)
         {
@@ -1845,7 +1839,7 @@ public static partial class BenchmarkReportPackRenderer
             }
             else if (fired.Count == 0)
             {
-                // Where only price effects fired, the line on them below stands in for the table.
+                // Where only price effects fired, the lines on them below stand in for the table.
                 if (priceEffects.Count == 0)
                 {
                     Line(sb, "No hypothesis other than a null fired on this axis.");
@@ -1880,6 +1874,11 @@ public static partial class BenchmarkReportPackRenderer
                     ? "1 cost difference follows mainly from the price cards (" + keys + "); Appendix C lists it."
                     : Inv(priceEffects.Count) + " cost differences follow mainly from the price cards (" + keys + "); Appendix C lists them.");
                 Line(sb);
+                if (fired.Count == 0)
+                {
+                    Line(sb, "No hypothesis other than a null or a price-card difference fired on this axis.");
+                    Line(sb);
+                }
             }
 
             if (RcaNullsSentence(ctx, hypotheses.Where(h => h.Kind == "null").ToList()) is string nulls)
@@ -1887,7 +1886,11 @@ public static partial class BenchmarkReportPackRenderer
                 Line(sb, nulls);
                 Line(sb);
             }
-            Slot(sb, ctx, slots[axis]);
+
+            // An axis with nothing to discuss lets the writer leave its slot out (BenchmarkReportPackPrompt.RootCauseQuietAxes).
+            string slot = BenchmarkReportPackPrompt.RootCauseHypothesesSlot(axis)!;
+            if (result != null && fired.Count == 0) OptionalSlot(sb, ctx, slot);
+            else Slot(sb, ctx, slot);
         }
 
         Figures(sb, ctx, BenchmarkReportChartAnchor.RcaHypotheses);

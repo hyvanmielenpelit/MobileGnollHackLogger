@@ -809,9 +809,9 @@ public class RootCauseEngineTests
     }
 
     [Fact]
-    public void TheEngineVersion_IsTen()
+    public void TheEngineVersion_IsEleven()
     {
-        Assert.Equal(10, RootCauseEngine.Version);
+        Assert.Equal(11, RootCauseEngine.Version);
     }
 
     [Fact]
@@ -1749,7 +1749,7 @@ public class RootCauseEngineTests
         Assert.Equal("all", draft.Group);
         Assert.Equal(new[] { "A", "B", "C" }, draft.Models);
         Assert.Equal("Concise style: all models", draft.Short);
-        Assert.Equal("Completeness was the lowest dimension of 3 of 3 models under the concise response style.", draft.Statement);
+        Assert.Equal("Completeness was the lowest dimension, at least 13 points below Accuracy, for 3 of 3 models under the concise response style.", draft.Statement);
         Assert.Equal("the concise response style, 3 of 3 models", draft.Label);
         Assert.Equal(RootCauseHypotheses.StyleRefutedIf, draft.RefutedIf);
         Assert.Equal(RootCauseRunKinds.StylePair, draft.NextRunKind);
@@ -1776,7 +1776,7 @@ public class RootCauseEngineTests
         Assert.Equal("HQ5.1", hq5.Key);
         Assert.Equal("pair", hq5.Kind);
         Assert.Equal(new[] { "A", "B" }, hq5.Models);
-        Assert.Equal("Completeness was the lowest dimension of 2 of 2 models under the concise response style.", hq5.Statement);
+        Assert.Equal("Completeness was the lowest dimension, at least 13 points below Accuracy, for 2 of 2 models under the concise response style.", hq5.Statement);
         Assert.Equal("the concise response style, 2 of 2 models", hq5.Label);
         Assert.All(two.Questions, q => Assert.DoesNotContain(hq5.Key, q.HypothesisKeys));
 

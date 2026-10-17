@@ -1177,6 +1177,157 @@ public class BenchmarkReportPackServiceTests
         }
     }
 
+    // --- Documents --------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Writes the whole comparison's Executive Summary and a two-model subset's over the fake writer;
+    /// returns every entry key, the subset's keys and the subset document's id.
+    /// </summary>
+    private static async Task<(List<string> All, List<string> Subset, long SubsetDocumentId)> WriteWholeAndSubsetAsync(Harness h)
+    {
+        var all = h.Seeded.RunIds.Select(id => "run:" + id).ToList();
+        var subset = all.Take(2).ToList();
+        foreach (var request in new[] { h.ComparisonRequest(covered: all), h.ComparisonRequest(covered: subset) })
+        {
+            var prep = await h.PrepareComparisonAsync(request);
+            string reply = Reply(BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.ExecutiveSummary, prep.Sheet));
+            h.Provider.Replies.Clear();
+            h.Provider.Replies.Enqueue(reply);
+            h.Provider.Replies.Enqueue(reply);
+            await h.RunComparisonAsync(request);
+        }
+        var newest = await h.Db.BenchmarkReportDocuments.OrderByDescending(d => d.Id).FirstAsync(TestContext.Current.CancellationToken);
+        return (all, subset, newest.Id);
+    }
+
+    private static BenchmarkReportPackDocumentsDto DocumentsOf(IActionResult result)
+        => Assert.IsType<BenchmarkReportPackDocumentsDto>(Assert.IsType<OkObjectResult>(result).Value);
+
+    [Fact]
+    public async Task Documents_ListsTheChosenSetAndTheOtherSets_WithoutComparingOrPreparing()
+    {
+        await using var h = await Harness.CreateAsync();
+        var (all, subset, subsetDocumentId) = await WriteWholeAndSubsetAsync(h);
+        int calls = h.Provider.Calls;
+
+        // A comparison service over a disposed context throws on its first query.
+        var disposed = new ApplicationDbContext(h.Options);
+        await disposed.DisposeAsync();
+        using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
+        var controller = h.Controller(
+            previewCache: new BenchmarkReportPackPreviewCache(memory), comparisonService: new BenchmarkModelComparisonService(disposed));
+
+        var documents = DocumentsOf(await controller.Documents(h.ComparisonRequest(covered: all), CancellationToken.None));
+
+        var comparison = Assert.Single(await h.Db.BenchmarkComparisons.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BenchmarkReportScope.Comparison, documents.Scope);
+        Assert.Equal(comparison.Id, documents.ComparisonId);
+        Assert.Equal(BenchmarkReportComparisonKey.ForCoveredSet(all), documents.CoveredSetKey);
+        Assert.Equal(BenchmarkReportAudience.ExecutiveSummary, Assert.Single(documents.WrittenDocuments).Audience);
+        var other = Assert.Single(documents.OtherModelSets);
+        Assert.Equal(BenchmarkReportComparisonKey.ForCoveredSet(subset), other.CoveredSetKey);
+        Assert.Equal(subset, other.CoveredModels.Select(m => m.EntryKey));
+        Assert.Equal(subsetDocumentId, Assert.Single(other.Documents).DocumentId);
+        Assert.Empty(documents.SubjectDocuments);
+        Assert.Equal(0, memory.Count);
+        Assert.Equal(calls, h.Provider.Calls);
+
+        // The preview of the same request compares, on that context.
+        await Assert.ThrowsAnyAsync<ObjectDisposedException>(
+            () => controller.Preview(h.ComparisonRequest(covered: all), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Documents_ModelScope_ListsEachSubjectsDocuments()
+    {
+        await using var h = await Harness.CreateAsync();
+        string first = $"run:{h.Seeded.RunIds[0]}";
+        string second = $"run:{h.Seeded.RunIds[1]}";
+        var request = h.Request();
+        request.SubjectKeys = new List<string> { first, second };
+        long executive = await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request, subjectKey: first);
+        long rootCause = await h.StoreDocumentAsync(BenchmarkReportAudience.RootCauseAnalysis, request, subjectKey: second);
+        await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request, comparisonKey: new string('f', 64), subjectKey: second);
+        await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request, subjectKey: second, origin: BenchmarkReportDocumentOrigin.RunCompletion);
+
+        var documents = DocumentsOf(await h.Controller().Documents(request, CancellationToken.None));
+
+        Assert.Equal(BenchmarkReportScope.Model, documents.Scope);
+        Assert.Null(documents.ComparisonId);
+        Assert.Null(documents.CoveredSetKey);
+        Assert.Empty(documents.WrittenDocuments);
+        Assert.Empty(documents.OtherModelSets);
+        Assert.Equal(new[] { first, second }, documents.SubjectDocuments.Select(s => s.SubjectKey));
+        Assert.Equal(new[] { first, second }, documents.SubjectDocuments.Select(s => s.SubjectLabel));
+        Assert.Equal(executive, Assert.Single(documents.SubjectDocuments[0].Documents).DocumentId);
+        Assert.Equal(rootCause, Assert.Single(documents.SubjectDocuments[1].Documents).DocumentId);
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task Documents_WithoutCoveredKeys_ListsTheOtherSetsOnly()
+    {
+        await using var h = await Harness.CreateAsync();
+        var (all, subset, _) = await WriteWholeAndSubsetAsync(h);
+
+        var documents = DocumentsOf(await h.Controller().Documents(h.ComparisonRequest(), CancellationToken.None));
+
+        Assert.Null(documents.CoveredSetKey);
+        Assert.Empty(documents.WrittenDocuments);
+        // The set covering every entry comes first.
+        Assert.Equal(
+            new[] { BenchmarkReportComparisonKey.ForCoveredSet(all), BenchmarkReportComparisonKey.ForCoveredSet(subset) },
+            documents.OtherModelSets.Select(s => s.CoveredSetKey));
+    }
+
+    [Fact]
+    public async Task Documents_AnswerTheSameListsAsThePreview()
+    {
+        await using var h = await Harness.CreateAsync();
+        var (_, subset, _) = await WriteWholeAndSubsetAsync(h);
+
+        foreach (var request in new[] { h.ComparisonRequest(covered: subset), h.ComparisonRequest(covered: h.Seeded.RunIds.Select(id => "run:" + id)) })
+        {
+            var preview = Assert.IsType<BenchmarkReportPackPreviewDto>(Assert.IsType<OkObjectResult>(
+                await h.Controller().Preview(request, CancellationToken.None)).Value);
+            var documents = DocumentsOf(await h.Controller().Documents(request, CancellationToken.None));
+
+            Assert.Null(preview.Refusal);
+            Assert.Equal(preview.CoveredSetKey, documents.CoveredSetKey);
+            Assert.Equal(JsonSerializer.Serialize(preview.WrittenDocuments), JsonSerializer.Serialize(documents.WrittenDocuments));
+            Assert.Equal(JsonSerializer.Serialize(preview.OtherModelSets), JsonSerializer.Serialize(documents.OtherModelSets));
+        }
+
+        string first = $"run:{h.Seeded.RunIds[0]}";
+        string second = $"run:{h.Seeded.RunIds[1]}";
+        var model = h.Request();
+        model.SubjectKeys = new List<string> { first, second };
+        await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, model, subjectKey: first);
+        await h.StoreDocumentAsync(BenchmarkReportAudience.RootCauseAnalysis, model, subjectKey: second);
+
+        var modelPreview = Assert.IsType<BenchmarkReportPackPreviewDto>(Assert.IsType<OkObjectResult>(
+            await h.Controller().Preview(model, CancellationToken.None)).Value);
+        var modelDocuments = DocumentsOf(await h.Controller().Documents(model, CancellationToken.None));
+
+        Assert.Null(modelPreview.Refusal);
+        Assert.Equal(
+            modelPreview.SubjectDocuments.Select(s => (s.SubjectKey, JsonSerializer.Serialize(s.Documents))),
+            modelDocuments.SubjectDocuments.Select(s => (s.SubjectKey, JsonSerializer.Serialize(s.Documents))));
+        Assert.Equal(2, modelDocuments.SubjectDocuments.Sum(s => s.Documents.Count));
+    }
+
+    [Fact]
+    public async Task Documents_Answers499WhenTheClientAborts()
+    {
+        await using var h = await Harness.CreateAsync();
+        using var aborted = new CancellationTokenSource();
+        aborted.Cancel();
+
+        var result = await h.Controller().Documents(h.ComparisonRequest(covered: h.Seeded.RunIds.Select(id => "run:" + id)), aborted.Token);
+
+        Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status499ClientClosedRequest, Assert.IsType<StatusCodeResult>(result).StatusCode);
+    }
+
     [Fact]
     public void ReleaseDatesOf_KeysEachKnownDate_LeavesOutBlankOnes_AndIsNullWithoutALookup()
     {
@@ -2684,11 +2835,12 @@ public class BenchmarkReportPackServiceTests
         }
 
         public AdminBenchmarkReportPacksController Controller(
-            ModelMetadataService? metadata = null, BenchmarkReportPackPreviewCache? previewCache = null) => new(
+            ModelMetadataService? metadata = null, BenchmarkReportPackPreviewCache? previewCache = null,
+            BenchmarkModelComparisonService? comparisonService = null) => new(
             Db,
             Jobs,
             new BenchmarkComplianceGuard(Configuration, Db),
-            new BenchmarkModelComparisonService(Db),
+            comparisonService ?? new BenchmarkModelComparisonService(Db),
             new ModelPricingService(new ModelMetadataService(), Db),
             new EndpointPolicy(Configuration),
             scopeFactory: null!,

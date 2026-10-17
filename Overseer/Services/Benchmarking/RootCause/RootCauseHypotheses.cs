@@ -1368,7 +1368,8 @@ public static class RootCauseHypotheses
     }
 
     /// <summary>
-    /// HQ5 once for a comparison: Completeness was the lowest dimension of N of M models under the concise response style.
+    /// HQ5 once for a comparison: Completeness was the lowest dimension, at least <see cref="BenchmarkChatTransfer.LevelStepThreshold"/>
+    /// points below Accuracy, for N of M models under the concise response style.
     /// It is about the instrument, not a pair, so it is shaped as HQ3 is: a document-wide hypothesis (<see cref="IsDocumentWide"/>)
     /// of kind <c>pair</c> in group <c>all</c>, naming every model whose response-style conflict is true, which answers no
     /// research question. It fires when at least two models have the conflict, or the one model of a single-model
@@ -1387,7 +1388,8 @@ public static class RootCauseHypotheses
             Axis = RootCauseAxes.Intelligence,
             Kind = "pair",
             Group = "all",
-            Statement = "Completeness was the lowest dimension of " + counts + " models under the concise response style.",
+            Statement = "Completeness was the lowest dimension, at least " + BenchmarkReportFormat.CompactDecimal(BenchmarkChatTransfer.LevelStepThreshold)
+                        + " points below Accuracy, for " + counts + " models under the concise response style.",
             Short = "Concise style: all models",
             Label = "the concise response style, " + counts + " models",
             RefutedIf = StyleRefutedIf,

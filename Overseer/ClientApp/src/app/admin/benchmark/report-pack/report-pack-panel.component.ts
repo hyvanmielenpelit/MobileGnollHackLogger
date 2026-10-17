@@ -20,6 +20,7 @@ import {
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportPackAudienceEstimateDto,
   BenchmarkReportPackDocumentProgressDto,
+  BenchmarkReportPackDocumentsDto,
   BenchmarkReportPackJobDto,
   BenchmarkReportPackPreviewDto,
   BenchmarkReportPackPricingBasis,
@@ -355,6 +356,20 @@ interface PreviewAnswer {
   readonly error: HttpErrorResponse | null;
 }
 
+/** One request for the stored documents, with what it was asked for. */
+interface DocumentsTicket {
+  readonly generation: number;
+  readonly request: BenchmarkReportPackRequest;
+  /** The scope and models: what the document list answers. */
+  readonly listSignature: string;
+}
+
+interface DocumentsAnswer {
+  readonly ticket: DocumentsTicket;
+  /** Null when the request failed. */
+  readonly documents: BenchmarkReportPackDocumentsDto | null;
+}
+
 /** A written comparison-scope document and the reference model it was written against. */
 export interface ReportPackWrittenReference {
   /** The document's row key. */
@@ -551,9 +566,9 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   private readonly checks = new Map<string, boolean>();
   /** The comparison's stored documents, by id, for each row's flags and chart count. */
   private listItems = new Map<number, BenchmarkReportDocumentListItemDto>();
-  /** The list built from the last preview answered for the current scope and models. */
+  /** The list built from the stored documents, else the last preview, answered for the current scope and models. */
   documentsView: ComparisonDocumentsView = comparisonDocumentsView({
-    mode: 'comparison', preview: null, error: null, chosenKeys: [], offeredKeys: [], labelOf: key => key,
+    mode: 'comparison', preview: null, documents: null, error: null, chosenKeys: [], offeredKeys: [], labelOf: key => key,
     listItems: new Map(), checks: new Map()
   });
   /** The document types a checked row has, for the chart picker. */
@@ -577,6 +592,10 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   preview: BenchmarkReportPackPreviewDto | null = null;
   /** The scope and models `preview` answers. */
   private previewListSignature: string | null = null;
+  /** The last stored documents answered, listed with nothing prepared; the rows come from it while it is current. */
+  private listDocuments: BenchmarkReportPackDocumentsDto | null = null;
+  /** The scope and models `listDocuments` answers. */
+  private listDocumentsSignature: string | null = null;
   /** A change is waiting out the debounce, or its preview is in flight. */
   previewPending = false;
   previewError: string | null = null;
@@ -637,6 +656,16 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
         catchError((error: HttpErrorResponse) => of<PreviewAnswer>({ ticket, preview: null, error })))
       : EMPTY)
   ).subscribe(answer => this.onPreviewAnswer(answer));
+  private latestDocumentsTicket: DocumentsTicket | null = null;
+  private readonly documentsQueue = new Subject<DocumentsTicket | null>();
+  /** Not debounced; a newer ticket drops the request in flight, and an answer for an older one is ignored. */
+  private readonly documentsPipeline: Subscription = this.documentsQueue.pipe(
+    switchMap(ticket => ticket
+      ? this.benchmarkService.listReportPackDocuments(ticket.request).pipe(
+        map((documents): DocumentsAnswer => ({ ticket, documents })),
+        catchError(() => of<DocumentsAnswer>({ ticket, documents: null })))
+      : EMPTY)
+  ).subscribe(answer => this.onDocumentsAnswer(answer));
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private pollFailures = 0;
   private tickSub: Subscription | null = null;
@@ -662,6 +691,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.stopTimers();
     this.stopTick();
     this.previewPipeline.unsubscribe();
+    this.documentsPipeline.unsubscribe();
     this.listSub?.unsubscribe();
     this.listSub = null;
     this.writersSub?.unsubscribe();
@@ -688,6 +718,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
         const modelsChanged = this.refreshOptions(context);
         const baselineChanged = (context.baselineModelEntryKey ?? null) !== (previous.baselineModelEntryKey ?? null);
         if ((modelsChanged || baselineChanged || context.pricingBasis !== previous.pricingBasis) && !this.jobInProgress) {
+          this.scheduleDocuments();
           this.schedulePreview();
         }
       }
@@ -741,6 +772,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.writerId = null;
     this.preview = null;
     this.previewListSignature = null;
+    this.listDocuments = null;
+    this.listDocumentsSignature = null;
     this.previewPending = false;
     this.previewError = null;
     this.serverWarning = null;
@@ -765,6 +798,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
 
     if (context) {
       this.applyRememberedWriter();
+      this.scheduleDocuments();
       this.schedulePreview();
       this.refreshListItems(true);
       this.loadActiveJob(this.generation);
@@ -820,6 +854,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.serverWarning = null;
     this.startError = null;
     this.layoutPreviewNote = '';
+    this.scheduleDocuments();
     this.schedulePreview();
   }
 
@@ -847,6 +882,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     }
     this.serverWarning = null;
     this.startError = null;
+    this.scheduleDocuments();
     this.schedulePreview();
   }
 
@@ -1046,6 +1082,11 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     return this.previewListSignature === this.listSignature ? this.preview : null;
   }
 
+  /** The stored documents answered for the current scope and models, or null while they are awaited. */
+  private get listedDocuments(): BenchmarkReportPackDocumentsDto | null {
+    return this.listDocumentsSignature === this.listSignature ? this.listDocuments : null;
+  }
+
   /** The preview whose estimate, refusal and warning are current: none while a change is pending. */
   private get answeredPreview(): BenchmarkReportPackPreviewDto | null {
     return this.previewPending || this.previewError ? null : this.listPreview;
@@ -1075,6 +1116,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
       }
     }
     this.documentsChanged.emit();
+    this.scheduleDocuments();
     this.schedulePreview();
   }
 
@@ -1098,6 +1140,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.documentsView = comparisonDocumentsView({
       mode: this.scopeMode,
       preview: this.listPreview,
+      documents: this.listedDocuments,
       error: this.listPreview ? null : this.previewError ?? unlisted,
       chosenKeys: this.chosenKeys,
       offeredKeys: this.modelOptions.map(option => String(option.key)),
@@ -1120,7 +1163,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
    * missing and no list of the comparison is in flight. The entries merge into the rows in either order.
    */
   private refreshListItems(force = false): void {
-    const comparisonId = this.currentComparisonId ?? this.preview?.comparisonId ?? null;
+    const comparisonId = this.currentComparisonId ?? this.preview?.comparisonId ?? this.listDocuments?.comparisonId ?? null;
     if (comparisonId === null || this.destroyed || !this.currentContext) {
       return;
     }
@@ -1494,6 +1537,36 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
       this.schedulePreview();
       return;
     }
+    this.refreshListItems();
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * Asks at once for the stored documents of the current scope and models, which the server lists
+   * without preparing anything, so the rows need not wait for the preview. Asked again when the
+   * documents or the models can have changed; a writer or reference change keeps the answer.
+   */
+  private scheduleDocuments(): void {
+    const request = this.buildRequest({ preview: true });
+    if (!request || this.destroyed) {
+      this.latestDocumentsTicket = null;
+      this.documentsQueue.next(null);
+      return;
+    }
+    const ticket: DocumentsTicket = { generation: this.generation, request, listSignature: this.listSignature };
+    this.latestDocumentsTicket = ticket;
+    this.documentsQueue.next(ticket);
+  }
+
+  /** A failed request leaves the rows to the preview. */
+  private onDocumentsAnswer(answer: DocumentsAnswer): void {
+    const ticket = answer.ticket;
+    if (this.destroyed || ticket.generation !== this.generation || ticket !== this.latestDocumentsTicket || !answer.documents) {
+      return;
+    }
+    this.listDocuments = answer.documents;
+    this.listDocumentsSignature = ticket.listSignature;
+    this.refreshDocumentsView();
     this.refreshListItems();
     this.cdr.markForCheck();
   }
@@ -2196,6 +2269,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
         this.finishedJobIds.add(job.id);
         this.jobFinished.emit(job);
         // The documents it wrote are listed now.
+        this.scheduleDocuments();
         this.schedulePreview();
       }
     } else {
@@ -2420,6 +2494,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   private stopTimers(): void {
     this.latestTicket = null;
     this.previewQueue.next(null);
+    this.latestDocumentsTicket = null;
+    this.documentsQueue.next(null);
     this.clearPollTimer();
     this.listSub?.unsubscribe();
     this.listSub = null;

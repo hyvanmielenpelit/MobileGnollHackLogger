@@ -213,9 +213,10 @@ public static class RootCauseEngine
     /// billed for the same token kinds is split into input and output with a caching effect, every decomposed cost pair
     /// has its cost ratio at equal prices, the analyzed pairs include the same model at adjacent thinking levels and the
     /// pairs of unexpected results, the unexpected results are stored, HQ5 is one hypothesis in comparison scope, and a
-    /// profile has where the model gained points and leaves the shared lowest dimension out of where it lost them.
+    /// profile has where the model gained points and leaves the shared lowest dimension out of where it lost them. From
+    /// version 11 the comparison's HQ5 statement names the response-style margin it counts.
     /// </summary>
-    public const int Version = 10;
+    public const int Version = 11;
 
     /// <summary>The list output price ratio from which two models of one provider are in different price tiers.</summary>
     public const double TierPriceRatio = 1.5;

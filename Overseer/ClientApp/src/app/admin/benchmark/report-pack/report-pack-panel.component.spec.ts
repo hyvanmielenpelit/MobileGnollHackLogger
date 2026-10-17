@@ -9,6 +9,7 @@ import {
   BenchmarkReportPackAudienceEstimateDto,
   BenchmarkReportPackCallDto,
   BenchmarkReportPackDocumentProgressDto,
+  BenchmarkReportPackDocumentsDto,
   BenchmarkReportPackJobDto,
   BenchmarkReportPackPreviewDto,
   BenchmarkReportPackValidationIssueDto,
@@ -56,6 +57,7 @@ const SYSTEM_CONFIGS_URL = '/api/admin/systemconfigs';
 const DOCUMENTS_URL = '/api/admin/benchmark/report-documents';
 const ACTIVE_JOB_URL = '/api/admin/benchmark/report-packs/jobs/active';
 const PREVIEW_URL = '/api/admin/benchmark/report-packs/preview';
+const PACK_DOCUMENTS_URL = '/api/admin/benchmark/report-packs/documents';
 const START_URL = '/api/admin/benchmark/report-packs';
 const LAYOUT_PREVIEW_URL = '/api/admin/benchmark/report-packs/layout-preview';
 const jobUrl = (id: string): string => `/api/admin/benchmark/report-packs/jobs/${id}`;
@@ -209,6 +211,19 @@ function modelPreview(subjects: string[] = ['run:1'], overrides: Partial<Benchma
     estimates: subjects.flatMap(key => [estimate(ExecutiveSummary, 0.05, key), estimate(RootCauseAnalysis, 0.16, key)]),
     writtenDocuments: [],
     subjectDocuments: subjects.map(key => ({ subjectKey: key, subjectLabel: key, documents: [] })),
+    ...overrides
+  };
+}
+
+/** The stored documents' answer for a comparison-scope request, with nothing written. */
+function storedDocuments(overrides: Partial<BenchmarkReportPackDocumentsDto> = {}): BenchmarkReportPackDocumentsDto {
+  return {
+    scope: BenchmarkReportScope.Comparison,
+    comparisonId: 12,
+    coveredSetKey: 'set-all',
+    writtenDocuments: [],
+    otherModelSets: [],
+    subjectDocuments: [],
     ...overrides
   };
 }
@@ -666,13 +681,18 @@ describe('ReportPackPanelComponent', () => {
   it('asks one preview for every document, lists the documents without waiting for it, and estimates the checked ones', fakeAsync(() => {
     fixture.componentRef.setInput('comparisonId', 12);
     openPanel();
-    // The comparison's list goes out at once; the preview waits out its debounce.
+    // The comparison's list and its stored documents go out at once; the preview waits out its debounce.
     const list = http.expectOne(r => r.url === DOCUMENTS_URL);
     expect(list.request.params.get('comparisonId')).toBe('12');
+    const stored = http.expectOne(PACK_DOCUMENTS_URL);
+    expect(stored.request.body.coveredEntryKeys).toEqual(OFFERED);
     http.expectNone(PREVIEW_URL);
 
     const first = chooseWriter(7, comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
     expect(first.request.body.audiences).toEqual(ALL_AUDIENCES);
+    // A writer changes the estimate, not the documents.
+    http.expectNone(PACK_DOCUMENTS_URL);
+    expect(stored.cancelled).toBe(false);
 
     const executive = docRow(`comparison|${ExecutiveSummary}`);
     expect(executive.querySelector('.cds-status')!.textContent!.trim()).toBe('Written');
@@ -688,6 +708,84 @@ describe('ReportPackPanelComponent', () => {
     list.flush([]);
     fixture.detectChanges();
     http.expectNone(r => r.url === DOCUMENTS_URL);
+    fixture.destroy();
+  }));
+
+  it('fills the rows from the stored documents while the preview is still pending', fakeAsync(() => {
+    openPanel();
+    const stored = http.expectOne(PACK_DOCUMENTS_URL);
+    expect(stored.request.method).toBe('POST');
+    expect(stored.request.body.scope).toBe(BenchmarkReportScope.Comparison);
+    expect(stored.request.body.coveredEntryKeys).toEqual(OFFERED);
+    expect(stored.request.body.audiences).toEqual(ALL_AUDIENCES);
+    expect(text('.cds-loading')).toBe('Looking up the documents already written…');
+
+    stored.flush(storedDocuments({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+    fixture.detectChanges();
+    expect(q('.cds-loading')).toBeNull();
+    expect(docRow(`comparison|${ExecutiveSummary}`).querySelector('.cds-status')!.textContent!.trim()).toBe('Written');
+    expect(docCheck(`comparison|${ExecutiveSummary}`).checked).toBe(false);
+    expect(docCheck(`comparison|${RootCauseAnalysis}`).checked).toBe(true);
+    // The written document's flags are asked for by the answer's comparison number.
+    expect(http.expectOne(r => r.url === DOCUMENTS_URL).request.params.get('comparisonId')).toBe('12');
+    // The preview still waits out its debounce.
+    expect(component.previewPending).toBe(true);
+    http.expectNone(PREVIEW_URL);
+
+    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+    expect(host.querySelectorAll('.cds-row').length).toBe(2);
+    http.expectNone(PACK_DOCUMENTS_URL);
+    fixture.destroy();
+  }));
+
+  it('asks for the stored documents without a debounce on a model change, and not again on a writer or reference change', fakeAsync(() => {
+    openPanel();
+    const first = http.expectOne(PACK_DOCUMENTS_URL);
+
+    chooseModels(['run:1', 'run:2']);
+    const second = http.expectOne(PACK_DOCUMENTS_URL);
+    expect(first.cancelled).toBe(true);
+    expect(second.request.body.coveredEntryKeys).toEqual(['run:1', 'run:2']);
+
+    component.selectWriter(7);
+    component.onReferencePicked('run:2');
+    fixture.detectChanges();
+    http.expectNone(PACK_DOCUMENTS_URL);
+    const preview = answerPreview(comparisonPreview({ coversAllEntries: false }));
+    expect(preview.request.body.writerModelConfigurationId).toBe(7);
+    expect(preview.request.body.referenceEntryKey).toBe('run:2');
+    http.expectNone(PACK_DOCUMENTS_URL);
+    expect(second.cancelled).toBe(false);
+    fixture.destroy();
+  }));
+
+  it('never shows the stored documents of the other scope after a scope change', fakeAsync(() => {
+    openPanel();
+    const comparison = http.expectOne(PACK_DOCUMENTS_URL);
+
+    selectScope('model');
+    const model = http.expectOne(PACK_DOCUMENTS_URL);
+    expect(comparison.cancelled).toBe(true);
+    expect(model.request.body.scope).toBe(BenchmarkReportScope.Model);
+    expect(model.request.body.subjectKeys).toEqual(['run:1']);
+    model.flush(storedDocuments({
+      scope: BenchmarkReportScope.Model,
+      coveredSetKey: null,
+      subjectDocuments: [{ subjectKey: 'run:1', subjectLabel: 'run:1', documents: [writtenDoc(RootCauseAnalysis, 51, 'run:1')] }]
+    }));
+    fixture.detectChanges();
+    expect(docRow(`run:1|${RootCauseAnalysis}`).querySelector('.cds-status')!.textContent!.trim()).toBe('Written');
+
+    // Back to the whole comparison: the per-model answer is not its list; the comparison's is asked again.
+    selectScope('comparison');
+    const again = http.expectOne(PACK_DOCUMENTS_URL);
+    expect(again.request.body.scope).toBe(BenchmarkReportScope.Comparison);
+    expect(q(`.cds-row[data-row="run:1|${RootCauseAnalysis}"]`)).toBeNull();
+    expect(text('.cds-loading')).toBe('Looking up the documents already written…');
+
+    again.flush(storedDocuments({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+    fixture.detectChanges();
+    expect(docRow(`comparison|${ExecutiveSummary}`).querySelector('.cds-status')!.textContent!.trim()).toBe('Written');
     fixture.destroy();
   }));
 

@@ -91,9 +91,10 @@ public sealed record BenchmarkReportSlotWordCount(
 /// <para>A comparison-scope sheet (<see cref="BenchmarkReportFactSheet.IsComparison"/>) is checked
 /// against its audience's comparison slots: its tokens are <c>{{model:X}}</c> for every covered
 /// model's letter and its fact keys, with no <c>{{subject}}</c> or <c>{{peer:X}}</c>; every covered
-/// model's name is a name of rule 10; rule 16 reads, for each comparative word, the pair it relates
-/// (the nearest <c>{{model:X}}</c> before it and the nearest after it in the sentence, or every pair of
-/// the sentence when either is missing), and gives at most one note per sentence: a quality sentence is
+/// model's name is a name of rule 10; rule 16 reads, for each comparative word, the pairs it relates
+/// (the nearest <c>{{model:X}}</c> before it and the nearest after it in the sentence; every pair of the
+/// models before it when none follows; none when no model precedes it or a word of <see cref="SettingNouns"/>
+/// follows it), and gives at most one note per sentence: a quality sentence is
 /// read against the pair's <c>pair.X.Y.intervalOverlap</c>, where a family's established result
 /// (<c>pair.X.Y.quality.reference</c> or <c>.allPairs</c>) may be stated instead, and a speed or cost
 /// sentence against the pair's paired result on that axis, where it has one; its
@@ -139,9 +140,10 @@ public sealed record BenchmarkReportSlotWordCount(
 /// (<see cref="RootCauseNullRestatedRule"/>) a sentence of a hypotheses slot that restates the nulls Overseer prints beside
 /// it.</para>
 ///
-/// <para>A Root Cause Analysis' optional slot, <see cref="BenchmarkReportSlots.UnexpectedResults"/>, is checked as a required
-/// slot is when it holds text, but never fails the document: on a sheet without an unexpected result
-/// (<see cref="BenchmarkReportPackPrompt.RootCauseAnomalyCount"/>) its text is a rule-7 issue and is removed.</para>
+/// <para>A Root Cause Analysis' optional slots, <see cref="BenchmarkReportSlots.UnexpectedResults"/> and the hypotheses slot of
+/// each axis where no hypothesis other than a null or a price effect fired (<see cref="BenchmarkReportPackPrompt.RootCauseQuietAxes"/>),
+/// are checked as a required slot is when they hold text, but never fail the document: on a sheet without an unexpected result
+/// (<see cref="BenchmarkReportPackPrompt.RootCauseAnomalyCount"/>) the unexpected results' text is a rule-7 issue and is removed.</para>
 ///
 /// <para>A chat consistency sheet (<see cref="BenchmarkReportFactSheet.IsChatConsistency"/>) is checked
 /// against its audience's chat consistency slots and word caps, with the claim discipline of rules
@@ -387,10 +389,10 @@ public static class BenchmarkReportPackValidator
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>The phrases rule 45 reads as restating a null, matched as whole words with their plurals, ignoring case.</summary>
-    public static readonly IReadOnlyList<string> NullRestatedPhrases = new[] { "null", "real difference", "may be chance" };
+    public static readonly IReadOnlyList<string> NullRestatedPhrases = new[] { "null", "non-null", "real difference", "may be chance" };
 
     private static readonly Regex NullRestatedRegex = new(
-        @"(?<![\p{L}\p{N}-])(?:nulls?|real\s+differences?|may\s+be\s+chance)(?![\p{L}\p{N}-])",
+        @"(?<![\p{L}\p{N}-])(?:(?:non-)?nulls?|real\s+differences?|may\s+be\s+chance)(?![\p{L}\p{N}-])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>The hypotheses slots rule 45 reads.</summary>
@@ -448,6 +450,16 @@ public static class BenchmarkReportPackValidator
     {
         "higher", "lower", "better", "worse", "ahead", "behind", "outperform", "outperforms", "outperformed",
         "beat", "beats", "leads", "trails"
+    };
+
+    /// <summary>
+    /// Words that make a comparative of <see cref="ComparativeWords"/> describe a setting when they follow it, after
+    /// whitespace or one hyphen (<c>a higher thinking level</c>, <c>higher-priced</c>): rule 16 reads no ranking in it.
+    /// Matched as whole words, ignoring case.
+    /// </summary>
+    public static readonly IReadOnlyList<string> SettingNouns = new[]
+    {
+        "thinking", "reasoning", "effort", "setting", "settings", "level", "levels", "tier", "tiers", "price", "prices", "priced"
     };
 
     /// <summary>Hype and filler words rule 17 flags in prose, matched as whole words, ignoring case.</summary>
@@ -587,13 +599,18 @@ public static class BenchmarkReportPackValidator
         @"(?<![\p{L}\p{N}])(?:" + string.Join("|", ComparativeWords) + @")(?![\p{L}\p{N}])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    /// <summary>A word of <see cref="SettingNouns"/> at the start of the text, after optional whitespace or one hyphen.</summary>
+    private static readonly Regex SettingNounRegex = new(
+        @"^(?:\s*|-)(?:" + string.Join("|", SettingNouns) + @")(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     /// <summary>What rule 16 accepts as saying that the order is open: "overlap" in any form, or "not established".</summary>
     private static readonly Regex OverlapHedgeRegex = new(
         @"(?<![\p{L}\p{N}])(?:overlap\p{L}*|not\s+established)(?![\p{L}\p{N}])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>Words rule 16 reads as a sentence about speed, matched as whole words, ignoring case.</summary>
-    public static readonly IReadOnlyList<string> SpeedWords = new[] { "time", "faster", "slower", "latency", "seconds" };
+    public static readonly IReadOnlyList<string> SpeedWords = new[] { "time", "faster", "slower", "latency", "seconds", "speed" };
 
     /// <summary>Words rule 16 reads as a sentence about cost, matched as whole words, ignoring case.</summary>
     public static readonly IReadOnlyList<string> CostWords = new[] { "cost", "costs", "cheaper", "expensive", "spend", "price", "priced", "token", "tokens" };
@@ -1923,7 +1940,9 @@ public static class BenchmarkReportPackValidator
     /// that a sentence ranks against each other with a word of <see cref="ComparativeWords"/> without the
     /// caveat its axis (<see cref="RankingAxes"/>) needs; a sentence saying <c>overlap</c> or
     /// <c>not established</c> needs none. A comparative word relates the nearest <c>{{model:X}}</c> before it
-    /// and the nearest after it; when either is missing, the sentence's every pair is read.
+    /// and the nearest after it; with no model after it, every pair of the models before it. With no model
+    /// before it, or followed by a word of <see cref="SettingNouns"/>, it describes something other than a
+    /// model and relates no pair. The sentence's pairs are those of all its comparative words.
     /// <list type="bullet">
     /// <item>Quality: a pair whose <c>pair.X.Y.intervalOverlap</c> is true. Citing that fact hedges it, as does
     /// a cited <c>model.X.quality.rank</c> of either model or <c>pair.X.Y.*.short</c> whose display carries the
@@ -1962,27 +1981,27 @@ public static class BenchmarkReportPackValidator
             string plain = TokenPlaceholderRegex.Replace(sentence, " ");
             if (!ComparativeRegex.IsMatch(plain) || OverlapHedgeRegex.IsMatch(plain)) continue;
 
-            // The pairs the comparative words relate; every pair when a word lacks a model on either side.
+            // The pairs the comparative words relate: none for a word with no model before it or a setting
+            // noun after it, and every pair of the models before a word with no model after it.
             var related = new List<(string, string)>();
-            bool everyPair = false;
             foreach (Match comparative in ComparativeRegex.Matches(sentence))
             {
-                var before = spots.Where(s => s.Index < comparative.Index).Select(s => s.Letter).LastOrDefault();
+                if (SettingNounRegex.IsMatch(sentence[(comparative.Index + comparative.Length)..])) continue;
+
+                var before = spots.Where(s => s.Index < comparative.Index).Select(s => s.Letter).Distinct(StringComparer.Ordinal).ToList();
+                if (before.Count == 0) continue;
+
                 var after = spots.Where(s => s.Index > comparative.Index).Select(s => s.Letter).FirstOrDefault();
-                if (before == null || after == null)
+                if (after == null)
                 {
-                    everyPair = true;
-                    break;
+                    for (int i = 0; i < before.Count; i++)
+                    {
+                        for (int j = i + 1; j < before.Count; j++) related.Add((before[i], before[j]));
+                    }
+                    continue;
                 }
-                if (!string.Equals(before, after, StringComparison.Ordinal)) related.Add((before, after));
-            }
-            if (everyPair)
-            {
-                related.Clear();
-                for (int i = 0; i < letters.Count; i++)
-                {
-                    for (int j = i + 1; j < letters.Count; j++) related.Add((letters[i], letters[j]));
-                }
+                string nearest = spots.Last(s => s.Index < comparative.Index).Letter;
+                if (!string.Equals(nearest, after, StringComparison.Ordinal)) related.Add((nearest, after));
             }
 
             var axes = RankingAxes(slot, plain);
@@ -3729,8 +3748,16 @@ public static class BenchmarkReportPackValidator
             var slots = Comparison
                 ? Spec.ComparisonSlotsFor(hasNotableFindings: BenchmarkNotableFindings.CountOf(sheet) > 0)
                 : Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
-            RequiredSlots = slots;
-            OptionalSlots = RootCause ? new[] { BenchmarkReportSlots.UnexpectedResults } : Array.Empty<string>();
+            var quiet = RootCause
+                ? BenchmarkReportPackPrompt.RootCauseQuietAxes(sheet.RootCause)
+                    .Select(BenchmarkReportPackPrompt.RootCauseHypothesesSlot)
+                    .OfType<string>()
+                    .ToList()
+                : new List<string>();
+            RequiredSlots = slots.Where(s => !quiet.Contains(s, StringComparer.Ordinal)).ToList();
+            OptionalSlots = RootCause
+                ? new[] { BenchmarkReportSlots.UnexpectedResults }.Concat(quiet.Where(s => slots.Contains(s, StringComparer.Ordinal))).ToList()
+                : new List<string>();
             KnownSlots = RequiredSlots.Concat(OptionalSlots).ToList();
             AnomalyCount = RootCause ? BenchmarkReportPackPrompt.RootCauseAnomalyCount(sheet) : 0;
             _rootCauseHidden = RootCause ? RootCauseFacts.RootCauseWriterHidden(sheet.RootCause) : _ => false;
@@ -3863,7 +3890,10 @@ public static class BenchmarkReportPackValidator
         /// </summary>
         public bool RootCauseWriterHidden(string key) => _rootCauseHidden(key);
 
-        /// <summary>The slots a document may leave out: a Root Cause Analysis' unexpected results; none on every other document.</summary>
+        /// <summary>
+        /// The slots a document may leave out: a Root Cause Analysis' unexpected results, then the hypotheses slot of each
+        /// axis with nothing to discuss (<see cref="BenchmarkReportPackPrompt.RootCauseQuietAxes"/>); none on every other document.
+        /// </summary>
         public IReadOnlyList<string> OptionalSlots { get; }
 
         /// <summary><see cref="RequiredSlots"/> and <see cref="OptionalSlots"/>: every slot the document may fill.</summary>
@@ -3913,7 +3943,10 @@ public static class BenchmarkReportPackValidator
         /// <summary>The display of an available fact whose display starts with <c>0</c>; null for any other key.</summary>
         public string? ZeroDisplay(string key) => _zeroDisplays.TryGetValue(key, out string? display) ? display : null;
 
-        /// <summary>The audience's slots this sheet requires: the peer-only slots only when it has peers.</summary>
+        /// <summary>
+        /// The audience's slots this sheet requires: the peer-only slots only when it has peers, and in a Root Cause Analysis
+        /// none of <see cref="OptionalSlots"/>.
+        /// </summary>
         public IReadOnlyList<string> RequiredSlots { get; }
 
         /// <summary>The peer's <c>peer.X.intervalOverlap</c> fact is true.</summary>

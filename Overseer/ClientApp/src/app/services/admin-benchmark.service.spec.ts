@@ -315,6 +315,21 @@ describe('AdminBenchmarkService', () => {
       expect(result).toEqual({ subjectKey: 'run:11', refusal: null });
     });
 
+    it('posts the same request body to list the stored documents', () => {
+      let result: unknown;
+      service.listReportPackDocuments(packRequest).subscribe(res => result = res);
+
+      const req = httpMock.expectOne('/api/admin/benchmark/report-packs/documents');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(packRequest);
+      const answer = {
+        scope: 1, comparisonId: 4, coveredSetKey: null, writtenDocuments: [], otherModelSets: [], subjectDocuments: []
+      };
+      req.flush(answer);
+
+      expect(result).toEqual(answer);
+    });
+
     it('posts a start request and returns the job id', () => {
       let jobId: string | undefined;
       service.startReportPack(packRequest).subscribe(res => jobId = res.jobId);

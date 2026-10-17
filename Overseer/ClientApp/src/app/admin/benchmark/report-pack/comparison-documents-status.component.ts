@@ -20,6 +20,7 @@ import {
   BenchmarkReportAudience,
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
+  BenchmarkReportPackDocumentsDto,
   BenchmarkReportPackPreviewDto,
   BenchmarkReportPackWrittenDocumentDto,
   BenchmarkReportPeerNaming,
@@ -99,7 +100,7 @@ export interface ComparisonOtherModelSet {
 /** What the list shows. */
 export interface ComparisonDocumentsView {
   readonly mode: ReportDocumentScopeMode;
-  /** `loading` until the preview has answered for the current mode and models. */
+  /** `loading` until the stored documents or the preview have answered for the current mode and models. */
   readonly state: 'loading' | 'ready' | 'error';
   readonly message: string | null;
   readonly groups: readonly ComparisonDocumentGroup[];
@@ -111,7 +112,12 @@ export interface ComparisonDocumentsViewInput {
   readonly mode: ReportDocumentScopeMode;
   /** The preview's answer for the current mode and models; null while it is awaited. */
   readonly preview: BenchmarkReportPackPreviewDto | null;
-  /** Why the preview failed, or null. */
+  /**
+   * The stored documents listed for the current mode and models, with nothing prepared; null while they
+   * are awaited. Its lists come before the preview's.
+   */
+  readonly documents: BenchmarkReportPackDocumentsDto | null;
+  /** Why the preview failed, or null; not shown once `documents` is in. */
   readonly error: string | null;
   /** The models chosen, in the picker's order. */
   readonly chosenKeys: readonly string[];
@@ -162,11 +168,12 @@ function setSizeText(count: number, of: number | undefined, all: boolean): strin
 /**
  * The list for the current mode and models. Comparison scope: one row per document type for the chosen
  * set, then every other set that has documents. Per-model scope: one group per chosen model, one row
- * per document type.
+ * per document type. The documents come from `documents` when it is in, else from the preview.
  */
 export function comparisonDocumentsView(input: ComparisonDocumentsViewInput): ComparisonDocumentsView {
   const preview = input.preview;
-  if (!preview) {
+  const stored = input.documents;
+  if (!preview && !stored) {
     return {
       mode: input.mode,
       state: input.error ? 'error' : 'loading',
@@ -177,18 +184,20 @@ export function comparisonDocumentsView(input: ComparisonDocumentsViewInput): Co
   }
   const audiences = reportAudiencesFor(input.mode).map(option => option.audience);
   if (input.mode === 'comparison') {
-    const written = preview.writtenDocuments ?? [];
+    const written = (stored ? stored.writtenDocuments : preview?.writtenDocuments) ?? [];
+    // The entries that are not Excluded, the same count the preview gives.
+    const entryCount = preview ? preview.comparisonEntryCount : input.offeredKeys.length;
     const label = input.chosenKeys.map(key => input.labelOf(key)).join(', ');
     const rows = audiences.map(audience => rowOf(
       `comparison|${audience}`, audience, label, null, written.find(doc => doc.audience === audience) ?? null, input, true));
     const offered = new Set(input.offeredKeys);
-    const otherSets = (preview.otherModelSets ?? [])
+    const otherSets = ((stored ? stored.otherModelSets : preview?.otherModelSets) ?? [])
       .filter(set => (set.documents ?? []).length > 0)
       .map((set): ComparisonOtherModelSet => {
         const models = set.coveredModels ?? [];
         const keys = models.map(model => model.entryKey);
         const setLabel = `${models.map(model => model.label).join(', ')} — `
-          + setSizeText(models.length, preview.comparisonEntryCount, set.coversAllEntries);
+          + setSizeText(models.length, entryCount, set.coversAllEntries);
         let chooseRefusal: string | null = null;
         if (keys.some(key => !offered.has(key))) {
           chooseRefusal = 'A model of this set is Excluded from the comparison now.';
@@ -209,7 +218,7 @@ export function comparisonDocumentsView(input: ComparisonDocumentsViewInput): Co
     return { mode: 'comparison', state: 'ready', message: null, groups: [{ key: 'chosen', heading: null, rows }], otherSets };
   }
 
-  const subjects = preview.subjectDocuments ?? [];
+  const subjects = (stored ? stored.subjectDocuments : preview?.subjectDocuments) ?? [];
   const groups = input.chosenKeys.map((entryKey): ComparisonDocumentGroup => {
     const documents = subjects.find(subject => subject.subjectKey === entryKey)?.documents ?? [];
     const heading = input.labelOf(entryKey);

@@ -45,6 +45,29 @@ public static partial class BenchmarkReportPackPrompt
         return value.TryGetValue(out double number) && number > 0 ? (int)Math.Round(number) : 0;
     }
 
+    /// <summary>
+    /// The axes of <paramref name="result"/>, in <see cref="RootCauseAxes.All"/> order, where no hypothesis other than a
+    /// null or a price effect fired: their hypotheses slots have nothing to discuss, so the writer may leave them out.
+    /// Empty when <paramref name="result"/> is null.
+    /// </summary>
+    public static IReadOnlyList<string> RootCauseQuietAxes(RootCauseResult? result)
+    {
+        if (result == null) return Array.Empty<string>();
+        var hypotheses = result.Hypotheses ?? new List<RootCauseHypothesis>();
+        return RootCauseAxes.All
+            .Where(axis => !hypotheses.Any(h => h.Axis == axis && h.Kind != "null" && !h.PriceEffect))
+            .ToList();
+    }
+
+    /// <summary>The hypotheses slot of an axis of <see cref="RootCauseAxes"/>; null for any other text.</summary>
+    public static string? RootCauseHypothesesSlot(string axis) => axis switch
+    {
+        RootCauseAxes.Intelligence => BenchmarkReportSlots.HypothesesIntelligence,
+        RootCauseAxes.Speed => BenchmarkReportSlots.HypothesesSpeed,
+        RootCauseAxes.Cost => BenchmarkReportSlots.HypothesesCost,
+        _ => null
+    };
+
     /// <summary>The headline's rule against stretching one pair's cause over every gap.</summary>
     private const string GapsCauseRule = "Name a cause for 'the gaps' only when the best hypotheses cover more than one pair; when you name a cause, give its share, or for several hypotheses of one rule its rca.rule.<id>.shareSpan beside their ref range.";
 
@@ -138,7 +161,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Moderate: quantified and pointing one way, with exactly one of these: a robustness check failed or could not be assessed, a single run per suite, one open confound.");
         Line(sb, "- Low: qualitative only, or two or more of the Moderate conditions, or the pair's null stands.");
         Line(sb, "- Not supported: under the rule's own test, the evidence against outweighs the evidence for.");
-        Line(sb, "- Each axis has a status, its rca.axis.<axis>.status fact: Root cause established (a non-null hypothesis is High and its null is rejected), Probable cause (the best hypothesis is Moderate), or Not established.");
+        Line(sb, "- Each axis has a status, its rca.axis.<axis>.status fact: Root cause established (a hypothesis other than a null is High and its null is rejected), Probable cause (the best hypothesis is Moderate), or Not established.");
         Line(sb, "- A price-per-token difference read off the price cards is graded Known from the price cards, with its grade: it supports a sentence about cost but no certainty word, and it never makes an axis's root cause established.");
         Line(sb, "- A price effect is known from the price cards: give it no refutation.");
         Line(sb, "- A Low hypothesis is a lead, not a cause; a Not supported one is refuted by its own test. Never present either as a finding.");
@@ -215,15 +238,17 @@ public static partial class BenchmarkReportPackPrompt
                 : $"At most {RootCauseCap(slot, false)} words, under the code-rendered design, which already prints the grading panel and the harness version: do not repeat them. Say what this design can and cannot decide: how many models and runs it rests on, whether they share graders and settings, which entries are degraded or excluded, and, where CONTROLS applies, which controls there are and the control limit. State it; use no causal word.",
             BenchmarkReportSlots.EvidenceIntelligence =>
                 evidenceCap + ", under the intelligence evidence tables: where the points were lost, which failure signals several models share and which only one shows, "
-                + (comparisonScope ? "what the per-question results show. " : "what the per-question results and the item-level controls show. ") + evidenceUse,
+                + (comparisonScope ? "what the per-question results show. " : "what the per-question results and the item-level controls show. ") + evidenceUse
+                + " The document prints under the dimensions table which dimension is lowest for how many models and how far below Accuracy: never restate it or count those models yourself.",
             BenchmarkReportSlots.EvidenceSpeed =>
                 evidenceCap + ", under the timing decomposition: which components make up the time per question and how they differ between the models or the groups of questions. " + evidenceUse,
             BenchmarkReportSlots.EvidenceCost =>
                 evidenceCap + ", under the cost decomposition: what the price cards do not explain — token volume per question, the share of thinking, caching, and model calls per answer — and how it differs between the models. "
                 + "Never say that a model with dearer prices costs more, and never give a spend ratio or a price-per-token difference; cite a pair's rca.cost.<F>.<S>.volumeRatio token for its token volume at equal prices. " + evidenceUse,
             BenchmarkReportSlots.HypothesesIntelligence or BenchmarkReportSlots.HypothesesSpeed or BenchmarkReportSlots.HypothesesCost =>
-                $"At most {RootCauseCap(slot, false)} words, under that axis's hypothesis table and its list of nulls, which Overseer prints beside the paragraph: never repeat them, and never list hypothesis or null references. Say, in this order: which mechanism leads the axis, with its share, or for several hypotheses of one rule the rule's shareSpan, and its grade; and what would refute it. Overseer prints the nulls that stand and those rejected beside the paragraph: do not count or restate them. Cite each hypothesis you discuss by its rca.hypothesis.<id>.<n>.ref token, after saying in your own words what it is about, in the sentence that discusses it. "
-                + "Give the grade word only (graded Moderate); the How sure box already says why every grade is capped. Never mention a price-card difference: Overseer prints them in one line.",
+                $"At most {RootCauseCap(slot, false)} words, under that axis's hypothesis table and its list of nulls, which Overseer prints beside the paragraph: never repeat them, and never list hypothesis or null references. Say, in this order: which mechanism explains the most of the axis's gaps, with its share, or for several hypotheses of one rule the rule's shareSpan, and its grade; and what would refute it. Overseer prints the nulls that stand and those rejected beside the paragraph: do not count or restate them. Cite each hypothesis you discuss by its rca.hypothesis.<id>.<n>.ref token, after saying in your own words what it is about, in the sentence that discusses it. "
+                + "Give the grade word only (graded Moderate); the How sure box already says why every grade is capped. Never mention a price-card difference: the document lists them itself. "
+                + "Leave this slot out only when HYPOTHESES says so for its axis.",
             BenchmarkReportSlots.Conclusions =>
                 $"At most {RootCauseCap(slot, false)} words: take the axes in the order intelligence, speed, cost; for each, write its status once, as 'Cost: {{{{rca.axis.cost.status}}}}.', and never repeat beside it the words the token prints (Root cause established, Probable cause, Not established); then give its root cause with that hypothesis's rca.hypothesis.<id>.<n>.ref token and grade, or why it is not established and what would establish it. "
                 + "Never mention price per token or the price cards. When the cost axis has no hypothesis beyond the price cards, say that the runs show no cost mechanism beyond them, with no causal word.",
@@ -342,7 +367,8 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- A hypothesis's reference (rca.hypothesis.<id>.<n>.ref) is a noun phrase that prints the hypothesis's id: it sits inside a sentence, after your own words for what the hypothesis is about, and it is how the prose cites the hypothesis; its label appears only in the tables. Its statement is a sentence: it stands alone as a sentence of its own.");
         if (comparisonScope)
         {
-            Line(sb, "- A sentence that ranks one model above or below another with a word such as higher, lower, better, worse, ahead, behind, outperforms, beats, leads or trails needs its caveat in the same sentence, one ranking per sentence. On intelligence, where their intervals overlap, say that the intervals overlap or that the order is not established, or cite the pair's interval-overlap or paired-result token: '{{model:A}} scored higher than {{model:B}}, though the intervals overlap and the order is not established.' On speed or cost, where the pair's paired result is not established, cite that result: '{{model:A}} has a higher cost per question than {{model:B}}: {{pair.A.B.cost.short}}.'");
+            Line(sb, "- A sentence that ranks one model above or below another with a word such as higher, lower, better, worse, ahead, behind, outperforms, beats, leads or trails needs its caveat in the same sentence, one ranking per sentence. On intelligence, where their intervals overlap, say that the intervals overlap or that the order is not established, or cite the pair's interval-overlap or paired-result token: '{{model:A}} scored higher than {{model:B}}, though the intervals overlap and the order is not established.' On speed or cost, where the pair's paired result is not established, cite that result: '{{model:A}} has a higher cost per question than {{model:B}}: {{pair.A.B.cost.short}}.' "
+                + "A comparative that describes a setting, as in 'a higher thinking level', ranks no model, and neither does a sentence whose comparative has no model token before it.");
         }
         else
         {
@@ -543,7 +569,7 @@ public static partial class BenchmarkReportPackPrompt
             {
                 Line(sb, IsTrue(fact)
                     ? $"{{{{{fact.Key}}}}} is true: completeness is that model's lowest dimension, well below its accuracy, under the production chat's concise response style. This states a condition, not a cause."
-                    : $"{{{{{fact.Key}}}}} is not true: completeness is not that model's lowest dimension by that margin.");
+                    : $"{{{{{fact.Key}}}}} is not true: that model's completeness is not both its lowest dimension and at least thirteen points below its accuracy; it may still be its lowest dimension.");
             }
             Line(sb);
         }
@@ -652,7 +678,7 @@ public static partial class BenchmarkReportPackPrompt
     }
 
     /// <summary>
-    /// The CHECK BEFORE YOU ANSWER block: one line each for rules 3, 16, 31, 39, 38, 33, 34, 36, 41 and 42, and in
+    /// The CHECK BEFORE YOU ANSWER block: one line each for rules 3, 4, 9, 16, 31, 39, 38, 33, 34, 36, 41 and 42, and in
     /// comparison scope one for statements about every model and one for rule 43, each with an example built from the sheet's
     /// own tokens that are not <paramref name="hidden"/>, or generic wording where the sheet has none to show.
     /// </summary>
@@ -672,6 +698,8 @@ public static partial class BenchmarkReportPackPrompt
             .FirstOrDefault();
         Line(sb, "- Rule 3, digits: write every figure as its token" + (figure != null ? ", such as " + T(figure) : string.Empty)
             + "; the only digits prose may hold are question references and the phrase '95% interval'.");
+        Line(sb, "- Rule 4, topics: every question you cite anywhere — the sections, the observations, and each writer hypothesis's for, against and evidence — that QUESTIONS NEEDING A TOPIC lists has its questionTopics entry.");
+        Line(sb, $"- Rule 9, your own words: no run of {Words(BenchmarkReportPackValidator.ShingleLength)} words may match a question, a rubric, an answer excerpt or a grader comment; describe them instead.");
 
         string ranking;
         if (comparison)
@@ -988,7 +1016,7 @@ public static partial class BenchmarkReportPackPrompt
     /// <summary>
     /// The axes with their statuses, the known facts, the hypotheses by axis, the next runs and the checks. A hypothesis
     /// whose facts are <paramref name="hidden"/>, a price effect, is counted on its axis instead of listed, and named in
-    /// no run or check.
+    /// no run or check. An axis of <see cref="RootCauseQuietAxes"/> tells the writer to leave its hypotheses slot out.
     /// </summary>
     private static void AppendRootCauseAnalysis(StringBuilder sb, RootCauseResult? result, Func<string?, bool> hidden)
     {
@@ -1017,23 +1045,23 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
 
         Line(sb, "HYPOTHESES (by axis, nulls first; cite each by its .ref token, never by its id or label)");
+        var quiet = RootCauseQuietAxes(result);
         foreach (string axis in RootCauseAxes.All)
         {
             var fired = result.Hypotheses.Where(h => h.Axis == axis).ToList();
             var hypotheses = fired.Where(h => !hidden(HypothesisToken(h))).ToList();
             int priceCards = fired.Count - hypotheses.Count;
             Line(sb, RootCauseAxes.Name(axis) + ":");
-            if (fired.Count == 0)
+
+            // An axis with nothing to discuss lets the writer leave its hypotheses slot out.
+            if (quiet.Contains(axis, StringComparer.Ordinal))
             {
-                Line(sb, "  (no hypothesis fired on this axis)");
-            }
-            else if (hypotheses.Count == 0)
-            {
-                Line(sb, "  (no hypothesis beyond the price cards fired on this axis)");
+                string what = priceCards > 0 ? "beyond the price cards" : "other than a null";
+                Line(sb, $"  (no hypothesis {what} fired on this axis: leave \"{RootCauseHypothesesSlot(axis)}\" out of \"sections\"; the document says so itself)");
             }
             if (priceCards > 0)
             {
-                Line(sb, $"  ({Words(priceCards)} price-card {(priceCards == 1 ? "difference" : "differences")} left out: Overseer prints them in one line; never mention them)");
+                Line(sb, $"  ({Words(priceCards)} price-card {(priceCards == 1 ? "difference" : "differences")} left out: the document lists them itself; never mention them)");
             }
             foreach (var h in hypotheses)
             {

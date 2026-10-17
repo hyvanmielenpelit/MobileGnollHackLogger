@@ -6,6 +6,7 @@ import {
   BenchmarkReportAudience,
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
+  BenchmarkReportPackDocumentsDto,
   BenchmarkReportPackPreviewDto,
   BenchmarkReportPackWrittenDocumentDto,
   BenchmarkReportScope
@@ -113,10 +114,23 @@ function preview(overrides: Partial<BenchmarkReportPackPreviewDto> = {}): Benchm
   };
 }
 
+/** The stored documents' answer with a preview's lists. */
+function documentsOf(source: BenchmarkReportPackPreviewDto): BenchmarkReportPackDocumentsDto {
+  return {
+    scope: source.scope ?? BenchmarkReportScope.Comparison,
+    comparisonId: source.comparisonId ?? null,
+    coveredSetKey: source.coveredSetKey ?? null,
+    writtenDocuments: source.writtenDocuments ?? [],
+    otherModelSets: source.otherModelSets ?? [],
+    subjectDocuments: source.subjectDocuments ?? []
+  };
+}
+
 function input(overrides: Partial<ComparisonDocumentsViewInput> = {}): ComparisonDocumentsViewInput {
   return {
     mode: 'comparison',
     preview: preview(),
+    documents: null,
     error: null,
     chosenKeys: ['run:1', 'run:2', 'run:3'],
     offeredKeys: ['run:1', 'run:2', 'run:3'],
@@ -187,6 +201,36 @@ describe('comparisonDocumentsView', () => {
     const failed = comparisonDocumentsView(input({ preview: null, error: 'Down.' }));
     expect(failed.state).toBe('error');
     expect(failed.message).toBe('Down.');
+  });
+
+  it('builds ready rows from the stored documents while the preview is awaited, and shows no preview error then', () => {
+    const listed = documentsOf(preview());
+    const view = comparisonDocumentsView(input({
+      preview: null, documents: listed, error: 'Down.', offeredKeys: ['run:1', 'run:2', 'run:3', 'run:4']
+    }));
+
+    expect(view.state).toBe('ready');
+    expect(view.message).toBeNull();
+    expect(view.groups[0].rows.map(row => [row.key, row.document?.documentId ?? null, row.checked])).toEqual([
+      [`comparison|${ExecutiveSummary}`, 41, false],
+      [`comparison|${RootCauseAnalysis}`, null, true]
+    ]);
+    expect(view.groups[0].rows[0].listItem?.id).toBe(41);
+    // Without the preview, a set's size is out of the models offered.
+    expect(view.otherSets.map(set => set.label)).toEqual(['GPT-6.1 Sol (medium), GPT-5.6 Luna (max) — 2 of 4 models']);
+
+    const perModel = comparisonDocumentsView(input({ mode: 'model', chosenKeys: ['run:1', 'run:2'], preview: null, documents: listed }));
+    expect(perModel.state).toBe('ready');
+    expect(perModel.groups.map(group => group.rows.map(row => row.document?.documentId ?? null))).toEqual([[null, 51], [null, null]]);
+  });
+
+  it('takes the stored documents\' lists over the preview\'s', () => {
+    const view = comparisonDocumentsView(input({
+      documents: documentsOf(preview({ writtenDocuments: [written(RootCauseAnalysis, 45)], otherModelSets: [] }))
+    }));
+
+    expect(view.groups[0].rows.map(row => row.document?.documentId ?? null)).toEqual([null, 45]);
+    expect(view.otherSets).toEqual([]);
   });
 
   it('names the writer with its provider and thinking level, and counts figures', () => {

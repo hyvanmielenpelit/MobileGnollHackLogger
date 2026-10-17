@@ -131,8 +131,11 @@ public static partial class BenchmarkReportPackRenderer
     /// where it gained points, a Lost points entry leaves out a weakness every model shares, each axis' null hypotheses are one
     /// sentence, and the writer is asked for no price-card or choosing-a-model sentence and no count written in words.
     /// The PDF layout, the Word layout and the chart layout did not change with version 22.
+    /// From version 23 a Root Cause Analysis' hypotheses section prints no writer paragraph on an axis where only nulls or
+    /// price-card differences fired unless the writer wrote one, and says so in one line. The PDF layout, the Word layout and
+    /// the chart layout did not change with version 23.
     /// </summary>
-    public const int ReportFormatVersion = 22;
+    public const int ReportFormatVersion = 23;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
@@ -176,8 +179,11 @@ public static partial class BenchmarkReportPackRenderer
     /// findings table leaves out the models with the most common count in every category. The writer has an unexpected-results
     /// slot and is asked for no price-card or choosing-a-model sentence and no count written in words.
     /// The PDF layout, the Word layout and the chart layout did not change with version 26.
+    /// From version 27 a Root Cause Analysis' hypotheses section prints no writer paragraph on an axis where only nulls or
+    /// price-card differences fired unless the writer wrote one, and says so in one line. The PDF layout, the Word layout and
+    /// the chart layout did not change with version 27.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 26;
+    public const int ComparisonReportFormatVersion = 27;
 
     /// <summary>The comparison format version whose answer excerpts were first allotted in rounds across the questions.</summary>
     private const int RoundExcerptsFormatVersion = 20;
@@ -2291,7 +2297,10 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
     }
 
-    /// <summary>A slot a document stored before format version 7 lacks: its prose where written, nothing otherwise.</summary>
+    /// <summary>
+    /// A slot a document may lack, as one stored before format version 7 does, or a Root Cause Analysis' hypotheses slot of
+    /// an axis with nothing to discuss: its prose where written, nothing otherwise.
+    /// </summary>
     private static void OptionalSlot(StringBuilder sb, Context ctx, string slot)
     {
         if (!ctx.Writer.Sections.TryGetValue(slot, out var text) || string.IsNullOrWhiteSpace(text)) return;

@@ -1105,27 +1105,114 @@ public class BenchmarkReportPackPromptTests
         int start = message.IndexOf("CHECK BEFORE YOU ANSWER (", StringComparison.Ordinal);
         Assert.True(start > 0);
         var lines = message[start..].Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal(13, lines.Length);
+        Assert.Equal(15, lines.Length);
         Assert.DoesNotContain(lines, l => l.StartsWith("- Rule 40", StringComparison.Ordinal));
         Assert.DoesNotContain(lines, l => l.Contains("priceNote", StringComparison.Ordinal));
-        Assert.StartsWith("- Rule 41, unavailable figures:", lines[10]);
-        Assert.StartsWith("- Rule 42, next runs in code's order:", lines[11]);
-        Assert.StartsWith("- Rule 43, one model's figure:", lines[12]);
-        Assert.Contains("{{rca.run.1.summary}} comes first", lines[11]);
+        Assert.StartsWith("- Rule 41, unavailable figures:", lines[12]);
+        Assert.StartsWith("- Rule 42, next runs in code's order:", lines[13]);
+        Assert.StartsWith("- Rule 43, one model's figure:", lines[14]);
+        Assert.Contains("{{rca.run.1.summary}} comes first", lines[13]);
         Assert.StartsWith("- Rule 3, digits:", lines[1]);
-        Assert.StartsWith("- Rule 16, rankings", lines[2]);
-        Assert.StartsWith("- Every model at once:", lines[3]);
-        Assert.StartsWith("- Rule 31, sentence shapes:", lines[4]);
-        Assert.StartsWith("- Rule 39, counts:", lines[5]);
-        Assert.StartsWith("- Rule 38, shares:", lines[6]);
-        Assert.StartsWith("- Rule 33, causes:", lines[7]);
-        Assert.StartsWith("- Rule 34, certainty:", lines[8]);
-        Assert.StartsWith("- Rule 36, statuses:", lines[9]);
-        Assert.Contains("{{rca.axis.intelligence.status}}", lines[9]);
-        Assert.Contains(".profile.noToolAnswers}} already prints 'without a tool call'", lines[5]);
-        Assert.Contains("{{model:", lines[2]);
-        Assert.Contains("noun phrase", lines[4]);
+        Assert.StartsWith("- Rule 4, topics:", lines[2]);
+        Assert.StartsWith("- Rule 9, your own words:", lines[3]);
+        Assert.StartsWith("- Rule 16, rankings", lines[4]);
+        Assert.StartsWith("- Every model at once:", lines[5]);
+        Assert.StartsWith("- Rule 31, sentence shapes:", lines[6]);
+        Assert.StartsWith("- Rule 39, counts:", lines[7]);
+        Assert.StartsWith("- Rule 38, shares:", lines[8]);
+        Assert.StartsWith("- Rule 33, causes:", lines[9]);
+        Assert.StartsWith("- Rule 34, certainty:", lines[10]);
+        Assert.StartsWith("- Rule 36, statuses:", lines[11]);
+        Assert.Contains("{{rca.axis.intelligence.status}}", lines[11]);
+        Assert.Contains(".profile.noToolAnswers}} already prints 'without a tool call'", lines[7]);
+        Assert.Contains("{{model:", lines[4]);
+        Assert.Contains("noun phrase", lines[6]);
         Assert.Contains("'95% interval'", lines[1]);
+    }
+
+    [Fact]
+    public void TheRootCauseChecks_AskForEveryCitedQuestionsTopic_AndOwnWords()
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, built.Sheet!, built.Content!).UserMessage;
+        var lines = message[message.IndexOf("CHECK BEFORE YOU ANSWER (", StringComparison.Ordinal)..].Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        string topics = Assert.Single(lines, l => l.StartsWith("- Rule 4, topics:", StringComparison.Ordinal));
+        Assert.Contains("each writer hypothesis's for, against and evidence", topics);
+        Assert.Contains("QUESTIONS NEEDING A TOPIC", topics);
+        Assert.True(message.IndexOf("QUESTIONS NEEDING A TOPIC (", StringComparison.Ordinal) < message.IndexOf(topics, StringComparison.Ordinal));
+
+        // The run length is the validator's own, in words.
+        Assert.Equal(8, BenchmarkReportPackValidator.ShingleLength);
+        string ownWords = Assert.Single(lines, l => l.StartsWith("- Rule 9, your own words:", StringComparison.Ordinal));
+        Assert.Contains("no run of eight words may match a question, a rubric, an answer excerpt or a grader comment", ownWords);
+        Assert.False(ownWords["- Rule 9, your own words:".Length..].Any(char.IsDigit), ownWords);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TheRootCauseSystemPrompt_UsesNoWordingTheChecksFlagOrTheWriterCouldEcho(bool comparison)
+    {
+        string system = BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(comparison);
+
+        Assert.DoesNotContain("non-null", system);
+        Assert.DoesNotContain("which mechanism leads", system);
+        Assert.DoesNotContain("Overseer prints them in one line", system);
+        Assert.Contains("which mechanism explains the most of the axis's gaps", system);
+        Assert.Contains("Never mention a price-card difference: the document lists them itself.", system);
+        Assert.Contains("Leave this slot out only when HYPOTHESES says so for its axis.", system);
+        Assert.Contains("The document prints under the dimensions table which dimension is lowest for how many models and how far below Accuracy: never restate it or count those models yourself.", system);
+        Assert.Equal(comparison, system.Contains("A comparative that describes a setting, as in 'a higher thinking level', ranks no model", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheRootCauseUserMessage_SaysThePriceCardsAreListedByTheDocument_AndStatesTheResponseStyleMargin()
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var sheet = built.Sheet!;
+        sheet.Facts.RemoveAll(f => f.Key.Contains("responseStyleConflict", StringComparison.OrdinalIgnoreCase));
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "model.B.style.responseStyleConflict", Value = System.Text.Json.Nodes.JsonValue.Create(false), Display = "no" });
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, built.Content!).UserMessage;
+
+        Assert.DoesNotContain("Overseer prints them in one line", message);
+        Assert.Contains("price-card differences left out: the document lists them itself; never mention them)", message);
+        Assert.Contains("{{model.B.style.responseStyleConflict}} is not true: that model's completeness is not both its lowest dimension and at least thirteen points below its accuracy; it may still be its lowest dimension.\n", message.Replace("\r\n", "\n"));
+    }
+
+    /// <summary>
+    /// The fixture comparison with its cost axis quiet: every hypothesis on it a null or a price effect, while the
+    /// intelligence and speed axes keep theirs.
+    /// </summary>
+    private static (BenchmarkReportFactSheet Sheet, BenchmarkReportContentSnapshot Content) QuietCostSheet()
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var sheet = built.Sheet!;
+        foreach (var h in sheet.RootCause!.Hypotheses.Where(h => h.Axis == Overseer.Services.Benchmarking.RootCause.RootCauseAxes.Cost && h.Kind != "null"))
+        {
+            h.PriceEffect = true;
+        }
+        return (sheet, built.Content!);
+    }
+
+    [Fact]
+    public void AQuietAxis_TellsTheWriterToLeaveItsHypothesesSlotOut()
+    {
+        var (sheet, content) = QuietCostSheet();
+        Assert.Equal(new[] { Overseer.Services.Benchmarking.RootCause.RootCauseAxes.Cost }, BenchmarkReportPackPrompt.RootCauseQuietAxes(sheet.RootCause));
+        Assert.Equal(BenchmarkReportSlots.HypothesesCost, BenchmarkReportPackPrompt.RootCauseHypothesesSlot(Overseer.Services.Benchmarking.RootCause.RootCauseAxes.Cost));
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, content).UserMessage.Replace("\r\n", "\n");
+
+        Assert.Contains("\nCost:\n  (no hypothesis beyond the price cards fired on this axis: leave \"" + BenchmarkReportSlots.HypothesesCost
+            + "\" out of \"sections\"; the document says so itself)\n", message);
+        Assert.DoesNotContain("leave \"" + BenchmarkReportSlots.HypothesesIntelligence + "\" out", message);
+        Assert.DoesNotContain("leave \"" + BenchmarkReportSlots.HypothesesSpeed + "\" out", message);
+
+        // The fixture itself has no quiet axis, and a sheet without an analysis has none either.
+        Assert.Empty(BenchmarkReportPackPrompt.RootCauseQuietAxes(RootCauseReportFixture.ComparisonFacts().Sheet!.RootCause));
+        Assert.Empty(BenchmarkReportPackPrompt.RootCauseQuietAxes(null));
     }
 
     /// <summary>
@@ -1389,7 +1476,7 @@ public class BenchmarkReportPackPromptTests
         foreach (string slot in new[] { BenchmarkReportSlots.HypothesesIntelligence, BenchmarkReportSlots.HypothesesSpeed, BenchmarkReportSlots.HypothesesCost })
         {
             Assert.Contains("Give the grade word only (graded Moderate); the How sure box already says why every grade is capped. "
-                + "Never mention a price-card difference: Overseer prints them in one line.", Slot(slot));
+                + "Never mention a price-card difference: the document lists them itself.", Slot(slot));
         }
 
         Assert.Contains("A count across models, questions, answers or pairs, written as 'N of M' or 'N of the M', comes only from a fact token; never write it in words. "

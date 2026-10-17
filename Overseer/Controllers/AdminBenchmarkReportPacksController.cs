@@ -28,7 +28,7 @@ using Overseer.Services.Privacy;
 
 /// <summary>
 /// Report-pack generation, per model (one or several subjects) or comparison-wide over the covered
-/// models: preview and layout preview (no model call), start, progress and cancel; and for a finished
+/// models: preview, stored documents and layout preview (no model call), start, progress and cancel; and for a finished
 /// run's own run-completion documents, write on request, estimate, progress, cancel and delete, and the
 /// controls its Root Cause Analysis would use. The
 /// writer call runs in <see cref="BenchmarkReportPackService"/>, resolved per job from a fresh scope; stored documents
@@ -157,6 +157,55 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             return preview.Refusal == BenchmarkComparisonReportFacts.ReferenceRefusal
                 ? BadRequest(new { error = preview.Refusal })
                 : Ok(preview);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>
+    /// The stored Report Pack documents of a preview request, with nothing prepared. Comparison scope:
+    /// the documents of the covered set that <c>coveredEntryKeys</c> names (none without it) and the
+    /// comparison's other covered sets. Model scope: each subject's per-model documents, labeled by its
+    /// entry key. The lists are those <see cref="Preview"/> answers; computes no comparison, fact sheet
+    /// or prompt, reads no writer and leaves <see cref="BenchmarkReportPackPreviewCache"/> alone. Battery
+    /// results mixed with runs or groups are a 400; a request the client aborts is a 499.
+    /// </summary>
+    [HttpPost("report-packs/documents")]
+    public async Task<IActionResult> Documents([FromBody] BenchmarkReportPackRequest request, CancellationToken ct)
+    {
+        if (request == null) return BadRequest(new { error = "A request body is required." });
+        if (BenchmarkReportPackPreparation.MixesSources(request)) return BadRequest(new { error = BenchmarkBatteryModelComparison.MixedSourcesError });
+
+        try
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var numbered = await FindComparisonAsync(request, ct);
+            string comparisonKey = ComparisonKeyOf(request);
+            var documents = new BenchmarkReportPackDocumentsDto { Scope = request.Scope, ComparisonId = numbered?.Id };
+            int count;
+            if (request.Scope == BenchmarkReportScope.Comparison)
+            {
+                if (request.CoveredEntryKeys is { Count: > 0 } covered
+                    && BenchmarkReportComparisonKey.TryFromEntryKeys(covered, out string coveredSetKey))
+                {
+                    documents.CoveredSetKey = coveredSetKey;
+                    documents.WrittenDocuments = await CoveredSetDocumentsAsync(numbered?.Id, comparisonKey, coveredSetKey, ct);
+                }
+                documents.OtherModelSets = await CoveredSetsAsync(numbered?.Id, comparisonKey, documents.CoveredSetKey, ct);
+                count = documents.WrittenDocuments.Count + documents.OtherModelSets.Sum(s => s.Documents.Count);
+            }
+            else
+            {
+                documents.SubjectDocuments = await SubjectDocumentsAsync(
+                    numbered?.Id, comparisonKey, request.ModelSubjectKeys().Select(key => (Key: key, Label: key)).ToList(), ct);
+                count = documents.SubjectDocuments.Sum(s => s.Documents.Count);
+            }
+
+            _logger.LogInformation(
+                "Report Pack {Scope} documents: {Count} listed in {Ms} ms.", request.Scope, count, watch.ElapsedMilliseconds);
+            return Ok(documents);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
