@@ -466,6 +466,9 @@ describe('AdminConfigsTabComponent', () => {
       expect(dialog().open).toBe(true);
       expect(dialog().getAttribute('aria-labelledby')).toBe('api-keys-dialog-title');
       expect(dialog().classList).toContain('dialog-extra-wide');
+      expect(dialog().querySelector('.dialog-footer .api-keys-dialog-done')).toBeTruthy();
+      expect(dialog().querySelector('.dialog-body .api-keys-dialog-done')).toBeNull();
+      expect(dialog().querySelector('.dialog-body app-admin-api-keys')).toBeTruthy();
       expect(adminService.getDefaultApiKeys).toHaveBeenCalledTimes(1);
       expect(document.activeElement).toBe(host().querySelector('#api-keys-dialog-title'));
       const keys = dialog().querySelector('app-admin-api-keys') as HTMLElement;

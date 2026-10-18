@@ -1,4 +1,5 @@
 @use '../admin-shared' as shared;
+@use '../benchmark/benchmark-dialog-frame' as frame;
 
 :host {
   display: block;
@@ -26,6 +27,11 @@
 // The count of providers whose default key needs attention, after the API Keys label.
 .config-api-keys-attention {
   margin-inline-start: 2px;
+}
+
+// Header, scrolling body and footer; only the key cards scroll.
+.gh-dialog.api-keys-dialog {
+  @include frame.frame($width: 800px);
 }
 
 // The default API keys dialog: its h2 takes the size every dialog title has.

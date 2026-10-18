@@ -700,6 +700,9 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('keeps the open panel stable across change-detection passes', fakeAsync(() => {
+      // The running run's elapsed time has one-second resolution; start on a whole second so the
+      // tick below cannot carry it into the next one.
+      tick(1000 - (Date.now() % 1000));
       ctx.monitor.activeRunDetail = buildRun({ answers: [] });
       ctx.monitor.isRunProgressDialogOpen = true;
       ctx.refresh();

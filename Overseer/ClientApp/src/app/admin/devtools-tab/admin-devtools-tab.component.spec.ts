@@ -120,7 +120,7 @@ describe('AdminDevtoolsTabComponent', () => {
     fixture.detectChanges();
 
     const panel = host().querySelector('#devtools-subpanel-sentry') as HTMLElement;
-    expect(panel.querySelector('h4')?.textContent?.trim()).toBe('Sentry Crash Reporting');
+    expect(panel.querySelector('h1, h2, h3, h4, h5, h6')).toBeNull();
     expect(panel.querySelector('fieldset')).toBeNull();
     const buttons = Array.from(panel.querySelectorAll('.devtools-button-group .btn-gh')) as HTMLButtonElement[];
     expect(buttons.map(b => b.textContent?.trim())).toEqual(['Test Frontend Error', 'Test Backend Error']);

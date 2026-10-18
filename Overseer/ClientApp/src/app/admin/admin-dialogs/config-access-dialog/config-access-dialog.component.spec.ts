@@ -135,12 +135,14 @@ describe('ConfigAccessDialogComponent', () => {
     expect(textOf(claude.querySelector('.cad-off'))).toBe('Off for this user');
     expect(textOf(claude.querySelector('.cad-limited'))).toBe('Limited');
     expect(textOf(el.querySelector('#cad-1-limits-tip'))).toBe('Daily chat requests: 100');
-    expect(textOf(claude.querySelector('.cad-model-id'))).toBe('claude-x');
+    expect(claude.querySelector('.cad-model-id')).toBeNull();
+    expect(claude.textContent).not.toContain('claude-x');
     expect(textOf(claude.querySelector('.cad-note'))).toBe('For testers');
 
     expect(textOf(card(2).querySelector('.badge-system-wide'))).toBe('System Wide');
     expect(textOf(card(2).querySelector('.config-badge'))).toContain('Flex');
     expect(textOf(card(3).querySelector('.badge-disabled'))).toBe('Disabled');
+    expect(card(2).querySelector('.cad-meta')).toBeNull();
     expect(card(2).querySelector('.cad-off')).toBeNull();
     expect(card(2).querySelector('.cad-limited')).toBeNull();
   });
@@ -305,6 +307,8 @@ describe('ConfigAccessDialogComponent', () => {
     fixture.detectChanges();
 
     expect(textOf(dialog().querySelector('h3'))).toBe('AI configuration access for group Testers');
+    expect(dialog().querySelector('.cad-model-id')).toBeNull();
+    expect(dialog().textContent).not.toContain('claude-x');
     expect(adminService.getGroupSystemConfigs).toHaveBeenCalledWith(5);
     expect(toggleOf(2).checked).toBe(true);
 

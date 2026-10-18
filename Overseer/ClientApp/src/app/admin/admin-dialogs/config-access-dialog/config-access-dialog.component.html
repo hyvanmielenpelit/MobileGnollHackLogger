@@ -84,14 +84,9 @@
                       }
                     }
                   </div>
-                  <!-- A dot on screen between the parts, a comma for assistive technology. -->
-                  <p class="cad-meta">
-                    <code class="cad-model-id">{{ config.modelId }}</code>
-                    @if (config.note) {
-                      <span class="cad-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                      <em class="cad-note">{{ config.note }}</em>
-                    }
-                  </p>
+                  @if (config.note) {
+                    <p class="cad-meta"><em class="cad-note">{{ config.note }}</em></p>
+                  }
                 </div>
 
                 @if (assignment) {
