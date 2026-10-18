@@ -135,7 +135,7 @@ describe('AdminComponent', () => {
         'admin-tab-security', 'admin-tab-benchmark', 'admin-tab-devtools'
       ]);
       expect(mainTabs().map(t => t.textContent?.trim())).toEqual([
-        'Users', 'System Configs', 'Database', 'AI Telemetry', 'Security', 'GnollBench', 'Developer Tools'
+        'Users', 'System Configs', 'Database', 'AI Telemetry', 'Security', 'GnollBench', 'Services'
       ]);
     });
 
@@ -287,11 +287,18 @@ describe('AdminComponent', () => {
       expect(navigateSpy).not.toHaveBeenCalled();
     });
 
-    it('selects Developer Tools on the sub-tab the path names', () => {
-      component.applyAddress(pm({ tab: 'devtools', subtab: 'config-health' }), pm());
+    it('selects Services on the sub-tab the path names', () => {
+      component.applyAddress(pm({ tab: 'services', subtab: 'config-health' }), pm());
 
       expect(component.activeTab).toBe('devtools');
       expect(component.store.devtoolsSubTab).toBe('config-health');
+      expect(navigateSpy).not.toHaveBeenCalled();
+    });
+
+    it('replaces the retired Services slug with its current one', () => {
+      component.applyAddress(pm({ tab: 'devtools', subtab: 'config-health' }), pm());
+
+      expect(navigateSpy).toHaveBeenCalledWith(['/admin', 'services', 'config-health'], { queryParamsHandling: 'preserve', replaceUrl: true });
     });
 
     it('opens the API Keys dialog only on its own path', () => {
@@ -308,7 +315,8 @@ describe('AdminComponent', () => {
       [{ tab: 'bogus' }, ['/admin', 'users']],
       [{ tab: 'users', subtab: 'users' }, ['/admin', 'users']],
       [{ tab: 'users', subtab: 'bogus' }, ['/admin', 'users']],
-      [{ tab: 'devtools', subtab: 'source' }, ['/admin', 'devtools']],
+      [{ tab: 'services', subtab: 'source' }, ['/admin', 'services']],
+      [{ tab: 'devtools', subtab: 'sentry' }, ['/admin', 'services', 'developer-tools']],
       [{ tab: 'database', subtab: 'extra' }, ['/admin', 'database']]
     ] as [Params, string[]][]) {
       it(`replaces the non-canonical path ${JSON.stringify(params)} with ${target.join('/')}, keeping the query`, () => {

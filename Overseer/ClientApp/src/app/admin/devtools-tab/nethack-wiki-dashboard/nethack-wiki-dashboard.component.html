@@ -1,0 +1,212 @@
+<ng-template #skipBreakdown let-parts>
+  <ul class="nw-breakdown">
+    @for (part of parts; track part.reason) {
+      <li>
+        <span class="nw-breakdown-row">
+          <span class="nw-breakdown-name">{{ skipReasonLabel(part.reason) }}</span>
+          <span class="nw-breakdown-count">{{ fmt.formatNumber(part.count) }}</span>
+        </span>
+        @if (hasBreakdown(part)) {
+          <ng-container [ngTemplateOutlet]="skipBreakdown" [ngTemplateOutletContext]="{ $implicit: part.breakdown }" />
+        }
+      </li>
+    }
+  </ul>
+</ng-template>
+
+<div class="gh-dash-root">
+  <app-corpus-index-panel [status]="status" corpusLabel="NetHack wiki" idPrefix="nw"
+                          reindexLabel="Re-index wiki" [reindexTip]="reindexTip" [starting]="starting"
+                          [actionMessage]="actionMessage" [actionMessageKind]="actionMessageKind"
+                          [endedJob]="endedJob" [loadError]="loadError"
+                          (reindex)="reindex()" (retry)="retry()">
+    <div figures class="gh-health-tile nw-namespaces-tile">
+      <dt>Namespaces</dt>
+      <dd>{{ namespaceCountText }}</dd>
+    </div>
+  </app-corpus-index-panel>
+
+  <div class="gh-dash-grid">
+    @if (status; as s) {
+      <!-- Last regeneration -->
+      <section class="gh-dash-card nw-regeneration" aria-labelledby="nw-regeneration-title">
+        <h4 class="gh-section-title" id="nw-regeneration-title">Last regeneration</h4>
+        @if (report; as r) {
+          <dl class="gh-dash-facts nw-report-facts">
+            <div>
+              <dt>Generated</dt>
+              <dd>
+                @if (r.generatedAt) {
+                  <time [attr.datetime]="r.generatedAt">{{ r.generatedAt }}</time>
+                  &ngsp;<span class="gh-dash-muted">converter time</span>
+                } @else {
+                  —
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>Dump</dt>
+              <dd>
+                @if (r.dumpModified) {
+                  <time [attr.datetime]="r.dumpModified">{{ r.dumpModified }}</time>
+                  &ngsp;<span class="gh-dash-muted">converter time</span>
+                }
+                @if (dumpSizeText(r); as size) {
+                  &ngsp;<span>{{ size }}</span>
+                }
+                @if (!r.dumpModified && !dumpSizeText(r)) {
+                  —
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>Duration</dt>
+              <dd>{{ durationText(r) }}</dd>
+            </div>
+            <div>
+              <dt>Pages written</dt>
+              <dd>{{ fmt.formatNumber(r.pagesWritten) }}</dd>
+            </div>
+            <div>
+              <dt>Redirects</dt>
+              <dd>{{ fmt.formatNumber(r.redirects) }}</dd>
+            </div>
+            <div>
+              <dt>Errors</dt>
+              <dd class="nw-report-errors">
+                <span>{{ fmt.formatNumber(r.errors) }}</span>
+                @if ((r.errors ?? 0) > 0) {
+                  &ngsp;<app-health-status status="error">Conversion errors</app-health-status>
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>Tables converted</dt>
+              <dd>{{ fmt.formatNumber(r.tablesConverted) }}</dd>
+            </div>
+            <div>
+              <dt>Dropped templates</dt>
+              <dd>{{ fmt.formatNumber(r.droppedTemplates) }}</dd>
+            </div>
+            <div>
+              <dt>Largest file</dt>
+              <dd>
+                @if (r.largestFileName) {
+                  <code class="gh-dash-mono">{{ r.largestFileName }}</code>
+                }
+                @if (r.largestFileBytes !== null) {
+                  &ngsp;<span>{{ fmt.formatBytes(r.largestFileBytes) }}</span>
+                }
+                @if (!r.largestFileName && r.largestFileBytes === null) {
+                  —
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>Files over 500 KB</dt>
+              <dd>{{ fmt.formatNumber(r.filesOver500Kb) }}</dd>
+            </div>
+          </dl>
+
+          <h5 class="nw-subtitle" id="nw-skipped-title">Skipped by the converter</h5>
+          @if (r.skipped?.length) {
+            <div class="gh-dash-table-wrap" role="region" aria-labelledby="nw-skipped-title" tabindex="0">
+              <table class="gh-dash-table nw-skipped">
+                <caption class="visually-hidden">Pages the converter skipped, by reason</caption>
+                <thead>
+                  <tr><th scope="col">Reason</th><th scope="col">Pages</th></tr>
+                </thead>
+                <tbody>
+                  @for (reason of r.skipped ?? []; track reason.reason) {
+                    <tr>
+                      <td data-label="Reason">
+                        <span class="nw-skip-reason">{{ skipReasonLabel(reason.reason) }}</span>
+                        @if (hasBreakdown(reason)) {
+                          <ng-container [ngTemplateOutlet]="skipBreakdown" [ngTemplateOutletContext]="{ $implicit: reason.breakdown }" />
+                        }
+                      </td>
+                      <td class="nw-number" data-label="Pages">{{ fmt.formatNumber(reason.count) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <p class="gh-dash-muted">The report lists no skipped pages.</p>
+          }
+        } @else if (s.conversionReportError) {
+          <p class="gh-field-error nw-report-error">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>The conversion report could not be read: {{ s.conversionReportError }}</span>
+          </p>
+        } @else {
+          <p class="gh-dash-muted nw-report-missing">No conversion report in the wiki folder.</p>
+        }
+      </section>
+
+      <!-- Namespaces -->
+      <section class="gh-dash-card nw-namespaces" aria-labelledby="nw-namespaces-title">
+        <h4 class="gh-section-title" id="nw-namespaces-title">Namespaces</h4>
+        <p class="gh-dash-note">From each article's front matter; an article without one counts as <code class="gh-dash-mono">article</code>.</p>
+        @if (namespaceRows.length) {
+          <div class="gh-dash-table-wrap" role="region" aria-labelledby="nw-namespaces-title" tabindex="0">
+            <table class="gh-dash-table nw-namespace-table">
+              <caption class="visually-hidden">Indexed articles by namespace, most first</caption>
+              <thead>
+                <tr><th scope="col">Namespace</th><th scope="col">Articles</th><th scope="col">Share</th></tr>
+              </thead>
+              <tbody>
+                @for (row of namespaceRows; track $index) {
+                  <tr>
+                    <td data-label="Namespace"><code class="gh-dash-mono">{{ row.name }}</code></td>
+                    <td class="nw-number" data-label="Articles">{{ fmt.formatNumber(row.articles) }}</td>
+                    <td data-label="Share">
+                      <span class="nw-share">
+                        <span class="nw-share-text">{{ row.shareText }}</span>
+                        <span class="gh-dash-bar" aria-hidden="true" [style.--gh-dash-share]="shareStyle(row)"></span>
+                      </span>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else if (s.index) {
+          <p class="gh-dash-muted">The index holds no article.</p>
+        } @else {
+          <p class="gh-dash-muted">No index has been published yet.</p>
+        }
+      </section>
+    }
+
+    <!-- How to regenerate -->
+    <section class="gh-dash-card gh-dash-wide nw-howto" aria-labelledby="nw-howto-title">
+      <h4 class="gh-section-title" id="nw-howto-title">How to regenerate</h4>
+      <p class="gh-dash-note">The wiki folder is converted from a NetHack wiki dump outside Overseer. This dashboard never runs the converter.</p>
+      <details class="gh-disclosure nw-howto-steps">
+        <summary>Steps to regenerate the wiki</summary>
+        <div class="gh-disclosure-body">
+          <ol class="nw-steps">
+            <li>Back up the current wiki folder to a new dated folder under <code class="gh-dash-mono">C:\Backup\NetHack Wiki</code>.</li>
+            <li>Run the converter as <code class="gh-dash-mono">Overseer/Scripts/NetHackWiki/README.md</code> describes.</li>
+            <li>
+              Remove the old generated files from the wiki folder
+              @if (status?.path; as path) {
+                (<code class="gh-dash-mono">{{ path }}</code>)
+              }
+              so that only the new conversion remains.
+            </li>
+            <li>Click <strong>Re-index wiki</strong> on this page.</li>
+          </ol>
+        </div>
+      </details>
+    </section>
+
+    <app-corpus-tool-usage class="gh-dash-wide" corpus="NetHackWiki" idPrefix="nw" />
+
+    <app-corpus-search-probe class="gh-dash-wide" kind="nethack-wiki" toolName="nethack_wiki_search" idPrefix="nw"
+                             queryLabel="Search terms" />
+  </div>
+
+  <app-reindex-confirm-dialog #confirmDialog idPrefix="nw" (confirmed)="onReindexConfirmed()" />
+</div>

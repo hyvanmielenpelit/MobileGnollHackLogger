@@ -1,0 +1,319 @@
+@let p = idPrefix;
+
+@if (loadError) {
+  <div class="gh-dash-load-error">
+    <p class="gh-field-error" [id]="p + '-load-error'" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ loadError }}</span>
+    </p>
+    <button type="button" class="btn-ghost cip-retry" [attr.aria-describedby]="p + '-load-error'" (click)="retry.emit()">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+      Retry
+    </button>
+  </div>
+}
+
+@if (!status && !loadError) {
+  <p class="cip-loading" role="status">
+    <svg class="dc-ring dc-ring--inline" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 48 48" focusable="false" aria-hidden="true"><circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle><circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle></svg>
+    Loading the {{ corpusLabel }} status…
+  </p>
+}
+
+@if (status; as s) {
+  @let b = banner;
+
+  <!-- Status banner and action -->
+  <section class="cip-head" [attr.aria-labelledby]="p + '-head-title'">
+    <h4 class="visually-hidden" [id]="p + '-head-title'">{{ corpusTitle }} status</h4>
+    @if (b) {
+      <div class="gh-dash-banner" [attr.data-status]="b.status" role="status">
+        <app-health-status class="gh-dash-banner-word" [status]="b.status">{{ b.word }}</app-health-status>
+        <span class="gh-dash-banner-sentence">{{ b.sentence }}</span>
+      </div>
+    }
+
+    <div class="cip-actions">
+      <div class="gh-dash-actions">
+        <button type="button" class="btn-gh" [id]="p + '-reindex-btn'"
+                [attr.aria-disabled]="blockedReason ? 'true' : null"
+                [attr.aria-describedby]="actionDescribedBy || null"
+                (click)="onReindex()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          {{ reindexLabel }}
+        </button>
+        @if (reindexTip) {
+          <app-info-tip trigger="click" [tipId]="p + '-reindex-tip'" [subject]="reindexLabel">{{ reindexTip }}</app-info-tip>
+        }
+      </div>
+      @if (blockedReason) {
+        <p class="gh-field-warning" [id]="p + '-actions-reason'">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <span>{{ blockedReason }}</span>
+        </p>
+      }
+      <div class="cip-action-feedback" role="status">
+        @if (actionMessage) {
+          @if (actionMessageKind === 'warning') {
+            <p class="gh-field-warning" [id]="p + '-action-message'">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <span>{{ actionMessage }}</span>
+            </p>
+          } @else {
+            <p class="gh-field-error" [id]="p + '-action-message'">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>{{ actionMessage }}</span>
+            </p>
+          }
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- Progress card -->
+  @if (progressJob; as job) {
+    <section class="gh-dash-card cip-progress" [attr.aria-labelledby]="p + '-progress-title'">
+      <div class="gh-dash-card-head">
+        <h4 class="gh-section-title" [id]="p + '-progress-title'">{{ jobTitle(job) }}</h4>
+        @if (job.outcome !== 'Running') {
+          <app-health-status [status]="outcomeStatus(job.outcome)">{{ outcomeWord(job.outcome) }}</app-health-status>
+        }
+      </div>
+
+      <ol class="run-stage-rail cip-rail" [attr.aria-label]="corpusTitle + ' pass stages'">
+        @for (item of stageItems(job); track item.key; let i = $index) {
+          <li class="run-stage" [attr.data-stage]="item.key"
+              [class.is-done]="item.state === 'done'" [class.is-current]="item.state === 'current'"
+              [class.is-ended]="item.state === 'ended'"
+              [attr.aria-current]="item.state === 'current' ? 'step' : null">
+            <span class="run-stage-index" aria-hidden="true">{{ i + 1 }}</span>
+            <span class="run-stage-label">
+              <span class="run-stage-name">{{ item.name }}</span>
+              @if (item.note) {
+                <span class="run-stage-note">{{ item.note }}</span>
+              }
+            </span>
+            @if (item.state !== 'pending') {
+              <span class="visually-hidden">{{ stateWord(item.state) }}</span>
+            }
+          </li>
+        }
+      </ol>
+
+      @if (job.outcome === 'Running') {
+        <div class="cip-progress-row">
+          @if (isDeterminate(job)) {
+            <progress class="cip-progress-bar" [attr.aria-label]="corpusTitle + ' pass progress'"
+                      [attr.value]="job.filesRead" [attr.max]="job.filesTotal"></progress>
+            <span class="cip-progress-text" aria-hidden="true">{{ fileProgressText(job) }}</span>
+          } @else {
+            <progress class="cip-progress-bar" [attr.aria-label]="corpusTitle + ' pass progress'"></progress>
+          }
+        </div>
+      }
+
+      <div class="cip-job-meta">
+        <span>Elapsed <time [attr.datetime]="fmt.isoDuration(elapsedMs(job))">{{ fmt.formatDuration(elapsedMs(job)) }}</time></span>
+        <span>{{ triggerLabel(job.trigger) }}</span>
+        @if (job.message && job.outcome !== 'Running') {
+          <span class="cip-job-message">{{ job.message }}</span>
+        }
+      </div>
+    </section>
+  }
+}
+
+<!-- Key figures. Rendered while hidden so the projected tiles have one fixed slot. -->
+<section class="gh-dash-card cip-figures-card" [attr.aria-labelledby]="p + '-figures-title'" [hidden]="!status">
+  <h4 class="gh-section-title" [id]="p + '-figures-title'">Key figures</h4>
+  @if (status && !status.index) {
+    <p class="gh-dash-muted">No index has been published yet.</p>
+  }
+  <dl class="gh-health-summary cip-figures">
+    @if (status?.index; as index) {
+      <div class="gh-health-tile">
+        <dt>Articles</dt>
+        <dd>{{ fmt.formatNumber(index.fileCount) }}</dd>
+      </div>
+      <div class="gh-health-tile">
+        <dt>Total size</dt>
+        <dd>{{ fmt.formatBytes(index.totalBytes) }}</dd>
+      </div>
+      <div class="gh-health-tile">
+        <dt>Last indexed</dt>
+        <dd>
+          <button type="button" class="cip-time-hint" [id]="p + '-last-indexed-btn'"
+                  [attr.interestfor]="p + '-last-indexed-tip'" [attr.style]="'anchor-name: --' + p + '-last-indexed'">
+            <time [attr.datetime]="fmt.isoDateTime(index.indexedAtUtc)">{{ fmt.formatRelative(index.indexedAtUtc) }}</time>
+          </button>
+          <div popover="hint" class="gh-tooltip" [id]="p + '-last-indexed-tip'"
+               [attr.style]="'position-anchor: --' + p + '-last-indexed'">{{ fmt.formatDateTime(index.indexedAtUtc) }}</div>
+        </dd>
+      </div>
+      <div class="gh-health-tile">
+        <dt>Index time</dt>
+        <dd>{{ fmt.formatDuration(index.durationMs) }}</dd>
+      </div>
+      @if (gitPoll) {
+        <div class="gh-health-tile">
+          <dt>Indexed commit</dt>
+          <dd>
+            <code class="gh-dash-mono">{{ fmt.shortSha(index.headSha) }}</code>
+            @if (index.branch) {
+              <span class="gh-health-tile-note">{{ index.branch }}</span>
+            }
+            @if (status!.currentHeadSha && status!.currentHeadSha !== index.headSha) {
+              <span class="gh-health-tile-note cip-current-head">
+                Current HEAD <code class="gh-dash-mono">{{ fmt.shortSha(status!.currentHeadSha) }}</code>
+                @if (status!.currentBranch) {
+                  <span> on {{ status!.currentBranch }}</span>
+                }
+              </span>
+            }
+          </dd>
+        </div>
+      } @else {
+        <div class="gh-health-tile">
+          <dt>Refresh</dt>
+          <dd>Startup and manual only</dd>
+        </div>
+      }
+      <div class="gh-health-tile">
+        <dt>Content fingerprint</dt>
+        <dd>
+          @if (index.fingerprintShort; as fingerprint) {
+            <code class="gh-dash-mono">{{ fingerprint }}</code>
+            <button type="button" class="action-btn" [id]="p + '-copy-fingerprint-btn'"
+                    aria-label="Copy content fingerprint"
+                    [attr.interestfor]="p + '-copy-fingerprint-tip'" [attr.style]="'anchor-name: --' + p + '-copy-fingerprint'"
+                    (click)="copyFingerprint(fingerprint)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="p + '-copy-fingerprint-tip'"
+                 [attr.style]="'position-anchor: --' + p + '-copy-fingerprint'">Copy content fingerprint</div>
+          } @else {
+            —
+          }
+          <span class="cip-copy-status" role="status">{{ copyStatus }}</span>
+        </dd>
+      </div>
+      @if (gitPoll) {
+        <div class="gh-health-tile">
+          <dt>Next automatic check</dt>
+          <dd>
+            @if (status!.nextCheckAtUtc) {
+              <time [attr.datetime]="fmt.isoDateTime(status!.nextCheckAtUtc)">{{ fmt.formatTime(status!.nextCheckAtUtc) }}</time>
+            } @else {
+              —
+            }
+            @if (status!.checkIntervalMinutes) {
+              <span class="gh-health-tile-note">Every {{ fmt.formatNumber(status!.checkIntervalMinutes) }} min</span>
+            }
+          </dd>
+        </div>
+      }
+    }
+    <ng-content select="[figures]" />
+  </dl>
+  @if (status?.path; as path) {
+    <p class="cip-path">Folder: <code class="gh-dash-mono">{{ path }}</code></p>
+  }
+</section>
+
+@if (status; as s) {
+  <!-- Excluded and unreadable files -->
+  <section class="gh-dash-card" [attr.aria-labelledby]="p + '-excluded-title'">
+    <h4 class="gh-section-title" [id]="p + '-excluded-title'">Excluded files</h4>
+    @if (s.index; as index) {
+      <details class="gh-disclosure cip-excluded-size">
+        <summary>Excluded by size ({{ fmt.formatNumber(index.skippedBySizeCount) }})</summary>
+        <div class="gh-disclosure-body">
+          @if (index.maxFileSizeKB !== null && sizeLimitKey) {
+            <p class="gh-dash-note">
+              Files over {{ fmt.formatNumber(index.maxFileSizeKB) }} KB (<code class="gh-dash-mono">{{ sizeLimitKey }}</code>) are not indexed.
+            </p>
+          } @else {
+            <p class="gh-dash-note">This corpus has no size limit.</p>
+          }
+          @if (index.skippedBySize.length) {
+            <ul class="cip-file-list">
+              @for (file of index.skippedBySize; track file.path) {
+                <li><code class="gh-dash-mono">{{ file.path }}</code> <span class="gh-dash-muted">{{ fmt.formatBytes(file.bytes) }}</span></li>
+              }
+            </ul>
+            @if (moreText(index.skippedBySize.length, index.skippedBySizeCount); as more) {
+              <p class="gh-dash-muted cip-more">{{ more }}</p>
+            }
+          } @else if (index.skippedBySizeCount === 0) {
+            <p class="gh-dash-muted">No file was excluded by size.</p>
+          }
+        </div>
+      </details>
+
+      <details class="gh-disclosure cip-excluded-dot">
+        <summary>In dot-directories ({{ fmt.formatNumber(index.skippedDotDirectories) }})</summary>
+        <div class="gh-disclosure-body">
+          <p class="gh-dash-note">
+            Files under a folder whose name starts with a dot, such as <code class="gh-dash-mono">.git</code>, are never read.
+          </p>
+        </div>
+      </details>
+
+      <details class="gh-disclosure cip-unreadable">
+        <summary>Unreadable ({{ fmt.formatNumber(index.failedFileCount) }})</summary>
+        <div class="gh-disclosure-body">
+          @if (index.failedFiles.length) {
+            <ul class="cip-file-list">
+              @for (file of index.failedFiles; track file.path) {
+                <li>
+                  <code class="gh-dash-mono">{{ file.path }}</code>
+                  <code class="gh-dash-mono cip-file-error">{{ file.error }}</code>
+                </li>
+              }
+            </ul>
+            @if (moreText(index.failedFiles.length, index.failedFileCount); as more) {
+              <p class="gh-dash-muted cip-more">{{ more }}</p>
+            }
+          } @else if (index.failedFileCount === 0) {
+            <p class="gh-dash-muted">Every file could be read.</p>
+          }
+        </div>
+      </details>
+    } @else {
+      <p class="gh-dash-muted">No index has been published yet.</p>
+    }
+  </section>
+
+  <!-- Recent activity -->
+  <section class="gh-dash-card" [attr.aria-labelledby]="p + '-recent-title'">
+    <h4 class="gh-section-title" [id]="p + '-recent-title'">Recent activity</h4>
+    @if (recentJobs.length) {
+      <div class="gh-dash-table-wrap" role="region" [attr.aria-labelledby]="p + '-recent-title'" tabindex="0">
+        <table class="gh-dash-table cip-recent">
+          <caption class="visually-hidden">Recent {{ corpusLabel }} passes, newest first</caption>
+          <thead>
+            <tr>
+              <th scope="col">When</th><th scope="col">Trigger</th><th scope="col">Duration</th>
+              <th scope="col">Outcome</th><th scope="col">Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (job of recentJobs; track job.id) {
+              <tr>
+                <td data-label="When"><time [attr.datetime]="fmt.isoDateTime(job.startedAtUtc)">{{ fmt.formatDateTime(job.startedAtUtc) }}</time></td>
+                <td data-label="Trigger">{{ triggerLabel(job.trigger) }}</td>
+                <td data-label="Duration">{{ fmt.formatDuration(elapsedMs(job)) }}</td>
+                <td data-label="Outcome">
+                  <app-health-status [status]="outcomeStatus(job.outcome)">{{ outcomeWord(job.outcome) }}</app-health-status>
+                </td>
+                <td class="cip-message-cell" data-label="Message">{{ job.message || '' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    } @else {
+      <p class="gh-dash-muted">No pass has finished since the server started.</p>
+    }
+  </section>
+}

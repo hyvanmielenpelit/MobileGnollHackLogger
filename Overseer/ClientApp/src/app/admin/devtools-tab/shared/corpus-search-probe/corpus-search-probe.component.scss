@@ -1,0 +1,73 @@
+// A corpus dashboard's search probe card. The card, the note and the result's pre are the global
+// .gh-dash-* classes; this file lays out the form and the result toolbar.
+
+:host {
+  display: block;
+  min-inline-size: 0;
+}
+
+.csp-card {
+  block-size: 100%;
+  box-sizing: border-box;
+}
+
+.csp-note {
+  margin: 0;
+}
+
+.csp-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 0.75rem;
+}
+
+.csp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 0 1 12rem;
+  min-inline-size: 0;
+}
+
+.csp-query-field {
+  flex: 1 1 16rem;
+}
+
+.csp-label {
+  font-size: var(--text-secondary);
+  color: var(--gh-dash-ink-muted);
+}
+
+.csp-running,
+.csp-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.75rem;
+  margin: 0;
+}
+
+.csp-running {
+  color: var(--gh-dash-ink-muted);
+}
+
+.csp-summary-text {
+  font-family: var(--font-mono);
+  font-size: var(--text-secondary);
+  font-size-adjust: from-font;
+  font-variant-numeric: tabular-nums;
+  color: var(--gh-dash-ink-soft);
+}
+
+.csp-output-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.csp-copy-status {
+  font-size: var(--text-secondary);
+  color: var(--gh-dash-ink-muted);
+}

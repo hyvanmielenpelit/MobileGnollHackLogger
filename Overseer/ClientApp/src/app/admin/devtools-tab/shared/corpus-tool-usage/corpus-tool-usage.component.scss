@@ -1,0 +1,70 @@
+// A corpus dashboard's chat tool usage card. The card, table and notes are the global .gh-dash-*
+// classes and the tiles the global .gh-health-* classes; this file holds the sparkline and spacing.
+
+:host {
+  display: block;
+  min-inline-size: 0;
+}
+
+.ctu-card {
+  block-size: 100%;
+  box-sizing: border-box;
+}
+
+.ctu-load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+
+  .gh-field-error {
+    flex: 1 1 16rem;
+  }
+}
+
+.ctu-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--text-secondary);
+  color: var(--gh-dash-ink-muted);
+}
+
+.ctu-tiles {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
+}
+
+.ctu-num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ctu-spark {
+  display: block;
+  inline-size: 6rem;
+  block-size: 1.5rem;
+  overflow: visible;
+}
+
+.ctu-bar {
+  fill: var(--primary-color);
+}
+
+.ctu-tick {
+  fill: var(--gh-dash-ink-muted);
+}
+
+.ctu-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding-inline-start: 1.25rem;
+}
+
+@media (forced-colors: active) {
+  .ctu-bar,
+  .ctu-tick {
+    fill: CanvasText;
+  }
+}

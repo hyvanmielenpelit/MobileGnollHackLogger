@@ -205,7 +205,7 @@ internal static class ConfigHealthCatalog
         {
             Id = "makedefs-last-outcome", Category = SourceBuild, Title = "Last makedefs outcome",
             Keys = Array.Empty<string>(), Kind = ConfigCheckKind.Custom,
-            Remedy = "Open GnollHack Source in Developer Tools to see the build output, fix the cause, and build makedefs again.",
+            Remedy = "Open GnollHack Source on the Services tab to see the build output, fix the cause, and build makedefs again.",
             Evaluate = EvaluateMakedefsOutcome
         },
 

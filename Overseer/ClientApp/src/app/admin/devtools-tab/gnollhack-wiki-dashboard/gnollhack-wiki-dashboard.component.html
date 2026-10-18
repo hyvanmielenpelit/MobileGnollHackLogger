@@ -1,0 +1,103 @@
+<div class="gh-dash-root">
+  <app-corpus-index-panel [status]="status" corpusLabel="GnollHack wiki" idPrefix="gw" reindexLabel="Re-index wiki"
+                          [reindexTip]="reindexTip" [starting]="starting"
+                          [actionMessage]="actionMessage" [actionMessageKind]="actionMessageKind"
+                          [endedJob]="endedJob" [loadError]="loadError"
+                          (reindex)="reindex()" (retry)="retry()">
+    <div figures class="gh-health-tile gw-tile-categories">
+      <dt>Categories</dt>
+      <dd>{{ categoryCountText }}</dd>
+    </div>
+    <div figures class="gh-health-tile gw-tile-duplicates">
+      <dt>Duplicate titles</dt>
+      <dd>{{ duplicateCountText }}</dd>
+    </div>
+  </app-corpus-index-panel>
+
+  <div class="gh-dash-grid">
+    <!-- Categories -->
+    <section class="gh-dash-card gw-categories-card" aria-labelledby="gw-categories-title">
+      <h4 class="gh-section-title" id="gw-categories-title">Categories</h4>
+      <p class="gh-dash-note">
+        Each category is a top-level folder of the wiki, and its name is a value of the
+        <code class="gh-dash-mono">wiki_search</code> tool's <code class="gh-dash-mono">category</code> filter.
+        <code class="gh-dash-mono">(root)</code> counts the files at the top of the folder.
+      </p>
+      @if (categoryRows.length) {
+        <div class="gh-dash-table-wrap" role="region" aria-labelledby="gw-categories-title" tabindex="0">
+          <table class="gh-dash-table gw-categories">
+            <caption class="visually-hidden">Wiki categories, most articles first</caption>
+            <thead>
+              <tr>
+                <th scope="col">Category</th><th scope="col">Articles</th><th scope="col">Size</th><th scope="col">Share</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of categoryRows; track row.category) {
+                <tr>
+                  <th scope="row"><code class="gh-dash-mono">{{ row.category }}</code></th>
+                  <td class="gw-num" data-label="Articles">{{ fmt.formatNumber(row.articles) }}</td>
+                  <td class="gw-num" data-label="Size">{{ fmt.formatBytes(row.bytes) }}</td>
+                  <td data-label="Share">
+                    <span class="gw-share">
+                      <span class="gh-dash-bar" aria-hidden="true" [style.--gh-dash-share]="row.sharePercent + '%'"></span>
+                      <span class="gw-num gw-share-text">{{ row.shareText }}</span>
+                    </span>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else if (!status) {
+        <p class="gh-dash-muted">The status has not loaded yet.</p>
+      } @else if (!status.index) {
+        <p class="gh-dash-muted">No index has been published yet.</p>
+      } @else {
+        <p class="gh-dash-muted">The index holds no articles.</p>
+      }
+    </section>
+
+    <!-- Duplicate titles -->
+    <section class="gh-dash-card gw-duplicates-card" aria-labelledby="gw-duplicates-title">
+      <h4 class="gh-section-title" id="gw-duplicates-title">Duplicate titles</h4>
+      <p class="gh-dash-note">
+        Several articles share each of these titles. Asked for one of them, <code class="gh-dash-mono">wiki_view</code>
+        answers with a disambiguation list of the articles instead of an article.
+      </p>
+      @if (!status) {
+        <p class="gh-dash-muted">The status has not loaded yet.</p>
+      } @else if (status.duplicateTitles.length) {
+        <div class="gw-duplicates">
+          @for (group of status.duplicateTitles; track group.title) {
+            <details class="gh-disclosure gw-duplicate">
+              <summary>{{ group.title }} <span class="gh-dash-muted gw-duplicate-count">({{ articleCountText(group) }})</span></summary>
+              <div class="gh-disclosure-body">
+                <ul class="gw-path-list">
+                  @for (path of group.paths; track path) {
+                    <li><code class="gh-dash-mono">{{ path }}</code></li>
+                  }
+                </ul>
+              </div>
+            </details>
+          }
+        </div>
+        @if (moreDuplicatesText; as more) {
+          <p class="gh-dash-muted gw-more">{{ more }}</p>
+        }
+      } @else if (!status.index) {
+        <p class="gh-dash-muted">No index has been published yet.</p>
+      } @else {
+        <p class="gh-dash-muted">No two articles share a title.</p>
+      }
+    </section>
+
+    <app-corpus-tool-usage class="gh-dash-wide" corpus="GnollHackWiki" idPrefix="gw" />
+
+    <app-corpus-search-probe class="gh-dash-wide" kind="gnollhack-wiki" toolName="wiki_search" idPrefix="gw"
+                             queryLabel="Search terms" filterLabel="Category" filterAnyLabel="Any"
+                             [filterOptions]="categoryNames" />
+  </div>
+
+  <app-reindex-confirm-dialog idPrefix="gw" confirmLabel="Re-index anyway" (confirmed)="reindex(true)" />
+</div>

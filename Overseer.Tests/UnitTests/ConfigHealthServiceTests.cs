@@ -276,7 +276,7 @@ public class ConfigHealthServiceTests
         Assert.Equal(
             "makedefs could not generate the GnollHack headers (pm.h, onames.h), so the chat cannot see monster and object constants.",
             alert.Message);
-        Assert.Equal("/admin/devtools", alert.LinkUrl);
+        Assert.Equal("/admin/services", alert.LinkUrl);
         Assert.Equal("Open GnollHack Source", alert.LinkText);
     }
 

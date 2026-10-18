@@ -190,7 +190,7 @@ public class ConfigHealthService
                 Id = "gnollhack-makedefs-failed",
                 Type = "error",
                 Message = "makedefs could not generate the GnollHack headers (pm.h, onames.h), so the chat cannot see monster and object constants.",
-                LinkUrl = "/admin/devtools",
+                LinkUrl = "/admin/services",
                 LinkText = "Open GnollHack Source"
             });
         }

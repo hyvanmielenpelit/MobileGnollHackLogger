@@ -26,6 +26,7 @@
     <File Path="docs/overseer/chat-data-retention.md" />
     <File Path="docs/overseer/chat-response-telemetry.md" />
     <File Path="docs/overseer/commands.md" />
+    <File Path="docs/overseer/corpus-dashboards.md" />
     <File Path="docs/overseer/data-privacy-framework.md" />
     <File Path="docs/overseer/gemini-service-tier-measurements.md" />
     <File Path="docs/overseer/gnollhack-source-indexing.md" />

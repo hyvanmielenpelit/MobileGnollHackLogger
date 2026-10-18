@@ -1,0 +1,91 @@
+@let p = idPrefix;
+
+<section class="gh-dash-card csp-card" [attr.aria-labelledby]="p + '-probe-title'">
+  <h4 class="gh-section-title" [id]="p + '-probe-title'">{{ heading }}</h4>
+  <p class="gh-dash-note csp-note">Runs the chat's own tool against the live index. Nothing is stored.</p>
+
+  <form class="csp-form" novalidate (submit)="submit($event)">
+    <div class="csp-field csp-query-field">
+      <label class="csp-label" [for]="p + '-probe-query'">{{ queryLabel }}</label>
+      <input type="search" class="gh-input" [id]="p + '-probe-query'" name="query" autocomplete="off"
+             [attr.maxlength]="maxQueryLength" [value]="query"
+             [attr.list]="hasSuggestions ? p + '-probe-topics' : null"
+             [attr.aria-invalid]="validationError ? 'true' : null"
+             [attr.aria-describedby]="validationError ? p + '-probe-query-error' : null"
+             (input)="onQueryInput($event)">
+      @if (hasSuggestions) {
+        <datalist [id]="p + '-probe-topics'">
+          @for (topic of topicSuggestions; track topic) {
+            <option [value]="topic"></option>
+          }
+        </datalist>
+      }
+    </div>
+    @if (hasFilter) {
+      <div class="csp-field">
+        <label class="csp-label" [for]="p + '-probe-filter'">{{ filterLabel }}</label>
+        <select class="gh-input" [id]="p + '-probe-filter'" name="filter" (change)="onFilterChange($event)">
+          <option value="" [selected]="filter === ''">{{ filterAnyLabel }}</option>
+          @for (option of filterOptions; track option) {
+            <option [value]="option" [selected]="option === filter">{{ option }}</option>
+          }
+        </select>
+      </div>
+    }
+    <button type="submit" class="btn-gh csp-run" [id]="p + '-probe-run'" [attr.aria-busy]="running ? 'true' : null">Run probe</button>
+  </form>
+  @if (validationError) {
+    <p class="gh-field-error" [id]="p + '-probe-query-error'">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ validationError }}</span>
+    </p>
+  }
+
+  <div class="csp-status" role="status">
+    @if (running) {
+      <p class="csp-running">
+        <svg class="dc-ring dc-ring--inline" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 48 48" focusable="false" aria-hidden="true"><circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle><circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle></svg>
+        Running {{ toolName }}…
+      </p>
+    } @else if (requestError) {
+      <p class="gh-field-error csp-request-error">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ requestError }}</span>
+      </p>
+    } @else if (result) {
+      <p class="csp-summary">
+        <app-health-status [status]="result.success ? 'ok' : 'warning'">{{ resultStatusWord }}</app-health-status>
+        <span class="csp-summary-text">{{ summaryText }}</span>
+      </p>
+    }
+  </div>
+
+  @if (result && !running) {
+    @if (overCap) {
+      <p class="gh-field-warning csp-over-cap">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <span>Longer than the chat's limit: the chat sees only the first {{ capText }} characters.</span>
+      </p>
+    }
+    @if (resultText) {
+      <div class="csp-output-toolbar">
+        <button type="button" class="action-btn" [id]="p + '-probe-copy-btn'" aria-label="Copy probe result"
+                [attr.interestfor]="p + '-probe-copy-tip'" [attr.style]="'anchor-name: --' + p + '-probe-copy'"
+                (click)="copyResult()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        </button>
+        <div popover="hint" class="gh-tooltip" [id]="p + '-probe-copy-tip'"
+             [attr.style]="'position-anchor: --' + p + '-probe-copy'">Copy probe result</div>
+        @if (collapsible) {
+          <button type="button" class="btn-ghost csp-expand" [id]="p + '-probe-expand'"
+                  [attr.aria-expanded]="expanded ? 'true' : 'false'" [attr.aria-controls]="p + '-probe-output'"
+                  (click)="toggleExpanded()">{{ expanded ? 'Show less' : 'Show all' }}</button>
+        }
+        <span class="csp-copy-status" role="status">{{ copyStatus }}</span>
+      </div>
+      <pre class="gh-dash-pre csp-output" [id]="p + '-probe-output'" tabindex="0" [class.is-expanded]="expanded">{{ resultText }}</pre>
+    } @else {
+      <p class="gh-dash-muted">The tool returned no text.</p>
+    }
+  }
+</section>

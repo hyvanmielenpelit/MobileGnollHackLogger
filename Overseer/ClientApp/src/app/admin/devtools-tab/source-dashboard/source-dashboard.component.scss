@@ -1,20 +1,10 @@
-// The GnollHack Source dashboard. Status chips and key-figure tiles are the global
-// .gh-health-* classes; this file holds the layout. The host is the size container: one column
-// under 40rem, two from 40rem, three tiles per row from 56rem.
+// The GnollHack Source dashboard. Status chips and key-figure tiles are the global .gh-health-*
+// classes, and the cards, banner, facts and tables the global .gh-dash-* classes; this file holds
+// the rest. The host is the size container of the key figures: three tiles per row from 56rem.
 
 :host {
   display: block;
   container: source-dashboard / inline-size;
-}
-
-.sd-root {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  min-inline-size: 0;
-  font-size: var(--text-body);
-  line-height: var(--leading-body);
-  overflow-wrap: anywhere;
 }
 
 .sd-loading {
@@ -25,21 +15,6 @@
   color: #a1a1aa;
 }
 
-.sd-load-error {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1rem;
-  padding: 0.625rem 0.875rem;
-  border: 1px solid color-mix(in srgb, var(--color-error-text) 55%, transparent);
-  border-radius: 8px;
-  background: rgba(239, 68, 68, 0.08);
-
-  .gh-field-error {
-    flex: 1 1 16rem;
-  }
-}
-
 // ------------------------------------------------------------------ banner and actions
 
 .sd-head {
@@ -47,36 +22,6 @@
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 0.75rem 1rem;
-}
-
-.sd-banner {
-  flex: 1 1 18rem;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.375rem 0.75rem;
-  min-inline-size: 0;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--border-glass);
-  border-inline-start: 3px solid #71717a;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.22);
-
-  &[data-status="ok"] { border-inline-start-color: var(--score-high-ink); }
-  &[data-status="warning"] { border-inline-start-color: var(--color-warning); }
-  &[data-status="error"] { border-inline-start-color: var(--color-error-text); }
-  &[data-status="info"] { border-inline-start-color: #a8c7fa; }
-  &[data-status="running"] { border-inline-start-color: var(--primary-color); }
-}
-
-.sd-banner-word {
-  font-size: var(--text-body);
-}
-
-.sd-banner-sentence {
-  flex: 1 1 14rem;
-  min-inline-size: 0;
-  color: #d4d4d8;
 }
 
 .sd-actions {
@@ -103,46 +48,6 @@
 .sd-action-feedback:empty,
 .sd-cancel-feedback:empty {
   display: none;
-}
-
-// ------------------------------------------------------------------ cards
-
-.sd-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1rem;
-}
-
-.sd-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  min-inline-size: 0;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--border-glass);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.18);
-
-  .gh-section-title {
-    margin: 0;
-  }
-}
-
-.sd-card-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.75rem;
-}
-
-@container source-dashboard (min-width: 40rem) {
-  .sd-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .sd-wide {
-    grid-column: 1 / -1;
-  }
 }
 
 // ------------------------------------------------------------------ progress
@@ -252,102 +157,13 @@
   }
 }
 
-.sd-mono {
-  font-family: var(--font-mono);
-  font-size-adjust: from-font;
-  overflow-wrap: anywhere;
-}
-
 .sd-path {
   margin: 0;
   font-size: var(--text-secondary);
   color: #a1a1aa;
 }
 
-.sd-muted {
-  margin: 0;
-  color: #a1a1aa;
-}
-
-.sd-note {
-  margin: 0 0 0.5rem;
-  font-size: var(--text-secondary);
-  color: #c4c4c8;
-}
-
-// ------------------------------------------------------------------ facts and tables
-
-.sd-facts {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin: 0;
-
-  > div {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.125rem;
-  }
-
-  dt {
-    color: #a1a1aa;
-  }
-
-  dd {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.25rem 0.5rem;
-    margin: 0;
-    min-inline-size: 0;
-    color: #e4e4e7;
-  }
-}
-
-@container source-dashboard (min-width: 40rem) {
-  .sd-facts > div {
-    grid-template-columns: minmax(8rem, 2fr) minmax(0, 3fr);
-    gap: 0.75rem;
-  }
-}
-
-.sd-table-wrap {
-  max-inline-size: 100%;
-  overflow-x: auto;
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-}
-
-.sd-table {
-  inline-size: 100%;
-  border-collapse: collapse;
-  font-size: var(--text-secondary);
-
-  th,
-  td {
-    padding: 0.375rem 0.5rem;
-    border-block-end: 1px solid rgba(255, 255, 255, 0.08);
-    text-align: start;
-    vertical-align: top;
-  }
-
-  thead th {
-    font-weight: 600;
-    color: #a1a1aa;
-    white-space: nowrap;
-  }
-
-  tbody th {
-    font-weight: 400;
-  }
-
-  time {
-    font-variant-numeric: tabular-nums;
-  }
-}
+// ------------------------------------------------------------------ tables and lists
 
 .sd-message-cell {
   min-inline-size: 12rem;

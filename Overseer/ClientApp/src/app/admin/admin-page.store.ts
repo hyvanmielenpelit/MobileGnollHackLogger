@@ -27,8 +27,8 @@ export interface AdminUsersQuery {
 /** The Users tab's sub-tabs. */
 export type AdminUsersSubTab = 'users' | 'groups' | 'deletions' | 'log';
 
-/** The Developer Tools tab's sub-tabs. */
-export type AdminDevtoolsSubTab = 'source' | 'config-health' | 'sentry';
+/** The Services tab's sub-tabs. */
+export type AdminDevtoolsSubTab = 'source' | 'gnollhack-wiki' | 'nethack-wiki' | 'knowledge-base' | 'config-health' | 'sentry';
 
 /** How a store navigation treats the browser history: a new entry, or the current one replaced. */
 export type AdminHistoryMode = 'push' | 'replace';
@@ -114,7 +114,7 @@ export class AdminPageStore {
   /** The Users tab's selected sub-tab, kept while the tab is closed. */
   usersSubTab: AdminUsersSubTab = 'users';
 
-  /** The Developer Tools tab's selected sub-tab, kept while the tab is closed. */
+  /** The Services tab's selected sub-tab, kept while the tab is closed. */
   devtoolsSubTab: AdminDevtoolsSubTab = 'source';
 
   /** The GnollBench sub-tab last shown, kept while the tab is closed. */

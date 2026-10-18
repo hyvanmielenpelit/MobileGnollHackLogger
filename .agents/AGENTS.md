@@ -132,9 +132,9 @@ Rationale, the `[Trait("Category", "UsesExternalApi")]` convention, live-model p
 
 ## NetHack Wiki Re-Indexing Policy
 
-- **Startup-Only Indexing**: `NetHackWikiService` only indexes files once during application startup and does NOT run periodic background re-indexing timers.
+- **No Automatic Re-Indexing**: `NetHackWikiService` indexes files once during application startup, and again only when an administrator clicks **Re-index** on Admin → Services → NetHack Wiki. It does NOT run periodic background re-indexing timers or file watchers.
 - **Rationale**: NetHackWiki consists of thousands of static files (in `C:\hmp\nethackwiki`) that are updated very seldomly via manual file uploads. Running periodic scans on thousands of files introduces unnecessary CPU and disk I/O load.
-- **Restart Required**: If NetHackWiki markdown files are updated or uploaded, the Overseer site/service must be restarted for the new content to be indexed.
+- **Restart or Re-index**: If NetHackWiki markdown files are updated or uploaded, the Overseer site/service must be restarted, or a Re-index run on Admin → Services → NetHack Wiki, for the new content to be indexed.
 
 ## Environment & Shell Conventions
 

@@ -46,7 +46,7 @@ Key capabilities:
 - **Spoiler Policy** — Enforces a configurable spoiler policy so the AI can respect players who want to discover things on their own.
 - **Telemetry, Cost and Retention** — Response timing, whole-turn cost accounting, and automated chat data retention and database maintenance.
 - **API Key Alerts** — E-mails the developers when a system API key runs out of credit, fails, or is about to expire.
-- **Admin Dashboard** — Administrative tools on the tabs *Users, System Configs, Database, AI Telemetry, Security, GnollBench* and *Developer Tools*, each with its own address ([Admin Page URLs](docs/overseer/admin-page-urls.md)). Groups are a sub-tab of Users, the default API keys a dialog of System Configs, and Developer Tools shows the [GnollHack source index](docs/overseer/gnollhack-source-indexing.md) and the configuration health.
+- **Admin Dashboard** — Administrative tools on the tabs *Users, System Configs, Database, AI Telemetry, Security, GnollBench* and *Services*, each with its own address ([Admin Page URLs](docs/overseer/admin-page-urls.md)). Groups are a sub-tab of Users, the default API keys a dialog of System Configs, and Services shows the [GnollHack source index](docs/overseer/gnollhack-source-indexing.md), the [GnollHack wiki, NetHack wiki and knowledge base indexes](docs/overseer/corpus-dashboards.md), the configuration health and the Sentry test errors.
 
 ### 📊 GnollBench (inside `Overseer/`)
 
@@ -181,7 +181,8 @@ Developer guides, command references, release checklists, and architectural docu
 | [**Data Privacy Framework**](docs/overseer/data-privacy-framework.md) | How Overseer protects user content — confidential and ephemeral sessions, encryption, provider trust, secret masking, document ingestion — and what it does not claim. |
 | [**API Key Alerts**](docs/overseer/api-key-alerts.md) | E-mail alerts when a system API key runs out of credit or fails, and their throttling. |
 | [**GnollHack Source Indexing**](docs/overseer/gnollhack-source-indexing.md) | The background makedefs build and source index behind the source tools, its configuration, the GnollHack Source dashboard, and troubleshooting. |
-| [**Admin Page URLs**](docs/overseer/admin-page-urls.md) | The path of every Admin tab and sub-tab, one-shot query parameters, old `?tab=` links, and the history rules. |
+| [**Corpus Dashboards**](docs/overseer/corpus-dashboards.md) | The Services tab's GnollHack Wiki, NetHack Wiki and Knowledge Base dashboards: index status, Re-index, search probes, chat tool usage, and the job runner behind them. |
+| [**Admin Page URLs**](docs/overseer/admin-page-urls.md) | The path of every Admin tab and sub-tab, one-shot query parameters, old and retired links, and the history rules. |
 
 ### Gnoll Overseer — AI models
 

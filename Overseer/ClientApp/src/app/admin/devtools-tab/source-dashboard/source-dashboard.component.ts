@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { EMPTY, Observable, Subject, Subscription, catchError, map, of, switchMap, timer } from 'rxjs';
+import { Observable, Subscription } from 'rxjs';
 
 import {
   AdminDevtoolsService,
@@ -27,9 +27,12 @@ import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { copyToClipboard } from '../../../utils/clipboard.util';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { ACTIVE_POLL_MS, DashboardPoller, ERROR_BACKOFF_MS, IDLE_POLL_MS } from '../shared/dashboard-poller';
+import type { PollResult } from '../shared/dashboard-poller';
+import * as fmt from '../shared/devtools-format';
+import type { HealthStatus } from '../shared/health-status/health-status.component';
 
-/** The status words of the shared `.gh-health-status` chip. */
-export type HealthStatus = 'ok' | 'warning' | 'error' | 'info' | 'running';
+export type { HealthStatus } from '../shared/health-status/health-status.component';
 
 export type StageState = 'pending' | 'current' | 'done' | 'skipped' | 'ended';
 
@@ -57,10 +60,8 @@ export const SOURCE_STAGES: ReadonlyArray<{ key: SourceIndexPhase; name: string 
   { key: 'Publishing', name: 'Publishing index' }
 ];
 
-type PollResult = { ok: true; dashboard: SourceDashboard } | { ok: false; error: unknown };
-
 /**
- * The GnollHack Source sub-tab of Developer Tools: the state of the source index, makedefs and
+ * The GnollHack Source sub-tab of the Services tab: the state of the source index, makedefs and
  * the running source job, polled from the server, with Re-index, Build makedefs and Cancel.
  */
 @Component({
@@ -72,34 +73,27 @@ type PollResult = { ok: true; dashboard: SourceDashboard } | { ok: false; error:
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class SourceDashboardComponent implements OnInit, OnDestroy {
-  /** Poll cadence while a source job runs. */
-  static readonly ACTIVE_POLL_MS = 1000;
-  /** Poll cadence while nothing runs. */
-  static readonly IDLE_POLL_MS = 15000;
-  /** Delays after the first, second and every later consecutive failed poll. */
-  static readonly ERROR_BACKOFF_MS: readonly number[] = [5000, 10000, 30000];
+  /** Poll cadence while a source job runs (`DashboardPoller`'s). */
+  static readonly ACTIVE_POLL_MS = ACTIVE_POLL_MS;
+  /** Poll cadence while nothing runs (`DashboardPoller`'s). */
+  static readonly IDLE_POLL_MS = IDLE_POLL_MS;
+  /** Delays after the first, second and every later consecutive failed poll (`DashboardPoller`'s). */
+  static readonly ERROR_BACKOFF_MS: readonly number[] = ERROR_BACKOFF_MS;
   /** How long a finished job's progress card stays, with its outcome. */
   static readonly ENDED_JOB_LINGER_MS = 10000;
 
   private readonly devtools = inject(AdminDevtoolsService);
   private readonly cdr = inject(ChangeDetectorRef);
 
-  /** Each value replaces the pending poll: a delay in ms, or null to stop until rescheduled. */
-  private readonly schedule$ = new Subject<number | null>();
-  private pollSub: Subscription | null = null;
+  private readonly poller = new DashboardPoller<SourceDashboard>(
+    () => this.devtools.getSourceStatus(),
+    dashboard => !!dashboard.gnollHack.currentJob,
+    result => this.onPollResult(result)
+  );
   private actionSub: Subscription | null = null;
   private cancelSub: Subscription | null = null;
   private lingerTimer: ReturnType<typeof setTimeout> | null = null;
   private trackedJobId: string | null = null;
-  private failures = 0;
-  private pendingDelayMs = 0;
-  private paused = false;
-  private destroyed = false;
-
-  private readonly numberFormat = new Intl.NumberFormat();
-  private readonly dateTimeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
-  private readonly timeFormat = new Intl.DateTimeFormat(undefined, { timeStyle: 'medium' });
-  private readonly relativeFormat = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 
   dashboard: SourceDashboard | null = null;
   /** The last poll failed; the dashboard keeps showing the last good answer. */
@@ -121,78 +115,35 @@ export class SourceDashboardComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
-    this.pollSub = this.schedule$.pipe(
-      switchMap(delay => delay === null
-        ? EMPTY
-        : timer(delay).pipe(
-          switchMap(() => this.devtools.getSourceStatus().pipe(
-            map((dashboard): PollResult => ({ ok: true, dashboard })),
-            catchError((error: unknown) => of<PollResult>({ ok: false, error }))
-          ))
-        ))
-    ).subscribe(result => this.onPollResult(result));
-    this.scheduleNext(0);
+    this.poller.start();
   }
 
   ngOnDestroy(): void {
-    this.destroyed = true;
-    this.pollSub?.unsubscribe();
+    this.poller.stop();
     this.actionSub?.unsubscribe();
     this.cancelSub?.unsubscribe();
-    this.schedule$.complete();
     this.clearLinger();
   }
 
   @HostListener('document:visibilitychange')
   onVisibilityChange(): void {
-    if (this.destroyed) {
-      return;
-    }
-    if (document.hidden) {
-      this.paused = true;
-      this.schedule$.next(null);
-    } else if (this.paused) {
-      this.paused = false;
-      // Back from a hidden page: fresh data at once, unless the server was failing.
-      this.schedule$.next(this.failures > 0 ? this.pendingDelayMs : 0);
-    }
+    this.poller.onVisibilityChange(document.hidden);
   }
 
   // ---------------------------------------------------------------- polling
 
   /** Polls now, cancelling a pending poll and any request in flight. */
   retry(): void {
-    this.scheduleNext(0);
+    this.poller.retry();
   }
 
-  private scheduleNext(delayMs: number): void {
-    if (this.destroyed) {
-      return;
-    }
-    this.pendingDelayMs = delayMs;
-    if (document.hidden) {
-      this.paused = true;
-      this.schedule$.next(null);
-      return;
-    }
-    this.schedule$.next(delayMs);
-  }
-
-  private onPollResult(result: PollResult): void {
+  private onPollResult(result: PollResult<SourceDashboard>): void {
     if (result.ok) {
-      this.failures = 0;
       this.loadError = null;
-      this.applyDashboard(result.dashboard);
-      this.scheduleNext(result.dashboard.gnollHack.currentJob
-        ? SourceDashboardComponent.ACTIVE_POLL_MS
-        : SourceDashboardComponent.IDLE_POLL_MS);
+      this.applyDashboard(result.value);
     } else {
-      this.failures++;
-      const backoff = SourceDashboardComponent.ERROR_BACKOFF_MS;
-      const delay = backoff[Math.min(this.failures, backoff.length) - 1];
       this.loadError = `${this.describeError(result.error, 'The source status could not be loaded')} `
-        + `Trying again in ${delay / 1000} s.`;
-      this.scheduleNext(delay);
+        + `Trying again in ${result.retryInMs / 1000} s.`;
     }
     this.cdr.markForCheck();
   }
@@ -295,7 +246,7 @@ export class SourceDashboardComponent implements OnInit, OnDestroy {
       next: () => {
         this.starting = false;
         this.cdr.markForCheck();
-        this.scheduleNext(0);
+        this.poller.pollNow();
       },
       error: (error: unknown) => {
         this.starting = false;
@@ -305,7 +256,7 @@ export class SourceDashboardComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
         if (conflict) {
           // Another job holds the source: show it.
-          this.scheduleNext(0);
+          this.poller.pollNow();
         }
       }
     });
@@ -325,7 +276,7 @@ export class SourceDashboardComponent implements OnInit, OnDestroy {
           this.cancelMessage = 'Nothing to cancel: the job had already finished.';
         }
         this.cdr.markForCheck();
-        this.scheduleNext(0);
+        this.poller.pollNow();
       },
       error: (error: unknown) => {
         this.canceling = false;
@@ -589,92 +540,49 @@ export class SourceDashboardComponent implements OnInit, OnDestroy {
   }
 
   elapsedMs(job: SourceIndexJob): number {
-    const start = parseServerUtcDate(job.startedAtUtc).getTime();
-    const end = job.finishedAtUtc ? parseServerUtcDate(job.finishedAtUtc).getTime() : Date.now();
-    return isNaN(start) || isNaN(end) || end < start ? 0 : end - start;
+    return fmt.elapsedMs(job.startedAtUtc, job.finishedAtUtc);
   }
 
   /** An ISO 8601 duration for a `<time datetime>`. */
   isoDuration(ms: number): string {
-    return `PT${(Math.max(0, ms) / 1000).toFixed(1)}S`;
+    return fmt.isoDuration(ms);
   }
 
   // ---------------------------------------------------------------- formatting
 
   formatNumber(value: number | null | undefined): string {
-    return value === null || value === undefined ? '—' : this.numberFormat.format(value);
+    return fmt.formatNumber(value);
   }
 
   formatDuration(ms: number | null | undefined): string {
-    if (ms === null || ms === undefined || ms < 0) {
-      return '—';
-    }
-    if (ms < 1000) {
-      return `${this.numberFormat.format(Math.round(ms))} ms`;
-    }
-    const totalSeconds = ms / 1000;
-    if (totalSeconds < 60) {
-      return `${totalSeconds.toFixed(1)} s`;
-    }
-    const whole = Math.round(totalSeconds);
-    const hours = Math.floor(whole / 3600);
-    const minutes = Math.floor((whole % 3600) / 60);
-    const seconds = whole % 60;
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return hours > 0 ? `${hours} h ${pad(minutes)} min` : `${minutes} min ${pad(seconds)} s`;
+    return fmt.formatDuration(ms);
   }
 
   formatBytes(bytes: number): string {
-    return `${this.numberFormat.format(Math.max(1, Math.round(bytes / 1024)))} KB`;
+    return fmt.formatBytes(bytes);
   }
 
   /** The local date and time of a server timestamp, or '' when there is none. */
   formatDateTime(value: string | null | undefined): string {
-    const date = this.parse(value);
-    return date ? this.dateTimeFormat.format(date) : '';
+    return fmt.formatDateTime(value);
   }
 
   /** The local time of day of a server timestamp, or '' when there is none. */
   formatTime(value: string | null | undefined): string {
-    const date = this.parse(value);
-    return date ? this.timeFormat.format(date) : '';
+    return fmt.formatTime(value);
   }
 
   /** "3 minutes ago", "in 5 minutes", or '' when there is no timestamp. */
   formatRelative(value: string | null | undefined): string {
-    const date = this.parse(value);
-    if (!date) {
-      return '';
-    }
-    const seconds = Math.round((date.getTime() - Date.now()) / 1000);
-    const abs = Math.abs(seconds);
-    if (abs < 45) {
-      return this.relativeFormat.format(0, 'second');
-    }
-    if (abs < 3600) {
-      return this.relativeFormat.format(Math.round(seconds / 60), 'minute');
-    }
-    if (abs < 86400) {
-      return this.relativeFormat.format(Math.round(seconds / 3600), 'hour');
-    }
-    return this.relativeFormat.format(Math.round(seconds / 86400), 'day');
+    return fmt.formatRelative(value);
   }
 
   /** The `datetime` attribute value: the instant in ISO form. */
   isoDateTime(value: string | null | undefined): string | null {
-    const date = this.parse(value);
-    return date ? date.toISOString() : null;
+    return fmt.isoDateTime(value);
   }
 
   shortSha(sha: string | null | undefined): string {
-    return sha ? sha.slice(0, 10) : '—';
-  }
-
-  private parse(value: string | null | undefined): Date | null {
-    if (!value) {
-      return null;
-    }
-    const date = parseServerUtcDate(value);
-    return isNaN(date.getTime()) ? null : date;
+    return fmt.shortSha(sha);
   }
 }

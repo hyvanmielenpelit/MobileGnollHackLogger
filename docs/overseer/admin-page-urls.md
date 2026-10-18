@@ -14,20 +14,27 @@ that knows the scheme is `Overseer/ClientApp/src/app/admin/admin-url.ts`, pinned
 | `/admin/configs` · `/admin/configs/api-keys` | System Configs; the second with the **API Keys** dialog (*Default API Keys*) open |
 | `/admin/database` · `/admin/telemetry` · `/admin/security` | Database, AI Telemetry, Security (no sub-tabs) |
 | `/admin/gnollbench` · `/admin/gnollbench/history` · `…/multi-run` · `…/multi-suite` · `…/suites` · `…/profiles` · `…/model-comparison` · `…/chat-consistency` | GnollBench: *Run Benchmark*, *Run History*, *Multi-Run Analysis*, *Multi-Suite*, *Manage Suites*, *Scoring Profiles*, *Model Comparison*, *Chat Consistency* |
-| `/admin/devtools` · `/admin/devtools/config-health` · `/admin/devtools/sentry` | Developer Tools: *GnollHack Source*, *Configuration Health*, *Sentry Crash Reporting* |
+| `/admin/services` · `/admin/services/gnollhack-wiki` · `…/nethack-wiki` · `…/knowledge-base` · `…/config-health` · `…/developer-tools` | Services: *GnollHack Source*, *GnollHack Wiki*, *NetHack Wiki*, *Knowledge Base*, *Configuration Health*, *Developer Tools* |
 
 - **The first sub-tab is the default and has no segment.** `/admin/users/users` and
-  `/admin/devtools/source`, which name the default by its id, are accepted and replaced by
-  `/admin/users` and `/admin/devtools`. A sub-tab named by a code id that differs from its slug
-  (`/admin/gnollbench/multirun`) is replaced by its slug the same way; a tab is found by its slug
-  only, so `/admin/benchmark` is an unknown tab.
+  `/admin/services/source`, which name the default by its id, are accepted and replaced by
+  `/admin/users` and `/admin/services`. A sub-tab named by a code id that differs from its slug
+  (`/admin/gnollbench/multirun`, `/admin/services/sentry`) is replaced by its slug the same way. A
+  tab is found by its slug, or by a retired slug in `RETIRED_ADMIN_TAB_SLUGS` (`devtools`, the
+  Services tab's slug until 2026-10-18), which is then replaced by the current one;
+  `/admin/benchmark` is still an unknown tab.
 - **An unknown value is corrected, never an error page.** An unknown tab becomes `/admin/users`, an
   unknown sub-tab the tab's default, and a path of more than three segments matches no route.
   Every correction replaces the history entry.
 - **Slugs are not code ids.** The code keeps its ids — `benchmark`, `multirun`, `modelcomparison`,
   `deletions` and the rest, in every `localStorage` key — and `ADMIN_TAB_SLUGS` and
   `ADMIN_SUBTAB_SLUGS` translate. The address shows the visible name, so the GnollBench tab is
-  `gnollbench`. A slug is part of every bookmark that holds it, so renaming one breaks them.
+  `gnollbench`, and the Services tab, whose code id is `devtools`, is `services`.
+- **A renamed slug is kept as a retired slug.** A slug is part of every bookmark and alert that holds
+  it, so renaming one would break them. A tab's old slug therefore stays in `RETIRED_ADMIN_TAB_SLUGS`,
+  mapped to the tab it named, and **a retired slug is never reused** for another tab. A sub-tab's old
+  slug needs no such list when it was the sub-tab's code id, because a sub-tab is also accepted by its
+  id: that is how `/admin/services/sentry` still opens *Developer Tools*.
 
 ## 2. Query parameters
 
@@ -65,8 +72,20 @@ other parameter (so `suiteId` and `resolveConfig` still work):
 `legacyAdminPath()` does the mapping. The legacy redirect runs before any other correction, in the
 same handler, so an old query on a non-canonical path issues one navigation.
 
+A path with a retired tab slug (§ 1) is corrected like any other non-canonical path, keeping every
+query parameter:
+
+| Old | New |
+|---|---|
+| `/admin/devtools` | `/admin/services` |
+| `/admin/devtools/config-health` | `/admin/services/config-health` |
+| `/admin/devtools/sentry` | `/admin/services/developer-tools` |
+
+`parseAdminPath()` reads the retired slug. An old query link, `?tab=devtools`, names the code id and
+maps through `legacyAdminPath()` to `/admin/services`.
+
 The server's own links use the path form: the system alerts (`/admin/configs`,
-`/admin/users/deletions`, `/admin/telemetry`, `/admin/devtools`) and the deletion review email, whose
+`/admin/users/deletions`, `/admin/telemetry`, `/admin/services`) and the deletion review email, whose
 link is `OverseerAdminUrl` with `/users/deletions` appended to its path
 (`AccountDeletionReviewEmail.ReviewLink`).
 

@@ -1,0 +1,21 @@
+@let p = idPrefix;
+
+<dialog #confirmDialog class="gh-dialog reindex-confirm-dialog"
+        [attr.aria-labelledby]="p + '-reindex-confirm-title'"
+        [attr.aria-describedby]="p + '-reindex-confirm-message ' + p + '-reindex-confirm-effect'">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <h3 [id]="p + '-reindex-confirm-title'">A GnollBench run is executing</h3>
+    </div>
+    <p [id]="p + '-reindex-confirm-message'">{{ message }}</p>
+    <p [id]="p + '-reindex-confirm-effect'">
+      {{ actionName }} changes the corpus the run is reading; questions after this point read the new index,
+      while the run's recorded fingerprints describe the old one.
+    </p>
+    <div class="dialog-actions">
+      <button #cancelButton type="button" class="btn-gh btn-gh-cancel" [id]="p + '-reindex-confirm-cancel'" autofocus
+              (click)="close()">Cancel</button>
+      <button type="button" class="btn-gh" [id]="p + '-reindex-confirm-ok'" (click)="confirm()">{{ confirmLabel }}</button>
+    </div>
+  </div>
+</dialog>

@@ -203,10 +203,10 @@ you already read the label, it is noise; drop it.
 | Icon | Buttons | Why it carries information |
 |------|---------|----------------------------|
 | plus | New Profile, Create Suite, Add Question | "Something new appears" — recognised without reading |
-| play | Start Benchmark, Acknowledge & Start Run, **Continue — <reason>** (the battery and series progress dialogs), **Build makedefs** (the Developer Tools GnollHack Source dashboard) | "This begins now", and it reinforces the consequence of a button that starts real work |
+| play | Start Benchmark, Acknowledge & Start Run, **Continue — <reason>** (the battery and series progress dialogs), **Build makedefs** (the Services tab's GnollHack Source dashboard) | "This begins now", and it reinforces the consequence of a button that starts real work |
 | trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center, on each written row of the Model Comparison wizard's step 3 *Documents of this comparison*, and on the run report's AI Reports tab, and the **Delete** of its confirmation), **Delete** a saved Chat Consistency analysis (`.btn-ghost.btn-ghost-danger`, each Analysis History card, and the **Delete** of its confirmation), **Delete the default {provider} key** (icon-only `.action-btn-danger`, each card of the Default API Keys dialog) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | pencil (Feather *edit-3*) | **Edit** (a battery card's actions), **Rename comparison** (icon-only `.action-btn` beside *Comparison #N — name* in the Model Comparison wizard's header; opens the nested rename dialog), **Replace the default {provider} key** (icon-only `.action-btn`, each card of the Default API Keys dialog; reveals the key input) | "Change this thing's text in place" — it edits a name or a definition and runs nothing |
-| refresh / rotate | Refresh, Re-run failed questions, Re-run question, Re-assess question, **Re-run** (the run report's popover trigger, followed by a chevron state indicator), the icon-only **Recompute** of the Model Comparison, the icon-only **Reload runs** (the Chat Consistency wizard's header, steps 1 and 2), **Re-index Source Files** (`.btn-gh`, the GnollHack Source dashboard) and its load error's **Retry** (`.btn-ghost`), **Re-check** (`.btn-ghost`, the Configuration Health dashboard) | "This runs again" — the circular-arrow convention is universal; the repair verbs that use it are in §4g |
+| refresh / rotate | Refresh, Re-run failed questions, Re-run question, Re-assess question, **Re-run** (the run report's popover trigger, followed by a chevron state indicator), the icon-only **Recompute** of the Model Comparison, the icon-only **Reload runs** (the Chat Consistency wizard's header, steps 1 and 2), **Re-index Source Files** (`.btn-gh`, the GnollHack Source dashboard) and its load error's **Retry** (`.btn-ghost`), **Re-index wiki** and **Reload articles** (`.btn-gh`, the GnollHack Wiki, NetHack Wiki and Knowledge Base dashboards), **Re-check** (`.btn-ghost`, the Configuration Health dashboard) | "This runs again" — the circular-arrow convention is universal; the repair verbs that use it are in §4g |
 | flask | **Try another assessor (does not change the score)** (`.btn-ghost`, each question of the run report) | "An experiment": it records another assessor's verdict beside the score and changes nothing, so it must not look like the repairs beside it |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
 | file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog and the Model Comparison wizard's Write step), **Open Download Center** (`.btn-ghost`, the Model Comparison launcher's *Comparison reports*, `app-report-documents-launcher`), **Download Markdown report** (icon-only, each Run History card), **Documents (N)** (`.btn-ghost`, the Chat Consistency launcher's *Latest analysis*; opens the wizard on step 6, *Documents*) | "A file arrives on your disk" |
@@ -1739,10 +1739,20 @@ concerns.
   beside a readiness card (§4i); a standalone warning block stays an `alert-warning`. The readiness
   card's own classes are `.gh-readiness*`.
 - `.gh-health-status[data-status]` (`ok`, `warning`, `error`, `info`, `running`) is the status word of
-  the Developer Tools dashboards (since 2026-10-18): a 14 px glyph the markup supplies (`aria-hidden`:
+  the Services tab's dashboards (since 2026-10-18): a 14 px glyph the markup supplies (`aria-hidden`:
   *check-circle*, *alert-triangle*, *alert-circle*, *info*, the `.dc-ring` while running), the word,
   a tone color and a 1 px border that forced-colors mode keeps. `.gh-health-summary` /
   `.gh-health-tile` are their key-figure tiles. Every status is a word and a glyph, never a color alone.
+  `app-health-status` (`admin/devtools-tab/shared/health-status/`) renders the chip with its glyph;
+  new markup uses it rather than drawing the glyphs again.
+- `.gh-dash-*` is the layout of those dashboards, beside `.gh-health-*` in `styles.scss` (since
+  2026-10-18): the `devtools-dash` container `.gh-dash-root`, the card grid `.gh-dash-grid` (two
+  columns from 40rem of the container), `.gh-dash-card`, the status banner `.gh-dash-banner[data-status]`,
+  `.gh-dash-actions`, `.gh-dash-load-error`, `.gh-dash-facts`, the scrolling `.gh-dash-table-wrap`
+  (`role="region"`, `tabindex="0"`, `aria-labelledby`) around a `.gh-dash-table` that stacks into
+  blocks labeled from each cell's `data-label` below 36rem of the wrap, the decorative share bar
+  `.gh-dash-bar` (`aria-hidden`; the table row carries the number), `.gh-dash-pre`, `.gh-dash-muted`,
+  `.gh-dash-mono` and `.gh-dash-note`. A dashboard component keeps only what no other dashboard uses.
 - Every `.gh-dialog` contains scroll chaining: `::backdrop` has `overflow: hidden;
   overscroll-behavior: contain` and `:modal` has `overscroll-behavior: contain`, both needed for the
   page not to scroll under a modal.

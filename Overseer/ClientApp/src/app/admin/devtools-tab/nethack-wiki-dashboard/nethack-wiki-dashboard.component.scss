@@ -1,0 +1,75 @@
+// The NetHack Wiki dashboard. The panel, cards, facts, tables and share bars are the shared
+// components and the global .gh-dash-* and .gh-health-* classes; this file holds the rest.
+
+:host {
+  display: block;
+}
+
+.nw-subtitle {
+  margin: 0.5rem 0 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--gh-dash-ink-soft);
+}
+
+.nw-number {
+  font-variant-numeric: tabular-nums;
+}
+
+// ------------------------------------------------------------------ skipped pages
+
+.nw-skip-reason {
+  display: block;
+}
+
+.nw-breakdown {
+  margin: 0.25rem 0 0;
+  padding-inline-start: 1rem;
+  list-style: none;
+  border-inline-start: 1px solid var(--gh-dash-rule);
+  color: var(--gh-dash-ink-subtle);
+
+  .nw-breakdown {
+    margin-block-start: 0.125rem;
+  }
+}
+
+.nw-breakdown-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 0.75rem;
+}
+
+.nw-breakdown-count {
+  font-variant-numeric: tabular-nums;
+}
+
+// ------------------------------------------------------------------ namespaces
+
+.nw-share {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-inline-size: 0;
+
+  .gh-dash-bar {
+    flex: 1 1 6rem;
+  }
+}
+
+.nw-share-text {
+  flex: 0 0 auto;
+  min-inline-size: 3.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+// ------------------------------------------------------------------ how to regenerate
+
+.nw-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 0;
+  padding-inline-start: 1.25rem;
+}

@@ -238,7 +238,7 @@ While no `account-terms` version is required, the filter lets everything through
 1. Edit the page on the wiki. For a **material** change, set **Last updated** to the day's date
    (`(revision N)` for a second one that day); otherwise leave the line alone.
 2. Pull the wiki clone on the server. The new version applies on the next request; no restart.
-3. Check Admin → Developer Tools → Configuration Health (`/admin/devtools/config-health`): the
+3. Check Admin → Services → Configuration Health (`/admin/services/config-health`): the
    `legal-document:<key>` check reports the version, and is a warning if the line could not be read.
 
 Every user is then asked once for the new version, through whichever channel they use next.

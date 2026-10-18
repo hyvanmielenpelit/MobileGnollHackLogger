@@ -2778,7 +2778,7 @@ label.checkbox-label,
 }
 
 /* ==========================================================================
-   Health status (Developer Tools)
+   Health status (Services tab dashboards)
    Shared by the GnollHack Source dashboard and Configuration Health.
    - .gh-health-status[data-status]: ok, warning, error, info or running. A 14 px glyph slot and a
      word, a tone color and a 1 px border, so forced-colors mode keeps the outline. The markup
@@ -2916,6 +2916,340 @@ label.checkbox-label,
   .gh-health-tile,
   .gh-health-tile[data-status] {
     border-color: CanvasText;
+  }
+}
+
+/* ==========================================================================
+   Dashboards (Services tab)
+   The layout of the Services tab's dashboards: GnollHack Source, GnollHack Wiki, NetHack Wiki and
+   Knowledge Base. Status words and key-figure tiles are the .gh-health-* classes above.
+   - .gh-dash-root: the dashboard's column, and the devtools-dash inline-size container.
+   - .gh-dash-grid: the cards, one column below 40rem of that container and two from 40rem;
+     .gh-dash-wide spans both.
+   - .gh-dash-card and .gh-dash-card-head: a card (a section headed by an h4.gh-section-title) and
+     its heading row.
+   - .gh-dash-banner[data-status], with .gh-dash-banner-word and .gh-dash-banner-sentence: the status
+     banner. data-status takes the .gh-health-status words and colors the start edge.
+   - .gh-dash-actions: a wrapping row of action buttons. .gh-dash-load-error: the failed-poll line
+     with its Retry. .gh-dash-facts: a dl of div groups, the label above the value, side by side
+     from 40rem.
+   - .gh-dash-table-wrap (role="region", tabindex="0", aria-labelledby) scrolls a .gh-dash-table
+     under a sticky header. Below 36rem of the wrap's width the table stacks into one block per row
+     and each td is labeled from its data-label attribute; a row header (th scope="row") needs none.
+   - .gh-dash-bar (aria-hidden): a share bar in a breakdown table, filled to the percentage in its
+     --gh-dash-share custom property.
+   - .gh-dash-pre: plain text in a pre, wrapped and collapsed to 24rem; .is-expanded shows it all.
+   - .gh-dash-muted, .gh-dash-mono, .gh-dash-note: muted text, monospace, a note.
+   Colors are the --gh-dash-* tokens below. Forced-colors mode keeps the banner edge and the bars.
+   ========================================================================== */
+:root {
+  --gh-dash-ink: #e4e4e7;
+  --gh-dash-ink-soft: #d4d4d8;
+  --gh-dash-ink-subtle: #c4c4c8;
+  --gh-dash-ink-muted: #a1a1aa;
+  --gh-dash-edge-neutral: #71717a;
+  --gh-dash-edge-info: #a8c7fa;
+  --gh-dash-rule: rgba(255, 255, 255, 0.08);
+  --gh-dash-surface: rgba(0, 0, 0, 0.18);
+  --gh-dash-surface-strong: rgba(0, 0, 0, 0.22);
+  --gh-dash-surface-code: rgba(0, 0, 0, 0.35);
+  --gh-dash-error-bg: rgba(239, 68, 68, 0.08);
+  /* Opaque: table rows scroll under the sticky header. */
+  --gh-dash-head-bg: #181818;
+}
+
+.gh-dash-root {
+  container: devtools-dash / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-inline-size: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+
+.gh-dash-load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--color-error-text) 55%, transparent);
+  border-radius: 8px;
+  background: var(--gh-dash-error-bg);
+
+  .gh-field-error {
+    flex: 1 1 16rem;
+  }
+}
+
+.gh-dash-banner {
+  flex: 1 1 18rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.75rem;
+  min-inline-size: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-glass);
+  border-inline-start: 3px solid var(--gh-dash-edge-neutral);
+  border-radius: 8px;
+  background: var(--gh-dash-surface-strong);
+
+  &[data-status="ok"] { border-inline-start-color: var(--score-high-ink); }
+  &[data-status="warning"] { border-inline-start-color: var(--color-warning); }
+  &[data-status="error"] { border-inline-start-color: var(--color-error-text); }
+  &[data-status="info"] { border-inline-start-color: var(--gh-dash-edge-info); }
+  &[data-status="running"] { border-inline-start-color: var(--primary-color); }
+}
+
+.gh-dash-banner-word {
+  font-size: var(--text-body);
+}
+
+.gh-dash-banner-sentence {
+  flex: 1 1 14rem;
+  min-inline-size: 0;
+  color: var(--gh-dash-ink-soft);
+}
+
+.gh-dash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.gh-dash-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.gh-dash-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-inline-size: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: var(--gh-dash-surface);
+
+  .gh-section-title {
+    margin: 0;
+  }
+}
+
+.gh-dash-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.gh-dash-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+
+  > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.125rem;
+  }
+
+  dt {
+    color: var(--gh-dash-ink-muted);
+  }
+
+  dd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.5rem;
+    margin: 0;
+    min-inline-size: 0;
+    color: var(--gh-dash-ink);
+  }
+}
+
+@container devtools-dash (min-width: 40rem) {
+  .gh-dash-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gh-dash-wide {
+    grid-column: 1 / -1;
+  }
+
+  .gh-dash-facts > div {
+    grid-template-columns: minmax(8rem, 2fr) minmax(0, 3fr);
+    gap: 0.75rem;
+  }
+}
+
+.gh-dash-table-wrap {
+  container: gh-dash-table / inline-size;
+  max-inline-size: 100%;
+  max-block-size: min(32rem, 70vh);
+  overflow: auto;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.gh-dash-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-secondary);
+
+  th,
+  td {
+    padding: 0.375rem 0.5rem;
+    border-block-end: 1px solid var(--gh-dash-rule);
+    text-align: start;
+    vertical-align: top;
+  }
+
+  thead th {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
+    background: var(--gh-dash-head-bg);
+    /* border-collapse drops a sticky cell's own bottom border in several engines. */
+    box-shadow: inset 0 -1px 0 var(--gh-dash-rule);
+    font-weight: 600;
+    color: var(--gh-dash-ink-muted);
+    white-space: nowrap;
+  }
+
+  tbody th {
+    font-weight: 400;
+  }
+
+  time {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@container gh-dash-table (width < 36rem) {
+  .gh-dash-table {
+    &,
+    thead,
+    tbody,
+    tr,
+    th,
+    td {
+      display: block;
+    }
+
+    thead {
+      display: none;
+    }
+
+    tr {
+      padding-block: 0.375rem;
+      border-block-end: 1px solid var(--gh-dash-rule);
+    }
+
+    th,
+    td {
+      padding: 0.125rem 0;
+      border: 0;
+    }
+
+    tbody th {
+      font-weight: 600;
+    }
+
+    td[data-label]::before {
+      content: attr(data-label) ": ";
+      content: attr(data-label) ": " / attr(data-label);
+      color: var(--gh-dash-ink-muted);
+    }
+  }
+}
+
+.gh-dash-bar {
+  display: block;
+  inline-size: 100%;
+  min-inline-size: 3rem;
+  block-size: 0.375rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--gh-dash-rule);
+
+  &::before {
+    content: "";
+    display: block;
+    block-size: 100%;
+    inline-size: clamp(0%, var(--gh-dash-share, 0%), 100%);
+    border-radius: inherit;
+    background: var(--primary-color);
+  }
+}
+
+.gh-dash-pre {
+  margin: 0;
+  max-block-size: 24rem;
+  overflow: auto;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--gh-dash-rule);
+  border-radius: 6px;
+  background: var(--gh-dash-surface-code);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--gh-dash-ink);
+
+  &.is-expanded {
+    max-block-size: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.gh-dash-mono {
+  font-family: var(--font-mono);
+  font-size-adjust: from-font;
+  overflow-wrap: anywhere;
+}
+
+.gh-dash-muted {
+  margin: 0;
+  color: var(--gh-dash-ink-muted);
+}
+
+.gh-dash-note {
+  margin: 0 0 0.5rem;
+  font-size: var(--text-secondary);
+  color: var(--gh-dash-ink-subtle);
+}
+
+@media (forced-colors: active) {
+  .gh-dash-banner,
+  .gh-dash-banner[data-status] {
+    border-color: CanvasText;
+  }
+
+  .gh-dash-bar {
+    forced-color-adjust: none;
+    outline: 1px solid CanvasText;
+    background: Canvas;
+
+    &::before {
+      background: CanvasText;
+    }
   }
 }
 

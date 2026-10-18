@@ -1,6 +1,6 @@
 import { UrlSegment, convertToParamMap } from '@angular/router';
 import {
-  ADMIN_SUBTAB_SLUGS, ADMIN_TAB_SLUGS, AdminTabId, adminCommands, adminUrlMatcher, defaultAdminSubTab,
+  ADMIN_SUBTAB_SLUGS, ADMIN_TAB_SLUGS, AdminTabId, RETIRED_ADMIN_TAB_SLUGS, adminCommands, adminUrlMatcher, defaultAdminSubTab,
   isAdminTabId, legacyAdminPath, parseAdminPath
 } from './admin-url';
 import type { BenchmarkSubTab } from './benchmark/state/benchmark-shell-bridge.service';
@@ -30,7 +30,7 @@ describe('admin URL scheme', () => {
     it('omits the default sub-tab', () => {
       expect(adminCommands('users')).toEqual(['/admin', 'users']);
       expect(adminCommands('users', 'users')).toEqual(['/admin', 'users']);
-      expect(adminCommands('devtools', 'source')).toEqual(['/admin', 'devtools']);
+      expect(adminCommands('devtools', 'source')).toEqual(['/admin', 'services']);
       expect(adminCommands('benchmark', 'run')).toEqual(['/admin', 'gnollbench']);
       expect(adminCommands('configs', '')).toEqual(['/admin', 'configs']);
     });
@@ -40,7 +40,8 @@ describe('admin URL scheme', () => {
       expect(adminCommands('configs', 'api-keys')).toEqual(['/admin', 'configs', 'api-keys']);
       expect(adminCommands('benchmark', 'multirun')).toEqual(['/admin', 'gnollbench', 'multi-run']);
       expect(adminCommands('benchmark', 'modelcomparison')).toEqual(['/admin', 'gnollbench', 'model-comparison']);
-      expect(adminCommands('devtools', 'config-health')).toEqual(['/admin', 'devtools', 'config-health']);
+      expect(adminCommands('devtools', 'config-health')).toEqual(['/admin', 'services', 'config-health']);
+      expect(adminCommands('devtools', 'sentry')).toEqual(['/admin', 'services', 'developer-tools']);
     });
 
     it('ignores an unknown sub-tab and a sub-tab on a tab without sub-tabs', () => {
@@ -93,7 +94,35 @@ describe('admin URL scheme', () => {
       expect(parseAdminPath('users', 'users')).toEqual(
         { tab: 'users', subTab: 'users', canonical: ['/admin', 'users'], isCanonical: false });
       expect(parseAdminPath('devtools', 'source')).toEqual(
-        { tab: 'devtools', subTab: 'source', canonical: ['/admin', 'devtools'], isCanonical: false });
+        { tab: 'devtools', subTab: 'source', canonical: ['/admin', 'services'], isCanonical: false });
+    });
+
+    it('accepts a sub-tab by its code id and replaces it with the slug', () => {
+      for (const tabSlug of ['services', 'devtools']) {
+        expect(parseAdminPath(tabSlug, 'sentry')).toEqual(
+          { tab: 'devtools', subTab: 'sentry', canonical: ['/admin', 'services', 'developer-tools'], isCanonical: false });
+      }
+    });
+
+    it('opens a retired tab slug as its tab and replaces it with the current slug', () => {
+      expect(RETIRED_ADMIN_TAB_SLUGS['devtools']).toBe('devtools');
+      expect(parseAdminPath('devtools', null)).toEqual(
+        { tab: 'devtools', subTab: 'source', canonical: ['/admin', 'services'], isCanonical: false });
+      expect(parseAdminPath('devtools', 'config-health')).toEqual(
+        { tab: 'devtools', subTab: 'config-health', canonical: ['/admin', 'services', 'config-health'], isCanonical: false });
+    });
+
+    it('does not read an inherited property name as a retired slug', () => {
+      expect(parseAdminPath('constructor', null).tab).toBe('users');
+      expect(parseAdminPath('toString', null).tab).toBe('users');
+    });
+
+    it('reads the Services sub-tabs from their slugs', () => {
+      for (const [slug, id] of [['gnollhack-wiki', 'gnollhack-wiki'], ['nethack-wiki', 'nethack-wiki'],
+        ['knowledge-base', 'knowledge-base'], ['config-health', 'config-health'], ['developer-tools', 'sentry']]) {
+        expect(parseAdminPath('services', slug)).toEqual(
+          { tab: 'devtools', subTab: id, canonical: ['/admin', 'services', slug], isCanonical: true });
+      }
     });
 
     it('does not accept a code id that differs from its slug as a canonical path', () => {
@@ -122,7 +151,7 @@ describe('admin URL scheme', () => {
       expect(legacy({ tab: 'telemetry' })).toEqual(['/admin', 'telemetry']);
       expect(legacy({ tab: 'security' })).toEqual(['/admin', 'security']);
       expect(legacy({ tab: 'benchmark' })).toEqual(['/admin', 'gnollbench']);
-      expect(legacy({ tab: 'devtools' })).toEqual(['/admin', 'devtools']);
+      expect(legacy({ tab: 'devtools' })).toEqual(['/admin', 'services']);
       expect(legacy({ tab: 'bogus' })).toEqual(['/admin', 'users']);
     });
 
@@ -150,6 +179,7 @@ describe('admin URL scheme', () => {
 
   it('knows the tab ids and defaults', () => {
     expect(isAdminTabId('devtools')).toBe(true);
+    expect(isAdminTabId('services')).toBe(false);
     expect(isAdminTabId('groups')).toBe(false);
     expect(isAdminTabId(null)).toBe(false);
     expect(defaultAdminSubTab('users')).toBe('users');

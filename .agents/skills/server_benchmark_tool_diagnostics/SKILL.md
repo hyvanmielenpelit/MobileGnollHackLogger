@@ -336,7 +336,7 @@ The cold-start case is handled and visible: while a service is still indexing, e
 
 ### Worked example: `src/soundset.c`
 
-`SourceCodeService.ReadFiles` indexes a file only when `fileInfo.Length <= _maxFileSizeKB * 1024`, and skips it otherwise with **no log line and nothing the tools can see**; the published index records it in `SkippedBySize`, which only the GnollHack Source dashboard (Admin → Developer Tools) lists. `_maxFileSizeKB` comes from the `MaxSourceFileSizeKB` configuration key and defaults to **800** when unset. `src/soundset.c` in the GnollHack source measures **1,086,562 bytes ≈ 1061 KB** — measured on this machine on 2026-09-09.
+`SourceCodeService.ReadFiles` indexes a file only when `fileInfo.Length <= _maxFileSizeKB * 1024`, and skips it otherwise with **no log line and nothing the tools can see**; the published index records it in `SkippedBySize`, which only the GnollHack Source dashboard (Admin → Services) lists. `_maxFileSizeKB` comes from the `MaxSourceFileSizeKB` configuration key and defaults to **800** when unset. `src/soundset.c` in the GnollHack source measures **1,086,562 bytes ≈ 1061 KB** — measured on this machine on 2026-09-09.
 
 So the file is **not in the source index at all**. Every consequence is silent:
 

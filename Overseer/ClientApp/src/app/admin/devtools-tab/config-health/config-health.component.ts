@@ -62,7 +62,7 @@ function isUserSecrets(source: ConfigSourceInfo): boolean {
 }
 
 /**
- * Developer Tools > Configuration Health: every configuration check the server runs, grouped by
+ * Services > Configuration Health: every configuration check the server runs, grouped by
  * category, with the configuration sources it loaded and a Problems / All checks filter.
  */
 @Component({

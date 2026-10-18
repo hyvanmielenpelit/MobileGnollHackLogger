@@ -1,8 +1,8 @@
 <div class="tab-header-row">
-  <h3 class="m-0">Developer Tools</h3>
+  <h3 class="m-0">Services</h3>
 </div>
 
-<div class="gh-tabs gh-tabs-secondary devtools-subtabs" role="tablist" aria-label="Developer tool sections">
+<div class="gh-tabs gh-tabs-secondary gh-tabs-wrap devtools-subtabs" role="tablist" aria-label="Service sections">
   @for (tab of subTabs; track tab; let i = $index) {
     <button type="button" role="tab" class="gh-tab"
             [id]="'devtools-subtab-' + tab"
@@ -20,6 +20,24 @@
   </div>
 }
 
+@if (subTab === 'gnollhack-wiki') {
+  <div role="tabpanel" id="devtools-subpanel-gnollhack-wiki" aria-labelledby="devtools-subtab-gnollhack-wiki" tabindex="0" class="devtools-subpanel">
+    <app-gnollhack-wiki-dashboard></app-gnollhack-wiki-dashboard>
+  </div>
+}
+
+@if (subTab === 'nethack-wiki') {
+  <div role="tabpanel" id="devtools-subpanel-nethack-wiki" aria-labelledby="devtools-subtab-nethack-wiki" tabindex="0" class="devtools-subpanel">
+    <app-nethack-wiki-dashboard></app-nethack-wiki-dashboard>
+  </div>
+}
+
+@if (subTab === 'knowledge-base') {
+  <div role="tabpanel" id="devtools-subpanel-knowledge-base" aria-labelledby="devtools-subtab-knowledge-base" tabindex="0" class="devtools-subpanel">
+    <app-knowledge-base-dashboard></app-knowledge-base-dashboard>
+  </div>
+}
+
 @if (subTab === 'config-health') {
   <div role="tabpanel" id="devtools-subpanel-config-health" aria-labelledby="devtools-subtab-config-health" tabindex="0" class="devtools-subpanel">
     <app-config-health></app-config-health>
@@ -28,18 +46,20 @@
 
 @if (subTab === 'sentry') {
   <div role="tabpanel" id="devtools-subpanel-sentry" aria-labelledby="devtools-subtab-sentry" tabindex="0" class="devtools-subpanel">
-    <div class="margin-y-20 mt-5">
-      <div class="devtools-button-group">
-        <button class="btn-gh" (click)="triggerFrontendSentryError()">
+    <fieldset class="gh-fieldset devtools-sentry">
+      <legend>Sentry Crash Reporting</legend>
+      <p class="gh-fieldset-hint" id="devtools-sentry-hint">Send deliberate test errors to check that crash reports reach Sentry.</p>
+      <div class="devtools-button-group" role="group" aria-label="Sentry test errors">
+        <button type="button" class="btn-gh" aria-describedby="devtools-sentry-warning" (click)="triggerFrontendSentryError()">
           Test Frontend Error
         </button>
-        <button class="btn-gh" (click)="triggerBackendSentryError()">
+        <button type="button" class="btn-gh" aria-describedby="devtools-sentry-warning" (click)="triggerBackendSentryError()">
           Test Backend Error
         </button>
       </div>
-      <p class="text-muted mt-10 devtools-warning">
+      <p class="text-muted mt-10 devtools-warning" id="devtools-sentry-warning">
         Warning: Clicking these buttons will deliberately throw unhandled exceptions and send real error reports to your configured Sentry project.
       </p>
-    </div>
+    </fieldset>
   </div>
 }

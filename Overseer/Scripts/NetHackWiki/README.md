@@ -105,8 +105,8 @@ python -m unittest discover -s Overseer/Scripts/NetHackWiki -p "test_*.py"
   ```json
   "NetHackWikiPath": "c:\\hmp\\nethackwiki"
   ```
-- **Indexing is startup-only**: `NetHackWikiService` scans this directory and indexes all markdown files into a Lucene.Net RAM index **once, when Overseer starts**. There is no periodic re-indexing timer — NetHackWiki is thousands of static files updated only by a manual regeneration, and repeatedly scanning them would cost CPU and disk I/O for nothing. The two JSON files are not `.md` files and are not indexed.
-- **Restart Overseer after a regeneration**, or none of the new content is indexed and every NetHack wiki tool keeps answering from the previous tree.
+- **Indexing is never automatic**: `NetHackWikiService` scans this directory and indexes all markdown files into a Lucene.Net RAM index **once when Overseer starts, and again only when an administrator clicks Re-index** on Admin → Services → NetHack Wiki. There is no periodic re-indexing timer and no file watcher — NetHackWiki is thousands of static files updated only by a manual regeneration, and repeatedly scanning them would cost CPU and disk I/O for nothing. The two JSON files are not `.md` files and are not indexed; the dashboard reads `_conversion_report.json` to show the last regeneration, and says *Tree regenerated* when the report is newer than the index.
+- **Restart Overseer, or click Re-index on Admin → Services → NetHack Wiki, after a regeneration**, or none of the new content is indexed and every NetHack wiki tool keeps answering from the previous tree. Re-index swaps the new index in when it is complete; the tools answer from the previous one meanwhile.
 
 ---
 

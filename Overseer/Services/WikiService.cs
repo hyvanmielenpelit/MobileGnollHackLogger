@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Lucene.Net.Analysis;
 using Lucene.Net.Analysis.En;
 using Lucene.Net.Documents;
@@ -15,52 +16,88 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System;
+using System.Globalization;
 using System.Text.RegularExpressions;
+using Overseer.Services.CorpusIndexing;
 
 namespace Overseer.Services;
 
 public class WikiService : IDisposable
 {
+    private const string WikiPathKey = "WikiPath";
+
+    /// <summary>How often the timer compares the wiki's Git HEAD with the published index's.</summary>
+    private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(10);
+
+    /// <summary>The most duplicate-title groups a status lists; <see cref="WikiStatusDto.DuplicateTitleCount"/> counts them all.</summary>
+    private const int MaxDuplicateTitleGroups = 100;
+
+    private const string RootCategory = "(root)";
+
     private readonly string _wikiPath;
+    private readonly bool _configured;
     private readonly int _maxFileSizeKB;
     private readonly ILogger<WikiService>? _logger;
+    private readonly CorpusIndexJobRunner _runner;
     private readonly object _swapLock = new();
     private RAMDirectory? _directory;
     private DirectoryReader? _reader;
     private IndexSearcher? _searcher;
     private Analyzer? _analyzer;
     private Timer? _reindexTimer;
-    private string? _lastGitSha;
+
+    /* The statistics of the index the tools read, swapped together with the searcher under
+       _swapLock; null until a pass publishes. Its HeadSha is the HEAD the timer compares with. */
+    private PublishedWikiIndex? _published;
+    private long _generation;
+    private bool _disposed;
+
+    /* UTC ticks of the next timer check; 0 once the timer is gone. */
+    private long _nextCheckAtTicks;
 
     public Task InitializationTask { get; private set; }
     public bool IsIndexingComplete => InitializationTask?.IsCompleted ?? false;
 
     /// <summary>What the index the tools currently read holds; null until the first pass finishes.</summary>
     public CorpusContentFingerprint? ContentFingerprint { get; private set; }
-    
+
+    /// <summary>The id of the most recently started indexing job, running or finished; null before the first.</summary>
+    public string? LastStartedJobId => _runner.LastStartedJobId;
+
     public WikiService(IConfiguration configuration, ILogger<WikiService>? logger = null)
     {
         _logger = logger;
-        _wikiPath = configuration["WikiPath"] ?? "c:\\wiki";
+        string? configuredPath = configuration[WikiPathKey];
+        _configured = !string.IsNullOrWhiteSpace(configuredPath);
+        _wikiPath = configuredPath ?? "c:\\wiki";
         _maxFileSizeKB = int.TryParse(configuration["MaxWikiFileSizeKB"], out var maxFileSize) ? maxFileSize : 100;
+        _runner = new CorpusIndexJobRunner("GnollHack wiki", (ILogger?)logger ?? NullLogger.Instance);
 
-        InitializationTask = Task.Run(() => IndexWikiFiles());
-        
+        // The gate is free, so the startup pass always starts; its task never faults.
+        InitializationTask = _runner.TryStart(CorpusIndexTrigger.Startup, RunPassAsync, out _) ?? Task.CompletedTask;
+
         // Check for Git repository updates every 10 minutes
-        _reindexTimer = new Timer(CheckForUpdates, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
+        SetNextCheck(DateTime.UtcNow + CheckInterval);
+        _reindexTimer = new Timer(CheckForUpdates, null, CheckInterval, CheckInterval);
     }
 
     private void CheckForUpdates(object? state)
     {
+        SetNextCheck(DateTime.UtcNow + CheckInterval);
         try
         {
             if (!System.IO.Directory.Exists(_wikiPath)) return;
 
+            // Compared with the published index's HEAD, so a pass that failed is retried on the
+            // next check rather than at the next commit.
+            string? publishedSha;
+            lock (_swapLock) publishedSha = _published?.Index.HeadSha;
+
             string? currentSha = GitHelper.GetGitHeadSha(_wikiPath);
-            if (!string.IsNullOrEmpty(currentSha) && currentSha != _lastGitSha)
+            if (!string.IsNullOrEmpty(currentSha) && currentSha != publishedSha)
             {
-                _logger?.LogInformation("Wiki repository update detected ({OldSha} -> {NewSha}). Re-indexing.", _lastGitSha, currentSha);
-                Task.Run(() => IndexWikiFiles());
+                _logger?.LogInformation("Wiki repository update detected ({OldSha} -> {NewSha}). Re-indexing.", publishedSha, currentSha);
+                RequestReindex(CorpusIndexTrigger.RepositoryChange);
             }
         }
         catch (Exception ex)
@@ -69,11 +106,117 @@ public class WikiService : IDisposable
         }
     }
 
-    private void IndexWikiFiles()
-    {
-        if (!System.IO.Directory.Exists(_wikiPath)) return;
+    private void SetNextCheck(DateTime nextCheckAtUtc) => Interlocked.Exchange(ref _nextCheckAtTicks, nextCheckAtUtc.Ticks);
 
-        _lastGitSha = GitHelper.GetGitHeadSha(_wikiPath);
+    private DateTime? NextCheckAtUtc
+    {
+        get
+        {
+            long ticks = Interlocked.Read(ref _nextCheckAtTicks);
+            return ticks == 0 ? null : new DateTime(ticks, DateTimeKind.Utc);
+        }
+    }
+
+    /// <summary>
+    /// Starts a pass that reads the wiki folder as it is now, uncommitted edits included.
+    /// <see cref="CorpusIndexStartResult.NotConfigured"/> when there is no folder to read (the key is
+    /// set to a blank value; an unset key reads the built-in default <c>c:\wiki</c>),
+    /// <see cref="CorpusIndexStartResult.PathMissing"/> when the folder does not exist, and otherwise
+    /// the runner's answer: a manual request while a pass runs is
+    /// <see cref="CorpusIndexStartResult.AlreadyRunning"/>, an automatic one queues one follow-up.
+    /// </summary>
+    public CorpusIndexStartResult RequestReindex(CorpusIndexTrigger trigger = CorpusIndexTrigger.Manual)
+    {
+        return RequestReindex(trigger, out _);
+    }
+
+    /// <summary>
+    /// As <see cref="RequestReindex(CorpusIndexTrigger)"/>, also returning through
+    /// <paramref name="completion"/> a task that completes, without faulting, when the started pass
+    /// (or the queued follow-up) has ended; null when no pass was started or queued.
+    /// </summary>
+    public CorpusIndexStartResult RequestReindex(CorpusIndexTrigger trigger, out Task? completion)
+    {
+        completion = null;
+        if (string.IsNullOrWhiteSpace(_wikiPath)) return CorpusIndexStartResult.NotConfigured;
+        if (!System.IO.Directory.Exists(_wikiPath)) return CorpusIndexStartResult.PathMissing;
+
+        completion = _runner.TryStart(trigger, RunPassAsync, out var result);
+        return result;
+    }
+
+    /// <summary>
+    /// The status of the GnollHack wiki index for the admin dashboard. The published statistics are
+    /// read once, so every figure describes the same index; HEAD and branch are read live.
+    /// </summary>
+    public WikiStatusDto GetStatus()
+    {
+        PublishedWikiIndex? published;
+        lock (_swapLock) published = _published;
+
+        string? path = string.IsNullOrWhiteSpace(_wikiPath) ? null : _wikiPath;
+        bool pathExists = path != null && System.IO.Directory.Exists(path);
+        bool isGitRepository = pathExists && System.IO.Directory.Exists(Path.Combine(path!, ".git"));
+        string? currentHeadSha = pathExists ? GitHelper.GetGitHeadSha(path!) : null;
+        string? currentBranch = pathExists ? NullIfEmpty(GitHelper.GetCurrentBranch(path!)) : null;
+        var index = published?.Index;
+
+        return new WikiStatusDto
+        {
+            Kind = CorpusKind.GnollHackWiki,
+            ConfigKey = WikiPathKey,
+            Configured = _configured,
+            Path = path,
+            PathExists = pathExists,
+            IsGitRepository = isGitRepository,
+            IsIndexingComplete = IsIndexingComplete,
+            CurrentHeadSha = currentHeadSha,
+            CurrentBranch = currentBranch,
+            Index = index,
+            UpToDate = index != null && currentHeadSha == index.HeadSha,
+            RefreshMode = CorpusRefreshMode.GitPoll,
+            NextCheckAtUtc = NextCheckAtUtc,
+            CheckIntervalMinutes = (int)CheckInterval.TotalMinutes,
+            CurrentJob = _runner.CurrentJob,
+            RecentJobs = _runner.RecentJobs,
+            ServerTimeUtc = DateTime.UtcNow,
+            Categories = published?.Categories ?? Array.Empty<WikiCategoryDto>(),
+            DuplicateTitles = published?.DuplicateTitles ?? Array.Empty<WikiDuplicateTitleDto>(),
+            DuplicateTitleCount = published?.DuplicateTitleCount ?? 0
+        };
+    }
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    private Task<string?> RunPassAsync(CorpusPassContext context, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(IndexWikiFiles(context, cancellationToken));
+    }
+
+    /// <summary>
+    /// One indexing pass: reads the files, builds a new index and swaps it in with its statistics.
+    /// A file that cannot be read is listed and skipped; the pass goes on. Returns the job message.
+    /// </summary>
+    private string? IndexWikiFiles(CorpusPassContext context, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_wikiPath))
+        {
+            context.Fail($"{WikiPathKey} is not configured.");
+            return null;
+        }
+
+        if (!System.IO.Directory.Exists(_wikiPath))
+        {
+            context.Fail($"The {WikiPathKey} folder does not exist.");
+            return null;
+        }
+
+        var stats = new PassStats();
+        context.SetPhase(CorpusIndexPhase.ReadingFiles);
+
+        // Read before the files, so a commit that lands during the pass gets a pass of its own.
+        string? headSha = GitHelper.GetGitHeadSha(_wikiPath);
+        string? branch = NullIfEmpty(GitHelper.GetCurrentBranch(_wikiPath));
 
         var candidates = System.IO.Directory.GetFiles(_wikiPath, "*.*", SearchOption.AllDirectories)
             .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
@@ -86,84 +229,172 @@ public class WikiService : IDisposable
         var files = candidates.Where(f => !IsUnderDotDirectory(f)).ToList();
         int skippedDotFiles = candidates.Count - files.Count;
         int indexedCount = 0;
+        int filesRead = 0;
         var fingerprint = new CorpusContentFingerprintBuilder();
+        context.ReportFiles(0, files.Count);
 
         // Porter stemming: title and body tokens match across inflections (material/materials).
-        _analyzer = new EnglishAnalyzer(LuceneVersion.LUCENE_48);
+        var analyzer = new EnglishAnalyzer(LuceneVersion.LUCENE_48);
 
         // Build the new index into a fresh directory
         var newDirectory = new RAMDirectory();
-        var config = new IndexWriterConfig(LuceneVersion.LUCENE_48, _analyzer)
+        var config = new IndexWriterConfig(LuceneVersion.LUCENE_48, analyzer)
         {
             Similarity = new BM25Similarity()  // BM25 scoring
         };
-        
+
         using (var writer = new IndexWriter(newDirectory, config))
         {
             foreach (var file in files)
             {
-                var fileInfo = new FileInfo(file);
-                if (fileInfo.Length <= _maxFileSizeKB * 1024)
+                cancellationToken.ThrowIfCancellationRequested();
+                context.ReportFiles(++filesRead, files.Count);
+
+                string relativeFile = GetWikiRelativePath(file);
+                long length;
+                string content;
+                try
                 {
-                    string relativeFile = GetWikiRelativePath(file);
-                    string relativePath = StripFileExtension(relativeFile, Path.GetExtension(file));
+                    var fileInfo = new FileInfo(file);
+                    length = fileInfo.Length;
+                    if (length > _maxFileSizeKB * 1024)
+                    {
+                        stats.SkippedBySize.Add(new SkippedCorpusFileDto(relativeFile, length));
+                        continue;
+                    }
 
-                    string content = File.ReadAllText(file);
-                    fingerprint.Add(relativeFile, content);
-
-                    var doc = new Document();
-                    doc.Add(new TextField("title", Path.GetFileNameWithoutExtension(file), Field.Store.YES));
-                    doc.Add(new TextField("content", content, Field.Store.YES));
-                    doc.Add(new StringField("path", file, Field.Store.YES));
-                    doc.Add(new StringField("filename", Path.GetFileName(file), Field.Store.YES));
-
-                    // The human-facing path form, e.g. "Races/Gnoll": what the article parameter
-                    // and the disambiguation payload name, and the only field an exact path
-                    // lookup can match. relpathlower carries the same value case-folded, because
-                    // a StringField is one exact, case-sensitive term.
-                    doc.Add(new StringField("relpath", relativePath, Field.Store.YES));
-                    doc.Add(new StringField("relpathlower", relativePath.ToLowerInvariant(), Field.Store.NO));
-
-                    // With its extension, e.g. "Races/Gnoll.md": the label every result header
-                    // shows. Displayed only, so it is stored without being indexed.
-                    doc.Add(new StoredField("relfile", relativeFile));
-
-                    // The case-folded, forward-slashed wiki-relative path (with extension) the
-                    // category filter matches, so a lowercase category value still matches a
-                    // capitalized wiki directory.
-                    doc.Add(new StringField("pathlower", relativeFile.ToLowerInvariant().Replace('\\', '/'), Field.Store.NO));
-
-                    writer.AddDocument(doc);
-                    indexedCount++;
+                    content = File.ReadAllText(file);
                 }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Could not read GnollHack wiki file {File}; it is left out of the index.", relativeFile);
+                    stats.FailedFiles.Add(new FailedCorpusFileDto(relativeFile, ex.GetType().Name + ": " + ex.Message));
+                    continue;
+                }
+
+                string relativePath = StripFileExtension(relativeFile, Path.GetExtension(file));
+                string title = Path.GetFileNameWithoutExtension(file);
+
+                fingerprint.Add(relativeFile, content);
+
+                var doc = new Document();
+                doc.Add(new TextField("title", title, Field.Store.YES));
+                doc.Add(new TextField("content", content, Field.Store.YES));
+                doc.Add(new StringField("path", file, Field.Store.YES));
+                doc.Add(new StringField("filename", Path.GetFileName(file), Field.Store.YES));
+
+                // The human-facing path form, e.g. "Races/Gnoll": what the article parameter
+                // and the disambiguation payload name, and the only field an exact path
+                // lookup can match. relpathlower carries the same value case-folded, because
+                // a StringField is one exact, case-sensitive term.
+                doc.Add(new StringField("relpath", relativePath, Field.Store.YES));
+                doc.Add(new StringField("relpathlower", relativePath.ToLowerInvariant(), Field.Store.NO));
+
+                // With its extension, e.g. "Races/Gnoll.md": the label every result header
+                // shows. Displayed only, so it is stored without being indexed.
+                doc.Add(new StoredField("relfile", relativeFile));
+
+                // The case-folded, forward-slashed wiki-relative path (with extension) the
+                // category filter matches, so a lowercase category value still matches a
+                // capitalized wiki directory.
+                doc.Add(new StringField("pathlower", relativeFile.ToLowerInvariant().Replace('\\', '/'), Field.Store.NO));
+
+                writer.AddDocument(doc);
+                indexedCount++;
+                stats.AddIndexed(relativeFile, relativePath, title, length);
             }
+
+            context.SetPhase(CorpusIndexPhase.BuildingIndex);
             writer.Commit();
         }
-        
+
+        cancellationToken.ThrowIfCancellationRequested();
         var newReader = DirectoryReader.Open(newDirectory);
         var newSearcher = new IndexSearcher(newReader)
         {
             Similarity = new BM25Similarity()
         };
-        
+
+        context.SetPhase(CorpusIndexPhase.Publishing);
+        var categories = stats.BuildCategories();
+        var duplicateTitles = stats.BuildDuplicateTitles();
+        var skippedBySize = stats.SkippedBySize
+            .OrderByDescending(f => f.Bytes)
+            .ThenBy(f => f.Path, StringComparer.Ordinal)
+            .ToList();
+        var failedFiles = stats.FailedFiles
+            .OrderBy(f => f.Path, StringComparer.Ordinal)
+            .ToList();
+
         // Hot-swap: atomically replace the old index, then dispose of the old one
         RAMDirectory? oldDirectory;
         DirectoryReader? oldReader;
+        bool disposed;
         lock (_swapLock)
         {
-            oldDirectory = _directory;
-            oldReader = _reader;
-            _directory = newDirectory;
-            _reader = newReader;
-            _searcher = newSearcher;
-            ContentFingerprint = fingerprint.Build();
+            disposed = _disposed;
+            if (disposed)
+            {
+                oldDirectory = newDirectory;
+                oldReader = newReader;
+            }
+            else
+            {
+                oldDirectory = _directory;
+                oldReader = _reader;
+                _directory = newDirectory;
+                _reader = newReader;
+                _searcher = newSearcher;
+                _analyzer = analyzer;
+                var contentFingerprint = fingerprint.Build();
+                ContentFingerprint = contentFingerprint;
+
+                // The statistics swap with the searcher, so a status never pairs one index's
+                // figures with another index's fingerprint.
+                _published = new PublishedWikiIndex(
+                    new CorpusIndexInfoDto
+                    {
+                        Generation = ++_generation,
+                        HeadSha = headSha,
+                        Branch = branch,
+                        IndexedAtUtc = contentFingerprint.IndexedAtUtc,
+                        DurationMs = stats.Stopwatch.ElapsedMilliseconds,
+                        FileCount = indexedCount,
+                        TotalBytes = stats.TotalBytes,
+                        FingerprintShort = contentFingerprint.Sha256.Substring(0, Math.Min(CorpusIndexLimits.FingerprintShortLength, contentFingerprint.Sha256.Length)),
+                        MaxFileSizeKB = _maxFileSizeKB,
+                        SkippedBySize = skippedBySize.Take(CorpusIndexLimits.MaxListedFiles).ToList(),
+                        SkippedBySizeCount = skippedBySize.Count,
+                        SkippedDotDirectories = skippedDotFiles,
+                        FailedFiles = failedFiles.Take(CorpusIndexLimits.MaxListedFiles).ToList(),
+                        FailedFileCount = failedFiles.Count
+                    },
+                    categories,
+                    duplicateTitles.Take(MaxDuplicateTitleGroups).ToList(),
+                    duplicateTitles.Count);
+            }
         }
-        
+
         // Dispose old resources OUTSIDE the lock to avoid blocking queries
         oldReader?.Dispose();
         oldDirectory?.Dispose();
 
-        _logger?.LogInformation("Indexed {Count} GnollHack wiki articles, skipped {SkippedCount} file(s) under dot-directories.", indexedCount, skippedDotFiles);
+        // Dispose cancels the token before it marks the service disposed.
+        if (disposed) throw new OperationCanceledException(cancellationToken);
+
+        _logger?.LogInformation("Indexed {Count} GnollHack wiki articles, skipped {SkippedCount} file(s) under dot-directories, {OversizeCount} over the size limit and {FailedCount} unreadable.",
+            indexedCount, skippedDotFiles, skippedBySize.Count, failedFiles.Count);
+
+        return BuildJobMessage(indexedCount, skippedBySize.Count, failedFiles.Count);
+    }
+
+    /// <summary>The job message, such as <c>2,512 articles, 3 unreadable</c>.</summary>
+    private static string BuildJobMessage(int articles, int oversize, int unreadable)
+    {
+        var message = string.Format(CultureInfo.InvariantCulture, articles == 1 ? "{0:N0} article" : "{0:N0} articles", articles);
+        if (oversize > 0) message += string.Format(CultureInfo.InvariantCulture, ", {0:N0} over the size limit", oversize);
+        if (unreadable > 0) message += string.Format(CultureInfo.InvariantCulture, ", {0:N0} unreadable", unreadable);
+        return message;
     }
 
     /// <summary>
@@ -753,9 +984,111 @@ public class WikiService : IDisposable
 
     public void Dispose()
     {
-        _reader?.Dispose();
-        _directory?.Dispose();
         _reindexTimer?.Dispose();
         _reindexTimer = null;
+        Interlocked.Exchange(ref _nextCheckAtTicks, 0);
+
+        // Cancels a running pass and waits for it, so no pass publishes into a disposed service.
+        _runner.Dispose();
+
+        RAMDirectory? directory;
+        DirectoryReader? reader;
+        lock (_swapLock)
+        {
+            _disposed = true;
+            directory = _directory;
+            reader = _reader;
+            _directory = null;
+            _reader = null;
+            _searcher = null;
+        }
+
+        reader?.Dispose();
+        directory?.Dispose();
+    }
+
+    /// <summary>The statistics of one published index, swapped in with its searcher.</summary>
+    private sealed record PublishedWikiIndex(
+        CorpusIndexInfoDto Index,
+        IReadOnlyList<WikiCategoryDto> Categories,
+        IReadOnlyList<WikiDuplicateTitleDto> DuplicateTitles,
+        int DuplicateTitleCount);
+
+    /// <summary>What one pass counts while it reads the files.</summary>
+    private sealed class PassStats
+    {
+        private readonly Dictionary<string, (int Articles, long Bytes)> _categories = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, (string Title, List<string> Paths)> _titles = new(StringComparer.OrdinalIgnoreCase);
+
+        public System.Diagnostics.Stopwatch Stopwatch { get; } = System.Diagnostics.Stopwatch.StartNew();
+        public long TotalBytes { get; private set; }
+        public List<SkippedCorpusFileDto> SkippedBySize { get; } = new();
+        public List<FailedCorpusFileDto> FailedFiles { get; } = new();
+
+        /// <param name="relativeFile">The wiki-relative path with its extension, e.g. <c>Races/Gnoll.md</c>.</param>
+        /// <param name="relativePath">The path form, e.g. <c>Races/Gnoll</c>.</param>
+        /// <param name="title">The indexed title, the file name without its extension.</param>
+        public void AddIndexed(string relativeFile, string relativePath, string title, long bytes)
+        {
+            TotalBytes += bytes;
+
+            int slash = relativeFile.IndexOf('/');
+            string category = slash > 0 ? relativeFile.Substring(0, slash) : RootCategory;
+            _categories.TryGetValue(category, out var counts);
+            _categories[category] = (counts.Articles + 1, counts.Bytes + bytes);
+
+            // The key wiki_view's disambiguation compares a request with: the normalized title,
+            // case-insensitively.
+            string titleKey = NormalizeArticleName(title);
+            if (!_titles.TryGetValue(titleKey, out var group))
+            {
+                group = (title, new List<string>());
+                _titles[titleKey] = group;
+            }
+            group.Paths.Add(relativePath);
+        }
+
+        /// <summary>One entry per top-level directory, <c>(root)</c> for files at the root; most articles first.</summary>
+        public List<WikiCategoryDto> BuildCategories()
+        {
+            return _categories
+                .Select(entry => new WikiCategoryDto(entry.Key, entry.Value.Articles, entry.Value.Bytes))
+                .OrderByDescending(c => c.Articles)
+                .ThenBy(c => c.Category, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        /// <summary>Every title two or more indexed files share, by title; each group's paths sorted.</summary>
+        public List<WikiDuplicateTitleDto> BuildDuplicateTitles()
+        {
+            return _titles.Values
+                .Where(group => group.Paths.Count > 1)
+                .Select(group => new WikiDuplicateTitleDto(
+                    group.Title,
+                    group.Paths.OrderBy(p => p, StringComparer.Ordinal).ToList()))
+                .OrderBy(d => d.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
     }
 }
+
+/// <summary>The GnollHack wiki's index status, with the wiki's own breakdowns.</summary>
+public sealed class WikiStatusDto : CorpusIndexStatusDto
+{
+    /// <summary>Indexed articles per top-level directory, <c>(root)</c> for files at the root; most articles first.</summary>
+    public IReadOnlyList<WikiCategoryDto> Categories { get; init; } = Array.Empty<WikiCategoryDto>();
+
+    /// <summary>
+    /// Titles that two or more indexed articles share, which <c>wiki_view</c> answers with a
+    /// disambiguation list; at most 100 groups, <see cref="DuplicateTitleCount"/> is the full count.
+    /// </summary>
+    public IReadOnlyList<WikiDuplicateTitleDto> DuplicateTitles { get; init; } = Array.Empty<WikiDuplicateTitleDto>();
+
+    public int DuplicateTitleCount { get; init; }
+}
+
+/// <summary>One top-level wiki directory: its indexed articles and their size on disk.</summary>
+public sealed record WikiCategoryDto(string Category, int Articles, long Bytes);
+
+/// <summary>A title shared by several indexed articles, with each article's path form, e.g. <c>Races/Gnoll</c>.</summary>
+public sealed record WikiDuplicateTitleDto(string Title, IReadOnlyList<string> Paths);

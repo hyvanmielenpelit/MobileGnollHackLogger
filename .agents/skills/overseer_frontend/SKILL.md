@@ -116,6 +116,19 @@ Harness-neutral, and the floor for any Overseer frontend work.
   `-severity`, `-item-title`, `-item-detail`, `-item-actions` and `.gh-readiness-ack`. Every severity is
   a word and a glyph, never a color alone, and forced-colors mode keeps the borders and words. Contract:
   [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) § 4i.
+- **`.gh-dash-*`** (since 2026-10-18) — the layout of the Services tab's four dashboards (GnollHack
+  Source, GnollHack Wiki, NetHack Wiki, Knowledge Base), global in `styles.scss`'s *Dashboards
+  (Services tab)* block right after the `.gh-health-*` status block; the block's header comment lists
+  every class. `.gh-dash-root` is the `devtools-dash` inline-size container and `.gh-dash-grid` its
+  cards, one column below 40rem and two from 40rem (`.gh-dash-wide` spans both); `.gh-dash-card` /
+  `-card-head`, `.gh-dash-banner[data-status]` with `-banner-word` and `-banner-sentence`,
+  `.gh-dash-actions`, `.gh-dash-load-error`, `.gh-dash-facts`; `.gh-dash-table-wrap` (a focusable
+  `role="region"` with a sticky header) around a `.gh-dash-table`, which stacks into labeled blocks
+  (`data-label`) below 36rem of the wrap; the `aria-hidden` share bar `.gh-dash-bar` (`--gh-dash-share`);
+  `.gh-dash-pre` (plain text, collapsed to 24rem, `.is-expanded`), `.gh-dash-muted`, `.gh-dash-mono`
+  and `.gh-dash-note`. Colors are the `--gh-dash-*` tokens; forced-colors mode keeps the banner edge
+  and the bars. A dashboard's own SCSS holds only what no other dashboard uses (the Source
+  dashboard's `sd-progress*`, `sd-job-*` and the like). Never copied into a component.
 - **Account management** (since 2026-10-13) — global in `styles.scss`, shared by the Users tab's cards,
   its account action dialogs, the Bulk Actions wizard and the Admin log; never copied into a component:
   - **`.gh-account-badges`** / **`.gh-account-badge`** with `[data-tone]` `ok`, `info`, `warning` or
@@ -389,7 +402,7 @@ The Angular application's routes are defined in `app.routes.ts`. The primary pag
   rendered inside the Settings page, with no page chrome of their own.
 - `/admin`, `/admin/:tab` and `/admin/:tab/:subtab` (`admin.component`): System administration
   (groups, configs, rate limits). Tabs, in order: Users, System Configs, Database, AI Telemetry,
-  Security, GnollBench, Developer Tools. *Groups* is a sub-tab of Users (*Users · Groups · Deletion
+  Security, GnollBench, Services. *Groups* is a sub-tab of Users (*Users · Groups · Deletion
   requests · Admin log*); **API Keys** (`app-admin-api-keys`, the per-provider default keys) is a
   dialog of System Configs at `/admin/configs/api-keys`. One route with `matcher: adminUrlMatcher`
   serves all three shapes, so a tab change reuses the page; the slugs, the legacy `?tab=` redirect
@@ -414,12 +427,19 @@ To find specific popups, look in the corresponding component's `.html` template:
   the Users tab's *Groups* sub-panel), and `AdminPageStore` (`admin-page.store.ts`) holds what the tabs
   share or keep across a tab switch. The address sets the selection: the shell applies it through
   `store.applyLocation`, and a tab moves it with `store.goTo(tab, subTab, 'push' | 'replace')`.
-  Developer Tools has three sub-tabs: *GnollHack Source* (`devtools-tab/source-dashboard/`, the
-  source index and makedefs status with **Re-index Source Files**, **Build makedefs** and live
-  progress, polled from `api/admin/devtools/source/status` through `services/admin-devtools.service.ts`),
-  *Configuration Health* (`devtools-tab/config-health/`, the configuration report with its
-  *Problems* / *All checks* filter) and *Sentry Crash Reporting*. Both dashboards use the global
-  `.gh-health-*` status classes in `styles.scss`. Dialogs, by the component that holds them:
+  The **Services** tab (address slug `services`; the code id stays `devtools`, as do `devtools-tab/`,
+  `AdminDevtoolsSubTab`, the DOM ids and the API route `api/admin/devtools`) has six sub-tabs:
+  *GnollHack Source* (`devtools-tab/source-dashboard/`, the source index and makedefs status with
+  **Re-index Source Files**, **Build makedefs** and live progress, polled from
+  `api/admin/devtools/source/status` through `services/admin-devtools.service.ts`), *GnollHack Wiki*
+  (`devtools-tab/gnollhack-wiki-dashboard/`), *NetHack Wiki* (`devtools-tab/nethack-wiki-dashboard/`)
+  and *Knowledge Base* (`devtools-tab/knowledge-base-dashboard/`) — the three corpus dashboards, built
+  from the shared parts in `devtools-tab/shared/` and described in `docs/overseer/corpus-dashboards.md`
+  — then *Configuration Health* (`devtools-tab/config-health/`, the configuration report with its
+  *Problems* / *All checks* filter) and *Developer Tools* (code id `sentry`, slug `developer-tools`:
+  the Sentry test buttons in a *Sentry Crash Reporting* fieldset). The dashboards use the global
+  `.gh-health-*` status classes and the `.gh-dash-*` layout classes in `styles.scss`, and poll
+  through the shared `DashboardPoller`. Dialogs, by the component that holds them:
   - `#manageGroupsDialog`: *Manage Groups for {user}* (`users-tab/user-list/`), in the benchmark dialog
     frame at 36rem (not full height), one switch card per group, **Done** (`btn-gh-cancel`)
   - `#createGroupDialog`: Create Group (`groups-tab/`)
@@ -470,6 +490,13 @@ To find specific popups, look in the corresponding component's `.html` template:
     or by the `resolveConfig={id}` query parameter (`/admin/configs?resolveConfig={id}`, the chat
     composer's **Open System Configs**). Its **Delete…** emits `deleteRequested`, which starts the
     tab's own delete flow. See the shared component below.
+  - `app-reindex-confirm-dialog` (`devtools-tab/shared/reindex-confirm-dialog/`): *A GnollBench run is
+    executing*, a native `dialog.gh-dialog` opened with `showModal()` when a corpus Re-index answers 409
+    `benchmarkRunActive`; **Cancel** (focused first) and **Re-index anyway**, which resends the request
+    acknowledged.
+  - The Knowledge Base dashboard's article preview (`devtools-tab/knowledge-base-dashboard/`): a
+    `dialog.gh-dialog` headed by the topic, showing the article's raw source in a `pre.gh-dash-pre` with
+    a full-text copy button and a close button named *Close article preview*.
   - Not a dialog: the **Database** tab's report chart files (`database-tab/`). A stat box *Report Chart Files* after
     *Disk Attachments* reads *N documents · M files · X MB*, or *Not configured
     (Benchmark:ReportPack:ChartsDataLocation)*, and is absent when an older server sends no

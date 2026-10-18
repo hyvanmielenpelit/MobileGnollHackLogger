@@ -4,14 +4,19 @@ import { AdminDevtoolsSubTab, AdminHistoryMode, AdminPageStore } from '../admin-
 import { rovingTabIndex } from '../../utils/roving-tab.util';
 import { SourceDashboardComponent } from './source-dashboard/source-dashboard.component';
 import { ConfigHealthComponent } from './config-health/config-health.component';
+import { GnollHackWikiDashboardComponent } from './gnollhack-wiki-dashboard/gnollhack-wiki-dashboard.component';
+import { NetHackWikiDashboardComponent } from './nethack-wiki-dashboard/nethack-wiki-dashboard.component';
+import { KnowledgeBaseDashboardComponent } from './knowledge-base-dashboard/knowledge-base-dashboard.component';
 
 /**
- * The Admin page's Developer Tools tab, in three sub-tabs: the GnollHack source and its index, the
- * configuration health checks, and deliberate frontend and backend errors for testing Sentry.
+ * The Admin page's Services tab, in six sub-tabs: the GnollHack source, the GnollHack wiki, the
+ * NetHack wiki and the knowledge base with their indexes; the configuration health checks; and
+ * developer tools (deliberate frontend and backend errors for testing Sentry).
  */
 @Component({
   selector: 'app-admin-devtools-tab',
-  imports: [SourceDashboardComponent, ConfigHealthComponent],
+  imports: [SourceDashboardComponent, GnollHackWikiDashboardComponent, NetHackWikiDashboardComponent,
+    KnowledgeBaseDashboardComponent, ConfigHealthComponent],
   templateUrl: './admin-devtools-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
   styleUrl: './admin-devtools-tab.component.scss'
@@ -21,13 +26,17 @@ export class AdminDevtoolsTabComponent {
   private store = inject(AdminPageStore);
 
   /** The sub-tabs, in display order. */
-  readonly subTabs: readonly AdminDevtoolsSubTab[] = ['source', 'config-health', 'sentry'];
+  readonly subTabs: readonly AdminDevtoolsSubTab[] =
+    ['source', 'gnollhack-wiki', 'nethack-wiki', 'knowledge-base', 'config-health', 'sentry'];
 
   /** Each sub-tab's visible label. */
   readonly subTabLabels: Readonly<Record<AdminDevtoolsSubTab, string>> = {
     'source': 'GnollHack Source',
+    'gnollhack-wiki': 'GnollHack Wiki',
+    'nethack-wiki': 'NetHack Wiki',
+    'knowledge-base': 'Knowledge Base',
     'config-health': 'Configuration Health',
-    'sentry': 'Sentry Crash Reporting'
+    'sentry': 'Developer Tools'
   };
 
   /** The selected sub-tab, which the Admin page sets in the page store from the address. */

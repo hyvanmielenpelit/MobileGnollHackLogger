@@ -22,9 +22,9 @@
   <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
 </ng-template>
 
-<div class="sd-root">
+<div class="gh-dash-root">
   @if (loadError) {
-    <div class="sd-load-error">
+    <div class="gh-dash-load-error">
       <p class="gh-field-error" id="sd-load-error" role="alert">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
         <span>{{ loadError }}</span>
@@ -44,12 +44,12 @@
     <section class="sd-head" aria-labelledby="sd-head-title">
       <h4 class="visually-hidden" id="sd-head-title">GnollHack source status</h4>
       @if (b) {
-        <div class="sd-banner" [attr.data-status]="b.status" role="status">
-          <span class="gh-health-status sd-banner-word" [attr.data-status]="b.status">
+        <div class="gh-dash-banner" [attr.data-status]="b.status" role="status">
+          <span class="gh-health-status gh-dash-banner-word" [attr.data-status]="b.status">
             <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: b.status }" />
             {{ b.word }}
           </span>
-          <span class="sd-banner-sentence">{{ b.sentence }}</span>
+          <span class="gh-dash-banner-sentence">{{ b.sentence }}</span>
         </div>
       }
 
@@ -102,8 +102,8 @@
 
     <!-- 3. Progress card -->
     @if (progressJob; as job) {
-      <section class="sd-card sd-progress" aria-labelledby="sd-progress-title">
-        <div class="sd-card-head">
+      <section class="gh-dash-card sd-progress" aria-labelledby="sd-progress-title">
+        <div class="gh-dash-card-head">
           <h4 class="gh-section-title" id="sd-progress-title">{{ jobTitle(job) }}</h4>
           @if (job.outcome !== 'Running') {
             <span class="gh-health-status" [attr.data-status]="outcomeStatus(job.outcome)">
@@ -185,7 +185,7 @@
               @if (job.outputTail?.length) {
                 <pre class="sd-output-text">{{ outputText(job.outputTail) }}</pre>
               } @else {
-                <p class="sd-muted">No output yet.</p>
+                <p class="gh-dash-muted">No output yet.</p>
               }
             </div>
           </details>
@@ -193,9 +193,9 @@
       </section>
     }
 
-    <div class="sd-grid">
+    <div class="gh-dash-grid">
       <!-- 4. Key figures -->
-      <section class="sd-card sd-wide" aria-labelledby="sd-figures-title">
+      <section class="gh-dash-card gh-dash-wide" aria-labelledby="sd-figures-title">
         <h4 class="gh-section-title" id="sd-figures-title">Key figures</h4>
         @if (s.index; as index) {
           <dl class="gh-health-summary sd-figures">
@@ -229,13 +229,13 @@
             <div class="gh-health-tile">
               <dt>Indexed commit</dt>
               <dd>
-                <code class="sd-mono">{{ shortSha(index.headSha) }}</code>
+                <code class="gh-dash-mono">{{ shortSha(index.headSha) }}</code>
                 @if (index.branch) {
                   <span class="gh-health-tile-note">{{ index.branch }}</span>
                 }
                 @if (s.currentHeadSha && s.currentHeadSha !== index.headSha) {
                   <span class="gh-health-tile-note">
-                    Current HEAD <code class="sd-mono">{{ shortSha(s.currentHeadSha) }}</code>
+                    Current HEAD <code class="gh-dash-mono">{{ shortSha(s.currentHeadSha) }}</code>
                     @if (s.currentBranch) {
                       <span>on {{ s.currentBranch }}</span>
                     }
@@ -256,19 +256,19 @@
             </div>
           </dl>
         } @else {
-          <p class="sd-muted">No index has been published yet.</p>
+          <p class="gh-dash-muted">No index has been published yet.</p>
         }
         @if (s.sourcePath) {
-          <p class="sd-path">Source folder: <code class="sd-mono">{{ s.sourcePath }}</code></p>
+          <p class="sd-path">Source folder: <code class="gh-dash-mono">{{ s.sourcePath }}</code></p>
         }
       </section>
 
       <!-- 5. Generated headers -->
-      <section class="sd-card" aria-labelledby="sd-headers-title">
+      <section class="gh-dash-card" aria-labelledby="sd-headers-title">
         <h4 class="gh-section-title" id="sd-headers-title">Generated headers</h4>
         @if (s.generatedHeaders.length) {
-          <div class="sd-table-wrap" role="region" aria-labelledby="sd-headers-title" tabindex="0">
-            <table class="sd-table">
+          <div class="gh-dash-table-wrap" role="region" aria-labelledby="sd-headers-title" tabindex="0">
+            <table class="gh-dash-table">
               <caption class="visually-hidden">Headers makedefs generates</caption>
               <thead>
                 <tr><th scope="col">Header</th><th scope="col">On disk</th><th scope="col">Modified</th><th scope="col">In index</th></tr>
@@ -276,21 +276,21 @@
               <tbody>
                 @for (header of s.generatedHeaders; track header.name) {
                   <tr>
-                    <th scope="row"><code class="sd-mono">{{ header.name }}</code></th>
-                    <td>
+                    <th scope="row"><code class="gh-dash-mono">{{ header.name }}</code></th>
+                    <td data-label="On disk">
                       <span class="gh-health-status" [attr.data-status]="header.exists ? 'ok' : 'error'">
                         <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: header.exists ? 'ok' : 'error' }" />
                         {{ header.exists ? 'Present' : 'Missing' }}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Modified">
                       @if (header.lastWriteUtc) {
                         <time [attr.datetime]="isoDateTime(header.lastWriteUtc)">{{ formatDateTime(header.lastWriteUtc) }}</time>
                       } @else {
                         —
                       }
                     </td>
-                    <td>
+                    <td data-label="In index">
                       <span class="gh-health-status" [attr.data-status]="header.inIndex ? 'ok' : 'warning'">
                         <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: header.inIndex ? 'ok' : 'warning' }" />
                         {{ header.inIndex ? 'Indexed' : 'Not indexed' }}
@@ -302,20 +302,20 @@
             </table>
           </div>
         } @else {
-          <p class="sd-muted">No generated headers are reported.</p>
+          <p class="gh-dash-muted">No generated headers are reported.</p>
         }
       </section>
 
       <!-- 6. makedefs -->
-      <section class="sd-card" aria-labelledby="sd-makedefs-title">
+      <section class="gh-dash-card" aria-labelledby="sd-makedefs-title">
         <h4 class="gh-section-title" id="sd-makedefs-title">makedefs</h4>
         @if (s.makedefs; as m) {
-          <dl class="sd-facts">
+          <dl class="gh-dash-facts">
             <div>
               <dt>Build command</dt>
               <dd>
                 @if (m.buildCommand) {
-                  <code class="sd-mono">{{ m.buildCommand }}</code>
+                  <code class="gh-dash-mono">{{ m.buildCommand }}</code>
                 } @else {
                   Not set
                 }
@@ -334,7 +334,7 @@
               <dt>Executable</dt>
               <dd>
                 @if (m.executablePath) {
-                  <code class="sd-mono">{{ m.executablePath }}</code>
+                  <code class="gh-dash-mono">{{ m.executablePath }}</code>
                 }
                 <span class="gh-health-status" [attr.data-status]="m.executableExists ? 'ok' : 'warning'">
                   <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: m.executableExists ? 'ok' : 'warning' }" />
@@ -371,7 +371,7 @@
                 @if (m.lastBuildAtUtc) {
                   <time [attr.datetime]="isoDateTime(m.lastBuildAtUtc)">{{ formatDateTime(m.lastBuildAtUtc) }}</time>
                   @if (m.lastBuildDurationMs !== null) {
-                    <span class="sd-muted">({{ formatDuration(m.lastBuildDurationMs) }})</span>
+                    <span class="gh-dash-muted">({{ formatDuration(m.lastBuildDurationMs) }})</span>
                   }
                 }
                 <span class="gh-health-status" [attr.data-status]="makedefsOutcomeStatus(m.lastOutcome)">
@@ -401,19 +401,19 @@
             </details>
           }
         } @else {
-          <p class="sd-muted">makedefs state is not reported.</p>
+          <p class="gh-dash-muted">makedefs state is not reported.</p>
         }
       </section>
 
       <!-- 7. Excluded by size -->
       @if (s.index; as index) {
-        <section class="sd-card" aria-labelledby="sd-excluded-title">
+        <section class="gh-dash-card" aria-labelledby="sd-excluded-title">
           <h4 class="gh-section-title" id="sd-excluded-title">Excluded files</h4>
           <details class="gh-disclosure sd-excluded">
             <summary>Excluded by size ({{ formatNumber(index.skippedBySize.length) }})</summary>
             <div class="gh-disclosure-body">
-              <p class="sd-note">
-                Files over {{ formatNumber(index.maxFileSizeKB) }} KB (<code class="sd-mono">MaxSourceFileSizeKB</code>)
+              <p class="gh-dash-note">
+                Files over {{ formatNumber(index.maxFileSizeKB) }} KB (<code class="gh-dash-mono">MaxSourceFileSizeKB</code>)
                 are not indexed.
                 @if (index.skippedExcludedDirectories > 0) {
                   {{ formatNumber(index.skippedExcludedDirectories) }} files in excluded folders were skipped as well.
@@ -422,11 +422,11 @@
               @if (index.skippedBySize.length) {
                 <ul class="sd-excluded-list">
                   @for (file of index.skippedBySize; track file.path) {
-                    <li><code class="sd-mono">{{ file.path }}</code> <span class="sd-muted">{{ formatBytes(file.bytes) }}</span></li>
+                    <li><code class="gh-dash-mono">{{ file.path }}</code> <span class="gh-dash-muted">{{ formatBytes(file.bytes) }}</span></li>
                   }
                 </ul>
               } @else {
-                <p class="sd-muted">No file was excluded by size.</p>
+                <p class="gh-dash-muted">No file was excluded by size.</p>
               }
             </div>
           </details>
@@ -435,9 +435,9 @@
 
       <!-- 9. NetHack source -->
       @if (netHack; as n) {
-        <section class="sd-card" aria-labelledby="sd-nethack-title">
+        <section class="gh-dash-card" aria-labelledby="sd-nethack-title">
           <h4 class="gh-section-title" id="sd-nethack-title">NetHack source</h4>
-          <dl class="sd-facts">
+          <dl class="gh-dash-facts">
             <div>
               <dt>Configured</dt>
               <dd>
@@ -476,9 +476,9 @@
               <dt>Commit</dt>
               <dd>
                 @if (n.index?.headSha) {
-                  <code class="sd-mono">{{ shortSha(n.index!.headSha) }}</code>
+                  <code class="gh-dash-mono">{{ shortSha(n.index!.headSha) }}</code>
                   @if (n.index!.branch) {
-                    <span class="sd-muted">{{ n.index!.branch }}</span>
+                    <span class="gh-dash-muted">{{ n.index!.branch }}</span>
                   }
                 } @else {
                   —
@@ -490,11 +490,11 @@
       }
 
       <!-- 8. Recent activity -->
-      <section class="sd-card sd-wide" aria-labelledby="sd-recent-title">
+      <section class="gh-dash-card gh-dash-wide" aria-labelledby="sd-recent-title">
         <h4 class="gh-section-title" id="sd-recent-title">Recent activity</h4>
         @if (s.recentJobs.length) {
-          <div class="sd-table-wrap" role="region" aria-labelledby="sd-recent-title" tabindex="0">
-            <table class="sd-table sd-recent">
+          <div class="gh-dash-table-wrap" role="region" aria-labelledby="sd-recent-title" tabindex="0">
+            <table class="gh-dash-table sd-recent">
               <caption class="visually-hidden">Recent source jobs</caption>
               <thead>
                 <tr>
@@ -505,24 +505,24 @@
               <tbody>
                 @for (job of recentJobs(s); track job.id) {
                   <tr>
-                    <td><time [attr.datetime]="isoDateTime(job.startedAtUtc)">{{ formatDateTime(job.startedAtUtc) }}</time></td>
-                    <td>{{ triggerLabel(job.trigger) }}</td>
-                    <td>{{ kindLabel(job.kind) }}</td>
-                    <td>{{ formatDuration(elapsedMs(job)) }}</td>
-                    <td>
+                    <td data-label="When"><time [attr.datetime]="isoDateTime(job.startedAtUtc)">{{ formatDateTime(job.startedAtUtc) }}</time></td>
+                    <td data-label="Trigger">{{ triggerLabel(job.trigger) }}</td>
+                    <td data-label="Kind">{{ kindLabel(job.kind) }}</td>
+                    <td data-label="Duration">{{ formatDuration(elapsedMs(job)) }}</td>
+                    <td data-label="Outcome">
                       <span class="gh-health-status" [attr.data-status]="outcomeStatus(job.outcome)">
                         <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: outcomeStatus(job.outcome) }" />
                         {{ outcomeWord(job.outcome) }}
                       </span>
                     </td>
-                    <td class="sd-message-cell">{{ job.message || '' }}</td>
+                    <td class="sd-message-cell" data-label="Message">{{ job.message || '' }}</td>
                   </tr>
                 }
               </tbody>
             </table>
           </div>
         } @else {
-          <p class="sd-muted">No source job has finished since the server started.</p>
+          <p class="gh-dash-muted">No source job has finished since the server started.</p>
         }
       </section>
     </div>

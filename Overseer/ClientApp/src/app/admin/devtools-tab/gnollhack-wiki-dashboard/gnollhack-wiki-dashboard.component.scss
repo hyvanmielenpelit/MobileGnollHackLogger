@@ -1,0 +1,52 @@
+// The GnollHack Wiki dashboard. Layout, cards, tables and share bars are the global .gh-dash-*
+// classes; this file holds the categories' share column and the duplicate-title lists.
+
+:host {
+  display: block;
+  min-inline-size: 0;
+}
+
+.gw-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.gw-share {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-inline-size: 8rem;
+
+  .gh-dash-bar {
+    flex: 1 1 auto;
+  }
+}
+
+.gw-share-text {
+  flex: 0 0 auto;
+  min-inline-size: 3.5rem;
+  text-align: end;
+}
+
+.gw-duplicates {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.gw-duplicate-count {
+  display: inline;
+  font-size: var(--text-secondary);
+}
+
+.gw-path-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  font-size: var(--text-secondary);
+}
+
+.gw-more {
+  font-size: var(--text-secondary);
+}

@@ -60,7 +60,7 @@ export class AdminComponent implements OnInit, OnDestroy {
     { id: 'telemetry', label: 'AI Telemetry' },
     { id: 'security',  label: 'Security' },
     { id: 'benchmark', label: 'GnollBench' },
-    { id: 'devtools',  label: 'Developer Tools' }
+    { id: 'devtools',  label: 'Services' }
   ];
   loading = false;
 

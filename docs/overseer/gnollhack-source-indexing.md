@@ -146,7 +146,7 @@ environment fact, not a finding about the model (`server_benchmark_tool_diagnost
 
 ## 6. The GnollHack Source dashboard
 
-Admin → **Developer Tools** → **GnollHack Source** (`/admin/devtools`) polls
+Admin → **Services** → **GnollHack Source** (`/admin/services`) polls
 `GET api/admin/devtools/source/status` every second while a job runs and every 15 seconds otherwise,
 and pauses while the browser tab is hidden. It shows:
 
@@ -184,7 +184,7 @@ and pauses while the browser tab is hidden. It shows:
 All are `AdminOnly`. The build command and the paths are shown; they are not secrets.
 
 **Alerts.** `source-code-path-missing` (warning) while `SourceCodePath` is not set, and
-`gnollhack-makedefs-failed` (error, **Open GnollHack Source** → `/admin/devtools`) when the last
+`gnollhack-makedefs-failed` (error, **Open GnollHack Source** → `/admin/services`) when the last
 makedefs outcome is `BuildFailed` or `RunFailed` **and** a generated header is missing. A failure over
 headers still on disk raises no alert, since the index still has the constants; the dashboard and
 Configuration Health (*GnollHack source build*) still show it.

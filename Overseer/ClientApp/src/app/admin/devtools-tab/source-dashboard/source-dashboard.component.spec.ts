@@ -104,7 +104,7 @@ describe('SourceDashboardComponent', () => {
   it('renders the idle state from a status fixture', () => {
     start();
 
-    const banner = el.querySelector('.sd-banner') as HTMLElement;
+    const banner = el.querySelector('.gh-dash-banner') as HTMLElement;
     expect(banner.getAttribute('role')).toBe('status');
     expect(banner.getAttribute('data-status')).toBe('ok');
     expect(banner.textContent).toContain('Ready');
@@ -125,7 +125,7 @@ describe('SourceDashboardComponent', () => {
     current = dashboard({ currentJob: job() });
     start();
 
-    const banner = el.querySelector('.sd-banner') as HTMLElement;
+    const banner = el.querySelector('.gh-dash-banner') as HTMLElement;
     expect(banner.getAttribute('data-status')).toBe('running');
     expect(banner.textContent).toContain('Indexing');
 
@@ -242,7 +242,7 @@ describe('SourceDashboardComponent', () => {
     statusSpy.mockImplementation(() => throwError(() => new HttpErrorResponse({ status: 500 })));
     start();
     expect(statusSpy).toHaveBeenCalledTimes(1);
-    expect(el.querySelector('.sd-load-error')?.textContent).toContain('could not be loaded');
+    expect(el.querySelector('.gh-dash-load-error')?.textContent).toContain('could not be loaded');
 
     vi.advanceTimersByTime(4999);
     expect(statusSpy).toHaveBeenCalledTimes(1);
@@ -265,8 +265,8 @@ describe('SourceDashboardComponent', () => {
     vi.advanceTimersByTime(0);
     fixture.detectChanges();
     expect(statusSpy).toHaveBeenCalledTimes(6);
-    expect(el.querySelector('.sd-load-error')).toBeNull();
-    expect(el.querySelector('.sd-banner')?.textContent).toContain('Ready');
+    expect(el.querySelector('.gh-dash-load-error')).toBeNull();
+    expect(el.querySelector('.gh-dash-banner')?.textContent).toContain('Ready');
   });
 
   it('pauses polling while the page is hidden and polls again when it is shown', () => {
@@ -302,7 +302,7 @@ describe('SourceDashboardComponent', () => {
     current = dashboard({ configured: false, pathExists: false, index: null, sourcePath: null });
     start();
 
-    expect(el.querySelector('.sd-banner')?.textContent).toContain('Not configured');
+    expect(el.querySelector('.gh-dash-banner')?.textContent).toContain('Not configured');
     expect(button('sd-reindex-btn').getAttribute('aria-disabled')).toBe('true');
     expect(el.querySelector('#sd-actions-reason')?.textContent).toContain('SourceCodePath is not configured.');
   });

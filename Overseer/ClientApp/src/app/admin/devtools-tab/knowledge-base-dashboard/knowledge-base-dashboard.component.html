@@ -1,0 +1,278 @@
+<div class="gh-dash-root">
+  <app-corpus-index-panel [status]="status" corpusLabel="knowledge base" idPrefix="kb"
+                          reindexLabel="Reload articles" [reindexTip]="reloadTip" [starting]="starting"
+                          [actionMessage]="actionMessage" [actionMessageKind]="actionMessageKind"
+                          [endedJob]="endedJob" [loadError]="loadError"
+                          (reindex)="reload()" (retry)="retry()">
+    <div figures class="gh-health-tile kb-tile-prompt">
+      <dt>In the system prompt</dt>
+      <dd>
+        {{ fmt.formatNumber(topicListChars) }} characters
+        <span class="gh-health-tile-note">≈ {{ fmt.formatNumber(topicListTokens) }} tokens, estimated</span>
+      </dd>
+    </div>
+    <div figures class="gh-health-tile kb-tile-missing-summary">
+      <dt>Missing summary</dt>
+      <dd>{{ fmt.formatNumber(missingSummary.length) }}</dd>
+    </div>
+    <div figures class="gh-health-tile kb-tile-shadowed">
+      <dt>Shadowed topics</dt>
+      <dd>{{ fmt.formatNumber(shadowedTopics.length) }}</dd>
+    </div>
+  </app-corpus-index-panel>
+
+  @if (status) {
+    <div class="gh-dash-grid">
+      <!-- Articles -->
+      <section class="gh-dash-card gh-dash-wide kb-articles" aria-labelledby="kb-articles-title">
+        <h4 class="gh-section-title" id="kb-articles-title">Articles</h4>
+        @if (articles.length === 0) {
+          <p class="gh-dash-muted" id="kb-articles-empty">
+            @if (status.contentPathExists === false) {
+              No article is loaded: the {{ status.configKey }} folder has no Content folder.
+            } @else {
+              No article is loaded.
+            }
+          </p>
+        } @else {
+          <app-table-pager [state]="articleTable" [rows]="articles" noun="articles" [announce]="true"
+                           (changed)="onTableChanged()"></app-table-pager>
+          <div class="gh-dash-table-wrap" id="kb-articles-wrap" role="region" aria-labelledby="kb-articles-title" tabindex="0">
+            <table class="gh-dash-table gh-datatable kb-table">
+              <caption class="visually-hidden">Knowledge base articles</caption>
+              <thead>
+                <tr>
+                  <th app-sort-header [state]="articleTable" column="topic" label="Topic" (changed)="onTableChanged()"></th>
+                  <th app-sort-header [state]="articleTable" column="title" label="Title" (changed)="onTableChanged()"></th>
+                  <th app-sort-header [state]="articleTable" column="summary" label="Summary" (changed)="onTableChanged()"></th>
+                  <th app-sort-header [state]="articleTable" column="bytes" label="Size" (changed)="onTableChanged()"></th>
+                  <th app-sort-header [state]="articleTable" column="modified" label="Modified" (changed)="onTableChanged()"></th>
+                  <th scope="col" class="kb-preview-head">Preview</th>
+                </tr>
+                <tr class="gh-filter-row">
+                  <td>
+                    <label class="visually-hidden" for="kb-filter-topic">Filter by topic</label>
+                    <input id="kb-filter-topic" type="search" class="gh-input gh-filter-input" placeholder="Topic"
+                           autocomplete="off" [value]="textFilter('topic')"
+                           (input)="onTextFilter('topic', $event)">
+                  </td>
+                  <td>
+                    <div class="kb-filter-stack">
+                      <label class="visually-hidden" for="kb-filter-title">Filter by title</label>
+                      <input id="kb-filter-title" type="search" class="gh-input gh-filter-input" placeholder="Title"
+                             autocomplete="off" [value]="textFilter('title')"
+                             (input)="onTextFilter('title', $event)">
+                      <label class="visually-hidden" for="kb-filter-has-title">Title present or missing</label>
+                      <select id="kb-filter-has-title" class="gh-input gh-filter-select"
+                              (change)="onPresenceFilter('hasTitle', $event)">
+                        <option value="" [selected]="presenceFilter('hasTitle') === ''">Any title</option>
+                        <option value="present" [selected]="presenceFilter('hasTitle') === 'present'">Present</option>
+                        <option value="missing" [selected]="presenceFilter('hasTitle') === 'missing'">Missing</option>
+                      </select>
+                    </div>
+                  </td>
+                  <td>
+                    <label class="visually-hidden" for="kb-filter-has-summary">Summary present or missing</label>
+                    <select id="kb-filter-has-summary" class="gh-input gh-filter-select"
+                            (change)="onPresenceFilter('hasSummary', $event)">
+                      <option value="" [selected]="presenceFilter('hasSummary') === ''">Any</option>
+                      <option value="present" [selected]="presenceFilter('hasSummary') === 'present'">Present</option>
+                      <option value="missing" [selected]="presenceFilter('hasSummary') === 'missing'">Missing</option>
+                    </select>
+                  </td>
+                  <td class="kb-filter-none"></td>
+                  <td class="kb-filter-none"></td>
+                  <td [class.kb-filter-none]="!articleTable.hasActiveFilters">
+                    @if (articleTable.hasActiveFilters) {
+                      <button type="button" class="gh-filter-clear" id="kb-articles-clear" (click)="clearFilters()">Clear filters</button>
+                    }
+                  </td>
+                </tr>
+              </thead>
+              <tbody>
+                @for (article of articleTable.view(articles); track article.topic; let i = $index) {
+                  <tr>
+                    <th scope="row"><span class="gh-dash-mono">{{ article.topic }}</span></th>
+                    <td data-label="Title">
+                      @if (article.hasTitle) {
+                        {{ article.title }}
+                      } @else {
+                        <app-health-status status="warning">Missing</app-health-status>
+                      }
+                    </td>
+                    <td data-label="Summary">
+                      @if (article.hasSummary) {
+                        <app-health-status status="ok">Present</app-health-status>
+                      } @else {
+                        <app-health-status status="warning">Missing</app-health-status>
+                      }
+                    </td>
+                    <td class="kb-num" data-label="Size">{{ fmt.formatBytes(article.bytes) }}</td>
+                    <td data-label="Modified">
+                      <time [attr.datetime]="fmt.isoDateTime(article.lastWriteUtc)">{{ fmt.formatDateTime(article.lastWriteUtc) }}</time>
+                    </td>
+                    <td class="kb-preview-cell" data-label="Preview">
+                      <button #previewButton type="button" class="action-btn" [id]="'kb-article-' + i + '-preview-btn'"
+                              [attr.aria-label]="'Preview article ' + article.topic"
+                              [attr.interestfor]="'kb-article-' + i + '-preview-tip'"
+                              [attr.style]="'anchor-name: --kb-article-' + i + '-preview'"
+                              (click)="openPreview(article, previewButton)">
+                        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                      </button>
+                      <div popover="hint" class="gh-tooltip" [id]="'kb-article-' + i + '-preview-tip'"
+                           [attr.style]="'position-anchor: --kb-article-' + i + '-preview'">Preview article</div>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          @if (articleTable.noMatches(articles)) {
+            <p class="gh-dash-muted kb-no-matches" id="kb-articles-no-matches">
+              <span>No article matches these filters.</span>
+              <button type="button" class="gh-filter-clear" id="kb-articles-no-matches-clear" (click)="clearFilters()">Clear filters</button>
+            </p>
+          }
+        }
+      </section>
+
+      <!-- Health checks -->
+      <section class="gh-dash-card gh-dash-wide kb-health" aria-labelledby="kb-health-title">
+        <h4 class="gh-section-title" id="kb-health-title">Health checks</h4>
+        @if (hasProblems) {
+          <ul class="kb-health-list" id="kb-health-list">
+            @if (missingTitle.length) {
+              <li class="kb-health-item" data-check="missing-title">
+                <p class="kb-health-head">
+                  <app-health-status status="warning">Missing title</app-health-status>
+                  <span class="gh-dash-muted">{{ fmt.formatNumber(missingTitle.length) }} {{ missingTitle.length === 1 ? 'article' : 'articles' }}</span>
+                </p>
+                <ul class="kb-health-topics">
+                  @for (article of missingTitle; track article.topic) {
+                    <li><code class="gh-dash-mono">{{ article.topic }}</code></li>
+                  }
+                </ul>
+              </li>
+            }
+            @if (missingSummary.length) {
+              <li class="kb-health-item" data-check="missing-summary">
+                <p class="kb-health-head">
+                  <app-health-status status="warning">Missing summary</app-health-status>
+                  <span class="gh-dash-muted">{{ fmt.formatNumber(missingSummary.length) }} {{ missingSummary.length === 1 ? 'article' : 'articles' }}</span>
+                </p>
+                <ul class="kb-health-topics">
+                  @for (article of missingSummary; track article.topic) {
+                    <li><code class="gh-dash-mono">{{ article.topic }}</code></li>
+                  }
+                </ul>
+              </li>
+            }
+            @if (shadowedTopics.length) {
+              <li class="kb-health-item" data-check="shadowed">
+                <p class="kb-health-head">
+                  <app-health-status status="warning">Shadowed topic</app-health-status>
+                  <span class="gh-dash-muted">{{ fmt.formatNumber(shadowedTopics.length) }} {{ shadowedTopics.length === 1 ? 'file' : 'files' }} replaced by a case variant</span>
+                </p>
+                <ul class="kb-health-files">
+                  @for (shadow of shadowedTopics; track shadow.path) {
+                    <li>
+                      <code class="gh-dash-mono">{{ shadow.topic }}</code>
+                      <span class="kb-health-path">Kept: <code class="gh-dash-mono">{{ shadow.shadowedByPath }}</code></span>
+                      <span class="kb-health-path">Shadowed: <code class="gh-dash-mono">{{ shadow.path }}</code></span>
+                    </li>
+                  }
+                </ul>
+              </li>
+            }
+            @if (unreadableCount > 0) {
+              <li class="kb-health-item" data-check="unreadable">
+                <p class="kb-health-head">
+                  <app-health-status status="error">Unreadable</app-health-status>
+                  <span class="gh-dash-muted">{{ fmt.formatNumber(unreadableCount) }} {{ unreadableCount === 1 ? 'file' : 'files' }}</span>
+                </p>
+                <ul class="kb-health-files">
+                  @for (file of unreadableFiles; track file.path) {
+                    <li>
+                      <code class="gh-dash-mono">{{ file.path }}</code>
+                      <code class="gh-dash-mono kb-health-error">{{ file.error }}</code>
+                    </li>
+                  }
+                </ul>
+                @if (unreadableMoreText) {
+                  <p class="gh-dash-muted kb-health-more">{{ unreadableMoreText }}</p>
+                }
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="kb-health-none"><app-health-status status="ok">No problems found.</app-health-status></p>
+        }
+      </section>
+
+      <app-corpus-tool-usage class="gh-dash-wide" corpus="KnowledgeBase" idPrefix="kb" />
+
+      <app-corpus-search-probe class="gh-dash-wide" kind="knowledge-base" toolName="get_knowledge_article"
+                               idPrefix="kb" queryLabel="Topic" [topicSuggestions]="topics" />
+    </div>
+  }
+</div>
+
+<!-- Article preview. Read-only: the knowledge base is a Git working tree, edited in Git. -->
+<dialog #previewDialog class="gh-dialog kb-preview-dialog" id="kb-preview-dialog" aria-labelledby="kb-preview-title"
+        closedby="any" (click)="onPreviewDialogClick($event)" (close)="onPreviewClosed()">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group kb-preview-title-group">
+        <!-- The focus target on open, so the Close button's tooltip does not open by itself. -->
+        <h3 #previewTitle id="kb-preview-title" class="gh-dash-mono" tabindex="-1">{{ previewTopic }}</h3>
+        @if (previewArticle?.title; as title) {
+          <p class="dialog-subtitle" id="kb-preview-subtitle">{{ title }}</p>
+        }
+      </div>
+      <button type="button" class="btn-icon-action" id="kb-preview-close" aria-label="Close article preview"
+              interestfor="kb-preview-close-tip" [attr.style]="'anchor-name: --kb-preview-close'"
+              (click)="closePreview()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="kb-preview-close-tip" [attr.style]="'position-anchor: --kb-preview-close'">Close</div>
+    </div>
+
+    <div class="dialog-body kb-preview-body">
+      <div class="kb-preview-status" id="kb-preview-status" role="status">
+        @if (previewLoading) {
+          <p class="kb-preview-loading">
+            <svg class="dc-ring dc-ring--inline" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 48 48" focusable="false" aria-hidden="true"><circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle><circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle></svg>
+            Loading the article…
+          </p>
+        } @else if (previewError) {
+          <p class="gh-field-error" id="kb-preview-error">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ previewError }}</span>
+          </p>
+        }
+      </div>
+
+      @if (previewArticle; as article) {
+        @if (article.source) {
+          <div class="kb-preview-toolbar">
+            <button type="button" class="action-btn" id="kb-preview-copy-btn" aria-label="Copy article source"
+                    interestfor="kb-preview-copy-tip" [attr.style]="'anchor-name: --kb-preview-copy'"
+                    (click)="copyPreview()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" id="kb-preview-copy-tip" [attr.style]="'position-anchor: --kb-preview-copy'">Copy article source</div>
+            <span class="kb-preview-copy-status" role="status">{{ previewCopyStatus }}</span>
+          </div>
+          <pre class="gh-dash-pre kb-preview-source" id="kb-preview-source" tabindex="0">{{ article.source }}</pre>
+        } @else {
+          <p class="gh-dash-muted">The article file is empty.</p>
+        }
+      }
+    </div>
+  </div>
+</dialog>
+
+<app-reindex-confirm-dialog idPrefix="kb" confirmLabel="Reload anyway" actionName="Reload" (confirmed)="reload(true)" />

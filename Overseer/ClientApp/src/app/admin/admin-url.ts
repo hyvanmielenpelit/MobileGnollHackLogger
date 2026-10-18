@@ -15,8 +15,14 @@ export const ADMIN_TAB_SLUGS: Readonly<Record<AdminTabId, string>> = {
   telemetry: 'telemetry',
   security: 'security',
   benchmark: 'gnollbench',
-  devtools: 'devtools'
+  devtools: 'services'
 };
+
+/**
+ * Slugs a tab had before it was renamed, so old bookmarks and alerts still open it. Such an address is
+ * accepted and replaced by the canonical one; a retired slug is never reused for another tab.
+ */
+export const RETIRED_ADMIN_TAB_SLUGS: Readonly<Record<string, AdminTabId>> = { devtools: 'devtools' };
 
 /** Every GnollBench sub-tab needs a slug; a new `BenchmarkSubTab` without one fails to compile. */
 const BENCHMARK_SUBTAB_SLUGS: Readonly<Record<BenchmarkSubTab, string>> = {
@@ -35,7 +41,8 @@ export const ADMIN_SUBTAB_SLUGS: Readonly<Partial<Record<AdminTabId, readonly Ad
   users: [['users', ''], ['groups', 'groups'], ['deletions', 'deletions'], ['log', 'log']],
   configs: [['', ''], ['api-keys', 'api-keys']],
   benchmark: Object.entries(BENCHMARK_SUBTAB_SLUGS) as [BenchmarkSubTab, string][],
-  devtools: [['source', ''], ['config-health', 'config-health'], ['sentry', 'sentry']]
+  devtools: [['source', ''], ['gnollhack-wiki', 'gnollhack-wiki'], ['nethack-wiki', 'nethack-wiki'],
+             ['knowledge-base', 'knowledge-base'], ['config-health', 'config-health'], ['sentry', 'developer-tools']]
 };
 
 const TAB_IDS = Object.keys(ADMIN_TAB_SLUGS) as AdminTabId[];
@@ -70,12 +77,14 @@ export function adminCommands(tab: AdminTabId, subTab?: string | null): string[]
 }
 
 /**
- * The tab and sub-tab a path names, and its canonical commands. An unknown tab is Users, an unknown
- * sub-tab is the tab's default, and the default sub-tab named by its id (`users/users`) is accepted.
+ * The tab and sub-tab a path names, and its canonical commands. A tab is found by its slug or by a
+ * retired slug; an unknown tab is Users, an unknown sub-tab is the tab's default, and a sub-tab named
+ * by its id (`users/users`, `services/sentry`) is accepted.
  */
 export function parseAdminPath(tabSlug: string | null, subSlug: string | null):
   { tab: AdminTabId; subTab: string | null; canonical: string[]; isCanonical: boolean } {
-  const tab = TAB_IDS.find(id => ADMIN_TAB_SLUGS[id] === tabSlug) ?? 'users';
+  const tab = TAB_IDS.find(id => ADMIN_TAB_SLUGS[id] === tabSlug) ??
+    (tabSlug != null && Object.hasOwn(RETIRED_ADMIN_TAB_SLUGS, tabSlug) ? RETIRED_ADMIN_TAB_SLUGS[tabSlug] : undefined) ?? 'users';
   const entries = ADMIN_SUBTAB_SLUGS[tab];
   let subTab: string | null = null;
   if (entries) {

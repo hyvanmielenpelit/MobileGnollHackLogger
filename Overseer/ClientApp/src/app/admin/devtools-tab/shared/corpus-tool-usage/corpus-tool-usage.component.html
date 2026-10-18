@@ -1,0 +1,134 @@
+@let p = idPrefix;
+
+<section class="gh-dash-card ctu-card" [attr.aria-labelledby]="p + '-usage-title'">
+  <h4 class="gh-section-title" [id]="p + '-usage-title'">{{ heading }}</h4>
+
+  <fieldset class="gh-choice ctu-period">
+    <legend>Period</legend>
+    @for (period of periods; track period) {
+      <label class="gh-radio">
+        <input type="radio" [name]="p + '-usage-days'" [id]="p + '-usage-days-' + period" [value]="period"
+               [checked]="days === period" (change)="setDays(period)">
+        {{ period }} days
+      </label>
+    }
+  </fieldset>
+
+  @if (loadError) {
+    <div class="ctu-load-error">
+      <p class="gh-field-error" [id]="p + '-usage-error'" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ loadError }}</span>
+      </p>
+      <button type="button" class="btn-ghost ctu-retry" [attr.aria-describedby]="p + '-usage-error'" (click)="retry()">Try again</button>
+    </div>
+  }
+
+  <div class="ctu-loading" role="status">
+    @if (loading) {
+      <svg class="dc-ring dc-ring--inline" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 48 48" focusable="false" aria-hidden="true"><circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle><circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle></svg>
+      <span>Loading the tool usage…</span>
+    }
+  </div>
+
+  @if (usage; as u) {
+    @if (corpusStats; as c) {
+      <dl class="gh-health-summary ctu-tiles">
+        <div class="gh-health-tile">
+          <dt>Calls</dt>
+          <dd>{{ formatNumber(c.calls) }}</dd>
+        </div>
+        <div class="gh-health-tile">
+          <dt>Error rate</dt>
+          <dd>
+            {{ errorRate(c) }}
+            <span class="gh-health-tile-note">{{ formatNumber(c.errors) }} {{ c.errors === 1 ? 'error' : 'errors' }}</span>
+          </dd>
+        </div>
+        <div class="gh-health-tile">
+          <dt>Index-warming refusals</dt>
+          <dd>{{ formatNumber(c.guardRefusals) }}</dd>
+        </div>
+        <div class="gh-health-tile">
+          <dt>Median time</dt>
+          <dd>{{ formatDuration(c.p50ExecutionMs) }}</dd>
+        </div>
+        <div class="gh-health-tile">
+          <dt>95th percentile</dt>
+          <dd>{{ formatDuration(c.p95ExecutionMs) }}</dd>
+        </div>
+      </dl>
+    }
+
+    @if (toolRows.length) {
+      <div class="gh-dash-table-wrap" role="region" [attr.aria-labelledby]="p + '-usage-title'" tabindex="0">
+        <table class="gh-dash-table ctu-table">
+          <caption class="visually-hidden">Calls per tool, last {{ u.days }} days</caption>
+          <thead>
+            <tr>
+              <th scope="col">Tool</th><th scope="col">Calls</th><th scope="col">Completed</th>
+              <th scope="col">Errors</th><th scope="col">Other</th><th scope="col">Refusals</th>
+              <th scope="col">Median</th><th scope="col">p95</th><th scope="col">Trend</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of toolRows; track row.tool) {
+              @let spark = sparkline(row.daily);
+              <tr>
+                <th scope="row"><code class="gh-dash-mono">{{ row.tool }}</code></th>
+                <td class="ctu-num" data-label="Calls">{{ formatNumber(row.calls) }}</td>
+                <td class="ctu-num" data-label="Completed">{{ formatNumber(row.completed) }}</td>
+                <td class="ctu-num" data-label="Errors">{{ formatNumber(row.errors) }}</td>
+                <td class="ctu-num" data-label="Other">{{ formatNumber(row.other) }}</td>
+                <td class="ctu-num" data-label="Refusals">{{ formatNumber(row.guardRefusals) }}</td>
+                <td class="ctu-num" data-label="Median">{{ formatDuration(row.p50ExecutionMs) }}</td>
+                <td class="ctu-num" data-label="p95">{{ formatDuration(row.p95ExecutionMs) }}</td>
+                <td data-label="Trend">
+                  <svg class="ctu-spark" xmlns="http://www.w3.org/2000/svg" role="img" focusable="false"
+                       [attr.viewBox]="spark.viewBox" preserveAspectRatio="none"
+                       [attr.aria-label]="sparklineLabel(row)">
+                    @for (bar of spark.bars; track $index) {
+                      <rect [attr.class]="bar.zero ? 'ctu-tick' : 'ctu-bar'" [attr.x]="bar.x" [attr.y]="bar.y"
+                            width="2" [attr.height]="bar.height"></rect>
+                    }
+                  </svg>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <ul class="gh-dash-note ctu-facts">
+      <li>
+        @if (u.includesGnollBenchCalls) {
+          GnollBench runs are included.
+        } @else {
+          GnollBench runs are not included: their tool calls are stored with the run.
+        }
+      </li>
+      <li>
+        @if (u.includesEphemeralSessions) {
+          Ephemeral sessions are included.
+        } @else {
+          Ephemeral sessions are never stored, so their calls are not counted.
+        }
+      </li>
+      <li>
+        @if (u.includesSubAgentCalls) {
+          Calls made by sub-agents are included.
+        } @else {
+          Calls made by sub-agents are not included.
+        }
+      </li>
+      @if (!u.guardRefusalsIncludeEncryptedSessions) {
+        <li>In confidential sessions a refusal counts as an error, not as a refusal, because its error text is encrypted.</li>
+      }
+      <li>
+        Updated every 5 minutes; this view was computed at
+        <time [attr.datetime]="isoDateTime(u.generatedAtUtc)">{{ formatTime(u.generatedAtUtc) }}</time>.
+      </li>
+    </ul>
+  }
+</section>
