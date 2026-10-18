@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, Ele
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall, ChatContextUsage, ChatSessionStateResponse, PrivateBadge } from '../services/chat.service';
-import { AuthService } from '../services/auth.service';
+import { AuthService, AuthUser, hasTermsStatus, needsTermsAcceptance } from '../services/auth.service';
 import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule, NavigationEnd, NavigationStart } from '@angular/router';
 import { MarkdownPipe } from './markdown.pipe';
@@ -16,6 +16,7 @@ import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.
 import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '../shared/model-picker/model-picker.component';
 import { ModelAvailabilityNoticeComponent } from '../shared/model-availability/model-availability-notice.component';
 import { ModelResolutionDialogComponent } from '../shared/model-resolution-dialog/model-resolution-dialog.component';
+import { TermsAcceptedEvent, TermsDialogComponent } from '../shared/terms-dialog/terms-dialog.component';
 import { ModelResolutionResult, isResolutionDeletion, needsAttention } from '../shared/model-availability/model-availability';
 import { AttachedSnapshotService, type AttachedSnapshotInfo } from '../services/attached-snapshot.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
@@ -58,7 +59,7 @@ export interface AttachmentExcerptNotice {
 
 @Component({
     selector: 'app-chat',
-    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent, ProviderBadgeComponent, ModelPickerComponent, ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent],
+    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent, ProviderBadgeComponent, ModelPickerComponent, ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent, TermsDialogComponent],
     styleUrl: './chat.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './chat.component.html'
@@ -224,6 +225,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('ephemeralInfoDialog') ephemeralInfoDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('trashModal') trashModal!: TrashModalComponent;
   @ViewChild('modelResolutionDialog') modelResolutionDialog?: ModelResolutionDialogComponent;
+  @ViewChild('termsDialog', { static: true }) termsDialog?: TermsDialogComponent;
   autoScrollEnabled = true;
   readonly STREAMING_SCROLL_OFFSET = 50;
 
@@ -480,10 +482,27 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
    * reload asks the server again.
    */
   overseerBlock: { message: string; reason: string | null } | null = null;
+  /**
+   * True while the user has not accepted the required Overseer Terms: the composer refuses to
+   * send and the banner above it offers the Terms again. Set from `/api/auth/me`, a 403
+   * `terms_not_accepted` send or a `terms_not_accepted` error event; cleared on acceptance.
+   */
+  termsAcceptanceRequired = false;
+  /** The gate opens once the view exists, when the status read in `ngOnInit` requires it. */
+  private termsGatePending = false;
+  /** The handoff chat whose greeting waits on the acceptance, passed to the gate. */
+  private termsGateSessionId: number | null = null;
+  readonly termsRequiredMessage = 'To use Gnoll Overseer, accept the Terms of Service.';
   /** The model key the turn in progress was sent with. */
   private turnModelKey: string | null = null;
   /** Whether the turn in progress reported an error; a turn that finishes without one clears `modelUnavailableNotice`. */
   private currentTurnFailed = false;
+
+  /** Why the composer refuses to send, or null when it may; an administrator's block wins over the Terms. */
+  get sendRefusal(): string | null {
+    if (this.overseerBlock) return this.overseerBlock.message;
+    return this.termsAcceptanceRequired ? this.termsRequiredMessage : null;
+  }
 
   isRenamingTitle = false;
   renameTitleValue = '';
@@ -1490,7 +1509,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   ngAfterViewInit() {
     this.focusPromptInput();
-    
+    /* After this check finishes: opening starts the dialog's own loading state. */
+    if (this.termsGatePending) {
+      this.termsGatePending = false;
+      setTimeout(() => this.openTermsGate(), 0);
+    }
+
     if (this.logoutDialog && this.logoutDialog.nativeElement) {
       if (!('closedBy' in HTMLDialogElement.prototype)) {
         this.logoutDialog.nativeElement.addEventListener('click', (event: MouseEvent) => {
@@ -1693,6 +1717,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     // Feature-detected and code-split: a browser with native popover, interestfor and
     // anchor positioning downloads nothing. Needed by the context-window tooltip.
     ensureOverlayPolyfills();
+    this.initTermsStatus();
     setTimeout(() => this.preloadAvatarImages(), 2500);
     this.settingsService.showThoughtsAndToolsUpdated.subscribe(val => {
       this.showThoughtsAndTools = val;
@@ -1838,6 +1863,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     /* A block applies to the user rather than to one chat, so it is taken from any chat's turn. */
     if (evt?.type === 'error' && evt.errorCode === 'overseer_blocked') {
       this.applyOverseerBlock(evt.data, evt.detail);
+    } else if (evt?.type === 'error' && evt.errorCode === 'terms_not_accepted') {
+      this.handleTermsNotAccepted(evt.sessionId);
     }
 
     /* The hub carries a session reference, which is a decimal id for a persisted chat and
@@ -2874,20 +2901,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         }
         this.liveEventBuffer = [];
 
-        // Safety timeout: if the "Consulting" overlay is still showing after 60s with no events, dismiss it
-        if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
-        if (this.isHandoffWaiting) {
-          this.handoffTimeoutHandle = setTimeout(() => {
-            if (this.isHandoffWaiting) {
-              this.debugService.log('[Frontend] Handoff timeout reached (60s). Dismissing consulting overlay.');
-              this.hasOngoingGeneration = false;
-              this.isStreaming = false;
-              this.showSpinner = false;
-              this.currentStatusText = '';
-              this.cdr.detectChanges();
-            }
-          }, 60000);
-        }
+        this.armHandoffTimeout();
 
         if (!this.sessions.find(x => String(x.id) === id)) {
            this.loadSessions(true);
@@ -2908,6 +2922,23 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.forceWebViewRepaint();
       }
     });
+  }
+
+  /** Safety timeout: if the "Consulting" overlay is still showing after 60s with no events, dismiss it. */
+  private armHandoffTimeout(): void {
+    if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
+    if (this.isHandoffWaiting) {
+      this.handoffTimeoutHandle = setTimeout(() => {
+        if (this.isHandoffWaiting) {
+          this.debugService.log('[Frontend] Handoff timeout reached (60s). Dismissing consulting overlay.');
+          this.hasOngoingGeneration = false;
+          this.isStreaming = false;
+          this.showSpinner = false;
+          this.currentStatusText = '';
+          this.cdr.detectChanges();
+        }
+      }, 60000);
+    }
   }
 
   async syncSessionSilently(sessionRef: string | number) {
@@ -3544,7 +3575,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.confidentialGate = gate;
     this.gateSaveError = null;
     this.isSavingGateChoice = false;
+    this.restoreRefusedTurn();
 
+    this.showPrivacyModal(this.confidentialGateDialog?.nativeElement, null);
+  }
+
+  /**
+   * Undoes a turn the server refused before running it: the optimistic user message goes away
+   * and its text and attachments return to the composer.
+   */
+  private restoreRefusedTurn(): void {
     for (let i = this.messages.length - 1; i >= 0; i--) {
       if (this.messages[i].role === 'user') {
         this.messages.splice(i, 1);
@@ -3566,8 +3606,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.currentStatusText = '';
     this.resetAvatarState();
     this.cdr.detectChanges();
-
-    this.showPrivacyModal(this.confidentialGateDialog?.nativeElement, null);
   }
 
   /** The gated model's name for the dialog, falling back to the provider when none was sent. */
@@ -3721,7 +3759,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   async sendMessage() {
-    if (this.overseerBlock) return;
+    if (this.sendRefusal) return;
     const message = this.sanitizeInput(this.currentInput).trim();
     if (!message && this.pendingAttachments.length === 0) return;
     
@@ -3882,6 +3920,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         return;
       }
 
+      if (this.isTermsNotAcceptedRefusal(e)) {
+        this.restoreRefusedTurn();
+        this.handleTermsNotAccepted(null);
+        return;
+      }
+
       let errorDisplay = e.message || 'Unknown error';
       if (e.name === 'HttpErrorResponse') {
          errorDisplay = `Network error: ${e.message} (Status: ${e.status} ${e.statusText})`;
@@ -3937,6 +3981,98 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         : 'Your access to the Overseer AI chat has been suspended by an administrator.',
       reason: typeof reason === 'string' && reason.trim() ? reason.trim() : null
     };
+  }
+
+  /** True for a 403 whose body is `{ error: "terms_not_accepted" }`. */
+  private isTermsNotAcceptedRefusal(e: any): boolean {
+    if (e?.status !== 403) return false;
+    let body = e.error;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        return false;
+      }
+    }
+    return !!body && typeof body === 'object' && body.error === 'terms_not_accepted';
+  }
+
+  /**
+   * Reads the Terms status of the signed-in user: from the cached user when it came from
+   * `/api/auth/me`, else from a fresh check. A required acceptance opens the gate once the view
+   * exists; a fresh check that finishes later opens it at once.
+   */
+  private initTermsStatus(): void {
+    const idParam = Number(this.route.snapshot?.queryParamMap?.get('sessionId'));
+    this.termsGateSessionId = Number.isInteger(idParam) && idParam > 0 ? idParam : null;
+    const user = this.authService.currentUser;
+    if (hasTermsStatus(user)) {
+      this.applyTermsStatus(user!);
+      this.termsGatePending = this.termsAcceptanceRequired;
+    } else {
+      this.refreshTermsStatus(true);
+    }
+  }
+
+  /** Asks `/api/auth/me` again; `openGate` opens the gate when an acceptance is required. */
+  private refreshTermsStatus(openGate: boolean): void {
+    this.authService.checkAuth().subscribe(result => {
+      if (result.kind !== 'signedIn' || !hasTermsStatus(result.user)) return;
+      this.applyTermsStatus(result.user);
+      if (this.termsAcceptanceRequired) {
+        if (openGate) this.openTermsGate();
+      } else if (this.termsDialog?.isOpen && this.termsDialog.mode === 'gate') {
+        this.termsDialog.close();
+      }
+      this.cdr.detectChanges();
+    });
+  }
+
+  private applyTermsStatus(user: AuthUser): void {
+    this.termsAcceptanceRequired = needsTermsAcceptance(user);
+  }
+
+  /**
+   * The server refused AI work until the Terms are accepted: the gate opens for the chat the
+   * refusal named, if any, and the status is read again.
+   */
+  private handleTermsNotAccepted(sessionId: unknown): void {
+    const id = Number(sessionId);
+    this.termsGateSessionId = sessionId !== null && sessionId !== undefined && Number.isInteger(id) && id > 0 ? id : null;
+    this.termsAcceptanceRequired = true;
+    this.openTermsGate();
+    this.refreshTermsStatus(false);
+  }
+
+  /** Opens the Terms in gate mode, unless the gate is already showing. Review Terms calls it too. */
+  openTermsGate(): void {
+    const dialog = this.termsDialog;
+    if (!dialog || (dialog.isOpen && dialog.mode === 'gate')) return;
+    dialog.open('gate', this.termsGateSessionId);
+  }
+
+  /** The sidebar's Terms link: the Terms to read, with nothing to accept. */
+  openTermsView(event?: Event): void {
+    event?.preventDefault();
+    this.closeSidebar();
+    this.termsDialog?.open('view');
+  }
+
+  /**
+   * The gate recorded the acceptance. The composer is enabled again; when the server started the
+   * handoff chat's greeting, that chat shows the waiting state a handoff greeting shows.
+   */
+  onTermsAccepted(event: TermsAcceptedEvent): void {
+    this.termsAcceptanceRequired = false;
+    const gateSessionId = this.termsGateSessionId;
+    if (event.greetingStarted && gateSessionId !== null && this.currentSessionId === String(gateSessionId)
+        && this.messages.length === 0 && !this.isLoadingSession) {
+      this.hasOngoingGeneration = true;
+      this.armHandoffTimeout();
+    }
+    this.refreshTermsStatus(false);
+    this.cdr.detectChanges();
+    this.focusPromptInput();
   }
 
   confirmLogout(event: Event) {

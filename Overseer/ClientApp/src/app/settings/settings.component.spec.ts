@@ -15,6 +15,7 @@ import {
   CONFIDENTIALITY_POSTURES
 } from '../services/settings.service';
 import { ChatService } from '../services/chat.service';
+import { AuthService, AuthUser } from '../services/auth.service';
 
 describe('SettingsComponent', () => {
   let component: SettingsComponent;
@@ -1392,5 +1393,84 @@ describe('SettingsComponent', () => {
       expect(rows[0].querySelector('th')?.textContent?.trim()).toBe('Not established');
       expect(rows[rows.length - 1].querySelector('th')?.textContent?.trim()).toBe('Self-hosted inference');
     });
+  });
+});
+
+describe('SettingsComponent Legal block', () => {
+  let component: SettingsComponent;
+  let fixture: ComponentFixture<SettingsComponent>;
+  let paramMapSubject: Subject<ParamMap>;
+
+  const host = () => fixture.nativeElement as HTMLElement;
+  const legal = () => host().querySelector<HTMLElement>('.legal-block');
+  const status = () => legal()?.querySelector('.legal-terms-status')?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+  const termsButton = () => legal()!.querySelector<HTMLButtonElement>('.legal-terms-btn')!;
+
+  /** Signs in the given user, then opens the Version section. */
+  async function showVersion(user: Partial<AuthUser>): Promise<void> {
+    paramMapSubject = new Subject<ParamMap>();
+    await TestBed.configureTestingModule({
+      imports: [SettingsComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { paramMap: paramMapSubject.asObservable() } }
+      ]
+    }).compileComponents();
+
+    vi.spyOn(TestBed.inject(SettingsService), 'getSettings').mockReturnValue(of({ hasApiKey: true } as any));
+    (TestBed.inject(AuthService) as any).userSubject.next({ userName: 'player', email: 'player@example.com', hasApiKey: true, ...user });
+    fixture = TestBed.createComponent(SettingsComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+    paramMapSubject.next(convertToParamMap({ section: 'version' }));
+    fixture.detectChanges();
+  }
+
+  it('says when the Terms were accepted and offers View Terms', async () => {
+    await showVersion({ termsRequiredVersion: '2026-10-18.2', termsAccepted: true, termsAcceptedVersion: '2026-10-18.2', termsAcceptedUtc: '2026-10-18T09:30:00Z' });
+
+    const acceptedOn = new Date('2026-10-18T09:30:00Z').toLocaleDateString();
+    expect(legal()!.querySelector('h4')?.textContent?.trim()).toBe('Legal');
+    expect(status()).toBe(`Terms of Service last updated 18 October 2026 (revision 2), accepted on ${acceptedOn}.`);
+    expect(termsButton().textContent?.trim()).toBe('View Terms');
+
+    const open = vi.spyOn(component.termsDialog!, 'open').mockReturnValue(undefined);
+    termsButton().click();
+    expect(open).toHaveBeenCalledWith('view');
+
+    const privacy = legal()!.querySelector<HTMLAnchorElement>('a.legal-privacy-link')!;
+    expect(privacy.textContent?.trim()).toBe('Privacy notice');
+    expect(privacy.getAttribute('href')).toBe('/privacy');
+  });
+
+  it('says the Terms are not accepted yet and offers Review and accept, which opens the gate', async () => {
+    await showVersion({ termsRequiredVersion: '2026-10-18', termsAccepted: false, termsAcceptedVersion: null, termsAcceptedUtc: null });
+
+    expect(status()).toBe('Terms of Service last updated 18 October 2026. You have not accepted them yet.');
+    expect(termsButton().textContent?.trim()).toBe('Review and accept');
+
+    const open = vi.spyOn(component.termsDialog!, 'open').mockReturnValue(undefined);
+    termsButton().click();
+    expect(open).toHaveBeenCalledWith('gate');
+
+    vi.spyOn(TestBed.inject(AuthService), 'checkAuth').mockReturnValue(of({
+      kind: 'signedIn' as const,
+      user: { userName: 'player', email: 'player@example.com', hasApiKey: true, termsRequiredVersion: '2026-10-18', termsAccepted: true, termsAcceptedVersion: '2026-10-18', termsAcceptedUtc: '2026-10-18T12:00:00Z' }
+    }));
+    component.termsDialog!.accepted.emit({ greetingStarted: false });
+    fixture.detectChanges();
+
+    expect(status()).toBe(`Terms of Service last updated 18 October 2026, accepted on ${new Date('2026-10-18T12:00:00Z').toLocaleDateString()}.`);
+    expect(termsButton().textContent?.trim()).toBe('View Terms');
+  });
+
+  it('offers only View Terms when no version is required', async () => {
+    await showVersion({ termsRequiredVersion: null, termsAccepted: true, termsAcceptedVersion: null, termsAcceptedUtc: null });
+
+    expect(status()).toBeNull();
+    expect(termsButton().textContent?.trim()).toBe('View Terms');
+    expect(legal()!.querySelector('a.legal-privacy-link')).toBeTruthy();
   });
 });

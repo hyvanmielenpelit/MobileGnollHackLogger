@@ -24,6 +24,7 @@ using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
 using GnollHackServer.Data;
+using GnollHackServer.Data.Legal;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
@@ -39,6 +40,8 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
         private readonly IEmailSender _emailSender;
         private readonly IConfiguration _configuration;
         private readonly LogFileLogger _fileLogger;
+        private readonly TermsAcceptanceStore _termsStore;
+        private readonly LegalDocumentReader _legalReader;
 
         public RegisterModel(
             UserManager<ApplicationUser> userManager,
@@ -46,7 +49,9 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
             SignInManager<ApplicationUser> signInManager,
             ILogger<RegisterModel> logger,
             IEmailSender emailSender,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            TermsAcceptanceStore termsStore,
+            LegalDocumentReader legalReader)
         {
             _userManager = userManager;
             _userStore = userStore;
@@ -56,6 +61,8 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
             _emailSender = emailSender;
             _configuration = configuration;
             _fileLogger = new LogFileLogger(_configuration);
+            _termsStore = termsStore;
+            _legalReader = legalReader;
         }
 
         /// <summary>
@@ -76,6 +83,16 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
         ///     directly from your code. This API may change or be removed in future releases.
         /// </summary>
         public IList<AuthenticationScheme> ExternalLogins { get; set; }
+
+        /// <summary>
+        ///     The account Terms version a new account accepts; null when there is no Terms document,
+        ///     and the consent checkbox is then neither shown nor required.
+        /// </summary>
+        public string TermsRequiredVersion { get; set; }
+
+        public string TermsUrl { get; set; }
+
+        public string PrivacyPolicyUrl { get; set; }
 
         /// <summary>
         ///     This API supports the ASP.NET Core Identity default UI infrastructure and is not intended to be used
@@ -119,13 +136,42 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
             [Display(Name = "Confirm password")]
             [Compare("Password", ErrorMessage = "The password and confirmation password do not match.")]
             public string ConfirmPassword { get; set; }
+
+            /// <summary>
+            ///     The consent checkbox for the account Terms of Service.
+            /// </summary>
+            [Range(typeof(bool), "true", "true", ErrorMessage = "Please accept the Terms of Service to create an account.")]
+            [Display(Name = "I accept the Terms of Service")]
+            public bool AcceptTerms { get; set; }
+
+            /// <summary>
+            ///     The Terms version shown when the form was rendered.
+            /// </summary>
+            public string TermsVersion { get; set; }
         }
 
+        private async Task LoadTermsAsync()
+        {
+            TermsRequiredVersion = await _termsStore.GetRequiredVersionAsync(LegalDocumentKeys.AccountTerms);
+            TermsUrl = _legalReader.GetWikiUrl(LegalDocumentKeys.AccountTerms);
+            PrivacyPolicyUrl = _legalReader.GetPrivacyPolicyUrl(LegalDocumentKeys.AccountTerms);
+        }
+
+        /// <summary>Unchecks the consent checkbox and points the form at the version required now.</summary>
+        private void ResetTermsConsent()
+        {
+            ModelState.Remove("Input.AcceptTerms");
+            ModelState.Remove("Input.TermsVersion");
+            Input.AcceptTerms = false;
+            Input.TermsVersion = TermsRequiredVersion;
+        }
 
         public async Task<IActionResult> OnGetAsync(string returnUrl = null)
         {
             ReturnUrl = returnUrl;
             ExternalLogins = (await _signInManager.GetExternalAuthenticationSchemesAsync()).ToList();
+            await LoadTermsAsync();
+            Input = new InputModel { TermsVersion = TermsRequiredVersion };
             if(User.Identity.IsAuthenticated)
             {
                 return Redirect("/");
@@ -140,6 +186,17 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
         {
             returnUrl ??= Url.Content("~/");
             ExternalLogins = (await _signInManager.GetExternalAuthenticationSchemesAsync()).ToList();
+            await LoadTermsAsync();
+            if (TermsRequiredVersion == null)
+            {
+                ModelState.Remove("Input.AcceptTerms");
+            }
+            else if (!string.Equals(Input.TermsVersion, TermsRequiredVersion, StringComparison.Ordinal))
+            {
+                ModelState.AddModelError(string.Empty, "The Terms of Service were updated while you were registering. Please review them.");
+                ResetTermsConsent();
+            }
+
             if (ModelState.IsValid)
             {
                 var existingUser = await _userManager.FindByEmailAsync(Input.Email);
@@ -155,6 +212,25 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
                     if (result.Succeeded)
                     {
                         _logger.LogInformation("User created a new account with password.");
+
+                        if (TermsRequiredVersion != null)
+                        {
+                            try
+                            {
+                                var document = await _legalReader.GetAsync(LegalDocumentKeys.AccountTerms);
+                                var recorded = await _termsStore.RecordAsync(user.Id, LegalDocumentKeys.AccountTerms, TermsRequiredVersion,
+                                    LegalDocumentKeys.SourceAccountSite, document?.ContentSha256, null);
+                                if (recorded == TermsRecordResult.StaleVersion)
+                                {
+                                    _logger.LogWarning("The account Terms changed during registration; the new account is asked to accept them at sign-in.");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                // The account exists already; the sign-in gate asks for acceptance again.
+                                _logger.LogError(ex, "Recording the account Terms acceptance at registration failed.");
+                            }
+                        }
 
                         var userId = await _userManager.GetUserIdAsync(user);
                         var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);

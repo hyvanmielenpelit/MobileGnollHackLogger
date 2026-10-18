@@ -1,24 +1,52 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
-import { PrivacyComponent } from './privacy.component';
+import { OperatorStatementKey, OperatorStatementsResponse, PrivacyComponent } from './privacy.component';
 
 describe('PrivacyComponent', () => {
   let component: PrivacyComponent;
   let fixture: ComponentFixture<PrivacyComponent>;
   let host: HTMLElement;
+  let httpMock: HttpTestingController;
+
+  const operatorUrl = '/api/legal/operator';
 
   const textOf = (el: HTMLElement): string => (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+  /** Answers the operator statements request and lets the view pick up the result. */
+  const respondWith = async (body: OperatorStatementsResponse): Promise<void> => {
+    const req = httpMock.expectOne(operatorUrl);
+    expect(req.request.method).toBe('GET');
+    req.flush(body);
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
+  /** The rendered operator item for a key, found by its position in the fallback list. */
+  const operatorItem = (key: OperatorStatementKey): HTMLElement => {
+    const index = component.operatorGaps.findIndex(gap => gap.key === key);
+    expect(index, `operator key ${key}`).toBeGreaterThanOrEqual(0);
+    return host.querySelectorAll<HTMLElement>('#operator-statements .operator-gap')[index];
+  };
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [PrivacyComponent],
-      providers: [provideRouter([])]
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()]
     }).compileComponents();
 
+    httpMock = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(PrivacyComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
     host = fixture.nativeElement as HTMLElement;
+  });
+
+  afterEach(() => {
+    // Tests that do not answer the operator request render with the fallbacks; discard it.
+    httpMock.match(operatorUrl);
+    httpMock.verify();
   });
 
   it('should render one h1 and an h2 for every section, skipping no heading level', () => {
@@ -79,9 +107,23 @@ describe('PrivacyComponent', () => {
     const text = textOf(map);
     for (const label of ['The message you type', 'Documents and images you attach',
       'The call to the AI provider', 'Error telemetry', 'Cost and token accounting',
-      'Activity counts', 'Security events', 'Provider safety identifier']) {
+      'Activity counts', 'Security events', 'Provider safety identifier', 'Terms of Service acceptance']) {
       expect(text, label).toContain(label);
     }
+  });
+
+  it('should list Terms of Service acceptance as kept until account deletion and shared with nobody', () => {
+    const rows = Array.from(host.querySelectorAll<HTMLElement>('#conversation-data-map tbody tr'));
+    const terms = rows.find(r => textOf(r.querySelector('th') as HTMLElement) === 'Terms of Service acceptance');
+    expect(terms).toBeTruthy();
+
+    const cells = Array.from(terms!.querySelectorAll<HTMLElement>('td')).map(textOf);
+    expect(cells.length).toBe(3);
+    expect(cells[0]).toContain('Overseer’s database');
+    expect(cells[0]).toContain('the version, the time, and how you accepted');
+    expect(cells[0]).toContain('No IP address');
+    expect(cells[1]).toBe('Until your account is deleted.');
+    expect(cells[2]).toBe('Nobody outside Overseer.');
   });
 
   it('should say security events hold no message content and which providers get the safety identifier', () => {
@@ -127,7 +169,8 @@ describe('PrivacyComponent', () => {
     expect(hrefs).toEqual([
       'https://openai.com/policies/usage-policies/',
       'https://www.anthropic.com/legal/aup',
-      'https://policies.google.com/terms/generative-ai/use-policy'
+      'https://policies.google.com/terms/generative-ai/use-policy',
+      '/terms'
     ]);
     for (const link of Array.from(section.querySelectorAll<HTMLAnchorElement>('a[target="_blank"]'))) {
       expect(link.rel).toContain('noopener');
@@ -137,6 +180,18 @@ describe('PrivacyComponent', () => {
     expect(textOf(review)).toBe('A request to delete your account may be held for review by an administrator when there is ' +
       'evidence of misuse that may be illegal. You are told that it is under review, and you are e-mailed when the ' +
       'deletion is completed or declined.');
+  });
+
+  it('should link the acceptable use section to the Terms of Service page', () => {
+    const section = host.querySelector('#acceptable-use') as HTMLElement;
+    const link = Array.from(section.querySelectorAll<HTMLAnchorElement>('a[href]'))
+      .find(a => a.getAttribute('href') === '/terms');
+
+    expect(link).toBeTruthy();
+    expect(textOf(link!)).toBe('Gnoll Overseer Terms of Service');
+    expect(link!.hasAttribute('target')).toBe(false);
+    expect(textOf(section.querySelector('.terms-reference') as HTMLElement))
+      .toBe('The rules for using Overseer are in the Gnoll Overseer Terms of Service.');
   });
 
   it('should render every limitation and overstate none of them', () => {
@@ -209,11 +264,14 @@ describe('PrivacyComponent', () => {
     expect(text).toContain('This is the one category a confidential chat blocks');
   });
 
-  it('should render each operator placeholder as visibly unfilled', () => {
-    const gaps = host.querySelector('#operator-gaps') as HTMLElement;
-    expect(gaps).toBeTruthy();
+  it('should render each unconfigured operator statement as visibly not supplied', async () => {
+    await respondWith({ statements: {} });
 
-    const items = gaps.querySelectorAll('.operator-gap');
+    const statements = host.querySelector('#operator-statements') as HTMLElement;
+    expect(statements).toBeTruthy();
+    expect(textOf(statements.querySelector('h2') as HTMLElement)).toBe('7. Operator statements');
+
+    const items = statements.querySelectorAll('.operator-gap');
     expect(items.length).toBe(component.operatorGaps.length);
 
     items.forEach((item, index) => {
@@ -221,13 +279,76 @@ describe('PrivacyComponent', () => {
       expect(flag, `placeholder ${index} flag`).toBeTruthy();
       expect(textOf(flag)).toBe('Not supplied by the operator');
       expect(textOf(item as HTMLElement)).toContain(component.operatorGaps[index].title);
+      expect(textOf(item as HTMLElement)).toContain(component.operatorGaps[index].detail);
+      expect(item.querySelector('.operator-statement-text'), `placeholder ${index} statement`).toBeNull();
     });
 
-    expect(textOf(gaps)).toContain('this notice is incomplete rather than');
+    expect(textOf(statements.querySelector('p') as HTMLElement)).toBe('Statements only the operator of this deployment ' +
+      'can make. Each names where it comes from. An item marked Not supplied has not been made yet, and nothing has ' +
+      'been invented to fill it.');
+  });
+
+  it('should render a configured operator statement with its source, linked when it has a URL', async () => {
+    await respondWith({
+      statements: {
+        legalEntity: {
+          text: 'Example Games Oy, a company registered in Finland.',
+          source: 'Operator configuration',
+          sourceUrl: 'https://example.test/legal'
+        },
+        contact: {
+          text: 'Write to the privacy contact on the account site.',
+          source: 'Account site',
+          sourceUrl: null
+        }
+      }
+    });
+
+    const legal = operatorItem('legalEntity');
+    expect(legal.classList.contains('is-supplied')).toBe(true);
+    expect(legal.querySelector('.operator-gap-flag')).toBeNull();
+    expect(textOf(legal)).toContain('The legal entity responsible for this deployment');
+    expect(textOf(legal.querySelector('.operator-statement-text') as HTMLElement))
+      .toBe('Example Games Oy, a company registered in Finland.');
+    expect(textOf(legal.querySelector('.operator-statement-source') as HTMLElement))
+      .toBe('Source: Operator configuration (opens in a new tab)');
+
+    const link = legal.querySelector<HTMLAnchorElement>('.operator-statement-source a') as HTMLAnchorElement;
+    expect(link).toBeTruthy();
+    expect(link.getAttribute('href')).toBe('https://example.test/legal');
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toContain('noopener');
+
+    const contact = operatorItem('contact');
+    expect(contact.querySelector('.operator-gap-flag')).toBeNull();
+    expect(textOf(contact.querySelector('.operator-statement-source') as HTMLElement)).toBe('Source: Account site');
+    expect(contact.querySelector('.operator-statement-source a')).toBeNull();
+
+    // A key the operator did not configure keeps its fallback.
+    const agreement = operatorItem('dataProcessingAgreement');
+    expect(agreement.classList.contains('is-supplied')).toBe(false);
+    expect(textOf(agreement.querySelector('.operator-gap-flag') as HTMLElement)).toBe('Not supplied by the operator');
+    expect(textOf(agreement)).toContain('This page does not state that one exists.');
+  });
+
+  it('should render the whole notice with the fallbacks when the operator request fails', async () => {
+    httpMock.expectOne(operatorUrl).flush('Server error', { status: 500, statusText: 'Internal Server Error' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('section[id]').length).toBe(component.sections.length);
+
+    const items = host.querySelectorAll('#operator-statements .operator-gap');
+    expect(items.length).toBe(component.operatorGaps.length);
+    items.forEach((item, index) => {
+      expect(textOf(item.querySelector('.operator-gap-flag') as HTMLElement), `placeholder ${index} flag`)
+        .toBe('Not supplied by the operator');
+    });
+    expect(host.querySelectorAll('#conversation-data-map tbody tr').length).toBe(component.dataMap.length);
   });
 
   it('should name every statement only the operator can make', () => {
-    const text = textOf(host.querySelector('#operator-gaps') as HTMLElement);
+    const text = textOf(host.querySelector('#operator-statements') as HTMLElement);
     for (const expected of [
       'The legal entity responsible for this deployment',
       'A contact address for data-subject requests',

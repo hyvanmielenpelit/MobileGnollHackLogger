@@ -10,6 +10,7 @@ import { AdminComponent } from './admin/admin.component';
 import { DebugLogComponent } from './debug-log/debug-log.component';
 import { SettingsComponent } from './settings/settings.component';
 import { PrivacyComponent } from './privacy/privacy.component';
+import { TermsComponent } from './terms/terms.component';
 import { AuthService, AuthUser } from './services/auth.service';
 import { adminUrlMatcher } from './admin/admin-url';
 
@@ -46,6 +47,7 @@ describe('app routes', () => {
     ['settings', () => route('settings'), SettingsComponent],
     ['settings/:section', () => route('settings/:section'), SettingsComponent],
     ['privacy', () => route('privacy'), PrivacyComponent],
+    ['terms', () => route('terms'), TermsComponent],
   ];
 
   for (const [name, find, expected] of lazyRoutes) {

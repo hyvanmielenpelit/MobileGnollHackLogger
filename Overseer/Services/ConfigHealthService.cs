@@ -48,7 +48,8 @@ public class ConfigHealthService
             Configuration = _configuration,
             Sources = sources,
             Makedefs = GetMakedefsState(),
-            KeyRing = ResolveKeyRing()
+            KeyRing = ResolveKeyRing(),
+            LegalDocuments = ResolveLegalDocumentReader()
         };
 
         var checks = ConfigHealthCatalog.Evaluate(context, _logger);
@@ -120,6 +121,25 @@ public class ConfigHealthService
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Failed to evaluate the content keyring in ConfigHealthService");
+            return null;
+        }
+    }
+
+    private GnollHackServer.Data.Legal.LegalDocumentReader? ResolveLegalDocumentReader()
+    {
+        try
+        {
+            if (_scopeFactory == null)
+            {
+                return null;
+            }
+
+            using var scope = _scopeFactory.CreateScope();
+            return scope.ServiceProvider.GetService<GnollHackServer.Data.Legal.LegalDocumentReader>();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to resolve the Terms document reader in ConfigHealthService");
             return null;
         }
     }

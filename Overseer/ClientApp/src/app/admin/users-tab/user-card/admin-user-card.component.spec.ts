@@ -74,6 +74,38 @@ describe('AdminUserCardComponent', () => {
     expect(textOf(el.querySelector('.au-fact-chats'))).toBe('2');
   });
 
+  it('shows the newest accepted version of each Terms document, and says when one is not accepted', () => {
+    render(buildAdminUser({
+      termsAcceptances: [
+        { document: 'overseer-terms', version: '2026-10-18.2', acceptedUtc: '2026-10-18T09:30:00Z', source: 'GnollHackApp' }
+      ]
+    }));
+
+    const overseer = el.querySelector('.au-fact-overseer-terms')!;
+    expect(textOf(overseer.previousElementSibling)).toBe('Overseer Terms');
+    expect(textOf(overseer)).toBe('18 October 2026 (revision 2) · accepted 2026-10-18 · GnollHack app');
+    const account = el.querySelector('.au-fact-account-terms')!;
+    expect(textOf(account.previousElementSibling)).toBe('Account Terms');
+    expect(textOf(account)).toBe('Not accepted');
+  });
+
+  it('names the web and account site sources, and reads a user without acceptances as not accepted', () => {
+    render(buildAdminUser({
+      termsAcceptances: [
+        { document: 'overseer-terms', version: '2026-10-18', acceptedUtc: '2026-10-18T09:30:00Z', source: 'Web' },
+        { document: 'account-terms', version: '2026-09-01', acceptedUtc: '2026-09-02T08:00:00Z', source: 'AccountSite' }
+      ]
+    }));
+
+    expect(textOf(el.querySelector('.au-fact-overseer-terms'))).toBe('18 October 2026 · accepted 2026-10-18 · web');
+    expect(textOf(el.querySelector('.au-fact-account-terms'))).toBe('1 September 2026 · accepted 2026-09-02 · account site');
+
+    fixture.componentRef.setInput('user', buildAdminUser());
+    fixture.detectChanges();
+    expect(textOf(el.querySelector('.au-fact-overseer-terms'))).toBe('Not accepted');
+    expect(textOf(el.querySelector('.au-fact-account-terms'))).toBe('Not accepted');
+  });
+
   it('names the actions group, the icon buttons and the popover for the user', () => {
     render();
 

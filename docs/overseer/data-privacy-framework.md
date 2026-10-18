@@ -1659,10 +1659,13 @@ Stated plainly, because a privacy framework that overstates itself is worse than
   the content key, so a confidential conversation exports there as a notice rather than as text.
   §8.2 names both entry points; there is no single export that is both complete and reachable
   from the account page.
-- **The privacy notice has six unfilled items.** The legal entity, a data-subject contact, the DPA
-  position, breach notification, data residency and telemetry retention are the operator's to
-  supply, and the page renders each as visibly missing rather than quietly omitting it. Until they
-  are filled the notice is honest but not sufficient.
+- **The privacy notice's operator statements are the operator's word, not the code's.** The legal
+  entity, a data-subject contact, the DPA position, breach notification, data residency, telemetry
+  retention and acceptable use are the operator's to supply, in `PrivacyNotice:OperatorStatements`
+  (§8.3). All seven are configured on this deployment, each naming its source; Overseer verifies none
+  of them. The code keeps the fallback for any other deployment: an item left out renders as visibly
+  missing rather than being quietly omitted, and until it is filled that notice is honest but not
+  sufficient.
 - **No regulated-data support.** See §2.
 
 ---
@@ -1803,6 +1806,10 @@ attachment is downloadable one at a time from the conversation anyway.
 The export note also says what an **incognito** chat's absence means: there is nothing to
 include, because it was never stored. Without that line, an absence reads as data withheld.
 
+Both entry points also carry `termsAcceptances`: every Terms of Service acceptance recorded for the
+user (§8.5), oldest first, with its document, version, time and source
+(`ChatDataExport.BuildTermsAcceptancesAsync`).
+
 ### 8.3 The in-product notice
 
 `/privacy` in Overseer renders the ladder, the data map, the limitations matrix, the readable-metadata
@@ -1813,10 +1820,21 @@ It renders **this document's** §6 in full. If a change makes one of those limit
 stronger, the page changes with it — a limitations matrix that lags the code is worse than none,
 because it is read as a promise.
 
-Six items only the operator can supply — the legal entity, a contact address for data-subject
-requests, the DPA position, breach notification, data residency, and telemetry retention — render
-as **visibly unfilled**, each flagged as not supplied. The page is honest about being incomplete
-rather than looking finished.
+The data map includes the Terms of Service acceptance record (§8.5), and the *Acceptable use*
+section links the Gnoll Overseer Terms of Service at `/terms`.
+
+The notice's last section, **§ 7 *Operator statements***, lists seven items only the operator of a
+deployment can supply: the legal entity, a contact address for data-subject requests, the DPA
+position, breach notification, data residency, telemetry retention, and the operator's own
+acceptable-use terms. Each comes from `PrivacyNotice:OperatorStatements:<key>` in Overseer's
+`appsettings.json` (`legalEntity`, `contact`, `dataProcessingAgreement`, `breachNotification`,
+`dataResidency`, `telemetryRetention`, `acceptableUse`), as `{ Text, Source, SourceUrl }`, served by
+`GET /api/legal/operator`. A configured item shows its text and names its source, linked when
+`SourceUrl` is set. An item without `Text` renders as **Not supplied by the operator** with its static
+description, so a deployment that has not filled one is honest about being incomplete rather than
+looking finished. The data map's telemetry row points at this section for its retention. All seven are
+configured on this deployment; changing one needs only a restart of Overseer, no client build. The
+configuration is described in [`terms-of-service.md`](terms-of-service.md) § 10.
 
 ### 8.4 The key-custody and rotation runbook
 
@@ -1852,3 +1870,17 @@ permanently unreadable without touching a byte of it. Its honest limit is in §5
 repeating here because this is the runbook someone will follow under pressure: **shredding makes
 data unrecoverable from a backup restored after it, and a backup taken before it remains
 readable.**
+
+### 8.5 The Terms of Service acceptance record
+
+`UserTermsAcceptances` records which version of which Terms of Service document each account accepted.
+How versions are decided and where acceptance happens is in
+[`terms-of-service.md`](terms-of-service.md); what matters here is what the row holds.
+
+| Stored | Not stored | How long | Shared with |
+|---|---|---|---|
+| The user id, the document key (`overseer-terms` or `account-terms`), the version, the time, the source (`Web`, `GnollHackApp` or `AccountSite`), the GnollHack app version for an app acceptance, and the SHA-256 of the document bytes served (null for an app acceptance) | No IP address, no user agent, no document text | Until the account is deleted; the foreign key cascades, so `AccountErasure` removes the rows with the user | Nobody outside Overseer. Administrators see the newest acceptance of each document on the user card |
+
+The record is append-only in the same sense as §8.1: the application never updates a row, and a
+unique index on user, document and version makes a repeat write nothing. Both personal-data exports
+include it (§8.2), and the notice's data map lists it (§8.3).

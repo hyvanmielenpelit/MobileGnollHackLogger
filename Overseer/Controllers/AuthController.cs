@@ -174,7 +174,8 @@ public class AuthController : ControllerBase
     }
 
     [HttpGet("me")]
-    public async Task<IActionResult> Me([FromServices] ApplicationDbContext dbContext, [FromServices] IConfiguration configuration)
+    public async Task<IActionResult> Me([FromServices] ApplicationDbContext dbContext, [FromServices] IConfiguration configuration,
+        [FromServices] GnollHackServer.Data.Legal.TermsAcceptanceStore? terms = null)
     {
         if (User.Identity?.IsAuthenticated != true)
         {
@@ -190,12 +191,20 @@ public class AuthController : ControllerBase
         bool hasApiKey = dbContext.UserAiApiKeys.Any(k => k.AspNetUserId == user.Id && !string.IsNullOrEmpty(k.EncryptedApiKey));
         bool isAdmin = configuration.IsAdmin(user.UserName);
 
+        var termsStatus = terms == null
+            ? null
+            : await terms.GetStatusAsync(user.Id, GnollHackServer.Data.Legal.LegalDocumentKeys.OverseerTerms);
+
         return Ok(new
         {
             userName = user.UserName,
             email = user.Email,
             hasApiKey = hasApiKey,
-            isAdmin = isAdmin
+            isAdmin = isAdmin,
+            termsRequiredVersion = termsStatus?.RequiredVersion,
+            termsAccepted = termsStatus?.IsAccepted ?? true,
+            termsAcceptedVersion = termsStatus?.AcceptedVersion,
+            termsAcceptedUtc = termsStatus?.AcceptedUtc
         });
     }
 

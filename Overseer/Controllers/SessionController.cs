@@ -57,7 +57,9 @@ public class SessionController : ControllerBase
         [FromServices] GnollHackServer.Data.Security.GameApiSignInThrottle? signInThrottle = null,
         [FromServices] Microsoft.Extensions.Options.IOptions<Overseer.Models.AiUsageGuardOptions>? guardOptions = null,
         [FromServices] Overseer.Security.UserTurnRateLimiter? turnLimiter = null,
-        [FromServices] Overseer.Security.UserTurnConcurrencyGate? turnGate = null)
+        [FromServices] Overseer.Security.UserTurnConcurrencyGate? turnGate = null,
+        [FromServices] GnollHackServer.Data.Legal.TermsAcceptanceStore? terms = null,
+        [FromServices] Overseer.Services.Legal.PendingGreetingStore? pendingGreetings = null)
     {
         var expectedSecret = _configuration["AntiForgeryToken"];
         if (string.IsNullOrEmpty(expectedSecret) || request.AntiForgeryToken != expectedSecret)
@@ -322,60 +324,20 @@ public class SessionController : ControllerBase
             request.InitialPrompt = request.InitialPrompt.Substring(0, maxInitialPromptCharacters);
         }
 
+        bool termsAccepted = await ApplyTermsAsync(terms, user.Id, request);
+
         if (!string.IsNullOrWhiteSpace(request.InitialPrompt))
         {
-            var userId = user.Id;
-            var sessionRef = Overseer.Services.Privacy.SessionRef.Persistent(session.Id);
-            var initialPrompt = request.InitialPrompt;
-
-            /* The handoff turn names no model, so ChatService runs it on the user's own model
-               when they have one; only otherwise is it operator-funded. The rate limit applies
-               to every handoff turn, the concurrency gate to operator-funded ones only. When
-               either refuses, the session and its handoff token are still returned, without the
-               greeting. */
-            bool operatorFunded = turnGate != null
-                && !await _dbContext.UserAiModels.AnyAsync(m => m.AspNetUserId == userId);
-
-            var settings = await _dbContext.UserAiSettings.FindAsync(userId);
-            int timeoutSeconds = settings?.RequestTimeout ?? _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Default", 300);
-
-            bool startTurn = true;
-            if (turnLimiter != null && !turnLimiter.TryAcquire(user.UserName ?? userId))
+            if (termsAccepted)
             {
-                securityEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
-                    SecurityEventKind.RateLimitRejected, UserId: userId, IpAddress: remoteIp, Code: "session-create-turn"));
-                startTurn = false;
+                var starter = new HandoffGreetingStarter(_dbContext, _configuration, _scopeFactory, _ongoingChatManager,
+                    turnLimiter, turnGate, securityEvents);
+                await starter.TryStartAsync(user, Overseer.Services.Privacy.SessionRef.Persistent(session.Id), request.InitialPrompt, remoteIp);
             }
-
-            bool gateEntered = false;
-            if (startTurn && operatorFunded)
+            else
             {
-                gateEntered = turnGate!.TryEnter(userId);
-                startTurn = gateEntered;
-            }
-
-            if (startTurn)
-            {
-                var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-                _ongoingChatManager.TryStart(sessionRef, cts, out _);
-
-                // The gate slot this turn holds, released by the background task's finally.
-                var heldGate = gateEntered ? turnGate : null;
-
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        using var scope = _scopeFactory.CreateScope();
-                        var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
-                        await chatService.GenerateAndBroadcastMessageAsync(sessionRef, initialPrompt, null, userId, true, cts.Token);
-                    }
-                    finally
-                    {
-                        _ongoingChatManager.Complete(sessionRef);
-                        heldGate?.Exit(userId);
-                    }
-                });
+                // Started by LegalController once the user accepts the Terms in the chat.
+                pendingGreetings?.Hold(session.Id, user.Id, request.InitialPrompt);
             }
         }
 
@@ -384,6 +346,50 @@ public class SessionController : ControllerBase
             sessionId = session.Id,
             handoffToken = token
         });
+    }
+
+    /// <summary>
+    /// Records the app's acceptance when it sent one, and says whether the user has accepted the required
+    /// Terms. Never fails: current app builds retry every error except 400, 401 and 404.
+    /// </summary>
+    private async Task<bool> ApplyTermsAsync(GnollHackServer.Data.Legal.TermsAcceptanceStore? terms, string userId, CreateSessionRequest request)
+    {
+        if (terms == null)
+        {
+            return true;
+        }
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(request.AcceptedTermsVersion))
+            {
+                await terms.RecordAsync(userId, GnollHackServer.Data.Legal.LegalDocumentKeys.OverseerTerms,
+                    request.AcceptedTermsVersion.Trim(), GnollHackServer.Data.Legal.LegalDocumentKeys.SourceGnollHackApp,
+                    contentSha256: null, clientVersion: ReadClientVersion(request.OverseerSettings));
+            }
+
+            var status = await terms.GetStatusAsync(userId, GnollHackServer.Data.Legal.LegalDocumentKeys.OverseerTerms);
+            return status.IsAccepted;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not apply the Terms of Service acceptance at session creation.");
+            return false;
+        }
+    }
+
+    /// <summary>"GHVersion PortVersion" from the app's OverseerSettings, capped at 64 characters, or null.</summary>
+    internal static string? ReadClientVersion(string? overseerSettings)
+    {
+        string? ghVersion = ClientSettingsReader.ReadString(overseerSettings, ClientSettingsReader.GnollHackVersionKey);
+        string? portVersion = ClientSettingsReader.ReadString(overseerSettings, "PortVersion");
+        string text = string.Join(" ", new[] { ghVersion, portVersion }.Where(v => !string.IsNullOrEmpty(v)));
+        if (text.Length == 0)
+        {
+            return null;
+        }
+
+        return text.Length <= 64 ? text : text[..64];
     }
 }
 
@@ -422,4 +428,10 @@ public class CreateSessionRequest
     /// an incognito session has no row to give one.
     /// </remarks>
     public bool IsConfidential { get; set; }
+
+    /// <summary>
+    /// The Gnoll Overseer Terms version the player accepted in the app, recorded when it is the version
+    /// required now. Apps that predate it send nothing, and their users accept in the chat.
+    /// </summary>
+    public string? AcceptedTermsVersion { get; set; }
 }

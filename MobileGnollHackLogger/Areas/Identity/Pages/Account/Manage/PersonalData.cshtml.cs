@@ -7,9 +7,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
+using MobileGnollHackLogger.Filters;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account.Manage;
 
+[AllowWithoutAccountTerms]
 public class PersonalDataModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;

@@ -763,6 +763,28 @@
           <button type="button" class="btn-gh version-notes-btn" (click)="openChangelog()">Release Notes</button>
         </div>
 
+        <section class="legal-block" aria-labelledby="legal-heading">
+          <h4 id="legal-heading" class="legal-heading">Legal</h4>
+          @switch (termsState) {
+            @case ('accepted') {
+              <p class="legal-terms-status">
+                Terms of Service last updated {{ termsVersionLabel }}@if (termsAcceptedOn) {, accepted on {{ termsAcceptedOn }}}.
+              </p>
+            }
+            @case ('pending') {
+              <p class="legal-terms-status">Terms of Service last updated {{ termsVersionLabel }}. You have not accepted them yet.</p>
+            }
+          }
+          <div class="legal-actions">
+            @if (termsState === 'pending') {
+              <button type="button" class="btn-gh legal-terms-btn" aria-haspopup="dialog" (click)="openTermsGate()">Review and accept</button>
+            } @else {
+              <button type="button" class="btn-gh legal-terms-btn" aria-haspopup="dialog" (click)="openTermsView()">View Terms</button>
+            }
+            <a class="legal-privacy-link" routerLink="/privacy">Privacy notice</a>
+          </div>
+        </section>
+
       }
       }
       </div>
@@ -777,6 +799,8 @@
     <span class="success">{{ toastMessage || 'Settings saved successfully!' }}</span>
   }
 </div>
+
+<app-terms-dialog #termsDialog (accepted)="onTermsAccepted()"></app-terms-dialog>
 
 <!-- Changelog Dialog -->
 <dialog #changelogDialog class="gh-dialog changelog-dialog" closedby="any" (click)="onChangelogDialogClick($event)">

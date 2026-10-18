@@ -1,4 +1,6 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
 
 /** A heading the table of contents links to. The `id` is the section element's own id. */
@@ -53,10 +55,39 @@ export interface ProviderPolicy {
   url: string;
 }
 
-/** A statement only the deployment's operator can make, rendered as visibly unfilled. */
+/** The keys `GET /api/legal/operator` may carry a statement under. */
+export type OperatorStatementKey =
+  | 'legalEntity'
+  | 'contact'
+  | 'dataProcessingAgreement'
+  | 'breachNotification'
+  | 'dataResidency'
+  | 'telemetryRetention'
+  | 'acceptableUse';
+
+/** One configured operator statement, as the server returns it. */
+export interface OperatorStatement {
+  text: string;
+  source: string;
+  sourceUrl: string | null;
+}
+
+/** The body of `GET /api/legal/operator`; a statement that is not configured is absent. */
+export interface OperatorStatementsResponse {
+  statements: { [key: string]: OperatorStatement };
+}
+
+/**
+ * A statement only the deployment's operator can make. The title and detail are the static
+ * fallback; `statement`, `source` and `sourceUrl` are filled when the operator has configured it.
+ */
 export interface OperatorGap {
+  key: OperatorStatementKey;
   title: string;
   detail: string;
+  statement?: string;
+  source?: string;
+  sourceUrl?: string | null;
 }
 
 @Component({
@@ -67,6 +98,21 @@ export interface OperatorGap {
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PrivacyComponent {
+  private readonly http = inject(HttpClient);
+
+  /** Configured operator statements by key; empty until the request answers, and after it fails. */
+  private readonly statements = signal<{ [key: string]: OperatorStatement }>({});
+
+  constructor() {
+    this.http.get<OperatorStatementsResponse>('/api/legal/operator')
+      .pipe(takeUntilDestroyed())
+      .subscribe({
+        next: response => this.statements.set(response?.statements ?? {}),
+        // The static fallbacks stay in place, so the notice renders in full without the endpoint.
+        error: () => this.statements.set({})
+      });
+  }
+
   /** Drives the table of contents. Each id matches a `<section>` in the template. */
   readonly sections: readonly PrivacySection[] = [
     { id: 'data-sensitivity-ladder', title: 'The data sensitivity ladder' },
@@ -75,7 +121,7 @@ export class PrivacyComponent {
     { id: 'readable-metadata', title: 'What stays readable even in a confidential chat' },
     { id: 'subprocessors', title: 'Subprocessors' },
     { id: 'acceptable-use', title: 'Acceptable use' },
-    { id: 'operator-gaps', title: 'Still to be supplied by the operator' }
+    { id: 'operator-statements', title: 'Operator statements' }
   ];
 
   readonly ladder: readonly SensitivityRung[] = [
@@ -127,7 +173,7 @@ export class PrivacyComponent {
     {
       what: 'Error telemetry',
       storedWhere: 'Sent to Sentry when something fails. Credential-bearing headers, named query values and the whole user record are stripped first, personally identifying data is not attached by default, and request bodies are never captured.',
-      howLong: 'Not stated in this notice — see “Still to be supplied by the operator”.',
+      howLong: 'Set outside Overseer — see “Operator statements”.',
       sharedWith: 'Sentry. Nothing at all from a confidential or an incognito turn: those events are dropped on the server and suppressed in the browser.'
     },
     {
@@ -153,6 +199,12 @@ export class PrivacyComponent {
       storedWhere: 'Not kept as a record of its own. It is a pseudonym derived from your user id, not your name, e-mail address or the id itself.',
       howLong: 'How long a provider keeps it is the provider’s own term, as with the rest of the call.',
       sharedWith: 'OpenAI and Anthropic, with the requests the operator pays for (system AI configurations), so that a provider can act on one user instead of everyone. It is not sent on your own API key or to a custom endpoint. Google receives none: its API has no such field.'
+    },
+    {
+      what: 'Terms of Service acceptance',
+      storedWhere: 'A row in Overseer’s database for each Terms version you accept: the version, the time, and how you accepted — on the web, in the GnollHack app (with the app’s version) or on the account site. No IP address and no browser details are recorded.',
+      howLong: 'Until your account is deleted.',
+      sharedWith: 'Nobody outside Overseer.'
     }
   ];
 
@@ -317,32 +369,56 @@ export class PrivacyComponent {
 
   readonly operatorGaps: readonly OperatorGap[] = [
     {
+      key: 'legalEntity',
       title: 'The legal entity responsible for this deployment',
       detail: 'Who is accountable for the data described on this page, and under which jurisdiction.'
     },
     {
+      key: 'contact',
       title: 'A contact address for data-subject requests',
       detail: 'Where to write to ask for access to your data, its correction, its erasure, a copy of it, or to object to its processing.'
     },
     {
+      key: 'dataProcessingAgreement',
       title: 'Whether a data processing agreement is offered, and on what terms',
       detail: 'This page does not state that one exists.'
     },
     {
+      key: 'breachNotification',
       title: 'How a personal-data breach is assessed and notified, and within what time',
       detail: 'This page does not state a notification process or a deadline.'
     },
     {
+      key: 'dataResidency',
       title: 'Where data is stored and processed, and in which regions inference runs',
       detail: 'This page makes no data-residency guarantee, for Overseer’s own storage or for any provider.'
     },
     {
+      key: 'telemetryRetention',
       title: 'How long error telemetry is kept',
       detail: 'Retention for the telemetry described in the data map above is set outside Overseer.'
     },
     {
+      key: 'acceptableUse',
       title: 'The operator’s own acceptable-use terms',
       detail: 'Any rules for using this deployment beyond the AI providers’ own policies, and what happens when they are broken.'
     }
   ];
+
+  /** The operator items as rendered: each fallback, with its configured statement where there is one. */
+  readonly operatorItems = computed<readonly OperatorGap[]>(() => {
+    const statements = this.statements();
+    return this.operatorGaps.map(gap => {
+      const configured = statements[gap.key];
+      if (!configured || typeof configured.text !== 'string' || configured.text.trim() === '') {
+        return gap;
+      }
+      return {
+        ...gap,
+        statement: configured.text,
+        source: configured.source,
+        sourceUrl: configured.sourceUrl ?? null
+      };
+    });
+  });
 }

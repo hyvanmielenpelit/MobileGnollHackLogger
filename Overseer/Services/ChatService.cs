@@ -281,6 +281,7 @@ public class ChatService
                 /* Both ways a turn starts -- the chat's send and the GnollHack handoff's background
                    turn -- arrive here, and the handoff can report a block only through a chat event. */
                 var block = await GetOverseerBlockAsync(userId);
+                bool termsAccepted = block != null || await AreTermsAcceptedAsync(userId);
                 if (block != null)
                 {
                     var blockedEvt = new ChatEvent
@@ -293,6 +294,18 @@ public class ChatService
                     };
                     _ongoingChatManager.ProcessEvent(sessionRef, blockedEvt);
                     await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", blockedEvt, CancellationToken.None);
+                }
+                else if (!termsAccepted)
+                {
+                    var termsEvt = new ChatEvent
+                    {
+                        Type = "error",
+                        Data = Overseer.Security.RequireTermsAcceptedAttribute.NotAcceptedMessage,
+                        ErrorCode = Overseer.Security.RequireTermsAcceptedAttribute.NotAcceptedCode,
+                        SessionId = wireRef
+                    };
+                    _ongoingChatManager.ProcessEvent(sessionRef, termsEvt);
+                    await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", termsEvt, CancellationToken.None);
                 }
                 else
                 await foreach (var evt in StreamMessageAsync(sessionRef, message, attachments, userId, isHidden, cancellationToken, userModelId, systemModelId, hasGreeted))
@@ -399,6 +412,30 @@ public class ChatService
         {
             _logger?.LogWarning(ex, "Could not read the Overseer block state of a user.");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Whether the user has accepted the required Gnoll Overseer Terms. True when no
+    /// <see cref="GnollHackServer.Data.Legal.LegalDocumentReader"/> is registered (no gate), or when the
+    /// status cannot be read: a failed lookup never stops a turn.
+    /// </summary>
+    internal async Task<bool> AreTermsAcceptedAsync(string userId)
+    {
+        if (OptionalSingleton<GnollHackServer.Data.Legal.LegalDocumentReader>() == null) return true;
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var terms = scope.ServiceProvider.GetService<GnollHackServer.Data.Legal.TermsAcceptanceStore>();
+            if (terms == null) return true;
+            var status = await terms.GetStatusAsync(userId, GnollHackServer.Data.Legal.LegalDocumentKeys.OverseerTerms);
+            return status.IsAccepted;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Could not read the Terms of Service acceptance of a user.");
+            return true;
         }
     }
 

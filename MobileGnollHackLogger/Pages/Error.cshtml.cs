@@ -6,6 +6,7 @@ namespace MobileGnollHackLogger.Pages
 {
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     [IgnoreAntiforgeryToken]
+    [MobileGnollHackLogger.Filters.AllowWithoutAccountTerms]
     public class ErrorModel : PageModel
     {
         public string? RequestId { get; set; }

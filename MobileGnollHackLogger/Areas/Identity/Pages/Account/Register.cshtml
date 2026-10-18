@@ -50,6 +50,17 @@
                         <span asp-validation-for="Input.ConfirmPassword" class="text-danger"></span>
                     </div>
 
+                    @if (Model.TermsRequiredVersion != null)
+                    {
+                        <div class="form-check terms-consent">
+                            @* data-val="false": jQuery Validate cannot evaluate [Range] on a checkbox and would reject a checked box; the server validates it. *@
+                            <input asp-for="Input.AcceptTerms" class="form-check-input" type="checkbox" data-val="false" />
+                            <label asp-for="Input.AcceptTerms" class="form-check-label">I am at least 13 years old, and if I am under 18 my parent or guardian has agreed to these Terms. I agree to the <a href="@Model.TermsUrl" target="_blank" rel="noopener">GnollHack Account Terms of Service</a>, and I have read the <a href="@Model.PrivacyPolicyUrl" target="_blank" rel="noopener">GnollHack Account Privacy Policy</a>.</label>
+                            <span asp-validation-for="Input.AcceptTerms" class="text-danger"></span>
+                        </div>
+                        <input type="hidden" asp-for="Input.TermsVersion" />
+                    }
+
                     <div class="login-button-container text-center mb-3">
                         <button id="registerSubmit" type="submit" class="btn btn-fantasy-login w-100">
                             <span>REGISTER</span>

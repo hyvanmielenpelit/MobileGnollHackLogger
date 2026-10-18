@@ -752,3 +752,24 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
   align-items: center;
   gap: 8px;
 }
+
+.legal-block {
+  margin-block-start: 28px;
+  padding-block-start: 16px;
+  border-block-start: 1px solid var(--border-glass);
+}
+
+.legal-heading {
+  margin: 0 0 8px;
+}
+
+.legal-terms-status {
+  margin: 0 0 12px;
+}
+
+.legal-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}

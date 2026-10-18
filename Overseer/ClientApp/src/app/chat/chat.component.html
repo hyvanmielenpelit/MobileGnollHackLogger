@@ -115,6 +115,7 @@
         @if (showDebugLog) {
           <a routerLink="/debug-log" queryParamsHandling="preserve">Debug Log</a>
         }
+        <button type="button" class="bottom-link-btn" aria-haspopup="dialog" (click)="openTermsView()">Terms</button>
         <a href="#" (click)="confirmLogout($event)">Logout</a>
       </div>
     </div>
@@ -620,6 +621,18 @@
               </div>
             </div>
           </div>
+        } @else if (termsAcceptanceRequired) {
+          <div class="alert alert-info alert-compact terms-required-banner" role="status">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+            <div class="alert-content">
+              <div class="alert-body">
+                <p class="terms-required-message">{{ termsRequiredMessage }}</p>
+              </div>
+              <div class="alert-actions">
+                <button type="button" class="btn-gh btn-gh-small terms-review-btn" aria-haspopup="dialog" (click)="openTermsGate()">Review Terms</button>
+              </div>
+            </div>
+          </div>
         }
         @if (privacyNotice) {
           <div class="ephemeral-notice" role="status" aria-live="polite">
@@ -897,19 +910,19 @@
             <div class="auto-resize-wrapper" [attr.data-replicated-value]="currentInput">
               <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keydown.enter)="onEnter($event)" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus class="transparent-textarea"></textarea>
             </div>
-            <!-- While blocked: aria-disabled rather than disabled, so the button stays focusable and its tooltip says why. -->
+            <!-- While blocked or awaiting the Terms: aria-disabled rather than disabled, so the button stays focusable and its tooltip says why. -->
             <button type="button" class="icon-btn send-icon" (click)="sendMessage()"
-                    [disabled]="!overseerBlock && (isStreaming || (!currentInput.trim() && pendingAttachments.length === 0))"
-                    [attr.aria-disabled]="overseerBlock ? 'true' : null"
+                    [disabled]="!sendRefusal && (isStreaming || (!currentInput.trim() && pendingAttachments.length === 0))"
+                    [attr.aria-disabled]="sendRefusal ? 'true' : null"
                     aria-label="Send message"
-                    [attr.title]="overseerBlock ? null : 'Send message'"
-                    [attr.interestfor]="overseerBlock ? 'tip-send-blocked' : null"
+                    [attr.title]="sendRefusal ? null : 'Send message'"
+                    [attr.interestfor]="sendRefusal ? 'tip-send-blocked' : null"
                     [attr.style]="'anchor-name: --tip-send-blocked'">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
             </button>
-            @if (overseerBlock) {
+            @if (sendRefusal; as refusal) {
               <div popover="hint" id="tip-send-blocked" class="gh-tooltip gh-tooltip-multiline"
-                   [attr.style]="'position-anchor: --tip-send-blocked'">{{ overseerBlock.message }}</div>
+                   [attr.style]="'position-anchor: --tip-send-blocked'">{{ refusal }}</div>
             }
           </div>
         </div>
@@ -1495,6 +1508,9 @@
 
 <app-model-resolution-dialog #modelResolutionDialog kind="user"
                              (resolved)="onModelResolved($event)"></app-model-resolution-dialog>
+
+<!-- Outside every block: the chat reads it as a static query and opens the gate from ngAfterViewInit. -->
+<app-terms-dialog #termsDialog (accepted)="onTermsAccepted($event)"></app-terms-dialog>
 
 <!-- Hidden container to keep avatar bitmaps decoded in memory -->
 <div aria-hidden="true" style="position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;">

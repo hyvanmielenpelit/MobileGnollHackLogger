@@ -230,6 +230,12 @@ public class AdminUserManagementService
             .Select(g => new { UserId = g.Key, Count = g.Count() })
             .ToListAsync(ct);
 
+        var acceptances = await _db.UserTermsAcceptances.AsNoTracking()
+            .Where(a => ids.Contains(a.AspNetUserId))
+            .Select(a => new { a.AspNetUserId, a.DocumentKey, a.Version, a.AcceptedUtc, a.Source })
+            .ToListAsync(ct);
+        var versionOrder = Comparer<string>.Create(GnollHackServer.Data.Legal.LegalVersion.Compare);
+
         var admins = AdminNormalizedNames;
         var rows = new List<AdminUserDto>(users.Count);
         foreach (var u in users)
@@ -276,7 +282,19 @@ public class AdminUserManagementService
                 PendingDeletionRequestId = pendingId,
                 GameLogCount = gameLogs.Where(g => g.UserId == u.Id).Select(g => g.Count).FirstOrDefault(),
                 BonesCount = bones.Where(g => g.UserId == u.Id).Select(g => g.Count).FirstOrDefault(),
-                ChatSessionCount = chats.Where(g => g.UserId == u.Id).Select(g => g.Count).FirstOrDefault()
+                ChatSessionCount = chats.Where(g => g.UserId == u.Id).Select(g => g.Count).FirstOrDefault(),
+                TermsAcceptances = acceptances.Where(a => a.AspNetUserId == u.Id)
+                    .GroupBy(a => a.DocumentKey)
+                    .Select(g => g.OrderByDescending(a => a.Version, versionOrder).First())
+                    .OrderBy(a => a.DocumentKey, StringComparer.Ordinal)
+                    .Select(a => new AdminTermsAcceptanceDto
+                    {
+                        Document = a.DocumentKey,
+                        Version = a.Version,
+                        AcceptedUtc = DateTime.SpecifyKind(a.AcceptedUtc, DateTimeKind.Utc),
+                        Source = a.Source
+                    })
+                    .ToList()
             });
         }
         return rows;

@@ -15,6 +15,14 @@ import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils
 import { formatUtcDay, relativeTime } from '../user-status/admin-user-status';
 import { UserStatusBadgesComponent } from '../user-status/user-status-badges.component';
 import { AdminUserActionGroup, AdminUserActionId, AdminUserActionItem, accountActionGroups } from './admin-user-card-actions';
+import { formatTermsVersion } from '../../../services/terms.service';
+
+/** How each acceptance source reads in a card. */
+const TERMS_SOURCE_LABELS: Readonly<Record<string, string>> = {
+  Web: 'web',
+  GnollHackApp: 'GnollHack app',
+  AccountSite: 'account site'
+};
 
 /**
  * One account of the Users list: the name, email, registration and last sign-in, the status badges,
@@ -98,6 +106,25 @@ export class AdminUserCardComponent implements OnInit {
 
   get twoFactorText(): string {
     return this.user.twoFactorEnabled ? 'On' : 'Off';
+  }
+
+  /** `18 October 2026 · accepted 2026-10-18 · web`, or `Not accepted`. */
+  get overseerTermsText(): string {
+    return this.termsText('overseer-terms');
+  }
+
+  get accountTermsText(): string {
+    return this.termsText('account-terms');
+  }
+
+  private termsText(document: string): string {
+    const entry = this.user.termsAcceptances?.find(a => a.document === document);
+    if (!entry) return 'Not accepted';
+    const parts = [formatTermsVersion(entry.version) ?? entry.version];
+    const day = formatUtcDay(entry.acceptedUtc);
+    if (day) parts.push(`accepted ${day}`);
+    parts.push(TERMS_SOURCE_LABELS[entry.source] ?? entry.source);
+    return parts.join(' · ');
   }
 
   itemId(item: AdminUserActionItem): string {

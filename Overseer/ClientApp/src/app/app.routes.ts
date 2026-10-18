@@ -83,5 +83,8 @@ export const routes: Routes = [
   // No auth guard: a privacy notice has to be readable by someone who has not signed in.
   { path: 'privacy', loadComponent: () => import('./privacy/privacy.component').then(m => m.PrivacyComponent) },
 
+  // No auth guard: the Terms have to be readable before someone signs in and agrees to them.
+  { path: 'terms', loadComponent: () => import('./terms/terms.component').then(m => m.TermsComponent) },
+
   { path: '', redirectTo: '/chat', pathMatch: 'full' }
 ];

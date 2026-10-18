@@ -68,6 +68,16 @@ export interface AdminUserGroup {
   userCount?: number;
 }
 
+/** The newest accepted version of one legal document. */
+export interface AdminTermsAcceptance {
+  /** `overseer-terms` or `account-terms`. */
+  document: string;
+  version: string;
+  acceptedUtc: string;
+  /** `Web`, `GnollHackApp` or `AccountSite`. */
+  source: string;
+}
+
 /** One account as the Users tab shows it (`AdminUserDto`). Dates are UTC ISO strings. */
 export interface AdminUser {
   id: string;
@@ -108,6 +118,8 @@ export interface AdminUser {
   gameLogCount: number;
   bonesCount: number;
   chatSessionCount: number;
+  /** The newest accepted version per document; a document the user never accepted has no entry. */
+  termsAcceptances?: AdminTermsAcceptance[];
 }
 
 export interface AdminUsersPage {

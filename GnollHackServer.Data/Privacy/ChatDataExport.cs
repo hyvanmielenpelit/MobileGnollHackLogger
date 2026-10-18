@@ -67,6 +67,15 @@ public sealed class ExportedAttachment
     public string? ContentType { get; set; }
 }
 
+/// <summary>One exported Terms of Service acceptance.</summary>
+public sealed class ExportedTermsAcceptance
+{
+    public string Document { get; set; } = "";
+    public string Version { get; set; } = "";
+    public DateTime AcceptedUtc { get; set; }
+    public string Source { get; set; } = "";
+}
+
 /// <summary>
 /// Builds a user's chat history as portable data.
 /// </summary>
@@ -228,6 +237,24 @@ public static class ChatDataExport
 
         return exported;
     }
+
+    /// <summary>Every Terms of Service acceptance recorded for <paramref name="userId"/>, oldest first.</summary>
+    public static Task<List<ExportedTermsAcceptance>> BuildTermsAcceptancesAsync(
+        ApplicationDbContext dbContext,
+        string userId,
+        CancellationToken cancellationToken = default)
+        => dbContext.UserTermsAcceptances
+            .AsNoTracking()
+            .Where(a => a.AspNetUserId == userId)
+            .OrderBy(a => a.AcceptedUtc)
+            .Select(a => new ExportedTermsAcceptance
+            {
+                Document = a.DocumentKey,
+                Version = a.Version,
+                AcceptedUtc = a.AcceptedUtc,
+                Source = a.Source
+            })
+            .ToListAsync(cancellationToken);
 
     /// <summary>
     /// The note that goes beside the conversations, saying what this export does and does not

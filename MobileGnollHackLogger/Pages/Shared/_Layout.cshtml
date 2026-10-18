@@ -1,5 +1,21 @@
 @inject IWebHostEnvironment WebHostEnvironment
 @inject IConfiguration Configuration
+@inject GnollHackServer.Data.Legal.TermsAcceptanceStore TermsAcceptanceStore
+@inject GnollHackServer.Data.Legal.LegalDocumentReader LegalDocumentReader
+@{
+    // The footer link is optional; a failed lookup must not stop a page, the error page included, from rendering.
+    string? accountTermsUrl = null;
+    try
+    {
+        accountTermsUrl = await TermsAcceptanceStore.GetRequiredVersionAsync(GnollHackServer.Data.Legal.LegalDocumentKeys.AccountTerms) != null
+            ? LegalDocumentReader.GetWikiUrl(GnollHackServer.Data.Legal.LegalDocumentKeys.AccountTerms)
+            : null;
+    }
+    catch (Exception)
+    {
+        accountTermsUrl = null;
+    }
+}
 
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
@@ -158,6 +174,11 @@
     <footer class="footer text-muted border-top">
         <div class="container">
                 &copy; @DateTime.Now.Year <i class="bi bi-dash"></i> GnollHack Account <i class="bi bi-dash"></i> @WebHostEnvironment.EnvironmentName <i class="bi bi-dash"></i> <a target="_blank" href="https://wiki.gnollhack.com/GnollHack%20Account%20Privacy%20Policy.md">Privacy</a>
+                @if (accountTermsUrl != null)
+                {
+                    <i class="bi bi-dash"></i> <a target="_blank" href="@accountTermsUrl">GnollHack Account Terms of Service</a>
+                }
+                <i class="bi bi-dash"></i> <a target="_blank" href="@LegalDocumentReader.PageUrl("Gnoll Overseer Terms of Service")">Gnoll Overseer Terms of Service</a>
         </div>
     </footer>
 

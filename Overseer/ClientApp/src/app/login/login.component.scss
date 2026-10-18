@@ -175,6 +175,18 @@
   margin-top: 5px;
 }
 
+/* The legal links under the form, in the page's small print. */
+.login-legal {
+  text-align: center;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 25px 0 0;
+}
+
+.login-legal a {
+  color: #e0ba6d;
+}
+
 .two-factor-prompt {
   text-align: center;
   margin: 0 0 20px;

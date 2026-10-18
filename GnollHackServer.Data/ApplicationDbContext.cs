@@ -77,6 +77,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<AdminUserAction> AdminUserActions { get; set; } = null!;
         public DbSet<AdminBulkOperation> AdminBulkOperations { get; set; } = null!;
         public DbSet<AdminBulkOperationItem> AdminBulkOperationItems { get; set; } = null!;
+        public DbSet<UserTermsAcceptance> UserTermsAcceptances { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -203,6 +204,15 @@ namespace MobileGnollHackLogger.Data
             {
                 e.HasOne(h => h.AspNetUser).WithMany().HasForeignKey(h => h.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
                 e.HasIndex(h => new { h.AspNetUserId, h.ReleasedUtc });
+            });
+
+            /* One row per user, document and version. (DocumentKey, Version) serves the required-version
+               fallback, which reads the versions anyone has accepted. */
+            modelBuilder.Entity<UserTermsAcceptance>(e =>
+            {
+                e.HasOne(a => a.AspNetUser).WithMany().HasForeignKey(a => a.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
+                e.HasIndex(a => new { a.AspNetUserId, a.DocumentKey, a.Version }).IsUnique();
+                e.HasIndex(a => new { a.DocumentKey, a.Version });
             });
 
             // No foreign key to the user: the decision outlives the deleted account.

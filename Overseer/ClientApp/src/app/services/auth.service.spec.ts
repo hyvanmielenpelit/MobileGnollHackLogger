@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, TestRequest, provideHttpClientTesting } from '@angular/common/http/testing';
 
-import { AuthCheckResult, AuthService, AuthUser } from './auth.service';
+import { AuthCheckResult, AuthService, AuthUser, hasTermsStatus, needsTermsAcceptance } from './auth.service';
 
 const ME = '/api/auth/me';
 const USER: AuthUser = { userName: 'player', email: 'player@example.com', hasApiKey: true };
@@ -153,5 +153,21 @@ describe('AuthService', () => {
       expect(service.currentUser).toEqual(USER);
       expect(service.revalidate()).toBeNull();
     });
+  });
+});
+
+describe('Terms status helpers', () => {
+  it('needs an acceptance only when a version is required and the user has not accepted it', () => {
+    expect(needsTermsAcceptance({ ...USER, termsRequiredVersion: '2026-10-18', termsAccepted: false })).toBe(true);
+    expect(needsTermsAcceptance({ ...USER, termsRequiredVersion: '2026-10-18', termsAccepted: true })).toBe(false);
+    expect(needsTermsAcceptance({ ...USER, termsRequiredVersion: null, termsAccepted: true })).toBe(false);
+    expect(needsTermsAcceptance(USER)).toBe(false);
+    expect(needsTermsAcceptance(null)).toBe(false);
+  });
+
+  it('tells a user from /api/auth/me from one published by sign-in', () => {
+    expect(hasTermsStatus({ ...USER, termsRequiredVersion: null, termsAccepted: true })).toBe(true);
+    expect(hasTermsStatus(USER)).toBe(false);
+    expect(hasTermsStatus(null)).toBe(false);
   });
 });

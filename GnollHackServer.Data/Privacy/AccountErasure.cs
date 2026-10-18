@@ -13,7 +13,7 @@ public sealed record AccountErasureResult(int BonesFilesMissing, int FoldersMiss
 /// <summary>
 /// Erases a user's account and data: self-service deletion on the website and an administrator's approved
 /// deletion in Overseer run these same steps. Rows that reference the user by foreign key (security events,
-/// holds, usage and attempt logs, activity, model order) go with the user by cascade; benchmark rows are kept
+/// holds, usage and attempt logs, activity, model order, terms acceptances) go with the user by cascade; benchmark rows are kept
 /// with their attribution to the user removed.
 /// </summary>
 public static class AccountErasure

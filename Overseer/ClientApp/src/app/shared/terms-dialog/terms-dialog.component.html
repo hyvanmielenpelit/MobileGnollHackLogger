@@ -1,0 +1,116 @@
+<!-- View mode light-dismisses; gate mode takes closedby="none" and refuses Escape in (cancel). -->
+<dialog #termsDialog class="gh-dialog terms-dialog" aria-labelledby="termsDialogTitle"
+        [attr.closedby]="mode === 'gate' ? 'none' : 'any'"
+        (click)="onDialogClick($event)"
+        (cancel)="onCancel($event)" (close)="onClose($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h1 #termsHeading id="termsDialogTitle" tabindex="-1">{{ title }}</h1>
+      </div>
+      @if (mode === 'view') {
+        <button type="button" class="btn-icon-action terms-close"
+                aria-label="Close the Terms of Service"
+                interestfor="terms-close-tip" style="anchor-name: --terms-close-tip" (click)="close()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+        <div popover="hint" class="gh-tooltip" id="terms-close-tip" style="position-anchor: --terms-close-tip">Close</div>
+      }
+    </div>
+
+    @if (doc) {
+      <p class="terms-meta">
+        @if (lastUpdated) {
+          <span class="terms-updated">Last updated {{ lastUpdated }}</span>
+        }
+        <a class="terms-wiki-link" [href]="doc.wikiUrl" target="_blank" rel="noopener">Open on the wiki</a>
+      </p>
+    }
+
+    <div #termsText id="termsDialogText" class="terms-text" role="region" aria-label="Terms of Service text"
+         tabindex="0" [attr.aria-busy]="loading ? 'true' : null">
+      @if (loading && !doc) {
+        <app-loading-indicator text="Loading the Terms of Service…" size="block"></app-loading-indicator>
+      } @else if (loadError && !doc) {
+        <div class="terms-load-error">
+          <p class="gh-field-error" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            The Terms of Service could not be loaded.
+          </p>
+          <button type="button" class="btn-ghost terms-retry" (click)="retryLoad()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+            Retry
+          </button>
+        </div>
+      } @else if (doc && doc.markdown === null) {
+        <p class="terms-fallback">
+          The Terms could not be loaded here.
+          <a [href]="doc.wikiUrl" target="_blank" rel="noopener">Read them on the wiki.</a>
+        </p>
+      } @else if (doc) {
+        <div class="markdown-body gh-help-prose terms-markdown" [innerHTML]="body | markdown"></div>
+      }
+    </div>
+
+    @if (mode === 'gate') {
+      <div class="terms-consent">
+        @if (termsChanged) {
+          <p class="gh-field-warning terms-changed" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            The Terms of Service have just changed. Please review them again.
+          </p>
+        }
+        <label class="checkbox-label align-start terms-agree">
+          <input type="checkbox" class="terms-agree-input" [checked]="agreed" (change)="onAgreeChange($event)">
+          <span>
+            I am at least 13 years old, and if I am under 18 my parent or guardian has agreed to these Terms.
+            I agree to the
+            <a class="terms-top-link" href="#termsDialogText" (click)="showTermsFromTop($event)"><strong>Gnoll Overseer Terms of Service</strong></a>,
+            and I have read the
+            @if (doc?.privacyPolicyUrl; as privacyPolicyUrl) {
+              <a class="terms-privacy-link" [href]="privacyPolicyUrl" target="_blank" rel="noopener"><strong>Gnoll Overseer Privacy Policy</strong></a>.
+            } @else {
+              <strong>Gnoll Overseer Privacy Policy</strong>.
+            }
+          </span>
+        </label>
+        @if (submitError) {
+          <p class="gh-field-error terms-submit-error" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            {{ submitError }}
+          </p>
+        }
+      </div>
+    }
+
+    <div class="dialog-footer">
+      @if (mode === 'gate') {
+        <button type="button" class="btn-gh btn-gh-cancel terms-decline" (click)="decline()">Not now</button>
+        <button type="button" class="btn-gh terms-accept"
+                [disabled]="!agreed || submitting || !acceptable"
+                [attr.aria-busy]="submitting ? 'true' : null"
+                (click)="accept()">{{ submitting ? 'Saving…' : 'Accept and continue' }}</button>
+      } @else {
+        <button type="button" class="btn-gh btn-gh-cancel terms-done" (click)="close()">Close</button>
+      }
+    </div>
+  </div>
+</dialog>

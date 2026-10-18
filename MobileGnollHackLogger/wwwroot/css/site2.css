@@ -1208,6 +1208,58 @@ div.container.xxlMaxWidth main.xxlMaxWidth {
   background-color: #e0ba6d;
   border-color: #e0ba6d;
 }
+.login-box .terms-consent {
+  padding-left: 2.25em;
+  margin-bottom: 1.5rem;
+  color: #a0aec0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.login-box .terms-consent .form-check-input {
+  width: 1.15em;
+  height: 1.15em;
+  margin-left: -2.25em;
+  margin-top: 0.175em;
+  background-color: transparent;
+  border: 1px solid rgba(212, 160, 23, 0.6);
+  cursor: pointer;
+}
+.login-box .terms-consent .form-check-input:checked {
+  background-color: #e0ba6d;
+  border-color: #e0ba6d;
+}
+.login-box .terms-consent .form-check-input:focus {
+  box-shadow: none;
+  border-color: rgba(212, 160, 23, 0.6);
+}
+.login-box .terms-consent .form-check-input:focus-visible {
+  border-color: #e0ba6d;
+  outline: 2px solid #e0ba6d;
+  outline-offset: 2px;
+  box-shadow: 0 0 8px rgba(212, 160, 23, 0.25);
+}
+.login-box .terms-consent .form-check-label {
+  color: #a0aec0;
+  cursor: pointer;
+}
+.login-box .terms-consent a {
+  color: #e0ba6d;
+  font-weight: bold;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.login-box .terms-consent a:hover, .login-box .terms-consent a:focus-visible {
+  color: rgb(93.097374543%, 84.6360917248%, 67.4908607511%);
+}
+.login-box .terms-consent a:focus-visible {
+  outline: 2px solid #e0ba6d;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.login-box .terms-consent .text-danger {
+  display: block;
+  margin-top: 0.25rem;
+}
 .login-box .signup-text {
   color: #a0aec0;
 }

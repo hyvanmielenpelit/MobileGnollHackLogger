@@ -1,0 +1,84 @@
+/* Layout for the Terms of Service page, matching the privacy notice. The container shell, buttons,
+   .markdown-body and .gh-help-prose come from styles.scss; nothing global is redefined here. */
+
+.terms-container {
+  max-width: 980px;
+  margin: 20px auto;
+  max-height: calc(100dvh - 40px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* .header-row styles an h2; this page leads with an h1, so it carries its own type. */
+.header-row h1 {
+  margin: 0;
+  font-family: "Cinzel", serif;
+  font-size: 1.6rem;
+  color: var(--title-color);
+}
+
+.terms-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px 30px 40px;
+  color: #ddd;
+}
+
+.terms-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  margin: 0 0 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-glass);
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.terms-markdown {
+  max-width: 78ch;
+}
+
+/* Underlined, so the links do not rely on color alone inside running text. */
+.terms-meta a,
+.terms-fallback a {
+  color: var(--link-color);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+
+  &:hover {
+    color: #fce6a8;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+.terms-fallback {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.terms-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+@media (max-width: 700px) {
+  .terms-scroll-area {
+    padding: 15px 15px 30px;
+  }
+
+  .header-row h1 {
+    font-size: 1.35rem;
+  }
+}

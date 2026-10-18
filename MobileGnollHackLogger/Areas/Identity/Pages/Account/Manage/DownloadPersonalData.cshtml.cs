@@ -13,9 +13,11 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
 using GnollHackServer.Data.Privacy;
+using MobileGnollHackLogger.Filters;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account.Manage;
 
+[AllowWithoutAccountTerms]
 public class DownloadPersonalDataModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
@@ -88,7 +90,8 @@ public class DownloadPersonalDataModel : PageModel
         {
             ["account"] = personalData,
             ["conversationsNote"] = ChatDataExport.DescribeExport(canDecrypt: false),
-            ["conversations"] = conversations
+            ["conversations"] = conversations,
+            ["termsAcceptances"] = await ChatDataExport.BuildTermsAcceptancesAsync(_dbContext, user.Id)
         };
 
         Response.Headers.TryAdd("Content-Disposition", "attachment; filename=PersonalData.json");

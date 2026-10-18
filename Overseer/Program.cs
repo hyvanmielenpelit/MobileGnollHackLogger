@@ -297,6 +297,14 @@ builder.Services.AddScoped<Overseer.Services.Security.AccountDeletionReviewServi
 builder.Services.AddSingleton(sp => builder.Configuration.GetSection("AccountHold").Get<GnollHackServer.Data.Security.AccountHoldOptions>()
     ?? new GnollHackServer.Data.Security.AccountHoldOptions());
 
+// Terms of Service: the documents are read from the wiki clone at WikiPath; acceptance is recorded per user.
+builder.Services.Configure<GnollHackServer.Data.Legal.LegalDocumentOptions>(
+    builder.Configuration.GetSection(GnollHackServer.Data.Legal.LegalDocumentOptions.SectionName));
+builder.Services.AddSingleton<GnollHackServer.Data.Legal.LegalDocumentReader>();
+builder.Services.AddScoped<GnollHackServer.Data.Legal.TermsAcceptanceStore>();
+builder.Services.AddSingleton<Overseer.Services.Legal.PendingGreetingStore>();
+builder.Services.AddScoped<HandoffGreetingStarter>();
+
 // Admin user management: per-user actions per request; bulk operations run one account at a time on a background loop.
 builder.Services.AddSingleton(sp => builder.Configuration.GetSection("AdminUserManagement").Get<Overseer.Services.Security.AdminUserManagementOptions>()
     ?? new Overseer.Services.Security.AdminUserManagementOptions());

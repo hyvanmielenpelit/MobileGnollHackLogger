@@ -3,11 +3,11 @@ import { Component, inject, OnInit, OnDestroy, ChangeDetectionStrategy } from '@
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
 import { SystemService } from '../services/system.service';
-import { Router, ActivatedRoute } from '@angular/router';
+import { Router, ActivatedRoute, RouterLink } from '@angular/router';
 
 @Component({
     selector: 'app-login',
-    imports: [FormsModule],
+    imports: [FormsModule, RouterLink],
     templateUrl: './login.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './login.component.scss'

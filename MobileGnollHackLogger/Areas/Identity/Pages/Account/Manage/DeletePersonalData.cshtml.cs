@@ -14,9 +14,11 @@ using MobileGnollHackLogger.Data;
 using GnollHackServer.Data.Privacy;
 using GnollHackServer.Data.Security;
 using Microsoft.AspNetCore.Identity.UI.Services;
+using MobileGnollHackLogger.Filters;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account.Manage;
 
+[AllowWithoutAccountTerms]
 public class DeletePersonalDataModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;

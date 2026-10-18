@@ -2,7 +2,32 @@ import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { BehaviorSubject, Observable, tap, catchError, of, map, finalize, shareReplay } from 'rxjs';
 
-export interface AuthUser { userName: string; email: string; hasApiKey: boolean; isAdmin?: boolean; }
+export interface AuthUser {
+  userName: string;
+  email: string;
+  hasApiKey: boolean;
+  isAdmin?: boolean;
+  /**
+   * The Overseer Terms version the user must accept, or null when none is required. The Terms
+   * fields come from `/api/auth/me` only; a user published by sign-in carries none of them.
+   */
+  termsRequiredVersion?: string | null;
+  /** True when the required version is accepted or none is required; absent reads as accepted. */
+  termsAccepted?: boolean;
+  termsAcceptedVersion?: string | null;
+  /** ISO timestamp of the newest acceptance. */
+  termsAcceptedUtc?: string | null;
+}
+
+/** True when the user must accept the Overseer Terms before using the chat. */
+export function needsTermsAcceptance(user: AuthUser | null | undefined): boolean {
+  return !!user && !!user.termsRequiredVersion && user.termsAccepted === false;
+}
+
+/** True when the user object came from `/api/auth/me` and so carries the Terms status. */
+export function hasTermsStatus(user: AuthUser | null | undefined): boolean {
+  return !!user && user.termsAccepted !== undefined;
+}
 
 /** `unknown` is a check that did not reach a verdict (network error, 5xx, 429): it never signs the user out. */
 export type AuthCheckResult =

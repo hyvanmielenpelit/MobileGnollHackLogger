@@ -107,7 +107,8 @@
 /* ---- Acceptable use ---- */
 
 /* Underlined, so the links do not rely on color alone inside running text. */
-.provider-policy-list a {
+.provider-policy-list a,
+.privacy-inline-link {
   color: var(--link-color);
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -268,7 +269,7 @@
   }
 }
 
-/* ---- Operator placeholders ---- */
+/* ---- Operator statements ---- */
 
 .operator-gap-list {
   list-style: none;
@@ -290,6 +291,12 @@
   border: 1px dashed var(--color-warning);
   border-radius: 6px;
   background: rgba(255, 193, 7, 0.06);
+
+  /* A configured statement is a statement, so it loses the unfinished look. */
+  &.is-supplied {
+    border: 1px solid var(--border-glass);
+    background: rgba(17, 17, 17, 0.5);
+  }
 }
 
 .operator-gap-flag {
@@ -311,6 +318,20 @@
 .operator-gap-detail {
   color: #ccc;
   line-height: 1.55;
+}
+
+/* Keeps the line breaks the operator wrote. */
+.operator-statement-text {
+  color: #ddd;
+  line-height: 1.6;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.operator-statement-source {
+  color: #ccc;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
 }
 
 @media (prefers-reduced-motion: no-preference) {

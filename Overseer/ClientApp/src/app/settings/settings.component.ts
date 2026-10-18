@@ -35,6 +35,9 @@ import { Subject, BehaviorSubject, Subscription, of, timer, firstValueFrom, EMPT
 import { debounce, tap, switchMap, catchError, filter, timeout } from 'rxjs/operators';
 import { ensureOverlayPolyfills } from '../utils/polyfills.util';
 import { formatCalendarDate, formatServerDate } from '../utils/date.util';
+import { AuthService, AuthUser, hasTermsStatus, needsTermsAcceptance } from '../services/auth.service';
+import { formatTermsVersion } from '../services/terms.service';
+import { TermsDialogComponent } from '../shared/terms-dialog/terms-dialog.component';
 
 /** The data classes outbound masking can recognise, named as `POST /api/settings/dlp` accepts them. */
 export type DlpMaskClass = keyof DlpSettings;
@@ -67,7 +70,7 @@ const DLP_FLOOR_KEYS: Record<DlpMaskClass, keyof DlpFloor> = {
 
 @Component({
     selector: 'app-settings',
-    imports: [FormsModule, RouterModule, ChangelogComponent, TrashModalComponent, ApiKeysComponent, ModelsComponent],
+    imports: [FormsModule, RouterModule, ChangelogComponent, TrashModalComponent, ApiKeysComponent, ModelsComponent, TermsDialogComponent],
     styleUrl: './settings.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './settings.component.html'
@@ -78,8 +81,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
   chatService = inject(ChatService);
   cdr = inject(ChangeDetectorRef);
   route = inject(ActivatedRoute);
+  private authService = inject(AuthService);
 
   appVersion = '';
+
+  /** The signed-in user as `/api/auth/me` reports it, for the Terms status in the Version section; null until known. */
+  termsUser: AuthUser | null = null;
+  private termsStatusSubscription?: Subscription;
 
   /** The sections offered by the nav, in display order. `label` is the nav text; `title`, when present, is the full heading the content column shows. */
   readonly sections: ReadonlyArray<{ id: SettingsSection; label: string; hint: string; title?: string }> = [
@@ -116,6 +124,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   @ViewChild('settingsUnpinAllDialog') settingsUnpinAllDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('systemModelsInfoDialog') systemModelsInfoDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('settingsTrashModal') settingsTrashModal!: TrashModalComponent;
+  @ViewChild('termsDialog') termsDialog?: TermsDialogComponent;
 
   /** The posture ladder, weakest first, as the "How this works" dialog lists it. */
   readonly postureLadder = CONFIDENTIALITY_POSTURES;
@@ -542,6 +551,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     });
 
     ensureOverlayPolyfills();
+    this.loadTermsStatus(false);
 
     this.systemService.getVersion().subscribe({
       next: (v) => this.appVersion = v,
@@ -1214,5 +1224,65 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (this.routeParamSubscription) {
       this.routeParamSubscription.unsubscribe();
     }
+    this.termsStatusSubscription?.unsubscribe();
+  }
+
+  /**
+   * The Terms status: `accepted` with a required version accepted, `pending` while it waits for
+   * acceptance, `none` when no version is required or the status is not known yet.
+   */
+  get termsState(): 'accepted' | 'pending' | 'none' {
+    const user = this.termsUser;
+    if (!user?.termsRequiredVersion) return 'none';
+    return needsTermsAcceptance(user) ? 'pending' : 'accepted';
+  }
+
+  /** The required version as a date, `18 October 2026 (revision 2)`. */
+  get termsVersionLabel(): string {
+    return formatTermsVersion(this.termsUser?.termsRequiredVersion) ?? '';
+  }
+
+  /** The local date of the newest acceptance, or '' when none is recorded. */
+  get termsAcceptedOn(): string {
+    return this.formatStamp(this.termsUser?.termsAcceptedUtc);
+  }
+
+  /** Reads the status from the cached user when it carries one, else (or when `reload`) from `/api/auth/me`. */
+  private loadTermsStatus(reload: boolean): void {
+    const cached = this.authService.currentUser;
+    if (!reload && hasTermsStatus(cached)) {
+      this.termsUser = cached;
+      return;
+    }
+    this.termsStatusSubscription?.unsubscribe();
+    this.termsStatusSubscription = this.authService.checkAuth().subscribe(result => {
+      if (result.kind === 'signedIn' && hasTermsStatus(result.user)) {
+        this.termsUser = result.user;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  openTermsView(): void {
+    this.termsDialog?.open('view');
+  }
+
+  /** Review and accept: the Terms in gate mode. */
+  openTermsGate(): void {
+    this.termsDialog?.open('gate');
+  }
+
+  /** The gate recorded the acceptance: the status reads accepted at once, and the server's record follows. */
+  onTermsAccepted(): void {
+    if (this.termsUser) {
+      this.termsUser = {
+        ...this.termsUser,
+        termsAccepted: true,
+        termsAcceptedVersion: this.termsUser.termsRequiredVersion ?? null,
+        termsAcceptedUtc: new Date().toISOString()
+      };
+    }
+    this.loadTermsStatus(true);
+    this.cdr.markForCheck();
   }
 }

@@ -9,9 +9,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
+using MobileGnollHackLogger.Filters;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account;
 
+[AllowWithoutAccountTerms]
 public class LogoutModel : PageModel
 {
     private readonly SignInManager<ApplicationUser> _signInManager;

@@ -99,7 +99,8 @@ public class PrivacyController : ControllerBase
             var payload = new Dictionary<string, object?>
             {
                 ["conversationsNote"] = ChatDataExport.DescribeExport(canDecrypt: true),
-                ["conversations"] = conversations
+                ["conversations"] = conversations,
+                ["termsAcceptances"] = await ChatDataExport.BuildTermsAcceptancesAsync(_dbContext, userId, cancellationToken)
             };
 
             Response.Headers["Content-Disposition"] = "attachment; filename=OverseerConversations.json";

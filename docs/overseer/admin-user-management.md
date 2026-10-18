@@ -34,13 +34,22 @@ filter bar is shared with step 1 of the wizard:
 Each card shows the user name and email; *Registered 2026-03-02* (or *Registered on or before …* for a
 backfilled date, § 2.1) and the last sign-in (*not recorded* while unknown); the status badges, each a
 glyph and a word with its facts in a tooltip; the failed sign-in count, two-factor state, groups, game
-logs and bones, and chats; icon buttons for groups (*Manage Groups for {user}*), AI configurations
+logs and bones, and chats; the **Overseer Terms** and **Account Terms** lines (below); icon buttons for groups (*Manage Groups for {user}*), AI configurations
 (*AI configuration access for {user}*: one card per system configuration with its switch, badges and
 per-assignment state, and the Rate limits and Overrides dialogs) and the user's security events;
 and **Actions**, a popover of the actions in § 3 grouped under *Access*, *Account* and *Deletion*. An
 action the server would refuse is shown unavailable with its reason. After an action the card is
 replaced by the server's copy and carries a *before → after* note; after a delete it becomes a
 tombstone until the next reload.
+
+The two Terms lines show the newest version of each Terms of Service document the user has accepted,
+with its date and source (`Web`, `GnollHackApp` or `AccountSite`), or that it is not accepted: **Overseer
+Terms** for the Gnoll Overseer Terms of Service (`overseer-terms`) and **Account Terms** for the
+GnollHack Account Terms of Service (`account-terms`). The server sends them as
+`AdminUserDto.TermsAcceptances`, one `AdminTermsAcceptanceDto { document, version, acceptedUtc, source }`
+per document accepted. A line shows the newest version accepted, which is not necessarily the version
+required now. There is no list column, filter or sort for the Terms; the record and how versions work
+are in [`terms-of-service.md`](terms-of-service.md).
 
 ## 2. Statuses
 

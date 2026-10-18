@@ -56,6 +56,21 @@ public class AdminUserDto
     public int GameLogCount { get; set; }
     public int BonesCount { get; set; }
     public int ChatSessionCount { get; set; }
+
+    /// <summary>The newest accepted version of each Terms document the user has accepted; empty when none.</summary>
+    public List<AdminTermsAcceptanceDto> TermsAcceptances { get; set; } = new();
+}
+
+/// <summary>A user's acceptance of one Terms document.</summary>
+public class AdminTermsAcceptanceDto
+{
+    /// <summary>"overseer-terms" or "account-terms".</summary>
+    public string Document { get; set; } = string.Empty;
+    public string Version { get; set; } = string.Empty;
+    public DateTime AcceptedUtc { get; set; }
+
+    /// <summary>"Web", "GnollHackApp" or "AccountSite".</summary>
+    public string Source { get; set; } = string.Empty;
 }
 
 public class AdminUsersPageDto

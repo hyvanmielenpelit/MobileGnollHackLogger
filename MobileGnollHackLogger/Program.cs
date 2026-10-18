@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
 using MobileGnollHackLogger.Data;
 using GnollHackServer.Data;
+using GnollHackServer.Data.Legal;
+using MobileGnollHackLogger.Filters;
 using System.Configuration;
 using Azure.Communication.Email;
 using Azure.Core.Extensions;
@@ -135,7 +137,15 @@ builder.Services.AddRateLimiter(options =>
     };
 });
 
+// Terms documents are read from the wiki folder named by the WikiPath key.
+builder.Services.Configure<LegalDocumentOptions>(builder.Configuration.GetSection(LegalDocumentOptions.SectionName));
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<LegalDocumentReader>();
+builder.Services.AddScoped<TermsAcceptanceStore>();
+
 builder.Services.AddRazorPages()
+    // Signed-in users who have not accepted the current account Terms are sent to the acceptance page.
+    .AddMvcOptions(o => o.Filters.Add<RequireAccountTermsPageFilter>())
     .ConfigureApiBehaviorOptions(options =>
     options.InvalidModelStateResponseFactory = context =>
     {

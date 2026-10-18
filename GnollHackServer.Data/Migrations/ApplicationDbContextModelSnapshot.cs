@@ -5754,6 +5754,55 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("UserSystemModelOrders");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.UserTermsAcceptance", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("AcceptedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("AspNetUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ClientVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ContentSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("DocumentKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentKey", "Version");
+
+                    b.HasIndex("AspNetUserId", "DocumentKey", "Version")
+                        .IsUnique();
+
+                    b.ToTable("UserTermsAcceptances");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.ApplicationUser", b =>
                 {
                     b.HasBaseType("Microsoft.AspNetCore.Identity.IdentityUser");
@@ -6615,6 +6664,17 @@ namespace GnollHackServer.Data.Migrations
                 {
                     b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
                         .WithMany("SystemModelOrders")
+                        .HasForeignKey("AspNetUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AspNetUser");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.UserTermsAcceptance", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
+                        .WithMany()
                         .HasForeignKey("AspNetUserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

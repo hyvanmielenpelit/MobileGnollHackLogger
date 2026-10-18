@@ -1,0 +1,46 @@
+<div class="terms-container gh-main-container">
+  <div class="header-row">
+    <h1>{{ title }}</h1>
+    <a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">&larr; Back</a>
+  </div>
+
+  <div class="terms-scroll-area" [attr.aria-busy]="loading ? 'true' : null">
+    @if (doc) {
+      <p class="terms-meta">
+        @if (lastUpdated) {
+          <span class="terms-updated">Last updated {{ lastUpdated }}</span>
+        }
+        <a class="terms-wiki-link" [href]="doc.wikiUrl" target="_blank" rel="noopener">Open on the wiki</a>
+      </p>
+    }
+
+    @if (loading && !doc) {
+      <app-loading-indicator text="Loading the Terms of Service…" size="block"></app-loading-indicator>
+    } @else if (loadError && !doc) {
+      <div class="terms-load-error">
+        <p class="gh-field-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          The Terms of Service could not be loaded.
+        </p>
+        <button type="button" class="btn-ghost terms-retry" (click)="retryLoad()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+          </svg>
+          Retry
+        </button>
+      </div>
+    } @else if (doc && doc.markdown === null) {
+      <p class="terms-fallback">
+        The Terms could not be loaded here.
+        <a [href]="doc.wikiUrl" target="_blank" rel="noopener">Read them on the wiki.</a>
+      </p>
+    } @else if (doc) {
+      <div class="markdown-body gh-help-prose terms-markdown" [innerHTML]="body | markdown"></div>
+    }
+  </div>
+</div>

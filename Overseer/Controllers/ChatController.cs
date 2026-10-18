@@ -1368,6 +1368,7 @@ public class ChatController : ControllerBase
     [HttpPost("send")]
     [EnableRateLimiting(RateLimitPolicies.Chat)]
     [RequireOverseerAccess]
+    [RequireTermsAccepted]
     /* The aggregate body bound. AttachmentValidator caps each attachment and their number;
        this caps the whole request, base64 expansion included, so an oversized send is
        refused by Kestrel before the controller allocates anything. */

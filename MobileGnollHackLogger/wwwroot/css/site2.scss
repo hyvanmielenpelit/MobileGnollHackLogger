@@ -1201,7 +1201,71 @@ div.container.xxlMaxWidth {
             }
         }
     }
-    
+
+    // Terms of Service and Privacy Policy consent checkbox (Register, Accept Terms)
+    .terms-consent {
+        padding-left: 2.25em;
+        margin-bottom: 1.5rem;
+        color: #a0aec0;
+        font-size: 0.95rem;
+        line-height: 1.5;
+
+        .form-check-input {
+            width: 1.15em;
+            height: 1.15em;
+            margin-left: -2.25em;
+            margin-top: 0.175em; // centers the box on the first line of the label
+            background-color: transparent;
+            border: 1px solid rgba(212, 160, 23, 0.6);
+            cursor: pointer;
+
+            &:checked {
+                background-color: $title-color;
+                border-color: $title-color;
+            }
+
+            &:focus {
+                box-shadow: none;
+                border-color: rgba(212, 160, 23, 0.6);
+            }
+
+            &:focus-visible {
+                border-color: $title-color;
+                outline: 2px solid $title-color;
+                outline-offset: 2px;
+                box-shadow: 0 0 8px $gold-glow;
+            }
+        }
+
+        .form-check-label {
+            color: #a0aec0;
+            cursor: pointer;
+        }
+
+        a {
+            color: $link-color;
+            font-weight: bold;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+
+            &:hover,
+            &:focus-visible {
+                color: $link-color-light;
+            }
+
+            &:focus-visible {
+                outline: 2px solid $link-color;
+                outline-offset: 2px;
+                border-radius: 2px;
+            }
+        }
+
+        .text-danger {
+            display: block;
+            margin-top: 0.25rem;
+        }
+    }
+
     .signup-text {
         color: #a0aec0;
         .signup-link {

@@ -49,6 +49,9 @@ internal sealed class ConfigHealthContext
     /// <summary>Null when the keyring could not be evaluated.</summary>
     public ConfigurationContentKeyRing? KeyRing { get; init; }
 
+    /// <summary>Null when no Terms document reader is registered.</summary>
+    public GnollHackServer.Data.Legal.LegalDocumentReader? LegalDocuments { get; init; }
+
     /// <summary>The trimmed value of <paramref name="key"/>, or an empty string.</summary>
     public string Read(string key) => Configuration[key]?.Trim() ?? string.Empty;
 }
@@ -322,6 +325,7 @@ internal static class ConfigHealthCatalog
     public static IReadOnlyList<ConfigHealthCheckDto> Evaluate(ConfigHealthContext context, ILogger? logger)
     {
         var definitions = Definitions
+            .Concat(LegalDocumentDefinitions(context))
             .Concat(SecretPlacementDefinitions(context))
             .Concat(LimitDefinitions(context));
 
@@ -662,6 +666,46 @@ internal static class ConfigHealthCatalog
         return key.Length == 32
             ? new ConfigHealthOutcome(ConfigHealthStatus.Ok, "Set; a 32-byte key.")
             : new ConfigHealthOutcome(ConfigHealthStatus.Error, $"Set, but {key.Length} bytes long instead of 32.");
+    }
+
+    /// <summary>One check per Terms of Service document this host serves.</summary>
+    private static IEnumerable<ConfigHealthCheckDefinition> LegalDocumentDefinitions(ConfigHealthContext context)
+        => (context.LegalDocuments?.DocumentKeys ?? Array.Empty<string>())
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .Select(key => new ConfigHealthCheckDefinition
+            {
+                Id = "legal-document:" + key,
+                Category = ToolCorpora,
+                Title = (context.LegalDocuments!.GetTitle(key) ?? key) + " (Terms of Service)",
+                Keys = new[] { "WikiPath", GnollHackServer.Data.Legal.LegalDocumentOptions.SectionName + ":Documents:" + key + ":WikiPageName" },
+                Kind = ConfigCheckKind.Custom,
+                Remedy = "Make sure WikiPath is a clone of the GnollHack wiki that holds the page, and that the page starts with a line such as **Last updated:** 18 October 2026.",
+                Evaluate = EvaluateLegalDocument
+            });
+
+    private static ConfigHealthOutcome EvaluateLegalDocument(ConfigHealthContext context, ConfigHealthCheckDefinition definition)
+    {
+        string key = definition.Id["legal-document:".Length..];
+        var reader = context.LegalDocuments!;
+        string fileName = (reader.GetTitle(key) ?? key) + ".md";
+
+        var document = reader.Get(key);
+        if (document == null)
+        {
+            return new ConfigHealthOutcome(ConfigHealthStatus.Warning,
+                $"The file {fileName} cannot be read from WikiPath. The Terms viewer offers the wiki link only, and the required version is the newest one any user has accepted.");
+        }
+
+        if (document.Version == null)
+        {
+            return new ConfigHealthOutcome(ConfigHealthStatus.Warning,
+                $"{fileName} has no readable 'Last updated' line and Git gives no commit date, so no version can be required.");
+        }
+
+        return document.VersionOrigin == "git"
+            ? new ConfigHealthOutcome(ConfigHealthStatus.Warning,
+                $"{fileName} has no readable 'Last updated' line; version {document.Version} comes from its last Git commit.", document.Version)
+            : new ConfigHealthOutcome(ConfigHealthStatus.Ok, $"Version {document.Version} ({document.VersionLabel}).", document.Version);
     }
 
     /// <summary>One check per sensitive key, the configuration's own connection strings and provider API keys included.</summary>
