@@ -138,6 +138,7 @@ public class SettingsController : ControllerBase
                configuration, so the number shown is the one actually enforced. */
             ephemeralTimeoutMinutes = (int)_ephemeralSessions.Timeout.TotalMinutes,
             spoilerFreeMode = settings?.SpoilerFreeMode ?? true,
+            verboseResponses = settings?.VerboseResponses ?? false,
             showSourceCodeReferences = settings?.ShowSourceCodeReferences ?? false,
             maxResultLength = settings?.MaxResultLength,
             maxCallsPerSession = settings?.MaxCallsPerSession,
@@ -337,7 +338,7 @@ public class SettingsController : ControllerBase
                 return BadRequest($"RequestTimeout must be between {min} and {max}");
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout, request.EnableSubAgents, request.ShowParallelBadge, request.ShowContextWindowUsage, request.ShowChatCost);
+        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout, request.EnableSubAgents, request.ShowParallelBadge, request.ShowContextWindowUsage, request.ShowChatCost, verboseResponses: request.VerboseResponses);
 
         await _settingsService.SaveConfidentialSettingsAsync(
             userId,
@@ -1430,6 +1431,7 @@ public class UpdateDlpSettingsRequest
 public class UpdateSettingsRequest
 {
     public bool? SpoilerFreeMode { get; set; }
+    public bool? VerboseResponses { get; set; }
     public int? MaxResultLength { get; set; }
     public int? MaxCallsPerSession { get; set; }
     public int? MaxToolIterations { get; set; }

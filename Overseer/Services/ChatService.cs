@@ -24,6 +24,8 @@ public class ChatService
     private readonly CryptoService _cryptoService;
     private readonly IHttpClientFactory _httpClientFactory;
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<Overseer.Services.Privacy.SessionRef, System.Threading.CancellationTokenSource> _titleCancellationTokens = new();
+    // Keys older GnollHack builds send that no longer affect the chat; the account settings decide.
+    private static readonly HashSet<string> IgnoredClientSettingKeys = new(StringComparer.Ordinal) { "allowSpoilers", "verboseResponses" };
     private readonly IConfiguration _configuration;
     private readonly IHubContext<ChatHub> _hubContext;
     private readonly ModelMetadataService _modelMetadataService;
@@ -456,7 +458,8 @@ public class ChatService
            vault created per site would number each occurrence separately -- showing the model
            two placeholders for one credential and inviting it to reason about them as two. */
         Overseer.Services.Privacy.Dlp.DlpTokenVault? dlpVault = null;
-        bool spoilerFreeMode = false;
+        bool spoilerFreeMode = true;
+        bool verboseMode = false;
         bool isGameOn = false;
         bool enableWebSearch = true;
         bool enableToolUse = true;
@@ -494,6 +497,7 @@ public class ChatService
             if (settings != null)
             {
                 spoilerFreeMode = settings.SpoilerFreeMode;
+                verboseMode = settings.VerboseResponses;
                 enableWebSearch = settings.EnableWebSearch;
                 enableToolUse = settings.EnableToolUse;
                 enableSubAgents = settings.EnableSubAgents;
@@ -946,7 +950,6 @@ public class ChatService
             var contextDocs = _wikiService.GetRelevantContext(message);
             isGnollHackSession = session?.IsGnollHackSession ?? false;
 
-            bool verboseMode = false;
             // isGameOn declared above
             bool developerMode = false;
             bool debugLogMessages = false;
@@ -961,12 +964,6 @@ public class ChatService
 
                     if (root.TryGetProperty("BoolData", out var boolData))
                     {
-                        if (boolData.TryGetProperty("allowSpoilers", out var spoilerVal))
-                            spoilerFreeMode = !spoilerVal.GetBoolean();
-
-                        if (boolData.TryGetProperty("verboseResponses", out var verboseVal))
-                            verboseMode = verboseVal.GetBoolean();
-
                         if (boolData.TryGetProperty("isGameOn", out var gameOnVal))
                             isGameOn = gameOnVal.GetBoolean();
 
@@ -2307,6 +2304,8 @@ public class ChatService
                     {
                         foreach (var kvp in el.EnumerateObject())
                         {
+                            if (IgnoredClientSettingKeys.Contains(kvp.Name))
+                                continue;
                             sbSession.AppendLine($"- {kvp.Name}: {kvp.Value}");
                         }
                     }

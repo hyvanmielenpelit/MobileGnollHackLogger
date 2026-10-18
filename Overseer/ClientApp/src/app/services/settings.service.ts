@@ -92,6 +92,7 @@ export interface UserAiSettings {
      refuses. */
   attachmentAcceptExtensions?: string[];
   spoilerFreeMode: boolean;
+  verboseResponses?: boolean;
   showSourceCodeReferences?: boolean;
   showParallelBadge?: boolean;
   parallelBadgeEnabled?: boolean;
@@ -485,11 +486,12 @@ export class SettingsService {
   }
 
   /**
-   * `confidential` carries the seven Confidentiality Mode fields in one trailing object, so the
-   * positional list ahead of it keeps the shape every existing caller and spec relies on. A value
-   * weaker than the administrator's floor is not an error; the server clamps it.
+   * `confidential` carries the seven Confidentiality Mode fields in one object, so the positional
+   * list ahead of it keeps the shape every existing caller and spec relies on; `verboseResponses`
+   * follows it. A Confidentiality Mode value weaker than the administrator's floor is not an
+   * error; the server clamps it.
    */
-  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableSubAgents: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null, showParallelBadge?: boolean, showContextWindowUsage?: boolean, showChatCost?: boolean, confidential?: ConfidentialUserSettings) {
+  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableSubAgents: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null, showParallelBadge?: boolean, showContextWindowUsage?: boolean, showChatCost?: boolean, confidential?: ConfidentialUserSettings, verboseResponses?: boolean) {
     return this.http.put('/api/settings', {
       spoilerFreeMode,
       enableWebSearch,
@@ -507,6 +509,7 @@ export class SettingsService {
       showParallelBadge,
       showContextWindowUsage,
       showChatCost,
+      verboseResponses,
       ...(confidential ?? {})
     });
   }

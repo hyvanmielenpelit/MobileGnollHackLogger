@@ -11,6 +11,7 @@ public class UserAiSettings
     public ApplicationUser? AspNetUser { get; set; }
     
     public bool SpoilerFreeMode { get; set; } = true;
+    public bool VerboseResponses { get; set; } = false;
     public bool ShowSourceCodeReferences { get; set; } = false;
     public bool ShowParallelBadge { get; set; } = true;
     public bool ShowContextWindowUsage { get; set; } = true;

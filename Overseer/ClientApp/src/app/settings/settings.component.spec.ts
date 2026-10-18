@@ -46,6 +46,7 @@ describe('SettingsComponent', () => {
         hasApiKey: true,
         hasModel: true,
         spoilerFreeMode: false,
+        verboseResponses: true,
         showSourceCodeReferences: true,
         showThoughtsAndTools: 1,
         enableWebSearch: true,
@@ -70,6 +71,7 @@ describe('SettingsComponent', () => {
       fixture.detectChanges();
 
       expect(component.spoilerFreeMode).toBe(false);
+      expect(component.verboseResponses).toBe(true);
       expect(component.showSourceCodeReferences).toBe(true);
       expect(component.showParallelBadge).toBe(false);
       expect(component.parallelBadgeEnabled).toBe(true);
@@ -138,6 +140,30 @@ describe('SettingsComponent', () => {
 
       expect(saveSpy).toHaveBeenCalled();
       expect(vi.mocked(saveSpy).mock.lastCall![15]).toBe(false);
+    }));
+
+    it('should default verboseResponses to false and bind it to its checkbox', async () => {
+      expect(component.verboseResponses).toBe(false);
+
+      // ngModel writes the value to the DOM asynchronously, so let it settle first.
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const checkbox = compiled.querySelector('input[name="verboseResponses"]') as HTMLInputElement;
+      expect(checkbox).toBeTruthy();
+      expect(checkbox.checked).toBe(false);
+    });
+
+    it('should forward verboseResponses as the eighteenth saveSettings argument', fakeAsync(() => {
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
+
+      component.verboseResponses = true;
+      component.onSettingChange();
+      tick();
+
+      expect(saveSpy).toHaveBeenCalled();
+      expect(vi.mocked(saveSpy).mock.lastCall![17]).toBe(true);
     }));
 
     it('should not trigger save on initial data load', fakeAsync(() => {

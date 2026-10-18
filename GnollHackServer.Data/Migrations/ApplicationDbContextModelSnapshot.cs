@@ -5486,6 +5486,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<long?>("TitleGenerationSystemModelId")
                         .HasColumnType("bigint");
 
+                    b.Property<bool>("VerboseResponses")
+                        .HasColumnType("bit");
+
                     b.HasKey("AspNetUserId");
 
                     b.ToTable("UserAiSettings");

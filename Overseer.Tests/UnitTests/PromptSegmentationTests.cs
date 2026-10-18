@@ -187,6 +187,23 @@ public class PromptSegmentationTests
             < session.IndexOf("## Controls", StringComparison.Ordinal));
     }
 
+    /* Older GnollHack builds still send these keys; the account settings decide instead, so
+       echoing them would contradict the active mode. */
+    [Fact]
+    public void BuildSegmentedSystemPrompt_OmitsRetiredClientSettingKeysFromClientEnvironment()
+    {
+        var chatService = CreateChatService();
+
+        var (_, session, _) = BuildPrompt(
+            chatService,
+            clientSettings: "{\"BoolData\":{\"allowSpoilers\":true,\"verboseResponses\":true,\"isGameOn\":true}}");
+
+        Assert.Contains("## Client Environment", session);
+        Assert.Contains("- isGameOn: True", session);
+        Assert.DoesNotContain("allowSpoilers", session);
+        Assert.DoesNotContain("verboseResponses", session);
+    }
+
     [Fact]
     public void BuildSegmentedSystemPrompt_DescribesLocationsOnlyWithAGame()
     {

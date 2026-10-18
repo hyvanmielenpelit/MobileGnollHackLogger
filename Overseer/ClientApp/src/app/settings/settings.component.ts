@@ -135,6 +135,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   toastMessage = '';
 
   spoilerFreeMode = true;
+  verboseResponses = false;
   showSourceCodeReferences = false;
   showThoughtsAndTools = 0;
   showParallelBadge = true;
@@ -574,7 +575,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
           this.showParallelBadge,
           this.showContextWindowUsage,
           this.showChatCost,
-          this.confidentialPayload
+          this.confidentialPayload,
+          this.verboseResponses
         ).pipe(
           tap(() => {
             this.hasPendingChanges = false;
@@ -623,6 +625,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
         if (s) {
           if (s.spoilerFreeMode !== undefined) {
             this.spoilerFreeMode = s.spoilerFreeMode;
+          }
+          if (s.verboseResponses !== undefined) {
+            this.verboseResponses = s.verboseResponses;
           }
           if (s.showSourceCodeReferences !== undefined) {
             this.showSourceCodeReferences = s.showSourceCodeReferences;
