@@ -157,6 +157,7 @@ builder.Services.AddHttpClient("ApiKeyValidation", client =>
 });
 builder.Services.AddSingleton<WikiService>();
 builder.Services.AddSingleton<NetHackWikiService>();
+builder.Services.AddSingleton<Overseer.Services.SourceIndexing.IExternalProcessRunner, Overseer.Services.SourceIndexing.ExternalProcessRunner>();
 builder.Services.AddSingleton<SourceCodeService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SourceCodeService>());
 builder.Services.AddSingleton<NetHackSourceCodeService>();

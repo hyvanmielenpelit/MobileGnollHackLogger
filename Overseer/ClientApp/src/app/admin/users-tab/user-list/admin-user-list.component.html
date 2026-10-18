@@ -60,105 +60,54 @@
   }
 </section>
 
-<dialog #manageGroupsDialog class="gh-dialog">
-  @if (selectedUser) {
-    <div class="dialog-content flex-col">
-      <h3>Manage Groups for {{ selectedUser.userName }}</h3>
-      <div class="mt-20">
-        @if (groups.length === 0) {
-          <div class="text-muted italic" style="padding: 10px 0;">
-            No groups available.
-          </div>
-        }
-        @for (group of groups; track group) {
-          <div class="mb-10">
-            <label class="gh-switch-wrapper d-flex align-items-center">
-              <div class="gh-switch">
-                <input type="checkbox" [id]="'group_' + group.id"
-                  [checked]="isUserInGroup(selectedUser, group.id)"
-                  (change)="toggleUserGroup(selectedUser, group, $event)">
-                <span class="gh-slider"></span>
-              </div>
-              <span class="ml-10" style="font-size: 1.1em;">{{ group.displayName }}</span>
-            </label>
-          </div>
-        }
-      </div>
-      <div class="dialog-actions mt-auto pt-20">
-        <button type="button" class="btn-gh" (click)="closeManageGroups()">Done</button>
+<dialog #manageGroupsDialog class="gh-dialog au-groups-dialog" aria-labelledby="au-groups-title"
+        aria-describedby="au-groups-subtitle">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 #manageGroupsTitle id="au-groups-title" tabindex="-1">Manage Groups for {{ selectedUser?.userName }}</h3>
+        <p class="dialog-subtitle" id="au-groups-subtitle">Each switch adds the account to a group or removes it at once. Members can use the AI configurations assigned to their groups.</p>
       </div>
     </div>
-  }
-</dialog>
-
-<dialog #manageUserConfigsDialog class="gh-dialog dialog-wide">
-  <div class="dialog-content flex-col">
-    <h3>Manage User Configs: {{ selectedUserForConfigs?.userName }}</h3>
-    <div class="form-group mt-20 scrollable-list">
-      @for (config of configs; track config) {
-        <div class="mb-15 config-list-item">
-          <label class="gh-switch-wrapper d-flex align-items-center m-0">
-            <div class="gh-switch">
-              <input type="checkbox" [checked]="isConfigAssignedToUser(config.id)" [disabled]="processingConfigs.includes(config.id)" (change)="toggleUserConfig(config, $event)" />
-              <span class="gh-slider"></span>
-            </div>
-            <div style="margin-left: 20px;">
-              <div class="d-flex align-items-center" style="font-weight: 500; font-size: 1.1em; flex-wrap: wrap; gap: 8px;">
-                <span>{{ config.displayName }}</span>
-                @if (config.isSystemWide) {
-                  <span class="badge-system-wide">System Wide</span>
-                }
-              </div>
-              @if (config.note) {
-                <div class="text-muted mt-5" style="font-size: 0.9em; font-style: italic;">
-                  {{ config.note }}
-                </div>
-              }
-              <div class="text-muted mt-5" style="font-size: 0.85em; font-family: monospace;">
-                Provider: {{ config.provider }} <span class="ml-10">Role: {{ formatModelRole(config.modelRole) }}</span>
-              </div>
-            </div>
-          </label>
-          @if (isConfigAssignedToUser(config.id)) {
-            <div class="au-config-actions" role="group" [attr.aria-label]="'Limits of ' + config.displayName">
-              <button type="button" class="action-btn"
-                      [attr.aria-label]="'Rate limits of ' + config.displayName"
-                      [attr.interestfor]="'au-config-' + config.id + '-limits-tip'"
-                      [attr.style]="'anchor-name: --au-config-' + config.id + '-limits-tip'"
-                      (click)="openUserRateLimits(getUserAssignment(config.id))">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
-              </button>
-              <div popover="hint" class="gh-tooltip" [id]="'au-config-' + config.id + '-limits-tip'"
-                   [attr.style]="'position-anchor: --au-config-' + config.id + '-limits-tip'">Rate limits</div>
-              <button type="button" class="action-btn"
-                      [attr.aria-label]="'Overrides of ' + config.displayName"
-                      [attr.interestfor]="'au-config-' + config.id + '-overrides-tip'"
-                      [attr.style]="'anchor-name: --au-config-' + config.id + '-overrides-tip'"
-                      (click)="openEditUserOverride(getUserAssignment(config.id))">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-              </button>
-              <div popover="hint" class="gh-tooltip" [id]="'au-config-' + config.id + '-overrides-tip'"
-                   [attr.style]="'position-anchor: --au-config-' + config.id + '-overrides-tip'">Overrides</div>
-            </div>
-          }
-        </div>
-      } @empty {
-        <div class="text-muted italic text-center p-20">
-          No system configurations available.
-        </div>
+    <div class="dialog-body">
+      @if (selectedUser; as user) {
+        @if (groups.length === 0) {
+          <p class="au-groups-empty">No groups available.</p>
+        } @else {
+          <ul class="au-group-cards" role="list" aria-labelledby="au-groups-title">
+            @for (group of groups; track group.id) {
+              <li class="au-group-item">
+                <article class="au-group-card" [class.is-member]="isUserInGroup(user, group.id)"
+                         [attr.aria-labelledby]="'au-group-' + group.id + '-title'">
+                  <!-- The switch is named by the card's title. -->
+                  <label class="gh-switch-wrapper au-group-switch">
+                    <span class="gh-switch">
+                      <input type="checkbox" [id]="'group_' + group.id"
+                             [attr.aria-labelledby]="'au-group-' + group.id + '-title'"
+                             [checked]="isUserInGroup(user, group.id)"
+                             (change)="toggleUserGroup(user, group, $event)">
+                      <span class="gh-slider"></span>
+                    </span>
+                  </label>
+                  <h4 class="au-group-title" [id]="'au-group-' + group.id + '-title'">{{ group.displayName }}</h4>
+                </article>
+              </li>
+            }
+          </ul>
+        }
       }
     </div>
-    <div class="dialog-actions mt-auto pt-20">
-      <button type="button" class="btn-gh" (click)="closeManageUserConfigs()">Done</button>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel au-groups-done" (click)="closeManageGroups()">Done</button>
     </div>
   </div>
 </dialog>
+
+<app-config-access-dialog />
 
 <app-user-lockout-dialog (done)="onDialogDone($event)" />
 <app-user-ban-dialog (done)="onDialogDone($event)" />
 <app-user-restrictions-dialog (done)="onDialogDone($event)" />
 <app-user-delete-dialog (done)="onDialogDone($event)" (banInstead)="onBanInstead($event)" />
-<app-admin-rate-limits-dialog />
-<app-admin-config-override-dialog (saved)="onOverrideSaved($event)" />
 <app-admin-confirm-dialog />
 <app-admin-reason-dialog />

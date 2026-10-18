@@ -203,16 +203,16 @@ you already read the label, it is noise; drop it.
 | Icon | Buttons | Why it carries information |
 |------|---------|----------------------------|
 | plus | New Profile, Create Suite, Add Question | "Something new appears" — recognised without reading |
-| play | Start Benchmark, Acknowledge & Start Run, **Continue — <reason>** (the battery and series progress dialogs) | "This begins now", and it reinforces the consequence of a button that starts real work |
+| play | Start Benchmark, Acknowledge & Start Run, **Continue — <reason>** (the battery and series progress dialogs), **Build makedefs** (the Developer Tools GnollHack Source dashboard) | "This begins now", and it reinforces the consequence of a button that starts real work |
 | trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center, on each written row of the Model Comparison wizard's step 3 *Documents of this comparison*, and on the run report's AI Reports tab, and the **Delete** of its confirmation), **Delete** a saved Chat Consistency analysis (`.btn-ghost.btn-ghost-danger`, each Analysis History card, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | pencil (Feather *edit-3*) | **Edit** (a battery card's actions), **Rename comparison** (icon-only `.action-btn` beside *Comparison #N — name* in the Model Comparison wizard's header; opens the nested rename dialog) | "Change this thing's text in place" — it edits a name or a definition and runs nothing |
-| refresh / rotate | Refresh, Re-run failed questions, Re-run question, Re-assess question, **Re-run** (the run report's popover trigger, followed by a chevron state indicator), the icon-only **Recompute** of the Model Comparison, the icon-only **Reload runs** (the Chat Consistency wizard's header, steps 1 and 2) | "This runs again" — the circular-arrow convention is universal; the repair verbs that use it are in §4g |
+| refresh / rotate | Refresh, Re-run failed questions, Re-run question, Re-assess question, **Re-run** (the run report's popover trigger, followed by a chevron state indicator), the icon-only **Recompute** of the Model Comparison, the icon-only **Reload runs** (the Chat Consistency wizard's header, steps 1 and 2), **Re-index Source Files** (`.btn-gh`, the GnollHack Source dashboard) and its load error's **Retry** (`.btn-ghost`), **Re-check** (`.btn-ghost`, the Configuration Health dashboard) | "This runs again" — the circular-arrow convention is universal; the repair verbs that use it are in §4g |
 | flask | **Try another assessor (does not change the score)** (`.btn-ghost`, each question of the run report) | "An experiment": it records another assessor's verdict beside the score and changes nothing, so it must not look like the repairs beside it |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
 | file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog and the Model Comparison wizard's Write step), **Open Download Center** (`.btn-ghost`, the Model Comparison launcher's *Comparison reports*, `app-report-documents-launcher`), **Download Markdown report** (icon-only, each Run History card), **Documents (N)** (`.btn-ghost`, the Chat Consistency launcher's *Latest analysis*; opens the wizard on step 6, *Documents*) | "A file arrives on your disk" |
 | download (one arrow into a tray) | Download one chart (Model Comparison; each tile and the *Single chart* toolbar of the Chat Consistency wizard's Charts step), **Download** a Results section as an image (icon-only, the export group beside the Chat Consistency Results tabs) | "This one image arrives on your disk" |
 | download-all (two arrows into one tray) | Download all charts (the *All charts* toolbar of Model Comparison and of the Chat Consistency Charts step) | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
-| copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header, the report writing progress dialog and the Model Comparison wizard's Write step), **Copy** a chart (icon-only, each tile and the *Single chart* toolbar of the Chat Consistency Charts step), **Copy** a Results section as an image (icon-only, the export group beside the Chat Consistency Results tabs) | "Copies to the clipboard" — nothing is saved to disk |
+| copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header, the report writing progress dialog and the Model Comparison wizard's Write step), **Copy** a chart (icon-only, each tile and the *Single chart* toolbar of the Chat Consistency Charts step), **Copy** a Results section as an image (icon-only, the export group beside the Chat Consistency Results tabs), **Copy build output** and **Copy last build output** (icon-only, the GnollHack Source dashboard) | "Copies to the clipboard" — nothing is saved to disk |
 | maximize (Feather: four corner brackets) | **Fit to screen** (*Single chart*, and *All charts* of the Chat Consistency Charts step) and **Fit height** (*All charts* of Model Comparison), icon-only | "Fit the view to the space" — the zoom that makes the chart fill the view |
 | fit-width (a two-headed horizontal arrow: Feather geometry `<polyline points="7 8 3 12 7 16">`, `<polyline points="17 8 21 12 17 16">`, `<line x1="3" y1="12" x2="21" y2="12">`) | **Fit width** (icon-only, the *All charts* toolbar of the Chat Consistency Charts step) | "Stretch to the width" — the one fit that fills across only, told apart from *maximize*, which fits the height or the whole chart |
 | eye | Open in Single view (Model Comparison and each Chat Consistency Charts step tile), the Chat Consistency Charts step's **Single chart** view tab, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a report document or a run report (icon-only, each row of the Download Center and each written row of the Model Comparison wizard's step 3; opens the PDF viewer), **Preview layout** (`.btn-gh`, beside **Generate** in step 3's sidebar, opening a §4f popover of the three document types; each opens the layout preview PDF in the viewer), **Open** a saved Chat Consistency analysis (`.btn-ghost`, each Analysis History card; opens it in the wizard) | "Look at it here" — shows content without changing or downloading it |
@@ -238,7 +238,8 @@ you already read the label, it is noise; drop it.
 | x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar), **Clear selection** (`.btn-ghost`, the Model Comparison wizard's step-1 selection bar, §8i) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}*. Clear selection drops every selected source as removing one selection chip drops one, and deletes nothing |
 | arrow-right (Feather: a line and a chevron head, `<line x1="5" y1="12" x2="19" y2="12">`, `<polyline points="12 5 19 12 12 19">`) | The admin alert's call-to-action link (trailing, `aria-hidden`; the one glyph that ends a label rather than leading it) | "Go there": the link opens the page where the alert is dealt with |
 | bar-chart-2 (Feather: three vertical lines of different heights) | **Charts** (`.btn-gh`, the AI Telemetry tab's header; opens the charts dialog), **Usage charts** (icon-only, each card of the AI Telemetry Users view; the dialog for that user) | "Show it over time as charts" |
-| sliders (Feather *sliders*: three vertical lines with a knob each) | **Manage limits** (icon-only, each card of the AI Telemetry Users view; opens the user's *Manage User Configs* dialog in the Users tab) | "Adjust settings" — the limits are tuned there, not here |
+| sliders (Feather *sliders*: three vertical lines with a knob each) | **Manage limits** (icon-only, each card of the AI Telemetry Users view; opens the user's *AI configuration access* dialog in the Users tab) | "Adjust settings" — the limits are tuned there, not here |
+| key (Feather *key*) | **API Keys** (`.btn-ghost`, the Admin System Configs header, `aria-haspopup="dialog"`; opens the *Default API Keys* dialog) | "Credentials": the stored keys the configurations sign in with |
 
 *Changed 2026-09-12 (harness 24 round): Import Default Suite(s) moved from `upload` to `download` —
 importing brings suites from the server's catalog into the application, which is the same
@@ -578,6 +579,18 @@ badges' glyphs (*check-circle*, *lock*, *slash-circle*, *upload-cloud* struck th
 struck through, *shield*, *trash*, *mail*, *star*) and the danger zone's* alert-octagon *are status
 icons beside a word, not button glyphs. The Users table's unsortable `<th>` headers are gone with the
 table (§8c). No button glyph is new.*
+
+*Changed 2026-10-18 (Admin tab row, Developer Tools dashboards): one glyph is new.* key *marks the
+System Configs header's **API Keys** `.btn-ghost`, which opens the Default API Keys dialog; while a
+provider's key is missing or failed verification a `.config-badge` count follows the label, with a
+visually hidden completion* providers need attention*. The GnollHack Source dashboard's **Re-index
+Source Files** takes* rotate *and **Build makedefs** takes* play *(it builds and runs real work); both
+are `.btn-gh`, `aria-disabled` with their reason in a `.gh-field-warning` while a job runs. Its
+**Cancel** is a text-only `.btn-ghost` (nothing is deleted, so not `.btn-ghost-danger`), and **Copy
+build output** an icon-only* copy*. Configuration Health's **Re-check** is a `.btn-ghost` with* rotate*.
+The glyphs of the dashboards' `.gh-health-status` words (check-circle, alert-triangle, alert-circle,
+info) are status icons beside a word, not button glyphs. The AI configuration access dialog's **Done**
+is text-only `btn-gh-cancel`, since every switch commits at once.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -1606,6 +1619,27 @@ selectSubTab(tab: 'run' | 'history' | 'suites'): void {
 }
 ```
 
+### Tabs whose selection is a place in the URL
+
+A top-level or sub-tab row whose selection is a **place** — a view a reload or a shared link must
+reopen — takes its state from the URL **path**, not from a component field. The Admin page is the
+reference: every tab and sub-tab has one canonical path (`/admin/users/groups`,
+`/admin/gnollbench/suites`), `admin/admin-url.ts` holds the slug maps and the one `UrlMatcher`
+route, and `docs/overseer/admin-page-urls.md` the whole scheme. The rules a row of this kind
+follows:
+
+- **The view reads the selection; the address sets it.** The shell applies the path to
+  `AdminPageStore` (`applyLocation`), and a tab's click and keyboard handlers call
+  `store.goTo(tab, subTab, mode)` instead of assigning the selected tab themselves.
+- **A click, Enter or Space pushes a history entry; arrow keys, Home, End and programmatic switches
+  replace it**, so holding an arrow key does not fill the history while Back still returns to the
+  view the user chose. Focus still follows selection in the same turn, as above; Back and Forward
+  restore the tab without moving focus.
+- **Every tab navigation keeps the other query parameters** (`queryParamsHandling: 'preserve'`); only
+  the one-shot parameters a view consumes are removed.
+- A view filter that is not a place (Configuration Health's *Problems* / *All checks*) stays a
+  component field, remembered in `localStorage` if at all.
+
 ### 5b. Settings sections
 
 A long settings panel — the Theme and Charts tabs of the model comparison's sidebar are the
@@ -1697,6 +1731,14 @@ concerns.
   field's `aria-describedby` like `.gh-field-error`. Use it where a form shows one finding per field
   beside a readiness card (§4i); a standalone warning block stays an `alert-warning`. The readiness
   card's own classes are `.gh-readiness*`.
+- `.gh-health-status[data-status]` (`ok`, `warning`, `error`, `info`, `running`) is the status word of
+  the Developer Tools dashboards (since 2026-10-18): a 14 px glyph the markup supplies (`aria-hidden`:
+  *check-circle*, *alert-triangle*, *alert-circle*, *info*, the `.dc-ring` while running), the word,
+  a tone color and a 1 px border that forced-colors mode keeps. `.gh-health-summary` /
+  `.gh-health-tile` are their key-figure tiles. Every status is a word and a glyph, never a color alone.
+- Every `.gh-dialog` contains scroll chaining: `::backdrop` has `overflow: hidden;
+  overscroll-behavior: contain` and `:modal` has `overscroll-behavior: contain`, both needed for the
+  page not to scroll under a modal.
 - Use the design tokens: `var(--primary-color)`, `var(--gold-glow)`,
   `var(--border-glass)`, `var(--nav-color)`. Not `#e0ba6d`, which *is* `--primary-color`
   and will not follow it if the theme ever changes.
@@ -2411,6 +2453,37 @@ edits**, and a review list whose **checkboxes decide what a bulk operation touch
   address.*). Opening it changes nothing; **closing it unchecks the box**, so a choice is never hidden
   inside a closed disclosure; and checking it adds its own acknowledgment. It is the only override; hard
   protections are refused outright and listed under *Protected and skipped*, never offered here.
+
+**The AI configuration access dialog** (2026-10-18, `admin/admin-dialogs/config-access-dialog/`,
+`app-config-access-dialog`) is the Admin reference for **a card list inside a dialog** whose rows are
+switches. One component serves both subjects — *AI configuration access for {user}* from the Users list
+and the AI Telemetry *Manage limits*, *… for group {group}* from the Groups sub-tab:
+
+- **The frame**: `.gh-dialog`, `showModal()`, the `_benchmark-dialog-frame.scss` `frame` mixin at
+  64 rem with `$full-height: true`, a header of `h3#config-access-title` (focused on open), a
+  `.dialog-subtitle` that says what the switches decide, and the list's one `.gh-list-status`
+  (*3 of 5 configurations assigned*); the body is the scroller, and the footer holds a text-only
+  **Done** (`btn-gh-cancel`), since every switch commits at once. **No `closedby="any"`**: a
+  full-height frame leaves only a thin backdrop ring, which is no honest click target; Escape and Done
+  close it.
+- **The card**, full width, one per row, `ul[role=list]` labelled by the dialog title → `li` →
+  `article[aria-labelledby="cad-{id}-title"]`: the **switch first** (`gh-switch`, its checkbox named by
+  the card's title through `aria-labelledby`, disabled while its request runs, reverted on an error);
+  then `h4` title, the badge row in the model pickers' order (`app-model-option-badges`, then the
+  service tier, the role badges, *System Wide*, *Disabled*) and a meta line of the model id and the
+  note; then the **assignment's state**, which a switch alone cannot show — *Off for this user* /
+  *Off for this group* (`status-badge badge-warning`) and *Limited* (`status-badge badge-info`, its
+  limits in an `interestfor` tooltip); and, for an assigned configuration only, the actions group
+  *Actions for {name}* (icon-only **Rate limits** and **Overrides**). The title is not a label for the
+  whole card. Below 30 rem of the list the actions wrap under the title.
+- **No filter bar** beyond a search field shown above 8 configurations (Escape with text clears it and
+  keeps the dialog open): an installation has a handful of configurations, so there are no facets,
+  Sort by or Load more.
+- **Nested dialogs are siblings**, not children (the Rate Limits and Overrides dialogs), so the frame's
+  rules do not reach them and their `close` never closes this one.
+
+*Manage Groups for {user}* (`users-tab/user-list/`, `#manageGroupsDialog`) uses the same frame at
+36 rem, not full height, with the same switch-first cards (title only, no badges) and **Done**.
 
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
 `.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with

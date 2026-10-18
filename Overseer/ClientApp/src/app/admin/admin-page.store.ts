@@ -1,10 +1,13 @@
 import { Injectable, inject } from '@angular/core';
+import { Router } from '@angular/router';
 import { Observable, Subject } from 'rxjs';
 import { map, switchMap, tap } from 'rxjs/operators';
 import { AdminService, DefaultApiKeyStatus, GroupDto, SystemAiConfigDto } from '../services/admin.service';
 import { AdminUserActionKind, AdminUserCriteria, AdminUserSort } from '../services/admin-users.service';
 import { DefaultKeyInfo } from '../shared/ai-model-form/ai-model-form.component';
 import { readStoredUserSort } from './users-tab/user-criteria/user-criteria';
+import { ADMIN_SUBTAB_SLUGS, AdminTabId, adminCommands, defaultAdminSubTab, isAdminTabId } from './admin-url';
+import type { BenchmarkSubTab } from './benchmark/state/benchmark-shell-bridge.service';
 
 export type AdminToastType = 'success' | 'error' | 'info';
 
@@ -22,7 +25,13 @@ export interface AdminUsersQuery {
 }
 
 /** The Users tab's sub-tabs. */
-export type AdminUsersSubTab = 'users' | 'deletions' | 'log';
+export type AdminUsersSubTab = 'users' | 'groups' | 'deletions' | 'log';
+
+/** The Developer Tools tab's sub-tabs. */
+export type AdminDevtoolsSubTab = 'source' | 'config-health' | 'sentry';
+
+/** How a store navigation treats the browser history: a new entry, or the current one replaced. */
+export type AdminHistoryMode = 'push' | 'replace';
 
 /** What the Admin log sub-tab shows; every field is optional. `subjectUserName` and the operation id label its chips. */
 export interface AdminUsersLogFilter {
@@ -58,6 +67,7 @@ export interface AdminTelemetryRange {
 @Injectable()
 export class AdminPageStore {
   private adminService = inject(AdminService);
+  private router = inject(Router);
 
   groups: GroupDto[] = [];
   configs: SystemAiConfigDto[] = [];
@@ -65,7 +75,7 @@ export class AdminPageStore {
   /** Emits after `configs` is replaced or one of its entries changes. */
   readonly configsChanged$ = new Subject<void>();
 
-  /** The per-provider default keys, for the API Keys tab and the configuration form. */
+  /** The per-provider default keys, for the API Keys dialog and the configuration form. */
   defaultApiKeys: DefaultApiKeyStatus[] = [];
   defaultApiKeysLoading = false;
   /** Provider → what the configuration form needs to offer Default; rebuilt only when the keys load. */
@@ -98,11 +108,23 @@ export class AdminPageStore {
   /** Emits when `pendingResolveConfigId` is set. */
   readonly resolveConfigRequested$ = new Subject<void>();
 
+  /** The selected top-level tab: set from the address, and by `goTo` before the address follows. */
+  activeTab: AdminTabId = 'users';
+
   /** The Users tab's selected sub-tab, kept while the tab is closed. */
   usersSubTab: AdminUsersSubTab = 'users';
 
-  /** Emits a top-level tab id (`AdminTabId`) a tab asks the Admin page to select. */
-  readonly tabRequested$ = new Subject<string>();
+  /** The Developer Tools tab's selected sub-tab, kept while the tab is closed. */
+  devtoolsSubTab: AdminDevtoolsSubTab = 'source';
+
+  /** The GnollBench sub-tab last shown, kept while the tab is closed. */
+  benchmarkSubTab: BenchmarkSubTab = 'run';
+
+  /** True while the address is `/admin/configs/api-keys`, where System Configs shows its API Keys dialog. */
+  apiKeysDialogOpen = false;
+
+  /** Emits when `apiKeysDialogOpen` changes. */
+  readonly apiKeysDialogChanged$ = new Subject<void>();
 
   /** A user whose AI usage a link asked the AI Telemetry tab to show; cleared once the tab has read it. */
   pendingTelemetryUserId: string | null = null;
@@ -172,9 +194,57 @@ export class AdminPageStore {
     this.resolveConfigRequested$.next();
   }
 
-  /** Asks the Admin page to select a top-level tab. */
+  /**
+   * Selects `tab` and `subTab` — by default the sub-tab remembered for that tab — and moves the
+   * address there, keeping every query parameter. `push` adds a history entry, `replace` replaces
+   * the current one. The Admin page applies the address again once it arrives.
+   */
+  goTo(tab: AdminTabId, subTab?: string | null, mode: AdminHistoryMode = 'replace'): void {
+    const target = subTab ?? this.rememberedSubTab(tab);
+    this.applyLocation(tab, target);
+    // A navigation the router fails is reported by its own NavigationError event.
+    this.router.navigate(adminCommands(tab, target), {
+      queryParamsHandling: 'preserve',
+      replaceUrl: mode === 'replace'
+    }).catch(() => false);
+  }
+
+  /**
+   * Records `tab` as selected and `subTab` as its sub-tab; an unknown sub-tab is the tab's default.
+   * The API Keys dialog is open only on System Configs → API Keys.
+   */
+  applyLocation(tab: AdminTabId, subTab: string | null): void {
+    const known = ADMIN_SUBTAB_SLUGS[tab]?.some(([id]) => id === subTab) ? subTab : defaultAdminSubTab(tab);
+    this.activeTab = tab;
+    if (tab === 'users') {
+      this.usersSubTab = known as AdminUsersSubTab;
+    } else if (tab === 'devtools') {
+      this.devtoolsSubTab = known as AdminDevtoolsSubTab;
+    } else if (tab === 'benchmark') {
+      this.benchmarkSubTab = known as BenchmarkSubTab;
+    }
+    const dialogOpen = tab === 'configs' && known === 'api-keys';
+    if (dialogOpen !== this.apiKeysDialogOpen) {
+      this.apiKeysDialogOpen = dialogOpen;
+      this.apiKeysDialogChanged$.next();
+    }
+  }
+
+  /** The sub-tab a tab returns to; System Configs always returns without its API Keys dialog. */
+  private rememberedSubTab(tab: AdminTabId): string | null {
+    switch (tab) {
+      case 'users': return this.usersSubTab;
+      case 'devtools': return this.devtoolsSubTab;
+      case 'benchmark': return this.benchmarkSubTab;
+      default: return null;
+    }
+  }
+
+  /** Selects a top-level tab on its remembered sub-tab; an id naming no tab is ignored. */
   requestTab(tab: string): void {
-    this.tabRequested$.next(tab);
+    if (isAdminTabId(tab)) {
+      this.goTo(tab);
+    }
   }
 
   /** Asks the AI Telemetry tab to show one user's usage, and selects it. */
@@ -193,7 +263,7 @@ export class AdminPageStore {
     this.requestTab('security');
   }
 
-  /** Asks the Users tab to open its Manage User Configs dialog for one user, and selects it. */
+  /** Asks the Users tab to open its AI configuration access dialog for one user, and selects it. */
   requestManageUser(userId: string, userName: string): void {
     this.pendingManageUser = { userId, userName };
     this.manageUserRequested$.next();
@@ -203,9 +273,8 @@ export class AdminPageStore {
   /** Shows the Users tab's Admin log with `filter`, and selects it. */
   showUsersLog(filter: AdminUsersLogFilter = {}): void {
     this.usersLogFilter = { ...filter, kinds: filter.kinds ? [...filter.kinds] : undefined };
-    this.usersSubTab = 'log';
     this.usersLogFilterChanged$.next();
-    this.requestTab('users');
+    this.goTo('users', 'log');
   }
 
   /** Asks the Users tab to open the Bulk Actions wizard, and selects it. */

@@ -7,6 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
+using Overseer.Services.ConfigHealth;
+using Overseer.Services.SourceIndexing;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -15,7 +17,8 @@ namespace Overseer.Tests.UnitTests;
 /// The retired-model alert: one per retired catalog entry that enabled system configurations still
 /// name, and none for a configuration that is disabled, custom, on a custom endpoint or simply not in
 /// the catalog. The AI spend alert: one for the users whose operator-funded spend in the last 24 hours reached
-/// the threshold, administrators excluded.
+/// the threshold, administrators excluded. The GnollHack source alerts: a missing SourceCodePath, and a failed
+/// makedefs that leaves a generated header missing.
 /// </summary>
 public class ConfigHealthServiceTests
 {
@@ -75,7 +78,7 @@ public class ConfigHealthServiceTests
         Assert.Equal(
             "2 system configurations use Gemini 3.7 Flash (gemini-3.7-flash), which was removed from the model catalog on 2026-10-10.",
             alert.Message);
-        Assert.Equal("/admin?tab=configs", alert.LinkUrl);
+        Assert.Equal("/admin/configs", alert.LinkUrl);
         Assert.Equal("Review in System Configs", alert.LinkText);
     }
 
@@ -165,7 +168,7 @@ public class ConfigHealthServiceTests
         });
         Assert.Equal("warning", alert.Type);
         Assert.Equal("2 users spent over $20.00 on AI in the last 24 hours (highest: $30.00).", alert.Message);
-        Assert.Equal("/admin?tab=telemetry", alert.LinkUrl);
+        Assert.Equal("/admin/telemetry", alert.LinkUrl);
         Assert.Equal("Review", alert.LinkText);
     }
 
@@ -212,5 +215,92 @@ public class ConfigHealthServiceTests
 
         Assert.Null(alert.LinkUrl);
         Assert.Null(alert.LinkText);
+    }
+
+    // -- GnollHack source ----------------------------------------------------------------------------
+
+    /// <summary>A ConfigHealthService whose makedefs state is given instead of read from SourceCodeService.</summary>
+    private sealed class MakedefsStateHealthService : ConfigHealthService
+    {
+        private readonly MakedefsHealthState? _state;
+
+        public MakedefsStateHealthService(IConfiguration configuration, MakedefsHealthState? state)
+            : base(configuration)
+        {
+            _state = state;
+        }
+
+        protected override MakedefsHealthState? GetMakedefsState() => _state;
+    }
+
+    private static IConfiguration ConfigurationWith(params (string Key, string? Value)[] values) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(values.Select(v => new KeyValuePair<string, string?>(v.Key, v.Value)))
+            .Build();
+
+    private static MakedefsHealthState MakedefsState(MakedefsOutcomeKind? kind, params string[] missingHeaders) =>
+        new(kind, null, DateTime.UtcNow, missingHeaders);
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void SourceCodePathMissing_RaisesAWarning(string? path)
+    {
+        var alert = Assert.Single(new ConfigHealthService(ConfigurationWith(("SourceCodePath", path))).GetSystemAlerts(),
+            a => a.Id == "source-code-path-missing");
+
+        Assert.Equal("warning", alert.Type);
+        Assert.Equal("GnollHack source code path is not configured. Set SourceCodePath in configuration settings.", alert.Message);
+        Assert.Null(alert.LinkUrl);
+    }
+
+    [Fact]
+    public void SourceCodePathConfigured_RaisesNoAlert()
+    {
+        var alerts = new ConfigHealthService(ConfigurationWith(("SourceCodePath", @"C:\repos\GnollHack"))).GetSystemAlerts();
+
+        Assert.DoesNotContain(alerts, a => a.Id == "source-code-path-missing");
+    }
+
+    [Theory]
+    [InlineData(MakedefsOutcomeKind.BuildFailed)]
+    [InlineData(MakedefsOutcomeKind.RunFailed)]
+    public void MakedefsFailed_WithAMissingHeader_RaisesAnErrorWithALink(MakedefsOutcomeKind kind)
+    {
+        var service = new MakedefsStateHealthService(ConfigurationWith(), MakedefsState(kind, "pm.h"));
+
+        var alert = Assert.Single(service.GetSystemAlerts(), a => a.Id == "gnollhack-makedefs-failed");
+
+        Assert.Equal("error", alert.Type);
+        Assert.Equal(
+            "makedefs could not generate the GnollHack headers (pm.h, onames.h), so the chat cannot see monster and object constants.",
+            alert.Message);
+        Assert.Equal("/admin/devtools", alert.LinkUrl);
+        Assert.Equal("Open GnollHack Source", alert.LinkText);
+    }
+
+    [Theory]
+    [InlineData(MakedefsOutcomeKind.BuildFailed, false)]
+    [InlineData(MakedefsOutcomeKind.RunFailed, false)]
+    [InlineData(MakedefsOutcomeKind.ExecutableMissing, true)]
+    [InlineData(MakedefsOutcomeKind.SkippedBranch, true)]
+    [InlineData(MakedefsOutcomeKind.UpToDate, true)]
+    [InlineData(MakedefsOutcomeKind.Generated, true)]
+    [InlineData(null, true)]
+    public void MakedefsAlert_IsAbsent_UnlessAFailureLeavesAHeaderMissing(MakedefsOutcomeKind? kind, bool headerMissing)
+    {
+        var state = headerMissing ? MakedefsState(kind, "onames.h") : MakedefsState(kind);
+        var service = new MakedefsStateHealthService(ConfigurationWith(), state);
+
+        Assert.DoesNotContain(service.GetSystemAlerts(), a => a.Id == "gnollhack-makedefs-failed");
+    }
+
+    [Fact]
+    public void MakedefsAlert_IsAbsent_WhenTheSourceServiceIsUnavailable()
+    {
+        Assert.DoesNotContain(new MakedefsStateHealthService(ConfigurationWith(), null).GetSystemAlerts(),
+            a => a.Id == "gnollhack-makedefs-failed");
+        Assert.DoesNotContain(CreateService().GetSystemAlerts(), a => a.Id == "gnollhack-makedefs-failed");
     }
 }

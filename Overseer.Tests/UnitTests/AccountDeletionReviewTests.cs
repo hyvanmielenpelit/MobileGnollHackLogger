@@ -483,7 +483,7 @@ public sealed class AccountDeletionReviewTests : IDisposable
 
         Assert.Equal($"account-deletion-review:{recent.Id}", alert.Id);
         Assert.Equal("2 account deletions await review (1 overdue).", alert.Message);
-        Assert.Equal("/admin?tab=users&subtab=deletions", alert.LinkUrl);
+        Assert.Equal("/admin/users/deletions", alert.LinkUrl);
         Assert.Equal("error", alert.Type);
     }
 

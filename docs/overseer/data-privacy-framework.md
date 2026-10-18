@@ -1274,7 +1274,7 @@ deliberately out of scope: it needs its own migration and its own re-wrap pass.
 
 **What `AesEncryptionKey` protects.** A user's own key (`UserAiApiKey`) is encrypted with the user id
 as associated data; a system AI configuration's key (`SystemAiApiConfiguration`) with
-`SYSTEM_API_KEY`; the per-provider **default key** (`SystemDefaultApiKey`, Admin → API Keys) with
+`SYSTEM_API_KEY`; the per-provider **default key** (`SystemDefaultApiKey`, Admin → System Configs → **API Keys**) with
 `SYSTEM_DEFAULT_API_KEY:<provider>`, which binds each cipher to its provider. A configuration set to
 *Default* holds its **own copy** of the default key, re-encrypted with `SYSTEM_API_KEY`, and every save
 or delete of the default key rewrites or clears those copies in the same transaction

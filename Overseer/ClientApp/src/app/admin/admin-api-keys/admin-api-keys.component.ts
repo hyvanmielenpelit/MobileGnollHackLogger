@@ -60,6 +60,11 @@ export class AdminApiKeysComponent implements OnInit, OnChanges, OnDestroy {
   @Input() statuses: DefaultApiKeyStatus[] = [];
   /** True while the host's list has not arrived yet. */
   @Input() loading = false;
+  /**
+   * False inside the System Configs tab's API Keys dialog, whose header names the keys: the heading
+   * and the intro are left out, and the dialog's `#api-keys-dialog-title` labels the section.
+   */
+  @Input() showHeading = true;
 
   /** After every save, verification and delete, so the host reloads the keys and the configurations. */
   @Output() changed = new EventEmitter<void>();

@@ -6,6 +6,7 @@ import { inject } from '@angular/core';
 import { AuthService, AuthUser } from './services/auth.service';
 import { Router } from '@angular/router';
 import { map } from 'rxjs';
+import { adminUrlMatcher } from './admin/admin-url';
 
 /**
  * Allows a cached user that `allows` at once and revalidates the session in the background;
@@ -49,7 +50,7 @@ const redirectKeepingQuery = (target: string): RedirectFunction =>
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
   {
-    path: 'admin',
+    matcher: adminUrlMatcher,
     loadComponent: () => import('./admin/admin.component').then(m => m.AdminComponent),
     canActivate: [requireSignedIn(u => !!u.isAdmin)]
   },

@@ -363,8 +363,12 @@ stays signed in. Otherwise the account is erased at once, as always.
 `gnollhack@hyvanmielenpelit.fi`; empty disables it) at most once per user account per
 `ReviewEmailMinIntervalHours` (6), decided over every request of the user and stored on the request
 (`LastReviewEmailUtc`), so it survives restarts and a user retrying the page cannot flood the mailbox. It
-carries the user name, the request time, the hold type and a link to `OverseerAdminUrl` +
-`?tab=users&subtab=deletions` (website only; empty means no link) — **never the reasons**. The website
+carries the user name, the request time, the hold type and a link to `OverseerAdminUrl` with
+`/users/deletions` appended to its path, before any query string, and a trailing `/` trimmed
+(`https://overseer.example/admin` → `https://overseer.example/admin/users/deletions`;
+`AccountDeletionReviewEmail.ReviewLink`; website only; empty means no link) — **never the reasons**.
+A link in an older email, `?tab=users&subtab=deletions`, still opens the sub-tab: the Admin page
+replaces it with the path. The website
 sends it; the shared `EmailSender` starts sends with `WaitUntil.Started`, so only a failure to start is
 seen, and a failed start leaves the stamp unchanged so the next attempt retries.
 

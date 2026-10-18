@@ -12,9 +12,11 @@ answers 401 to an anonymous caller and 403 to a signed-in non-administrator.
 
 ## 1. The Users tab
 
-Admin → **Users** has three sub-tabs, *Users · Deletion requests (N pending) · Admin log*
-(`?tab=users&subtab=users|deletions|log`), and a gold **Bulk Actions** button that opens the wizard
-of § 5 seeded with the list's current filters.
+Admin → **Users** has four sub-tabs, *Users · Groups · Deletion requests (N pending) · Admin log*
+(`/admin/users`, `/admin/users/groups`, `/admin/users/deletions`, `/admin/users/log`; the scheme is in
+[`admin-page-urls.md`](admin-page-urls.md)), and a gold **Bulk Actions** button that opens the wizard
+of § 5 seeded with the list's current filters. **Groups** lists the user groups with **Create**; each
+group's gear button opens *AI configuration access for group {group}*.
 
 The **Users** sub-tab is a card list fetched from the server in batches of 20 (**Show 20 more**). Its
 filter bar is shared with step 1 of the wizard:
@@ -32,7 +34,9 @@ filter bar is shared with step 1 of the wizard:
 Each card shows the user name and email; *Registered 2026-03-02* (or *Registered on or before …* for a
 backfilled date, § 2.1) and the last sign-in (*not recorded* while unknown); the status badges, each a
 glyph and a word with its facts in a tooltip; the failed sign-in count, two-factor state, groups, game
-logs and bones, and chats; icon buttons for groups, AI configurations and the user's security events;
+logs and bones, and chats; icon buttons for groups (*Manage Groups for {user}*), AI configurations
+(*AI configuration access for {user}*: one card per system configuration with its switch, badges and
+per-assignment state, and the Rate limits and Overrides dialogs) and the user's security events;
 and **Actions**, a popover of the actions in § 3 grouped under *Access*, *Account* and *Deletion*. An
 action the server would refuse is shown unavailable with its reason. After an action the card is
 replaced by the server's copy and carries a *before → after* note; after a delete it becomes a

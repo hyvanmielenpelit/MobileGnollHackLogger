@@ -2,19 +2,45 @@
   <h3 class="m-0">Developer Tools</h3>
 </div>
 
-<fieldset class="permissions-fieldset mt-20">
-  <legend>Sentry Crash Reporting</legend>
-  <div class="margin-y-20 mt-5">
-    <div class="devtools-button-group">
-      <button class="btn-gh" (click)="triggerFrontendSentryError()">
-        Test Frontend Error
-      </button>
-      <button class="btn-gh" (click)="triggerBackendSentryError()">
-        Test Backend Error
-      </button>
-    </div>
-    <p class="text-muted mt-10" style="font-size: 0.9em;">
-      Warning: Clicking these buttons will deliberately throw unhandled exceptions and send real error reports to your configured Sentry project.
-    </p>
+<div class="gh-tabs gh-tabs-secondary devtools-subtabs" role="tablist" aria-label="Developer tool sections">
+  @for (tab of subTabs; track tab; let i = $index) {
+    <button type="button" role="tab" class="gh-tab"
+            [id]="'devtools-subtab-' + tab"
+            [attr.aria-controls]="'devtools-subpanel-' + tab"
+            [attr.aria-selected]="subTab === tab"
+            [attr.tabindex]="subTab === tab ? 0 : -1"
+            (keydown)="onSubTabKeydown($event, i)"
+            (click)="selectSubTab(tab)">{{ subTabLabels[tab] }}</button>
+  }
+</div>
+
+@if (subTab === 'source') {
+  <div role="tabpanel" id="devtools-subpanel-source" aria-labelledby="devtools-subtab-source" tabindex="0" class="devtools-subpanel">
+    <app-source-dashboard></app-source-dashboard>
   </div>
-</fieldset>
+}
+
+@if (subTab === 'config-health') {
+  <div role="tabpanel" id="devtools-subpanel-config-health" aria-labelledby="devtools-subtab-config-health" tabindex="0" class="devtools-subpanel">
+    <app-config-health></app-config-health>
+  </div>
+}
+
+@if (subTab === 'sentry') {
+  <div role="tabpanel" id="devtools-subpanel-sentry" aria-labelledby="devtools-subtab-sentry" tabindex="0" class="devtools-subpanel">
+    <h4 class="gh-section-title">Sentry Crash Reporting</h4>
+    <div class="margin-y-20 mt-5">
+      <div class="devtools-button-group">
+        <button class="btn-gh" (click)="triggerFrontendSentryError()">
+          Test Frontend Error
+        </button>
+        <button class="btn-gh" (click)="triggerBackendSentryError()">
+          Test Backend Error
+        </button>
+      </div>
+      <p class="text-muted mt-10 devtools-warning">
+        Warning: Clicking these buttons will deliberately throw unhandled exceptions and send real error reports to your configured Sentry project.
+      </p>
+    </div>
+  </div>
+}

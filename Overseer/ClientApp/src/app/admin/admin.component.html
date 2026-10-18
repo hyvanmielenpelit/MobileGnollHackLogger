@@ -36,20 +36,6 @@
             <app-admin-users-tab></app-admin-users-tab>
           </div>
         }
-        <!-- GROUPS TAB -->
-        @if (activeTab === 'groups') {
-          <div role="tabpanel" id="admin-panel-groups" aria-labelledby="admin-tab-groups" tabindex="0">
-            <app-admin-groups-tab></app-admin-groups-tab>
-          </div>
-        }
-        <!-- API KEYS TAB -->
-        @if (activeTab === 'apikeys') {
-          <div role="tabpanel" id="admin-panel-apikeys" aria-labelledby="admin-tab-apikeys" tabindex="0">
-            <app-admin-api-keys [statuses]="store.defaultApiKeys"
-                                [loading]="store.defaultApiKeysLoading"
-                                (changed)="store.onDefaultApiKeysChanged()"></app-admin-api-keys>
-          </div>
-        }
         <!-- CONFIGS TAB -->
         @if (activeTab === 'configs') {
           <div role="tabpanel" id="admin-panel-configs" aria-labelledby="admin-tab-configs" tabindex="0">
@@ -87,7 +73,8 @@
         @if (activeTab === 'benchmark') {
           <div role="tabpanel" id="admin-panel-benchmark" aria-labelledby="admin-tab-benchmark" tabindex="0">
             <app-admin-benchmark [systemConfigs]="store.configs" [openRunId]="pendingRunId" (openRunHandled)="pendingRunId = null"
-                                 [navigation]="pendingBenchmarkNavigation" (navigationHandled)="pendingBenchmarkNavigation = null"></app-admin-benchmark>
+                                 [navigation]="pendingBenchmarkNavigation" (navigationHandled)="pendingBenchmarkNavigation = null"
+                                 (subTabChange)="onBenchmarkSubTabChange($event)"></app-admin-benchmark>
           </div>
         }
       </div>

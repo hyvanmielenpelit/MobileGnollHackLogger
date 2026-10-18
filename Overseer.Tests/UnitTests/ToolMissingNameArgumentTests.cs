@@ -91,6 +91,7 @@ public class ToolMissingNameArgumentTests : IDisposable
 
         using var service = new SourceCodeService(config, NullLogger<SourceCodeService>.Instance);
         await service.StartAsync(CancellationToken.None);
+        await service.InitializationTask;
         Assert.True(service.IsIndexingComplete);
 
         // The NetHack repository is left unconfigured: no case here selects it.

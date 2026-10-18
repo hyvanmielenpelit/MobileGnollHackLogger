@@ -11,11 +11,19 @@ import { DebugLogComponent } from './debug-log/debug-log.component';
 import { SettingsComponent } from './settings/settings.component';
 import { PrivacyComponent } from './privacy/privacy.component';
 import { AuthService, AuthUser } from './services/auth.service';
+import { adminUrlMatcher } from './admin/admin-url';
 
 describe('app routes', () => {
   const route = (path: string): Route => {
     const found = routes.find(r => r.path === path);
     expect(found, `route '${path}'`).toBeDefined();
+    return found!;
+  };
+
+  /** The admin route has a matcher, not a path. */
+  const adminRoute = (): Route => {
+    const found = routes.find(r => r.matcher === adminUrlMatcher);
+    expect(found, 'admin route').toBeDefined();
     return found!;
   };
 
@@ -32,17 +40,17 @@ describe('app routes', () => {
     expect(login.loadComponent).toBeUndefined();
   });
 
-  const lazyRoutes: [string, unknown][] = [
-    ['admin', AdminComponent],
-    ['debug-log', DebugLogComponent],
-    ['settings', SettingsComponent],
-    ['settings/:section', SettingsComponent],
-    ['privacy', PrivacyComponent],
+  const lazyRoutes: [string, () => Route, unknown][] = [
+    ['admin', adminRoute, AdminComponent],
+    ['debug-log', () => route('debug-log'), DebugLogComponent],
+    ['settings', () => route('settings'), SettingsComponent],
+    ['settings/:section', () => route('settings/:section'), SettingsComponent],
+    ['privacy', () => route('privacy'), PrivacyComponent],
   ];
 
-  for (const [path, expected] of lazyRoutes) {
-    it(`loads '${path}' lazily`, async () => {
-      const lazy = route(path);
+  for (const [name, find, expected] of lazyRoutes) {
+    it(`loads '${name}' lazily`, async () => {
+      const lazy = find();
       expect(lazy.component).toBeUndefined();
       expect(await lazy.loadComponent!()).toBe(expected);
     });
@@ -50,6 +58,28 @@ describe('app routes', () => {
 
   @Component({ template: '' })
   class SectionStubComponent {}
+
+  describe('admin paths', () => {
+    let router: Router;
+
+    beforeEach(() => {
+      TestBed.configureTestingModule({
+        providers: [provideRouter([{ matcher: adminRoute().matcher, component: SectionStubComponent }])]
+      });
+      router = TestBed.inject(Router);
+    });
+
+    for (const url of ['/admin', '/admin/users/groups', '/admin/gnollbench/suites', '/admin/configs?resolveConfig=3']) {
+      it(`reaches the admin route from ${url}`, async () => {
+        expect(await router.navigateByUrl(url)).toBe(true);
+        expect(router.url).toBe(url);
+      });
+    }
+
+    it('does not match a four-segment admin path', async () => {
+      await expect(router.navigateByUrl('/admin/users/groups/extra')).rejects.toThrow();
+    });
+  });
 
   /** Navigates `url` through one real route, landing on a stub so no guard or HTTP call runs. */
   async function navigateThrough(path: string, url: string): Promise<string> {
@@ -96,7 +126,7 @@ describe('app routes', () => {
           provideHttpClientTesting(),
           provideRouter([
             { path: 'login', component: SectionStubComponent },
-            { path: 'admin', component: SectionStubComponent, canActivate: route('admin').canActivate },
+            { matcher: adminUrlMatcher, component: SectionStubComponent, canActivate: adminRoute().canActivate },
             { path: 'settings/:section', component: SectionStubComponent, canActivate: route('settings/:section').canActivate }
           ])
         ]

@@ -43,8 +43,10 @@ public static class AccountDeletionReviewEmail
     public static string ReviewLink(string adminUrl)
     {
         string trimmed = adminUrl.Trim();
-        string separator = trimmed.Contains('?') ? "&" : "?";
-        return trimmed + separator + "tab=users&subtab=deletions";
+        int queryStart = trimmed.IndexOf('?');
+        string path = queryStart < 0 ? trimmed : trimmed[..queryStart];
+        string query = queryStart < 0 ? string.Empty : trimmed[queryStart..];
+        return path.TrimEnd('/') + "/users/deletions" + query;
     }
 
     /// <summary>

@@ -1143,7 +1143,7 @@ describe('AiModelFormComponent', () => {
       expect(customRadio().checked).toBe(true);
       expect(defaultRadio().disabled).toBe(true);
       expect(defaultRadio().getAttribute('aria-describedby')).toBe('apiKeyChoiceDefaultReason');
-      expect(reason()!.textContent!.trim()).toBe('No default Google key. Add one in Admin → API Keys.');
+      expect(reason()!.textContent!.trim()).toBe('No default Google key. Add one with API Keys in Admin → System Configs.');
     });
 
     it('disables Default while a Base URL is filled, and offers it again once it is cleared', () => {

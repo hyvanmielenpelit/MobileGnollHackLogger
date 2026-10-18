@@ -236,7 +236,7 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
 
   /** Resolve in System Configs: opens System Configs with the configuration's resolution dialog. */
   resolveInSystemConfigs(configId: number): void {
-    void this.router.navigate(['/admin'], { queryParams: { tab: 'configs', resolveConfig: configId } });
+    void this.router.navigate(['/admin', 'configs'], { queryParams: { resolveConfig: configId }, queryParamsHandling: 'merge' });
   }
 
   /**

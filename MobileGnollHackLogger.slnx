@@ -9,6 +9,7 @@
   <Folder Name="/docs/" />
   <Folder Name="/docs/overseer/">
     <File Path="docs/overseer/adding-ai-models.md" />
+    <File Path="docs/overseer/admin-page-urls.md" />
     <File Path="docs/overseer/admin-user-management.md" />
     <File Path="docs/overseer/ai-benchmark.md" />
     <File Path="docs/overseer/ai-benchmark-chat-consistency.md" />
@@ -27,6 +28,7 @@
     <File Path="docs/overseer/commands.md" />
     <File Path="docs/overseer/data-privacy-framework.md" />
     <File Path="docs/overseer/gemini-service-tier-measurements.md" />
+    <File Path="docs/overseer/gnollhack-source-indexing.md" />
     <File Path="docs/overseer/release-checklist.md" />
     <File Path="docs/overseer/security-monitoring.md" />
     <File Path="docs/overseer/sentry-logging-architecture.md" />

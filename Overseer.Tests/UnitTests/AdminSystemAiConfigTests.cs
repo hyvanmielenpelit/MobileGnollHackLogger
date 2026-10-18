@@ -609,7 +609,7 @@ public class AdminSystemAiConfigTests
         }, ct);
 
         var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Equal("There is no default OpenAI key. Add one in the API Keys tab, or choose Custom.", badRequest.Value);
+        Assert.Equal("There is no default OpenAI key. Add one with API Keys in System Configs, or choose Custom.", badRequest.Value);
         Assert.False(await db.SystemAiApiConfigurations.AnyAsync(ct));
     }
 

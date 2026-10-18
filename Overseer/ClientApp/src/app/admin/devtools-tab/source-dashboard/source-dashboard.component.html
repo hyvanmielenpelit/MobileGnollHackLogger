@@ -1,0 +1,535 @@
+<ng-template #healthGlyph let-status>
+  @switch (status) {
+    @case ('ok') {
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+    }
+    @case ('warning') {
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+    }
+    @case ('error') {
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    }
+    @case ('running') {
+      <svg class="dc-ring dc-ring--inline" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 48 48" focusable="false" aria-hidden="true"><circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle><circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle></svg>
+    }
+    @default {
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+    }
+  }
+</ng-template>
+
+<ng-template #copyGlyph>
+  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+</ng-template>
+
+<div class="sd-root">
+  @if (loadError) {
+    <div class="sd-load-error">
+      <p class="gh-field-error" id="sd-load-error" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ loadError }}</span>
+      </p>
+      <button type="button" class="btn-ghost sd-retry" aria-describedby="sd-load-error" (click)="retry()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+        Retry
+      </button>
+    </div>
+  }
+
+  @if (dashboard; as d) {
+    @let s = d.gnollHack;
+    @let b = banner;
+
+    <!-- 1-2. Status banner and actions -->
+    <section class="sd-head" aria-labelledby="sd-head-title">
+      <h4 class="visually-hidden" id="sd-head-title">GnollHack source status</h4>
+      @if (b) {
+        <div class="sd-banner" [attr.data-status]="b.status" role="status">
+          <span class="gh-health-status sd-banner-word" [attr.data-status]="b.status">
+            <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: b.status }" />
+            {{ b.word }}
+          </span>
+          <span class="sd-banner-sentence">{{ b.sentence }}</span>
+        </div>
+      }
+
+      <div class="sd-actions">
+        <div class="sd-action-buttons">
+          <button type="button" class="btn-gh" id="sd-reindex-btn"
+                  [attr.aria-disabled]="actionsBlockedReason ? 'true' : null"
+                  [attr.aria-describedby]="actionDescribedBy()"
+                  (click)="reindex()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            Re-index Source Files
+          </button>
+          <span class="sd-makedefs-action">
+            <button type="button" class="btn-gh" id="sd-makedefs-btn"
+                    [attr.aria-disabled]="actionsBlockedReason ? 'true' : null"
+                    [attr.aria-describedby]="actionDescribedBy('sd-makedefs-tip')"
+                    (click)="buildMakedefs()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              Build makedefs
+            </button>
+            <app-info-tip trigger="click" tipId="sd-makedefs-tip" subject="Build makedefs">
+              Always rebuilds makedefs and regenerates the headers, then re-indexes the source when the
+              headers changed or no index exists yet.
+            </app-info-tip>
+          </span>
+        </div>
+        @if (actionsBlockedReason) {
+          <p class="gh-field-warning" id="sd-actions-reason">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <span>{{ actionsBlockedReason }}</span>
+          </p>
+        }
+        <div class="sd-action-feedback" role="status">
+          @if (actionMessage) {
+            @if (actionMessageKind === 'warning') {
+              <p class="gh-field-warning" id="sd-action-message">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                <span>{{ actionMessage }}</span>
+              </p>
+            } @else {
+              <p class="gh-field-error" id="sd-action-message">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span>{{ actionMessage }}</span>
+              </p>
+            }
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Progress card -->
+    @if (progressJob; as job) {
+      <section class="sd-card sd-progress" aria-labelledby="sd-progress-title">
+        <div class="sd-card-head">
+          <h4 class="gh-section-title" id="sd-progress-title">{{ jobTitle(job) }}</h4>
+          @if (job.outcome !== 'Running') {
+            <span class="gh-health-status" [attr.data-status]="outcomeStatus(job.outcome)">
+              <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: outcomeStatus(job.outcome) }" />
+              {{ outcomeWord(job.outcome) }}
+            </span>
+          }
+        </div>
+
+        <ol class="run-stage-rail sd-rail" aria-label="Source job stages">
+          @for (item of stageItems(job); track item.key; let i = $index) {
+            <li class="run-stage" [attr.data-stage]="item.key"
+                [class.is-done]="item.state === 'done'" [class.is-current]="item.state === 'current'"
+                [class.is-skipped]="item.state === 'skipped'" [class.is-ended]="item.state === 'ended'"
+                [attr.aria-current]="item.state === 'current' ? 'step' : null">
+              <span class="run-stage-index" aria-hidden="true">{{ i + 1 }}</span>
+              <span class="run-stage-label">
+                <span class="run-stage-name">{{ item.name }}</span>
+                @if (item.note) {
+                  <span class="run-stage-note">{{ item.note }}</span>
+                }
+              </span>
+              @if (item.state !== 'pending') {
+                <span class="visually-hidden">{{ stateWord(item.state) }}</span>
+              }
+            </li>
+          }
+        </ol>
+
+        @if (job.outcome === 'Running') {
+          <div class="sd-progress-row">
+            @if (isDeterminate(job)) {
+              <progress class="sd-progress-bar" aria-label="Source job progress"
+                        [attr.value]="job.filesRead" [attr.max]="job.filesTotal"></progress>
+              <span class="sd-progress-text" aria-hidden="true">{{ fileProgressText(job) }}</span>
+            } @else {
+              <progress class="sd-progress-bar" aria-label="Source job progress"></progress>
+            }
+          </div>
+        }
+
+        <div class="sd-job-meta">
+          <span>Elapsed <time [attr.datetime]="isoDuration(elapsedMs(job))">{{ formatDuration(elapsedMs(job)) }}</time></span>
+          <span>{{ triggerLabel(job.trigger) }}</span>
+          @if (job.message && job.outcome !== 'Running') {
+            <span class="sd-job-message">{{ job.message }}</span>
+          }
+          @if (job.outcome === 'Running') {
+            <button type="button" class="btn-ghost sd-cancel" id="sd-cancel-btn"
+                    [attr.aria-disabled]="canceling ? 'true' : null"
+                    [attr.aria-describedby]="cancelMessage ? 'sd-cancel-message' : null"
+                    (click)="cancel()">Cancel</button>
+          }
+        </div>
+        <div role="status" class="sd-cancel-feedback">
+          @if (cancelMessage) {
+            <p class="gh-field-warning" id="sd-cancel-message">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <span>{{ cancelMessage }}</span>
+            </p>
+          }
+        </div>
+
+        @if (isBuildJob(job)) {
+          <details class="gh-disclosure sd-output">
+            <summary>Build output</summary>
+            <div class="gh-disclosure-body">
+              <div class="sd-output-toolbar">
+                <button type="button" class="action-btn" id="sd-copy-job-output-btn"
+                        aria-label="Copy build output"
+                        interestfor="sd-copy-job-output-tip" [attr.style]="'anchor-name: --sd-copy-job-output'"
+                        (click)="copyOutput(job.outputTail)">
+                  <ng-container [ngTemplateOutlet]="copyGlyph" />
+                </button>
+                <div popover="hint" class="gh-tooltip" id="sd-copy-job-output-tip"
+                     [attr.style]="'position-anchor: --sd-copy-job-output'">Copy build output</div>
+                <span class="sd-copy-status" role="status">{{ copyStatus }}</span>
+              </div>
+              @if (job.outputTail?.length) {
+                <pre class="sd-output-text">{{ outputText(job.outputTail) }}</pre>
+              } @else {
+                <p class="sd-muted">No output yet.</p>
+              }
+            </div>
+          </details>
+        }
+      </section>
+    }
+
+    <div class="sd-grid">
+      <!-- 4. Key figures -->
+      <section class="sd-card sd-wide" aria-labelledby="sd-figures-title">
+        <h4 class="gh-section-title" id="sd-figures-title">Key figures</h4>
+        @if (s.index; as index) {
+          <dl class="gh-health-summary sd-figures">
+            <div class="gh-health-tile">
+              <dt>Indexed files</dt>
+              <dd>{{ formatNumber(index.fileCount) }}</dd>
+            </div>
+            <div class="gh-health-tile">
+              <dt>Lines</dt>
+              <dd>{{ formatNumber(index.totalLines) }}</dd>
+            </div>
+            <div class="gh-health-tile">
+              <dt>Constants</dt>
+              <dd>{{ formatNumber(index.constantCount) }}</dd>
+            </div>
+            <div class="gh-health-tile">
+              <dt>Last indexed</dt>
+              <dd>
+                <button type="button" class="sd-time-hint" id="sd-last-indexed-btn"
+                        interestfor="sd-last-indexed-tip" [attr.style]="'anchor-name: --sd-last-indexed'">
+                  <time [attr.datetime]="isoDateTime(index.indexedAtUtc)">{{ formatRelative(index.indexedAtUtc) }}</time>
+                </button>
+                <div popover="hint" class="gh-tooltip" id="sd-last-indexed-tip"
+                     [attr.style]="'position-anchor: --sd-last-indexed'">{{ formatDateTime(index.indexedAtUtc) }}</div>
+              </dd>
+            </div>
+            <div class="gh-health-tile">
+              <dt>Index time</dt>
+              <dd>{{ formatDuration(index.durationMs) }}</dd>
+            </div>
+            <div class="gh-health-tile">
+              <dt>Indexed commit</dt>
+              <dd>
+                <code class="sd-mono">{{ shortSha(index.headSha) }}</code>
+                @if (index.branch) {
+                  <span class="gh-health-tile-note">{{ index.branch }}</span>
+                }
+                @if (s.currentHeadSha && s.currentHeadSha !== index.headSha) {
+                  <span class="gh-health-tile-note">
+                    Current HEAD <code class="sd-mono">{{ shortSha(s.currentHeadSha) }}</code>
+                    @if (s.currentBranch) {
+                      <span>on {{ s.currentBranch }}</span>
+                    }
+                  </span>
+                }
+              </dd>
+            </div>
+            <div class="gh-health-tile">
+              <dt>Next automatic check</dt>
+              <dd>
+                @if (s.nextCheckAtUtc) {
+                  <time [attr.datetime]="isoDateTime(s.nextCheckAtUtc)">{{ formatTime(s.nextCheckAtUtc) }}</time>
+                } @else {
+                  —
+                }
+                <span class="gh-health-tile-note">Every {{ formatNumber(s.checkIntervalMinutes) }} min</span>
+              </dd>
+            </div>
+          </dl>
+        } @else {
+          <p class="sd-muted">No index has been published yet.</p>
+        }
+        @if (s.sourcePath) {
+          <p class="sd-path">Source folder: <code class="sd-mono">{{ s.sourcePath }}</code></p>
+        }
+      </section>
+
+      <!-- 5. Generated headers -->
+      <section class="sd-card" aria-labelledby="sd-headers-title">
+        <h4 class="gh-section-title" id="sd-headers-title">Generated headers</h4>
+        @if (s.generatedHeaders.length) {
+          <div class="sd-table-wrap" role="region" aria-labelledby="sd-headers-title" tabindex="0">
+            <table class="sd-table">
+              <caption class="visually-hidden">Headers makedefs generates</caption>
+              <thead>
+                <tr><th scope="col">Header</th><th scope="col">On disk</th><th scope="col">Modified</th><th scope="col">In index</th></tr>
+              </thead>
+              <tbody>
+                @for (header of s.generatedHeaders; track header.name) {
+                  <tr>
+                    <th scope="row"><code class="sd-mono">{{ header.name }}</code></th>
+                    <td>
+                      <span class="gh-health-status" [attr.data-status]="header.exists ? 'ok' : 'error'">
+                        <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: header.exists ? 'ok' : 'error' }" />
+                        {{ header.exists ? 'Present' : 'Missing' }}
+                      </span>
+                    </td>
+                    <td>
+                      @if (header.lastWriteUtc) {
+                        <time [attr.datetime]="isoDateTime(header.lastWriteUtc)">{{ formatDateTime(header.lastWriteUtc) }}</time>
+                      } @else {
+                        —
+                      }
+                    </td>
+                    <td>
+                      <span class="gh-health-status" [attr.data-status]="header.inIndex ? 'ok' : 'warning'">
+                        <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: header.inIndex ? 'ok' : 'warning' }" />
+                        {{ header.inIndex ? 'Indexed' : 'Not indexed' }}
+                      </span>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <p class="sd-muted">No generated headers are reported.</p>
+        }
+      </section>
+
+      <!-- 6. makedefs -->
+      <section class="sd-card" aria-labelledby="sd-makedefs-title">
+        <h4 class="gh-section-title" id="sd-makedefs-title">makedefs</h4>
+        @if (s.makedefs; as m) {
+          <dl class="sd-facts">
+            <div>
+              <dt>Build command</dt>
+              <dd>
+                @if (m.buildCommand) {
+                  <code class="sd-mono">{{ m.buildCommand }}</code>
+                } @else {
+                  Not set
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>Build tool</dt>
+              <dd>
+                <span class="gh-health-status" [attr.data-status]="m.buildCommandToolExists ? 'ok' : 'error'">
+                  <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: m.buildCommandToolExists ? 'ok' : 'error' }" />
+                  {{ m.buildCommandToolExists ? 'Found' : 'Not found' }}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Executable</dt>
+              <dd>
+                @if (m.executablePath) {
+                  <code class="sd-mono">{{ m.executablePath }}</code>
+                }
+                <span class="gh-health-status" [attr.data-status]="m.executableExists ? 'ok' : 'warning'">
+                  <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: m.executableExists ? 'ok' : 'warning' }" />
+                  {{ m.executableExists ? 'Found' : 'Missing' }}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Executable modified</dt>
+              <dd>
+                @if (m.executableLastWriteUtc) {
+                  <time [attr.datetime]="isoDateTime(m.executableLastWriteUtc)">{{ formatDateTime(m.executableLastWriteUtc) }}</time>
+                } @else {
+                  —
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>Branch restriction</dt>
+              <dd>{{ m.branchRestriction || 'None' }}</dd>
+            </div>
+            <div>
+              <dt>Inputs</dt>
+              <dd>
+                <span class="gh-health-status" [attr.data-status]="inputsStatus(m.inputsState)">
+                  <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: inputsStatus(m.inputsState) }" />
+                  {{ inputsWord(m.inputsState) }}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Last build</dt>
+              <dd>
+                @if (m.lastBuildAtUtc) {
+                  <time [attr.datetime]="isoDateTime(m.lastBuildAtUtc)">{{ formatDateTime(m.lastBuildAtUtc) }}</time>
+                  @if (m.lastBuildDurationMs !== null) {
+                    <span class="sd-muted">({{ formatDuration(m.lastBuildDurationMs) }})</span>
+                  }
+                }
+                <span class="gh-health-status" [attr.data-status]="makedefsOutcomeStatus(m.lastOutcome)">
+                  <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: makedefsOutcomeStatus(m.lastOutcome) }" />
+                  {{ makedefsOutcomeWord(m.lastOutcome) }}
+                </span>
+              </dd>
+            </div>
+          </dl>
+          @if (m.lastOutputTail?.length && !(progressJob && isBuildJob(progressJob))) {
+            <details class="gh-disclosure sd-output">
+              <summary>Last build output</summary>
+              <div class="gh-disclosure-body">
+                <div class="sd-output-toolbar">
+                  <button type="button" class="action-btn" id="sd-copy-last-output-btn"
+                          aria-label="Copy last build output"
+                          interestfor="sd-copy-last-output-tip" [attr.style]="'anchor-name: --sd-copy-last-output'"
+                          (click)="copyOutput(m.lastOutputTail)">
+                    <ng-container [ngTemplateOutlet]="copyGlyph" />
+                  </button>
+                  <div popover="hint" class="gh-tooltip" id="sd-copy-last-output-tip"
+                       [attr.style]="'position-anchor: --sd-copy-last-output'">Copy build output</div>
+                  <span class="sd-copy-status" role="status">{{ copyStatus }}</span>
+                </div>
+                <pre class="sd-output-text">{{ outputText(m.lastOutputTail) }}</pre>
+              </div>
+            </details>
+          }
+        } @else {
+          <p class="sd-muted">makedefs state is not reported.</p>
+        }
+      </section>
+
+      <!-- 7. Excluded by size -->
+      @if (s.index; as index) {
+        <section class="sd-card" aria-labelledby="sd-excluded-title">
+          <h4 class="gh-section-title" id="sd-excluded-title">Excluded files</h4>
+          <details class="gh-disclosure sd-excluded">
+            <summary>Excluded by size ({{ formatNumber(index.skippedBySize.length) }})</summary>
+            <div class="gh-disclosure-body">
+              <p class="sd-note">
+                Files over {{ formatNumber(index.maxFileSizeKB) }} KB (<code class="sd-mono">MaxSourceFileSizeKB</code>)
+                are not indexed.
+                @if (index.skippedExcludedDirectories > 0) {
+                  {{ formatNumber(index.skippedExcludedDirectories) }} files in excluded folders were skipped as well.
+                }
+              </p>
+              @if (index.skippedBySize.length) {
+                <ul class="sd-excluded-list">
+                  @for (file of index.skippedBySize; track file.path) {
+                    <li><code class="sd-mono">{{ file.path }}</code> <span class="sd-muted">{{ formatBytes(file.bytes) }}</span></li>
+                  }
+                </ul>
+              } @else {
+                <p class="sd-muted">No file was excluded by size.</p>
+              }
+            </div>
+          </details>
+        </section>
+      }
+
+      <!-- 9. NetHack source -->
+      @if (netHack; as n) {
+        <section class="sd-card" aria-labelledby="sd-nethack-title">
+          <h4 class="gh-section-title" id="sd-nethack-title">NetHack source</h4>
+          <dl class="sd-facts">
+            <div>
+              <dt>Configured</dt>
+              <dd>
+                <span class="gh-health-status" [attr.data-status]="n.configured && n.pathExists ? 'ok' : 'info'">
+                  <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: n.configured && n.pathExists ? 'ok' : 'info' }" />
+                  {{ !n.configured ? 'Not configured' : n.pathExists ? 'Configured' : 'Folder missing' }}
+                </span>
+              </dd>
+            </div>
+            @if (n.currentJob) {
+              <div>
+                <dt>Activity</dt>
+                <dd>
+                  <span class="gh-health-status" data-status="running">
+                    <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: 'running' }" />
+                    Indexing
+                  </span>
+                </dd>
+              </div>
+            }
+            <div>
+              <dt>Files</dt>
+              <dd>{{ n.index ? formatNumber(n.index.fileCount) : '—' }}</dd>
+            </div>
+            <div>
+              <dt>Last indexed</dt>
+              <dd>
+                @if (n.index) {
+                  <time [attr.datetime]="isoDateTime(n.index.indexedAtUtc)">{{ formatDateTime(n.index.indexedAtUtc) }}</time>
+                } @else {
+                  —
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>Commit</dt>
+              <dd>
+                @if (n.index?.headSha) {
+                  <code class="sd-mono">{{ shortSha(n.index!.headSha) }}</code>
+                  @if (n.index!.branch) {
+                    <span class="sd-muted">{{ n.index!.branch }}</span>
+                  }
+                } @else {
+                  —
+                }
+              </dd>
+            </div>
+          </dl>
+        </section>
+      }
+
+      <!-- 8. Recent activity -->
+      <section class="sd-card sd-wide" aria-labelledby="sd-recent-title">
+        <h4 class="gh-section-title" id="sd-recent-title">Recent activity</h4>
+        @if (s.recentJobs.length) {
+          <div class="sd-table-wrap" role="region" aria-labelledby="sd-recent-title" tabindex="0">
+            <table class="sd-table sd-recent">
+              <caption class="visually-hidden">Recent source jobs</caption>
+              <thead>
+                <tr>
+                  <th scope="col">When</th><th scope="col">Trigger</th><th scope="col">Kind</th>
+                  <th scope="col">Duration</th><th scope="col">Outcome</th><th scope="col">Message</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (job of recentJobs(s); track job.id) {
+                  <tr>
+                    <td><time [attr.datetime]="isoDateTime(job.startedAtUtc)">{{ formatDateTime(job.startedAtUtc) }}</time></td>
+                    <td>{{ triggerLabel(job.trigger) }}</td>
+                    <td>{{ kindLabel(job.kind) }}</td>
+                    <td>{{ formatDuration(elapsedMs(job)) }}</td>
+                    <td>
+                      <span class="gh-health-status" [attr.data-status]="outcomeStatus(job.outcome)">
+                        <ng-container [ngTemplateOutlet]="healthGlyph" [ngTemplateOutletContext]="{ $implicit: outcomeStatus(job.outcome) }" />
+                        {{ outcomeWord(job.outcome) }}
+                      </span>
+                    </td>
+                    <td class="sd-message-cell">{{ job.message || '' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <p class="sd-muted">No source job has finished since the server started.</p>
+        }
+      </section>
+    </div>
+  } @else if (!loadError) {
+    <p class="sd-loading" role="status">
+      <svg class="dc-ring dc-ring--inline" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 48 48" focusable="false" aria-hidden="true"><circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle><circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle></svg>
+      Loading the source status…
+    </p>
+  }
+</div>

@@ -387,9 +387,13 @@ The Angular application's routes are defined in `app.routes.ts`. The primary pag
 - `/api-keys` and `/models` are redirects to `/settings/api-keys` and `/settings/models`, whose
   content is `api-keys.component` (user API keys) and `models.component` (the user's AI models)
   rendered inside the Settings page, with no page chrome of their own.
-- `/admin` (`admin.component`): System administration (groups, configs, rate limits). Tabs, in
-  order: Users, Groups, **API Keys** (`app-admin-api-keys`, the per-provider default keys), System
-  Configs, Database, AI Telemetry, GnollBench, Developer Tools.
+- `/admin`, `/admin/:tab` and `/admin/:tab/:subtab` (`admin.component`): System administration
+  (groups, configs, rate limits). Tabs, in order: Users, System Configs, Database, AI Telemetry,
+  Security, GnollBench, Developer Tools. *Groups* is a sub-tab of Users (*Users · Groups · Deletion
+  requests · Admin log*); **API Keys** (`app-admin-api-keys`, the per-provider default keys) is a
+  dialog of System Configs at `/admin/configs/api-keys`. One route with `matcher: adminUrlMatcher`
+  serves all three shapes, so a tab change reuses the page; the slugs, the legacy `?tab=` redirect
+  and the history rules are in `admin/admin-url.ts` and `docs/overseer/admin-page-urls.md`.
 - `/debug-log` (`debug-log.component`): Developer debug logs.
 - `/login` (`login.component`): Authentication entry point.
 
@@ -405,17 +409,30 @@ chat needs from an admin service is imported with `import type`. The `initial` b
 To find specific popups, look in the corresponding component's `.html` template:
 
 - **Admin Component (`admin/`)** — `admin.component.html` is the page shell: the tab row, the toast and
-  one tab panel per tab. Each tab is a component of its own (`users-tab/`, `groups-tab/`, `configs-tab/`,
-  `database-tab/`, `telemetry-tab/`, `devtools-tab/`), and `AdminPageStore` (`admin-page.store.ts`) holds
-  what the tabs share or keep across a tab switch. Dialogs, by the component that holds them:
-  - `#manageGroupsDialog`: Manage Groups (`users-tab/user-list/`)
+  one tab panel per tab. Each tab is a component of its own (`users-tab/`, `configs-tab/`,
+  `database-tab/`, `telemetry-tab/`, `security-tab/`, `benchmark/`, `devtools-tab/`; `groups-tab/` is
+  the Users tab's *Groups* sub-panel), and `AdminPageStore` (`admin-page.store.ts`) holds what the tabs
+  share or keep across a tab switch. The address sets the selection: the shell applies it through
+  `store.applyLocation`, and a tab moves it with `store.goTo(tab, subTab, 'push' | 'replace')`.
+  Developer Tools has three sub-tabs: *GnollHack Source* (`devtools-tab/source-dashboard/`, the
+  source index and makedefs status with **Re-index Source Files**, **Build makedefs** and live
+  progress, polled from `api/admin/devtools/source/status` through `services/admin-devtools.service.ts`),
+  *Configuration Health* (`devtools-tab/config-health/`, the configuration report with its
+  *Problems* / *All checks* filter) and *Sentry Crash Reporting*. Both dashboards use the global
+  `.gh-health-*` status classes in `styles.scss`. Dialogs, by the component that holds them:
+  - `#manageGroupsDialog`: *Manage Groups for {user}* (`users-tab/user-list/`), in the benchmark dialog
+    frame at 36rem (not full height), one switch card per group, **Done** (`btn-gh-cancel`)
   - `#createGroupDialog`: Create Group (`groups-tab/`)
   - `#configDialog`: Config (`configs-tab/`) — near full screen (`settings-dialog model-form-dialog`);
     only the body of its `app-ai-model-form` scrolls.
   - `#config-filter-panel`: Config Filter (`popover="auto"`, anchored to `#config-filter-trigger`)
   - `#confirmDialog`: Confirm (`admin-dialogs/admin-confirm-dialog.component.html`; Groups, Database and
     the rate limits dialog each embed their own)
-  - `#manageUserConfigsDialog`: Manage User Configs (`users-tab/user-list/`)
+  - `app-config-access-dialog` (`admin-dialogs/config-access-dialog/`): *AI configuration access for
+    {user}* (or *… for group {group}*), shared by the Users list and the Groups sub-tab — a full-height
+    card list in the benchmark dialog frame, one card per system configuration with its switch, the
+    model badges, *Off for this user* / *Limited*, and the Rate Limits and Overrides dialogs it hosts
+    itself.
   - The Users list's account action dialogs (`users-tab/user-action-dialogs/`, `app-user-*-dialog`,
     each a `dialog.gh-dialog.uad-dialog` opened with `showModal()`, focus on its heading, a server error
     kept inline and `aria-busy` while sending; their shared layout is `user-action-dialog.scss`, the
@@ -440,13 +457,17 @@ To find specific popups, look in the corresponding component's `.html` template:
     `closedby="any"`): *1. Users · 2. Action · 3. Review · 4. Results*. Opened by the tab's **Bulk Actions**
     with the list's criteria, or by the Admin log's **Open results** on step 4 through the page store's
     `requestBulkWizard`. Its state is discarded on close; a running operation continues.
-  - `#manageGroupConfigsDialog`: Manage Group Configs (`groups-tab/`)
   - `#editConfigOverrideDialog`: Edit Config Override (`admin-dialogs/admin-config-override-dialog.component.html`)
   - `#rateLimitsDialog`: Rate Limits (`admin-dialogs/admin-rate-limits-dialog.component.html`)
   - `#analyticsDialog`: Analytics (`configs-tab/`)
+  - `#apiKeysDialog`: *Default API Keys* (`configs-tab/`, `.gh-dialog.dialog-extra-wide`), opened by the
+    tab header's **API Keys** button (a count chip follows the label while a provider's key is missing or
+    failed verification) and open exactly while the address is `/admin/configs/api-keys`; it hosts
+    `<app-admin-api-keys [showHeading]="false">`. Done, the close button and Escape replace the address
+    with `/admin/configs`; Back closes it too, since the address loses `/api-keys`.
   - `app-model-resolution-dialog` (`kind="system"`, `configs-tab/`): *Resolve "{model}"* for a
     configuration whose model was removed from or is not in the catalog, opened by a row's **Resolve…**
-    or by the `resolveConfig={id}` query parameter (`/admin?tab=configs&resolveConfig={id}`, the chat
+    or by the `resolveConfig={id}` query parameter (`/admin/configs?resolveConfig={id}`, the chat
     composer's **Open System Configs**). Its **Delete…** emits `deleteRequested`, which starts the
     tab's own delete flow. See the shared component below.
   - Not a dialog: the **Database** tab's report chart files (`database-tab/`). A stat box *Report Chart Files* after
@@ -461,7 +482,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     asks *Delete N chart files (X MB) for M documents? …* first; Maintenance History shows the trigger
     `Manual:ClearReportCharts` verbatim. See `docs/overseer/chat-data-retention.md`.
 
-- **Admin API Keys Component (`admin/admin-api-keys/admin-api-keys.component.html`, Admin → API Keys)**
+- **Admin API Keys Component (`admin/admin-api-keys/admin-api-keys.component.html`, Admin → System Configs → API Keys)**
   - `#deleteDefaultKeyDialog`: *Delete the default <Provider> key?* — the count and names of the
     system AI configurations that use it (from `deletion-check`, fetched on open), which a delete
     disables; **Delete Key** (`.btn-gh btn-gh-delete`, trash).
@@ -472,7 +493,7 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `app-key-verification-dialog` (below), opened by a 409 on **Save Key**.
 
 - **Key Verification Dialog (`shared/key-verification/key-verification-dialog.component.html`)** —
-  *Could not verify the key*, shared by the admin API Keys tab and the user API Keys page. Opened with
+  *Could not verify the key*, shared by the admin API Keys dialog and the user API Keys page. Opened with
   `open(provider, refusal)` for a 409 `unverifiable` refusal: one sentence, *What failed* as a `dl` of
   the detail parts present (*Check*, *Response*, *Error*, *Provider's message*, *Time*), and **Cancel** /
   **Save Anyway**, which emits `(saveAnyway)`; the host resends with `saveUnverified: true` and the

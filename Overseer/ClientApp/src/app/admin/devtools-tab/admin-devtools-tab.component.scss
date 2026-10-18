@@ -5,8 +5,22 @@
 }
 
 @include shared.tab-header-row;
-@include shared.permissions-fieldset;
 @include shared.text-muted;
+
+/* Sub-tabs */
+.devtools-subtabs {
+  margin-top: 1rem;
+}
+
+.devtools-subpanel {
+  padding-top: 0.5rem;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
 
 .devtools-button-group {
   display: flex;
@@ -20,4 +34,8 @@
     max-width: 100%;
     justify-content: center;
   }
+}
+
+.devtools-warning {
+  font-size: 0.9em;
 }

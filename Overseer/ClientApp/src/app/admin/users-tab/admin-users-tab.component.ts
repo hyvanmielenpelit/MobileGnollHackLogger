@@ -1,22 +1,26 @@
 import { Component, OnInit, OnDestroy, inject, ViewChild, ChangeDetectionStrategy } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
-import { AdminPageStore, AdminUsersLogFilter, AdminUsersSubTab } from '../admin-page.store';
+import { AdminHistoryMode, AdminPageStore, AdminUsersLogFilter, AdminUsersSubTab } from '../admin-page.store';
 import { DeletionRequestsComponent } from './deletion-requests/deletion-requests.component';
 import { AdminUserListComponent } from './user-list/admin-user-list.component';
 import { AdminUserLogComponent } from './admin-log/admin-user-log.component';
 import { AdminBulkWizardComponent } from './bulk-wizard/admin-bulk-wizard.component';
+import { AdminGroupsTabComponent } from '../groups-tab/admin-groups-tab.component';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 import { rovingTabIndex } from '../../utils/roving-tab.util';
 import { Subscription } from 'rxjs';
 
 /**
- * The Admin page's Users tab: the header with Bulk Actions, and three sub-tabs — the user list, the
- * deletion requests and the admin log. It hosts the Bulk Actions wizard, which opens seeded with the
- * list's current criteria.
+ * The Admin page's Users tab: the header with Bulk Actions, and four sub-tabs — the user list, the
+ * groups, the deletion requests and the admin log. It hosts the Bulk Actions wizard, which opens
+ * seeded with the list's current criteria.
  */
 @Component({
   selector: 'app-admin-users-tab',
-  imports: [AdminUserListComponent, DeletionRequestsComponent, AdminUserLogComponent, AdminBulkWizardComponent],
+  imports: [
+    AdminUserListComponent, AdminGroupsTabComponent, DeletionRequestsComponent, AdminUserLogComponent,
+    AdminBulkWizardComponent
+  ],
   templateUrl: './admin-users-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
   styleUrl: './admin-users-tab.component.scss'
@@ -29,7 +33,7 @@ export class AdminUsersTabComponent implements OnInit, OnDestroy {
   @ViewChild(AdminUserListComponent) userList?: AdminUserListComponent;
 
   /** The sub-tabs, in display order. */
-  readonly subTabs: readonly AdminUsersSubTab[] = ['users', 'deletions', 'log'];
+  readonly subTabs: readonly AdminUsersSubTab[] = ['users', 'groups', 'deletions', 'log'];
 
   /** Pending deletion requests, for the Deletion requests label; null until counted. */
   pendingDeletionCount: number | null = null;
@@ -56,11 +60,11 @@ export class AdminUsersTabComponent implements OnInit, OnDestroy {
 
   /**
    * A pending manage request selects the Users sub-tab; the user list reads and clears it and opens
-   * Manage User Configs for that user.
+   * the AI configuration access dialog for that user.
    */
   private takePendingManageUser(): void {
     if (this.store.pendingManageUser) {
-      this.selectSubTab('users');
+      this.selectSubTab('users', 'replace');
     }
   }
 
@@ -102,15 +106,18 @@ export class AdminUsersTabComponent implements OnInit, OnDestroy {
 
   // --- Sub-tabs ---
 
-  /** The selected sub-tab, kept in the page store so a link can choose it before the tab exists. */
+  /** The selected sub-tab, which the Admin page sets in the page store from the address. */
   get subTab(): AdminUsersSubTab {
     return this.store.usersSubTab;
   }
 
-  /** `Users`; `Deletion requests (2 pending)` while requests are pending; `Admin log`. */
+  /** `Users`; `Groups`; `Deletion requests (2 pending)` while requests are pending; `Admin log`. */
   subTabLabel(tab: AdminUsersSubTab): string {
     if (tab === 'users') {
       return 'Users';
+    }
+    if (tab === 'groups') {
+      return 'Groups';
     }
     if (tab === 'log') {
       return 'Admin log';
@@ -119,12 +126,15 @@ export class AdminUsersTabComponent implements OnInit, OnDestroy {
     return pending > 0 ? `Deletion requests (${pending} pending)` : 'Deletion requests';
   }
 
-  /** Selects a sub-tab; each panel loads what it shows when it appears. */
-  selectSubTab(tab: AdminUsersSubTab): void {
+  /**
+   * Selects a sub-tab through the address: a click or Enter/Space adds a history entry, anything
+   * else replaces it. Each panel loads what it shows when it appears.
+   */
+  selectSubTab(tab: AdminUsersSubTab, mode: AdminHistoryMode = 'push'): void {
     if (tab === this.subTab) {
       return;
     }
-    this.store.usersSubTab = tab;
+    this.store.goTo('users', tab, mode);
   }
 
   /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
@@ -132,7 +142,7 @@ export class AdminUsersTabComponent implements OnInit, OnDestroy {
     const next = rovingTabIndex(event, index, this.subTabs.length);
     if (next === null) return;
     const tab = this.subTabs[next];
-    this.selectSubTab(tab);
+    this.selectSubTab(tab, 'replace');
     document.getElementById(`users-subtab-${tab}`)?.focus();
   }
 

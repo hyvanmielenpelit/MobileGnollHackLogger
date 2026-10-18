@@ -297,16 +297,29 @@ describe('AdminUserListComponent', () => {
       expect(textOf(card('u-1').querySelector('.au-fact-groups'))).toBe('Testers');
     });
 
-    it('opens Manage User Configs for a request from AI Telemetry without looking the user up', () => {
+    it('opens the AI configuration access dialog for a request from AI Telemetry without looking the user up', () => {
       const configsSpy = vi.spyOn(adminService, 'getUserSystemConfigs').mockReturnValue(of([]));
       store.pendingManageUser = { userId: 'u-9', userName: 'zed' };
       create();
 
       expect(store.pendingManageUser).toBeNull();
       expect(configsSpy).toHaveBeenCalledWith('u-9');
-      const dialog = el.querySelector<HTMLDialogElement>('dialog.dialog-wide')!;
+      const dialog = el.querySelector<HTMLDialogElement>('app-config-access-dialog dialog')!;
       expect(dialog.open).toBe(true);
-      expect(textOf(dialog.querySelector('h3'))).toBe('Manage User Configs: zed');
+      expect(textOf(dialog.querySelector('h3'))).toBe('AI configuration access for zed');
+    });
+
+    it('opens the AI configuration access dialog from a card', () => {
+      const configsSpy = vi.spyOn(adminService, 'getUserSystemConfigs').mockReturnValue(of([]));
+      create();
+
+      card('u-1').querySelector<HTMLButtonElement>('.au-manage-configs')!.click();
+      fixture.detectChanges();
+
+      expect(configsSpy).toHaveBeenCalledWith('u-1');
+      const dialog = el.querySelector<HTMLDialogElement>('app-config-access-dialog dialog')!;
+      expect(dialog.open).toBe(true);
+      expect(textOf(dialog.querySelector('h3'))).toBe('AI configuration access for alice');
     });
   });
 });

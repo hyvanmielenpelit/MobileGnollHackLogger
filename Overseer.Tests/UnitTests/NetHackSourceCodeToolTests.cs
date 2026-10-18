@@ -109,7 +109,9 @@ enum nethack_types {
         var netService = new NetHackSourceCodeService(config, NullLogger<NetHackSourceCodeService>.Instance);
 
         gnollService.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        gnollService.InitializationTask.GetAwaiter().GetResult();
         netService.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        netService.InitializationTask.GetAwaiter().GetResult();
 
         return (gnollService, netService, config);
     }
@@ -140,7 +142,7 @@ enum nethack_types {
             .Build();
 
         using var netService = new NetHackSourceCodeService(emptyConfig, NullLogger<NetHackSourceCodeService>.Instance);
-        var ex = Record.Exception(() => netService.StartAsync(CancellationToken.None).GetAwaiter().GetResult());
+        var ex = Record.Exception(() => { netService.StartAsync(CancellationToken.None).GetAwaiter().GetResult(); netService.InitializationTask.GetAwaiter().GetResult(); });
         Assert.Null(ex);
         Assert.True(netService.IsIndexingComplete);
     }

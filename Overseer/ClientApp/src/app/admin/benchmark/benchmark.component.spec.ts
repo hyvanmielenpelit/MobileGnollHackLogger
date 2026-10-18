@@ -1728,6 +1728,38 @@ describe('AdminBenchmarkComponent', () => {
       ctx.refresh();
       expect(benchmarkServiceMock.getScoringProfiles).toHaveBeenCalled();
     });
+
+    describe('subTabChange', () => {
+      let changes: { tab: string; byUser: boolean }[];
+
+      beforeEach(() => {
+        changes = [];
+        component.subTabChange.subscribe(change => changes.push(change));
+      });
+
+      it('reports a tab click as chosen by the user, once per change', () => {
+        (fixture.nativeElement.querySelector('#bm-tab-history') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        (fixture.nativeElement.querySelector('#bm-tab-history') as HTMLButtonElement).click();
+        fixture.detectChanges();
+
+        expect(changes).toEqual([{ tab: 'history', byUser: true }]);
+      });
+
+      it('reports nothing when the current sub-tab is selected again', () => {
+        component.selectSubTab('run');
+        (fixture.nativeElement.querySelector('#bm-tab-run') as HTMLButtonElement).click();
+
+        expect(changes).toEqual([]);
+      });
+
+      it('reports an arrow key and a bridge request as not chosen by the user', () => {
+        component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 0);
+        ctx.bridge.selectSubTab('suites');
+
+        expect(changes).toEqual([{ tab: 'history', byUser: false }, { tab: 'suites', byUser: false }]);
+      });
+    });
   });
 
   describe('runCountInput layout', () => {

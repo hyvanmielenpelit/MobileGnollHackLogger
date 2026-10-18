@@ -90,6 +90,7 @@ struct windowprocs { void (*win_print_glyph)(int, int, int); };
 
         var service = new SourceCodeService(config, NullLogger<SourceCodeService>.Instance);
         service.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        service.InitializationTask.GetAwaiter().GetResult();
         return (service, config);
     }
 
@@ -102,6 +103,7 @@ struct windowprocs { void (*win_print_glyph)(int, int, int); };
             using (netService)
             {
                 netService.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+                netService.InitializationTask.GetAwaiter().GetResult();
                 var tool = new SourceCodeSearchTool(service, netService, config);
                 return await tool.ExecuteAsync(
                     JsonDocument.Parse(argsJson).RootElement,
@@ -120,6 +122,7 @@ struct windowprocs { void (*win_print_glyph)(int, int, int); };
             using (netService)
             {
                 netService.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+                netService.InitializationTask.GetAwaiter().GetResult();
                 var tool = new GetFunctionDefinitionTool(service, netService);
                 return await tool.ExecuteAsync(
                     JsonDocument.Parse(argsJson).RootElement,
@@ -447,6 +450,7 @@ struct windowprocs { void (*win_print_glyph)(int, int, int); };
 
             var service = new SourceCodeService(config, NullLogger<SourceCodeService>.Instance);
             await service.StartAsync(TestContext.Current.CancellationToken);
+            await service.InitializationTask;
             using (service)
             {
                 // "hooded" (>=4 chars) matches the indexed "hooded cloak"; "mantle" matches nothing.

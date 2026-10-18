@@ -17,6 +17,8 @@ import { ModelResolutionDialogComponent } from '../../shared/model-resolution-di
 import {
   ModelResolutionResult, availabilityChip, availabilitySentence, needsAttention
 } from '../../shared/model-availability/model-availability';
+import { modelRoleBadges } from '../../utils/model-badge-format.util';
+import { AdminApiKeysComponent, DEFAULT_KEY_PROVIDERS } from '../admin-api-keys/admin-api-keys.component';
 
 /** The badge beside a configuration's provider badge that says how it relates to the model catalog. */
 export interface ConfigAvailabilityBadge {
@@ -31,7 +33,7 @@ export interface ConfigAvailabilityBadge {
   selector: 'app-admin-configs-tab',
   imports: [
     CommonModule, AiModelFormComponent, ConfigAnalyticsComponent, ConfigFilterComponent, ProviderBadgeComponent, AdminRateLimitsDialogComponent,
-    ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent
+    ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent, AdminApiKeysComponent
   ],
   templateUrl: './admin-configs-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
@@ -51,9 +53,16 @@ export class AdminConfigsTabComponent implements OnInit, OnDestroy, AfterViewIni
   @ViewChild('deleteConfigDialog') deleteConfigDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild(ModelResolutionDialogComponent) resolutionDialog?: ModelResolutionDialogComponent;
   @ViewChild('configsHeading') configsHeading?: ElementRef<HTMLElement>;
+  @ViewChild('apiKeysDialog', { static: true }) apiKeysDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('apiKeysHeading', { static: true }) apiKeysHeading?: ElementRef<HTMLElement>;
+  @ViewChild('apiKeysButton', { static: true }) apiKeysButton?: ElementRef<HTMLButtonElement>;
 
   private configsChangedSub?: Subscription;
   private resolveRequestSub?: Subscription;
+  private apiKeysDialogSub?: Subscription;
+
+  /** Set once the view exists, so the API Keys dialog can be opened. */
+  private viewReady = false;
 
   /** The configuration a resolution saved; focus moves on from its row once the dialog has closed. */
   private focusAfterResolutionId: number | null = null;
@@ -144,17 +153,83 @@ export class AdminConfigsTabComponent implements OnInit, OnDestroy, AfterViewIni
     this.store.loadDefaultApiKeys();
     this.applyConfigFilters();
     this.configsChangedSub = this.store.configsChanged$.subscribe(() => this.applyConfigFilters());
+    this.apiKeysDialogSub = this.store.apiKeysDialogChanged$.subscribe(() => this.syncApiKeysDialog(true));
   }
 
   ngAfterViewInit(): void {
     setTimeout(() => refreshAnchorPositioning(), 0);
     this.openPendingResolve();
     this.resolveRequestSub = this.store.resolveConfigRequested$.subscribe(() => this.openPendingResolve());
+    this.viewReady = true;
+    // A direct load of /admin/configs/api-keys asked for the dialog before this view existed; the
+    // keys are already loading from ngOnInit.
+    this.syncApiKeysDialog(false);
   }
 
   ngOnDestroy() {
     this.configsChangedSub?.unsubscribe();
     this.resolveRequestSub?.unsubscribe();
+    this.apiKeysDialogSub?.unsubscribe();
+  }
+
+  // --- API Keys dialog ---
+
+  /** True while the address is System Configs → API Keys. */
+  get apiKeysDialogOpen(): boolean {
+    return this.store.apiKeysDialogOpen;
+  }
+
+  /** Providers whose default key is missing or not verified; 0 until the keys have loaded. */
+  get apiKeysAttentionCount(): number {
+    const keys = this.store.defaultApiKeys;
+    if (keys.length === 0) {
+      return 0;
+    }
+    return DEFAULT_KEY_PROVIDERS.filter(provider => {
+      const status = keys.find(k => k.provider.toLowerCase() === provider.toLowerCase());
+      return !status?.hasKey || status.verification?.status === 'NotVerified';
+    }).length;
+  }
+
+  /** API Keys: the dialog's address, as a new history entry. */
+  openApiKeysDialog(): void {
+    this.store.goTo('configs', 'api-keys', 'push');
+  }
+
+  /** Done and the close button: back to System Configs, replacing the dialog's history entry. */
+  closeApiKeysDialog(): void {
+    this.store.goTo('configs', null, 'replace');
+  }
+
+  /**
+   * Every close, Escape and an address without `/api-keys` included: the address follows, and focus
+   * returns to API Keys unless another tab is being selected.
+   */
+  onApiKeysDialogClose(): void {
+    if (this.store.apiKeysDialogOpen) {
+      this.closeApiKeysDialog();
+    }
+    if (this.store.activeTab === 'configs') {
+      this.apiKeysButton?.nativeElement.focus();
+    }
+  }
+
+  /** Opens or closes the dialog as the page store says; an opening reloads the keys when `load` is set. */
+  private syncApiKeysDialog(load: boolean): void {
+    const dialog = this.apiKeysDialog?.nativeElement;
+    if (!dialog || !this.viewReady) {
+      return;
+    }
+    if (this.store.apiKeysDialogOpen && !dialog.open) {
+      if (load && !this.store.defaultApiKeysLoading) {
+        this.store.loadDefaultApiKeys();
+      }
+      dialog.showModal();
+      this.apiKeysHeading?.nativeElement.focus();
+      setTimeout(() => refreshAnchorPositioning(), 0);
+    } else if (!this.store.apiKeysDialogOpen && dialog.open) {
+      dialog.close();
+    }
   }
 
   configName(config: SystemAiConfigDto): string {
@@ -629,13 +704,7 @@ export class AdminConfigsTabComponent implements OnInit, OnDestroy, AfterViewIni
     return (config.pricingSource === 'custom' || config.pricingMode === 'custom') ? 'Custom' : 'Catalog';
   }
 
-  modelRoleBadges(role: number): Array<{ label: string; cssClass: string }> {
-    const badges: Array<{ label: string; cssClass: string }> = [];
-    if ((role & 1) === 1) badges.push({ label: 'Chat', cssClass: 'badge-role-chat' });
-    if ((role & 2) === 2) badges.push({ label: 'Title', cssClass: 'badge-role-title' });
-    if ((role & 4) === 4) badges.push({ label: 'Benchmark', cssClass: 'badge-role-benchmark' });
-    return badges;
-  }
+  readonly modelRoleBadges = modelRoleBadges;
 
   // --- Drag and Drop for System Configs ---
   onConfigDragStart(event: DragEvent, index: number) {

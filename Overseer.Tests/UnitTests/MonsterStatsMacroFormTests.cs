@@ -38,6 +38,7 @@ public class MonsterStatsMacroFormTests : IDisposable
 
         _service = new SourceCodeService(config, NullLogger<SourceCodeService>.Instance);
         _service.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        _service.InitializationTask.GetAwaiter().GetResult();
     }
 
     public void Dispose()

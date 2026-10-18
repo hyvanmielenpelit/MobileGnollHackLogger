@@ -106,7 +106,11 @@ describe('AdminUsersTabComponent', () => {
 
       const list = host().querySelector('[role="tablist"]') as HTMLElement;
       expect(list.getAttribute('aria-label')).toBe('User sections');
+      expect(Array.from(list.querySelectorAll('[role="tab"]')).map(t => t.id)).toEqual([
+        'users-subtab-users', 'users-subtab-groups', 'users-subtab-deletions', 'users-subtab-log'
+      ]);
       expect(tab('users').textContent?.trim()).toBe('Users');
+      expect(tab('groups').textContent?.trim()).toBe('Groups');
       expect(tab('deletions').textContent?.trim()).toBe('Deletion requests (2 pending)');
       expect(tab('log').textContent?.trim()).toBe('Admin log');
       expect(adminService.getAccountDeletionRequests).toHaveBeenCalledWith({ status: 'Pending', take: 1 });
@@ -114,6 +118,9 @@ describe('AdminUsersTabComponent', () => {
       expect(tab('users').getAttribute('aria-selected')).toBe('true');
       expect(tab('users').getAttribute('tabindex')).toBe('0');
       expect(tab('users').getAttribute('aria-controls')).toBe('users-subpanel-users');
+      expect(tab('groups').getAttribute('aria-controls')).toBe('users-subpanel-groups');
+      expect(tab('groups').getAttribute('aria-selected')).toBe('false');
+      expect(tab('groups').getAttribute('tabindex')).toBe('-1');
       expect(tab('deletions').getAttribute('aria-selected')).toBe('false');
       expect(tab('deletions').getAttribute('tabindex')).toBe('-1');
       expect(tab('log').getAttribute('tabindex')).toBe('-1');
@@ -122,8 +129,39 @@ describe('AdminUsersTabComponent', () => {
       expect(panel.getAttribute('role')).toBe('tabpanel');
       expect(panel.getAttribute('aria-labelledby')).toBe('users-subtab-users');
       expect(panel.querySelector('app-admin-user-list')).toBeTruthy();
+      expect(host().querySelector('#users-subpanel-groups')).toBeNull();
       expect(host().querySelector('#users-subpanel-deletions')).toBeNull();
       expect(host().querySelector('#users-subpanel-log')).toBeNull();
+    });
+
+    it('renders the Groups panel with the groups tab on the Groups sub-tab', () => {
+      fixture.detectChanges();
+
+      tab('groups').click();
+      fixture.detectChanges();
+
+      const panel = host().querySelector('#users-subpanel-groups') as HTMLElement;
+      expect(panel.getAttribute('role')).toBe('tabpanel');
+      expect(panel.getAttribute('aria-labelledby')).toBe('users-subtab-groups');
+      expect(panel.getAttribute('tabindex')).toBe('0');
+      expect(panel.querySelector('app-admin-groups-tab')).toBeTruthy();
+      expect(tab('groups').getAttribute('aria-selected')).toBe('true');
+      expect(host().querySelector('#users-subpanel-users')).toBeNull();
+    });
+
+    it('selects through the page store: a click adds a history entry, an arrow key replaces it', () => {
+      fixture.detectChanges();
+      const goTo = vi.spyOn(store, 'goTo');
+
+      tab('deletions').click();
+      expect(goTo).toHaveBeenLastCalledWith('users', 'deletions', 'push');
+
+      press(tab('deletions'), 'ArrowRight');
+      expect(goTo).toHaveBeenLastCalledWith('users', 'log', 'replace');
+
+      goTo.mockClear();
+      tab('log').click();
+      expect(goTo).not.toHaveBeenCalled();
     });
 
     it('drops the count from the label when nothing is pending', () => {
@@ -135,12 +173,21 @@ describe('AdminUsersTabComponent', () => {
 
     it('moves and selects with Right, Left, Home and End, focus following selection', () => {
       fixture.detectChanges();
+      const goTo = vi.spyOn(store, 'goTo');
 
       press(tab('users'), 'ArrowRight');
+      expect(goTo).toHaveBeenLastCalledWith('users', 'groups', 'replace');
+      expect(store.usersSubTab).toBe('groups');
+      expect(tab('groups').getAttribute('aria-selected')).toBe('true');
+      expect(tab('groups').getAttribute('tabindex')).toBe('0');
+      expect(tab('users').getAttribute('tabindex')).toBe('-1');
+      expect(document.activeElement).toBe(tab('groups'));
+      expect(host().querySelector('#users-subpanel-groups app-admin-groups-tab')).toBeTruthy();
+
+      press(tab('groups'), 'ArrowRight');
+      expect(goTo).toHaveBeenLastCalledWith('users', 'deletions', 'replace');
       expect(store.usersSubTab).toBe('deletions');
       expect(tab('deletions').getAttribute('aria-selected')).toBe('true');
-      expect(tab('deletions').getAttribute('tabindex')).toBe('0');
-      expect(tab('users').getAttribute('tabindex')).toBe('-1');
       expect(document.activeElement).toBe(tab('deletions'));
       const panel = host().querySelector('#users-subpanel-deletions') as HTMLElement;
       expect(panel.getAttribute('aria-labelledby')).toBe('users-subtab-deletions');
@@ -202,9 +249,9 @@ describe('AdminUsersTabComponent', () => {
   });
 
   describe('manage request from AI Telemetry', () => {
-    const dialog = () => host().querySelector('dialog.dialog-wide') as HTMLDialogElement;
+    const dialog = () => host().querySelector('app-config-access-dialog dialog') as HTMLDialogElement;
 
-    it('selects the Users sub-tab, whose list opens Manage User Configs for the requested user', () => {
+    it('selects the Users sub-tab, whose list opens the AI configuration access dialog for the requested user', () => {
       const configsSpy = vi.spyOn(adminService, 'getUserSystemConfigs').mockReturnValue(of([]));
       store.usersSubTab = 'deletions';
       store.pendingManageUser = { userId: 'u-9', userName: 'zed' };
@@ -216,7 +263,7 @@ describe('AdminUsersTabComponent', () => {
       expect(host().querySelector('#users-subtab-users')?.getAttribute('aria-selected')).toBe('true');
       expect(configsSpy).toHaveBeenCalledWith('u-9');
       expect(dialog().open).toBe(true);
-      expect(dialog().querySelector('h3')?.textContent).toContain('Manage User Configs: zed');
+      expect(dialog().querySelector('h3')?.textContent).toContain('AI configuration access for zed');
     });
 
     it('handles a request that arrives while the tab is open', () => {
@@ -232,7 +279,7 @@ describe('AdminUsersTabComponent', () => {
       expect(store.pendingManageUser).toBeNull();
       expect(configsSpy).toHaveBeenCalledWith('u-7');
       expect(dialog().open).toBe(true);
-      expect(dialog().querySelector('h3')?.textContent).toContain('Manage User Configs: yuri');
+      expect(dialog().querySelector('h3')?.textContent).toContain('AI configuration access for yuri');
     });
   });
 });

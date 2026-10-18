@@ -91,7 +91,9 @@ throttle state itself is in the database, so a restart does not re-send.
   config's display name and id, and whether the key is the provider's **default** key or a
   **custom** key of the config.
 - **Summary and what to do:** top up the provider account, or create a new key and save it
-  under *Admin → Default API keys* (default key) or in the System AI Config (custom key).
+  under *Admin → Default API keys* (default key: the *Default API Keys* dialog that **API Keys**
+  opens on Admin → System Configs, `/admin/configs/api-keys`) or in the System AI Config (custom
+  key).
 - **Every configuration sharing the key**, found by decrypting each key of the same provider
   only to fingerprint it. A key that fails to decrypt is listed as *key unreadable*.
 - **The error:** time of the provider response in UTC and Helsinki time, HTTP status and

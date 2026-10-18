@@ -1,0 +1,137 @@
+<!--
+  No closedby="any": the full-height frame leaves only a thin backdrop ring, which is no honest click
+  target. Escape and Done close it. &ngsp; keeps the spaces between badges that flex separates only visually.
+-->
+<dialog #dialog class="gh-dialog config-access-dialog" aria-labelledby="config-access-title"
+        aria-describedby="config-access-subtitle" (close)="onClosed($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 #title id="config-access-title" tabindex="-1">{{ heading }}</h3>
+        <p class="dialog-subtitle" id="config-access-subtitle">{{ subtitle }}</p>
+        <!-- The list's one polite live region. -->
+        <p class="gh-list-status cad-status" id="cad-status" role="status">{{ status }}</p>
+      </div>
+    </div>
+
+    <div class="dialog-body cad-body" [attr.aria-busy]="loading ? 'true' : null">
+      @if (configs.length > searchThreshold && !loading && !error) {
+        <div class="gh-search-field cad-search">
+          <label class="visually-hidden" for="cad-search">Search configurations</label>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="search" class="gh-input" id="cad-search" autocomplete="off"
+                 placeholder="Search name, model or provider"
+                 [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+        </div>
+      }
+
+      @if (error) {
+        <p class="gh-field-error cad-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ error }}</span>
+        </p>
+      } @else if (loading) {
+        <!-- The status line says it is loading. -->
+      } @else if (configs.length === 0) {
+        <p class="cad-empty">No system configurations available.</p>
+      } @else if (shownConfigs.length === 0) {
+        <p class="cad-empty cad-no-matches">No configurations match the search.</p>
+      } @else {
+        <ul class="cad-cards" role="list" aria-labelledby="config-access-title">
+          @for (config of shownConfigs; track config.id) {
+            @let assignment = assignmentOf(config.id);
+            <li class="cad-item">
+              <article class="cad-card" [class.is-assigned]="!!assignment" [attr.data-config-id]="config.id"
+                       [attr.aria-labelledby]="'cad-' + config.id + '-title'">
+                <!-- The switch is named by the card's title; the title is not a label for the whole card. -->
+                <label class="gh-switch-wrapper cad-switch">
+                  <span class="gh-switch">
+                    <input type="checkbox" class="cad-toggle" [id]="'cad-' + config.id + '-toggle'"
+                           [attr.aria-labelledby]="'cad-' + config.id + '-title'"
+                           [checked]="!!assignment" [disabled]="isProcessing(config.id)"
+                           (change)="toggle(config, $event)">
+                    <span class="gh-slider"></span>
+                  </span>
+                </label>
+
+                <div class="cad-head">
+                  <h4 class="cad-title" [id]="'cad-' + config.id + '-title'">{{ config.displayName }}</h4>
+                  <div class="cad-badges">
+                    <app-model-option-badges [model]="config" />
+                    @if (config.serviceTier) {
+                      &ngsp;<span class="config-badge"><span class="visually-hidden">service tier </span>{{ formatServiceTier(config.serviceTier) }}</span>
+                    }
+                    @for (role of modelRoleBadges(config.modelRole); track role.label) {
+                      &ngsp;<span class="status-badge" [ngClass]="role.cssClass"><span class="visually-hidden">role </span>{{ role.label }}</span>
+                    }
+                    @if (config.isSystemWide) {
+                      &ngsp;<span class="badge-system-wide">System Wide</span>
+                    }
+                    @if (!config.isEnabled) {
+                      &ngsp;<span class="badge-disabled">Disabled</span>
+                    }
+                    @if (assignment) {
+                      @if (!assignment.isEnabled) {
+                        &ngsp;<span class="status-badge badge-warning cad-off">{{ offLabel }}</span>
+                      }
+                      @let limits = limitsText(assignment);
+                      @if (limits) {
+                        &ngsp;<button type="button" class="status-badge badge-info cad-limited"
+                                [attr.interestfor]="'cad-' + config.id + '-limits-tip'"
+                                [attr.style]="'anchor-name: --cad-' + config.id + '-limits-tip'">Limited</button>
+                        <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="'cad-' + config.id + '-limits-tip'"
+                             [attr.style]="'position-anchor: --cad-' + config.id + '-limits-tip'">{{ limits }}</div>
+                      }
+                    }
+                  </div>
+                  <!-- A dot on screen between the parts, a comma for assistive technology. -->
+                  <p class="cad-meta">
+                    <code class="cad-model-id">{{ config.modelId }}</code>
+                    @if (config.note) {
+                      <span class="cad-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <em class="cad-note">{{ config.note }}</em>
+                    }
+                  </p>
+                </div>
+
+                @if (assignment) {
+                  <div class="cad-actions" role="group" [attr.aria-label]="'Actions for ' + config.displayName">
+                    <button type="button" class="action-btn cad-rate-limits"
+                            [attr.aria-label]="'Rate limits of ' + config.displayName"
+                            [attr.interestfor]="'cad-' + config.id + '-rate-tip'"
+                            [attr.style]="'anchor-name: --cad-' + config.id + '-rate-tip'"
+                            (click)="openRateLimits(assignment)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'cad-' + config.id + '-rate-tip'"
+                         [attr.style]="'position-anchor: --cad-' + config.id + '-rate-tip'">Rate limits</div>
+                    <button type="button" class="action-btn cad-overrides"
+                            [attr.aria-label]="'Overrides of ' + config.displayName"
+                            [attr.interestfor]="'cad-' + config.id + '-overrides-tip'"
+                            [attr.style]="'anchor-name: --cad-' + config.id + '-overrides-tip'"
+                            (click)="openOverrides(assignment)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'cad-' + config.id + '-overrides-tip'"
+                         [attr.style]="'position-anchor: --cad-' + config.id + '-overrides-tip'">Overrides</div>
+                  </div>
+                }
+              </article>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel cad-done" (click)="close()">Done</button>
+    </div>
+  </div>
+</dialog>
+
+<!--
+  Siblings of the dialog, not children: they open as modals above it, the frame's rules never reach
+  them, and their close events never reach this dialog's handler.
+-->
+<app-admin-rate-limits-dialog />
+<app-admin-config-override-dialog (saved)="onOverrideSaved($event)" />

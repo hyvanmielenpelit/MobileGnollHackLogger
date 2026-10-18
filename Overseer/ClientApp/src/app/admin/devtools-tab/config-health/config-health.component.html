@@ -1,0 +1,204 @@
+<!-- Status glyphs: Feather check-circle, alert-triangle, alert-circle and info. -->
+<ng-template #statusGlyph let-status>
+  @switch (status) {
+    @case ('ok') {
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+      </svg>
+    }
+    @case ('warning') {
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+    }
+    @case ('error') {
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+    }
+    @default {
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="16" x2="12" y2="12"></line>
+        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+      </svg>
+    }
+  }
+</ng-template>
+
+<div class="ch-toolbar">
+  <p class="ch-checked" role="status">
+    @if (loading) {
+      Checking the configuration…
+    } @else if (checkedAtText) {
+      Checked at <time [attr.datetime]="report?.generatedAtUtc">{{ checkedAtText }}</time>
+    }
+  </p>
+  <button type="button" class="btn-ghost ch-recheck"
+          [attr.aria-disabled]="loading ? 'true' : null"
+          (click)="recheck()">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+         aria-hidden="true">
+      <polyline points="23 4 23 10 17 10"></polyline>
+      <polyline points="1 20 1 14 7 14"></polyline>
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+    </svg>
+    Re-check
+  </button>
+</div>
+
+@if (loadError) {
+  <p class="gh-field-error ch-load-error" role="alert">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    {{ loadError }}
+  </p>
+}
+
+@if (report; as r) {
+  <div class="gh-health-summary ch-summary" role="group" aria-label="Check counts">
+    @for (tile of tiles; track tile.status) {
+      <div class="gh-health-tile" [attr.data-status]="tile.status">
+        <span class="ch-tile-count">{{ tile.count }}</span>
+        <span class="gh-health-status" [attr.data-status]="tile.status">
+          <ng-container *ngTemplateOutlet="statusGlyph; context: { $implicit: tile.status }"></ng-container>
+          {{ tile.label }}
+        </span>
+      </div>
+    }
+  </div>
+  <p class="ch-environment">Environment: <strong>{{ r.environmentName }}</strong></p>
+
+  <div class="ch-table-wrap">
+    <table class="gh-table ch-sources-table">
+      <caption>Configuration sources, lowest precedence first</caption>
+      <thead>
+        <tr>
+          <th scope="col">Source</th>
+          <th scope="col">Kind</th>
+          <th scope="col">File</th>
+          <th scope="col">Keys</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of sourceRows; track $index) {
+          <tr>
+            <th scope="row">{{ row.name }}</th>
+            <td>{{ row.kind }}</td>
+            <td>
+              @if (row.fileStatus) {
+                <span class="gh-health-status" [attr.data-status]="row.fileStatus">
+                  <ng-container *ngTemplateOutlet="statusGlyph; context: { $implicit: row.fileStatus }"></ng-container>
+                  {{ row.fileText }}
+                </span>
+              } @else {
+                {{ row.fileText }}
+              }
+            </td>
+            <td class="ch-num">{{ row.keyCount }}</td>
+          </tr>
+        } @empty {
+          <tr><td colspan="4">No configuration sources were reported.</td></tr>
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <div class="gh-tabs gh-tabs-segmented ch-filter" role="tablist" aria-label="Checks shown">
+    @for (f of filters; track f; let i = $index) {
+      <button type="button" role="tab" class="gh-tab"
+              [id]="'ch-filter-' + f"
+              aria-controls="ch-checks-panel"
+              [attr.aria-selected]="filter === f"
+              [attr.tabindex]="filter === f ? 0 : -1"
+              (keydown)="onFilterKeydown($event, i)"
+              (click)="selectFilter(f)">{{ filterLabel(f) }}</button>
+    }
+  </div>
+
+  <div role="tabpanel" id="ch-checks-panel" class="ch-checks" tabindex="0"
+       [attr.aria-labelledby]="'ch-filter-' + filter">
+    @if (visibleGroups.length === 0) {
+      <p class="ch-empty">
+        @if (filter === 'problems') {
+          No problems found in {{ allCount }} {{ allCount === 1 ? 'check' : 'checks' }}.
+        } @else {
+          No checks were reported.
+        }
+      </p>
+    }
+    @for (group of visibleGroups; track group.category) {
+      <section class="ch-category" [attr.aria-labelledby]="group.headingId">
+        <h4 class="gh-section-title" [id]="group.headingId">{{ group.category }}</h4>
+        <div class="ch-check-list">
+          @for (view of group.checks; track view.domId) {
+            <article class="ch-check" [attr.data-status]="view.check.status" [attr.aria-labelledby]="view.domId + '-title'">
+              <div class="ch-check-head">
+                <span class="gh-health-status" [attr.data-status]="view.check.status">
+                  <ng-container *ngTemplateOutlet="statusGlyph; context: { $implicit: view.check.status }"></ng-container>
+                  {{ view.statusLabel }}
+                </span>
+                <h5 class="ch-check-title" [id]="view.domId + '-title'">{{ view.check.title }}</h5>
+              </div>
+              <dl class="ch-check-facts">
+                @if (view.check.keys.length > 0) {
+                  <div class="ch-fact">
+                    <dt>{{ view.check.keys.length === 1 ? 'Key' : 'Keys' }}</dt>
+                    <dd class="ch-keys">
+                      @for (key of view.check.keys; track key) {
+                        <code>{{ key }}</code>
+                      }
+                    </dd>
+                  </div>
+                }
+                @if (view.check.source) {
+                  <div class="ch-fact">
+                    <dt>Source</dt>
+                    <dd><span class="ch-source-chip" [class.is-unset]="view.check.source === 'Not set'">{{ view.check.source }}</span></dd>
+                  </div>
+                }
+                @if (view.valueDisplay !== 'none') {
+                  <div class="ch-fact">
+                    <dt>Value</dt>
+                    <dd>
+                      @if (view.valueDisplay === 'shown') {
+                        <code class="ch-value">{{ view.check.value }}</code>
+                      } @else {
+                        <span class="ch-value-hidden">Value hidden</span>
+                      }
+                    </dd>
+                  </div>
+                }
+              </dl>
+              @if (view.check.summary) {
+                <p class="ch-check-summary">{{ view.check.summary }}</p>
+              }
+              @if (view.remedy) {
+                <details class="gh-disclosure ch-remedy">
+                  <summary>How to fix</summary>
+                  <div class="gh-disclosure-body">
+                    <p>{{ view.remedy }}</p>
+                  </div>
+                </details>
+              }
+            </article>
+          }
+        </div>
+      </section>
+    }
+  </div>
+}

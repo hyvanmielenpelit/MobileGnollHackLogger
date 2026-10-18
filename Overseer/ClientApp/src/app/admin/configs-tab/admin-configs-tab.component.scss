@@ -23,6 +23,25 @@
   font-weight: 600;
 }
 
+// The count of providers whose default key needs attention, after the API Keys label.
+.config-api-keys-attention {
+  margin-inline-start: 2px;
+}
+
+// The default API keys dialog: its h2 takes the size every dialog title has.
+.api-keys-dialog {
+  .dialog-title-group h2 {
+    margin: 0;
+    font-size: 1.3em;
+  }
+
+  .api-keys-dialog-intro {
+    margin: 0 0 1rem;
+    font-size: var(--text-secondary);
+    color: var(--gh-text-secondary);
+  }
+}
+
 // The summary of the configurations whose model needs attention, with one Resolve button each.
 .config-attention-banner {
   .config-attention-body {

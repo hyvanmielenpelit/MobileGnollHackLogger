@@ -205,6 +205,12 @@ export interface RunRailItem {
   note: string | null;
 }
 
+/** A sub-tab change `subTabChange` reports: `byUser` when a click or Enter/Space on the tab row chose it. */
+export interface BenchmarkSubTabChange {
+  tab: BenchmarkSubTab;
+  byUser: boolean;
+}
+
 @Component({
   selector: 'app-admin-benchmark',
   standalone: true,
@@ -339,6 +345,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   @Output() navigationHandled = new EventEmitter<void>();
+
+  /** Emitted whenever the visible sub-tab changes, so the host's address can follow it. */
+  @Output() subTabChange = new EventEmitter<BenchmarkSubTabChange>();
 
   private pendingNavigation: BenchmarkNavigationRequest | null = null;
 
@@ -760,8 +769,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /**
    * Switches the visible sub-tab. Each sub-tab's component loads what it shows when it is created.
    * Marked for check, since a request through the bridge comes from outside this view's own events.
+   * A real change is reported through `subTabChange`; `byUser` is true only from the tab row's click.
    */
-  selectSubTab(tab: BenchmarkSubTab): void {
+  selectSubTab(tab: BenchmarkSubTab, byUser = false): void {
+    const changed = tab !== this.activeSubTab;
     this.activeSubTab = tab;
     // The prefill note describes the launcher as it was filled; it is not shown again on return.
     if (tab !== 'run') {
@@ -769,6 +780,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.repeatRunSetupError = null;
     }
     this.cdr.markForCheck();
+    if (changed) {
+      this.subTabChange.emit({ tab, byUser });
+    }
   }
 
   /** The run report's Repeat this run's setup. */
@@ -3160,7 +3174,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       .filter(a => this.isAnswerFailed(a))
       .map(a => a.orderIndex);
     this.closeRunDetail();
-    this.activeSubTab = 'run';
+    this.selectSubTab('run');
     this.monitor.launchFailedQuestionRerun(runId, failed);
   }
 
@@ -3174,7 +3188,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (runId == null) return;
     if (this.refuseLeaving()) return;
     this.closeRunDetail();
-    this.activeSubTab = 'run';
+    this.selectSubTab('run');
     if (this.monitor.activeRunId != null && this.monitor.activeRunId !== runId && this.monitor.pollTickerHandle != null) {
       // Another run is live, and the banner keeps following it.
       this.monitor.viewRun(runId);

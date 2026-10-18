@@ -2,6 +2,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Overseer.Extensions;
 using Overseer.Models;
+using Overseer.Services.ConfigHealth;
+using Overseer.Services.SourceIndexing;
 using Microsoft.EntityFrameworkCore;
 using System.Linq;
 
@@ -13,6 +15,7 @@ public class ConfigHealthService
     private readonly IServiceScopeFactory? _scopeFactory;
     private readonly ILogger<ConfigHealthService>? _logger;
     private readonly IOptions<AiUsageGuardOptions>? _usageGuardOptions;
+    private readonly IHostEnvironment? _environment;
 
     public ConfigHealthService(IConfiguration configuration)
         : this(configuration, null, null)
@@ -23,12 +26,102 @@ public class ConfigHealthService
         IConfiguration configuration,
         IServiceScopeFactory? scopeFactory = null,
         ILogger<ConfigHealthService>? logger = null,
-        IOptions<AiUsageGuardOptions>? usageGuardOptions = null)
+        IOptions<AiUsageGuardOptions>? usageGuardOptions = null,
+        IHostEnvironment? environment = null)
     {
         _configuration = configuration;
         _scopeFactory = scopeFactory;
         _logger = logger;
         _usageGuardOptions = usageGuardOptions;
+        _environment = environment;
+    }
+
+    /// <summary>
+    /// Every catalog check of the configuration, with the provider each value comes from. A sensitive
+    /// key's value is never included; computed per call, with no database query.
+    /// </summary>
+    public ConfigHealthReportDto GetHealthReport()
+    {
+        var sources = new ConfigurationSourceInspector(_configuration);
+        var context = new ConfigHealthContext
+        {
+            Configuration = _configuration,
+            Sources = sources,
+            Makedefs = GetMakedefsState(),
+            KeyRing = ResolveKeyRing()
+        };
+
+        var checks = ConfigHealthCatalog.Evaluate(context, _logger);
+
+        return new ConfigHealthReportDto
+        {
+            GeneratedAtUtc = DateTime.UtcNow,
+            EnvironmentName = _environment?.EnvironmentName,
+            UserSecretsExpected = _environment?.IsDevelopment() == true,
+            Sources = sources.ListSources(),
+            Summary = new ConfigHealthSummaryDto
+            {
+                Ok = checks.Count(c => c.Status == ConfigHealthStatus.Ok),
+                Warning = checks.Count(c => c.Status == ConfigHealthStatus.Warning),
+                Error = checks.Count(c => c.Status == ConfigHealthStatus.Error),
+                Info = checks.Count(c => c.Status == ConfigHealthStatus.Info)
+            },
+            Checks = checks
+        };
+    }
+
+    /// <summary>
+    /// The GnollHack source service's last makedefs outcome and its missing generated headers, or null
+    /// when that service cannot be resolved.
+    /// </summary>
+    protected virtual MakedefsHealthState? GetMakedefsState()
+    {
+        if (_scopeFactory == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var sourceCode = scope.ServiceProvider.GetService<SourceCodeService>();
+            if (sourceCode == null)
+            {
+                return null;
+            }
+
+            var outcome = sourceCode.LastMakedefsOutcome;
+            return new MakedefsHealthState(outcome?.Kind, outcome?.Message, outcome?.FinishedAtUtc, sourceCode.GetMissingGeneratedHeaders());
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to read the makedefs outcome in ConfigHealthService");
+            return null;
+        }
+    }
+
+    // The registered keyring when there is one, else one read from the same configuration.
+    private Privacy.ConfigurationContentKeyRing? ResolveKeyRing()
+    {
+        try
+        {
+            if (_scopeFactory != null)
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var registered = scope.ServiceProvider.GetService<Privacy.ConfigurationContentKeyRing>();
+                if (registered != null)
+                {
+                    return registered;
+                }
+            }
+
+            return new Privacy.ConfigurationContentKeyRing(_configuration);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to evaluate the content keyring in ConfigHealthService");
+            return null;
+        }
     }
 
     public IEnumerable<SystemAlert> GetSystemAlerts()
@@ -52,6 +145,33 @@ public class ConfigHealthService
                 Id = "nethack-wiki-path-missing",
                 Type = "warning",
                 Message = "NetHack Wiki path is not configured. Set NetHackWikiPath in configuration settings."
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(_configuration["SourceCodePath"]))
+        {
+            alerts.Add(new SystemAlert
+            {
+                Id = "source-code-path-missing",
+                Type = "warning",
+                Message = "GnollHack source code path is not configured. Set SourceCodePath in configuration settings."
+            });
+        }
+
+        /* A failed makedefs matters while a generated header is missing: the index then lacks the
+           monster and object constants. A failure over headers still on disk raises nothing. */
+        var makedefs = GetMakedefsState();
+        if (makedefs != null
+            && (makedefs.LastKind == MakedefsOutcomeKind.BuildFailed || makedefs.LastKind == MakedefsOutcomeKind.RunFailed)
+            && makedefs.MissingHeaders.Count > 0)
+        {
+            alerts.Add(new SystemAlert
+            {
+                Id = "gnollhack-makedefs-failed",
+                Type = "error",
+                Message = "makedefs could not generate the GnollHack headers (pm.h, onames.h), so the chat cannot see monster and object constants.",
+                LinkUrl = "/admin/devtools",
+                LinkText = "Open GnollHack Source"
             });
         }
 
@@ -208,7 +328,7 @@ public class ConfigHealthService
                         Id = $"retired-model-{entry.Provider}-{firstPrefix}",
                         Type = "warning",
                         Message = $"{subject} {entry.DisplayName} ({firstPrefix}), which was removed from the model catalog on {entry.RetiredOn}.",
-                        LinkUrl = "/admin?tab=configs",
+                        LinkUrl = "/admin/configs",
                         LinkText = "Review in System Configs"
                     });
                 }
@@ -255,7 +375,7 @@ public class ConfigHealthService
                         Id = $"account-deletion-review:{newestId}",
                         Type = overdue > 0 ? "error" : "warning",
                         Message = overdue > 0 ? $"{subject} ({overdue} overdue)." : $"{subject}.",
-                        LinkUrl = "/admin?tab=users&subtab=deletions",
+                        LinkUrl = "/admin/users/deletions",
                         LinkText = "Review"
                     });
                 }
@@ -298,7 +418,7 @@ public class ConfigHealthService
                         Id = $"ai-spend:{now.ToString("yyyyMMdd", money)}:{spenders.Count}",
                         Type = "warning",
                         Message = $"{subject} spent over ${spendThreshold.ToString("0.00", money)} on AI in the last 24 hours (highest: ${highest.ToString("0.00", money)}).",
-                        LinkUrl = "/admin?tab=telemetry",
+                        LinkUrl = "/admin/telemetry",
                         LinkText = "Review"
                     });
                 }

@@ -96,6 +96,7 @@ public class SourceCodeServiceDefinitionTests : IDisposable
 
         var service = new SourceCodeService(config, NullLogger<SourceCodeService>.Instance);
         service.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        service.InitializationTask.GetAwaiter().GetResult();
         return service;
     }
 
@@ -370,6 +371,7 @@ public class SourceCodeServiceDefinitionTests : IDisposable
 
         var service = new SourceCodeService(config, NullLogger<SourceCodeService>.Instance);
         service.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        service.InitializationTask.GetAwaiter().GetResult();
         return service;
     }
 

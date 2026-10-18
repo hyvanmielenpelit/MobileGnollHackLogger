@@ -168,7 +168,7 @@ operator-funded estimated cost (roles 1–3) over the last 24 hours reaches
 (`security-monitoring.md` § 2). It never limits anyone.
 
 Actions: *Usage charts* (the charts dialog for that user), *Manage limits* (selects the Users tab and
-opens its *Manage User Configs* dialog for the user, where the Rate Limits dialog edits each assignment;
+opens its *AI configuration access for {user}* dialog, where the Rate Limits dialog edits each assignment;
 no limit editing is duplicated here), and *Block* / *Unblock*. The Security tab's *Usage* action lands
 here with that one user selected.
 

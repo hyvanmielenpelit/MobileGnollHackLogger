@@ -1,18 +1,11 @@
-@use '../../admin-shared' as shared;
+@use '../../benchmark/benchmark-dialog-frame' as frame;
 
-/* The filter bar, the status line, Load more, `.action-btn` and `.btn-ghost` are global in styles.scss;
-   the card's own layout is in the card component. */
+/* The filter bar, the status line, Load more, `.action-btn`, `.btn-ghost` and `.gh-switch` are global in
+   styles.scss; the card's own layout is in the card component. */
 
 :host {
   display: block;
 }
-
-@include shared.text-muted;
-@include shared.badge-system-wide;
-@include shared.d-flex;
-@include shared.scrollable-list;
-@include shared.config-list-item;
-@include shared.dialog-wide;
 
 .au-section {
   display: flex;
@@ -97,7 +90,69 @@
   font-size: var(--text-secondary);
 }
 
-.au-config-actions {
+/* --- Manage Groups ------------------------------------------------------------------------- */
+
+/* Header, scrolling body and footer; a group list is short, so not full height. */
+.gh-dialog.au-groups-dialog {
+  @include frame.frame($width: 36rem);
+
+  h3:focus {
+    outline: none;
+  }
+
+  h3:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.au-groups-empty {
+  margin: 0;
+  color: var(--nav-color);
+}
+
+.au-group-cards {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.au-group-item {
+  min-inline-size: 0;
+}
+
+/* Membership is shown by the switch and a gold border together, never by color alone. */
+.au-group-card {
   display: flex;
-  gap: 5px;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.625rem 1rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+
+  &.is-member {
+    border-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
+  }
+}
+
+.au-group-switch {
+  display: inline-flex;
+  flex-shrink: 0;
+
+  .gh-switch input:focus-visible + .gh-slider {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.au-group-title {
+  margin: 0;
+  min-width: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: #e4e4e7;
+  overflow-wrap: anywhere;
 }

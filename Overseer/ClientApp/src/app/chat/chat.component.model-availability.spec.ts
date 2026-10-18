@@ -159,8 +159,8 @@ describe('ChatComponent model availability', () => {
       expect(link).toBeTruthy();
       expect(link!.textContent?.trim()).toBe('Open System Configs');
       const href = link!.getAttribute('href') ?? '';
-      expect(href.startsWith('/admin?')).toBe(true);
-      expect(href).toContain('tab=configs');
+      expect(href.startsWith('/admin/configs?')).toBe(true);
+      expect(href).not.toContain('tab=');
       expect(href).toContain('resolveConfig=2');
     });
 

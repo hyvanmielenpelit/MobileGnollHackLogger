@@ -29,7 +29,7 @@ describe('AdminAlertsComponent', () => {
     await TestBed.configureTestingModule({
       imports: [AdminAlertsComponent],
       providers: [
-        provideRouter([{ path: 'admin', component: AdminStubComponent }]),
+        provideRouter([{ path: 'admin/:tab', component: AdminStubComponent }]),
         { provide: AdminAlertService, useValue: { alerts$: alerts.asObservable(), dismiss } }
       ]
     }).compileComponents();
@@ -66,13 +66,13 @@ describe('AdminAlertsComponent', () => {
     expect(unknown.querySelector('.admin-alert-glyph svg circle')).toBeNull();
   });
 
-  it('renders the link after the message and navigates with its query parameter intact', async () => {
-    alerts.next([alert({ linkUrl: '/admin?tab=configs', linkText: 'Review in System Configs' })]);
+  it('renders the link after the message and navigates to its path', async () => {
+    alerts.next([alert({ linkUrl: '/admin/configs', linkText: 'Review in System Configs' })]);
     fixture.detectChanges();
 
     const anchor = link()!;
     expect(anchor.textContent!.trim()).toBe('Review in System Configs');
-    expect(anchor.getAttribute('href')).toBe('/admin?tab=configs');
+    expect(anchor.getAttribute('href')).toBe('/admin/configs');
     expect(anchor.parentElement!.classList).toContain('admin-alert-actions');
     expect(anchor.querySelector('svg.admin-alert-link-arrow')!.getAttribute('aria-hidden')).toBe('true');
     const content = items()[0].querySelector('.admin-alert-body')!.textContent!;
@@ -81,12 +81,12 @@ describe('AdminAlertsComponent', () => {
     anchor.click();
     await fixture.whenStable();
 
-    expect(TestBed.inject(Router).url).toBe('/admin?tab=configs');
+    expect(TestBed.inject(Router).url).toBe('/admin/configs');
   });
 
   it('renders no link without link text, or for a link off the site', () => {
     alerts.next([
-      alert({ id: 'a', linkUrl: '/admin?tab=configs', linkText: null }),
+      alert({ id: 'a', linkUrl: '/admin/configs', linkText: null }),
       alert({ id: 'b', linkUrl: 'https://example.com/admin', linkText: 'Open' }),
       alert({ id: 'c', linkUrl: '//example.com/admin', linkText: 'Open' })
     ]);

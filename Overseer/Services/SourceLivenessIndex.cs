@@ -24,7 +24,7 @@ using Overseer.Services.Tools;
 /// counts as live.
 ///
 /// Built over the C sources and headers of the corpus it is given, rebuilt when that corpus changes
-/// (for the GnollHack repository, when the root or its HEAD SHA changes), and each name's answer is
+/// (for the GnollHack repository, when the root or the source index generation changes), and each name's answer is
 /// memoized per build. The first build is logged once.
 /// </summary>
 public sealed class SourceLivenessIndex
@@ -525,7 +525,8 @@ public sealed class SourceLivenessIndex
     /// <summary>
     /// The GnollHack repository <see cref="SourceCodeService"/> indexes, read from its path under the
     /// indexer's directory, extension and size rules (C sources and headers only), and cached until
-    /// the repository's root or HEAD moves. Throws while the service has not finished indexing.
+    /// the repository's root or the service's index generation changes. Throws while the service has
+    /// not finished indexing.
     /// </summary>
     private sealed class SourceCodeServiceCorpus
     {
@@ -554,7 +555,7 @@ public sealed class SourceLivenessIndex
                 throw new DirectoryNotFoundException("The GnollHack source repository is not reachable.");
             }
 
-            string key = root + "|" + (GitHelper.GetGitHeadSha(root) ?? string.Empty);
+            string key = root + "|" + _sourceCode.IndexGeneration.ToString(System.Globalization.CultureInfo.InvariantCulture);
             lock (_gate)
             {
                 if (_cached != null && string.Equals(_cachedKey, key, StringComparison.Ordinal))

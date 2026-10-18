@@ -296,13 +296,10 @@ describe('TelemetryUsersComponent', () => {
 
     it('Manage limits asks the Users tab to manage the user and selects it', () => {
       create();
-      const tabs: string[] = [];
-      store.tabRequested$.subscribe(tab => tabs.push(tab));
-
       el.querySelector<HTMLButtonElement>('button[aria-label="Manage the limits of alice"]')!.click();
 
       expect(store.pendingManageUser).toEqual({ userId: 'u-1', userName: 'alice' });
-      expect(tabs).toEqual(['users']);
+      expect(store.activeTab).toBe('users');
     });
 
     it('Block asks for a reason, blocks with it and refetches', () => {

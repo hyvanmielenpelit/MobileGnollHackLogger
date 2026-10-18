@@ -693,7 +693,7 @@ public class SystemConfigDeletionCheckDto
     public int ConfidentialTrustCount { get; set; }
 }
 
-/// <summary>One provider's default API key, as the API Keys tab shows it. Never carries the key.</summary>
+/// <summary>One provider's default API key, as the API Keys dialog shows it. Never carries the key.</summary>
 public class DefaultApiKeyStatusDto
 {
     public string Provider { get; set; } = string.Empty;

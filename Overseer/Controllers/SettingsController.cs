@@ -1165,7 +1165,7 @@ public class SettingsController : ControllerBase
             apiKey = await _settingsService.GetDecryptedSystemDefaultApiKeyAsync(provider);
             if (string.IsNullOrEmpty(apiKey))
             {
-                return BadRequest(new { message = $"There is no default {provider} key. Add one in the API Keys tab, or choose Custom." });
+                return BadRequest(new { message = $"There is no default {provider} key. Add one with API Keys in System Configs, or choose Custom." });
             }
         }
 

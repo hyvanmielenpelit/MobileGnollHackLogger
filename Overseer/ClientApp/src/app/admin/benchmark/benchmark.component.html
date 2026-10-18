@@ -13,7 +13,7 @@
         [attr.aria-selected]="activeSubTab === tab"
         [attr.tabindex]="activeSubTab === tab ? 0 : -1"
         (keydown)="onTabKeydown($event, $index)"
-        (click)="selectSubTab(tab)">
+        (click)="selectSubTab(tab, true)">
         @switch (tab) {
           @case ('run') {
             <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>

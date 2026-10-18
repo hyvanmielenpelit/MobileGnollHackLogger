@@ -416,7 +416,8 @@ each row.
   configurations (id `retired-model-{provider}-{firstPrefix}`), linking to **Review in System
   Configs**. *Not in catalog* raises no alert. The System Configs tab lists every flagged configuration
   in a summary banner and gives each row the badge, the notice and **Resolve…**;
-  `/admin?tab=configs&resolveConfig={id}` opens the dialog for one configuration.
+  `/admin/configs?resolveConfig={id}` opens the dialog for one configuration; the parameter is
+  removed once applied, so a reload does not open it again.
 
 ### The Three Resolutions
 

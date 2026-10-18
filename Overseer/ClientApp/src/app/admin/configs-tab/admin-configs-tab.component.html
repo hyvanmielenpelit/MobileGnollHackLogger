@@ -3,6 +3,15 @@
   <app-config-filter [filter]="configFilter"
                      [providers]="adminProviders"
                      (filterChange)="onConfigFilterChange($event)"></app-config-filter>
+  @let keysAttention = apiKeysAttentionCount;
+  <button type="button" #apiKeysButton id="config-api-keys" class="btn-ghost config-api-keys" aria-haspopup="dialog"
+          (click)="openApiKeysDialog()">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
+    API Keys
+    @if (keysAttention > 0) {
+      <span class="config-badge config-api-keys-attention">{{ keysAttention }}<span class="visually-hidden"> {{ keysAttention === 1 ? 'provider needs' : 'providers need' }} attention</span></span>
+    }
+  </button>
   <button class="btn-gh btn-gh-wide" (click)="openCreateConfig()">Create</button>
 </div>
 @let attention = attentionConfigs;
@@ -299,6 +308,40 @@
       (close)="closeAnalytics()">
     </app-config-analytics>
   }
+</dialog>
+
+<dialog #apiKeysDialog class="gh-dialog dialog-extra-wide api-keys-dialog" aria-labelledby="api-keys-dialog-title"
+        (close)="onApiKeysDialogClose()">
+  <div class="dialog-header">
+    <div class="dialog-title-group">
+      <h2 #apiKeysHeading id="api-keys-dialog-title" tabindex="-1">Default API Keys</h2>
+    </div>
+    <button type="button" class="btn-icon-action"
+            aria-label="Close default API keys"
+            interestfor="config-tip-api-keys-close"
+            style="anchor-name: --config-tip-api-keys-close"
+            (click)="closeApiKeysDialog()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+    <div popover="hint" class="gh-tooltip" id="config-tip-api-keys-close"
+         style="position-anchor: --config-tip-api-keys-close">Close</div>
+  </div>
+  <p class="api-keys-dialog-intro">
+    System AI configurations set to Default use these keys. Each key is checked with its provider before it is saved.
+  </p>
+  @if (apiKeysDialogOpen) {
+    <app-admin-api-keys [showHeading]="false"
+                        [statuses]="store.defaultApiKeys"
+                        [loading]="store.defaultApiKeysLoading"
+                        (changed)="store.onDefaultApiKeysChanged()"></app-admin-api-keys>
+  }
+  <div class="dialog-actions">
+    <button type="button" class="btn-gh btn-gh-cancel api-keys-dialog-done" (click)="closeApiKeysDialog()">Done</button>
+  </div>
 </dialog>
 
 <app-admin-rate-limits-dialog #rateLimits></app-admin-rate-limits-dialog>

@@ -824,7 +824,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(resolve.getAttribute('aria-describedby')).toBe('bmClaimVerifierModelAvailability');
       resolve.click();
 
-      expect(navigate).toHaveBeenCalledWith(['/admin'], { queryParams: { tab: 'configs', resolveConfig: 2 } });
+      expect(navigate).toHaveBeenCalledWith(['/admin', 'configs'], { queryParams: { resolveConfig: 2 }, queryParamsHandling: 'merge' });
     });
 
     it('advises on a model the catalog does not list without holding Start back', () => {

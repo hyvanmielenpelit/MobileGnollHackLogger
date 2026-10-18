@@ -209,7 +209,7 @@ public class AccountDeletionReviewEmailTests
         Assert.DoesNotContain("secret investigation details", email.Subject);
         Assert.Contains("alice", email.Body);
         Assert.Contains("manual hold and automatic rule", email.Body);
-        Assert.Contains("tab=users&amp;subtab=deletions", email.Body);
+        Assert.Contains("/admin/users/deletions", email.Body);
     }
 
     [Fact]
@@ -240,7 +240,7 @@ public class AccountDeletionReviewEmailTests
     {
         var (_, body) = AccountDeletionReviewEmail.Compose("alice", Now, manual: true, automatic: false, "https://overseer.example/admin");
 
-        Assert.Contains("href=\"https://overseer.example/admin?tab=users&amp;subtab=deletions\"", body);
+        Assert.Contains("href=\"https://overseer.example/admin/users/deletions\"", body);
         Assert.Contains("2026-10-14 12:00", body);
     }
 
@@ -253,9 +253,10 @@ public class AccountDeletionReviewEmailTests
     }
 
     [Theory]
-    [InlineData("https://overseer.example/admin", "https://overseer.example/admin?tab=users&subtab=deletions")]
-    [InlineData(" https://overseer.example/admin ", "https://overseer.example/admin?tab=users&subtab=deletions")]
-    [InlineData("https://overseer.example/admin?lang=en", "https://overseer.example/admin?lang=en&tab=users&subtab=deletions")]
+    [InlineData("https://overseer.example/admin", "https://overseer.example/admin/users/deletions")]
+    [InlineData(" https://overseer.example/admin ", "https://overseer.example/admin/users/deletions")]
+    [InlineData("https://overseer.example/admin/", "https://overseer.example/admin/users/deletions")]
+    [InlineData("https://overseer.example/admin?lang=en", "https://overseer.example/admin/users/deletions?lang=en")]
     public void ReviewLinkAddsTheDeletionsSubTab(string adminUrl, string expected)
     {
         Assert.Equal(expected, AccountDeletionReviewEmail.ReviewLink(adminUrl));

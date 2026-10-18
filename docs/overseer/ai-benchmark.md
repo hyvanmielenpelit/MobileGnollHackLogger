@@ -1336,7 +1336,7 @@ advantage."*, *"Good — the sword is cursed."*). Still **detect-and-count only*
 
 #### Dot-directories leave the source index (H4)
 
-`SourceCodeService.IndexRepository` now skips any file whose path relative to the repository root
+`SourceCodeService`'s file read (then `IndexRepository`, now `ReadFiles`) skips any file whose path relative to the repository root
 has a segment beginning with `.`, the same test `WikiService` applies to the wiki, and logs the
 skipped count once per pass. Run 32's Q16 surfaced a Visual Studio cache file
 (`win/win32/xpl/…/.vs/…/HierarchyCache.v1.txt`) in a `filenames_only` search; it was the only such
@@ -3420,7 +3420,7 @@ gains the provider wording and, where it applies, the writer-independence caveat
   versions when they differ and lists the automatic checks, which do not verify the prose's
   interpretations.
 
-The Admin **API Keys** tab's content is centered in one column of at most 48rem.
+The Admin **API Keys** dialog's content (System Configs → **API Keys**) is centered in one column of at most 48rem.
 
 ### Report Packs: a Comparison's Own Documents, a Comparison Reports Library and Format 7 (2026-09-29) — No Harness Version Bump
 

@@ -73,6 +73,7 @@ public class GetItemStatsResolutionTests : IDisposable
 
         var service = new SourceCodeService(config, NullLogger<SourceCodeService>.Instance);
         await service.StartAsync(TestContext.Current.CancellationToken);
+        await service.InitializationTask;
         return service;
     }
 

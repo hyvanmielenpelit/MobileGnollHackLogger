@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 import { Observable, Subscription } from 'rxjs';
 
-import { AdminService, GroupDto, SystemAiConfigDto } from '../../../services/admin.service';
+import { AdminService, GroupDto } from '../../../services/admin.service';
 import {
   AdminUser,
   AdminUserActionResult,
@@ -22,10 +22,9 @@ import {
   adminApiError
 } from '../../../services/admin-users.service';
 import { refreshAnchorPositioning, ensureOverlayPolyfills } from '../../../utils/polyfills.util';
-import { AdminConfigOverrideDialogComponent, formatModelRole } from '../../admin-dialogs/admin-config-override-dialog.component';
 import { AdminConfirmDialogComponent } from '../../admin-dialogs/admin-confirm-dialog.component';
-import { AdminRateLimitsDialogComponent } from '../../admin-dialogs/admin-rate-limits-dialog.component';
 import { AdminReasonDialogComponent } from '../../admin-dialogs/admin-reason-dialog.component';
+import { ConfigAccessDialogComponent } from '../../admin-dialogs/config-access-dialog/config-access-dialog.component';
 import { AdminPageStore } from '../../admin-page.store';
 import { AdminUserCardComponent } from '../user-card/admin-user-card.component';
 import { AdminUserActionId } from '../user-card/admin-user-card-actions';
@@ -60,8 +59,8 @@ interface CardChange {
  * with its status badges and actions. Every account action goes through one handler, which opens the
  * action's dialog, calls the server, replaces the card's account with the result, shows the before →
  * after note, announces the summary in the page toast and returns focus to the card's Actions. A
- * deleted account stays as a tombstone until dismissed or reloaded. The Manage Groups and Manage User
- * Configs dialogs live here.
+ * deleted account stays as a tombstone until dismissed or reloaded. The Manage Groups and AI
+ * configuration access dialogs live here.
  */
 @Component({
   selector: 'app-admin-user-list',
@@ -69,7 +68,7 @@ interface CardChange {
   imports: [
     UserCriteriaBarComponent, AdminUserCardComponent,
     UserLockoutDialogComponent, UserBanDialogComponent, UserRestrictionsDialogComponent, UserDeleteDialogComponent,
-    AdminConfirmDialogComponent, AdminReasonDialogComponent, AdminRateLimitsDialogComponent, AdminConfigOverrideDialogComponent
+    AdminConfirmDialogComponent, AdminReasonDialogComponent, ConfigAccessDialogComponent
   ],
   templateUrl: './admin-user-list.component.html',
   styleUrl: './admin-user-list.component.scss',
@@ -89,12 +88,9 @@ export class AdminUserListComponent implements OnInit, OnDestroy {
   @ViewChild(UserDeleteDialogComponent, { static: true }) deleteDialog!: UserDeleteDialogComponent;
   @ViewChild(AdminConfirmDialogComponent, { static: true }) confirmDialog!: AdminConfirmDialogComponent;
   @ViewChild(AdminReasonDialogComponent, { static: true }) reasonDialog!: AdminReasonDialogComponent;
-  @ViewChild(AdminRateLimitsDialogComponent, { static: true }) rateLimitsDialog!: AdminRateLimitsDialogComponent;
-  @ViewChild(AdminConfigOverrideDialogComponent, { static: true }) overrideDialog!: AdminConfigOverrideDialogComponent;
+  @ViewChild(ConfigAccessDialogComponent, { static: true }) configAccess!: ConfigAccessDialogComponent;
   @ViewChild('manageGroupsDialog', { static: true }) manageGroupsDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('manageUserConfigsDialog', { static: true }) manageUserConfigsDialog!: ElementRef<HTMLDialogElement>;
-
-  readonly formatModelRole = formatModelRole;
+  @ViewChild('manageGroupsTitle', { static: true }) manageGroupsTitle!: ElementRef<HTMLElement>;
 
   /** The accounts fetched so far, in the server's order; a deleted one stays until dismissed. */
   rows: AdminUser[] = [];
@@ -117,11 +113,6 @@ export class AdminUserListComponent implements OnInit, OnDestroy {
   // --- Manage Groups ---
   selectedUser: AdminUser | null = null;
 
-  // --- Manage User Configs ---
-  selectedUserForConfigs: { id: string; userName: string } | null = null;
-  userConfigAssignments: any[] = [];
-  processingConfigs: number[] = [];
-
   private listSub: Subscription | null = null;
   private countsSub: Subscription | null = null;
   private actionSub: Subscription | null = null;
@@ -131,10 +122,6 @@ export class AdminUserListComponent implements OnInit, OnDestroy {
 
   get groups(): GroupDto[] {
     return this.store.groups;
-  }
-
-  get configs(): SystemAiConfigDto[] {
-    return this.store.configs;
   }
 
   get criteria(): AdminUserCriteria {
@@ -157,14 +144,12 @@ export class AdminUserListComponent implements OnInit, OnDestroy {
     this.countsSub?.unsubscribe();
     this.actionSub?.unsubscribe();
     this.manageUserSub?.unsubscribe();
-    for (const ref of [this.manageGroupsDialog, this.manageUserConfigsDialog]) {
-      if (ref?.nativeElement.open) ref.nativeElement.close();
-    }
+    if (this.manageGroupsDialog?.nativeElement.open) this.manageGroupsDialog.nativeElement.close();
   }
 
   /**
-   * Reads and clears the page store's pending manage request and opens Manage User Configs for that
-   * user, which needs only the id and the name.
+   * Reads and clears the page store's pending manage request and opens the AI configuration access
+   * dialog for that user, which needs only the id and the name.
    */
   private takePendingManageUser(): void {
     const pending = this.store.pendingManageUser;
@@ -521,6 +506,7 @@ export class AdminUserListComponent implements OnInit, OnDestroy {
   openManageUserGroups(user: AdminUser) {
     this.selectedUser = user;
     this.manageGroupsDialog.nativeElement.showModal();
+    this.manageGroupsTitle.nativeElement.focus();
   }
 
   closeManageGroups() {
@@ -566,106 +552,9 @@ export class AdminUserListComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  // --- Config Assignments ---
+  // --- AI configuration access ---
 
   openManageUserConfigs(user: { id: string; userName: string }) {
-    this.selectedUserForConfigs = user;
-    this.adminService.getUserSystemConfigs(user.id).subscribe({
-      next: (assignments) => {
-        this.userConfigAssignments = assignments;
-        this.manageUserConfigsDialog.nativeElement.showModal();
-      },
-      error: () => {}
-    });
-  }
-
-  closeManageUserConfigs() {
-    this.manageUserConfigsDialog.nativeElement.close();
-    this.selectedUserForConfigs = null;
-    this.userConfigAssignments = [];
-  }
-
-  isConfigAssignedToUser(configId: number): boolean {
-    return this.userConfigAssignments.some(a => a.systemAiApiConfigurationId === configId);
-  }
-
-  getUserAssignment(configId: number) {
-    return this.userConfigAssignments.find(a => a.systemAiApiConfigurationId === configId);
-  }
-
-  toggleUserConfig(config: SystemAiConfigDto, event: any) {
-    const isChecked = event.target.checked;
-    const assignment = this.getUserAssignment(config.id);
-
-    if (this.processingConfigs.includes(config.id)) {
-      // Revert the visual change because we are ignoring this click
-      event.target.checked = !isChecked;
-      return;
-    }
-
-    if (isChecked) {
-      if (!assignment) {
-        this.processingConfigs = [...this.processingConfigs, config.id];
-        this.adminService.createUserSystemConfig(this.selectedUserForConfigs!.id, {
-          systemAiApiConfigurationId: config.id,
-          isEnabled: true,
-          modelRole: config.modelRole,
-          maxResultLength: null,
-          maxCallsPerSession: null,
-          maxToolIterations: null,
-          maxDailyChatRequests: null,
-          maxMonthlyChatRequests: null,
-          maxTotalChatRequests: null,
-          maxDailyTitleRequests: null,
-          maxMonthlyTitleRequests: null,
-          maxTotalTitleRequests: null,
-          maxDailyChatTokens: null,
-          maxMonthlyChatTokens: null,
-          maxTotalChatTokens: null,
-          maxDailyTitleTokens: null,
-          maxMonthlyTitleTokens: null,
-          maxTotalTitleTokens: null
-        }).subscribe({
-          next: res => {
-            this.userConfigAssignments = [...this.userConfigAssignments, res];
-            this.processingConfigs = this.processingConfigs.filter(id => id !== config.id);
-          },
-          error: () => {
-            this.processingConfigs = this.processingConfigs.filter(id => id !== config.id);
-            event.target.checked = false; // revert
-          }
-        });
-      }
-    } else {
-      if (assignment) {
-        this.processingConfigs = [...this.processingConfigs, config.id];
-        this.adminService.deleteUserSystemConfig(assignment.id).subscribe({
-          next: () => {
-            this.userConfigAssignments = this.userConfigAssignments.filter(a => a.id !== assignment.id);
-            this.processingConfigs = this.processingConfigs.filter(id => id !== config.id);
-          },
-          error: () => {
-            this.processingConfigs = this.processingConfigs.filter(id => id !== config.id);
-            event.target.checked = true; // revert
-          }
-        });
-      }
-    }
-  }
-
-  openUserRateLimits(assignment: any) {
-    this.rateLimitsDialog.open('user', assignment);
-  }
-
-  openEditUserOverride(assignment: any) {
-    this.overrideDialog.open('user', assignment);
-  }
-
-  /** Replaces the saved assignment in the open dialog's list. */
-  onOverrideSaved(saved: any) {
-    const idx = this.userConfigAssignments.findIndex(a => a.id === saved.id);
-    if (idx !== -1) {
-      this.userConfigAssignments[idx] = saved;
-    }
+    this.configAccess.open({ kind: 'user', id: user.id, name: user.userName });
   }
 }

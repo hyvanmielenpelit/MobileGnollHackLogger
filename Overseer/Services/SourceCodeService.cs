@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -10,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Overseer.Services.SourceIndexing;
 
 namespace Overseer.Services
 {
@@ -18,11 +18,10 @@ namespace Overseer.Services
         protected readonly ILogger _logger;
         protected readonly string _sourceCodePath;
         public string SourceCodePath => _sourceCodePath;
+        private readonly string _configPathKey;
         private readonly int _maxFileSizeKB;
         private Timer? _reindexTimer;
-        
-        private string _lastHeadSha = string.Empty;
-        
+
         public class ConstantInfo
         {
             public string Name { get; set; } = string.Empty;
@@ -31,34 +30,53 @@ namespace Overseer.Services
             public int LineNumber { get; set; }
         }
 
-        private readonly ConcurrentDictionary<string, ConstantInfo> _constants = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<string, SourceDocument> _documents = new(StringComparer.OrdinalIgnoreCase);
-        
         private readonly HashSet<string> _excludedFiles = new(StringComparer.OrdinalIgnoreCase)
         {
             "vis_tab.c", "vis_tab.h", "date.h"
         };
-        
+
         private readonly Dictionary<string, string> _flagDescriptions = new(StringComparer.OrdinalIgnoreCase);
-        private readonly GameDataParser _dataParser = new();
 
-        /* Reloaded from ParseGameData on every re-index, so it tracks the HEAD poll with the rest
-           of the corpus. Takes the same tokenizer the rest of the game-data parsing uses, so it
-           needs no DI registration of its own. */
-        private readonly ObjectsMacroResolver _itemResolver;
+        /* The published index: documents, constants, the game-data parser and the item resolver of
+           one completed pass. A pass builds a new snapshot and replaces this reference; every query
+           reads it once and uses that snapshot to the end. */
+        private SourceIndexSnapshot _snapshot = SourceIndexSnapshot.Empty;
 
-        public GameDataParser Parser => _dataParser;
-        
+        public GameDataParser Parser => Volatile.Read(ref _snapshot).Parser;
+
         private readonly IConfiguration _configuration;
-        private readonly string[] _makedefsSourceFiles = new[]
-        {
-            "src/monst.c", "src/objects.c", "src/animdef.c", "util/makedefs.c"
-        };
-        private Dictionary<string, DateTime> _lastMakedefsSourceTimestamps = new();
+        private readonly IExternalProcessRunner _processRunner;
+        private MakedefsHeaderGenerator? _makedefs;
         private readonly int _maxFunctionBodyLines;
         private volatile bool _isIndexingComplete = false;
 
+        /// <summary>True once the first pass has ended, published or not; never returns to false.</summary>
         public bool IsIndexingComplete => _isIndexingComplete;
+
+        /// <summary>The first pass, started by <see cref="StartAsync"/>. Never faults.</summary>
+        public Task InitializationTask { get; private set; } = Task.CompletedTask;
+
+        /// <summary>The published snapshot's generation: 0 before the first publish, then one more per publish.</summary>
+        public int IndexGeneration => Volatile.Read(ref _snapshot).Generation;
+
+        private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromMinutes(10);
+        private const int MaxRecentJobs = 20;
+
+        /* One pass at a time: start-up, the HEAD poll and manual requests all take this gate. A
+           request that finds it taken sets _pendingFollowUp (automatic triggers only), so at most
+           one follow-up pass is ever queued. */
+        private readonly SemaphoreSlim _gate = new(1, 1);
+        private int _pendingFollowUp;
+        private readonly object _jobLock = new();
+        private RunningJob? _currentJob;
+        private CancellationTokenSource? _currentJobCts;
+        private string? _lastStartedJobId;
+        private readonly LinkedList<SourceIndexJob> _recentJobs = new();
+        private DateTime? _nextCheckAtUtc;
+        private Task _runningPass = Task.CompletedTask;
+        private int _jobCounter;
+        private volatile bool _stopRequested;
+        private bool _disposed;
 
         /// <summary>Per-match timeout for a regular expression a model supplies.</summary>
         internal static readonly TimeSpan UserRegexMatchTimeout = TimeSpan.FromMilliseconds(200);
@@ -69,41 +87,61 @@ namespace Overseer.Services
         internal const string RegexTooSlowMessage =
             "Error: The regular expression took too long to evaluate and was stopped. Use a simpler pattern, or search for a literal string.";
 
-        /// <summary>What the index the tools currently read holds, generated headers included; null until the first pass finishes.</summary>
-        public CorpusContentFingerprint? ContentFingerprint { get; private set; }
+        /// <summary>What the index the tools currently read holds, generated headers included; null until the first pass publishes.</summary>
+        public CorpusContentFingerprint? ContentFingerprint => Volatile.Read(ref _snapshot).Fingerprint;
 
         protected virtual string[] TargetDirectories => new[] { "src", "include", "dat", @"win\win32\xpl" };
-        
-        public SourceCodeService(IConfiguration configuration, ILogger<SourceCodeService> logger)
-            : this(configuration, (ILogger)logger, "SourceCodePath")
+
+        /// <summary>Whether a pass generates the headers with makedefs before reading the files.</summary>
+        protected virtual bool SupportsMakedefs => true;
+
+        /// <summary>How far apart two equal HEAD reads must be for the repository to count as quiet.</summary>
+        protected virtual TimeSpan QuietPeriod => TimeSpan.FromSeconds(3);
+
+        /// <summary>How long a pass waits for a quiet repository before it reads the files anyway.</summary>
+        protected virtual TimeSpan QuietWaitLimit => TimeSpan.FromMinutes(2);
+
+        /// <summary>How often a pass looks again while <c>.git/index.lock</c> exists.</summary>
+        protected virtual TimeSpan LockPollInterval => TimeSpan.FromMilliseconds(500);
+
+        public SourceCodeService(IConfiguration configuration, ILogger<SourceCodeService> logger, IExternalProcessRunner? processRunner = null)
+            : this(configuration, (ILogger)logger, "SourceCodePath", processRunner)
         {
         }
 
-        protected SourceCodeService(IConfiguration configuration, ILogger logger, string configPathKey)
+        protected SourceCodeService(IConfiguration configuration, ILogger logger, string configPathKey, IExternalProcessRunner? processRunner = null)
         {
             _configuration = configuration;
             _logger = logger;
-            _itemResolver = new ObjectsMacroResolver(_dataParser);
+            _processRunner = processRunner ?? new ExternalProcessRunner();
+            _configPathKey = configPathKey;
             _sourceCodePath = configuration[configPathKey] ?? string.Empty;
-            
+
             if (!int.TryParse(configuration["MaxSourceFileSizeKB"], out _maxFileSizeKB))
             {
                 _maxFileSizeKB = 800;
             }
             _maxFunctionBodyLines = configuration.GetValue<int>("Tools:get_function_definition:MaxLinesPerChunk", 150);
         }
-        
+
+        /// <summary>
+        /// Loads the flag descriptions, starts the first pass in the background and the 10-minute HEAD
+        /// poll, and returns at once.
+        /// </summary>
         public Task StartAsync(CancellationToken cancellationToken)
         {
-            _logger.LogInformation("SourceCodeService starting. Path: {Path}", _sourceCodePath);
+            _logger.LogInformation("{Service} starting. Path: {Path}", ServiceName, _sourceCodePath);
             LoadFlagDescriptions();
-            RegenerateHeaders(force: true);
-            IndexRepository();
-            _isIndexingComplete = true;
-            
+            InitializationTask = TryStartPass(SourceIndexTrigger.Startup, SourceIndexJobKind.Index, forceMakedefs: false, queueIfBusy: false)
+                ?? Task.CompletedTask;
+
             // Check for changes every 10 minutes
-            _reindexTimer = new Timer(CheckForUpdates, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
-            
+            lock (_jobLock)
+            {
+                _nextCheckAtUtc = DateTime.UtcNow + UpdateCheckInterval;
+            }
+            _reindexTimer = new Timer(CheckForUpdates, null, UpdateCheckInterval, UpdateCheckInterval);
+
             return Task.CompletedTask;
         }
 
@@ -132,29 +170,237 @@ namespace Overseer.Services
             }
         }
 
-        public Task StopAsync(CancellationToken cancellationToken)
+        /// <summary>Cancels the running job, stops the poll and waits for the pass to end or for <paramref name="cancellationToken"/>.</summary>
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
-            _reindexTimer?.Change(Timeout.Infinite, 0);
-            return Task.CompletedTask;
+            _stopRequested = true;
+            try
+            {
+                _reindexTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            }
+            catch (ObjectDisposedException)
+            {
+                /* Already disposed. */
+            }
+            CancelCurrentJob();
+
+            try
+            {
+                await Volatile.Read(ref _runningPass).WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                /* The host's shutdown timeout fired first. */
+            }
         }
 
         public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
+            _stopRequested = true;
             _reindexTimer?.Dispose();
+            CancelCurrentJob();
+
+            /* A canceled pass ends within moments; the gate is disposed only once nothing can release it. */
+            bool ended;
+            try
+            {
+                ended = Volatile.Read(ref _runningPass).Wait(TimeSpan.FromSeconds(5));
+            }
+            catch (AggregateException)
+            {
+                ended = true;
+            }
+            if (ended) _gate.Dispose();
         }
+
+        private string ServiceName => GetType().Name;
+
+        private bool IsPathAvailable => !string.IsNullOrWhiteSpace(_sourceCodePath) && Directory.Exists(_sourceCodePath);
+
+        /// <summary>The id of the running job, or null.</summary>
+        public string? CurrentJobId
+        {
+            get { lock (_jobLock) return _currentJob?.Id; }
+        }
+
+        /// <summary>The id of the most recently started job, running or finished; null before the first.</summary>
+        public string? LastStartedJobId
+        {
+            get { lock (_jobLock) return _lastStartedJobId; }
+        }
+
+        /// <summary>The outcome of the last makedefs check; null until one has run, and always null without makedefs.</summary>
+        public MakedefsOutcome? LastMakedefsOutcome => SupportsMakedefs ? Volatile.Read(ref _makedefs)?.LastOutcome : null;
+
+        private MakedefsHeaderGenerator MakedefsGenerator =>
+            LazyInitializer.EnsureInitialized(ref _makedefs, () => new MakedefsHeaderGenerator(_sourceCodePath, _configuration, _processRunner, _logger));
+
+        /// <summary>
+        /// Starts an indexing pass. <see cref="SourceIndexStartResult.AlreadyRunning"/> when a job runs;
+        /// an automatic trigger then queues one follow-up pass, a manual one is refused.
+        /// </summary>
+        public SourceIndexStartResult RequestReindex(SourceIndexTrigger trigger)
+        {
+            if (!IsPathAvailable) return SourceIndexStartResult.NotConfigured;
+            var pass = TryStartPass(trigger, SourceIndexJobKind.Index, forceMakedefs: false, queueIfBusy: trigger != SourceIndexTrigger.Manual);
+            return pass != null ? SourceIndexStartResult.Started : SourceIndexStartResult.AlreadyRunning;
+        }
+
+        /// <summary>
+        /// Builds and runs makedefs even when its inputs are unchanged, then re-indexes when a generated
+        /// header changed or no index exists yet.
+        /// </summary>
+        public SourceIndexStartResult RequestMakedefsBuild()
+        {
+            if (!SupportsMakedefs || !IsPathAvailable) return SourceIndexStartResult.NotConfigured;
+            var pass = TryStartPass(SourceIndexTrigger.Manual, SourceIndexJobKind.BuildMakedefs, forceMakedefs: true, queueIfBusy: false);
+            return pass != null ? SourceIndexStartResult.Started : SourceIndexStartResult.AlreadyRunning;
+        }
+
+        /// <summary>Requests cancellation of the running job; false when none runs. The previous index keeps serving.</summary>
+        public bool CancelCurrentJob()
+        {
+            CancellationTokenSource? cts;
+            lock (_jobLock)
+            {
+                cts = _currentJob != null ? _currentJobCts : null;
+            }
+            if (cts == null) return false;
+
+            /* Callbacks run on the thread pool, never inline on the caller's thread. */
+            _ = cts.CancelAsync();
+            return true;
+        }
+
+        /// <summary>
+        /// The names of the makedefs outputs missing under <c>include/</c>; empty without makedefs or
+        /// when the source path is not configured or missing.
+        /// </summary>
+        public IReadOnlyList<string> GetMissingGeneratedHeaders()
+        {
+            if (!SupportsMakedefs || !IsPathAvailable) return Array.Empty<string>();
+            return MakedefsInputSet.GeneratedHeaders
+                .Where(name => !File.Exists(Path.Combine(_sourceCodePath, "include", name)))
+                .ToList();
+        }
+
+        /// <summary>The configuration, the published index, makedefs and the jobs, for the dashboard.</summary>
+        public SourceIndexStatusDto GetStatus()
+        {
+            var index = Volatile.Read(ref _snapshot);
+            bool configured = !string.IsNullOrWhiteSpace(_sourceCodePath);
+            bool exists = configured && Directory.Exists(_sourceCodePath);
+            string? currentHead = exists ? GitHelper.GetGitHeadSha(_sourceCodePath) : null;
+            string? currentBranch = exists ? NullIfEmpty(GitHelper.GetCurrentBranch(_sourceCodePath)) : null;
+
+            SourceIndexInfoDto? info = null;
+            if (index.Generation > 0)
+            {
+                string? fingerprint = index.Fingerprint?.Sha256;
+                info = new SourceIndexInfoDto
+                {
+                    Generation = index.Generation,
+                    HeadSha = index.HeadSha,
+                    Branch = index.Branch,
+                    IndexedAtUtc = index.IndexedAtUtc,
+                    DurationMs = (long)index.Duration.TotalMilliseconds,
+                    FileCount = index.Documents.Count,
+                    TotalLines = index.TotalLines,
+                    ConstantCount = index.Constants.Count,
+                    FingerprintShort = fingerprint == null ? null : fingerprint.Substring(0, Math.Min(12, fingerprint.Length)),
+                    SkippedBySize = index.SkippedBySize.Select(s => new SkippedFileDto(s.Path, s.Bytes)).ToList(),
+                    SkippedExcludedDirectories = index.SkippedExcludedDirectories,
+                    MaxFileSizeKB = _maxFileSizeKB
+                };
+            }
+
+            var headers = new List<GeneratedHeaderDto>();
+            if (SupportsMakedefs && exists)
+            {
+                foreach (string name in MakedefsInputSet.GeneratedHeaders)
+                {
+                    string path = Path.Combine(_sourceCodePath, "include", name);
+                    bool headerExists = File.Exists(path);
+                    headers.Add(new GeneratedHeaderDto(
+                        name,
+                        headerExists,
+                        headerExists ? File.GetLastWriteTimeUtc(path) : null,
+                        index.Documents.ContainsKey("include/" + name)));
+                }
+            }
+
+            SourceIndexJob? currentJob;
+            List<SourceIndexJob> recentJobs;
+            DateTime? nextCheck;
+            lock (_jobLock)
+            {
+                currentJob = _currentJob?.ToJob(null);
+                recentJobs = _recentJobs.ToList();
+                nextCheck = _nextCheckAtUtc;
+            }
+
+            return new SourceIndexStatusDto
+            {
+                Configured = configured,
+                SourcePath = _sourceCodePath,
+                PathExists = exists,
+                IsIndexingComplete = _isIndexingComplete,
+                CurrentHeadSha = currentHead,
+                CurrentBranch = currentBranch,
+                Index = info,
+                UpToDate = info != null && string.Equals(index.HeadSha, currentHead, StringComparison.Ordinal),
+                NextCheckAtUtc = nextCheck,
+                CheckIntervalMinutes = (int)UpdateCheckInterval.TotalMinutes,
+                GeneratedHeaders = headers,
+                Makedefs = BuildMakedefsStatus(),
+                CurrentJob = currentJob,
+                RecentJobs = recentJobs
+            };
+        }
+
+        private MakedefsStatusDto BuildMakedefsStatus()
+        {
+            if (!SupportsMakedefs) return new MakedefsStatusDto { Supported = false };
+
+            var state = MakedefsGenerator.GetState();
+            return new MakedefsStatusDto
+            {
+                Supported = true,
+                BuildCommand = NullIfEmpty(state.BuildCommand),
+                BuildCommandToolExists = state.BuildCommandToolExists,
+                ExecutablePath = state.ExecutablePath,
+                ExecutableExists = state.ExecutableExists,
+                ExecutableLastWriteUtc = state.ExecutableLastWriteUtc,
+                BranchRestriction = state.BranchRestriction,
+                InputsState = state.InputsState,
+                StampGeneratedAtUtc = state.StampGeneratedAtUtc,
+                LastOutcome = state.LastOutcome?.Kind.ToString(),
+                LastBuildAtUtc = state.LastBuildAtUtc,
+                LastBuildDurationMs = state.LastBuildDuration.HasValue ? (long)state.LastBuildDuration.Value.TotalMilliseconds : null,
+                LastOutputTail = state.LastOutcome?.OutputTail ?? Array.Empty<string>()
+            };
+        }
+
+        private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
         private void CheckForUpdates(object? state)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(_sourceCodePath) || !Directory.Exists(_sourceCodePath)) return;
-                
-                string? currentSha = GitHelper.GetGitHeadSha(_sourceCodePath);
-                if (!string.IsNullOrEmpty(currentSha) && currentSha != _lastHeadSha)
+                lock (_jobLock)
                 {
-                    _logger.LogInformation("Repository update detected ({OldSha} -> {NewSha}). Re-indexing.", _lastHeadSha, currentSha);
-                    RegenerateHeaders();
-                    IndexRepository();
+                    _nextCheckAtUtc = DateTime.UtcNow + UpdateCheckInterval;
+                }
+                if (_stopRequested || !IsPathAvailable) return;
+
+                string? currentSha = GitHelper.GetGitHeadSha(_sourceCodePath);
+                string? indexedSha = Volatile.Read(ref _snapshot).HeadSha;
+                if (!string.IsNullOrEmpty(currentSha) && currentSha != indexedSha)
+                {
+                    _logger.LogInformation("Repository update detected ({OldSha} -> {NewSha}). Re-indexing.", indexedSha, currentSha);
+                    RequestReindex(SourceIndexTrigger.RepositoryChange);
                 }
             }
             catch (Exception ex)
@@ -164,318 +410,551 @@ namespace Overseer.Services
         }
 
         /// <summary>
-        /// Regenerate onames.h, pm.h, animoff.h, animtotals.h by building and running makedefs.
-        /// Only runs when the source files compiled into makedefs have changed (or on startup when force=true).
+        /// Takes the gate and starts a job on the thread pool; null when the gate is taken (setting the
+        /// follow-up flag when <paramref name="queueIfBusy"/>) or the service is stopping.
         /// </summary>
-        protected virtual void RegenerateHeaders(bool force = false)
+        private Task? TryStartPass(SourceIndexTrigger trigger, SourceIndexJobKind kind, bool forceMakedefs, bool queueIfBusy)
         {
+            if (_stopRequested) return null;
             try
             {
-                var currentTimestamps = new Dictionary<string, DateTime>();
-                // 0a. Check if any makedefs source files actually changed
-                if (!force)
+                if (!_gate.Wait(0))
                 {
-                    bool anyChanged = false;
-                    foreach (var relPath in _makedefsSourceFiles)
-                    {
-                        string fullPath = Path.Combine(_sourceCodePath, relPath.Replace('/', Path.DirectorySeparatorChar));
-                        if (File.Exists(fullPath))
-                        {
-                            var lastWrite = File.GetLastWriteTimeUtc(fullPath);
-                            currentTimestamps[relPath] = lastWrite;
-                            if (!_lastMakedefsSourceTimestamps.TryGetValue(relPath, out var prev) || prev != lastWrite)
-                            {
-                                anyChanged = true;
-                            }
-                        }
-                    }
-                    if (!anyChanged)
-                    {
-                        _logger.LogDebug("makedefs source files unchanged, skipping header regeneration.");
-                        return;
-                    }
+                    if (queueIfBusy) Interlocked.Exchange(ref _pendingFollowUp, 1);
+                    return null;
                 }
-
-                // 0b. Optional branch restriction
-                string? allowedBranch = _configuration["MakedefsBranch"];
-                if (!string.IsNullOrEmpty(allowedBranch))
-                {
-                    string currentBranch = GitHelper.GetCurrentBranch(_sourceCodePath);
-                    if (!string.Equals(currentBranch, allowedBranch, StringComparison.OrdinalIgnoreCase))
-                    {
-                        _logger.LogInformation("Skipping makedefs: current branch '{Current}' != allowed '{Allowed}'",
-                            currentBranch, allowedBranch);
-                        return;
-                    }
-                }
-
-                // 1. Rebuild makedefs if a build command is configured
-                string? buildCmd = _configuration["MakedefsBuildCommand"];
-                if (!string.IsNullOrEmpty(buildCmd))
-                {
-                    if (!RunProcess(buildCmd, _sourceCodePath))
-                    {
-                        _logger.LogWarning("makedefs build failed — aborting header generation to avoid running a stale binary.");
-                        return;  // Do NOT continue to run a potentially stale makedefs.exe
-                    }
-                }
-
-                // 2. Locate the executable
-                string? makedefsPath = _configuration["MakedefsExecutablePath"];
-                if (string.IsNullOrEmpty(makedefsPath))
-                {
-                    // The GnollHack build system outputs makedefs.exe to tools\$(Configuration)\$(Platform)\
-                    // (defined in win/win32/vs/dirs.props as ToolsDir), NOT bin\.
-                    makedefsPath = Path.Combine(_sourceCodePath, "tools", "Release", "x64", "makedefs.exe");
-                }
-                
-                if (!File.Exists(makedefsPath))
-                {
-                    _logger.LogWarning("makedefs executable not found at {Path}, skipping header generation", makedefsPath);
-                    return;
-                }
-
-                // 3. Generate headers
-                // Working directories match aftermakedefs.proj: -o/-p from util/, -a from dat/.
-                // All use INCLUDE_TEMPLATE ("../include/%s") so output goes to include/ either way.
-                var utilDir = Path.Combine(_sourceCodePath, "util");
-                bool allSucceeded = true;
-                allSucceeded &= RunProcess($"\"{makedefsPath}\" -o", utilDir);  // onames.h
-                allSucceeded &= RunProcess($"\"{makedefsPath}\" -p", utilDir);  // pm.h
-                allSucceeded &= RunProcess($"\"{makedefsPath}\" -a", Path.Combine(_sourceCodePath, "dat"));  // animoff.h, animtotals.h
-                
-                // Only commit timestamps if ALL steps succeeded.
-                // If any failed, we want to retry on the next cycle.
-                if (allSucceeded && !force)
-                {
-                    _lastMakedefsSourceTimestamps = currentTimestamps;
-                }
-                
-                _logger.LogInformation(allSucceeded
-                    ? "makedefs header regeneration completed successfully."
-                    : "makedefs header regeneration partially failed — will retry next cycle.");
             }
-            catch (Exception ex)
+            catch (ObjectDisposedException)
             {
-                // Graceful degradation: if makedefs fails entirely, log the error
-                // and continue with indexing. Previously generated headers (if any)
-                // will still be on disk and will be indexed. If no headers exist,
-                // they simply won't be indexed — the rest of the source code still works.
-                _logger.LogError(ex, "makedefs header regeneration failed. Continuing with existing headers (if any).");
+                return null;
             }
+
+            string prefix = kind == SourceIndexJobKind.BuildMakedefs ? "makedefs" : "index";
+            var job = new RunningJob($"{prefix}-{DateTime.UtcNow:yyyyMMddHHmmss}-{Interlocked.Increment(ref _jobCounter)}", trigger, kind);
+
+            /* Holds no timer or wait handle, so it is left to the collector rather than disposed
+               while a CancelAsync may still be running on it. */
+            var cts = new CancellationTokenSource();
+            lock (_jobLock)
+            {
+                _currentJob = job;
+                _currentJobCts = cts;
+                _lastStartedJobId = job.Id;
+            }
+            _logger.LogInformation("{Service}: {Kind} job {Id} started ({Trigger}).", ServiceName, kind, job.Id, trigger);
+
+            /* Recorded before the job runs, so a follow-up the job starts always replaces it. */
+            var outer = new Task<Task>(() => RunPassAsync(job, forceMakedefs, cts.Token));
+            var pass = outer.Unwrap();
+            Volatile.Write(ref _runningPass, pass);
+            outer.Start(TaskScheduler.Default);
+            return pass;
         }
 
-        /// <summary>
-        /// Runs a shell command. Cross-platform: uses cmd.exe on Windows, /bin/bash on Linux/macOS.
-        /// Returns true if the process ran and exited with code 0, false otherwise.
-        /// </summary>
-        private bool RunProcess(string command, string workingDir)
+        /// <summary>Runs one job and records its outcome; never throws. Releases the gate and starts a queued follow-up.</summary>
+        private async Task RunPassAsync(RunningJob job, bool forceMakedefs, CancellationToken ct)
         {
             try
             {
-                bool isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
-                    System.Runtime.InteropServices.OSPlatform.Windows);
-
-                var psi = new ProcessStartInfo(
-                    isWindows ? "cmd.exe" : "/bin/bash",
-                    isWindows ? $"/c {command}" : $"-c \"{command}\"")
-                {
-                    WorkingDirectory = workingDir,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                using var process = Process.Start(psi);
-                if (process == null) return false;
-                
-                // IMPORTANT: Read streams asynchronously to avoid deadlock.
-                // If the child process fills the OS pipe buffer for one stream while
-                // we're synchronously reading the other, both processes deadlock.
-                var stdoutTask = process.StandardOutput.ReadToEndAsync();
-                var stderrTask = process.StandardError.ReadToEndAsync();
-                
-                bool exited = process.WaitForExit(30000); // 30 second timeout
-                
-                if (!exited)
-                {
-                    _logger.LogWarning("makedefs command timed out: {Command}", command);
-                    try { process.Kill(); } catch { /* best effort */ }
-                    return false;
-                }
-                
-                // Process has exited — drain any remaining buffered output.
-                // GetAwaiter().GetResult() is safe here because the pipes are closed.
-                string stdout = stdoutTask.GetAwaiter().GetResult();
-                string stderr = stderrTask.GetAwaiter().GetResult();
-                
-                if (process.ExitCode != 0)
-                {
-                    _logger.LogWarning("makedefs command failed (exit {Code}): {Command}, stderr: {StdErr}",
-                        process.ExitCode, command, stderr);
-                    return false;
-                }
-                return true;
+                await RunPipelineAsync(job, forceMakedefs, ct).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                _logger.LogError(ex, "Error running makedefs command: {Command}", command);
-                return false;
-            }
-        }
-
-        private void IndexRepository()
-        {
-            if (string.IsNullOrWhiteSpace(_sourceCodePath) || !Directory.Exists(_sourceCodePath))
-            {
-                _logger.LogWarning("Source code repository not found at {Path}", _sourceCodePath);
-                return;
-            }
-            
-            try
-            {
-                var newDocuments = new ConcurrentDictionary<string, SourceDocument>(StringComparer.OrdinalIgnoreCase);
-                var newConstants = new ConcurrentDictionary<string, ConstantInfo>(StringComparer.OrdinalIgnoreCase);
-                
-                var targetDirs = TargetDirectories;
-                int skippedExcludedFiles = 0;
-
-                foreach (var dir in targetDirs)
-                {
-                    string fullDirPath = Path.Combine(_sourceCodePath, dir);
-                    if (!Directory.Exists(fullDirPath)) continue;
-
-                    var files = Directory.GetFiles(fullDirPath, "*.*", SearchOption.AllDirectories);
-
-                    foreach (var file in files)
-                    {
-                        string relPath = Path.GetRelativePath(_sourceCodePath, file).Replace('\\', '/');
-                        if (IsUnderExcludedDirectory(relPath))
-                        {
-                            skippedExcludedFiles++;
-                            continue;
-                        }
-
-                        var fileInfo = new FileInfo(file);
-                        string ext = fileInfo.Extension.ToLowerInvariant();
-                        string fileName = fileInfo.Name;
-                        
-                        // Check exclusions
-                        if (_excludedFiles.Contains(fileName)) continue;
-                        if (fileName.EndsWith("conf.h", StringComparison.OrdinalIgnoreCase) ||
-                            // Rough approximation of platform headers, avoiding false positives if possible
-                            fileName.StartsWith("win", StringComparison.OrdinalIgnoreCase) && ext == ".h"
-                                && !string.Equals(fileName, "wintype.h", StringComparison.OrdinalIgnoreCase)
-                                && !string.Equals(fileName, "winprocs.h", StringComparison.OrdinalIgnoreCase) ||
-                            fileName.StartsWith("mac", StringComparison.OrdinalIgnoreCase) && ext == ".h" ||
-                            fileName.StartsWith("qt", StringComparison.OrdinalIgnoreCase) && ext == ".h")
-                        {
-                            // Skip platform specific headers
-                            continue;
-                        }
-                        
-                        // Check extensions
-                        bool isNormalMode = ext == ".c" || ext == ".h" || ext == ".des" || ext == ".txt";
-                        bool isDebugMode = ext == ".cs" || ext == ".xaml";
-                        
-                        if (!isNormalMode && !isDebugMode) continue;
-                        
-                        if (fileInfo.Length <= _maxFileSizeKB * 1024)
-                        {
-                            var contentLines = File.ReadAllLines(file);
-                            
-                            newDocuments[relPath] = new SourceDocument
-                            {
-                                FilePath = file,
-                                RelativePath = relPath,
-                                IsNetCode = isDebugMode,
-                                ContentLines = contentLines
-                            };
-                            
-                            // Parse constants
-                            bool inEnum = false;
-                            // Set by an "enum name" line without a brace; the next non-blank line opens the enum if it starts with "{".
-                            // A line with "(" is a function signature or prototype taking an enum parameter, never an enum header.
-                            bool pendingEnum = false;
-                            for (int i = 0; i < contentLines.Length; i++)
-                            {
-                                string line = contentLines[i].Trim();
-
-                                if (pendingEnum && line.Length > 0)
-                                {
-                                    pendingEnum = false;
-                                    if (line.StartsWith("{", StringComparison.Ordinal)) inEnum = true;
-                                }
-
-                                var defineMatch = Regex.Match(line, @"^#define\s+([A-Za-z0-9_]+)(?:\s+([^/]*))?");
-                                if (defineMatch.Success)
-                                {
-                                    string name = defineMatch.Groups[1].Value;
-                                    string val = defineMatch.Groups[2].Success ? defineMatch.Groups[2].Value.Trim() : "";
-                                    newConstants[name] = new ConstantInfo { Name = name, Value = val, FilePath = relPath, LineNumber = i + 1 };
-                                    continue;
-                                }
-                                
-                                if (Regex.IsMatch(line, @"\benum\b.*\{")) inEnum = true;
-                                else if (!inEnum && !line.StartsWith("#", StringComparison.Ordinal)
-                                    && !line.Contains('{') && !line.Contains(';') && !line.Contains('(')
-                                    && Regex.IsMatch(line, @"\benum\b"))
-                                {
-                                    pendingEnum = true;
-                                }
-
-                                if (inEnum)
-                                {
-                                    var matches = Regex.Matches(line, @"([A-Za-z0-9_]+)\s*(?:=\s*([^,}]+))?\s*(?:,|})");
-                                    foreach (Match m in matches)
-                                     {
-                                        string name = m.Groups[1].Value;
-                                        if (name == "enum") continue;
-                                        string val = m.Groups[2].Success ? m.Groups[2].Value.Trim() : "";
-                                        newConstants[name] = new ConstantInfo { Name = name, Value = val, FilePath = relPath, LineNumber = i + 1 };
-                                    }
-                                    if (line.Contains("}")) inEnum = false;
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // Swap in the new dictionaries
-                _documents.Clear();
-                foreach (var kvp in newDocuments)
-                {
-                    _documents[kvp.Key] = kvp.Value;
-                }
-                
-                _constants.Clear();
-                foreach (var kvp in newConstants)
-                {
-                    _constants[kvp.Key] = kvp.Value;
-                }
-
-                var fingerprint = new CorpusContentFingerprintBuilder();
-                foreach (var doc in newDocuments.Values)
-                {
-                    fingerprint.Add(doc.RelativePath, string.Join("\n", doc.ContentLines));
-                }
-                ContentFingerprint = fingerprint.Build();
-                
-                // Update SHA
-                _lastHeadSha = GitHelper.GetGitHeadSha(_sourceCodePath) ?? string.Empty;
-
-                // 2. Parse game data via GameDataParser
-                ParseGameData();
-                
-                _logger.LogInformation("Indexed {Count} source files.", _documents.Count);
-                if (skippedExcludedFiles > 0)
-                {
-                    _logger.LogInformation("Skipped {Count} source file(s) under dot-, bin or obj directories.", skippedExcludedFiles);
-                }
+                _logger.LogInformation("{Service}: job {Id} was canceled; the previous index keeps serving.", ServiceName, job.Id);
+                job.Complete(SourceIndexJobOutcome.Canceled, "Canceled; the previous index keeps serving.");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error indexing source repository.");
+                job.Complete(SourceIndexJobOutcome.Failed, $"{ex.Message} The previous index keeps serving.");
+            }
+            finally
+            {
+                _isIndexingComplete = true;
+                FinishJob(job);
+                try
+                {
+                    _gate.Release();
+                }
+                catch (ObjectDisposedException)
+                {
+                    /* Disposed while this pass was ending. */
+                }
+
+                if (Interlocked.Exchange(ref _pendingFollowUp, 0) == 1 && !_stopRequested)
+                {
+                    _logger.LogInformation("{Service}: starting the queued follow-up pass.", ServiceName);
+                    _ = TryStartPass(SourceIndexTrigger.FollowUp, SourceIndexJobKind.Index, forceMakedefs: false, queueIfBusy: true);
+                }
+            }
+        }
+
+        private void FinishJob(RunningJob job)
+        {
+            var finished = job.ToJob(DateTime.UtcNow);
+            lock (_jobLock)
+            {
+                _recentJobs.AddFirst(finished);
+                while (_recentJobs.Count > MaxRecentJobs) _recentJobs.RemoveLast();
+                if (ReferenceEquals(_currentJob, job))
+                {
+                    _currentJob = null;
+                    _currentJobCts = null;
+                }
+            }
+            _logger.LogInformation("{Service}: job {Id} ended: {Outcome}. {Message}", ServiceName, job.Id, finished.Outcome, finished.Message);
+        }
+
+        private void SetPhase(RunningJob job, SourceIndexPhase phase)
+        {
+            if (job.Phase == phase) return;
+            job.Phase = phase;
+            _logger.LogInformation("{Service}: job {Id} phase {Phase}.", ServiceName, job.Id, phase);
+        }
+
+        /// <summary>
+        /// The only code that builds an index: waits for a quiet repository, generates the headers,
+        /// reads the files and parses the game data into a new snapshot, and publishes it with one
+        /// reference assignment. Anything that throws publishes nothing.
+        /// </summary>
+        private async Task RunPipelineAsync(RunningJob job, bool forceMakedefs, CancellationToken ct)
+        {
+            string root = _sourceCodePath;
+            if (!IsPathAvailable)
+            {
+                /* The empty snapshot stays published, as an unconfigured service has nothing to index. */
+                _logger.LogWarning("Source code repository not found at {Path}", root);
+                job.Complete(SourceIndexJobOutcome.Failed, string.IsNullOrWhiteSpace(root)
+                    ? $"{_configPathKey} is not configured."
+                    : $"The source path {root} does not exist.");
+                return;
+            }
+
+            SetPhase(job, SourceIndexPhase.WaitingForRepository);
+            string? headBefore = await WaitForQuietRepositoryAsync(root, ct).ConfigureAwait(false);
+            string? branch = NullIfEmpty(GitHelper.GetCurrentBranch(root));
+            var published = Volatile.Read(ref _snapshot);
+
+            if (job.Kind == SourceIndexJobKind.Index
+                && job.Trigger is SourceIndexTrigger.RepositoryChange or SourceIndexTrigger.FollowUp
+                && published.Generation > 0
+                && headBefore != null
+                && string.Equals(headBefore, published.HeadSha, StringComparison.Ordinal))
+            {
+                job.Complete(SourceIndexJobOutcome.SkippedNoChange, $"HEAD {ShortSha(headBefore)} is already indexed.");
+                return;
+            }
+
+            MakedefsOutcome? makedefs = null;
+            string? makedefsError = null;
+            if (SupportsMakedefs)
+            {
+                SetPhase(job, SourceIndexPhase.CheckingMakedefs);
+                try
+                {
+                    var progress = new InlineProgress(p => SetPhase(job, p.Phase));
+                    makedefs = await MakedefsGenerator.EnsureHeadersAsync(forceMakedefs, progress, ct).ConfigureAwait(false);
+                    job.SetMakedefs(makedefs);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    /* A makedefs failure never stops indexing: the headers on disk are indexed as they are. */
+                    _logger.LogError(ex, "makedefs header regeneration failed. Continuing with existing headers (if any).");
+                    makedefsError = $"The makedefs check failed: {ex.Message}";
+                }
+            }
+
+            string makedefsSummary = makedefs?.Message ?? makedefsError ?? string.Empty;
+            if (job.Kind == SourceIndexJobKind.BuildMakedefs
+                && makedefs?.HeadersChanged != true
+                && published.Generation > 0)
+            {
+                bool built = makedefs?.HeadersCurrent == true;
+                job.Complete(built ? SourceIndexJobOutcome.Succeeded : SourceIndexJobOutcome.Failed,
+                    (makedefsSummary + " The index was kept.").Trim());
+                return;
+            }
+
+            await OnBeforeReadFilesAsync(job.Trigger, ct).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+
+            SetPhase(job, SourceIndexPhase.ReadingFiles);
+            var indexStopwatch = Stopwatch.StartNew();
+            var read = ReadFiles(root, job, ct);
+
+            SetPhase(job, SourceIndexPhase.ParsingGameData);
+            var parser = new GameDataParser();
+            var itemResolver = new ObjectsMacroResolver(parser);
+            ParseGameData(read.Documents, parser, itemResolver);
+            ct.ThrowIfCancellationRequested();
+
+            SetPhase(job, SourceIndexPhase.Publishing);
+            var fingerprintBuilder = new CorpusContentFingerprintBuilder();
+            foreach (var doc in read.Documents.Values)
+            {
+                fingerprintBuilder.Add(doc.RelativePath, string.Join("\n", doc.ContentLines));
+            }
+            var fingerprint = fingerprintBuilder.Build();
+
+            var snapshot = new SourceIndexSnapshot
+            {
+                Documents = read.Documents,
+                Constants = read.Constants,
+                Parser = parser,
+                ItemResolver = itemResolver,
+                Fingerprint = fingerprint,
+                HeadSha = headBefore,
+                Branch = branch,
+                IndexedAtUtc = fingerprint.IndexedAtUtc,
+                Duration = indexStopwatch.Elapsed,
+                Generation = published.Generation + 1,
+                TotalLines = read.TotalLines,
+                SkippedBySize = read.SkippedBySize,
+                SkippedExcludedDirectories = read.SkippedExcludedDirectories
+            };
+
+            ct.ThrowIfCancellationRequested();
+            Volatile.Write(ref _snapshot, snapshot);
+            _isIndexingComplete = true;
+
+            _logger.LogInformation("Indexed {Count} source files.", read.Documents.Count);
+            if (read.SkippedExcludedDirectories > 0)
+            {
+                _logger.LogInformation("Skipped {Count} source file(s) under dot-, bin or obj directories.", read.SkippedExcludedDirectories);
+            }
+
+            /* The files were read at headBefore; a newer HEAD gets its own pass. */
+            string? headAfter = GitHelper.GetGitHeadSha(root);
+            if (!string.Equals(headAfter, headBefore, StringComparison.Ordinal))
+            {
+                _logger.LogInformation("{Service}: HEAD moved during the pass ({Before} -> {After}); a follow-up pass is queued.",
+                    ServiceName, headBefore, headAfter);
+                Interlocked.Exchange(ref _pendingFollowUp, 1);
+            }
+
+            job.Complete(SourceIndexJobOutcome.Succeeded,
+                ($"Indexed {read.Documents.Count} files (generation {snapshot.Generation}). " + makedefsSummary).Trim());
+        }
+
+        /// <summary>
+        /// Runs inside every indexing pass, after the makedefs step and before the files are read.
+        /// Cancellation and exceptions end the pass without publishing.
+        /// </summary>
+        protected virtual Task OnBeforeReadFilesAsync(SourceIndexTrigger trigger, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        /// <summary>
+        /// Waits until <c>.git/index.lock</c> is absent and HEAD reads the same twice
+        /// <see cref="QuietPeriod"/> apart, at most <see cref="QuietWaitLimit"/>; returns that HEAD.
+        /// Outside a Git working tree it returns at once.
+        /// </summary>
+        private async Task<string?> WaitForQuietRepositoryAsync(string root, CancellationToken ct)
+        {
+            string gitDir = Path.Combine(root, ".git");
+            if (!Directory.Exists(gitDir)) return GitHelper.GetGitHeadSha(root);
+
+            var stopwatch = Stopwatch.StartNew();
+            string? previous = null;
+            bool havePrevious = false;
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                bool locked = File.Exists(Path.Combine(gitDir, "index.lock"));
+                string? head = GitHelper.GetGitHeadSha(root);
+                if (!locked && havePrevious && string.Equals(head, previous, StringComparison.Ordinal))
+                {
+                    return head;
+                }
+
+                if (stopwatch.Elapsed >= QuietWaitLimit)
+                {
+                    _logger.LogWarning("{Service}: the repository at {Path} did not become quiet within {Limit}; indexing anyway.",
+                        ServiceName, root, QuietWaitLimit);
+                    return head;
+                }
+
+                previous = head;
+                havePrevious = !locked;
+                await Task.Delay(locked ? LockPollInterval : QuietPeriod, ct).ConfigureAwait(false);
+            }
+        }
+
+        private static string ShortSha(string sha) => sha.Length > 12 ? sha.Substring(0, 12) : sha;
+
+        /// <summary>Reports a progress value on the reporting thread, so a phase change is visible at once.</summary>
+        private sealed class InlineProgress : IProgress<SourceIndexProgress>
+        {
+            private readonly Action<SourceIndexProgress> _report;
+
+            public InlineProgress(Action<SourceIndexProgress> report)
+            {
+                _report = report;
+            }
+
+            public void Report(SourceIndexProgress value) => _report(value);
+        }
+
+        /// <summary>The mutable record of the running job; <see cref="ToJob"/> copies it for the status API.</summary>
+        private sealed class RunningJob
+        {
+            private readonly object _lock = new();
+            private volatile SourceIndexPhase _phase = SourceIndexPhase.Idle;
+            private int _filesTotal = -1;
+            private SourceIndexJobOutcome _outcome = SourceIndexJobOutcome.Running;
+            private string? _message;
+            private MakedefsOutcome? _makedefs;
+
+            /// <summary>Incremented with <see cref="Interlocked"/> per file read.</summary>
+            public int FilesRead;
+
+            public RunningJob(string id, SourceIndexTrigger trigger, SourceIndexJobKind kind)
+            {
+                Id = id;
+                Trigger = trigger;
+                Kind = kind;
+                StartedAtUtc = DateTime.UtcNow;
+            }
+
+            public string Id { get; }
+            public SourceIndexTrigger Trigger { get; }
+            public SourceIndexJobKind Kind { get; }
+            public DateTime StartedAtUtc { get; }
+
+            public SourceIndexPhase Phase
+            {
+                get => _phase;
+                set => _phase = value;
+            }
+
+            public int FilesTotal
+            {
+                set => Volatile.Write(ref _filesTotal, value);
+            }
+
+            public void SetMakedefs(MakedefsOutcome outcome)
+            {
+                lock (_lock) _makedefs = outcome;
+            }
+
+            /// <summary>Records the outcome; the first completion wins.</summary>
+            public void Complete(SourceIndexJobOutcome outcome, string? message)
+            {
+                lock (_lock)
+                {
+                    if (_outcome != SourceIndexJobOutcome.Running) return;
+                    _outcome = outcome;
+                    _message = message;
+                }
+            }
+
+            public SourceIndexJob ToJob(DateTime? finishedAtUtc)
+            {
+                int filesTotal = Volatile.Read(ref _filesTotal);
+                lock (_lock)
+                {
+                    var outcome = _outcome;
+                    if (finishedAtUtc.HasValue && outcome == SourceIndexJobOutcome.Running)
+                    {
+                        outcome = SourceIndexJobOutcome.Failed;
+                    }
+
+                    return new SourceIndexJob
+                    {
+                        Id = Id,
+                        Trigger = Trigger,
+                        Kind = Kind,
+                        StartedAtUtc = StartedAtUtc,
+                        FinishedAtUtc = finishedAtUtc,
+                        Phase = _phase,
+                        FilesRead = Volatile.Read(ref FilesRead),
+                        FilesTotal = filesTotal < 0 ? null : filesTotal,
+                        Outcome = outcome,
+                        Message = _message,
+                        OutputTail = _makedefs?.OutputTail ?? Array.Empty<string>(),
+                        MakedefsOutcome = _makedefs?.Kind.ToString()
+                    };
+                }
+            }
+        }
+
+        /// <summary>
+        /// Waits until no job runs and no follow-up is queued; false when <paramref name="timeout"/>
+        /// passes first. For tests.
+        /// </summary>
+        internal async Task<bool> WaitForIdleAsync(TimeSpan timeout)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            while (stopwatch.Elapsed < timeout)
+            {
+                var running = Volatile.Read(ref _runningPass);
+                var remaining = timeout - stopwatch.Elapsed;
+                try
+                {
+                    await running.WaitAsync(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero).ConfigureAwait(false);
+                }
+                catch (TimeoutException)
+                {
+                    return false;
+                }
+
+                bool idle;
+                lock (_jobLock)
+                {
+                    idle = _currentJob == null;
+                }
+                if (idle && Volatile.Read(ref _pendingFollowUp) == 0 && ReferenceEquals(running, Volatile.Read(ref _runningPass)))
+                {
+                    return true;
+                }
+                await Task.Delay(5).ConfigureAwait(false);
+            }
+            return false;
+        }
+
+        /// <summary>What one pass read from disk, before it becomes a snapshot.</summary>
+        private sealed record IndexReadResult(
+            Dictionary<string, SourceDocument> Documents,
+            Dictionary<string, ConstantInfo> Constants,
+            long TotalLines,
+            IReadOnlyList<(string Path, long Bytes)> SkippedBySize,
+            int SkippedExcludedDirectories);
+
+        /// <summary>
+        /// Reads every indexed file under the target directories into new collections and parses its
+        /// constants; the published snapshot is not touched. Checks <paramref name="ct"/> per file.
+        /// </summary>
+        private IndexReadResult ReadFiles(string root, RunningJob job, CancellationToken ct)
+        {
+            var newDocuments = new Dictionary<string, SourceDocument>(StringComparer.OrdinalIgnoreCase);
+            var newConstants = new Dictionary<string, ConstantInfo>(StringComparer.OrdinalIgnoreCase);
+            var candidates = new List<(string File, string RelativePath, bool IsNetCode)>();
+            var skippedBySize = new List<(string Path, long Bytes)>();
+            int skippedExcludedFiles = 0;
+
+            foreach (var dir in TargetDirectories)
+            {
+                string fullDirPath = Path.Combine(root, dir);
+                if (!Directory.Exists(fullDirPath)) continue;
+
+                var files = Directory.GetFiles(fullDirPath, "*.*", SearchOption.AllDirectories);
+
+                foreach (var file in files)
+                {
+                    string relPath = Path.GetRelativePath(root, file).Replace('\\', '/');
+                    if (IsUnderExcludedDirectory(relPath))
+                    {
+                        skippedExcludedFiles++;
+                        continue;
+                    }
+
+                    var fileInfo = new FileInfo(file);
+                    string ext = fileInfo.Extension.ToLowerInvariant();
+                    string fileName = fileInfo.Name;
+
+                    // Check exclusions
+                    if (_excludedFiles.Contains(fileName)) continue;
+                    if (fileName.EndsWith("conf.h", StringComparison.OrdinalIgnoreCase) ||
+                        // Rough approximation of platform headers, avoiding false positives if possible
+                        fileName.StartsWith("win", StringComparison.OrdinalIgnoreCase) && ext == ".h"
+                            && !string.Equals(fileName, "wintype.h", StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(fileName, "winprocs.h", StringComparison.OrdinalIgnoreCase) ||
+                        fileName.StartsWith("mac", StringComparison.OrdinalIgnoreCase) && ext == ".h" ||
+                        fileName.StartsWith("qt", StringComparison.OrdinalIgnoreCase) && ext == ".h")
+                    {
+                        // Skip platform specific headers
+                        continue;
+                    }
+
+                    // Check extensions
+                    bool isNormalMode = ext == ".c" || ext == ".h" || ext == ".des" || ext == ".txt";
+                    bool isDebugMode = ext == ".cs" || ext == ".xaml";
+
+                    if (!isNormalMode && !isDebugMode) continue;
+
+                    if (fileInfo.Length <= _maxFileSizeKB * 1024)
+                    {
+                        candidates.Add((file, relPath, isDebugMode));
+                    }
+                    else
+                    {
+                        skippedBySize.Add((relPath, fileInfo.Length));
+                    }
+                }
+            }
+
+            job.FilesTotal = candidates.Count;
+            long totalLines = 0;
+
+            foreach (var (file, relPath, isNetCode) in candidates)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var contentLines = File.ReadAllLines(file);
+                newDocuments[relPath] = new SourceDocument
+                {
+                    FilePath = file,
+                    RelativePath = relPath,
+                    IsNetCode = isNetCode,
+                    ContentLines = contentLines
+                };
+                totalLines += contentLines.Length;
+
+                ParseConstants(contentLines, relPath, newConstants);
+                Interlocked.Increment(ref job.FilesRead);
+            }
+
+            return new IndexReadResult(newDocuments, newConstants, totalLines, skippedBySize, skippedExcludedFiles);
+        }
+
+        /// <summary>The <c>#define</c> and enum constants of one file, added to <paramref name="constants"/>.</summary>
+        private static void ParseConstants(string[] contentLines, string relPath, Dictionary<string, ConstantInfo> constants)
+        {
+            bool inEnum = false;
+            // Set by an "enum name" line without a brace; the next non-blank line opens the enum if it starts with "{".
+            // A line with "(" is a function signature or prototype taking an enum parameter, never an enum header.
+            bool pendingEnum = false;
+            for (int i = 0; i < contentLines.Length; i++)
+            {
+                string line = contentLines[i].Trim();
+
+                if (pendingEnum && line.Length > 0)
+                {
+                    pendingEnum = false;
+                    if (line.StartsWith("{", StringComparison.Ordinal)) inEnum = true;
+                }
+
+                var defineMatch = Regex.Match(line, @"^#define\s+([A-Za-z0-9_]+)(?:\s+([^/]*))?");
+                if (defineMatch.Success)
+                {
+                    string name = defineMatch.Groups[1].Value;
+                    string val = defineMatch.Groups[2].Success ? defineMatch.Groups[2].Value.Trim() : "";
+                    constants[name] = new ConstantInfo { Name = name, Value = val, FilePath = relPath, LineNumber = i + 1 };
+                    continue;
+                }
+
+                if (Regex.IsMatch(line, @"\benum\b.*\{")) inEnum = true;
+                else if (!inEnum && !line.StartsWith("#", StringComparison.Ordinal)
+                    && !line.Contains('{') && !line.Contains(';') && !line.Contains('(')
+                    && Regex.IsMatch(line, @"\benum\b"))
+                {
+                    pendingEnum = true;
+                }
+
+                if (inEnum)
+                {
+                    var matches = Regex.Matches(line, @"([A-Za-z0-9_]+)\s*(?:=\s*([^,}]+))?\s*(?:,|})");
+                    foreach (Match m in matches)
+                    {
+                        string name = m.Groups[1].Value;
+                        if (name == "enum") continue;
+                        string val = m.Groups[2].Success ? m.Groups[2].Value.Trim() : "";
+                        constants[name] = new ConstantInfo { Name = name, Value = val, FilePath = relPath, LineNumber = i + 1 };
+                    }
+                    if (line.Contains("}")) inEnum = false;
+                }
             }
         }
 
@@ -492,20 +971,25 @@ namespace Overseer.Services
                     || string.Equals(segment, "obj", StringComparison.OrdinalIgnoreCase));
         }
 
-        protected virtual void ParseGameData()
+        /// <summary>
+        /// Parses the game data of one pass's <paramref name="documents"/> into that pass's new
+        /// <paramref name="parser"/> and <paramref name="itemResolver"/>, which no query sees until the
+        /// snapshot holding them is published.
+        /// </summary>
+        private protected virtual void ParseGameData(IReadOnlyDictionary<string, SourceDocument> documents, GameDataParser parser, ObjectsMacroResolver itemResolver)
         {
             try
             {
-                var permonstDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\permonst.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/permonst.h", StringComparison.OrdinalIgnoreCase));
-                var objclassDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\objclass.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/objclass.h", StringComparison.OrdinalIgnoreCase));
+                var permonstDoc = documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\permonst.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/permonst.h", StringComparison.OrdinalIgnoreCase));
+                var objclassDoc = documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\objclass.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/objclass.h", StringComparison.OrdinalIgnoreCase));
                 if (permonstDoc != null && objclassDoc != null)
                 {
-                    _dataParser.ParseStructs(permonstDoc.ContentLines, objclassDoc.ContentLines);
+                    parser.ParseStructs(permonstDoc.ContentLines, objclassDoc.ContentLines);
                 }
-                var monstDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\monst.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/monst.c", StringComparison.OrdinalIgnoreCase));
-                var objectsDoc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
-                if (monstDoc != null) _dataParser.ParseMacros(monstDoc.ContentLines);
-                if (objectsDoc != null) _dataParser.ParseMacros(objectsDoc.ContentLines);
+                var monstDoc = documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\monst.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/monst.c", StringComparison.OrdinalIgnoreCase));
+                var objectsDoc = documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
+                if (monstDoc != null) parser.ParseMacros(monstDoc.ContentLines);
+                if (objectsDoc != null) parser.ParseMacros(objectsDoc.ContentLines);
 
                 /* objclass.h supplies the enum constants the ternary conditions in CHARGEDRING,
                    MISCELLANEOUSITEM, GENERAL_TOOL, GENERAL_SPELLTOOL, CONTAINER and GENERAL_ROCK
@@ -514,10 +998,10 @@ namespace Overseer.Services
                    resolver is GnollHack-only without a guard here. */
                 if (objectsDoc != null)
                 {
-                    _itemResolver.Load(objectsDoc.ContentLines, objclassDoc?.ContentLines);
+                    itemResolver.Load(objectsDoc.ContentLines, objclassDoc?.ContentLines);
                     _logger.LogInformation(
                         "Indexed {Count} objects.c item entries for structured item stats.",
-                        _itemResolver.ItemNames.Count);
+                        itemResolver.ItemNames.Count);
                 }
 
                 _logger.LogInformation("Parsed game data macros and structs.");
@@ -550,7 +1034,8 @@ namespace Overseer.Services
 
             var results = new List<SearchResult>();
 
-            var docsToSearch = _documents.Values.AsEnumerable();
+            var index = Volatile.Read(ref _snapshot);
+            var docsToSearch = index.Documents.Values.AsEnumerable();
             if (!includeNetCode)
             {
                 docsToSearch = docsToSearch.Where(d => !d.IsNetCode);
@@ -680,9 +1165,10 @@ namespace Overseer.Services
         public string FindDefinition(string symbol, string kind)
         {
             var results = new System.Text.StringBuilder();
-            
+            var index = Volatile.Read(ref _snapshot);
+
             // Prioritize .c files over .h files for definitions
-            var docsToSearch = _documents.Values
+            var docsToSearch = index.Documents.Values
                 .Where(d => !d.IsNetCode)
                 .OrderBy(d => d.FilePath.EndsWith(".c", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
                 .ToList();
@@ -807,9 +1293,9 @@ namespace Overseer.Services
         /// Shared helper: finds the first line in the index that matches a symbol of the given kind.
         /// Returns the document and 0-based line index, or (null, -1) if not found.
         /// </summary>
-        private (SourceDocument? doc, int line) FindSymbolLine(string name, string kind)
+        private static (SourceDocument? doc, int line) FindSymbolLine(SourceIndexSnapshot index, string name, string kind)
         {
-            var docsToSearch = _documents.Values
+            var docsToSearch = index.Documents.Values
                 .Where(d => !d.IsNetCode)
                 .OrderBy(d => d.FilePath.EndsWith(".c", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
                 .ToList();
@@ -869,7 +1355,7 @@ namespace Overseer.Services
 
         public string GetFunctionBody(string name, string kind, int? startLineReq = null)
         {
-            var (matchDoc, matchLine) = FindSymbolLine(name, kind);
+            var (matchDoc, matchLine) = FindSymbolLine(Volatile.Read(ref _snapshot), name, kind);
 
             if (matchDoc == null || matchLine < 0)
             {
@@ -1021,10 +1507,11 @@ namespace Overseer.Services
         {
             // Normalize path for lookup
             relativePath = relativePath.Replace('\\', '/');
-            if (!_documents.TryGetValue(relativePath, out var doc))
+            var index = Volatile.Read(ref _snapshot);
+            if (!index.Documents.TryGetValue(relativePath, out var doc))
             {
                 // Try case-insensitive fuzzy match if exact match fails
-                doc = _documents.Values.FirstOrDefault(d => d.RelativePath.Equals(relativePath, StringComparison.OrdinalIgnoreCase));
+                doc = index.Documents.Values.FirstOrDefault(d => d.RelativePath.Equals(relativePath, StringComparison.OrdinalIgnoreCase));
                 if (doc == null)
                 {
                     return $"Error: File '{relativePath}' not found in indexed source code.";
@@ -1104,15 +1591,16 @@ namespace Overseer.Services
         public string[]? GetIndexedLines(string relativePath)
         {
             relativePath = relativePath.Replace('\\', '/');
-            if (_documents.TryGetValue(relativePath, out var doc)) return doc.ContentLines;
+            var index = Volatile.Read(ref _snapshot);
+            if (index.Documents.TryGetValue(relativePath, out var doc)) return doc.ContentLines;
 
-            doc = _documents.Values.FirstOrDefault(d => d.RelativePath.Equals(relativePath, StringComparison.OrdinalIgnoreCase));
+            doc = index.Documents.Values.FirstOrDefault(d => d.RelativePath.Equals(relativePath, StringComparison.OrdinalIgnoreCase));
             return doc?.ContentLines;
         }
 
         public IEnumerable<ConstantInfo> GetConstants(string namePattern, string? prefixFilter)
         {
-            var results = _constants.Values.AsEnumerable();
+            var results = Volatile.Read(ref _snapshot).Constants.Values.AsEnumerable();
             
             if (!string.IsNullOrWhiteSpace(prefixFilter))
             {
@@ -1152,7 +1640,7 @@ namespace Overseer.Services
 
         public string ListFiles(string? pathFilter, bool includeNetCode)
         {
-            var docsToSearch = _documents.Values.AsEnumerable();
+            var docsToSearch = Volatile.Read(ref _snapshot).Documents.Values.AsEnumerable();
             if (!includeNetCode)
             {
                 docsToSearch = docsToSearch.Where(d => !d.IsNetCode);
@@ -1181,7 +1669,8 @@ namespace Overseer.Services
         public StatsResponse<MonsterStats> GetMonsterStats(string name)
         {
             var response = new StatsResponse<MonsterStats>();
-            var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\monst.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/monst.c", StringComparison.OrdinalIgnoreCase));
+            var index = Volatile.Read(ref _snapshot);
+            var doc = index.Documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\monst.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/monst.c", StringComparison.OrdinalIgnoreCase));
             if (doc == null)
             {
                 response.Error = "src/monst.c is not in the source code index. Ensure the GnollHack repository is indexed. Use monster_lookup or wiki_search as a fallback.";
@@ -1220,7 +1709,7 @@ namespace Overseer.Services
             {
                 /* ExtractParenBlock includes outer parens; strip them before tokenizing */
                 string innerContent = ExtractInnerArgs(extraction.Content);
-                var tokens = _dataParser.ParseMonsterMacroArgs(innerContent);
+                var tokens = index.Parser.ParseMonsterMacroArgs(innerContent);
                 if (tokens.Count >= 24) /* every monster macro has at least 24 top-level args before soundset fields */
                 {
                     var stats = new MonsterStats();
@@ -1279,8 +1768,8 @@ namespace Overseer.Services
 
             /* Level 2 fallback: raw dump + context */
             response.RawDefinition = rawDef;
-            response.MacroDefinitions = _dataParser.GetMacroDefinitions("MON", "ANIMATED_MON", "ENLARGED_MON", "ENLARGED_ANIMATED_MON", "GENERAL_MON", "LVL", "A", "ATTK", "SIZ", "STATS");
-            response.StructDefinitions = _dataParser.GetStructDefinitions("permonst", "attack");
+            response.MacroDefinitions = index.Parser.GetMacroDefinitions("MON", "ANIMATED_MON", "ENLARGED_MON", "ENLARGED_ANIMATED_MON", "GENERAL_MON", "LVL", "A", "ATTK", "SIZ", "STATS");
+            response.StructDefinitions = index.Parser.GetStructDefinitions("permonst", "attack");
             response.Message = $"Could not parse structured stats for '{name}'. Raw source and context provided for manual interpretation.";
             PopulateFlagDescriptions(response, rawDef);
 
@@ -1289,7 +1778,7 @@ namespace Overseer.Services
 
         public IEnumerable<string> SearchMonsters(string query)
         {
-            var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\monst.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/monst.c", StringComparison.OrdinalIgnoreCase));
+            var doc = Volatile.Read(ref _snapshot).Documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\monst.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/monst.c", StringComparison.OrdinalIgnoreCase));
             if (doc == null) return Enumerable.Empty<string>();
 
             var results = new List<string>();
@@ -1313,9 +1802,12 @@ namespace Overseer.Services
         /// <param name="objectClass">Selects among the object classes that hold an entry of this name.
         /// Null resolves the first in file order and reports the sharing classes in the result.</param>
         public StatsResponse<ItemStats> GetItemStats(string name, string? objectClass = null)
+            => GetItemStats(Volatile.Read(ref _snapshot), name, objectClass);
+
+        private StatsResponse<ItemStats> GetItemStats(SourceIndexSnapshot index, string name, string? objectClass)
         {
             var response = new StatsResponse<ItemStats>();
-            var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
+            var doc = index.Documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
             if (doc == null)
             {
                 response.Error = "src/objects.c is not in the source code index. Ensure the GnollHack repository is indexed. Use item_lookup or wiki_search as a fallback.";
@@ -1341,15 +1833,16 @@ namespace Overseer.Services
                    it; the note and the miss message still quote the name as given. */
                 string cut = CutAtFirstNonNameCharacter(name);
                 bool cutApplies = cut.Length > 0 && !string.Equals(cut, name.Trim(), StringComparison.Ordinal);
+                var resolver = index.ItemResolver;
                 string? fullName = cutApplies
-                    ? FindExactItemName(cut, objectClass)
-                        ?? FindUniqueOfSuffixItemName(cut, objectClass)
-                        ?? FindUniqueLeadingItemName(cut, objectClass)
-                    : FindUniqueOfSuffixItemName(name, objectClass)
-                        ?? FindUniqueLeadingItemName(name, objectClass);
+                    ? FindExactItemName(resolver, cut, objectClass)
+                        ?? FindUniqueOfSuffixItemName(resolver, cut, objectClass)
+                        ?? FindUniqueLeadingItemName(resolver, cut, objectClass)
+                    : FindUniqueOfSuffixItemName(resolver, name, objectClass)
+                        ?? FindUniqueLeadingItemName(resolver, name, objectClass);
                 if (fullName != null)
                 {
-                    var resolved = GetItemStats(fullName, objectClass);
+                    var resolved = GetItemStats(index, fullName, objectClass);
                     if (resolved.Error == null)
                     {
                         string note = $"Resolved '{name.Trim()}' to '{fullName}': no item is named '{name.Trim()}'.";
@@ -1358,7 +1851,7 @@ namespace Overseer.Services
                     }
                 }
 
-                response.Error = BuildItemStatsMissMessage(name);
+                response.Error = BuildItemStatsMissMessage(resolver, name);
                 return response;
             }
 
@@ -1377,7 +1870,7 @@ namespace Overseer.Services
             ItemResolution resolution;
             try
             {
-                resolution = _itemResolver.Resolve(name, objectClass);
+                resolution = index.ItemResolver.Resolve(name, objectClass);
             }
             catch (Exception rex)
             {
@@ -1404,8 +1897,8 @@ namespace Overseer.Services
                regex above matches every armour wrapper, so the macro list has to as well or the
                model is told to interpret definitions it was not given. */
             response.RawDefinition = rawDef;
-            response.MacroDefinitions = _dataParser.GetMacroDefinitions("OBJECT", "OBJ", "BITS", "WEAPON", "ARMOR", "SUIT", "HELM", "CLOAK", "SHIELD", "GLOVES", "BOOTS", "SHIRT", "ROBE", "BRACERS", "DRGN_ARMR", "WEAPONSHIELD", "WEAPONBOOTS", "WEAPONGLOVES", "POTION", "SCROLL", "SPELL", "WAND", "RING", "CHARGEDRING", "AMULET", "TOOL", "SPELLTOOL", "WEPTOOL", "CONTAINER", "GEM", "ROCK", "COIN", "MISCELLANEOUSITEM", "FOOD", "REAGENT", "BOW", "PROJECTILE");
-            response.StructDefinitions = _dataParser.GetStructDefinitions("objclass");
+            response.MacroDefinitions = index.Parser.GetMacroDefinitions("OBJECT", "OBJ", "BITS", "WEAPON", "ARMOR", "SUIT", "HELM", "CLOAK", "SHIELD", "GLOVES", "BOOTS", "SHIRT", "ROBE", "BRACERS", "DRGN_ARMR", "WEAPONSHIELD", "WEAPONBOOTS", "WEAPONGLOVES", "POTION", "SCROLL", "SPELL", "WAND", "RING", "CHARGEDRING", "AMULET", "TOOL", "SPELLTOOL", "WEPTOOL", "CONTAINER", "GEM", "ROCK", "COIN", "MISCELLANEOUSITEM", "FOOD", "REAGENT", "BOW", "PROJECTILE");
+            response.StructDefinitions = index.Parser.GetStructDefinitions("objclass");
             response.Message = response.MacroDefinitions.Count > 0
                 ? $"Raw source for '{name}', with the macro and struct definitions needed to read it. Interpret the macro invocation against those definitions. Structured values were not available: {resolution.FailureReason}"
                 : $"Raw source for '{name}'. No macro definitions were available for it, so interpret the invocation against src/objects.c itself. Structured values were not available: {resolution.FailureReason}";
@@ -1445,7 +1938,7 @@ namespace Overseer.Services
         /// The item name equal (case-insensitive) to <paramref name="name"/>, restricted to
         /// <paramref name="objectClass"/> when given. Null when none.
         /// </summary>
-        private string? FindExactItemName(string name, string? objectClass)
+        private static string? FindExactItemName(ObjectsMacroResolver resolver, string name, string? objectClass)
         {
             string trimmed = name?.Trim() ?? string.Empty;
             if (trimmed.Length == 0)
@@ -1453,10 +1946,10 @@ namespace Overseer.Services
                 return null;
             }
 
-            return _itemResolver.ItemNames
+            return resolver.ItemNames
                 .Where(n => string.Equals(n, trimmed, StringComparison.OrdinalIgnoreCase))
                 .Where(n => string.IsNullOrWhiteSpace(objectClass)
-                    || _itemResolver.ObjectClassesOf(n).Contains(objectClass, StringComparer.OrdinalIgnoreCase))
+                    || resolver.ObjectClassesOf(n).Contains(objectClass, StringComparer.OrdinalIgnoreCase))
                 .FirstOrDefault();
         }
 
@@ -1465,7 +1958,7 @@ namespace Overseer.Services
         /// <paramref name="objectClass"/> when given, so that <c>experience</c> finds
         /// <c>ioun stone of experience</c>. Null when no name or more than one name matches.
         /// </summary>
-        private string? FindUniqueOfSuffixItemName(string name, string? objectClass)
+        private static string? FindUniqueOfSuffixItemName(ObjectsMacroResolver resolver, string name, string? objectClass)
         {
             string trimmed = name?.Trim() ?? string.Empty;
             if (trimmed.Length == 0)
@@ -1474,10 +1967,10 @@ namespace Overseer.Services
             }
 
             string suffix = " of " + trimmed;
-            var matches = _itemResolver.ItemNames
+            var matches = resolver.ItemNames
                 .Where(n => n.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
                 .Where(n => string.IsNullOrWhiteSpace(objectClass)
-                    || _itemResolver.ObjectClassesOf(n).Contains(objectClass, StringComparer.OrdinalIgnoreCase))
+                    || resolver.ObjectClassesOf(n).Contains(objectClass, StringComparer.OrdinalIgnoreCase))
                 .Take(2)
                 .ToList();
             return matches.Count == 1 ? matches[0] : null;
@@ -1491,17 +1984,17 @@ namespace Overseer.Services
         /// at least two words, so <c>orange potion</c> never resolves to <c>orange</c>. Null when no
         /// prefix matches, or when the first prefix that matches names more than one item.
         /// </summary>
-        private string? FindUniqueLeadingItemName(string name, string? objectClass)
+        private static string? FindUniqueLeadingItemName(ObjectsMacroResolver resolver, string name, string? objectClass)
         {
             string[] words = (name ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
             for (int drop = 1; words.Length - drop >= 2; drop++)
             {
                 string prefix = string.Join(" ", words, 0, words.Length - drop);
-                var matches = _itemResolver.ItemNames
+                var matches = resolver.ItemNames
                     .Where(n => string.Equals(n, prefix, StringComparison.OrdinalIgnoreCase))
                     .Where(n => string.IsNullOrWhiteSpace(objectClass)
-                        || _itemResolver.ObjectClassesOf(n).Contains(objectClass, StringComparer.OrdinalIgnoreCase))
+                        || resolver.ObjectClassesOf(n).Contains(objectClass, StringComparer.OrdinalIgnoreCase))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Take(2)
                     .ToList();
@@ -1525,7 +2018,7 @@ namespace Overseer.Services
         /// potion</c>, <c>red mushroom</c>) is randomised per game and so has no objects.c entry of
         /// its own. Capped at <see cref="ItemStatsMissMaxChars"/>.
         /// </summary>
-        private string BuildItemStatsMissMessage(string name)
+        private static string BuildItemStatsMissMessage(ObjectsMacroResolver resolver, string name)
         {
             var suggestions = new List<string>();
 
@@ -1536,7 +2029,7 @@ namespace Overseer.Services
                     return;
                 }
 
-                foreach (var candidate in _itemResolver.FindItemNames(query))
+                foreach (var candidate in resolver.FindItemNames(query))
                 {
                     if (suggestions.Count >= MaxItemStatsSuggestions) break;
                     if (!suggestions.Contains(candidate, StringComparer.OrdinalIgnoreCase))
@@ -1567,7 +2060,7 @@ namespace Overseer.Services
 
         public IEnumerable<string> SearchItems(string query)
         {
-            var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
+            var doc = Volatile.Read(ref _snapshot).Documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
             if (doc == null) return Enumerable.Empty<string>();
 
             var results = new List<string>();
@@ -1590,7 +2083,8 @@ namespace Overseer.Services
         public StatsResponse<ArtifactStats> GetArtifactStats(string name)
         {
             var response = new StatsResponse<ArtifactStats>();
-            var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\artilist.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/artilist.h", StringComparison.OrdinalIgnoreCase));
+            var index = Volatile.Read(ref _snapshot);
+            var doc = index.Documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\artilist.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/artilist.h", StringComparison.OrdinalIgnoreCase));
             if (doc == null)
             {
                 response.Error = "include/artilist.h is not in the source code index. Ensure the GnollHack repository is indexed. Use wiki_search as a fallback.";
@@ -1631,7 +2125,7 @@ namespace Overseer.Services
             {
                 /* ExtractParenBlock includes outer parens; strip them before tokenizing */
                 string innerContent = ExtractInnerArgs(extraction.Content);
-                var tokens = _dataParser.ParseMonsterMacroArgs(innerContent);
+                var tokens = index.Parser.ParseMonsterMacroArgs(innerContent);
                 int minTokens = isGeneralArtifact ? 37 : 34;
                 if (tokens.Count >= minTokens)
                 {
@@ -1726,8 +2220,8 @@ namespace Overseer.Services
 
             /* Level 2 fallback: raw dump + context */
             response.RawDefinition = rawDef;
-            response.MacroDefinitions = _dataParser.GetMacroDefinitions("GENERAL_ARTIFACT", "A", "PHYS", "PHYSI", "DRLI", "COLD", "FIRE", "ELEC", "STUN", "NO_ATTK");
-            response.StructDefinitions = _dataParser.GetStructDefinitions("artifact", "attack");
+            response.MacroDefinitions = index.Parser.GetMacroDefinitions("GENERAL_ARTIFACT", "A", "PHYS", "PHYSI", "DRLI", "COLD", "FIRE", "ELEC", "STUN", "NO_ATTK");
+            response.StructDefinitions = index.Parser.GetStructDefinitions("artifact", "attack");
             response.Message = $"Could not parse structured stats for '{name}'. Raw source and context provided for manual interpretation.";
             PopulateFlagDescriptions(response, rawDef);
 
@@ -1736,7 +2230,7 @@ namespace Overseer.Services
 
         public IEnumerable<string> SearchArtifacts(string query)
         {
-            var doc = _documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\artilist.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/artilist.h", StringComparison.OrdinalIgnoreCase));
+            var doc = Volatile.Read(ref _snapshot).Documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\artilist.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/artilist.h", StringComparison.OrdinalIgnoreCase));
             if (doc == null) return Enumerable.Empty<string>();
 
             var results = new List<string>();
@@ -1963,12 +2457,12 @@ namespace Overseer.Services
             }
         }
 
-        private class SourceDocument
+        internal sealed class SourceDocument
         {
-            public string FilePath { get; set; } = string.Empty;
-            public string RelativePath { get; set; } = string.Empty;
-            public bool IsNetCode { get; set; }
-            public string[] ContentLines { get; set; } = Array.Empty<string>();
+            public string FilePath { get; init; } = string.Empty;
+            public string RelativePath { get; init; } = string.Empty;
+            public bool IsNetCode { get; init; }
+            public string[] ContentLines { get; init; } = Array.Empty<string>();
         }
 
         private class SearchResult

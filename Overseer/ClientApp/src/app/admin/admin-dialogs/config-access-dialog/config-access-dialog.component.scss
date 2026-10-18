@@ -1,0 +1,230 @@
+@use '../../admin-shared' as shared;
+@use '../../benchmark/benchmark-dialog-frame' as frame;
+
+/* .gh-search-field, .gh-list-status, .gh-switch, .action-btn, .config-badge, .status-badge and its
+   role and warning tones, .thinking-badge and the tooltips are global in styles.scss. Only the frame's
+   size, the cards and the badges no global rule covers are here. */
+
+:host {
+  display: contents;
+}
+
+@include shared.badge-system-wide;
+
+/* Header, scrolling body and footer, full height. */
+.gh-dialog.config-access-dialog {
+  @include frame.frame($width: 64rem, $full-height: true);
+}
+
+.config-access-dialog {
+  .dialog-title-group {
+    align-items: stretch;
+  }
+
+  h3:focus {
+    outline: none;
+  }
+
+  h3:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.cad-status {
+  margin: 0;
+  margin-block-start: 4px;
+
+  &:empty {
+    display: none;
+  }
+}
+
+.cad-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.cad-search {
+  flex-shrink: 0;
+}
+
+.cad-error,
+.cad-empty {
+  margin: 0;
+}
+
+.cad-empty {
+  color: var(--nav-color);
+}
+
+/* --- Cards ----------------------------------------------------------------------------------- */
+
+/* One full-width card per row; the cards lay out by this list's width. */
+.cad-cards {
+  display: grid;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: cad-cards / inline-size;
+}
+
+.cad-item {
+  min-inline-size: 0;
+}
+
+/* The switch, the title with its badges and meta line, and the actions top right. */
+.cad-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "switch head actions";
+  align-items: start;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+
+  /* An assignment is shown by the switch and a gold border together, never by color alone. */
+  &.is-assigned {
+    border-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 5%, rgba(0, 0, 0, 0.18));
+  }
+}
+
+/* Below 30 rem the actions wrap under the title. */
+@container cad-cards (max-width: 30rem) {
+  .cad-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "switch head"
+      "switch actions";
+  }
+
+  .cad-actions {
+    justify-content: flex-start;
+  }
+}
+
+.cad-switch {
+  grid-area: switch;
+  display: inline-flex;
+  padding-block-start: 2px;
+
+  .gh-switch input:focus-visible + .gh-slider {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  .gh-switch input:disabled + .gh-slider {
+    opacity: 0.55;
+    cursor: progress;
+  }
+}
+
+.cad-head {
+  grid-area: head;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.cad-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: #e4e4e7;
+  overflow-wrap: anywhere;
+}
+
+/* The model pickers' badge order, then the configuration's own and the assignment's states. */
+.cad-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.cad-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.5rem;
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.cad-model-id {
+  overflow-wrap: anywhere;
+  color: #d4d4d8;
+}
+
+.cad-sep {
+  color: #71717a;
+}
+
+.cad-note {
+  overflow-wrap: anywhere;
+}
+
+.cad-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+/* --- Badges no global rule covers ------------------------------------------------------------- */
+
+.badge-disabled {
+  display: inline-block;
+  background-color: rgba(220, 53, 69, 0.2);
+  border: 1px solid var(--color-error);
+  color: var(--color-error);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.status-badge.badge-info {
+  background-color: rgba(96, 165, 250, 0.15);
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  color: #60a5fa;
+}
+
+/* Limited is a focusable badge whose tooltip lists the limits. */
+button.cad-limited {
+  appearance: none;
+  margin: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: inherit;
+  cursor: help;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cad-card {
+    transition: none;
+  }
+}

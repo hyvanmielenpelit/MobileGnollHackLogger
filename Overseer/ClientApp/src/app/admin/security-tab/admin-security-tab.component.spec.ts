@@ -149,13 +149,10 @@ describe('AdminSecurityTabComponent', () => {
 
     it('opens the Users tab on its deletion requests from Review deletion requests', () => {
       create();
-      const requested: string[] = [];
-      store.tabRequested$.subscribe(tab => requested.push(tab));
-
       el.querySelector<HTMLButtonElement>('.sec-review-deletions')!.click();
 
       expect(store.usersSubTab).toBe('deletions');
-      expect(requested).toEqual(['users']);
+      expect(store.activeTab).toBe('users');
     });
   });
 
@@ -362,8 +359,6 @@ describe('AdminSecurityTabComponent', () => {
 
     it('shows the user\'s AI usage on the AI Telemetry tab from Usage', () => {
       create();
-      const requested: string[] = [];
-      store.tabRequested$.subscribe(tab => requested.push(tab));
       const usage = vi.spyOn(store, 'requestTelemetryUser');
 
       const button = card(1).querySelector<HTMLButtonElement>('.sec-usage')!;
@@ -372,7 +367,7 @@ describe('AdminSecurityTabComponent', () => {
 
       expect(usage).toHaveBeenCalledWith('u1', 'Alice');
       expect(store.pendingTelemetryUserId).toBe('u1');
-      expect(requested).toEqual(['telemetry']);
+      expect(store.activeTab).toBe('telemetry');
     });
   });
 

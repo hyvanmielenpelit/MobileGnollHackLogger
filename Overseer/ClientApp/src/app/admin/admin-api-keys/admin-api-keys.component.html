@@ -1,8 +1,10 @@
-<section class="aak" aria-labelledby="aakTitle">
-  <h3 id="aakTitle" class="gh-section-title">Default API Keys</h3>
-  <p class="aak-intro">
-    System AI configurations set to Default use these keys. Each key is checked with its provider before it is saved.
-  </p>
+<section class="aak" [attr.aria-labelledby]="showHeading ? 'aakTitle' : 'api-keys-dialog-title'">
+  @if (showHeading) {
+    <h3 id="aakTitle" class="gh-section-title">Default API Keys</h3>
+    <p class="aak-intro">
+      System AI configurations set to Default use these keys. Each key is checked with its provider before it is saved.
+    </p>
+  }
 
   @if (loading && statuses.length === 0) {
     <p class="aak-loading" role="status">Loading the default keys…</p>

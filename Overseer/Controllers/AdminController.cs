@@ -1405,7 +1405,7 @@ public class AdminController : ControllerBase
     private const string DefaultKeyNeedsOfficialEndpoint = "A default key works only with the provider's own endpoint.";
 
     private static string NoDefaultKeyMessage(string provider)
-        => $"There is no default {provider} key. Add one in the API Keys tab, or choose Custom.";
+        => $"There is no default {provider} key. Add one with API Keys in System Configs, or choose Custom.";
 
     [HttpGet("system-alerts")]
     public IActionResult GetSystemAlerts([FromServices] ConfigHealthService configHealthService)

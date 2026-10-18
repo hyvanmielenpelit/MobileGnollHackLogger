@@ -1,0 +1,224 @@
+/* Layout of the Configuration Health view. The status, summary and tile appearance is global
+   (.gh-health-status, .gh-health-summary, .gh-health-tile in styles.scss). */
+
+:host {
+  display: block;
+  container: config-health / inline-size;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.ch-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-block-end: 1rem;
+}
+
+.ch-checked {
+  margin: 0;
+  min-block-size: 1.5em;
+  color: var(--nav-color);
+  font-size: var(--text-secondary);
+}
+
+.ch-load-error {
+  margin-block: 0 1rem;
+}
+
+.ch-summary {
+  margin-block-end: 0.5rem;
+}
+
+.ch-tile-count {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.ch-environment {
+  margin: 0 0 1.25rem;
+  color: var(--nav-color);
+
+  strong {
+    color: var(--font-color);
+  }
+}
+
+/* The sources table scrolls inside its own box, so the page never scrolls sideways. */
+.ch-table-wrap {
+  max-inline-size: 100%;
+  overflow-x: auto;
+  margin-block-end: 1.25rem;
+}
+
+.ch-sources-table {
+  caption {
+    caption-side: top;
+    padding: 0 0 6px;
+    text-align: start;
+    font-weight: 600;
+    color: var(--primary-color);
+  }
+
+  th[scope="row"] {
+    font-weight: 600;
+    color: var(--font-color);
+    background: none;
+  }
+
+  th, td {
+    overflow-wrap: anywhere;
+  }
+
+  .ch-num {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@container config-health (max-width: 30rem) {
+  .ch-sources-table {
+    th, td {
+      padding: 8px 10px;
+    }
+  }
+}
+
+.ch-filter {
+  max-inline-size: 28rem;
+  margin-block-end: 1rem;
+}
+
+.ch-checks:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.ch-empty {
+  margin: 0;
+  color: var(--nav-color);
+}
+
+.ch-category {
+  margin-block-end: 1.5rem;
+}
+
+.ch-check-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
+  gap: 10px;
+}
+
+.ch-check {
+  min-inline-size: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border-glass);
+  border-inline-start-width: 3px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.15);
+
+  &[data-status="ok"] { border-inline-start-color: var(--color-success); }
+  &[data-status="warning"] { border-inline-start-color: var(--color-warning); }
+  &[data-status="error"] { border-inline-start-color: var(--color-error-text); }
+  &[data-status="info"] { border-inline-start-color: var(--nav-color); }
+}
+
+.ch-check-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.ch-check-title {
+  margin: 0;
+  min-inline-size: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* Inline code keeps the x-height of the text around it. */
+.ch-check-facts {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  font-size: var(--text-secondary);
+  font-size-adjust: from-font;
+
+  dt {
+    color: var(--nav-color);
+  }
+
+  dd {
+    margin: 0;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  code {
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
+  }
+}
+
+.ch-fact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+@container config-health (min-width: 36rem) {
+  .ch-fact {
+    grid-template-columns: 5rem minmax(0, 1fr);
+    gap: 12px;
+  }
+}
+
+.ch-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+.ch-source-chip {
+  display: inline-block;
+  padding: 0 8px;
+  border: 1px solid var(--border-glass);
+  border-radius: 999px;
+
+  &.is-unset {
+    border-style: dashed;
+    color: var(--nav-color);
+  }
+}
+
+.ch-value-hidden {
+  font-style: italic;
+  color: var(--nav-color);
+}
+
+.ch-check-summary {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.ch-remedy {
+  margin-block-start: 8px;
+
+  > summary {
+    padding: 6px 10px;
+    font-size: var(--text-secondary);
+  }
+
+  .gh-disclosure-body p {
+    margin: 0;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
+}

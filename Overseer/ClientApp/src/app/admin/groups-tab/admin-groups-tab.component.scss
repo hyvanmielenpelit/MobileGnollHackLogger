@@ -4,7 +4,6 @@
   display: block;
 }
 
-@include shared.tab-header-row;
 @include shared.btn-gh-wide;
 @include shared.text-muted;
 @include shared.empty-state-msg;
@@ -12,11 +11,23 @@
 @include shared.modern-table;
 @include shared.text-align;
 @include shared.actions-cell;
-@include shared.scrollable-list;
-@include shared.config-list-item;
-@include shared.dialog-wide;
-@include shared.badge-system-wide;
-@include shared.d-flex;
+
+/* The sub-panel's heading and its Create button; the Users tab's sticky header stays the only sticky bar. */
+.ag-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.ag-title {
+  margin: 0;
+  margin-inline-end: auto;
+  font-size: 1.125rem;
+  line-height: 1.2;
+  color: var(--title-color);
+}
 
 .error-text {
   color: #ff4d4d;

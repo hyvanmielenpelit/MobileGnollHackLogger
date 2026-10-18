@@ -1,10 +1,17 @@
 import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { AdminService } from '../../services/admin.service';
-import { AdminPageStore } from '../admin-page.store';
+import { AdminDevtoolsSubTab, AdminHistoryMode, AdminPageStore } from '../admin-page.store';
+import { rovingTabIndex } from '../../utils/roving-tab.util';
+import { SourceDashboardComponent } from './source-dashboard/source-dashboard.component';
+import { ConfigHealthComponent } from './config-health/config-health.component';
 
-/** The Admin page's Developer Tools tab: deliberate frontend and backend errors for testing Sentry. */
+/**
+ * The Admin page's Developer Tools tab, in three sub-tabs: the GnollHack source and its index, the
+ * configuration health checks, and deliberate frontend and backend errors for testing Sentry.
+ */
 @Component({
   selector: 'app-admin-devtools-tab',
+  imports: [SourceDashboardComponent, ConfigHealthComponent],
   templateUrl: './admin-devtools-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
   styleUrl: './admin-devtools-tab.component.scss'
@@ -12,6 +19,41 @@ import { AdminPageStore } from '../admin-page.store';
 export class AdminDevtoolsTabComponent {
   private adminService = inject(AdminService);
   private store = inject(AdminPageStore);
+
+  /** The sub-tabs, in display order. */
+  readonly subTabs: readonly AdminDevtoolsSubTab[] = ['source', 'config-health', 'sentry'];
+
+  /** Each sub-tab's visible label. */
+  readonly subTabLabels: Readonly<Record<AdminDevtoolsSubTab, string>> = {
+    'source': 'GnollHack Source',
+    'config-health': 'Configuration Health',
+    'sentry': 'Sentry Crash Reporting'
+  };
+
+  /** The selected sub-tab, which the Admin page sets in the page store from the address. */
+  get subTab(): AdminDevtoolsSubTab {
+    return this.store.devtoolsSubTab;
+  }
+
+  /**
+   * Selects a sub-tab through the address: a click or Enter/Space adds a history entry, anything
+   * else replaces it. Each panel loads what it shows when it appears.
+   */
+  selectSubTab(tab: AdminDevtoolsSubTab, mode: AdminHistoryMode = 'push'): void {
+    if (tab === this.subTab) {
+      return;
+    }
+    this.store.goTo('devtools', tab, mode);
+  }
+
+  /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
+  onSubTabKeydown(event: KeyboardEvent, index: number): void {
+    const next = rovingTabIndex(event, index, this.subTabs.length);
+    if (next === null) return;
+    const tab = this.subTabs[next];
+    this.selectSubTab(tab, 'replace');
+    document.getElementById(`devtools-subtab-${tab}`)?.focus();
+  }
 
   triggerFrontendSentryError() {
     this.store.showToast('Triggering frontend exception...', 'info', 'Sentry Test');

@@ -94,6 +94,7 @@ public class GetFunctionDefinitionToolFallbackTests : IDisposable
 
         using var service = new SourceCodeService(config, NullLogger<SourceCodeService>.Instance);
         await service.StartAsync(CancellationToken.None);
+        await service.InitializationTask;
 
         // The NetHack repository is left unconfigured: nothing here selects it.
         using var netHackService = new NetHackSourceCodeService(config, NullLogger<NetHackSourceCodeService>.Instance);

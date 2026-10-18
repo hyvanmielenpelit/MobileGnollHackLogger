@@ -120,6 +120,9 @@ public class ChatService
     /// which also set ChatMessage.IsGameSnapshot — the flag, not this prefix, is what
     /// detection reads.
     /// </summary>
+    /// <summary>The prompt cache key salt used when <c>PromptCacheSettings:PromptCacheKeySalt</c> is not set; public, so not a secret.</summary>
+    public const string DefaultPromptCacheKeySalt = "overseer_cache_salt_v1";
+
     public const string GameSnapshotPrefix = "Game Context Snapshot:";
 
     /// <summary>
@@ -1492,7 +1495,7 @@ public class ChatService
             runBudget.MaxParallelSubAgents = 1;
         }
 
-        string salt = _configuration.GetValue<string>("PromptCacheSettings:PromptCacheKeySalt", "overseer_cache_salt_v1");
+        string salt = _configuration.GetValue<string>("PromptCacheSettings:PromptCacheKeySalt", DefaultPromptCacheKeySalt);
         string? promptCacheKey = null;
         /* No cache key in a confidential session: the key is what makes a provider retain the
            prompt prefix for reuse, which is retention by another name. */

@@ -327,7 +327,7 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
     this.usageCharts.emit({ userId: user.userId, userName: user.userName });
   }
 
-  /** Opens Manage User Configs for the user on the Users tab. */
+  /** Opens AI configuration access for the user on the Users tab. */
   manageLimits(user: AiTelemetryUserRowDto): void {
     this.store.requestManageUser(user.userId, user.userName);
   }

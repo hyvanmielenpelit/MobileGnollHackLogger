@@ -1,31 +1,40 @@
 import { Component, OnInit, OnDestroy, inject, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute, ParamMap, Router, RouterModule } from '@angular/router';
-import { AdminApiKeysComponent } from './admin-api-keys/admin-api-keys.component';
-import { AdminBenchmarkComponent, BenchmarkNavigationRequest } from './benchmark/benchmark.component';
+import { ActivatedRoute, ActivatedRouteSnapshot, ParamMap, Router, RouterModule } from '@angular/router';
+import {
+  AdminBenchmarkComponent, BenchmarkNavigationRequest, BenchmarkSubTabChange
+} from './benchmark/benchmark.component';
+import type { BenchmarkSubTab } from './benchmark/state/benchmark-shell-bridge.service';
 import { ensureOverlayPolyfills } from '../utils/polyfills.util';
 import { rovingTabIndex } from '../utils/roving-tab.util';
-import { Subscription } from 'rxjs';
+import { Subscription, combineLatest } from 'rxjs';
+import { distinctUntilChanged, map } from 'rxjs/operators';
 import { provideCharts } from 'ng2-charts';
 import { APP_CHART_REGISTRABLES } from '../chart-registrables';
 import { AdminPageStore } from './admin-page.store';
+import { AdminTabId, adminCommands, legacyAdminPath, parseAdminPath } from './admin-url';
 import { AdminUsersTabComponent } from './users-tab/admin-users-tab.component';
-import { AdminGroupsTabComponent } from './groups-tab/admin-groups-tab.component';
 import { AdminConfigsTabComponent } from './configs-tab/admin-configs-tab.component';
 import { AdminDatabaseTabComponent } from './database-tab/admin-database-tab.component';
 import { AdminTelemetryTabComponent } from './telemetry-tab/admin-telemetry-tab.component';
 import { AdminDevtoolsTabComponent } from './devtools-tab/admin-devtools-tab.component';
 import { AdminSecurityTabComponent } from './security-tab/admin-security-tab.component';
 
-/** The admin dashboard's top-level tabs, in display order. */
-export type AdminTabId =
-  'users' | 'groups' | 'apikeys' | 'configs' | 'database' | 'devtools' | 'telemetry' | 'security' | 'benchmark';
+/** One string per address: the path's tab and sub-tab and every query parameter. */
+function addressKey(snapshot: ActivatedRouteSnapshot): string {
+  const query = snapshot.queryParamMap;
+  return JSON.stringify([
+    snapshot.paramMap.get('tab'),
+    snapshot.paramMap.get('subtab'),
+    [...query.keys].sort().map(key => [key, query.getAll(key)])
+  ]);
+}
 
 @Component({
     selector: 'app-admin',
     imports: [
-      CommonModule, RouterModule, AdminApiKeysComponent, AdminBenchmarkComponent,
-      AdminUsersTabComponent, AdminGroupsTabComponent, AdminConfigsTabComponent, AdminDatabaseTabComponent,
+      CommonModule, RouterModule, AdminBenchmarkComponent,
+      AdminUsersTabComponent, AdminConfigsTabComponent, AdminDatabaseTabComponent,
       AdminTelemetryTabComponent, AdminSecurityTabComponent, AdminDevtoolsTabComponent
     ],
     templateUrl: './admin.component.html',
@@ -38,13 +47,14 @@ export class AdminComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
-  activeTab: AdminTabId = 'users';
+  /** The selected tab, which the address sets through the page store. */
+  get activeTab(): AdminTabId {
+    return this.store.activeTab;
+  }
 
   /** Tab order, and the source of truth for arrow-key navigation indices. */
   readonly tabs: { id: AdminTabId; label: string }[] = [
     { id: 'users',     label: 'Users' },
-    { id: 'groups',    label: 'Groups' },
-    { id: 'apikeys',   label: 'API Keys' },
     { id: 'configs',   label: 'System Configs' },
     { id: 'database',  label: 'Database' },
     { id: 'telemetry', label: 'AI Telemetry' },
@@ -56,50 +66,84 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   @ViewChild('adminToast') adminToast?: ElementRef<HTMLElement>;
 
+  /** Forgets the GnollBench sub-tab on screen once its panel is gone; a new panel starts on Run Benchmark. */
+  @ViewChild(AdminBenchmarkComponent) set benchmarkPanel(panel: AdminBenchmarkComponent | undefined) {
+    if (panel) {
+      this.benchmarkPanelShown = true;
+    } else if (this.benchmarkPanelShown) {
+      this.benchmarkPanelShown = false;
+      this.shownBenchmarkSubTab = null;
+    }
+  }
+
+  private benchmarkPanelShown = false;
+
   /** A run the delete-config dialog asked the Benchmark tab to open; cleared once it has. */
   pendingRunId: number | null = null;
 
-  /** A sub-tab and suite a link asked the Benchmark tab to show; cleared once it has. */
+  /** A sub-tab and suite the address asked the Benchmark tab to show; cleared once it has. */
   pendingBenchmarkNavigation: BenchmarkNavigationRequest | null = null;
 
-  private queryParamSub?: Subscription;
+  /**
+   * The GnollBench sub-tab the panel shows, as it reports it or as last handed to it; null while the
+   * panel is not on screen. The address is compared with this, not with the store's memory.
+   */
+  shownBenchmarkSubTab: BenchmarkSubTab | null = null;
+
+  private addressSub?: Subscription;
   private toastSub?: Subscription;
-  private tabRequestSub?: Subscription;
 
   /**
-   * Applies the `tab`, `subtab`, `suiteId` and `resolveConfig` query parameters a link carries, then
-   * removes them from the address, so a reload or Back does not apply them again. `subtab` goes to
-   * the Benchmark tab, or to the Users tab (`users`, `deletions` or `log`). A valid `resolveConfig` selects
-   * the System Configs tab, which opens that configuration's resolution dialog.
+   * Applies an address to the page, in this order: an old `?tab=…&subtab=…` link is replaced by its
+   * path; a non-canonical path by its canonical one, and a valid `resolveConfig` on another tab by
+   * System Configs; otherwise the store takes the tab and sub-tab, the GnollBench panel the sub-tab it
+   * does not show yet, and the one-shot `suiteId` and `resolveConfig` are applied and removed, so a
+   * reload or Back does not apply them again. Every replacement keeps the other query parameters.
    */
-  applyNavigationParams(params: ParamMap): void {
-    if (!params.has('tab') && !params.has('subtab') && !params.has('suiteId') && !params.has('resolveConfig')) {
+  applyAddress(params: ParamMap, query: ParamMap): void {
+    const legacy = legacyAdminPath(query);
+    if (legacy) {
+      this.router.navigate(legacy, {
+        queryParams: { tab: null, subtab: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true
+      });
       return;
     }
-    const tab = this.tabs.find(t => t.id === params.get('tab'))?.id;
-    if (tab) {
-      if (tab === 'benchmark') {
-        const suiteId = AdminComponent.positiveId(params.get('suiteId'));
-        this.pendingBenchmarkNavigation = { subTab: params.get('subtab'), suiteId };
-      } else if (tab === 'users') {
-        const subTab = params.get('subtab');
-        if (subTab === 'users' || subTab === 'deletions' || subTab === 'log') {
-          this.store.usersSubTab = subTab;
-        }
-      }
-      this.selectTab(tab);
+
+    const parsed = parseAdminPath(params.get('tab'), params.get('subtab'));
+    const resolveConfigId = AdminComponent.positiveId(query.get('resolveConfig'));
+    const resolveElsewhere = resolveConfigId != null && parsed.tab !== 'configs';
+    if (!parsed.isCanonical || resolveElsewhere) {
+      this.router.navigate(resolveElsewhere ? adminCommands('configs') : parsed.canonical, {
+        queryParamsHandling: 'preserve',
+        replaceUrl: true
+      });
+      return;
     }
-    const resolveConfigId = AdminComponent.positiveId(params.get('resolveConfig'));
+
+    this.store.applyLocation(parsed.tab, parsed.subTab);
+
+    if (parsed.tab === 'benchmark') {
+      const subTab = parsed.subTab as BenchmarkSubTab;
+      const suiteId = subTab === 'suites' ? AdminComponent.positiveId(query.get('suiteId')) : null;
+      if (subTab !== this.shownBenchmarkSubTab || suiteId != null) {
+        this.pendingBenchmarkNavigation = { subTab, suiteId };
+        this.shownBenchmarkSubTab = subTab;
+      }
+    }
+
     if (resolveConfigId != null) {
       this.store.requestResolveConfig(resolveConfigId);
-      this.selectTab('configs');
     }
-    this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { tab: null, subtab: null, suiteId: null, resolveConfig: null },
-      queryParamsHandling: 'merge',
-      replaceUrl: true
-    });
+    if (query.has('suiteId') || query.has('resolveConfig')) {
+      this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { suiteId: null, resolveConfig: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true
+      });
+    }
   }
 
   /** A positive whole-number query parameter, or null. */
@@ -110,17 +154,16 @@ export class AdminComponent implements OnInit, OnDestroy {
   ngOnInit() {
     ensureOverlayPolyfills();
     this.toastSub = this.store.toast$.subscribe(t => this.showAdminToast(t.message, t.type, t.title));
-    this.tabRequestSub = this.store.tabRequested$.subscribe(requested => {
-      const tab = this.tabs.find(t => t.id === requested)?.id;
-      if (tab) {
-        this.selectTab(tab);
-      }
-    });
 
     this.loadData();
 
-    // A subscription rather than a snapshot: following a link to /admin from /admin reuses this component.
-    this.queryParamSub = this.route.queryParamMap.subscribe(params => this.applyNavigationParams(params));
+    // One subscription for path and query: a navigation that changes both emits twice, and the
+    // snapshot, already final at the first emission, makes the second a duplicate that is dropped.
+    // A tab change reuses this component, so the subscription sees every address.
+    this.addressSub = combineLatest([this.route.paramMap, this.route.queryParamMap]).pipe(
+      map(() => this.route.snapshot),
+      distinctUntilChanged((a, b) => addressKey(a) === addressKey(b))
+    ).subscribe(snapshot => this.applyAddress(snapshot.paramMap, snapshot.queryParamMap));
   }
   adminToastMessage = '';
   adminToastTitle = '';
@@ -170,9 +213,8 @@ export class AdminComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
-    this.queryParamSub?.unsubscribe();
+    this.addressSub?.unsubscribe();
     this.toastSub?.unsubscribe();
-    this.tabRequestSub?.unsubscribe();
     if (this.adminToastTimeout) {
       clearTimeout(this.adminToastTimeout);
     }
@@ -192,17 +234,27 @@ export class AdminComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Each tab component loads what it shows when it is created; API Keys reads the page's keys. */
+  /** A click, Enter or Space: the tab on its remembered sub-tab, as a new history entry. */
   selectTab(tab: AdminTabId) {
-    this.activeTab = tab;
-    if (tab === 'apikeys') {
-      this.store.loadDefaultApiKeys();
+    this.store.goTo(tab, null, 'push');
+  }
+
+  /**
+   * The GnollBench panel switched sub-tabs: the address follows, a new entry only when the user chose
+   * it. The panel carrying out a sub-tab the address handed it needs no navigation; one now could
+   * overtake the removal of a one-shot `suiteId` still under way.
+   */
+  onBenchmarkSubTabChange(change: BenchmarkSubTabChange): void {
+    if (!change.byUser && change.tab === this.shownBenchmarkSubTab) {
+      return;
     }
+    this.shownBenchmarkSubTab = change.tab;
+    this.store.goTo('benchmark', change.tab, change.byUser ? 'push' : 'replace');
   }
 
   /** Hands a run named by the Configs tab's delete dialog to the Benchmark tab's run detail dialog. */
   openBlockerRun(runId: number): void {
-    this.selectTab('benchmark');
+    this.store.goTo('benchmark', null, 'replace');
     this.pendingRunId = runId;
   }
 
@@ -212,13 +264,14 @@ export class AdminComponent implements OnInit, OnDestroy {
    * Space need no handling because each tab is a real <button>.
    *
    * Focus follows selection in the same turn, so the tab that just became
-   * tabindex="0" is the one holding focus.
+   * tabindex="0" is the one holding focus. Selection by arrow key replaces the
+   * history entry, so holding a key does not fill the history.
    */
   onTabKeydown(event: KeyboardEvent, index: number): void {
     const next = rovingTabIndex(event, index, this.tabs.length);
     if (next === null) return;
     const tab = this.tabs[next].id;
-    this.selectTab(tab);
+    this.store.goTo(tab, null, 'replace');
     document.getElementById(`admin-tab-${tab}`)?.focus();
   }
 }

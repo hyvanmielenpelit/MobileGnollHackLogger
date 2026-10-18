@@ -124,6 +124,25 @@ describe('AdminApiKeysComponent', () => {
     expect(card('OpenAI').querySelector('.aak-verification')).toBeNull();
   });
 
+  it('leaves the heading and the intro out when showHeading is false, and is labelled by the dialog heading', async () => {
+    fixture.componentRef.setInput('showHeading', false);
+    await render([status('Anthropic'), status('Google'), status('OpenAI')]);
+
+    const section = fixture.nativeElement.querySelector('section.aak') as HTMLElement;
+    expect(section.querySelector('#aakTitle')).toBeNull();
+    expect(section.querySelector('.aak-intro')).toBeNull();
+    expect(section.getAttribute('aria-labelledby')).toBe('api-keys-dialog-title');
+    expect(section.querySelectorAll('.aak-card').length).toBe(3);
+  });
+
+  it('shows the heading by default', async () => {
+    await render([]);
+
+    const section = fixture.nativeElement.querySelector('section.aak') as HTMLElement;
+    expect(section.querySelector('#aakTitle')!.textContent!.trim()).toBe('Default API Keys');
+    expect(section.getAttribute('aria-labelledby')).toBe('aakTitle');
+  });
+
   it('centers a 48rem content column on a wide panel and fills a narrow one without overflow', async () => {
     const host = fixture.nativeElement as HTMLElement;
     host.style.display = 'block';

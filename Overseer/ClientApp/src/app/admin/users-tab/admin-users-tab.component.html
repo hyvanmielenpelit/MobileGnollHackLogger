@@ -24,6 +24,12 @@
   </div>
 }
 
+@if (subTab === 'groups') {
+  <div role="tabpanel" id="users-subpanel-groups" aria-labelledby="users-subtab-groups" tabindex="0" class="users-subpanel">
+    <app-admin-groups-tab></app-admin-groups-tab>
+  </div>
+}
+
 @if (subTab === 'deletions') {
   <div role="tabpanel" id="users-subpanel-deletions" aria-labelledby="users-subtab-deletions" tabindex="0" class="users-subpanel">
     <app-deletion-requests (pendingCountChange)="onPendingCountChange($event)"></app-deletion-requests>

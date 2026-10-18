@@ -148,7 +148,7 @@ export class AiModelFormComponent implements OnInit, OnChanges {
   /** Why Default cannot be chosen, or null when it can. */
   get defaultKeyUnavailableReason(): string | null {
     if (!this.defaultKeyInfo) {
-      return `No default ${this.provider} key. Add one in Admin → API Keys.`;
+      return `No default ${this.provider} key. Add one with API Keys in Admin → System Configs.`;
     }
     if ((this.baseUrl || '').trim()) {
       return 'A default key works only with the provider\'s own endpoint.';

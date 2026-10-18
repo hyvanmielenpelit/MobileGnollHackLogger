@@ -30,6 +30,15 @@ export function formatServiceTier(tier: string | null | undefined): string {
   return tier.charAt(0).toUpperCase() + tier.slice(1);
 }
 
+/** The role badges of a configuration's `modelRole` bit field: Chat (1), Title (2), Benchmark (4). */
+export function modelRoleBadges(role: number): Array<{ label: string; cssClass: string }> {
+  const badges: Array<{ label: string; cssClass: string }> = [];
+  if ((role & 1) === 1) badges.push({ label: 'Chat', cssClass: 'badge-role-chat' });
+  if ((role & 2) === 2) badges.push({ label: 'Title', cssClass: 'badge-role-title' });
+  if ((role & 4) === 4) badges.push({ label: 'Benchmark', cssClass: 'badge-role-benchmark' });
+  return badges;
+}
+
 /**
  * Formats a `BenchmarkDifficulty` value, accepted as either its numeric enum value or its name,
  * into the band label shown throughout the benchmark views.

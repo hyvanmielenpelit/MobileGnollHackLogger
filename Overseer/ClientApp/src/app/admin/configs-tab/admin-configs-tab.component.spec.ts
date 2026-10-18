@@ -422,6 +422,134 @@ describe('AdminConfigsTabComponent', () => {
     });
   });
 
+  describe('API Keys dialog', () => {
+    const keyStatus = (provider: string, overrides: Partial<DefaultApiKeyStatus> = {}): DefaultApiKeyStatus => ({
+      provider, hasKey: true, keyHint: 'ab12', updatedAtUtc: null,
+      verification: { status: 'Verified', checkedAtUtc: null, message: null },
+      usedBy: [],
+      ...overrides
+    });
+
+    const host = () => fixture.nativeElement as HTMLElement;
+    const button = () => host().querySelector('#config-api-keys') as HTMLButtonElement;
+    const dialog = () => host().querySelector('dialog.api-keys-dialog') as HTMLDialogElement;
+
+    /** A dialog's close event is queued as a task; wait for the event itself. */
+    const nextClose = (target: HTMLDialogElement) =>
+      new Promise<void>(resolve => target.addEventListener('close', () => resolve(), { once: true }));
+
+    afterEach(() => {
+      host().querySelectorAll('dialog').forEach(d => { if (d.open) d.close(); });
+    });
+
+    it('offers API Keys before Create, a secondary button with the key glyph that opens a dialog', () => {
+      fixture.detectChanges();
+
+      const keys = button();
+      expect(keys.classList).toContain('btn-ghost');
+      expect(keys.getAttribute('type')).toBe('button');
+      expect(keys.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(keys.querySelector('svg.btn-icon')?.getAttribute('aria-hidden')).toBe('true');
+      expect(keys.textContent?.trim()).toBe('API Keys');
+      expect(keys.nextElementSibling?.textContent?.trim()).toBe('Create');
+    });
+
+    it('asks for the dialog\'s address on a click, and opens the dialog with the keys reloaded', () => {
+      fixture.detectChanges();
+      (adminService.getDefaultApiKeys as Mock).mockClear();
+      const goTo = vi.spyOn(store, 'goTo');
+
+      button().click();
+      fixture.detectChanges();
+
+      expect(goTo).toHaveBeenCalledWith('configs', 'api-keys', 'push');
+      expect(dialog().open).toBe(true);
+      expect(dialog().getAttribute('aria-labelledby')).toBe('api-keys-dialog-title');
+      expect(dialog().classList).toContain('dialog-extra-wide');
+      expect(adminService.getDefaultApiKeys).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(host().querySelector('#api-keys-dialog-title'));
+      const keys = dialog().querySelector('app-admin-api-keys') as HTMLElement;
+      expect(keys).toBeTruthy();
+      expect(keys.querySelector('#aakTitle')).toBeNull();
+    });
+
+    it('opens on a page loaded with the dialog\'s address', () => {
+      store.applyLocation('configs', 'api-keys');
+
+      fixture.detectChanges();
+
+      expect(dialog().open).toBe(true);
+      expect(dialog().querySelector('app-admin-api-keys')).toBeTruthy();
+      expect(document.activeElement).toBe(host().querySelector('#api-keys-dialog-title'));
+    });
+
+    it('goes back to System Configs on Done, replacing the entry, and returns focus to API Keys', async () => {
+      fixture.detectChanges();
+      button().click();
+      fixture.detectChanges();
+      const goTo = vi.spyOn(store, 'goTo');
+      const closed = nextClose(dialog());
+
+      (dialog().querySelector('.api-keys-dialog-done') as HTMLButtonElement).click();
+      await closed;
+      fixture.detectChanges();
+
+      expect(goTo).toHaveBeenCalledWith('configs', null, 'replace');
+      expect(store.apiKeysDialogOpen).toBe(false);
+      expect(dialog().open).toBe(false);
+      expect(dialog().querySelector('app-admin-api-keys')).toBeNull();
+      expect(document.activeElement).toBe(button());
+    });
+
+    it('follows a close it did not ask for, such as Escape, with the address and focus', async () => {
+      fixture.detectChanges();
+      button().click();
+      fixture.detectChanges();
+      const goTo = vi.spyOn(store, 'goTo');
+      const closed = nextClose(dialog());
+
+      dialog().close();
+      await closed;
+
+      expect(goTo).toHaveBeenCalledWith('configs', null, 'replace');
+      expect(store.apiKeysDialogOpen).toBe(false);
+      expect(document.activeElement).toBe(button());
+    });
+
+    it('closes when the address leaves the dialog', () => {
+      fixture.detectChanges();
+      button().click();
+      fixture.detectChanges();
+
+      store.applyLocation('configs', null);
+
+      expect(dialog().open).toBe(false);
+    });
+
+    it('counts the providers whose key is missing or not verified after the label', () => {
+      (adminService.getDefaultApiKeys as Mock).mockReturnValue(of([
+        keyStatus('Anthropic', { verification: { status: 'NotVerified', checkedAtUtc: null, message: null } }),
+        keyStatus('Google', { hasKey: false, keyHint: null, verification: { status: null, checkedAtUtc: null, message: null } }),
+        keyStatus('OpenAI')
+      ]));
+      fixture.detectChanges();
+
+      const chip = button().querySelector('.config-api-keys-attention') as HTMLElement;
+      expect(chip.classList).toContain('config-badge');
+      expect(chip.textContent?.replace(/\s+/g, ' ').trim()).toBe('2 providers need attention');
+      expect(chip.querySelector('.visually-hidden')?.textContent?.trim()).toBe('providers need attention');
+    });
+
+    it('shows no count when every provider has a verified key', () => {
+      (adminService.getDefaultApiKeys as Mock).mockReturnValue(of([
+        keyStatus('Anthropic'), keyStatus('Google'), keyStatus('OpenAI')
+      ]));
+      fixture.detectChanges();
+
+      expect(button().querySelector('.config-api-keys-attention')).toBeNull();
+    });
+  });
+
   describe('model availability', () => {
     const retired = (overrides: Partial<ModelAvailability> = {}): ModelAvailability => ({
       status: 'retired', needsAttention: true, retiredOn: '2026-09-30', note: null, catalogDisplayName: null, ...overrides

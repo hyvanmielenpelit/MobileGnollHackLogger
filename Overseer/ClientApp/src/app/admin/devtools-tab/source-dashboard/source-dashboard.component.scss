@@ -1,0 +1,377 @@
+// The GnollHack Source dashboard. Status chips and key-figure tiles are the global
+// .gh-health-* classes; this file holds the layout. The host is the size container: one column
+// under 40rem, two from 40rem, three tiles per row from 56rem.
+
+:host {
+  display: block;
+  container: source-dashboard / inline-size;
+}
+
+.sd-root {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-inline-size: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+
+.sd-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: #a1a1aa;
+}
+
+.sd-load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--color-error-text) 55%, transparent);
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.08);
+
+  .gh-field-error {
+    flex: 1 1 16rem;
+  }
+}
+
+// ------------------------------------------------------------------ banner and actions
+
+.sd-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem 1rem;
+}
+
+.sd-banner {
+  flex: 1 1 18rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.75rem;
+  min-inline-size: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-glass);
+  border-inline-start: 3px solid #71717a;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+
+  &[data-status="ok"] { border-inline-start-color: var(--score-high-ink); }
+  &[data-status="warning"] { border-inline-start-color: var(--color-warning); }
+  &[data-status="error"] { border-inline-start-color: var(--color-error-text); }
+  &[data-status="info"] { border-inline-start-color: #a8c7fa; }
+  &[data-status="running"] { border-inline-start-color: var(--primary-color); }
+}
+
+.sd-banner-word {
+  font-size: var(--text-body);
+}
+
+.sd-banner-sentence {
+  flex: 1 1 14rem;
+  min-inline-size: 0;
+  color: #d4d4d8;
+}
+
+.sd-actions {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-inline-size: 0;
+}
+
+.sd-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.sd-makedefs-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.sd-action-feedback:empty,
+.sd-cancel-feedback:empty {
+  display: none;
+}
+
+// ------------------------------------------------------------------ cards
+
+.sd-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.sd-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-inline-size: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+
+  .gh-section-title {
+    margin: 0;
+  }
+}
+
+.sd-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+@container source-dashboard (min-width: 40rem) {
+  .sd-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sd-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+// ------------------------------------------------------------------ progress
+
+.sd-rail {
+  margin-bottom: 0;
+}
+
+.sd-progress-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.75rem;
+}
+
+.sd-progress-bar {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+  block-size: 0.5rem;
+  accent-color: var(--primary-color);
+}
+
+.sd-progress-text {
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  color: #d4d4d8;
+}
+
+.sd-job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 1.25rem;
+  font-size: var(--text-secondary);
+  color: #c4c4c8;
+
+  time {
+    font-variant-numeric: tabular-nums;
+    color: #e4e4e7;
+  }
+}
+
+.sd-job-message {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+}
+
+.sd-cancel {
+  margin-inline-start: auto;
+}
+
+.sd-output-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block-end: 0.5rem;
+}
+
+.sd-copy-status {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.sd-output-text {
+  margin: 0;
+  max-block-size: 20rem;
+  overflow: auto;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #e4e4e7;
+}
+
+// ------------------------------------------------------------------ key figures
+
+.sd-figures {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container source-dashboard (min-width: 56rem) {
+  .sd-figures {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.sd-time-hint {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-block-end: 1px dotted currentColor;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: help;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.sd-mono {
+  font-family: var(--font-mono);
+  font-size-adjust: from-font;
+  overflow-wrap: anywhere;
+}
+
+.sd-path {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.sd-muted {
+  margin: 0;
+  color: #a1a1aa;
+}
+
+.sd-note {
+  margin: 0 0 0.5rem;
+  font-size: var(--text-secondary);
+  color: #c4c4c8;
+}
+
+// ------------------------------------------------------------------ facts and tables
+
+.sd-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+
+  > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.125rem;
+  }
+
+  dt {
+    color: #a1a1aa;
+  }
+
+  dd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.5rem;
+    margin: 0;
+    min-inline-size: 0;
+    color: #e4e4e7;
+  }
+}
+
+@container source-dashboard (min-width: 40rem) {
+  .sd-facts > div {
+    grid-template-columns: minmax(8rem, 2fr) minmax(0, 3fr);
+    gap: 0.75rem;
+  }
+}
+
+.sd-table-wrap {
+  max-inline-size: 100%;
+  overflow-x: auto;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.sd-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-secondary);
+
+  th,
+  td {
+    padding: 0.375rem 0.5rem;
+    border-block-end: 1px solid rgba(255, 255, 255, 0.08);
+    text-align: start;
+    vertical-align: top;
+  }
+
+  thead th {
+    font-weight: 600;
+    color: #a1a1aa;
+    white-space: nowrap;
+  }
+
+  tbody th {
+    font-weight: 400;
+  }
+
+  time {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.sd-message-cell {
+  min-inline-size: 12rem;
+  overflow-wrap: anywhere;
+}
+
+.sd-excluded-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  font-size: var(--text-secondary);
+}
+
+// ------------------------------------------------------------------ motion
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-rail .run-stage,
+  .sd-progress-bar {
+    transition: none;
+  }
+
+  .sd-progress-bar::-webkit-progress-value {
+    transition: none;
+  }
+}

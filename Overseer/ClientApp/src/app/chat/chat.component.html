@@ -1124,7 +1124,7 @@
         <dd><code>{{ captureBoardResult.shaPrefix }}...</code></dd>
         <dt>Bound suite</dt>
         <dd>
-          <a [routerLink]="['/admin']" [queryParams]="{tab: 'benchmark', subtab: 'suites', suiteId: captureBoardResult.suiteId}" (click)="closeCaptureBoardModal()">{{ captureBoardResult.suiteName }}</a>
+          <a [routerLink]="['/admin', 'gnollbench', 'suites']" [queryParams]="{ suiteId: captureBoardResult.suiteId }" (click)="closeCaptureBoardModal()">{{ captureBoardResult.suiteName }}</a>
         </dd>
       </dl>
       <p class="success-hint">
@@ -1177,7 +1177,7 @@
                 <li>
                   {{ board.isIdentical ? 'This exact snapshot is already saved as' : 'An earlier snapshot of this chat was saved as' }}
                   @if (board.suiteId) {
-                    <a [routerLink]="['/admin']" [queryParams]="{tab: 'benchmark', subtab: 'suites', suiteId: board.suiteId}" (click)="closeCaptureBoardModal()"><strong>{{ board.name }}</strong></a>.
+                    <a [routerLink]="['/admin', 'gnollbench', 'suites']" [queryParams]="{ suiteId: board.suiteId }" (click)="closeCaptureBoardModal()"><strong>{{ board.name }}</strong></a>.
                   } @else {
                     <strong>{{ board.name }}</strong>.
                   }
@@ -1485,8 +1485,8 @@
     @if (chatModel.isSystem) {
       @if (authService.user$ | async; as user) {
         @if (user.isAdmin) {
-          <a class="btn-ghost composer-model-config-link" routerLink="/admin"
-             [queryParams]="{ tab: 'configs', resolveConfig: chatModel.id }">Open System Configs</a>
+          <a class="btn-ghost composer-model-config-link" [routerLink]="['/admin', 'configs']"
+             [queryParams]="{ resolveConfig: chatModel.id }">Open System Configs</a>
         }
       }
     }

@@ -15,7 +15,7 @@ Overseer uses several indexing services to provide semantic search, documentatio
 - **`WikiService`**: Indexes the GnollHack-specific wiki (`WikiPath`, default `c:\wiki`) into an in-memory Lucene.NET 4.8 BM25 index.
 - **`NetHackWikiService`**: Indexes the NetHack community wiki (`NetHackWikiPath`) with frontmatter metadata into an in-memory Lucene.NET 4.8 BM25 index.
 - **`KnowledgeBaseService`**: Parses curated Markdown guides in `KbPath/Content` into an in-memory topic dictionary.
-- **`SourceCodeService`**: Background hosted service (`IHostedService`) that parses C source code, macros, constants, and function definitions.
+- **`SourceCodeService`**: Background hosted service (`IHostedService`) that generates the GnollHack headers with makedefs and parses C source code, macros, constants, and function definitions. `StartAsync` loads the flag descriptions, starts the first pass on the thread pool and returns at once, so Kestrel starts listening without waiting for makedefs or the index. `NetHackSourceCodeService` derives from it with `SupportsMakedefs => false`. The full pipeline is in `docs/overseer/gnollhack-source-indexing.md`.
 
 ### Asynchronous Startup Principle
 - **No Blocking I/O in Constructors**: Services must **never** perform blocking disk scans, file parsing, or index construction directly inside their constructors.
@@ -52,11 +52,12 @@ public bool IsIndexingComplete => InitializationTask?.IsCompleted ?? false;
 // SourceCodeService (IHostedService):
 private volatile bool _isIndexingComplete = false;
 public bool IsIndexingComplete => _isIndexingComplete;
-// Set to true after IndexRepository() finishes in StartAsync()
+// Set to true when the first pass that StartAsync() starts in the background ends
 ```
 - Returns `false` while the initial indexing pass is running.
 - Returns `true` once the initial indexing pass has finished (whether successful or failed due to missing directory).
 - **Does NOT flicker**: Periodic 10-minute re-indexing cycles do not reset `IsIndexingComplete` to `false`.
+- **`SourceCodeService.InitializationTask` never faults**: the pass catches every exception and records it as the job's outcome, so a test that awaits it after a failing pass gets a completed task and `IsIndexingComplete == true`. Its first pass includes the makedefs check, so on a machine whose generated headers are stale the guard holds until makedefs has been built and run.
 
 ---
 
@@ -116,9 +117,17 @@ To avoid heavy periodic CPU and disk I/O load, services do NOT blindly rebuild i
 - Services that map to Git repositories poll the local repository `.git/HEAD` commit SHA every 10 minutes via `GitHelper.GetGitHeadSha()`.
 - If the HEAD commit SHA matches `_lastGitSha`, the re-indexing pass is completely skipped (zero CPU/disk overhead).
 - When a new commit SHA is detected (e.g. after a `git pull`), the service triggers re-indexing in the background and updates its SHA fingerprint.
+- `SourceCodeService` compares the HEAD SHA with the `HeadSha` of its published snapshot, read **before** the pass read the files; a pull that lands during a pass therefore gets its own follow-up pass.
 - **Atomic Hot-Swap**:
   - `WikiService`: Builds a new `RAMDirectory` and `IndexSearcher` in isolation, then atomically swaps references inside `lock (_swapLock)`. Superseded readers are disposed outside the lock.
   - `KnowledgeBaseService`: Parses articles into a new dictionary and swaps the reference via `Interlocked.Exchange`.
+  - `SourceCodeService`: Each pass reads every file and parses the game data into a new immutable `SourceIndexSnapshot` (`Services/SourceIndexing/`: documents, constants, a new `GameDataParser` and `ObjectsMacroResolver`, fingerprint, HEAD SHA, branch, `Generation`) and publishes it with one `Volatile.Write`. Every query method reads the reference once and uses that snapshot to the end, so the chat keeps answering from the previous index during a rebuild and never sees a partial one. A failed or canceled pass publishes nothing. `IndexGeneration` (0 before the first publish) is the snapshot's generation; `SourceLivenessIndex` keys its cache on it rather than on HEAD.
+
+### 1a. One Gate for Source Passes (`SourceCodeService`)
+- Start-up, the 10-minute poll and the Developer Tools buttons (`RequestReindex`, `RequestMakedefsBuild`, `CancelCurrentJob`) all run through one `SemaphoreSlim(1,1)`. An automatic trigger that finds it taken sets a pending flag, so at most one follow-up pass is queued; a manual request is refused (*already running*, HTTP 409).
+- Before reading, a pass waits for a quiet repository: no `.git/index.lock`, and HEAD reading the same twice 3 s apart, for at most 2 minutes.
+- **makedefs runs only when its inputs changed.** In GnollHack (`SupportsMakedefs`), `MakedefsHeaderGenerator` hashes makedefs' inputs (`MakedefsInputSet`) and compares them, and the four generated headers, with the stamp `overseer-makedefs-stamp.json` beside the executable. Unchanged → no process is started; changed → `MakedefsBuildCommand` (timeout `MakedefsBuildTimeoutSeconds`, default 300) and three makedefs runs (`MakedefsRunTimeoutSeconds`, default 60) through `IExternalProcessRunner`, which kills the whole process tree on a timeout. A makedefs failure never stops the pass: the headers on disk are indexed as they are.
+- `GetStatus()` reports the published index, the makedefs state, the running job and the last 20 jobs for the GnollHack Source dashboard (`api/admin/devtools/source/status`).
 
 ### 2. Startup-Only Indexing (`NetHackWikiService`)
 - `NetHackWikiService` indexes the NetHack community wiki files (located in `C:\hmp\nethackwiki`) **only once at application startup**.
@@ -143,6 +152,7 @@ When writing unit or integration tests for any indexed service or tool:
    using var service = new NetHackWikiService(config);
    await service.InitializationTask; // Ensures background indexing is complete
    ```
+   `SourceCodeService` and `NetHackSourceCodeService` start their first pass in `StartAsync`, so await `InitializationTask` **after** `await service.StartAsync(...)`; a synchronous call site uses `.GetAwaiter().GetResult()`.
 
 3. **Testing the Unindexed Guard**:
    To test that a tool returns `Success = false` with the directive guard error message, construct the service and immediately invoke the tool **without** awaiting `InitializationTask`.
