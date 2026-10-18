@@ -115,6 +115,16 @@ describe('ConfigAccessDialogComponent', () => {
     expect(adminService.getUserSystemConfigs).toHaveBeenCalledWith('u-9');
   });
 
+  it('is at most 48rem wide and never scrolls sideways', () => {
+    openForZed();
+
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const expected = Math.min(48 * rem, 0.94 * window.innerWidth);
+    expect(Math.abs(dialog().getBoundingClientRect().width - expected)).toBeLessThanOrEqual(1);
+    const body = dialog().querySelector<HTMLElement>('.dialog-body')!;
+    expect(body.scrollWidth).toBeLessThanOrEqual(body.clientWidth);
+  });
+
   it('shows one full-width card per configuration with its badges and the assignment state', () => {
     openForZed();
 

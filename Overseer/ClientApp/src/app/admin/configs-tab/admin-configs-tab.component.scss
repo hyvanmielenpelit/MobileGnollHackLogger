@@ -31,7 +31,7 @@
 
 // Header, scrolling body and footer; only the key cards scroll.
 .gh-dialog.api-keys-dialog {
-  @include frame.frame($width: 800px);
+  @include frame.frame($width: 800px, $max-height: 92dvh);
 }
 
 // The default API keys dialog: its h2 takes the size every dialog title has.

@@ -13,7 +13,7 @@
 
 /* Header, scrolling body and footer, full height. */
 .gh-dialog.config-access-dialog {
-  @include frame.frame($width: 64rem, $full-height: true);
+  @include frame.frame($width: 48rem, $full-height: true);
 }
 
 .config-access-dialog {

@@ -114,6 +114,9 @@ describe('AdminApiKeysComponent', () => {
     expect(anthropic.querySelector('.aak-used-by summary')!.textContent!.trim()).toBe('Used by 2 system configurations');
     expect(anthropic.querySelector('.aak-verify-again')).toBeNull();
     expect(input('Anthropic')).toBeNull();
+    const actions = anthropic.querySelector('.aak-actions') as HTMLElement;
+    expect(actions.getAttribute('role')).toBe('group');
+    expect(actions.getAttribute('aria-label')).toBe('Actions for Anthropic');
 
     const google = card('Google');
     expect(google.querySelector('.aak-key-badge')!.textContent!.trim()).toBe('No default key');
@@ -162,6 +165,47 @@ describe('AdminApiKeysComponent', () => {
     box = section.getBoundingClientRect();
     expect(Math.abs(box.width - hostBox.width)).toBeLessThanOrEqual(1);
     expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
+  });
+
+  it('puts the key\'s actions beside its summary in a wide card and under it in a narrow one', async () => {
+    const host = fixture.nativeElement as HTMLElement;
+    host.style.display = 'block';
+    host.style.width = '1200px';
+    await render([status('Anthropic', { hasKey: true, keyHint: 'ab12' }), status('Google'), status('OpenAI')]);
+
+    const main = card('Anthropic').querySelector('.aak-card-main') as HTMLElement;
+    const actions = card('Anthropic').querySelector('.aak-actions') as HTMLElement;
+    let mainBox = main.getBoundingClientRect();
+    let actionsBox = actions.getBoundingClientRect();
+    expect(actionsBox.top).toBeLessThan(mainBox.bottom);
+    expect(actionsBox.bottom).toBeGreaterThan(mainBox.top);
+    expect(actionsBox.left).toBeGreaterThanOrEqual(mainBox.right);
+
+    host.style.width = '320px';
+    fixture.detectChanges();
+    mainBox = main.getBoundingClientRect();
+    actionsBox = actions.getBoundingClientRect();
+    expect(actionsBox.top).toBeGreaterThanOrEqual(mainBox.bottom);
+    expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
+  });
+
+  it('orders the card as summary, actions or input, then Used by', async () => {
+    await render([
+      status('Anthropic', { hasKey: true, keyHint: 'ab12', usedBy: [{ id: 3, displayName: 'Claude Chat', isEnabled: true }] }),
+      status('Google'),
+      status('OpenAI')
+    ]);
+
+    const anthropic = card('Anthropic');
+    const usedBy = anthropic.querySelector('.aak-used-by') as HTMLElement;
+    const precedes = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(precedes(anthropic.querySelector('.aak-card-main')!, anthropic.querySelector('.aak-actions')!)).toBe(true);
+    expect(precedes(anthropic.querySelector('.aak-actions')!, usedBy)).toBe(true);
+
+    (anthropic.querySelector('.aak-replace') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(anthropic.querySelector('.aak-actions')).toBeNull();
+    expect(precedes(anthropic.querySelector('.aak-input-block')!, anthropic.querySelector('.aak-used-by')!)).toBe(true);
   });
 
   it('shows an invalid refusal under the input with its detail and keeps the key', async () => {
