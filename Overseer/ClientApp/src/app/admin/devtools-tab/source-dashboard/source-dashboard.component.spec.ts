@@ -61,6 +61,17 @@ function dashboard(gnollHack: Partial<SourceIndexStatus> = {}): SourceDashboard 
   };
 }
 
+const BENCHMARK_MESSAGE = 'A GnollBench run is executing and reads the GnollHack source.';
+
+/** A dialog's close event is queued as a task; wait for the event itself. */
+function nextClose(dialog: HTMLDialogElement): Promise<void> {
+  return new Promise<void>(resolve => dialog.addEventListener('close', () => resolve(), { once: true }));
+}
+
+function conflict(code: string, message: string): HttpErrorResponse {
+  return new HttpErrorResponse({ status: 409, error: { code, message } });
+}
+
 describe('SourceDashboardComponent', () => {
   let fixture: ComponentFixture<SourceDashboardComponent>;
   let el: HTMLElement;
@@ -100,6 +111,8 @@ describe('SourceDashboardComponent', () => {
   }
 
   const button = (id: string): HTMLButtonElement => el.querySelector(`#${id}`) as HTMLButtonElement;
+  const dialog = (): HTMLDialogElement => el.querySelector('dialog') as HTMLDialogElement;
+  const text = (id: string): string => el.querySelector(`#${id}`)?.textContent?.trim() ?? '';
 
   it('renders the idle state from a status fixture', () => {
     start();
@@ -228,14 +241,123 @@ describe('SourceDashboardComponent', () => {
     expect(statusSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('shows the reason of a 409 alreadyRunning inline and polls for the job that holds the source', () => {
+    start();
+    vi.spyOn(devtools, 'startReindex').mockReturnValue(throwError(() =>
+      conflict('alreadyRunning', 'A source job is already running.')));
+
+    button('sd-reindex-btn').click();
+    fixture.detectChanges();
+
+    const message = el.querySelector('#sd-action-message') as HTMLElement;
+    expect(message.classList).toContain('gh-field-warning');
+    expect(message.textContent).toContain('A source job is already running.');
+    expect(dialog().open).toBe(false);
+
+    vi.advanceTimersByTime(0);
+    expect(statusSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts a re-index without the acknowledgment and polls at once', () => {
+    start();
+    const reindex = vi.spyOn(devtools, 'startReindex');
+
+    button('sd-reindex-btn').click();
+    expect(reindex).toHaveBeenCalledTimes(1);
+    expect(reindex).toHaveBeenCalledWith(false);
+    vi.advanceTimersByTime(0);
+    expect(statusSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('starts a makedefs build and polls at once', () => {
     start();
     const build = vi.spyOn(devtools, 'startMakedefsBuild');
 
     button('sd-makedefs-btn').click();
     expect(build).toHaveBeenCalledTimes(1);
+    expect(build).toHaveBeenCalledWith(false);
     vi.advanceTimersByTime(0);
     expect(statusSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks for confirmation while a GnollBench run executes, and resends the re-index acknowledged', async () => {
+    start();
+    const reindex = vi.spyOn(devtools, 'startReindex');
+    reindex.mockReturnValueOnce(throwError(() => conflict('benchmarkRunActive', BENCHMARK_MESSAGE)));
+
+    button('sd-reindex-btn').click();
+    fixture.detectChanges();
+
+    expect(dialog().open).toBe(true);
+    expect(text('sd-reindex-confirm-message')).toBe(BENCHMARK_MESSAGE);
+    expect(text('sd-reindex-confirm-ok')).toBe('Re-index anyway');
+    expect(el.querySelector('#sd-action-message')).toBeNull();
+    vi.advanceTimersByTime(0);
+    expect(statusSpy).toHaveBeenCalledTimes(1);
+
+    const closing = nextClose(dialog());
+    button('sd-reindex-confirm-ok').click();
+    await closing;
+
+    expect(dialog().open).toBe(false);
+    expect(reindex).toHaveBeenCalledTimes(2);
+    expect(reindex).toHaveBeenNthCalledWith(1, false);
+    expect(reindex).toHaveBeenNthCalledWith(2, true);
+    vi.advanceTimersByTime(0);
+    expect(statusSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks the same for Build makedefs and resends the build', async () => {
+    start();
+    const reindex = vi.spyOn(devtools, 'startReindex');
+    const build = vi.spyOn(devtools, 'startMakedefsBuild');
+    build.mockReturnValueOnce(throwError(() => conflict('benchmarkRunActive', BENCHMARK_MESSAGE)));
+
+    button('sd-makedefs-btn').click();
+    fixture.detectChanges();
+
+    expect(dialog().open).toBe(true);
+    expect(text('sd-reindex-confirm-ok')).toBe('Build anyway');
+    expect(text('sd-reindex-confirm-effect')).toMatch(/^Build makedefs /);
+
+    const closing = nextClose(dialog());
+    button('sd-reindex-confirm-ok').click();
+    await closing;
+
+    expect(build).toHaveBeenCalledTimes(2);
+    expect(build).toHaveBeenNthCalledWith(1, false);
+    expect(build).toHaveBeenNthCalledWith(2, true);
+    expect(reindex).not.toHaveBeenCalled();
+  });
+
+  it('does not resend when the warning is canceled', async () => {
+    start();
+    const reindex = vi.spyOn(devtools, 'startReindex');
+    reindex.mockReturnValueOnce(throwError(() => conflict('benchmarkRunActive', BENCHMARK_MESSAGE)));
+
+    button('sd-reindex-btn').click();
+    fixture.detectChanges();
+    expect(dialog().open).toBe(true);
+
+    const closing = nextClose(dialog());
+    button('sd-reindex-confirm-cancel').click();
+    await closing;
+
+    expect(reindex).toHaveBeenCalledTimes(1);
+    expect(el.querySelector('#sd-action-message')).toBeNull();
+  });
+
+  it('closes an open confirmation dialog when destroyed', () => {
+    start();
+    vi.spyOn(devtools, 'startReindex').mockReturnValueOnce(
+      throwError(() => conflict('benchmarkRunActive', BENCHMARK_MESSAGE)));
+    button('sd-reindex-btn').click();
+    fixture.detectChanges();
+    const open = dialog();
+    expect(open.open).toBe(true);
+
+    fixture.destroy();
+    expect(open.open).toBe(false);
   });
 
   it('backs off 5, 10 and 30 s after failed polls, and Retry polls at once', () => {

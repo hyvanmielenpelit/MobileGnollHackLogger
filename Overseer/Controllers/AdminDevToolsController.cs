@@ -68,13 +68,43 @@ public class AdminDevToolsController : ControllerBase
         ServerTimeUtc = DateTime.UtcNow
     });
 
-    /// <summary>Re-indexes the GnollHack source; makedefs runs only when its inputs changed.</summary>
+    /// <summary>
+    /// Re-indexes the GnollHack source; makedefs runs only when its inputs changed. The same GnollBench
+    /// rule as the GnollHack wiki.
+    /// </summary>
     [HttpPost("source/reindex")]
-    public IActionResult Reindex() => Started(_gnollHackSource.RequestReindex(SourceIndexTrigger.Manual));
+    public async Task<IActionResult> Reindex([FromQuery] bool acknowledgeActiveBenchmark = false,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await BenchmarkRunConflict(acknowledgeActiveBenchmark, "the GnollHack source", cancellationToken)
+                ?? Started(_gnollHackSource.RequestReindex(SourceIndexTrigger.Manual));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
 
-    /// <summary>Rebuilds makedefs and regenerates the headers, then re-indexes when they changed.</summary>
+    /// <summary>
+    /// Rebuilds makedefs and regenerates the headers, then re-indexes when they changed. The same
+    /// GnollBench rule as the GnollHack wiki.
+    /// </summary>
     [HttpPost("source/makedefs")]
-    public IActionResult BuildMakedefs() => Started(_gnollHackSource.RequestMakedefsBuild());
+    public async Task<IActionResult> BuildMakedefs([FromQuery] bool acknowledgeActiveBenchmark = false,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await BenchmarkRunConflict(acknowledgeActiveBenchmark, "the GnollHack source", cancellationToken)
+                ?? Started(_gnollHackSource.RequestMakedefsBuild());
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
 
     [HttpPost("source/cancel")]
     public IActionResult Cancel() => Ok(new { canceled = _gnollHackSource.CancelCurrentJob() });
@@ -225,23 +255,32 @@ public class AdminDevToolsController : ControllerBase
     private IActionResult Started(SourceIndexStartResult result) => result switch
     {
         SourceIndexStartResult.Started => Accepted(new { jobId = _gnollHackSource.CurrentJobId ?? _gnollHackSource.LastStartedJobId }),
-        SourceIndexStartResult.AlreadyRunning => Conflict(new { message = "A source job is already running." }),
+        SourceIndexStartResult.AlreadyRunning => Conflict(new { code = "alreadyRunning", message = "A source job is already running." }),
         _ => BadRequest(new { message = "SourceCodePath is not configured." })
     };
+
+    /// <summary>409 <c>benchmarkRunActive</c> while a GnollBench run executes, unless acknowledged; otherwise null.</summary>
+    private async Task<IActionResult?> BenchmarkRunConflict(bool acknowledgeActiveBenchmark, string corpusName,
+        CancellationToken cancellationToken)
+    {
+        if (acknowledgeActiveBenchmark ||
+            !await _db.BenchmarkRuns.AnyAsync(r => r.Status == BenchmarkRunStatus.Running, cancellationToken))
+        {
+            return null;
+        }
+        return Conflict(new
+        {
+            code = "benchmarkRunActive",
+            message = $"A GnollBench run is executing and reads {corpusName}."
+        });
+    }
 
     private async Task<IActionResult> StartCorpusReindex(bool acknowledgeActiveBenchmark, string corpusName,
         Func<CorpusIndexStatusDto> getStatus, Func<CorpusIndexTrigger, CorpusIndexStartResult> requestReindex,
         Func<string?> lastStartedJobId, CancellationToken cancellationToken)
     {
-        if (!acknowledgeActiveBenchmark &&
-            await _db.BenchmarkRuns.AnyAsync(r => r.Status == BenchmarkRunStatus.Running, cancellationToken))
-        {
-            return Conflict(new
-            {
-                code = "benchmarkRunActive",
-                message = $"A GnollBench run is executing and reads {corpusName}."
-            });
-        }
+        if (await BenchmarkRunConflict(acknowledgeActiveBenchmark, corpusName, cancellationToken) is { } conflict)
+            return conflict;
 
         return requestReindex(CorpusIndexTrigger.Manual) switch
         {

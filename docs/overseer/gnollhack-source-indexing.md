@@ -157,7 +157,9 @@ and pauses while the browser tab is hidden. It shows:
 - **Build makedefs** — always builds and runs makedefs, then re-indexes when a header changed or no
   index exists yet; otherwise the job ends with *The index was kept.*
   Both are unavailable, with the reason beside them, while a job runs or the source path is not
-  configured.
+  configured. While a GnollBench run executes, both ask first: the dialog *A GnollBench run is
+  executing*, with **Cancel** and **Re-index anyway** or **Build anyway** (see
+  [Corpus Dashboards](corpus-dashboards.md) § 7).
 - **A progress card** while a job runs and for 10 s after it ends: the seven stages (*Waiting for
   repository · Checking makedefs inputs · Building makedefs · Generating headers · Reading files ·
   Parsing game data · Publishing index*), a progress bar with *N of M files* while reading, the elapsed
@@ -177,8 +179,8 @@ and pauses while the browser tab is hidden. It shows:
 | Method | Route | Returns |
 |---|---|---|
 | `GET` | `api/admin/devtools/source/status` | `{ gnollHack, netHack, serverTimeUtc }`, each a `SourceIndexStatusDto` |
-| `POST` | `api/admin/devtools/source/reindex` | 202 `{ jobId }`; 409 while a job runs; 400 when `SourceCodePath` is not configured or missing |
-| `POST` | `api/admin/devtools/source/makedefs` | the same |
+| `POST` | `api/admin/devtools/source/reindex?acknowledgeActiveBenchmark=` | 202 `{ jobId }`; 409 `{ code: "benchmarkRunActive", message }` while a GnollBench run executes, unless acknowledged; 409 `{ code: "alreadyRunning", message }` while a job runs; 400 `{ message }` when `SourceCodePath` is not configured or missing; 499 when the browser abandons the request |
+| `POST` | `api/admin/devtools/source/makedefs?acknowledgeActiveBenchmark=` | the same |
 | `POST` | `api/admin/devtools/source/cancel` | `{ canceled }` |
 
 All are `AdminOnly`. The build command and the paths are shown; they are not secrets.

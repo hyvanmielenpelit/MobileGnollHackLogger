@@ -532,4 +532,9 @@
       Loading the source status…
     </p>
   }
+
+  <app-reindex-confirm-dialog idPrefix="sd"
+                              [confirmLabel]="confirmAction === 'makedefs' ? 'Build anyway' : 'Re-index anyway'"
+                              [actionName]="confirmAction === 'makedefs' ? 'Build makedefs' : 'Re-index'"
+                              (confirmed)="onBenchmarkWarningConfirmed()" />
 </div>

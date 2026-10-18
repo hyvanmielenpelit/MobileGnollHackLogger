@@ -27,7 +27,8 @@ namespace Overseer.Tests.UnitTests;
 /// The corpus endpoints of <see cref="AdminDevToolsController"/>, called as action methods: the
 /// re-index responses (202 with the job id, 409 <c>alreadyRunning</c>, 400 naming the key and never
 /// its value), the GnollBench guard (409 <c>benchmarkRunActive</c> while a run is <c>Running</c>,
-/// bypassed by <c>acknowledgeActiveBenchmark</c>), the search probes against a recording tool
+/// bypassed by <c>acknowledgeActiveBenchmark</c>), the source re-index and makedefs actions' GnollBench
+/// guard, the search probes against a recording tool
 /// handler, the knowledge base article preview and the status endpoints. The services are real, on
 /// temporary folders; the source services are never started. A knowledge base pass is held
 /// mid-flight by its file-listing seam.
@@ -140,9 +141,10 @@ public sealed class AdminDevToolsControllerCorpusTests : IDisposable
             Configuration(("KbPath", path ?? string.Empty)), listArticleFiles));
 
     private AdminDevToolsController CreateController(WikiService? wiki = null, NetHackWikiService? netHackWiki = null,
-        KnowledgeBaseService? knowledgeBase = null, IEnumerable<IToolHandler>? toolHandlers = null)
+        KnowledgeBaseService? knowledgeBase = null, IEnumerable<IToolHandler>? toolHandlers = null,
+        SourceCodeService? gnollHackSource = null)
     {
-        var gnollHackSource = Track(new SourceCodeService(Configuration(), NullLogger<SourceCodeService>.Instance));
+        gnollHackSource ??= Track(new SourceCodeService(Configuration(), NullLogger<SourceCodeService>.Instance));
         var netHackSource = Track(new NetHackSourceCodeService(Configuration(), NullLogger<NetHackSourceCodeService>.Instance));
 
         return new AdminDevToolsController(
@@ -438,6 +440,83 @@ public sealed class AdminDevToolsControllerCorpusTests : IDisposable
 
         Assert.IsType<AcceptedResult>(result);
         await WaitForJobAsync(fixture.Status, BodyString(result, "jobId")!);
+    }
+
+    // -- source jobs: the GnollBench guard ------------------------------------------------------------
+
+    private const string SourceReindex = "reindex";
+    private const string SourceMakedefs = "makedefs";
+    private const string SourceNotConfigured = "SourceCodePath is not configured.";
+
+    private static Task<IActionResult> SourceJob(AdminDevToolsController controller, string action, bool acknowledge,
+        CancellationToken cancellationToken) => action switch
+    {
+        SourceReindex => controller.Reindex(acknowledge, cancellationToken),
+        SourceMakedefs => controller.BuildMakedefs(acknowledge, cancellationToken),
+        _ => throw new ArgumentOutOfRangeException(nameof(action), action, null)
+    };
+
+    /* The source path is not configured, so an action past the guard answers 400 without starting a job. */
+
+    [Theory]
+    [InlineData(SourceReindex)]
+    [InlineData(SourceMakedefs)]
+    public async Task SourceJob_WhileABenchmarkRunIsRunning_Returns409BenchmarkRunActiveAndStartsNothing(string action)
+    {
+        var gnollHackSource = Track(new SourceCodeService(Configuration(), NullLogger<SourceCodeService>.Instance));
+        var controller = CreateController(gnollHackSource: gnollHackSource);
+        await SeedBenchmarkRunAsync(BenchmarkRunStatus.Running);
+
+        var result = await SourceJob(controller, action, false, TestContext.Current.CancellationToken);
+
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        Assert.Equal(StatusCodes.Status409Conflict, conflict.StatusCode);
+        Assert.Equal("benchmarkRunActive", BodyString(result, "code"));
+        Assert.Contains("the GnollHack source", BodyString(result, "message"));
+        Assert.Null(gnollHackSource.LastStartedJobId);
+    }
+
+    [Theory]
+    [InlineData(SourceReindex)]
+    [InlineData(SourceMakedefs)]
+    public async Task SourceJob_WhileABenchmarkRunIsRunning_Acknowledged_PassesTheGuard(string action)
+    {
+        var controller = CreateController();
+        await SeedBenchmarkRunAsync(BenchmarkRunStatus.Running);
+
+        var result = await SourceJob(controller, action, true, TestContext.Current.CancellationToken);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(SourceNotConfigured, BodyString(result, "message"));
+    }
+
+    [Theory]
+    [InlineData(SourceReindex)]
+    [InlineData(SourceMakedefs)]
+    public async Task SourceJob_WithOnlyAFinishedBenchmarkRun_PassesTheGuard(string action)
+    {
+        var controller = CreateController();
+        await SeedBenchmarkRunAsync(BenchmarkRunStatus.Completed);
+
+        var result = await SourceJob(controller, action, false, TestContext.Current.CancellationToken);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(SourceNotConfigured, BodyString(result, "message"));
+    }
+
+    [Theory]
+    [InlineData(SourceReindex)]
+    [InlineData(SourceMakedefs)]
+    public async Task SourceJob_ClientAborted_Returns499(string action)
+    {
+        var controller = CreateController();
+        using var aborted = new CancellationTokenSource();
+        aborted.Cancel();
+
+        var result = await SourceJob(controller, action, false, aborted.Token);
+
+        var status = Assert.IsType<StatusCodeResult>(result);
+        Assert.Equal(StatusCodes.Status499ClientClosedRequest, status.StatusCode);
     }
 
     // -- probes ---------------------------------------------------------------------------------------

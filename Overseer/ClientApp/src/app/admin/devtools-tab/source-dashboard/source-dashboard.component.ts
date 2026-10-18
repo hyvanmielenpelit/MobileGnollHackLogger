@@ -5,11 +5,12 @@ import {
   HostListener,
   OnDestroy,
   OnInit,
+  ViewChild,
   inject
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Observable, Subscription } from 'rxjs';
+import { Subscription } from 'rxjs';
 
 import {
   AdminDevtoolsService,
@@ -21,7 +22,7 @@ import {
   SourceIndexTrigger,
   SourceJobKind,
   SourceJobOutcome,
-  SourceJobStarted
+  readCorpusError
 } from '../../../services/admin-devtools.service';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { copyToClipboard } from '../../../utils/clipboard.util';
@@ -31,8 +32,11 @@ import { ACTIVE_POLL_MS, DashboardPoller, ERROR_BACKOFF_MS, IDLE_POLL_MS } from 
 import type { PollResult } from '../shared/dashboard-poller';
 import * as fmt from '../shared/devtools-format';
 import type { HealthStatus } from '../shared/health-status/health-status.component';
+import { ReindexConfirmDialogComponent } from '../shared/reindex-confirm-dialog/reindex-confirm-dialog.component';
 
 export type { HealthStatus } from '../shared/health-status/health-status.component';
+
+type SourceAction = 'reindex' | 'makedefs';
 
 export type StageState = 'pending' | 'current' | 'done' | 'skipped' | 'ended';
 
@@ -67,7 +71,7 @@ export const SOURCE_STAGES: ReadonlyArray<{ key: SourceIndexPhase; name: string 
 @Component({
   selector: 'app-source-dashboard',
   standalone: true,
-  imports: [InfoTipComponent, NgTemplateOutlet],
+  imports: [InfoTipComponent, NgTemplateOutlet, ReindexConfirmDialogComponent],
   templateUrl: './source-dashboard.component.html',
   styleUrl: './source-dashboard.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -95,6 +99,8 @@ export class SourceDashboardComponent implements OnInit, OnDestroy {
   private lingerTimer: ReturnType<typeof setTimeout> | null = null;
   private trackedJobId: string | null = null;
 
+  @ViewChild(ReindexConfirmDialogComponent) private confirmDialog?: ReindexConfirmDialogComponent;
+
   dashboard: SourceDashboard | null = null;
   /** The last poll failed; the dashboard keeps showing the last good answer. */
   loadError: string | null = null;
@@ -106,6 +112,8 @@ export class SourceDashboardComponent implements OnInit, OnDestroy {
   actionMessage: string | null = null;
   /** `warning` for a 409 (another job holds the source), `error` for any other refusal. */
   actionMessageKind: 'warning' | 'error' = 'error';
+  /** The action the GnollBench warning resends when confirmed. */
+  confirmAction: SourceAction = 'reindex';
 
   canceling = false;
   cancelMessage: string | null = null;
@@ -123,6 +131,7 @@ export class SourceDashboardComponent implements OnInit, OnDestroy {
     this.actionSub?.unsubscribe();
     this.cancelSub?.unsubscribe();
     this.clearLinger();
+    this.confirmDialog?.close();
   }
 
   @HostListener('document:visibilitychange')
@@ -227,22 +236,34 @@ export class SourceDashboardComponent implements OnInit, OnDestroy {
     return ids.length > 0 ? ids.join(' ') : null;
   }
 
-  reindex(): void {
-    this.startJob(() => this.devtools.startReindex());
+  reindex(acknowledgeActiveBenchmark = false): void {
+    this.startJob('reindex', acknowledgeActiveBenchmark);
   }
 
-  buildMakedefs(): void {
-    this.startJob(() => this.devtools.startMakedefsBuild());
+  buildMakedefs(acknowledgeActiveBenchmark = false): void {
+    this.startJob('makedefs', acknowledgeActiveBenchmark);
   }
 
-  private startJob(call: () => Observable<SourceJobStarted>): void {
+  /** The GnollBench warning was confirmed: resends the action it was opened for, acknowledged. */
+  onBenchmarkWarningConfirmed(): void {
+    this.startJob(this.confirmAction, true);
+  }
+
+  /**
+   * A 409 `benchmarkRunActive` opens the confirmation dialog for `action`; any other 409 shows a
+   * warning and polls at once; any other refusal shows an error.
+   */
+  private startJob(action: SourceAction, acknowledge: boolean): void {
     if (this.actionsBlockedReason) {
       return;
     }
     this.starting = true;
     this.actionMessage = null;
     this.actionSub?.unsubscribe();
-    this.actionSub = call().subscribe({
+    const call = action === 'makedefs'
+      ? this.devtools.startMakedefsBuild(acknowledge)
+      : this.devtools.startReindex(acknowledge);
+    this.actionSub = call.subscribe({
       next: () => {
         this.starting = false;
         this.cdr.markForCheck();
@@ -250,6 +271,13 @@ export class SourceDashboardComponent implements OnInit, OnDestroy {
       },
       error: (error: unknown) => {
         this.starting = false;
+        const refusal = readCorpusError(error);
+        if (refusal.status === 409 && refusal.code === 'benchmarkRunActive' && !acknowledge) {
+          this.confirmAction = action;
+          this.cdr.detectChanges();  // the dialog's labels follow confirmAction before it opens
+          this.confirmDialog?.open(refusal.message ?? 'A GnollBench run is executing and reads the GnollHack source.');
+          return;
+        }
         const conflict = error instanceof HttpErrorResponse && error.status === 409;
         this.actionMessageKind = conflict ? 'warning' : 'error';
         this.actionMessage = this.describeError(error, 'The source job could not be started');

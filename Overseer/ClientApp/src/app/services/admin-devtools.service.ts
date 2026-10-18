@@ -406,7 +406,7 @@ export interface CorpusToolUsage {
 
 /**
  * A refused corpus request, read from its error body (`{ code, message }` or `{ message }`).
- * `code` is `benchmarkRunActive` or `alreadyRunning` on a re-index 409; `status` is null for a
+ * `code` is `benchmarkRunActive` or `alreadyRunning` on a re-index or makedefs 409; `status` is null for a
  * non-HTTP error and 0 when the server could not be reached.
  */
 export interface CorpusRequestError {
@@ -430,6 +430,11 @@ export function readCorpusError(error: unknown): CorpusRequestError {
 
 const NO_CACHE_HEADERS = { 'Cache-Control': 'no-cache', Pragma: 'no-cache', Expires: '0' } as const;
 
+/** `acknowledgeActiveBenchmark=true` as a query parameter when acknowledged; no parameters otherwise. */
+function acknowledgeParams(acknowledgeActiveBenchmark: boolean): HttpParams | undefined {
+  return acknowledgeActiveBenchmark ? new HttpParams().set('acknowledgeActiveBenchmark', 'true') : undefined;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AdminDevtoolsService {
   private http = inject(HttpClient);
@@ -439,14 +444,20 @@ export class AdminDevtoolsService {
     return this.http.get<SourceDashboard>(`${this.base}/source/status`);
   }
 
-  /** 202 with the job id; 409 while a source job runs; 400 when the source path is not configured. */
-  startReindex(): Observable<SourceJobStarted> {
-    return this.http.post<SourceJobStarted>(`${this.base}/source/reindex`, {});
+  /**
+   * 202 with the job id. 409 `benchmarkRunActive` while a GnollBench run executes, unless
+   * `acknowledgeActiveBenchmark`; 409 `alreadyRunning` while a source job runs; 400 when the source
+   * path is not configured. `readCorpusError` reads the refusal.
+   */
+  startReindex(acknowledgeActiveBenchmark = false): Observable<SourceJobStarted> {
+    return this.http.post<SourceJobStarted>(`${this.base}/source/reindex`, {},
+      { params: acknowledgeParams(acknowledgeActiveBenchmark) });
   }
 
   /** Same responses as `startReindex`. */
-  startMakedefsBuild(): Observable<SourceJobStarted> {
-    return this.http.post<SourceJobStarted>(`${this.base}/source/makedefs`, {});
+  startMakedefsBuild(acknowledgeActiveBenchmark = false): Observable<SourceJobStarted> {
+    return this.http.post<SourceJobStarted>(`${this.base}/source/makedefs`, {},
+      { params: acknowledgeParams(acknowledgeActiveBenchmark) });
   }
 
   cancelSourceJob(): Observable<{ canceled: boolean }> {
@@ -468,8 +479,8 @@ export class AdminDevtoolsService {
    * not configured or missing. `readCorpusError` reads the refusal.
    */
   startCorpusReindex(kind: CorpusKindSlug, acknowledgeActiveBenchmark = false): Observable<CorpusReindexStarted> {
-    const params = acknowledgeActiveBenchmark ? new HttpParams().set('acknowledgeActiveBenchmark', 'true') : undefined;
-    return this.http.post<CorpusReindexStarted>(`${this.base}/${kind}/reindex`, {}, { params });
+    return this.http.post<CorpusReindexStarted>(`${this.base}/${kind}/reindex`, {},
+      { params: acknowledgeParams(acknowledgeActiveBenchmark) });
   }
 
   /**

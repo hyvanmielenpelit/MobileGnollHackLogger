@@ -491,9 +491,10 @@ To find specific popups, look in the corresponding component's `.html` template:
     composer's **Open System Configs**). Its **Delete…** emits `deleteRequested`, which starts the
     tab's own delete flow. See the shared component below.
   - `app-reindex-confirm-dialog` (`devtools-tab/shared/reindex-confirm-dialog/`): *A GnollBench run is
-    executing*, a native `dialog.gh-dialog` opened with `showModal()` when a corpus Re-index answers 409
-    `benchmarkRunActive`; **Cancel** (focused first) and **Re-index anyway**, which resends the request
-    acknowledged.
+    executing*, a native `dialog.gh-dialog` opened with `showModal()` when a corpus Re-index, or the
+    Source dashboard's Re-index Source Files or Build makedefs, answers 409 `benchmarkRunActive`;
+    **Cancel** (focused first) and the confirm button — **Re-index anyway**, **Reload anyway** (knowledge
+    base) or **Build anyway** (makedefs) — which resends the request acknowledged.
   - The Knowledge Base dashboard's article preview (`devtools-tab/knowledge-base-dashboard/`): a
     `dialog.gh-dialog` headed by the topic, showing the article's raw source in a `pre.gh-dash-pre` with
     a full-text copy button and a close button named *Close article preview*.

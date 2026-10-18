@@ -11,8 +11,9 @@ import {
 } from '@angular/core';
 
 /**
- * The warning a corpus dashboard shows when the server answers a Re-index with 409
- * `benchmarkRunActive`: a GnollBench run is executing and reads the corpus. A modal
+ * The warning a Services dashboard shows when the server answers a Re-index, Reload or Build makedefs
+ * with 409 `benchmarkRunActive`: a GnollBench run is executing and reads the corpus or the source
+ * index. A modal
  * `<dialog class="gh-dialog">` with *Cancel* (focused first) and the confirm button
  * (*Re-index anyway* by default). Escape and the platform's close request cancel.
  *
@@ -37,9 +38,9 @@ export class ReindexConfirmDialogComponent {
 
   /** The prefix of every id. */
   @Input({ required: true }) idPrefix = '';
-  /** The confirm button's label, matching the action: *Re-index anyway*, *Reload anyway*. */
+  /** The confirm button's label, matching the action: *Re-index anyway*, *Reload anyway*, *Build anyway*. */
   @Input() confirmLabel = 'Re-index anyway';
-  /** The action's name at the start of the effect sentence: *Re-index*, *Reload*. */
+  /** The action's name at the start of the effect sentence: *Re-index*, *Reload*, *Build makedefs*. */
   @Input() actionName = 'Re-index';
 
   /** The confirm button was clicked; the dialog has closed. */

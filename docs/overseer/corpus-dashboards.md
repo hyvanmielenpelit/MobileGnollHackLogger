@@ -231,6 +231,12 @@ this point read the new index while the run's recorded fingerprints describe the
 is focused first; **Re-index anyway** resends the request with `acknowledgeActiveBenchmark=true`. It is
 a warning, not a refusal. The 10-minute Git check does not ask.
 
+The GnollHack Source dashboard's **Re-index Source Files** and **Build makedefs** ask the same way —
+*A GnollBench run is executing and reads the GnollHack source.* — because a run records the source
+index's fingerprint as `gnollhackSource`, and Build makedefs re-indexes when the headers changed. Their
+confirm buttons are **Re-index anyway** and **Build anyway**. The source's 10-minute HEAD check,
+repository-change passes and follow-up passes do not ask.
+
 ## 8. The NetHack wiki's manual pass
 
 The NetHack wiki is thousands of static files that change only when the converter regenerates them,
