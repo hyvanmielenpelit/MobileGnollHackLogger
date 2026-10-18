@@ -483,6 +483,8 @@ To find specific popups, look in the corresponding component's `.html` template:
     `Manual:ClearReportCharts` verbatim. See `docs/overseer/chat-data-retention.md`.
 
 - **Admin API Keys Component (`admin/admin-api-keys/admin-api-keys.component.html`, Admin → System Configs → API Keys)**
+  - Each provider card with a saved key ends its summary row in two icon-only actions: **Replace**
+    (`.action-btn`, pencil) and **Delete** (`.action-btn-danger`, trash), each with a tooltip.
   - `#deleteDefaultKeyDialog`: *Delete the default <Provider> key?* — the count and names of the
     system AI configurations that use it (from `deletion-check`, fetched on open), which a delete
     disables; **Delete Key** (`.btn-gh btn-gh-delete`, trash).

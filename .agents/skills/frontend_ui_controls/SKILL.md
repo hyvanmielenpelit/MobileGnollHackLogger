@@ -204,8 +204,8 @@ you already read the label, it is noise; drop it.
 |------|---------|----------------------------|
 | plus | New Profile, Create Suite, Add Question | "Something new appears" — recognised without reading |
 | play | Start Benchmark, Acknowledge & Start Run, **Continue — <reason>** (the battery and series progress dialogs), **Build makedefs** (the Developer Tools GnollHack Source dashboard) | "This begins now", and it reinforces the consequence of a button that starts real work |
-| trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center, on each written row of the Model Comparison wizard's step 3 *Documents of this comparison*, and on the run report's AI Reports tab, and the **Delete** of its confirmation), **Delete** a saved Chat Consistency analysis (`.btn-ghost.btn-ghost-danger`, each Analysis History card, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
-| pencil (Feather *edit-3*) | **Edit** (a battery card's actions), **Rename comparison** (icon-only `.action-btn` beside *Comparison #N — name* in the Model Comparison wizard's header; opens the nested rename dialog) | "Change this thing's text in place" — it edits a name or a definition and runs nothing |
+| trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center, on each written row of the Model Comparison wizard's step 3 *Documents of this comparison*, and on the run report's AI Reports tab, and the **Delete** of its confirmation), **Delete** a saved Chat Consistency analysis (`.btn-ghost.btn-ghost-danger`, each Analysis History card, and the **Delete** of its confirmation), **Delete the default {provider} key** (icon-only `.action-btn-danger`, each card of the Default API Keys dialog) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
+| pencil (Feather *edit-3*) | **Edit** (a battery card's actions), **Rename comparison** (icon-only `.action-btn` beside *Comparison #N — name* in the Model Comparison wizard's header; opens the nested rename dialog), **Replace the default {provider} key** (icon-only `.action-btn`, each card of the Default API Keys dialog; reveals the key input) | "Change this thing's text in place" — it edits a name or a definition and runs nothing |
 | refresh / rotate | Refresh, Re-run failed questions, Re-run question, Re-assess question, **Re-run** (the run report's popover trigger, followed by a chevron state indicator), the icon-only **Recompute** of the Model Comparison, the icon-only **Reload runs** (the Chat Consistency wizard's header, steps 1 and 2), **Re-index Source Files** (`.btn-gh`, the GnollHack Source dashboard) and its load error's **Retry** (`.btn-ghost`), **Re-check** (`.btn-ghost`, the Configuration Health dashboard) | "This runs again" — the circular-arrow convention is universal; the repair verbs that use it are in §4g |
 | flask | **Try another assessor (does not change the score)** (`.btn-ghost`, each question of the run report) | "An experiment": it records another assessor's verdict beside the score and changes nothing, so it must not look like the repairs beside it |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
@@ -591,6 +591,13 @@ build output** an icon-only* copy*. Configuration Health's **Re-check** is a `.b
 The glyphs of the dashboards' `.gh-health-status` words (check-circle, alert-triangle, alert-circle,
 info) are status icons beside a word, not button glyphs. The AI configuration access dialog's **Done**
 is text-only `btn-gh-cancel`, since every switch commits at once.*
+
+*Changed 2026-10-18 (Default API Keys cards): each provider card's **Replace Key** and **Delete Key**
+image buttons became icon-only `.action-btn`s at the card's top right: **Replace the default
+{provider} key** with* pencil *and **Delete the default {provider} key** with* trash *on
+`.action-btn-danger`, each with an `interestfor` tooltip (*Replace key*, *Delete key*). The delete
+confirmation keeps its text **Delete Key** on `btn-gh btn-gh-delete`, and the input row's **Cancel**
+and **Verify and Save** stay `.btn-gh`. No glyph or class is new.*
 
 **Leave the icon off when the label is already the whole message:**
 

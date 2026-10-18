@@ -167,7 +167,7 @@ describe('AdminApiKeysComponent', () => {
     expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
   });
 
-  it('puts the key\'s actions beside its summary in a wide card and under it in a narrow one', async () => {
+  it('keeps the key\'s actions beside its summary in a wide and a narrow card', async () => {
     const host = fixture.nativeElement as HTMLElement;
     host.style.display = 'block';
     host.style.width = '1200px';
@@ -175,18 +175,54 @@ describe('AdminApiKeysComponent', () => {
 
     const main = card('Anthropic').querySelector('.aak-card-main') as HTMLElement;
     const actions = card('Anthropic').querySelector('.aak-actions') as HTMLElement;
-    let mainBox = main.getBoundingClientRect();
-    let actionsBox = actions.getBoundingClientRect();
-    expect(actionsBox.top).toBeLessThan(mainBox.bottom);
-    expect(actionsBox.bottom).toBeGreaterThan(mainBox.top);
-    expect(actionsBox.left).toBeGreaterThanOrEqual(mainBox.right);
+    for (const width of ['1200px', '320px']) {
+      host.style.width = width;
+      fixture.detectChanges();
+      const mainBox = main.getBoundingClientRect();
+      const actionsBox = actions.getBoundingClientRect();
+      expect(actionsBox.top).toBeLessThan(mainBox.bottom);
+      expect(actionsBox.bottom).toBeGreaterThan(mainBox.top);
+      expect(actionsBox.left).toBeGreaterThanOrEqual(mainBox.right);
+      expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
+    }
+  });
 
-    host.style.width = '320px';
+  it('names each icon-only action for its provider and gives it a tooltip', async () => {
+    await render([status('Anthropic', { hasKey: true, keyHint: 'ab12' }), status('Google'), status('OpenAI')]);
+
+    const anthropic = card('Anthropic');
+    const cases = [
+      { selector: '.aak-replace', name: 'Replace the default Anthropic key', tip: 'Replace key', danger: false },
+      { selector: '.aak-delete', name: 'Delete the default Anthropic key', tip: 'Delete key', danger: true }
+    ];
+    for (const c of cases) {
+      const button = anthropic.querySelector(c.selector) as HTMLButtonElement;
+      expect(button.classList.contains('action-btn')).toBe(true);
+      expect(button.classList.contains('action-btn-danger')).toBe(c.danger);
+      expect(button.getAttribute('aria-label')).toBe(c.name);
+      expect(button.textContent!.trim()).toBe('');
+      expect(button.hasAttribute('title')).toBe(false);
+      expect(button.querySelector('svg.btn-icon')!.getAttribute('aria-hidden')).toBe('true');
+
+      const tipId = button.getAttribute('interestfor')!;
+      expect(button.getAttribute('style')).toContain(`anchor-name: --${tipId}`);
+      const tip = fixture.nativeElement.querySelector('#' + tipId) as HTMLElement;
+      expect(tip.getAttribute('popover')).toBe('hint');
+      expect(tip.hasAttribute('role')).toBe(false);
+      expect(tip.getAttribute('style')).toContain(`position-anchor: --${tipId}`);
+      expect(tip.textContent!.trim()).toBe(c.tip);
+    }
+  });
+
+  it('gives the card title level 3 inside the dialog and its native level with the heading', async () => {
+    await render([status('Anthropic'), status('Google'), status('OpenAI')]);
+    const title = () => card('Anthropic').querySelector('h4.aak-card-title') as HTMLElement;
+    expect(title().hasAttribute('aria-level')).toBe(false);
+
+    fixture.componentRef.setInput('showHeading', false);
     fixture.detectChanges();
-    mainBox = main.getBoundingClientRect();
-    actionsBox = actions.getBoundingClientRect();
-    expect(actionsBox.top).toBeGreaterThanOrEqual(mainBox.bottom);
-    expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
+    await fixture.whenStable();
+    expect(title().getAttribute('aria-level')).toBe('3');
   });
 
   it('orders the card as summary, actions or input, then Used by', async () => {
@@ -321,7 +357,9 @@ describe('AdminApiKeysComponent', () => {
 
     (card('Anthropic').querySelector('.aak-cancel-replace') as HTMLButtonElement).click();
     fixture.detectChanges();
+    await fixture.whenStable();
     expect(input('Anthropic')).toBeNull();
+    expect(document.activeElement).toBe(card('Anthropic').querySelector('.aak-replace'));
   });
 
   it('the delete dialog shows the count and names from the deletion check, and deletes', async () => {

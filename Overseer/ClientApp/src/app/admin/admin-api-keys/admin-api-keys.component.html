@@ -18,7 +18,7 @@
         <div class="aak-card-top">
           <div class="aak-card-main">
             <div class="aak-card-header">
-              <h4 class="aak-card-title" [id]="'aak-title-' + provider">{{ provider }}</h4>
+              <h4 class="aak-card-title" [id]="'aak-title-' + provider" [attr.aria-level]="showHeading ? null : 3">{{ provider }}</h4>
               <span class="status-badge aak-key-badge" [class.badge-success]="status.hasKey" [class.badge-warning]="!status.hasKey">
                 {{ status.hasKey ? 'Default key saved' : 'No default key' }}
               </span>
@@ -54,11 +54,26 @@
 
           @if (!showsInput(provider)) {
             <div class="aak-actions" role="group" [attr.aria-label]="'Actions for ' + provider">
-              <button type="button" class="btn-gh aak-replace" (click)="startReplace(provider)">Replace Key</button>
-              <button type="button" class="btn-gh btn-gh-delete aak-delete" (click)="requestDelete(provider)">
-                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                Delete Key
+              <button type="button" class="action-btn aak-replace"
+                      [id]="replaceButtonId(provider)"
+                      [attr.aria-label]="'Replace the default ' + provider + ' key'"
+                      [attr.interestfor]="'aak-replace-tip-' + provider"
+                      [attr.style]="'anchor-name: --aak-replace-tip-' + provider"
+                      (click)="startReplace(provider)">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
               </button>
+              <div popover="hint" class="gh-tooltip" [id]="'aak-replace-tip-' + provider"
+                   [attr.style]="'position-anchor: --aak-replace-tip-' + provider">Replace key</div>
+
+              <button type="button" class="action-btn action-btn-danger aak-delete"
+                      [attr.aria-label]="'Delete the default ' + provider + ' key'"
+                      [attr.interestfor]="'aak-delete-tip-' + provider"
+                      [attr.style]="'anchor-name: --aak-delete-tip-' + provider"
+                      (click)="requestDelete(provider)">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+              </button>
+              <div popover="hint" class="gh-tooltip" [id]="'aak-delete-tip-' + provider"
+                   [attr.style]="'position-anchor: --aak-delete-tip-' + provider">Delete key</div>
             </div>
           }
         </div>

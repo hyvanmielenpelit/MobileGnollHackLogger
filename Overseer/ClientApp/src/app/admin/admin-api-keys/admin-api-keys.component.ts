@@ -146,6 +146,10 @@ export class AdminApiKeysComponent implements OnInit, OnChanges, OnDestroy {
     return `aak-error-${provider}`;
   }
 
+  replaceButtonId(provider: string): string {
+    return `aak-replace-${provider}`;
+  }
+
   onKeyInput(provider: string): void {
     if (this.errors[provider]) {
       this.errors[provider] = null;
@@ -161,11 +165,13 @@ export class AdminApiKeysComponent implements OnInit, OnChanges, OnDestroy {
     this.focusInput(provider);
   }
 
+  /** Hides the input and returns focus to the provider's Replace button, which opened it. */
   cancelReplace(provider: string): void {
     this.replacing[provider] = false;
     this.keyInputs[provider] = '';
     this.errors[provider] = null;
-    this.cdr.markForCheck();
+    this.cdr.detectChanges();
+    this.host.nativeElement.querySelector<HTMLButtonElement>('#' + this.replaceButtonId(provider))?.focus();
   }
 
   // --- Saving ---
