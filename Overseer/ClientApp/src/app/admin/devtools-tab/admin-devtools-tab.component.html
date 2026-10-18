@@ -1,17 +1,19 @@
-<div class="tab-header-row">
-  <h3 class="m-0">Services</h3>
-</div>
+<div class="devtools-head">
+  <div class="tab-header-row">
+    <h3 class="m-0">Services</h3>
+  </div>
 
-<div class="gh-tabs gh-tabs-secondary gh-tabs-wrap devtools-subtabs" role="tablist" aria-label="Service sections">
-  @for (tab of subTabs; track tab; let i = $index) {
-    <button type="button" role="tab" class="gh-tab"
-            [id]="'devtools-subtab-' + tab"
-            [attr.aria-controls]="'devtools-subpanel-' + tab"
-            [attr.aria-selected]="subTab === tab"
-            [attr.tabindex]="subTab === tab ? 0 : -1"
-            (keydown)="onSubTabKeydown($event, i)"
-            (click)="selectSubTab(tab)">{{ subTabLabels[tab] }}</button>
-  }
+  <div class="gh-tabs gh-tabs-secondary gh-tabs-wrap devtools-subtabs" role="tablist" aria-label="Service sections">
+    @for (tab of subTabs; track tab; let i = $index) {
+      <button type="button" role="tab" class="gh-tab"
+              [id]="'devtools-subtab-' + tab"
+              [attr.aria-controls]="'devtools-subpanel-' + tab"
+              [attr.aria-selected]="subTab === tab"
+              [attr.tabindex]="subTab === tab ? 0 : -1"
+              (keydown)="onSubTabKeydown($event, i)"
+              (click)="selectSubTab(tab)">{{ subTabLabels[tab] }}</button>
+    }
+  </div>
 </div>
 
 @if (subTab === 'source') {

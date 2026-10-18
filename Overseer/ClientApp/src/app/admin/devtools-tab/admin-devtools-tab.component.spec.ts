@@ -38,6 +38,19 @@ describe('AdminDevtoolsTabComponent', () => {
     expect(host().querySelector('.tab-header-row h3')?.textContent?.trim()).toBe('Services');
   });
 
+  it('keeps the heading and the sub-tab row together in one sticky head over an opaque ground', () => {
+    fixture.detectChanges();
+
+    const head = host().querySelector('.devtools-head') as HTMLElement;
+    expect(head.querySelector('.tab-header-row')).not.toBeNull();
+    const list = head.querySelector('[role="tablist"]') as HTMLElement;
+    expect(list).not.toBeNull();
+    const style = getComputedStyle(head);
+    expect(style.position).toBe('sticky');
+    expect(style.top).toBe('0px');
+    expect(getComputedStyle(list).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+  });
+
   it('renders six sub-tabs in order with the tab contract, GnollHack Source selected', () => {
     fixture.detectChanges();
 
@@ -190,6 +203,15 @@ describe('AdminDevtoolsTabComponent', () => {
 
       const facts = Array.from(panel.querySelectorAll('.devtools-sentry-facts dd')).map(d => d.textContent?.trim());
       expect(facts).toEqual(['Not initialized', 'Not initialized', 'Sent through /api/sentry/log']);
+    });
+
+    it('sizes the warning banner to its content, not to the 18rem flex basis', () => {
+      openSentry();
+
+      const banner = host().querySelector('#devtools-sentry-warning') as HTMLElement;
+      expect(getComputedStyle(banner).flexGrow).toBe('0');
+      // A banner that took the flex basis as its height was 288 px (18rem).
+      expect(banner.getBoundingClientRect().height).toBeLessThan(160);
     });
 
     it('reports the backend test as sent when the server throws, without a toast', () => {

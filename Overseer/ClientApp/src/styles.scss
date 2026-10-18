@@ -2929,7 +2929,8 @@ label.checkbox-label,
    - .gh-dash-card and .gh-dash-card-head: a card (a section headed by an h4.gh-section-title) and
      its heading row.
    - .gh-dash-banner[data-status], with .gh-dash-banner-word and .gh-dash-banner-sentence: the status
-     banner. data-status takes the .gh-health-status words and colors the start edge.
+     banner. data-status takes the .gh-health-status words and colors the start edge. In a wrapping
+     row head it grows from 18rem; directly in .gh-dash-root it is as tall as its content.
    - .gh-dash-actions: a wrapping row of action buttons. .gh-dash-load-error: the failed-poll line
      with its Retry. .gh-dash-facts: a dl of div groups, the label above the value, side by side
      from 40rem.
@@ -3012,6 +3013,11 @@ label.checkbox-label,
   flex: 1 1 14rem;
   min-inline-size: 0;
   color: var(--gh-dash-ink-soft);
+}
+
+/* In the dashboard column the banner takes its content height; flex-basis would set its height. */
+.gh-dash-root > .gh-dash-banner {
+  flex: none;
 }
 
 .gh-dash-actions {

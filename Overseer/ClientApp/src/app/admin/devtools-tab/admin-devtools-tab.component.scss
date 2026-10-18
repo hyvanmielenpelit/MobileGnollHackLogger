@@ -7,9 +7,24 @@
 @include shared.tab-header-row;
 @include shared.text-muted;
 
-/* Sub-tabs */
+/* The header and the sub-tab row stick together to the top of .tab-content (admin.component.scss),
+   the scrolling ancestor. The sub-tab row's ground is opaque, gap included, so the translucent
+   panel's content cannot scroll through it. */
+.devtools-head {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+
+  .tab-header-row {
+    margin-bottom: 0;
+  }
+}
+
 .devtools-subtabs {
-  margin-top: 1rem;
+  padding-top: 1rem;
+  background: rgba(17, 17, 17, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .devtools-subpanel {
