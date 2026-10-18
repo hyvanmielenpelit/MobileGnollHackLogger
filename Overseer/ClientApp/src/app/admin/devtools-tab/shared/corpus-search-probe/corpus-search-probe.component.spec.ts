@@ -245,4 +245,32 @@ describe('CorpusSearchProbeComponent', () => {
     expect(request.request.body).toEqual({ query: 'altars' });
     request.flush(buildCorpusProbeResult({ toolName: 'get_knowledge_article' }));
   });
+
+  describe('form layout', () => {
+    const center = (node: Element) => {
+      const rect = node.getBoundingClientRect();
+      return rect.top + rect.height / 2;
+    };
+
+    it('centers Run probe on the text box, under its label', () => {
+      render({ queryLabel: 'Topic' });
+      const input = queryInput();
+      const label = q('label[for="gw-probe-query"]')!;
+
+      expect(input.getBoundingClientRect().height).toBeGreaterThan(0);
+      expect(Math.abs(center(runButton()) - center(input))).toBeLessThanOrEqual(1);
+      expect(label.getBoundingClientRect().bottom).toBeLessThanOrEqual(input.getBoundingClientRect().top);
+    });
+
+    it('centers Run probe and the filter select on the text box', () => {
+      render({ filterLabel: 'Category', filterOptions: ['Monsters', 'Items'] });
+      const input = queryInput();
+      const select = q<HTMLSelectElement>('#gw-probe-filter')!;
+
+      expect(Math.abs(center(runButton()) - center(input))).toBeLessThanOrEqual(1);
+      expect(Math.abs(center(select) - center(input))).toBeLessThanOrEqual(1);
+      expect(q('label[for="gw-probe-filter"]')!.getBoundingClientRect().bottom)
+        .toBeLessThanOrEqual(select.getBoundingClientRect().top);
+    });
+  });
 });

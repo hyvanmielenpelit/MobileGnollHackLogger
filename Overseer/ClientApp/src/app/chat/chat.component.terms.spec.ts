@@ -255,18 +255,15 @@ describe('ChatComponent Terms gate', () => {
     expect(host().querySelector('#tip-send-blocked')?.textContent?.trim()).toBe('Suspended.');
   });
 
-  it('opens the Terms to read from the sidebar', async () => {
+  it('does not offer the Terms in the sidebar', async () => {
     signIn(ACCEPTED);
     load();
     await nextTask();
 
-    const link = host().querySelector<HTMLButtonElement>('.bottom-links .bottom-link-btn')!;
-    expect(link.textContent?.trim()).toBe('Terms');
-    link.click();
-    fixture.detectChanges();
-
-    expect(termsDialog().open).toBe(true);
-    expect(component.termsDialog!.mode).toBe('view');
-    expect(host().querySelector('.terms-decline')).toBeNull();
+    const links = host().querySelector<HTMLElement>('.bottom-links')!;
+    const texts = Array.from(links.querySelectorAll('a, button')).map(e => e.textContent?.trim());
+    expect(texts).toContain('Logout');
+    expect(texts).not.toContain('Terms');
+    expect(host().querySelector('.bottom-links .bottom-link-btn')).toBeNull();
   });
 });

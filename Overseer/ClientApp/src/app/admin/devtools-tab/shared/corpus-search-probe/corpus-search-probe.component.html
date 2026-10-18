@@ -22,7 +22,7 @@
       }
     </div>
     @if (hasFilter) {
-      <div class="csp-field">
+      <div class="csp-field csp-filter-field">
         <label class="csp-label" [for]="p + '-probe-filter'">{{ filterLabel }}</label>
         <select class="gh-input" [id]="p + '-probe-filter'" name="filter" (change)="onFilterChange($event)">
           <option value="" [selected]="filter === ''">{{ filterAnyLabel }}</option>

@@ -25,7 +25,7 @@ Admin → **Services** (`/admin/services`) has six sub-tabs, in this order:
 | NetHack Wiki | `/admin/services/nethack-wiki` | The NetHack wiki index and its last regeneration (§ 4) |
 | Knowledge Base | `/admin/services/knowledge-base` | The knowledge base articles (§ 5) |
 | Configuration Health | `/admin/services/config-health` | The configuration report (`configuration_management` § 4) |
-| Developer Tools | `/admin/services/developer-tools` | The *Sentry Crash Reporting* fieldset: **Test Frontend Error** and **Test Backend Error** |
+| Developer Tools | `/admin/services/developer-tools` | The *Sentry Crash Reporting* panel: a warning banner, the release and environment Sentry reports carry, and **Test Frontend Error** / **Test Backend Error**, each with its result line |
 
 The visible names and the address slugs are `Services` and `developer-tools`; the code ids stay
 `devtools` and `sentry`, as do `devtools-tab/`, the DOM ids and the API route `api/admin/devtools`.

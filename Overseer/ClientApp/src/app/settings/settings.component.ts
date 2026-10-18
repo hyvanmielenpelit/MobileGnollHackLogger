@@ -50,7 +50,7 @@ export interface DlpClassOption {
 }
 
 /** The settings sections a URL segment can name. */
-export type SettingsSection = 'general' | 'api-keys' | 'models' | 'permissions' | 'performance' | 'confidentiality' | 'provided-models' | 'masking' | 'chats' | 'version';
+export type SettingsSection = 'general' | 'api-keys' | 'models' | 'permissions' | 'performance' | 'confidentiality' | 'provided-models' | 'masking' | 'chats' | 'terms' | 'version';
 
 /** The three states of a per-model confidential-trust decision, as the `<select>` carries them. */
 export type ProvidedModelTrustChoice = 'yes' | 'no' | 'undecided';
@@ -85,7 +85,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   appVersion = '';
 
-  /** The signed-in user as `/api/auth/me` reports it, for the Terms status in the Version section; null until known. */
+  /** The signed-in user as `/api/auth/me` reports it, for the Terms status in the Terms of Service section; null until known. */
   termsUser: AuthUser | null = null;
   private termsStatusSubscription?: Subscription;
 
@@ -100,6 +100,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     { id: 'provided-models', label: 'System Model Confidentiality', title: 'System Models for Confidential Chats', hint: 'Models provided for you, and your decision on each for confidential chats' },
     { id: 'masking', label: 'Outbound Masking', hint: 'Secrets replaced before sending' },
     { id: 'chats', label: 'Chat Data', hint: 'Active, pinned and trashed chats' },
+    { id: 'terms', label: 'Terms of Service', hint: 'The Terms, and your acceptance' },
     { id: 'version', label: 'Version', hint: 'Overseer version and release notes' }
   ];
 

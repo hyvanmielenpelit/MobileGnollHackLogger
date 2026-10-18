@@ -1,10 +1,14 @@
+import { ErrorHandler } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
+import { Subject, of, throwError } from 'rxjs';
 import { AdminDevtoolsTabComponent } from './admin-devtools-tab.component';
 import { AdminService } from '../../services/admin.service';
 import { AdminDevtoolsService } from '../../services/admin-devtools.service';
 import { AdminPageStore } from '../admin-page.store';
-import { configureAdminTestBed } from '../admin.component.testing';
+import { adminTestRoutes, configureAdminTestBed } from '../admin.component.testing';
 
 describe('AdminDevtoolsTabComponent', () => {
   let fixture: ComponentFixture<AdminDevtoolsTabComponent>;
@@ -141,25 +145,145 @@ describe('AdminDevtoolsTabComponent', () => {
     expect(devtoolsService.getConfigHealth).toHaveBeenCalled();
   });
 
-  it('keeps the Sentry test buttons in a Sentry Crash Reporting fieldset in the Developer Tools panel', () => {
-    const backend = vi.spyOn(adminService, 'triggerBackendSentryError').mockReturnValue(of({}));
-    const toast = vi.spyOn(store, 'showToast');
-    store.devtoolsSubTab = 'sentry';
-    fixture.detectChanges();
+  describe('Sentry Crash Reporting panel', () => {
+    const sentryButton = (label: string) =>
+      Array.from(host().querySelectorAll('#devtools-subpanel-sentry .btn-gh'))
+        .find(b => b.textContent?.trim() === label) as HTMLButtonElement;
+    const resultLine = (kind: string) => host().querySelector(`#devtools-sentry-${kind}-result`) as HTMLElement;
 
-    const panel = host().querySelector('#devtools-subpanel-sentry') as HTMLElement;
-    expect(panel.querySelector('h1, h2, h3, h4, h5, h6')).toBeNull();
-    const fieldset = panel.querySelector('fieldset.gh-fieldset') as HTMLFieldSetElement;
-    expect(fieldset.querySelector('legend')?.textContent?.trim()).toBe('Sentry Crash Reporting');
-    const buttons = Array.from(fieldset.querySelectorAll('.devtools-button-group .btn-gh')) as HTMLButtonElement[];
-    expect(buttons.map(b => b.textContent?.trim())).toEqual(['Test Frontend Error', 'Test Backend Error']);
-    expect(buttons.every(b => b.getAttribute('type') === 'button')).toBe(true);
-    expect(buttons.every(b => b.getAttribute('aria-describedby') === 'devtools-sentry-warning')).toBe(true);
-    expect(fieldset.querySelector('#devtools-sentry-warning')?.textContent).toContain('send real error reports');
+    function openSentry(): void {
+      store.devtoolsSubTab = 'sentry';
+      fixture.detectChanges();
+    }
 
-    buttons[1].click();
+    it('renders the Sentry panel: warning banner, card, facts, two tests and the Configuration Health link', () => {
+      openSentry();
 
-    expect(backend).toHaveBeenCalledTimes(1);
-    expect(toast).toHaveBeenCalledWith('Sending backend crash request...', 'info', 'Sentry Test');
+      const panel = host().querySelector('#devtools-subpanel-sentry') as HTMLElement;
+      const banner = panel.querySelector('#devtools-sentry-warning') as HTMLElement;
+      expect(banner.classList).toContain('gh-dash-banner');
+      expect(banner.getAttribute('data-status')).toBe('warning');
+      expect(banner.textContent).toContain('real, unhandled exceptions');
+
+      expect(panel.querySelector('h4#devtools-sentry-title')?.textContent?.trim()).toBe('Sentry Crash Reporting');
+      const tests = Array.from(panel.querySelectorAll('article.devtools-sentry-test')) as HTMLElement[];
+      expect(tests.map(t => t.querySelector('h5')?.textContent?.trim())).toEqual(['Frontend error', 'Backend error']);
+      expect(tests.map(t => t.getAttribute('aria-labelledby')))
+        .toEqual(['devtools-sentry-frontend-title', 'devtools-sentry-backend-title']);
+
+      const buttons = Array.from(panel.querySelectorAll('.devtools-sentry-test .btn-gh')) as HTMLButtonElement[];
+      expect(buttons.map(b => b.textContent?.trim())).toEqual(['Test Frontend Error', 'Test Backend Error']);
+      expect(buttons.every(b => b.getAttribute('type') === 'button')).toBe(true);
+      expect(buttons.map(b => b.getAttribute('aria-describedby'))).toEqual([
+        'devtools-sentry-warning devtools-sentry-frontend-result',
+        'devtools-sentry-warning devtools-sentry-backend-result'
+      ]);
+      expect(buttons.every(b => !b.hasAttribute('aria-disabled'))).toBe(true);
+      for (const kind of ['frontend', 'backend']) {
+        expect(resultLine(kind).getAttribute('role')).toBe('status');
+        expect(resultLine(kind).textContent?.trim()).toBe('');
+      }
+
+      const link = panel.querySelector('.devtools-sentry-help a') as HTMLAnchorElement;
+      expect(link.textContent?.trim()).toBe('Configuration Health');
+      expect(link.getAttribute('href')).toBe('/admin/services/config-health');
+
+      const facts = Array.from(panel.querySelectorAll('.devtools-sentry-facts dd')).map(d => d.textContent?.trim());
+      expect(facts).toEqual(['Not initialized', 'Not initialized', 'Sent through /api/sentry/log']);
+    });
+
+    it('reports the backend test as sent when the server throws, without a toast', () => {
+      const backend = vi.spyOn(adminService, 'triggerBackendSentryError')
+        .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      const toast = vi.spyOn(store, 'showToast');
+      openSentry();
+
+      sentryButton('Test Backend Error').click();
+      fixture.detectChanges();
+
+      expect(backend).toHaveBeenCalledTimes(1);
+      const line = resultLine('backend');
+      expect(line.querySelector('.gh-health-status')?.getAttribute('data-status')).toBe('ok');
+      expect(line.textContent).toContain('Sent');
+      expect(line.textContent).toContain('HTTP 500');
+      expect(toast).not.toHaveBeenCalled();
+    });
+
+    it('keeps the backend button unavailable while the request is in flight', () => {
+      const pending = new Subject<unknown>();
+      const backend = vi.spyOn(adminService, 'triggerBackendSentryError').mockReturnValue(pending);
+      openSentry();
+
+      sentryButton('Test Backend Error').click();
+      fixture.detectChanges();
+
+      expect(sentryButton('Test Backend Error').getAttribute('aria-disabled')).toBe('true');
+      expect(resultLine('backend').querySelector('app-loading-indicator')).toBeTruthy();
+
+      sentryButton('Test Backend Error').click();
+      fixture.detectChanges();
+      expect(backend).toHaveBeenCalledTimes(1);
+      pending.complete();
+    });
+
+    it('reports an answer without a throw as unexpected', () => {
+      vi.spyOn(adminService, 'triggerBackendSentryError').mockReturnValue(of({}));
+      openSentry();
+
+      sentryButton('Test Backend Error').click();
+      fixture.detectChanges();
+
+      const line = resultLine('backend');
+      expect(line.querySelector('.gh-health-status')?.getAttribute('data-status')).toBe('warning');
+      expect(line.textContent).toContain('Unexpected');
+      expect(line.textContent).toContain('Nothing was reported');
+      expect(sentryButton('Test Backend Error').hasAttribute('aria-disabled')).toBe(false);
+    });
+
+    it('reports an unreachable server as failed', () => {
+      vi.spyOn(adminService, 'triggerBackendSentryError')
+        .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+      openSentry();
+
+      sentryButton('Test Backend Error').click();
+      fixture.detectChanges();
+
+      const line = resultLine('backend');
+      expect(line.querySelector('.gh-health-status')?.getAttribute('data-status')).toBe('error');
+      expect(line.textContent).toContain('Failed');
+      expect(line.textContent).toContain('no response');
+    });
+
+    it('throws the frontend test error to the error handler and reports it as sent', async () => {
+      // TestBed rethrows application errors outside the click; this run hands them to a spy instead.
+      fixture.destroy();
+      TestBed.resetTestingModule();
+      const handleError = vi.fn();
+      await TestBed.configureTestingModule({
+        imports: [AdminDevtoolsTabComponent],
+        providers: [
+          provideRouter(adminTestRoutes()),
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          AdminPageStore,
+          { provide: ErrorHandler, useValue: { handleError } }
+        ],
+        rethrowApplicationErrors: false
+      }).compileComponents();
+      store = TestBed.inject(AdminPageStore);
+      fixture = TestBed.createComponent(AdminDevtoolsTabComponent);
+      openSentry();
+
+      sentryButton('Test Frontend Error').click();
+      fixture.detectChanges();
+
+      expect(handleError).toHaveBeenCalledTimes(1);
+      expect(handleError.mock.calls[0][0]).toBeInstanceOf(Error);
+      expect((handleError.mock.calls[0][0] as Error).message).toBe('Sentry Frontend Crash Test triggered by Admin');
+      const line = resultLine('frontend');
+      expect(line.querySelector('.gh-health-status')?.getAttribute('data-status')).toBe('ok');
+      expect(line.textContent).toContain('Sent');
+      expect(line.textContent).toContain('Thrown at');
+    });
   });
 });

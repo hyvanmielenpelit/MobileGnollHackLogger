@@ -395,7 +395,7 @@ The Angular application's routes are defined in `app.routes.ts`. The primary pag
 - `/chat` (`chat.component`): The main chat interface.
 - `/settings` and `/settings/:section` (`settings.component`): User preferences, sectioned.
   `:section` is one of, in nav order, `general`, `api-keys`, `models`, `permissions`,
-  `performance`, `confidentiality`, `provided-models`, `masking`, `chats`, `version`; a bare
+  `performance`, `confidentiality`, `provided-models`, `masking`, `chats`, `terms`, `version`; a bare
   `/settings` or an unknown section shows General.
 - `/api-keys` and `/models` are redirects to `/settings/api-keys` and `/settings/models`, whose
   content is `api-keys.component` (user API keys) and `models.component` (the user's AI models)

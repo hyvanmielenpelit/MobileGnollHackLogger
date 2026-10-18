@@ -4051,13 +4051,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     dialog.open('gate', this.termsGateSessionId);
   }
 
-  /** The sidebar's Terms link: the Terms to read, with nothing to accept. */
-  openTermsView(event?: Event): void {
-    event?.preventDefault();
-    this.closeSidebar();
-    this.termsDialog?.open('view');
-  }
-
   /**
    * The gate recorded the acceptance. The composer is enabled again; when the server started the
    * handoff chat's greeting, that chat shows the waiting state a handoff greeting shows.

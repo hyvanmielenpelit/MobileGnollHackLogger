@@ -1056,12 +1056,12 @@ describe('SettingsComponent', () => {
       fixture.detectChanges();
     }
 
-    it('renders ten nav links with the expected labels and routerLinks', () => {
+    it('renders eleven nav links with the expected labels and routerLinks', () => {
       const compiled = fixture.nativeElement as HTMLElement;
       const links = compiled.querySelectorAll('.settings-nav-link');
-      const expectedLabels = ['General', 'API Keys', 'AI Models', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'System Model Confidentiality', 'Outbound Masking', 'Chat Data', 'Version'];
+      const expectedLabels = ['General', 'API Keys', 'AI Models', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'System Model Confidentiality', 'Outbound Masking', 'Chat Data', 'Terms of Service', 'Version'];
 
-      expect(links.length).toBe(10);
+      expect(links.length).toBe(11);
       links.forEach((link, i) => {
         expect(link.querySelector('.settings-nav-label')?.textContent).toBe(expectedLabels[i]);
       });
@@ -1089,6 +1089,7 @@ describe('SettingsComponent', () => {
       expect(row).toBeTruthy();
       expect(row!.querySelector('.version-notes-btn')?.textContent?.trim()).toContain('Release Notes');
       expect(compiled.querySelector('fieldset.version-fieldset')).toBeNull();
+      expect(compiled.querySelector('.legal-block')).toBeNull();
     });
 
     it('does not render the version row in the General section', () => {
@@ -1101,6 +1102,12 @@ describe('SettingsComponent', () => {
       emitSection('version');
       expect(component.activeSection).toBe('version');
       expect(component.contentSectionLabel).toBe('Version');
+    });
+
+    it('a paramMap emitting terms sets activeSection and the header label', () => {
+      emitSection('terms');
+      expect(component.activeSection).toBe('terms');
+      expect(component.contentSectionLabel).toBe('Terms of Service');
     });
 
     it('shows the full title in the content header for System Model Confidentiality', () => {
@@ -1396,7 +1403,7 @@ describe('SettingsComponent', () => {
   });
 });
 
-describe('SettingsComponent Legal block', () => {
+describe('SettingsComponent Terms of Service section', () => {
   let component: SettingsComponent;
   let fixture: ComponentFixture<SettingsComponent>;
   let paramMapSubject: Subject<ParamMap>;
@@ -1406,8 +1413,8 @@ describe('SettingsComponent Legal block', () => {
   const status = () => legal()?.querySelector('.legal-terms-status')?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
   const termsButton = () => legal()!.querySelector<HTMLButtonElement>('.legal-terms-btn')!;
 
-  /** Signs in the given user, then opens the Version section. */
-  async function showVersion(user: Partial<AuthUser>): Promise<void> {
+  /** Signs in the given user, then opens the Terms of Service section. */
+  async function showTerms(user: Partial<AuthUser>): Promise<void> {
     paramMapSubject = new Subject<ParamMap>();
     await TestBed.configureTestingModule({
       imports: [SettingsComponent],
@@ -1424,15 +1431,15 @@ describe('SettingsComponent Legal block', () => {
     fixture = TestBed.createComponent(SettingsComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
-    paramMapSubject.next(convertToParamMap({ section: 'version' }));
+    paramMapSubject.next(convertToParamMap({ section: 'terms' }));
     fixture.detectChanges();
   }
 
   it('says when the Terms were accepted and offers View Terms', async () => {
-    await showVersion({ termsRequiredVersion: '2026-10-18.2', termsAccepted: true, termsAcceptedVersion: '2026-10-18.2', termsAcceptedUtc: '2026-10-18T09:30:00Z' });
+    await showTerms({ termsRequiredVersion: '2026-10-18.2', termsAccepted: true, termsAcceptedVersion: '2026-10-18.2', termsAcceptedUtc: '2026-10-18T09:30:00Z' });
 
     const acceptedOn = new Date('2026-10-18T09:30:00Z').toLocaleDateString();
-    expect(legal()!.querySelector('h4')?.textContent?.trim()).toBe('Legal');
+    expect(host().querySelector('.settings-section-title')?.textContent).toBe('Terms of Service');
     expect(status()).toBe(`Terms of Service last updated 18 October 2026 (revision 2), accepted on ${acceptedOn}.`);
     expect(termsButton().textContent?.trim()).toBe('View Terms');
 
@@ -1446,7 +1453,7 @@ describe('SettingsComponent Legal block', () => {
   });
 
   it('says the Terms are not accepted yet and offers Review and accept, which opens the gate', async () => {
-    await showVersion({ termsRequiredVersion: '2026-10-18', termsAccepted: false, termsAcceptedVersion: null, termsAcceptedUtc: null });
+    await showTerms({ termsRequiredVersion: '2026-10-18', termsAccepted: false, termsAcceptedVersion: null, termsAcceptedUtc: null });
 
     expect(status()).toBe('Terms of Service last updated 18 October 2026. You have not accepted them yet.');
     expect(termsButton().textContent?.trim()).toBe('Review and accept');
@@ -1467,7 +1474,7 @@ describe('SettingsComponent Legal block', () => {
   });
 
   it('offers only View Terms when no version is required', async () => {
-    await showVersion({ termsRequiredVersion: null, termsAccepted: true, termsAcceptedVersion: null, termsAcceptedUtc: null });
+    await showTerms({ termsRequiredVersion: null, termsAccepted: true, termsAcceptedVersion: null, termsAcceptedUtc: null });
 
     expect(status()).toBeNull();
     expect(termsButton().textContent?.trim()).toBe('View Terms');

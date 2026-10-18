@@ -752,19 +752,9 @@
         </div>
 
       }
-      @case ('version') {
+      @case ('terms') {
 
-        <div class="version-row margin-y-20">
-          @if (appVersion) {
-            <p class="version-label">Overseer {{ appVersion }}</p>
-          } @else {
-            <p class="version-label version-loading">Loading...</p>
-          }
-          <button type="button" class="btn-gh version-notes-btn" (click)="openChangelog()">Release Notes</button>
-        </div>
-
-        <section class="legal-block" aria-labelledby="legal-heading">
-          <h4 id="legal-heading" class="legal-heading">Legal</h4>
+        <div class="legal-block margin-y-20">
           @switch (termsState) {
             @case ('accepted') {
               <p class="legal-terms-status">
@@ -783,7 +773,19 @@
             }
             <a class="legal-privacy-link" routerLink="/privacy">Privacy notice</a>
           </div>
-        </section>
+        </div>
+
+      }
+      @case ('version') {
+
+        <div class="version-row margin-y-20">
+          @if (appVersion) {
+            <p class="version-label">Overseer {{ appVersion }}</p>
+          } @else {
+            <p class="version-label version-loading">Loading...</p>
+          }
+          <button type="button" class="btn-gh version-notes-btn" (click)="openChangelog()">Release Notes</button>
+        </div>
 
       }
       }

@@ -456,10 +456,6 @@
 
 .bottom-links a { display: block; margin-block-start: 10px; text-decoration: none; color: var(--link-color); padding: 5px; }
 .bottom-links a:hover { background: rgba(255,255,255,0.05); border-radius: 4px; }
-/* A dialog opener among the links, drawn like them. */
-.bottom-links .bottom-link-btn { display: block; inline-size: 100%; margin-block-start: 10px; padding: 5px; border: none; background: none; color: var(--link-color); font: inherit; text-align: start; cursor: pointer; }
-.bottom-links .bottom-link-btn:hover { background: rgba(255,255,255,0.05); border-radius: 4px; }
-.bottom-links .bottom-link-btn:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 4px; }
 .chat-area { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
 .messages { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; }
 .conversation-loader {

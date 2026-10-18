@@ -15,23 +15,51 @@
   margin: 0;
 }
 
+// Two rows: every label in row 1, every control in row 2, and Run probe centered on row 2.
 .csp-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.5rem 0.75rem;
+  display: grid;
+  grid-template-columns: minmax(min(16rem, 100%), 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 0.75rem;
+  row-gap: 0.25rem;
+  align-items: center;
+
+  &:has(.csp-filter-field) {
+    grid-template-columns: minmax(min(16rem, 100%), 1fr) minmax(8rem, 12rem) auto;
+  }
 }
 
 .csp-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  flex: 0 1 12rem;
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
   min-inline-size: 0;
 }
 
-.csp-query-field {
-  flex: 1 1 16rem;
+.csp-run {
+  grid-row: 2;
+  align-self: center;
+}
+
+// Narrow card: one column, the button under the fields at the start.
+@container devtools-dash (width < 36rem) {
+  .csp-form,
+  .csp-form:has(.csp-filter-field) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    row-gap: 0.5rem;
+  }
+
+  .csp-field {
+    grid-row: auto;
+    grid-template-rows: auto auto;
+    row-gap: 0.25rem;
+  }
+
+  .csp-run {
+    grid-row: auto;
+    justify-self: start;
+  }
 }
 
 .csp-label {

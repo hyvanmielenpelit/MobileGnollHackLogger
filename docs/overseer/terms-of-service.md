@@ -87,9 +87,9 @@ disables the composer behind a banner, *To use Gnoll Overseer, accept the Terms 
 code also reopens it. A 409 `terms_version_changed` reloads the document and says *The Terms of Service
 have just changed. Please review them again.*
 
-The Terms are readable without accepting them: the public page `/terms` (no sign-in), the **Terms**
-link in the chat sidebar (the dialog in view mode), *Terms · Privacy* on the login page, the Legal block
-in Settings, and the Acceptable use section of `/privacy`. The account site's footer links the Overseer
+The Terms are readable without accepting them: the public page `/terms` (no sign-in), *Terms · Privacy*
+on the login page, the **Terms of Service** section of Settings (`/settings/terms`; the dialog in view
+mode, or in gate mode while acceptance is pending), and the Acceptable use section of `/privacy`. The account site's footer links the Overseer
 Terms always, and the account Terms while a version is required.
 
 **The account site.** Register shows the checkbox only while `account-terms` has a required version,

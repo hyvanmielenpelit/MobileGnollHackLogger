@@ -46,20 +46,72 @@
 
 @if (subTab === 'sentry') {
   <div role="tabpanel" id="devtools-subpanel-sentry" aria-labelledby="devtools-subtab-sentry" tabindex="0" class="devtools-subpanel">
-    <fieldset class="gh-fieldset devtools-sentry">
-      <legend>Sentry Crash Reporting</legend>
-      <p class="gh-fieldset-hint" id="devtools-sentry-hint">Send deliberate test errors to check that crash reports reach Sentry.</p>
-      <div class="devtools-button-group" role="group" aria-label="Sentry test errors">
-        <button type="button" class="btn-gh" aria-describedby="devtools-sentry-warning" (click)="triggerFrontendSentryError()">
-          Test Frontend Error
-        </button>
-        <button type="button" class="btn-gh" aria-describedby="devtools-sentry-warning" (click)="triggerBackendSentryError()">
-          Test Backend Error
-        </button>
+    <div class="gh-dash-root devtools-sentry">
+      <div class="gh-dash-banner" data-status="warning" id="devtools-sentry-warning">
+        <app-health-status class="gh-dash-banner-word" status="warning">Real reports</app-health-status>
+        <span class="gh-dash-banner-sentence">
+          These tests throw real, unhandled exceptions. Each click sends an error report to the
+          configured Sentry project and can notify its alert subscribers.
+        </span>
       </div>
-      <p class="text-muted mt-10 devtools-warning" id="devtools-sentry-warning">
-        Warning: Clicking these buttons will deliberately throw unhandled exceptions and send real error reports to your configured Sentry project.
-      </p>
-    </fieldset>
+
+      <section class="gh-dash-card" aria-labelledby="devtools-sentry-title">
+        <div class="gh-dash-card-head">
+          <h4 class="gh-section-title" id="devtools-sentry-title">Sentry Crash Reporting</h4>
+        </div>
+        <p class="gh-dash-note">Send a deliberate test error to check that crash reports reach Sentry.</p>
+
+        <dl class="gh-dash-facts devtools-sentry-facts">
+          <div><dt>Release</dt><dd class="gh-dash-mono">{{ sentryRelease }}</dd></div>
+          <div><dt>Environment</dt><dd>{{ sentryEnvironment }}</dd></div>
+          <div><dt>Browser reports</dt><dd><span>Sent through <code class="gh-dash-mono">/api/sentry/log</code></span></dd></div>
+        </dl>
+
+        <div class="devtools-sentry-tests">
+          @for (test of sentryTests; track test.kind) {
+            @let r = result(test.kind);
+            <article class="devtools-sentry-test" [attr.aria-labelledby]="'devtools-sentry-' + test.kind + '-title'">
+              <h5 class="devtools-sentry-test-title" [id]="'devtools-sentry-' + test.kind + '-title'">{{ test.title }}</h5>
+              <p class="devtools-sentry-test-text">{{ test.description }}</p>
+              <p class="devtools-sentry-test-issue">Issue title in Sentry: <code class="gh-dash-mono">{{ test.issueTitle }}</code></p>
+              <div class="gh-dash-actions">
+                <button type="button" class="btn-gh"
+                        [attr.aria-describedby]="'devtools-sentry-warning devtools-sentry-' + test.kind + '-result'"
+                        [attr.aria-disabled]="r.state === 'sending' ? 'true' : null"
+                        (click)="runSentryTest(test.kind)">{{ test.buttonLabel }}</button>
+              </div>
+              <p class="devtools-sentry-result" role="status" [id]="'devtools-sentry-' + test.kind + '-result'">
+                @switch (r.state) {
+                  @case ('sending') {
+                    <app-loading-indicator text="Sending the request…" [revealDelay]="false"></app-loading-indicator>
+                  }
+                  @case ('sent') {
+                    <app-health-status status="ok">Sent</app-health-status>
+                    @if (test.kind === 'frontend') {
+                      <span>Thrown at {{ r.at }}. Look for the issue in Sentry.</span>
+                    } @else {
+                      <span>The server threw the test exception (HTTP {{ r.httpStatus }}) at {{ r.at }}. Look for the issue in Sentry.</span>
+                    }
+                  }
+                  @case ('failed') {
+                    <app-health-status status="error">Failed</app-health-status>
+                    <span>The request did not reach the server ({{ r.httpStatus ? 'HTTP ' + r.httpStatus : 'no response' }}). Nothing was reported.</span>
+                  }
+                  @case ('unexpected') {
+                    <app-health-status status="warning">Unexpected</app-health-status>
+                    <span>The server answered without throwing. Nothing was reported.</span>
+                  }
+                }
+              </p>
+            </article>
+          }
+        </div>
+
+        <p class="gh-dash-note devtools-sentry-help">
+          Nothing in Sentry after a test? Check the Sentry DSN on
+          <a routerLink="/admin/services/config-health">Configuration Health</a>.
+        </p>
+      </section>
+    </div>
   </div>
 }
