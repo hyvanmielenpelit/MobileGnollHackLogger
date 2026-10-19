@@ -6259,6 +6259,12 @@ progress.job-progress {
   }
 }
 
+/* The search field holds focus and is the listbox's combobox; the ring is drawn on the active option. */
+.selector-popup:has(.model-picker-search:focus-visible) .model-option.is-active {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
+}
+
 .model-option {
   display: flex;
   align-items: center;
@@ -6494,6 +6500,271 @@ progress.job-progress {
       border-bottom-left-radius: 0;
       box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.8), inset 0 0 10px rgba(212, 175, 55, 0.1);
     }
+  }
+}
+
+/* A model picker's popup with the view toolbar (app-model-picker-tools): .selector-popup takes the
+   dropdown's place and frame, and holds the toolbar and then the listbox, which scrolls inside it.
+   Its width is fixed, so filtering never makes the popup jump. */
+.selector-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  box-sizing: border-box;
+  inline-size: min(480px, calc(100vw - 32px));
+  min-inline-size: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #181818;
+  border: 1px solid var(--primary-color);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+}
+
+.custom-model-selector.drops-up .selector-popup,
+.gh-multi-picker.drops-up .selector-popup {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+/* The listbox inside the popup gives its frame and position to the popup. The second selector
+   outweighs the compact upward variant's dropdown rule. */
+.custom-model-selector .selector-popup > .selector-dropdown,
+.custom-model-selector.compact.drops-up .selector-popup > .selector-dropdown {
+  position: static;
+  min-width: 0;
+  width: auto;
+  max-width: none;
+  max-height: 300px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  z-index: auto;
+}
+
+.custom-model-selector.compact {
+  .selector-popup {
+    top: 100%;
+    border-color: var(--gh-gold);
+    border-radius: 4px;
+    border-top-left-radius: 0;
+    background: var(--bg-glass);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.8), inset 0 0 10px rgba(212, 175, 55, 0.1);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 101;
+  }
+
+  &.drops-up .selector-popup {
+    top: auto;
+    bottom: 100%;
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 0;
+    box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.8), inset 0 0 10px rgba(212, 175, 55, 0.1);
+  }
+}
+
+/* The toolbar: search and Sort on one row, then the provider toggles, then the status line. It
+   keeps its own type size, so the compact trigger never shrinks the search field. */
+.model-picker-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 8px;
+  border-block-end: 1px solid var(--border-glass);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.model-picker-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 100%;
+  min-inline-size: 0;
+
+  .action-btn {
+    flex: none;
+    margin-left: 0;
+  }
+}
+
+.model-picker-search-field {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.model-picker-search {
+  inline-size: 100%;
+  min-block-size: 32px;
+  padding-block: 5px;
+  font-size: 13px;
+
+  /* The clear button is ours, with a name and a tooltip. */
+  &::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+}
+
+/* iOS zooms into a focused field set below 16 px. */
+@media (pointer: coarse) {
+  .model-picker-search {
+    font-size: 16px;
+  }
+}
+
+.model-picker-sort {
+  position: relative;
+}
+
+/* A non-default sort; the button's name says which. */
+.model-picker-sort-dot {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--primary-color);
+}
+
+/* The Sort popover borrows .gh-facet-popover's frame and radios; it hangs from the button's end. */
+.gh-facet-popover.model-picker-sort-panel {
+  left: auto;
+  right: anchor(right);
+  min-inline-size: 14rem;
+}
+
+.gh-anchor-native .gh-facet-popover.model-picker-sort-panel {
+  left: auto;
+  right: auto;
+  #{'position-area'}: block-end span-inline-start;
+}
+
+.model-picker-providers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 100%;
+}
+
+/* A provider toggle: the check glyph and aria-pressed carry the state; the colored edge is decorative. */
+.model-picker-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 28px;
+  padding: 2px 10px 2px 8px;
+  border: 1px solid var(--border-glass);
+  border-inline-start: 3px solid var(--model-picker-provider-edge, var(--border-glass));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e4e4e7;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+
+  &[data-provider="openai"] { --model-picker-provider-edge: var(--provider-openai); }
+  &[data-provider="anthropic"] { --model-picker-provider-edge: var(--provider-anthropic); }
+  &[data-provider="google"] { --model-picker-provider-edge: var(--provider-google); }
+
+  &:hover {
+    border-block-color: var(--primary-color);
+    border-inline-end-color: var(--primary-color);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  &[aria-pressed="true"] {
+    border-block-color: var(--primary-color);
+    border-inline-end-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+    color: var(--primary-color);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+}
+
+.model-picker-provider-check {
+  flex: none;
+}
+
+.model-picker-provider-count {
+  font-weight: 400;
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+}
+
+.model-picker-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+.model-picker-status-hidden {
+  color: var(--color-warning);
+}
+
+.model-picker-status .btn-link[aria-disabled="true"] {
+  color: #8a8a8a;
+  text-decoration: none;
+  cursor: default;
+}
+
+/* The part of a model name that matches the search. */
+mark.model-option-match {
+  padding: 0;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--primary-color) 35%, transparent);
+  color: inherit;
+}
+
+/* The release month after an option's badges, while a release-date sort applies. */
+.model-option-release {
+  flex: none;
+  font-size: 11px;
+  color: #a1a1aa;
+  white-space: nowrap;
+}
+
+@media (forced-colors: active) {
+  mark.model-option-match {
+    background: Mark;
+    color: MarkText;
+  }
+
+  .model-picker-provider[aria-pressed="true"] {
+    border-color: Highlight;
+  }
+
+  .model-picker-sort-dot {
+    background: CanvasText;
+  }
+
+  .selector-popup:has(.model-picker-search:focus-visible) .model-option.is-active {
+    outline-color: Highlight;
+  }
+
+  .model-picker-status .btn-link[aria-disabled="true"] {
+    color: GrayText;
   }
 }
 

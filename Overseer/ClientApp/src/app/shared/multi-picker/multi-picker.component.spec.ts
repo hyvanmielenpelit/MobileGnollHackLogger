@@ -586,3 +586,113 @@ describe('MultiPickerComponent', () => {
     });
   });
 });
+
+/** A picker with a plain search field as its tools, and a host-chosen list of visible keys. */
+@Component({
+  standalone: true,
+  imports: [MultiPickerComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <app-multi-picker class="vk-picker" label="Visible" summaryNoun="sources"
+                      [options]="options" [selectedKeys]="selected" [max]="max"
+                      [visibleKeys]="visible" [toolsTemplate]="tools"
+                      (selectionChange)="onChange($event)"></app-multi-picker>
+    <ng-template #tools let-listboxId="listboxId" let-navigate="navigate">
+      <input type="search" class="vk-search" data-picker-search [attr.aria-controls]="listboxId"
+             (keydown.enter)="$any($event).preventDefault(); navigate('commit')">
+    </ng-template>
+  `
+})
+class VisibleKeysHostComponent {
+  private cdr = inject(ChangeDetectorRef);
+  options: MultiPickerOption[] = OPTIONS;
+  selected: MultiPickerKey[] = [];
+  max: number | null = null;
+  visible: MultiPickerKey[] | null = ['d', 'b'];
+  changes: MultiPickerSelection[] = [];
+
+  onChange(selection: MultiPickerSelection): void {
+    this.changes.push(selection);
+    this.selected = selection.keys;
+    this.cdr.markForCheck();
+  }
+
+  set(changes: Partial<Pick<VisibleKeysHostComponent, 'selected' | 'max' | 'visible'>>): void {
+    Object.assign(this, changes);
+    this.cdr.markForCheck();
+  }
+}
+
+describe('MultiPickerComponent visible keys and tools', () => {
+  let fixture: ComponentFixture<VisibleKeysHostComponent>;
+  let host: VisibleKeysHostComponent;
+  let el: HTMLElement;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({ imports: [VisibleKeysHostComponent] }).compileComponents();
+    fixture = TestBed.createComponent(VisibleKeysHostComponent);
+    host = fixture.componentInstance;
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+  });
+
+  const picker = () => el.querySelector<HTMLElement>('.vk-picker')!;
+  const component = () => fixture.debugElement.children[0].componentInstance as MultiPickerComponent;
+  const labels = () => Array.from(picker().querySelectorAll<HTMLElement>('[role="option"] .model-name')).map(n => n.textContent!.trim());
+  const chips = () => Array.from(picker().querySelectorAll<HTMLElement>('.gh-multi-picker-chip-label')).map(c => c.textContent!.trim());
+  const liveLine = () => picker().querySelector<HTMLElement>(':scope > [role="status"]')!.textContent!.trim();
+
+  function update(changes: Parameters<VisibleKeysHostComponent['set']>[0]): void {
+    host.set(changes);
+    fixture.detectChanges();
+  }
+
+  function open(): void {
+    picker().querySelector<HTMLButtonElement>('.selector-trigger')!.click();
+    fixture.detectChanges();
+  }
+
+  it('lists only the visible keys, in their order, while a hidden selected option keeps its chip', () => {
+    update({ selected: ['a'] });
+    open();
+    expect(labels()).toEqual(['Charlie', 'Beta']);
+    expect(chips()).toEqual(['Alpha']);
+    expect(picker().querySelector('.gh-multi-picker-summary')!.textContent!.trim()).toBe('Alpha');
+  });
+
+  it('renders the tools template inside the popup and outside the listbox, and focuses its field', () => {
+    open();
+    const search = picker().querySelector<HTMLInputElement>('.vk-search')!;
+    expect(search.closest('.selector-popup')).not.toBeNull();
+    expect(search.closest('[role="listbox"]')).toBeNull();
+    expect(search.getAttribute('aria-controls')).toBe(picker().querySelector('[role="listbox"]')!.id);
+    expect(document.activeElement).toBe(search);
+  });
+
+  it('toggles the active option on Enter in the search field and stays open', () => {
+    open();
+    const search = picker().querySelector<HTMLInputElement>('.vk-search')!;
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+    expect(host.selected).toEqual(['d']);
+    expect(picker().querySelector('[role="listbox"]')).not.toBeNull();
+  });
+
+  it('adds the enabled unselected keys up to max with one change and one announcement', () => {
+    update({ selected: ['a'], max: 3, visible: ['b', 'c', 'd', 'e'] });
+    component().addToSelection(['e', 'c', 'b', 'd']);
+    fixture.detectChanges();
+    expect(host.changes.length).toBe(1);
+    expect(host.selected).toEqual(['a', 'b', 'd']);
+    expect(liveLine()).toBe('2 added. 3 of 5 selected.');
+
+    component().addToSelection(['e']);
+    fixture.detectChanges();
+    expect(host.changes.length).toBe(1);
+    expect(liveLine()).toBe('At most 3 sources can be selected.');
+
+    component().addToSelection(['a', 'c']);
+    fixture.detectChanges();
+    expect(liveLine()).toBe('All shown sources are already selected.');
+  });
+});

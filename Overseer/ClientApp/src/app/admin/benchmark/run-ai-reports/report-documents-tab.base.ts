@@ -142,6 +142,8 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
   abstract readonly rootClass: string;
   /** The report writer picker's class. */
   abstract readonly writerPickerClass: string;
+  /** Prefixes the view keys of this tab's model pickers: the run or the battery report. */
+  abstract readonly viewStateKeyPrefix: string;
   /** The tag of a document whose subject changed after it was written. */
   abstract readonly changedSinceText: string;
   /** The Downloads notice's sentence. */

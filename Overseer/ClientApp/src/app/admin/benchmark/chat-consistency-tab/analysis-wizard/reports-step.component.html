@@ -134,6 +134,7 @@
       <label id="cc-rep-writer-label">Report writer</label>
       <div class="gh-field-row">
         <app-model-picker class="cc-report-writer-model-selector" labelledBy="cc-rep-writer-label"
+                          viewStateKey="benchmark.chatConsistency.reportWriter"
                           [describedBy]="writerDescribedBy"
                           placeholder="Select a model" [emptyHint]="pickerEmptyHint" [showPrice]="true"
                           [options]="writerOptions" [selectedKey]="writerId"

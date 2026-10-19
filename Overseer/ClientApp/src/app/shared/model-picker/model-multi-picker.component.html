@@ -2,13 +2,26 @@
   @if (option.tag) {
     <span class="model-option-tag">{{ option.tag }}</span>
   }
-  <span class="model-name">{{ option.label }}</span>
+  <span class="model-name">@for (part of namePartsFor(option); track $index) {@if (part.match) {<mark class="model-option-match">{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</span>
   @if (modelFor(option.key); as model) {
     <app-model-option-badges [model]="model" [showPrice]="showPrice" [showParallel]="showParallel"></app-model-option-badges>
+  }
+  @if (releaseFor(option.key); as release) {
+    <span class="model-option-release"><span class="visually-hidden">released </span>{{ release }}</span>
   }
   @if (option.detail) {
     <span class="gh-multi-picker-detail">{{ option.detail }}</span>
   }
+</ng-template>
+
+<ng-template #modelTools let-listboxId="listboxId" let-activeOptionId="activeOptionId" let-navigate="navigate">
+  <app-model-picker-tools [uid]="uid" [listboxId]="listboxId" [activeOptionId]="activeOptionId"
+                          [state]="viewState" [providers]="facets" [dateSortAvailable]="dateSortAvailable"
+                          [shownCount]="visibleKeys?.length ?? options.length" [totalCount]="options.length"
+                          [hiddenSelectionText]="hiddenSelectionText" [selectShown]="selectShown"
+                          (stateChange)="onViewStateChange($event)"
+                          (navigate)="navigate($event)"
+                          (selectShownClick)="onSelectShown()"></app-model-picker-tools>
 </ng-template>
 
 <ng-template #modelChip let-option let-noteId="noteId">
@@ -49,4 +62,5 @@
                   [chips]="chips" [maxChips]="maxChips" [showAllNone]="showAllNone" [dropsUp]="dropsUp"
                   [optionTemplate]="modelOption" [chipTemplate]="modelChip" [chipStyle]="chipStyle"
                   [status]="status"
+                  [visibleKeys]="visibleKeys" [toolsTemplate]="toolsShown ? modelTools : null"
                   (selectionChange)="onSelectionChange($event)"></app-multi-picker>

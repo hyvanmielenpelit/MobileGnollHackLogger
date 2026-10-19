@@ -166,6 +166,8 @@ export interface UserAiModel {
   id?: number;
   provider: string;
   modelId: string;
+  /** The catalog release date, yyyy-MM-dd; null when the catalog does not describe the model. */
+  releaseDate?: string | null;
   displayName?: string;
   displayNameMode?: string;
   thinkingLevel?: string;

@@ -17,6 +17,27 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { ModelOptionBadgesComponent } from './model-option-badges.component';
+import { ModelPickerToolsComponent } from './model-picker-tools.component';
+import {
+  DEFAULT_MODEL_PICKER_VIEW,
+  ModelPickerMatchPart,
+  ModelPickerNavigateIntent,
+  ModelPickerProviderFacet,
+  ModelPickerViewState,
+  ModelPickerViewTools,
+  ModelPickerViewWriter,
+  applyModelPickerView,
+  effectiveView,
+  hasReleaseDates,
+  isReleaseSort,
+  matchParts,
+  providerFacets,
+  readModelPickerView,
+  releaseMonthLabel,
+  sameModelPickerView,
+  searchTerms,
+  showsViewTools
+} from './model-picker-view';
 import type { ModelAvailability } from '../model-availability/model-availability';
 
 /** The fields a picker renders. Structural, so SystemAiConfigDto and UserAiModel both fit. */
@@ -31,6 +52,8 @@ export interface ModelPickerModel {
   effectiveOutputPricePerMillion?: number | null;
   /** A model that needs attention gets a *Removed* or *Not in catalog* chip before its badges. */
   modelAvailability?: ModelAvailability | null;
+  /** The catalog release date, yyyy-MM-dd; the toolbar offers the release-date sorts when an option has one. */
+  releaseDate?: string | null;
 }
 
 export type ModelPickerKey = string | number;
@@ -87,6 +110,10 @@ interface FlatEntry<M> {
 interface SectionItem<M extends ModelPickerModel> {
   option: ModelPickerOption<M>;
   index: number;
+  /** The name in runs, the ones matching the search marked. */
+  nameParts: ModelPickerMatchPart[];
+  /** The release month while a release-date sort applies, else null. */
+  release: string | null;
 }
 
 /** A run of options sharing one `group` (or none). */
@@ -111,7 +138,7 @@ let nextUid = 0;
 @Component({
   selector: 'app-model-picker',
   standalone: true,
-  imports: [ModelOptionBadgesComponent, NgTemplateOutlet],
+  imports: [ModelOptionBadgesComponent, ModelPickerToolsComponent, NgTemplateOutlet],
   templateUrl: './model-picker.component.html',
   styleUrl: './model-picker.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -152,12 +179,17 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   @Input() narrowHidesBadges = false;
   /** The trigger is aria-disabled and the list does not open; the host names the reason through describedBy. */
   @Input() disabled = false;
+  /** The search, sort and provider toolbar: `auto` shows it from 6 options up. */
+  @Input() viewTools: ModelPickerViewTools = 'auto';
+  /** Names the picker's role; its view is stored as `overseer.modelPicker.view.<key>`. Null keeps it in memory only. */
+  @Input() viewStateKey: string | null = null;
 
   /** Every committed choice, including re-choosing the selected option. */
   @Output() selectionChange = new EventEmitter<ModelPickerSelection<M>>();
 
   @ViewChild('trigger', { static: true }) private triggerRef!: ElementRef<HTMLButtonElement>;
   @ViewChild('listbox') private listboxRef?: ElementRef<HTMLElement>;
+  @ViewChild(ModelPickerToolsComponent) private toolsRef?: ModelPickerToolsComponent;
 
   readonly uid = `mp-${++nextUid}`;
 
@@ -166,6 +198,17 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   flat: FlatEntry<M>[] = [];
   sections: Section<M>[] = [];
 
+  /** Whether the popup has the view toolbar; without it the stored view is not applied. */
+  toolsShown = false;
+  /** The stored view, shown in the toolbar as is. */
+  viewState: ModelPickerViewState = DEFAULT_MODEL_PICKER_VIEW;
+  facets: ModelPickerProviderFacet[] = [];
+  dateSortAvailable = false;
+  /** The models the view shows, the none option excluded. */
+  shownCount = 0;
+
+  private visibleKeys = new Set<ModelPickerKey>();
+  private viewWriter = new ModelPickerViewWriter(() => this.viewStateKey);
   private removeDocumentListener: (() => void) | null = null;
   private typeahead = '';
   private typeaheadTimer: ReturnType<typeof setTimeout> | null = null;
@@ -203,14 +246,22 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     return this.options.find(o => o.key === this.selectedKey)?.tag ?? null;
   }
 
+  /** `selected model hidden` while the view hides the selected model. */
+  get hiddenSelectionText(): string | null {
+    if (!this.toolsShown || this.selectedKey === null || this.visibleKeys.has(this.selectedKey)) return null;
+    return this.options.some(o => o.key === this.selectedKey) ? 'selected model hidden' : null;
+  }
+
   ngOnInit(): void {
     if (isDevMode() && !this.labelledBy && !this.label) {
       console.warn('app-model-picker: set labelledBy or label so the picker has an accessible name.');
     }
+    this.viewState = readModelPickerView(this.viewStateKey);
+    this.rebuild();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['options'] || changes['noneLabel']) {
+    if (changes['options'] || changes['noneLabel'] || changes['viewTools']) {
       this.rebuild();
     }
     if (changes['disabled'] && this.disabled) {
@@ -221,6 +272,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   ngOnDestroy(): void {
     this.detachDocumentListener();
     this.clearTypeahead();
+    this.viewWriter.dispose();
   }
 
   optionId(index: number): string { return `${this.uid}-opt-${index}`; }
@@ -295,7 +347,12 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
         return;
       default:
         if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-          this.typeAhead(event.key);
+          // With the toolbar, typing goes to its search field instead of type-ahead.
+          if (this.toolsShown && this.toolsRef) {
+            this.toolsRef.appendToSearch(event.key);
+          } else {
+            this.typeAhead(event.key);
+          }
           break;
         }
         return;
@@ -310,6 +367,59 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     }
   }
 
+  /** Keeps focus where it is (the search field) when the popup's non-interactive parts are pressed; a click still commits. */
+  onPopupMousedown(event: MouseEvent): void {
+    const target = event.target as Element | null;
+    if (target && !target.closest('input, button, label, select, textarea, [popover]')) {
+      event.preventDefault();
+    }
+  }
+
+  onNavigate(intent: ModelPickerNavigateIntent): void {
+    switch (intent) {
+      case 'next':
+      case 'extendNext':
+        this.moveActive(this.activeIndex + 1);
+        break;
+      case 'prev':
+      case 'extendPrev':
+        this.moveActive(this.activeIndex - 1);
+        break;
+      case 'pageNext':
+        this.moveActive(this.activeIndex + PAGE_STEP);
+        break;
+      case 'pagePrev':
+        this.moveActive(this.activeIndex - PAGE_STEP);
+        break;
+      case 'first':
+        this.moveActive(0);
+        break;
+      case 'last':
+        this.moveActive(this.flat.length - 1);
+        break;
+      case 'commit':
+        this.commit(this.activeIndex);
+        break;
+      case 'close':
+        this.close(true);
+        break;
+    }
+  }
+
+  onViewStateChange(state: ModelPickerViewState): void {
+    const previous = this.viewState;
+    if (sameModelPickerView(previous, state)) return;
+    this.viewState = state;
+    const searchOnly = previous.sort === state.sort
+      && previous.providers.length === state.providers.length
+      && previous.providers.every((p, i) => p === state.providers[i]);
+    this.viewWriter.write(state, searchOnly);
+    this.rebuild(true);
+    this.cdr.markForCheck();
+    this.cdr.detectChanges();
+    this.scrollActiveIntoView();
+  }
+
   commit(index: number): void {
     const entry = this.flat[index];
     if (!entry) return;
@@ -320,11 +430,16 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   private openList(activeIndex: number): void {
     if (this.open) return;
     this.open = true;
-    this.activeIndex = this.clampIndex(activeIndex);
+    this.activeIndex = this.clampIndex(this.toolsShown && this.hasSearch() ? this.firstModelIndex() : activeIndex);
     this.clearTypeahead();
     this.cdr.markForCheck();
     this.cdr.detectChanges();
-    this.listboxRef?.nativeElement.focus();
+    // On a touch screen the listbox takes focus, so the on-screen keyboard waits for a tap on the field.
+    if (this.toolsShown && this.toolsRef && finePointer()) {
+      this.toolsRef.focusSearch();
+    } else {
+      this.listboxRef?.nativeElement.focus();
+    }
     this.scrollActiveIntoView();
     this.removeDocumentListener = this.renderer.listen('document', 'pointerdown', (event: PointerEvent) => {
       if (!this.host.nativeElement.contains(event.target as Node)) {
@@ -338,6 +453,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     this.open = false;
     this.detachDocumentListener();
     this.clearTypeahead();
+    this.viewWriter.flush();
     this.cdr.markForCheck();
     if (focusTrigger) {
       this.triggerRef.nativeElement.focus();
@@ -406,30 +522,70 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     this.removeDocumentListener = null;
   }
 
-  private rebuild(): void {
+  private hasSearch(): boolean {
+    return this.viewState.search.trim() !== '';
+  }
+
+  /** The first model option, after the none option; the none option when no model is shown. */
+  private firstModelIndex(): number {
+    return this.hasNoneOption && this.flat.length > 1 ? 1 : 0;
+  }
+
+  /**
+   * `viewChanged` moves the active option: to the first shown model while there is a search, else
+   * to the selected option if it is shown, else to the first.
+   */
+  private rebuild(viewChanged = false): void {
+    this.toolsShown = showsViewTools(this.viewTools, this.options.length);
+    const view = this.toolsShown ? effectiveView(this.viewState, this.options) : DEFAULT_MODEL_PICKER_VIEW;
+    const order = this.toolsShown ? applyModelPickerView(this.options, view) : this.options.map((_, i) => i);
+    const terms = searchTerms(view.search);
+    const releaseShown = isReleaseSort(view.sort);
+    this.facets = this.toolsShown ? providerFacets(this.options) : [];
+    this.dateSortAvailable = this.toolsShown && hasReleaseDates(this.options);
+
     const flat: FlatEntry<M>[] = [];
     if (this.noneLabel !== null) {
       flat.push({ key: null, model: null, searchName: this.noneLabel.toLowerCase() });
     }
-    const offset = flat.length;
     const sections: Section<M>[] = [];
+    const visibleKeys = new Set<ModelPickerKey>();
     let current: Section<M> | null = null;
     let groupCount = 0;
-    this.options.forEach((option, i) => {
+    for (const i of order) {
+      const option = this.options[i];
+      const name = this.modelName(option.model);
+      visibleKeys.add(option.key);
       flat.push({
         key: option.key,
         model: option.model,
-        searchName: [option.tag, this.modelName(option.model)].filter(Boolean).join(' ').toLowerCase()
+        searchName: [option.tag, name].filter(Boolean).join(' ').toLowerCase()
       });
       const group = option.group ?? null;
       if (!current || current.group !== group) {
         current = { group, headingId: group ? `${this.uid}-grp-${++groupCount}` : null, items: [] };
         sections.push(current);
       }
-      current.items.push({ option, index: offset + i });
-    });
+      current.items.push({
+        option,
+        index: flat.length - 1,
+        nameParts: matchParts(name, terms),
+        release: releaseShown ? (releaseMonthLabel(option.model.releaseDate) || 'date unknown') : null
+      });
+    }
     this.flat = flat;
     this.sections = sections;
+    this.visibleKeys = visibleKeys;
+    this.shownCount = order.length;
+
+    if (viewChanged) {
+      const selected = this.selectedIndex();
+      this.activeIndex = this.hasSearch() ? this.firstModelIndex() : (selected ?? 0);
+    }
     this.activeIndex = flat.length > 0 ? this.clampIndex(this.activeIndex) : 0;
   }
+}
+
+function finePointer(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
 }

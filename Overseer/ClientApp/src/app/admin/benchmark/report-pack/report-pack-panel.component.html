@@ -44,6 +44,7 @@
         <label class="rp-models-label" [id]="idPrefix + '-models-label'">Models</label>
         @if (modelOptions.length > 0) {
           <app-model-multi-picker class="rp-models-picker" chips="none" placeholder="Choose models"
+                                  viewStateKey="benchmark.comparison.reportPack.models"
                                   [labelledBy]="idPrefix + '-models-label'" [describedBy]="idPrefix + '-models-line'"
                                   [options]="modelOptions" [selectedKeys]="chosenKeys"
                                   [min]="pickerMin" [max]="pickerMax"
@@ -86,6 +87,7 @@
         <div class="form-group rp-field rp-reference-field">
           <label [id]="idPrefix + '-reference-label'">Reference model</label>
           <app-model-picker class="rp-reference-picker" [triggerId]="idPrefix + '-reference'"
+                            viewStateKey="benchmark.comparison.reportPack.reference"
                             [labelledBy]="idPrefix + '-reference-label'" [describedBy]="idPrefix + '-reference-hint'"
                             [noneLabel]="highestIndexReference" [noneMuted]="false" [options]="referencePickerOptions"
                             [selectedKey]="referenceEntryKey" (selectionChange)="onReferencePicked($event.key)"></app-model-picker>
@@ -152,6 +154,7 @@
       <label [id]="idPrefix + '-writer-label'">Report writer</label>
       <div class="gh-field-row">
         <app-model-picker class="rp-writer-selector"
+                          viewStateKey="benchmark.comparison.reportPack.writer"
                           [labelledBy]="idPrefix + '-writer-label'" [describedBy]="writerDescribedBy"
                           placeholder="Choose a writer" [emptyHint]="writerEmptyHint" [showPrice]="true"
                           [options]="writerOptions" [selectedKey]="writerId"

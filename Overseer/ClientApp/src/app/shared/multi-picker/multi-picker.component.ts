@@ -22,15 +22,18 @@ import { NgTemplateOutlet } from '@angular/common';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import {
   MultiPickerKey,
+  MultiPickerNavigateIntent,
   MultiPickerOption,
   MultiPickerOptionContext,
   MultiPickerSelection,
-  MultiPickerStatus
+  MultiPickerStatus,
+  MultiPickerToolsContext
 } from './multi-picker.models';
 
-/** One row of the listbox. */
+/** One option: a row of the listbox (`flat`), or of all options (`entries`). */
 export interface MultiPickerEntry {
   option: MultiPickerOption;
+  /** The position in the list holding it: the listbox row in `flat`, the option's index in `entries`. */
   index: number;
   /** Lower-cased label, for type-ahead. */
   searchName: string;
@@ -116,8 +119,15 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
    * spinner and dims the chips' notes.
    */
   @Input() status: MultiPickerStatus | null = null;
+  /**
+   * The listbox's options and their order; `null` for all, in option order. Selection, chips, All,
+   * None, `min` / `max` and the summary act on all `options`, so a hidden selected option stays chosen.
+   */
+  @Input() visibleKeys: readonly MultiPickerKey[] | null = null;
+  /** Rendered at the top of the popup, before and outside the listbox: a search field and view controls. */
+  @Input() toolsTemplate: TemplateRef<MultiPickerToolsContext> | null = null;
 
-  /** Once per toggle, All, None or chip removal. */
+  /** Once per toggle, All, None, chip removal or `addToSelection()`. */
   @Output() selectionChange = new EventEmitter<MultiPickerSelection>();
 
   @ViewChild('field', { static: true }) private fieldRef!: ElementRef<HTMLElement>;
@@ -128,8 +138,13 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
 
   open = false;
   activeIndex = 0;
+  /** Every option, in option order. */
+  entries: MultiPickerEntry[] = [];
+  /** The listbox's rows. */
   flat: MultiPickerEntry[] = [];
   sections: Section[] = [];
+
+  readonly toolsContext: MultiPickerToolsContext = this.createToolsContext();
   /** The selected entries, in option order. */
   selectedEntries: MultiPickerEntry[] = [];
   /** The live line's text. */
@@ -139,6 +154,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   private indexByKey = new Map<MultiPickerKey, number>();
   private pendingFocus: PendingFocus | null = null;
   private anchorsChanged = false;
+  private scrollPending = false;
   private removeDocumentListener: (() => void) | null = null;
   private typeahead = '';
   private typeaheadTimer: ReturnType<typeof setTimeout> | null = null;
@@ -175,7 +191,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   /** The trigger text when more than one option is selected. */
   get summaryText(): string {
     const count = this.selectedEntries.length;
-    const total = this.flat.length;
+    const total = this.entries.length;
     return count === total ? `All ${total} ${this.summaryNoun}` : `${count} of ${total} ${this.summaryNoun}`;
   }
 
@@ -193,7 +209,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
 
   /** Why All cannot act, or null when it can. */
   get allBlockedReason(): string | null {
-    if (this.flat.length === 0) return `There are no ${this.summaryNoun} to select.`;
+    if (this.entries.length === 0) return `There are no ${this.summaryNoun} to select.`;
     const next = this.allKeys();
     if (next.length === this.selectedEntries.length) return `All ${this.summaryNoun} are already selected.`;
     if (next.length > this.maxValue) return this.maxReason();
@@ -219,12 +235,19 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
     if (changes['options']) {
       this.rebuild();
     }
+    if (changes['options'] || changes['visibleKeys']) {
+      this.rebuildRows(!!changes['visibleKeys'] && !changes['visibleKeys'].firstChange);
+    }
     if (changes['options'] || changes['selectedKeys']) {
       this.rebuildSelection();
     }
   }
 
   ngAfterViewChecked(): void {
+    if (this.scrollPending) {
+      this.scrollPending = false;
+      this.scrollActiveIntoView();
+    }
     if (this.pendingFocus) {
       const pending = this.pendingFocus;
       this.pendingFocus = null;
@@ -342,7 +365,13 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
           break;
         }
         if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-          this.typeAhead(event.key);
+          // With a search field, typing goes there instead of type-ahead.
+          const search = this.searchField();
+          if (search) {
+            appendToField(search, event.key);
+          } else {
+            this.typeAhead(event.key);
+          }
           break;
         }
         return;
@@ -355,6 +384,75 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
     if (!next || !this.fieldRef.nativeElement.contains(next)) {
       this.close(false);
     }
+  }
+
+  /** Keeps focus where it is (the search field) when the popup's non-interactive parts are pressed; a click still acts. */
+  onPopupMousedown(event: MouseEvent): void {
+    const target = event.target as Element | null;
+    if (target && !target.closest('input, button, label, select, textarea, [popover]')) {
+      event.preventDefault();
+    }
+  }
+
+  /** A key in the tools' search field: Enter toggles the active option and keeps the list open. */
+  navigate(intent: MultiPickerNavigateIntent): void {
+    switch (intent) {
+      case 'next':
+        this.moveActive(this.activeIndex + 1);
+        break;
+      case 'prev':
+        this.moveActive(this.activeIndex - 1);
+        break;
+      case 'extendNext':
+        this.extend(1);
+        break;
+      case 'extendPrev':
+        this.extend(-1);
+        break;
+      case 'pageNext':
+        this.moveActive(this.activeIndex + PAGE_STEP);
+        break;
+      case 'pagePrev':
+        this.moveActive(this.activeIndex - PAGE_STEP);
+        break;
+      case 'first':
+        this.moveActive(0);
+        break;
+      case 'last':
+        this.moveActive(this.flat.length - 1);
+        break;
+      case 'commit':
+        this.toggleIndex(this.activeIndex);
+        this.cdr.markForCheck();
+        break;
+      case 'close':
+        this.close(true);
+        break;
+    }
+  }
+
+  /**
+   * Adds the enabled keys among `keys` that are not selected yet, in option order, up to `max`, with
+   * one `selectionChange` and one announcement; announces why when it can add none.
+   */
+  addToSelection(keys: readonly MultiPickerKey[]): void {
+    const wanted = new Set(keys);
+    const candidates = this.entries.filter(e =>
+      wanted.has(e.option.key) && !e.option.disabledReason && !this.isSelected(e.option.key));
+    if (candidates.length === 0) {
+      this.announce(`All shown ${this.summaryNoun} are already selected.`);
+      return;
+    }
+    const room = this.maxValue - this.selectedEntries.length;
+    if (room <= 0) {
+      this.announce(this.maxReason());
+      return;
+    }
+    const added = new Set(candidates.slice(0, room).map(e => e.option.key));
+    const next = this.entries
+      .filter(e => added.has(e.option.key) || this.isSelected(e.option.key))
+      .map(e => e.option.key);
+    this.commit(next, `${added.size} added.`);
   }
 
   onOptionClick(entry: MultiPickerEntry): void {
@@ -441,7 +539,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
 
   private commit(keys: MultiPickerKey[], what: string): void {
     this.selectionChange.emit({ keys });
-    this.announce(`${what} ${keys.length} of ${this.flat.length} selected.`);
+    this.announce(`${what} ${keys.length} of ${this.entries.length} selected.`);
   }
 
   /** A repeated message alternates a trailing no-break space, so the live region reads it again. */
@@ -451,7 +549,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   }
 
   private keysWith(key: MultiPickerKey): MultiPickerKey[] {
-    return this.flat.filter(e => e.option.key === key || this.isSelected(e.option.key)).map(e => e.option.key);
+    return this.entries.filter(e => e.option.key === key || this.isSelected(e.option.key)).map(e => e.option.key);
   }
 
   private keysWithout(key: MultiPickerKey): MultiPickerKey[] {
@@ -460,7 +558,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
 
   /** Every enabled option, plus the disabled ones already selected. */
   private allKeys(): MultiPickerKey[] {
-    return this.flat
+    return this.entries
       .filter(e => !e.option.disabledReason || this.isSelected(e.option.key))
       .map(e => e.option.key);
   }
@@ -490,7 +588,13 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
     this.clearTypeahead();
     this.cdr.markForCheck();
     this.cdr.detectChanges();
-    this.listboxRef?.nativeElement.focus();
+    // On a touch screen the listbox takes focus, so the on-screen keyboard waits for a tap on the field.
+    const search = this.searchField();
+    if (search && finePointer()) {
+      search.focus();
+    } else {
+      this.listboxRef?.nativeElement.focus();
+    }
     this.scrollActiveIntoView();
     this.removeDocumentListener = this.renderer.listen('document', 'pointerdown', (event: PointerEvent) => {
       if (!this.fieldRef.nativeElement.contains(event.target as Node)) {
@@ -551,8 +655,25 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
     }
   }
 
+  /** The first listbox row that is selected. */
   private firstSelectedIndex(): number | null {
-    return this.selectedEntries[0]?.index ?? null;
+    const index = this.flat.findIndex(e => this.selectedSet.has(e.option.key));
+    return index >= 0 ? index : null;
+  }
+
+  private searchField(): HTMLInputElement | null {
+    if (!this.toolsTemplate || !this.open) return null;
+    return this.fieldRef.nativeElement.querySelector<HTMLInputElement>('.selector-popup [data-picker-search]');
+  }
+
+  private createToolsContext(): MultiPickerToolsContext {
+    // Getters, so one context object stays current and the tools template is never re-created.
+    const picker = this;
+    return {
+      get listboxId() { return picker.listboxId; },
+      get activeOptionId() { return picker.activeOptionId; },
+      navigate: (intent: MultiPickerNavigateIntent) => picker.navigate(intent)
+    };
   }
 
   private clampIndex(index: number): number {
@@ -572,31 +693,66 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   }
 
   private rebuild(): void {
-    const flat: MultiPickerEntry[] = [];
-    const sections: Section[] = [];
     const indexByKey = new Map<MultiPickerKey, number>();
+    this.entries = this.options.map((option, index) => {
+      indexByKey.set(option.key, index);
+      return { option, index, searchName: option.label.toLowerCase() };
+    });
+    this.indexByKey = indexByKey;
+  }
+
+  /** The listbox's rows and group sections; `viewChanged` moves the active option to the first row. */
+  private rebuildRows(viewChanged: boolean): void {
+    let flat: MultiPickerEntry[];
+    if (this.visibleKeys === null) {
+      flat = this.entries;
+    } else {
+      flat = [];
+      for (const key of this.visibleKeys) {
+        const index = this.indexByKey.get(key);
+        if (index !== undefined) flat.push({ ...this.entries[index], index: flat.length });
+      }
+    }
+    const sections: Section[] = [];
     let current: Section | null = null;
     let groupCount = 0;
-    this.options.forEach((option, index) => {
-      const entry: MultiPickerEntry = { option, index, searchName: option.label.toLowerCase() };
-      flat.push(entry);
-      indexByKey.set(option.key, index);
-      const group = option.group ?? null;
+    for (const entry of flat) {
+      const group = entry.option.group ?? null;
       if (!current || current.group !== group) {
         current = { group, headingId: group ? `${this.uid}-grp-${++groupCount}` : null, items: [] };
         sections.push(current);
       }
       current.items.push(entry);
-    });
+    }
     this.flat = flat;
     this.sections = sections;
-    this.indexByKey = indexByKey;
+    if (viewChanged) {
+      this.activeIndex = 0;
+      this.scrollPending = this.open;
+    }
     this.activeIndex = flat.length > 0 ? this.clampIndex(this.activeIndex) : 0;
   }
 
   private rebuildSelection(): void {
     this.selectedSet = new Set(this.selectedKeys);
-    this.selectedEntries = this.flat.filter(e => this.selectedSet.has(e.option.key));
+    this.selectedEntries = this.entries.filter(e => this.selectedSet.has(e.option.key));
     this.anchorsChanged = true;
   }
+}
+
+function finePointer(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
+}
+
+/** Appends a character to a text field as typing would, so its own input handling runs. */
+function appendToField(field: HTMLInputElement, char: string): void {
+  field.focus();
+  field.value += char;
+  const end = field.value.length;
+  try {
+    field.setSelectionRange(end, end);
+  } catch {
+    // Not every input type supports a selection.
+  }
+  field.dispatchEvent(new Event('input', { bubbles: true }));
 }

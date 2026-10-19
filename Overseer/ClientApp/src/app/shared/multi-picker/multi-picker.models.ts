@@ -27,6 +27,21 @@ export interface MultiPickerStatus {
 }
 
 /**
+ * What a key in a popup's search field asks the listbox to do. `commit` chooses the active option
+ * (the multi-picker toggles it and stays open); `extendNext` / `extendPrev` move and add to the
+ * selection where the picker selects several.
+ */
+export type MultiPickerNavigateIntent =
+  'next' | 'prev' | 'pageNext' | 'pagePrev' | 'first' | 'last' | 'commit' | 'close' | 'extendNext' | 'extendPrev';
+
+/** The context of a host's `toolsTemplate`, rendered at the top of the popup, outside the listbox. */
+export interface MultiPickerToolsContext {
+  listboxId: string;
+  activeOptionId: string | null;
+  navigate: (intent: MultiPickerNavigateIntent) => void;
+}
+
+/**
  * The context of a host's `optionTemplate`, which must render text only, or `chipTemplate`, which
  * renders non-interactive content: text or a list.
  */

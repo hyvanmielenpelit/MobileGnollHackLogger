@@ -70,6 +70,7 @@
     @if (changing) {
       <label id="mc-baseline-picker-label">New baseline model</label>
       <app-model-picker class="baseline-model-selector" labelledBy="mc-baseline-picker-label"
+                        viewStateKey="benchmark.comparison.baseline"
                         describedBy="mc-baseline-picker-hint" placeholder="Choose a model"
                         [emptyHint]="emptyHint" [disabled]="saving"
                         [options]="pickerOptions" [selectedKey]="selectedKey"

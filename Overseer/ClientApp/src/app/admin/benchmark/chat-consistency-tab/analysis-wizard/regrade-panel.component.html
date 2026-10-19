@@ -9,6 +9,7 @@
     <div class="cc-regrade-picker">
       <label id="cc-regrade-assessor-label">Common assessor</label>
       <app-model-picker class="cc-regrade-assessor-selector" labelledBy="cc-regrade-assessor-label"
+                        viewStateKey="benchmark.chatConsistency.regradeAssessor"
                         [describedBy]="estimateBlocked ? 'cc-regrade-blocked' : null"
                         placeholder="Select an assessor" [emptyHint]="pickerEmptyHint" [showPrice]="true"
                         [options]="pickerOptions" [selectedKey]="assessorId"

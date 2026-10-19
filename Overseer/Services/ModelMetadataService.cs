@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -317,6 +318,21 @@ public class ModelMetadataService
         }
 
         return metadata;
+    }
+
+    /// <summary>
+    /// The catalog release date of the model in yyyy-MM-dd form, from <see cref="GetMetadata"/>; null when
+    /// the catalog does not describe the model or its date is not a valid yyyy-MM-dd date.
+    /// </summary>
+    public string? GetReleaseDate(string provider, string modelId)
+    {
+        var releaseDate = GetMetadata(provider, modelId)?.ReleaseDate?.Trim();
+        if (string.IsNullOrEmpty(releaseDate))
+            return null;
+
+        return DateOnly.TryParseExact(releaseDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)
+            ? releaseDate
+            : null;
     }
 }
 

@@ -696,6 +696,7 @@
             @if (hasModel) {
               @if ((userModels.length + systemModels.length) > 1) {
                 <app-model-picker class="model-selector-wrapper" variant="compact" [dropsUp]="true"
+                                  viewStateKey="chat.composer"
                                   [narrowHidesBadges]="true" label="Chat model" [triggerId]="chatModelPickerTriggerId"
                                   [options]="composerModelOptions" [selectedKey]="selectedModelKey"
                                   [showParallel]="shouldRenderParallelBadge"

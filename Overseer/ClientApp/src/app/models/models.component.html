@@ -225,6 +225,7 @@
       <div class="form-group title-gen-form">
         <div class="d-flex align-items-center flex-gap-15">
           <app-model-picker class="title-model-selector-wrapper" variant="compact" label="Title generation model"
+                            viewStateKey="models.titleGeneration"
                             noneLabel="Default (First Available)" [options]="titleModelOptions"
                             [selectedKey]="titleModelSelection || null"
                             (selectionChange)="selectTitleModelByKey($event.key)"></app-model-picker>

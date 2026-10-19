@@ -1,0 +1,103 @@
+<search class="model-picker-tools">
+  <div class="model-picker-search-row">
+    <div class="gh-field-row model-picker-search-field">
+      <input #search type="search" class="gh-input model-picker-search" data-picker-search
+             [id]="searchId"
+             role="combobox" aria-expanded="true" aria-autocomplete="list"
+             [attr.aria-controls]="listboxId"
+             [attr.aria-activedescendant]="activeOptionId"
+             aria-label="Search models" placeholder="Search models"
+             autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"
+             [value]="state.search"
+             (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+      @if (state.search) {
+        <button type="button" class="action-btn model-picker-search-clear" [id]="clearId"
+                aria-label="Clear search"
+                [attr.interestfor]="clearId + '-tip'"
+                [attr.style]="'anchor-name: --' + clearId"
+                (click)="clearSearch()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+        <div popover="hint" class="gh-tooltip" [id]="clearId + '-tip'"
+             [attr.style]="'position-anchor: --' + clearId">Clear search</div>
+      }
+    </div>
+
+    <button type="button" class="action-btn model-picker-sort" [id]="sortId"
+            [attr.aria-label]="'Sort models: ' + sortLabel"
+            [attr.popovertarget]="sortPanelId"
+            [attr.aria-expanded]="sortOpen"
+            [attr.interestfor]="sortId + '-tip'"
+            [attr.style]="'anchor-name: --' + sortId">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m3 16 4 4 4-4"></path>
+        <path d="M7 20V4"></path>
+        <path d="m21 8-4-4-4 4"></path>
+        <path d="M17 4v16"></path>
+      </svg>
+      @if (shownSort !== 'default') {
+        <span class="model-picker-sort-dot" aria-hidden="true"></span>
+      }
+    </button>
+    <div popover="hint" class="gh-tooltip" [id]="sortId + '-tip'"
+         [attr.style]="'position-anchor: --' + sortId">Sort</div>
+    <div popover="auto" class="gh-facet-popover model-picker-sort-panel" [id]="sortPanelId"
+         [attr.style]="'position-anchor: --' + sortId"
+         (toggle)="onSortToggle($event)" (keydown)="onSortPanelKeydown($event)">
+      <fieldset class="gh-facet-group">
+        <legend class="gh-facet-legend">Sort by</legend>
+        @for (sort of visibleSortChoices; track sort) {
+          <label class="gh-radio gh-facet-option">
+            <input type="radio" [name]="uid + '-sort-choice'" [id]="uid + '-sort-' + sort" [value]="sort"
+                   [checked]="shownSort === sort" (change)="chooseSort(sort)">
+            <span class="gh-facet-option-label">{{ sortChoiceLabel(sort) }}</span>
+          </label>
+        }
+      </fieldset>
+    </div>
+  </div>
+
+  @if (providers.length >= 2) {
+    <div class="model-picker-providers" role="group" aria-label="Filter by provider">
+      @for (facet of providers; track facet.key) {
+        <button type="button" class="model-picker-provider" [attr.data-provider]="facet.key"
+                [attr.aria-pressed]="isProviderPressed(facet)"
+                (click)="toggleProvider(facet)">
+          @if (isProviderPressed(facet)) {
+            <svg class="model-picker-provider-check" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          }
+          <span>{{ facet.provider }}</span>
+          <span class="model-picker-provider-count">{{ facet.count }}<span class="visually-hidden"> {{ facet.count === 1 ? 'model' : 'models' }}</span></span>
+        </button>
+      }
+    </div>
+  }
+
+  <p class="model-picker-status">
+    <span>{{ countText }}</span>
+    @if (hiddenSelectionText) {
+      <span class="model-picker-status-hidden">{{ hiddenSelectionText }}</span>
+    }
+    @if (selectShown; as shown) {
+      @if (narrowed) {
+        <button type="button" class="btn-link model-picker-select-shown" [id]="uid + '-select-shown'"
+                [attr.aria-disabled]="shown.reason ? 'true' : null"
+                [attr.interestfor]="shown.reason ? uid + '-select-shown-tip' : null"
+                [attr.style]="'anchor-name: --' + uid + '-select-shown'"
+                (click)="onSelectShown()">Select all shown ({{ shown.count }})</button>
+        @if (shown.reason) {
+          <span popover="hint" class="gh-tooltip" [id]="uid + '-select-shown-tip'"
+                [attr.style]="'position-anchor: --' + uid + '-select-shown'">{{ shown.reason }}</span>
+        }
+      }
+    }
+    @if (viewActive) {
+      <button type="button" class="btn-link model-picker-reset" (click)="resetView()">Reset view</button>
+    }
+  </p>
+
+  <p class="visually-hidden" role="status">{{ liveText }}</p>
+</search>

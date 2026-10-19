@@ -26,10 +26,11 @@ public class AdminController : ControllerBase
     private readonly SystemConfigUsageGuard _usageGuard;
     private ModelAvailabilityService? _modelAvailabilityService;
     private ModelResolutionService? _modelResolutionService;
-    private ModelMetadataService? _fallbackMetadataService;
+    private ModelMetadataService? _metadataService;
 
     /// <param name="modelAvailabilityService">Built from a fresh <see cref="ModelMetadataService"/> on first use when null.</param>
     /// <param name="modelResolutionService">Built from a fresh <see cref="ModelMetadataService"/> on first use when null.</param>
+    /// <param name="modelMetadataService">A fresh instance is created on first use when null.</param>
     public AdminController(
         ApplicationDbContext dbContext,
         IConfiguration configuration,
@@ -40,7 +41,8 @@ public class AdminController : ControllerBase
         SystemConfigUsageGuard usageGuard,
         ModelPricingService? modelPricingService = null,
         ModelAvailabilityService? modelAvailabilityService = null,
-        ModelResolutionService? modelResolutionService = null)
+        ModelResolutionService? modelResolutionService = null,
+        ModelMetadataService? modelMetadataService = null)
     {
         _dbContext = dbContext;
         _configuration = configuration;
@@ -52,16 +54,17 @@ public class AdminController : ControllerBase
         _modelPricingService = modelPricingService;
         _modelAvailabilityService = modelAvailabilityService;
         _modelResolutionService = modelResolutionService;
+        _metadataService = modelMetadataService;
     }
 
-    private ModelMetadataService FallbackMetadata =>
-        _fallbackMetadataService ??= new ModelMetadataService();
+    private ModelMetadataService Metadata =>
+        _metadataService ??= new ModelMetadataService();
 
     private ModelAvailabilityService AvailabilityService =>
-        _modelAvailabilityService ??= new ModelAvailabilityService(FallbackMetadata);
+        _modelAvailabilityService ??= new ModelAvailabilityService(Metadata);
 
     private ModelResolutionService ResolutionService =>
-        _modelResolutionService ??= new ModelResolutionService(FallbackMetadata);
+        _modelResolutionService ??= new ModelResolutionService(Metadata);
 
     private static readonly System.Collections.Generic.HashSet<string> AllowedCounters = new(System.StringComparer.OrdinalIgnoreCase)
     {
@@ -250,6 +253,7 @@ public class AdminController : ControllerBase
             DisplayNameMode = c.DisplayNameMode,
             Provider = c.Provider,
             ModelId = c.ModelId,
+            ReleaseDate = Metadata.GetReleaseDate(c.Provider, c.ModelId),
             ConfidentialityPosture = c.ConfidentialityPosture,
             ConfidentialityNote = c.ConfidentialityNote,
             PostureAgreementRef = c.PostureAgreementRef,

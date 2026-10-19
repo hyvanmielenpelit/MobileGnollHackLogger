@@ -1721,6 +1721,7 @@
                 <div class="form-group calibration-model-field">
                   <label id="bmCalibrationModelLabel">Calibration assessor</label>
                   <app-model-picker class="calibration-model-selector" labelledBy="bmCalibrationModelLabel"
+                                    viewStateKey="benchmark.runReport.calibrationAssessor"
                                     placeholder="Select a model" [emptyHint]="workspace.benchmarkPickerEmptyHint"
                                     [options]="workspace.benchmarkPickerOptions" [selectedKey]="calibrationAssessorConfigId"
                                     (selectionChange)="selectCalibrationAssessorModel($event.model)"></app-model-picker>
@@ -1729,6 +1730,7 @@
                   <div class="form-group calibration-target-field">
                     <label id="bmCalibrationTargetLabel">Compare against</label>
                     <app-model-picker class="calibration-target-selector" labelledBy="bmCalibrationTargetLabel"
+                                      viewTools="never"
                                       [options]="calibrationTargetPickerOptions" [selectedKey]="calibrationTarget"
                                       (selectionChange)="selectCalibrationTarget($event.key)"></app-model-picker>
                   </div>
@@ -1903,6 +1905,7 @@
         <div class="form-group mb-15">
           <label id="bmDifficultyAssessorModelLabel">Assessment Model</label>
           <app-model-picker class="difficulty-assessor-model-selector" labelledBy="bmDifficultyAssessorModelLabel"
+                            viewStateKey="benchmark.difficulty.assessor"
                             [emptyHint]="workspace.benchmarkPickerEmptyHint" [showParallel]="true"
                             [options]="workspace.benchmarkPickerOptions" [selectedKey]="difficultyAssessorConfigId"
                             (selectionChange)="selectDifficultyAssessorModel($event.model)"></app-model-picker>
@@ -2102,6 +2105,7 @@
         <div class="form-group mb-15">
           <label id="bmRetryAssessorModelLabel">{{ retryScope === 'claim-verification' ? 'Claim Verifier Model' : 'Assessor Model' }}</label>
           <app-model-picker class="retry-assessor-model-selector" labelledBy="bmRetryAssessorModelLabel"
+                            viewStateKey="benchmark.retry.assessor"
                             [emptyHint]="workspace.benchmarkPickerEmptyHint" [showParallel]="true"
                             [options]="workspace.benchmarkPickerOptions" [selectedKey]="retryAssessorConfigId"
                             (selectionChange)="selectRetryAssessorModel($event.model)"></app-model-picker>

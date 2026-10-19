@@ -387,6 +387,7 @@
           <div class="form-group">
             <label id="rubricGapAuthorModelLabel">Rubric gap author model</label>
             <app-model-picker class="rubric-gap-author-selector"
+                              viewStateKey="benchmark.suiteHealth.rubricGapAuthor"
                               [options]="benchmarkModelOptions"
                               [selectedKey]="rubricGapAuthorConfigId"
                               labelledBy="rubricGapAuthorModelLabel"
@@ -696,6 +697,7 @@
         <div class="form-group">
           <label id="coverageModelLabel">Analysis model</label>
           <app-model-picker class="coverage-model-selector"
+                            viewStateKey="benchmark.suiteHealth.coverage"
                             [options]="benchmarkModelOptions"
                             [selectedKey]="coverageModelConfigId"
                             labelledBy="coverageModelLabel"
@@ -778,6 +780,7 @@
           <div class="form-group">
             <label id="rubricCheckerModelLabel">Rubric checker model</label>
             <app-model-picker class="rubric-checker-selector"
+                              viewStateKey="benchmark.suiteHealth.rubricChecker"
                               [options]="benchmarkModelOptions"
                               [selectedKey]="rubricCheckerConfigId"
                               labelledBy="rubricCheckerModelLabel"

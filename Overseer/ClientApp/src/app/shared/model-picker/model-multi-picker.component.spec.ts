@@ -396,3 +396,110 @@ describe('ModelMultiPickerComponent', () => {
     });
   });
 });
+
+const SIX: ModelPickerOption<TestModel>[] = [
+  { id: 11, displayName: 'Claude Opus 5.5', provider: 'Anthropic', releaseDate: '2026-08-01' },
+  { id: 12, displayName: 'Claude Haiku 5', provider: 'Anthropic' },
+  { id: 13, displayName: 'GPT-6', provider: 'OpenAI' },
+  { id: 14, displayName: 'GPT-6 Mini', provider: 'OpenAI' },
+  { id: 15, displayName: 'Gemini Luna 2', provider: 'Google' },
+  { id: 16, displayName: 'Gemini Flash 4', provider: 'Google' }
+].map(model => ({ key: model.id, model, ...(model.id === 12 ? { disabledReason: 'Grades this batch' } : {}) }));
+
+@Component({
+  standalone: true,
+  imports: [ModelMultiPickerComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <app-model-multi-picker class="six-picker" label="Six" viewStateKey="spec.multi"
+                            [options]="options" [selectedKeys]="selected" [max]="max"
+                            (selectionChange)="onChange($event)"></app-model-multi-picker>
+  `
+})
+class SixHostComponent {
+  private cdr = inject(ChangeDetectorRef);
+  options = SIX;
+  selected: ModelPickerKey[] = [];
+  max: number | null = null;
+  changes: ModelMultiPickerSelection<TestModel>[] = [];
+
+  onChange(selection: ModelMultiPickerSelection<TestModel>): void {
+    this.changes.push(selection);
+    this.selected = selection.keys;
+    this.cdr.markForCheck();
+  }
+
+  set(changes: Partial<Pick<SixHostComponent, 'selected' | 'max'>>): void {
+    Object.assign(this, changes);
+    this.cdr.markForCheck();
+  }
+}
+
+describe('ModelMultiPickerComponent view toolbar', () => {
+  let fixture: ComponentFixture<SixHostComponent>;
+  let host: SixHostComponent;
+  let el: HTMLElement;
+
+  beforeEach(async () => {
+    localStorage.removeItem('overseer.modelPicker.view.spec.multi');
+    await TestBed.configureTestingModule({ imports: [SixHostComponent] }).compileComponents();
+    fixture = TestBed.createComponent(SixHostComponent);
+    host = fixture.componentInstance;
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+  });
+
+  afterEach(() => localStorage.removeItem('overseer.modelPicker.view.spec.multi'));
+
+  const picker = () => el.querySelector<HTMLElement>('.six-picker')!;
+  const labels = () => Array.from(picker().querySelectorAll<HTMLElement>('[role="option"] .model-name')).map(n => n.textContent!.trim());
+  const selectShown = () => picker().querySelector<HTMLButtonElement>('.model-picker-select-shown');
+
+  function open(): void {
+    picker().querySelector<HTMLButtonElement>('.selector-trigger')!.click();
+    fixture.detectChanges();
+  }
+
+  function pressProvider(key: string): void {
+    picker().querySelector<HTMLButtonElement>(`.model-picker-provider[data-provider="${key}"]`)!.click();
+    fixture.detectChanges();
+  }
+
+  it('narrows the list by provider, and Select all shown adds only the shown enabled models', () => {
+    open();
+    expect(labels().length).toBe(6);
+    expect(selectShown()).toBeNull();
+
+    pressProvider('anthropic');
+    expect(labels()).toEqual(['Claude Opus 5.5', 'Claude Haiku 5']);
+    expect(selectShown()!.textContent).toContain('Select all shown (1)');
+    selectShown()!.click();
+    fixture.detectChanges();
+    expect(host.changes.length).toBe(1);
+    expect(host.selected).toEqual([11]);
+
+    expect(selectShown()!.getAttribute('aria-disabled')).toBe('true');
+    const tip = picker().querySelector<HTMLElement>(`#${selectShown()!.getAttribute('interestfor')}`)!;
+    expect(tip.textContent).toContain('All shown models are already selected.');
+  });
+
+  it('keeps a selected model hidden by the filter, and says so', () => {
+    host.set({ selected: [15] });
+    fixture.detectChanges();
+    open();
+    pressProvider('openai');
+    expect(labels()).toEqual(['GPT-6', 'GPT-6 Mini']);
+    expect(picker().querySelector('.gh-multi-picker-chip-label')!.textContent!.trim()).toBe('Gemini Luna 2');
+    expect(picker().querySelector('.model-picker-status')!.textContent).toContain('1 selected model hidden');
+  });
+
+  it('gives the max as the reason Select all shown cannot add', () => {
+    host.set({ selected: [11], max: 1 });
+    fixture.detectChanges();
+    open();
+    pressProvider('openai');
+    expect(selectShown()!.getAttribute('aria-disabled')).toBe('true');
+    const tip = picker().querySelector<HTMLElement>(`#${selectShown()!.getAttribute('interestfor')}`)!;
+    expect(tip.textContent).toContain('At most 1 model can be selected.');
+  });
+});

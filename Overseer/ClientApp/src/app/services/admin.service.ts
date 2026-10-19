@@ -147,6 +147,8 @@ export interface SystemAiConfigDto {
   displayNameMode?: string | null;
   provider: string;
   modelId: string;
+  /** The catalog release date, yyyy-MM-dd; null when the catalog does not describe the model. */
+  releaseDate?: string | null;
   thinkingLevel: string | null;
   reasoningMode: string | null;
   reasoningSummary: string | null;

@@ -156,6 +156,7 @@ export class RunAiReportsComponent extends ReportDocumentsTabBase<BenchmarkRunDe
   override readonly writerAdvice = RUN_REPORT_WRITER_ADVICE;
   override readonly rootClass = '';
   override readonly writerPickerClass = 'rr-report-writer-model-selector';
+  override readonly viewStateKeyPrefix = 'benchmark.runReport';
   override readonly changedSinceText = 'Run changed since this document was written';
   override readonly downloadsNoticeText = 'These reports, and the rest of this run, can be downloaded from the Download Center ' +
     'as PDF, Word or Markdown, at Summary, Detailed or Full disclosure, one by one or together in a ZIP.';

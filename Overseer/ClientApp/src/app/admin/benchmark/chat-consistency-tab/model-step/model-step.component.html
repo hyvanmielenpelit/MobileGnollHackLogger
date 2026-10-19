@@ -7,6 +7,7 @@
   <div class="cc-model-field cc-model-field--model">
     <label id="cc-tl-model-label" class="cc-model-label">Model</label>
     <app-model-picker class="cc-subject-model-selector cc-model-picker" labelledBy="cc-tl-model-label" [describedBy]="modelDescribedBy"
+                      viewStateKey="benchmark.chatConsistency.subject"
                       placeholder="Select a model" [emptyHint]="pickerEmptyHint"
                       [options]="options" [selectedKey]="selectedKey" [disabled]="!!lockedReason"
                       (selectionChange)="selectModel($event.key)"></app-model-picker>

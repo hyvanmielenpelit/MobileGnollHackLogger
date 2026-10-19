@@ -582,3 +582,276 @@ describe('ModelPickerComponent', () => {
     });
   });
 });
+
+const MANY: TestModel[] = [
+  { id: 1, displayName: 'Gemini Luna 2', modelId: 'gemini-luna-2', provider: 'Google', releaseDate: '2026-03-01' },
+  { id: 2, displayName: 'Claude Opus 5.5', modelId: 'claude-opus-5-5', provider: 'Anthropic', releaseDate: '2026-08-01' },
+  { id: 3, displayName: 'GPT-6', modelId: 'gpt-6', provider: 'OpenAI', releaseDate: '2026-01-15' },
+  { id: 4, displayName: 'Gemini Flash 4', modelId: 'gemini-flash-4', provider: 'Google' },
+  { id: 5, displayName: 'Claude Haiku 5', modelId: 'claude-haiku-5', provider: 'Anthropic', releaseDate: '2025-11-01' },
+  { id: 6, displayName: 'Alpha Custom', modelId: 'alpha', provider: 'OpenAI' }
+];
+
+const VIEW_KEYS = ['spec.one', 'spec.two', 'spec.never'];
+
+@Component({
+  standalone: true,
+  imports: [ModelPickerComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <dialog open class="dlg" (keydown)="dialogKeys.push($any($event).key)">
+      <app-model-picker class="pk-one" label="One" viewStateKey="spec.one" noneLabel="None"
+                        [options]="many" [selectedKey]="selected"
+                        (selectionChange)="onSelect($event)"></app-model-picker>
+    </dialog>
+    <app-model-picker class="pk-two" label="Two" viewStateKey="spec.two" [options]="grouped"></app-model-picker>
+    <app-model-picker class="pk-five" label="Five" [options]="five"></app-model-picker>
+    <app-model-picker class="pk-never" label="Never" viewTools="never" viewStateKey="spec.never"
+                      [options]="many"></app-model-picker>
+  `
+})
+class ToolsHostComponent {
+  private cdr = inject(ChangeDetectorRef);
+  many = toModelPickerOptions(MANY);
+  five = toModelPickerOptions(MANY.slice(0, 5));
+  grouped = [
+    ...toModelPickerOptions(MANY.slice(0, 3), 'Your Models', 'u_'),
+    ...toModelPickerOptions(MANY.slice(3), 'System Models', 's_')
+  ];
+  selected: ModelPickerKey | null = null;
+  selections: ModelPickerSelection<TestModel>[] = [];
+  dialogKeys: string[] = [];
+
+  onSelect(selection: ModelPickerSelection<TestModel>): void {
+    this.selections.push(selection);
+    this.selected = selection.key;
+    this.cdr.markForCheck();
+  }
+
+  select(key: ModelPickerKey | null): void {
+    this.selected = key;
+    this.cdr.markForCheck();
+  }
+}
+
+describe('ModelPickerComponent view toolbar', () => {
+  let fixture: ComponentFixture<ToolsHostComponent>;
+  let host: ToolsHostComponent;
+  let el: HTMLElement;
+  let finePointer = true;
+
+  function clearViews(): void {
+    for (const key of VIEW_KEYS) localStorage.removeItem(`overseer.modelPicker.view.${key}`);
+  }
+
+  function stored(key: string): Record<string, unknown> | null {
+    const raw = localStorage.getItem(`overseer.modelPicker.view.${key}`);
+    return raw ? JSON.parse(raw) : null;
+  }
+
+  function store(key: string, state: Record<string, unknown>): void {
+    localStorage.setItem(`overseer.modelPicker.view.${key}`, JSON.stringify({ version: 1, sort: 'default', providers: [], search: '', ...state }));
+  }
+
+  async function create(): Promise<void> {
+    await TestBed.configureTestingModule({ imports: [ToolsHostComponent] }).compileComponents();
+    fixture = TestBed.createComponent(ToolsHostComponent);
+    host = fixture.componentInstance;
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+  }
+
+  beforeEach(() => {
+    clearViews();
+    finePointer = true;
+    const real = window.matchMedia.bind(window);
+    vi.spyOn(window, 'matchMedia').mockImplementation((query: string) =>
+      query === '(pointer: fine)' ? ({ matches: finePointer, media: query } as MediaQueryList) : real(query));
+  });
+
+  afterEach(() => {
+    clearViews();
+    vi.restoreAllMocks();
+  });
+
+  const picker = (name: string) => el.querySelector<HTMLElement>(`.pk-${name}`)!;
+  const trigger = (p: HTMLElement) => p.querySelector<HTMLButtonElement>('.selector-trigger')!;
+  const listbox = (p: HTMLElement) => p.querySelector<HTMLElement>('[role="listbox"]');
+  const tools = (p: HTMLElement) => p.querySelector<HTMLElement>('.model-picker-tools');
+  const search = (p: HTMLElement) => p.querySelector<HTMLInputElement>('.model-picker-search')!;
+  const optionNames = (p: HTMLElement) =>
+    Array.from(p.querySelectorAll<HTMLElement>('[role="option"] .model-name')).map(n => n.textContent!.trim());
+  const headings = (p: HTMLElement) =>
+    Array.from(p.querySelectorAll<HTMLElement>('.model-group-title')).map(h => h.textContent!.trim());
+
+  function open(p: HTMLElement): void {
+    trigger(p).click();
+    fixture.detectChanges();
+  }
+
+  function type(p: HTMLElement, text: string): void {
+    const input = search(p);
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+  }
+
+  function key(target: HTMLElement, keyName: string, init: KeyboardEventInit = {}): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', { key: keyName, bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(event);
+    fixture.detectChanges();
+    return event;
+  }
+
+  it('has no toolbar at five options or with viewTools="never", and one at six', async () => {
+    await create();
+    open(picker('five'));
+    expect(tools(picker('five'))).toBeNull();
+    expect(document.activeElement).toBe(listbox(picker('five')));
+
+    open(picker('never'));
+    expect(tools(picker('never'))).toBeNull();
+
+    open(picker('two'));
+    expect(tools(picker('two'))).not.toBeNull();
+    expect(listbox(picker('two'))!.closest('.selector-popup')).not.toBeNull();
+    expect(tools(picker('two'))!.closest('[role="listbox"]')).toBeNull();
+  });
+
+  it('does not apply a stored view where the toolbar is not shown', async () => {
+    store('spec.never', { search: 'luna', sort: 'name-asc' });
+    await create();
+    open(picker('never'));
+    expect(optionNames(picker('never'))).toEqual(MANY.map(m => m.displayName));
+  });
+
+  it('filters as the user types, and Enter commits the first match', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    expect(document.activeElement).toBe(search(p));
+    type(p, 'luna');
+    expect(optionNames(p)).toEqual(['None', 'Gemini Luna 2']);
+    expect(p.querySelector('mark.model-option-match')!.textContent).toBe('Luna');
+    expect(p.querySelector('.model-picker-status')!.textContent).toContain('1 of 6 models');
+    key(search(p), 'Enter');
+    expect(host.selections.at(-1)!.key).toBe(1);
+    expect(listbox(p)).toBeNull();
+  });
+
+  it('keeps the none option first, however the view sorts', async () => {
+    store('spec.one', { sort: 'name-desc' });
+    await create();
+    open(picker('one'));
+    expect(optionNames(picker('one'))[0]).toBe('None');
+    expect(optionNames(picker('one'))[1]).toBe('GPT-6');
+  });
+
+  it('sorts Your Models and System Models separately and keeps their headings', async () => {
+    store('spec.two', { sort: 'name-asc' });
+    await create();
+    const p = picker('two');
+    open(p);
+    expect(headings(p)).toEqual(['Your Models', 'System Models']);
+    expect(optionNames(p)).toEqual(['Claude Opus 5.5', 'Gemini Luna 2', 'GPT-6', 'Alpha Custom', 'Claude Haiku 5', 'Gemini Flash 4']);
+  });
+
+  it('shows the release month while a release-date sort applies', async () => {
+    store('spec.two', { sort: 'release-desc' });
+    await create();
+    const p = picker('two');
+    open(p);
+    expect(optionNames(p)).toEqual(['Claude Opus 5.5', 'Gemini Luna 2', 'GPT-6', 'Claude Haiku 5', 'Alpha Custom', 'Gemini Flash 4']);
+    const notes = Array.from(p.querySelectorAll<HTMLElement>('.model-option-release')).map(n => n.textContent!.trim());
+    expect(notes).toEqual(['released Aug 2026', 'released Mar 2026', 'released Jan 2026', 'released Nov 2025', 'released date unknown', 'released date unknown']);
+    expect(trigger(p).querySelector('.model-option-release')).toBeNull();
+  });
+
+  it('renders no heading for a group the view leaves empty', async () => {
+    await create();
+    const p = picker('two');
+    open(p);
+    type(p, 'haiku');
+    expect(headings(p)).toEqual(['System Models']);
+    expect(optionNames(p)).toEqual(['Claude Haiku 5']);
+  });
+
+  it('remembers each picker on its own key', async () => {
+    await create();
+    open(picker('two'));
+    const toggle = picker('two').querySelector<HTMLButtonElement>('.model-picker-provider[data-provider="openai"]')!;
+    toggle.click();
+    fixture.detectChanges();
+    expect(stored('spec.two')).toEqual({ version: 1, sort: 'default', providers: ['openai'], search: '' });
+    expect(stored('spec.one')).toBeNull();
+    expect(optionNames(picker('two'))).toEqual(['GPT-6', 'Alpha Custom']);
+  });
+
+  it('writes the search after 300 ms of quiet, and at once on close', async () => {
+    await create();
+    vi.useFakeTimers();
+    try {
+      const p = picker('one');
+      open(p);
+      type(p, 'lu');
+      expect(stored('spec.one')).toBeNull();
+      vi.advanceTimersByTime(300);
+      expect(stored('spec.one')!['search']).toBe('lu');
+
+      type(p, 'lun');
+      key(search(p), 'Escape');
+      expect(stored('spec.one')!['search']).toBe('lun');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('focuses the listbox instead of the search field on a coarse pointer, and typing moves to the field', async () => {
+    finePointer = false;
+    await create();
+    const p = picker('one');
+    open(p);
+    expect(document.activeElement).toBe(listbox(p));
+    key(listbox(p)!, 'g');
+    expect(document.activeElement).toBe(search(p));
+    expect(search(p).value).toBe('g');
+    expect(optionNames(p)).toContain('GPT-6');
+  });
+
+  it('keeps focus in the search field when an option is pressed', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    const option = p.querySelectorAll<HTMLElement>('[role="option"]')[2];
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    option.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    option.click();
+    fixture.detectChanges();
+    expect(host.selections.at(-1)!.key).toBe(2);
+  });
+
+  it('closes on Escape in the search field without closing the enclosing dialog', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    const event = key(search(p), 'Escape');
+    expect(event.defaultPrevented).toBe(true);
+    expect(host.dialogKeys).toEqual([]);
+    expect(listbox(p)).toBeNull();
+    expect(el.querySelector<HTMLDialogElement>('.dlg')!.open).toBe(true);
+    expect(document.activeElement).toBe(trigger(p));
+  });
+
+  it('says so when the view hides the selected model', async () => {
+    await create();
+    host.select(2);
+    fixture.detectChanges();
+    const p = picker('one');
+    open(p);
+    type(p, 'luna');
+    expect(p.querySelector('.model-picker-status')!.textContent).toContain('selected model hidden');
+    type(p, '');
+    expect(p.querySelector('.model-picker-status')!.textContent).not.toContain('selected model hidden');
+  });
+});

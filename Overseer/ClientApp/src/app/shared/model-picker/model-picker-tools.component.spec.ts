@@ -1,0 +1,240 @@
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+
+import { ModelPickerSelectShown, ModelPickerToolsComponent } from './model-picker-tools.component';
+import { ModelPickerNavigateIntent, ModelPickerProviderFacet, ModelPickerViewState } from './model-picker-view';
+
+const TWO_PROVIDERS: ModelPickerProviderFacet[] = [
+  { provider: 'Anthropic', key: 'anthropic', count: 3 },
+  { provider: 'OpenAI', key: 'openai', count: 1 }
+];
+
+/** Feeds every state change back in, the way a picker does. */
+@Component({
+  standalone: true,
+  imports: [ModelPickerToolsComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="outer" (keydown)="outerKeys.push($any($event).key)">
+      <app-model-picker-tools uid="tt" listboxId="tt-listbox" [activeOptionId]="activeOptionId"
+                              [state]="state" [providers]="providers" [dateSortAvailable]="dates"
+                              [shownCount]="shown" [totalCount]="10" [selectShown]="selectShown"
+                              (stateChange)="onState($event)" (navigate)="intents.push($event)"
+                              (selectShownClick)="selectShownClicks = selectShownClicks + 1"></app-model-picker-tools>
+    </div>
+  `
+})
+class HostComponent {
+  private cdr = inject(ChangeDetectorRef);
+  state: ModelPickerViewState = { sort: 'default', providers: [], search: '' };
+  providers: ModelPickerProviderFacet[] = TWO_PROVIDERS;
+  dates = true;
+  shown = 10;
+  activeOptionId: string | null = 'tt-opt-1';
+  selectShown: ModelPickerSelectShown | null = null;
+  states: ModelPickerViewState[] = [];
+  intents: ModelPickerNavigateIntent[] = [];
+  outerKeys: string[] = [];
+  selectShownClicks = 0;
+
+  onState(state: ModelPickerViewState): void {
+    this.states.push(state);
+    this.state = state;
+    this.cdr.markForCheck();
+  }
+
+  set(changes: Partial<Pick<HostComponent, 'providers' | 'dates' | 'shown' | 'selectShown' | 'state'>>): void {
+    Object.assign(this, changes);
+    this.cdr.markForCheck();
+  }
+}
+
+describe('ModelPickerToolsComponent', () => {
+  let fixture: ComponentFixture<HostComponent>;
+  let host: HostComponent;
+  let el: HTMLElement;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({ imports: [HostComponent] }).compileComponents();
+    fixture = TestBed.createComponent(HostComponent);
+    host = fixture.componentInstance;
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+  });
+
+  const search = () => el.querySelector<HTMLInputElement>('.model-picker-search')!;
+  const sortButton = () => el.querySelector<HTMLButtonElement>('.model-picker-sort')!;
+  const sortPanel = () => el.querySelector<HTMLElement>('.model-picker-sort-panel')!;
+  const radios = () => Array.from(sortPanel().querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+  const toggles = () => Array.from(el.querySelectorAll<HTMLButtonElement>('.model-picker-provider'));
+  const liveRegion = () => el.querySelector<HTMLElement>('[role="status"]')!;
+
+  function update(changes: Parameters<HostComponent['set']>[0]): void {
+    host.set(changes);
+    fixture.detectChanges();
+  }
+
+  function key(target: HTMLElement, keyName: string, init: KeyboardEventInit = {}): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', { key: keyName, bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(event);
+    fixture.detectChanges();
+    return event;
+  }
+
+  function type(text: string): void {
+    search().value = text;
+    search().dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+  }
+
+  it('makes the search field the combobox of the listbox, inside a search landmark', () => {
+    const input = search();
+    expect(input.closest('search')).not.toBeNull();
+    expect(input.type).toBe('search');
+    expect(input.getAttribute('role')).toBe('combobox');
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    expect(input.getAttribute('aria-controls')).toBe('tt-listbox');
+    expect(input.getAttribute('aria-autocomplete')).toBe('list');
+    expect(input.getAttribute('aria-activedescendant')).toBe('tt-opt-1');
+    expect(input.getAttribute('aria-label')).toBe('Search models');
+    expect(input.getAttribute('autocomplete')).toBe('off');
+    expect(input.getAttribute('spellcheck')).toBe('false');
+    expect(el.querySelector('[title]')).toBeNull();
+  });
+
+  it('shows provider toggles only from two providers, pressed by the filter', () => {
+    expect(toggles().length).toBe(2);
+    expect(el.querySelector('[role="group"]')!.getAttribute('aria-label')).toBe('Filter by provider');
+    expect(toggles().map(t => t.getAttribute('aria-pressed'))).toEqual(['false', 'false']);
+
+    toggles()[1].click();
+    fixture.detectChanges();
+    expect(host.states.at(-1)!.providers).toEqual(['openai']);
+    expect(toggles()[1].getAttribute('aria-pressed')).toBe('true');
+    expect(toggles()[1].querySelector('svg')).not.toBeNull();
+    expect(toggles()[0].querySelector('svg')).toBeNull();
+
+    update({ providers: TWO_PROVIDERS.slice(0, 1) });
+    expect(toggles().length).toBe(0);
+  });
+
+  it('offers the release-date sorts only where the options have dates', () => {
+    expect(radios().map(r => r.value)).toEqual(['default', 'name-asc', 'name-desc', 'release-desc', 'release-asc']);
+    update({ dates: false });
+    expect(radios().map(r => r.value)).toEqual(['default', 'name-asc', 'name-desc']);
+  });
+
+  it('emits a sort as soon as a radio changes and keeps the panel open', () => {
+    sortPanel().showPopover();
+    fixture.detectChanges();
+    const nameDesc = radios().find(r => r.value === 'name-desc')!;
+    nameDesc.checked = true;
+    nameDesc.dispatchEvent(new Event('change', { bubbles: true }));
+    fixture.detectChanges();
+    expect(host.states.at(-1)!.sort).toBe('name-desc');
+    expect(sortPanel().matches(':popover-open')).toBe(true);
+    expect(sortButton().getAttribute('aria-label')).toBe('Sort models: Name (Z–A)');
+    expect(el.querySelector('.model-picker-sort-dot')).not.toBeNull();
+    sortPanel().hidePopover();
+  });
+
+  it('closes only the Sort panel on Escape there', () => {
+    sortPanel().showPopover();
+    fixture.detectChanges();
+    const event = key(radios()[0], 'Escape');
+    expect(event.defaultPrevented).toBe(true);
+    expect(host.outerKeys).toEqual([]);
+    expect(sortPanel().matches(':popover-open')).toBe(false);
+  });
+
+  it('turns Escape in the search field into a close intent that stops there', () => {
+    type('luna');
+    const event = key(search(), 'Escape');
+    expect(event.defaultPrevented).toBe(true);
+    expect(host.outerKeys).toEqual([]);
+    expect(host.intents).toEqual(['close']);
+    expect(search().value).toBe('luna');
+  });
+
+  it('turns arrow, page and Ctrl+Home / Ctrl+End keys into intents, and leaves plain Home to the caret', () => {
+    key(search(), 'ArrowDown');
+    key(search(), 'ArrowUp');
+    key(search(), 'PageDown');
+    key(search(), 'PageUp');
+    key(search(), 'Home', { ctrlKey: true });
+    key(search(), 'End', { ctrlKey: true });
+    key(search(), 'Enter');
+    const home = key(search(), 'Home');
+    expect(home.defaultPrevented).toBe(false);
+    expect(host.intents).toEqual(['next', 'prev', 'pageNext', 'pagePrev', 'first', 'last', 'commit']);
+  });
+
+  it('extends with Shift+Arrow only in a multi-select picker', () => {
+    key(search(), 'ArrowDown', { shiftKey: true });
+    update({ selectShown: { count: 2, reason: null } });
+    key(search(), 'ArrowDown', { shiftKey: true });
+    key(search(), 'ArrowUp', { shiftKey: true });
+    expect(host.intents).toEqual(['next', 'extendNext', 'extendPrev']);
+  });
+
+  it('clears the search with its button and returns focus to the field', () => {
+    type('luna');
+    const clear = el.querySelector<HTMLButtonElement>('.model-picker-search-clear')!;
+    expect(clear.getAttribute('aria-label')).toBe('Clear search');
+    clear.click();
+    fixture.detectChanges();
+    expect(host.state.search).toBe('');
+    expect(document.activeElement).toBe(search());
+    expect(el.querySelector('.model-picker-search-clear')).toBeNull();
+  });
+
+  it('shows Reset view only while the view differs from the default, and resets everything', () => {
+    expect(el.querySelector('.model-picker-reset')).toBeNull();
+    update({ state: { sort: 'name-asc', providers: ['openai'], search: 'gp' }, shown: 1 });
+    expect(el.querySelector('.model-picker-status')!.textContent).toContain('1 of 10 models');
+    el.querySelector<HTMLButtonElement>('.model-picker-reset')!.click();
+    fixture.detectChanges();
+    expect(host.states.at(-1)).toEqual({ sort: 'default', providers: [], search: '' });
+    expect(document.activeElement).toBe(search());
+  });
+
+  it('shows Select all shown while the list is narrowed, aria-disabled with a reason', () => {
+    update({ selectShown: { count: 3, reason: null } });
+    expect(el.querySelector('.model-picker-select-shown')).toBeNull();
+    type('a');
+    const button = el.querySelector<HTMLButtonElement>('.model-picker-select-shown')!;
+    expect(button.textContent).toContain('Select all shown (3)');
+    button.click();
+    expect(host.selectShownClicks).toBe(1);
+
+    update({ selectShown: { count: 0, reason: 'All shown models are already selected.' } });
+    const blocked = el.querySelector<HTMLButtonElement>('.model-picker-select-shown')!;
+    expect(blocked.getAttribute('aria-disabled')).toBe('true');
+    const tip = el.querySelector<HTMLElement>(`#${blocked.getAttribute('interestfor')}`)!;
+    expect(tip.textContent).toContain('All shown models are already selected.');
+  });
+
+  it('announces the count 400 ms after the last change, once', () => {
+    vi.useFakeTimers();
+    try {
+      type('lu');
+      update({ shown: 4 });
+      type('lun');
+      update({ shown: 2 });
+      vi.advanceTimersByTime(399);
+      fixture.detectChanges();
+      expect(liveRegion().textContent).toBe('');
+      vi.advanceTimersByTime(1);
+      fixture.detectChanges();
+      expect(liveRegion().textContent).toBe('2 of 10 models shown.');
+
+      type('luna');
+      update({ shown: 0 });
+      vi.advanceTimersByTime(400);
+      fixture.detectChanges();
+      expect(liveRegion().textContent).toBe('No models match "luna".');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

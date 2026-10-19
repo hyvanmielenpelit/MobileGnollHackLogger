@@ -51,7 +51,7 @@ public class AdminSystemAiConfigTests
             new Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorJobManager(),
             new Overseer.Services.Benchmarking.BenchmarkReportPackJobManager());
         var controller = new AdminController(db, config, null!, cryptoService, governor, endpointPolicy, usageGuard, pricingService,
-            new ModelAvailabilityService(metadataService), new ModelResolutionService(metadataService));
+            new ModelAvailabilityService(metadataService), new ModelResolutionService(metadataService), metadataService);
 
         return (controller, db, cryptoService);
     }
@@ -777,6 +777,48 @@ public class AdminSystemAiConfigTests
         var legacyDto = configs.Single(c => c.Id == legacy.Id);
         Assert.Equal(ModelCatalogModes.Catalog, legacyDto.ModelCatalogMode);
         Assert.Equal("available", legacyDto.ModelAvailability?.Status);
+    }
+
+    /// <summary>A Google catalog model ID whose release date the catalog declares, and that date.</summary>
+    private static (string ModelId, string ReleaseDate) GoogleModelWithReleaseDate()
+    {
+        var metadata = new ModelMetadataService();
+        var modelId = metadata.GetCatalogTargets("Google")
+            .Select(t => t.ModelId)
+            .First(id => metadata.GetReleaseDate("Google", id) != null);
+        return (modelId, metadata.GetReleaseDate("Google", modelId)!);
+    }
+
+    [Fact]
+    public async Task GetSystemConfigs_CarriesTheCatalogReleaseDate_AndNullForAModelOutsideTheCatalog()
+    {
+        var (controller, db, _) = CreateTestController();
+        var (modelId, releaseDate) = GoogleModelWithReleaseDate();
+        var catalogued = await AddGoogleConfigAsync(db, modelId, displayName: "Catalogued");
+        var madeUp = await AddGoogleConfigAsync(db, "made-up-model-x", ModelCatalogModes.Custom, displayName: "Made Up");
+
+        var configs = Assert.IsAssignableFrom<IEnumerable<SystemAiApiConfigurationDto>>(
+            Assert.IsType<OkObjectResult>(await controller.GetSystemConfigs()).Value).ToList();
+
+        Assert.False(string.IsNullOrEmpty(releaseDate));
+        Assert.Equal(releaseDate, configs.Single(c => c.Id == catalogued.Id).ReleaseDate);
+        Assert.Null(configs.Single(c => c.Id == madeUp.Id).ReleaseDate);
+    }
+
+    [Fact]
+    public async Task ResolveSystemConfigModel_DryRunSwitch_CarriesTheTargetsReleaseDate()
+    {
+        var (controller, db, _) = CreateTestController();
+        var (modelId, releaseDate) = GoogleModelWithReleaseDate();
+        var config = await AddGoogleConfigAsync(db, "made-up-model-x", ModelCatalogModes.Custom, displayName: "Made Up");
+
+        var ok = Assert.IsType<OkObjectResult>(await controller.ResolveSystemConfigModel(config.Id,
+            new ModelResolutionRequest { Action = ModelResolutionActions.Switch, TargetModelId = modelId, DryRun = true },
+            TestContext.Current.CancellationToken));
+
+        var dto = Assert.IsType<SystemAiApiConfigurationDto>(Assert.IsType<ModelResolutionResult>(ok.Value).Model);
+        Assert.Equal(modelId, dto.ModelId);
+        Assert.Equal(releaseDate, dto.ReleaseDate);
     }
 
     [Fact]

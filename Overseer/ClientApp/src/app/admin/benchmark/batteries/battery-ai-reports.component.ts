@@ -139,6 +139,7 @@ export class BatteryAiReportsComponent extends ReportDocumentsTabBase<BenchmarkB
   override readonly writerAdvice = BATTERY_REPORT_WRITER_ADVICE;
   override readonly rootClass = 'bai-reports';
   override readonly writerPickerClass = 'bai-report-writer-model-selector';
+  override readonly viewStateKeyPrefix = 'benchmark.batteryReport';
   override readonly changedSinceText = 'A member run changed since this document was written';
   override readonly downloadsNoticeText = 'These reports can be downloaded from the Download Center as PDF, Word or Markdown, ' +
     'at Summary, Detailed or Full disclosure, one by one or together in a ZIP with the battery\'s analysis report.';

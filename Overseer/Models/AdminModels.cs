@@ -28,6 +28,8 @@ public class SystemAiApiConfigurationDto
     public string? DisplayNameMode { get; set; }
     public string Provider { get; set; } = string.Empty;
     public string ModelId { get; set; } = string.Empty;
+    /// <summary>The catalog release date (yyyy-MM-dd) of the model; null when the catalog does not describe it.</summary>
+    public string? ReleaseDate { get; set; }
     public string? ThinkingLevel { get; set; }
     public string? ReasoningMode { get; set; }
     public string? ReasoningSummary { get; set; }

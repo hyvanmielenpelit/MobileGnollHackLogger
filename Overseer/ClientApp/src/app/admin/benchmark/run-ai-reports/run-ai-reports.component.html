@@ -158,6 +158,7 @@
         <div class="rr-ai-write-row">
           <div class="gh-field-row rr-ai-writer-field">
             <app-model-picker [class]="writerPickerClass" [labelledBy]="labelId"
+                              [viewStateKey]="viewStateKeyPrefix + '.reportWriter'"
                               [describedBy]="writerDescribedBy"
                               placeholder="Select a model" [emptyHint]="emptyHint" [showPrice]="true"
                               [options]="options" [selectedKey]="writerConfigId"
@@ -328,6 +329,7 @@
       <div class="rr-ai-writer">
         <label [id]="rewriteLabelId">Report writer</label>
         <app-model-picker class="rr-ai-rewrite-writer" [labelledBy]="rewriteLabelId"
+                          [viewStateKey]="viewStateKeyPrefix + '.rewriteWriter'"
                           placeholder="Select a model" [emptyHint]="emptyHint" [showPrice]="true"
                           [options]="options" [selectedKey]="rewriteWriterId"
                           (selectionChange)="selectRewriteWriter($event.model)"></app-model-picker>

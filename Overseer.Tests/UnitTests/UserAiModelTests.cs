@@ -262,6 +262,54 @@ public class UserAiModelTests
     }
 
     [Fact]
+    public async Task GetUserModels_CarriesTheCatalogReleaseDate_AndNullForAModelOutsideTheCatalog()
+    {
+        var (service, db) = CreateTestSettingsService();
+        var userId = "release-date-user";
+        var ct = TestContext.Current.CancellationToken;
+
+        var catalogModelId = Metadata.GetCatalogTargets("Google")
+            .Select(t => t.ModelId)
+            .First(id => Metadata.GetReleaseDate("Google", id) != null);
+        var expected = Metadata.GetReleaseDate("Google", catalogModelId);
+
+        var userCatalog = await AddRowAsync(db, userId, catalogModelId);
+        var userMadeUp = await AddRowAsync(db, userId, "made-up-model-x", ModelCatalogModes.Custom);
+        var systemCatalog = new SystemAiApiConfiguration
+        {
+            DisplayName = "Catalog System Model",
+            Provider = "Google",
+            ModelId = catalogModelId,
+            IsEnabled = true,
+            IsSystemWide = true,
+            ModelRole = 7
+        };
+        var systemMadeUp = new SystemAiApiConfiguration
+        {
+            DisplayName = "Made-up System Model",
+            Provider = "Google",
+            ModelId = "made-up-model-x",
+            IsEnabled = true,
+            IsSystemWide = true,
+            ModelRole = 7
+        };
+        db.SystemAiApiConfigurations.AddRange(systemCatalog, systemMadeUp);
+        await db.SaveChangesAsync(ct);
+
+        var ok = Assert.IsType<OkObjectResult>(await CreateController(service, db, userId).GetUserModels());
+        var items = Assert.IsAssignableFrom<IEnumerable<object>>(ok.Value).ToList();
+
+        object? ReleaseDateOf(long id, bool isSystem) =>
+            Prop(items.Single(i => (long)Prop(i, "Id")! == id && (bool)Prop(i, "IsSystem")! == isSystem), "ReleaseDate");
+
+        Assert.NotNull(expected);
+        Assert.Equal(expected, ReleaseDateOf(userCatalog.Id, isSystem: false));
+        Assert.Null(ReleaseDateOf(userMadeUp.Id, isSystem: false));
+        Assert.Equal(expected, ReleaseDateOf(systemCatalog.Id, isSystem: true));
+        Assert.Null(ReleaseDateOf(systemMadeUp.Id, isSystem: true));
+    }
+
+    [Fact]
     public async Task AddUserModelAsync_DerivesCustomForAnUncataloguedId_AndCatalogForACataloguedOne()
     {
         var (service, db) = CreateTestSettingsService();
