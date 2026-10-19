@@ -39,6 +39,7 @@ import {
   showsViewTools
 } from './model-picker-view';
 import type { ModelAvailability } from '../model-availability/model-availability';
+import { scrollOptionIntoListbox } from '../../utils/listbox-scroll.util';
 
 /** The fields a picker renders. Structural, so SystemAiConfigDto and UserAiModel both fit. */
 export interface ModelPickerModel {
@@ -179,7 +180,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   @Input() narrowHidesBadges = false;
   /** The trigger is aria-disabled and the list does not open; the host names the reason through describedBy. */
   @Input() disabled = false;
-  /** The search, sort and provider toolbar: `auto` shows it from 6 options up. */
+  /** The search, sort and provider toolbar: `auto` shows it from 2 options up. */
   @Input() viewTools: ModelPickerViewTools = 'auto';
   /** Names the picker's role; its view is stored as `overseer.modelPicker.view.<key>`. Null keeps it in memory only. */
   @Input() viewStateKey: string | null = null;
@@ -206,6 +207,11 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   dateSortAvailable = false;
   /** The models the view shows, the none option excluded. */
   shownCount = 0;
+  /**
+   * The listbox's least height, in px, while open with the toolbar: it only rises, so filtering
+   * never shrinks the popup or moves the controls. Null when closed.
+   */
+  listHold: number | null = null;
 
   private visibleKeys = new Set<ModelPickerKey>();
   private viewWriter = new ModelPickerViewWriter(() => this.viewStateKey);
@@ -227,6 +233,22 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   get listboxId(): string { return `${this.uid}-listbox`; }
 
   get emptyHintId(): string { return `${this.uid}-empty`; }
+
+  get noMatchId(): string { return `${this.uid}-no-match`; }
+
+  /** The view hides every model. */
+  get noMatchShown(): boolean { return this.toolsShown && this.shownCount === 0 && this.options.length > 0; }
+
+  /** The same words as the toolbar's live line. */
+  get noMatchText(): string {
+    const search = this.viewState.search.trim();
+    return search ? `No models match "${search}".` : 'No models match the filter.';
+  }
+
+  get listboxDescribedBy(): string | null {
+    if (this.options.length === 0 && !this.hasNoneOption && this.emptyHint) return this.emptyHintId;
+    return this.noMatchShown ? this.noMatchId : null;
+  }
 
   get activeOptionId(): string | null {
     return this.open && this.flat.length > 0 ? this.optionId(this.activeIndex) : null;
@@ -347,9 +369,9 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
         return;
       default:
         if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-          // With the toolbar, typing goes to its search field instead of type-ahead.
+          // With the toolbar, typing opens its search field instead of type-ahead.
           if (this.toolsShown && this.toolsRef) {
-            this.toolsRef.appendToSearch(event.key);
+            this.toolsRef.typeToSearch(event.key);
           } else {
             this.typeAhead(event.key);
           }
@@ -414,6 +436,8 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
       && previous.providers.length === state.providers.length
       && previous.providers.every((p, i) => p === state.providers[i]);
     this.viewWriter.write(state, searchOnly);
+    // Measured before the rows change.
+    this.holdListHeight();
     this.rebuild(true);
     this.cdr.markForCheck();
     this.cdr.detectChanges();
@@ -434,12 +458,14 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     this.clearTypeahead();
     this.cdr.markForCheck();
     this.cdr.detectChanges();
-    // On a touch screen the listbox takes focus, so the on-screen keyboard waits for a tap on the field.
-    if (this.toolsShown && this.toolsRef && finePointer()) {
+    // The field takes focus only when it opens with a remembered search, and on a touch screen not
+    // even then, so the on-screen keyboard waits for a tap on the field.
+    if (this.toolsShown && this.toolsRef?.searchShown && finePointer()) {
       this.toolsRef.focusSearch();
     } else {
       this.listboxRef?.nativeElement.focus();
     }
+    this.holdListHeight();
     this.scrollActiveIntoView();
     this.removeDocumentListener = this.renderer.listen('document', 'pointerdown', (event: PointerEvent) => {
       if (!this.host.nativeElement.contains(event.target as Node)) {
@@ -451,6 +477,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   private close(focusTrigger: boolean): void {
     if (!this.open) return;
     this.open = false;
+    this.listHold = null;
     this.detachDocumentListener();
     this.clearTypeahead();
     this.viewWriter.flush();
@@ -512,9 +539,18 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
 
   private scrollActiveIntoView(): void {
     const id = this.activeOptionId;
-    if (!id) return;
+    const listbox = this.listboxRef?.nativeElement;
+    if (!id || !listbox) return;
     const option = this.host.nativeElement.querySelector<HTMLElement>(`#${id}`);
-    option?.scrollIntoView?.({ block: 'nearest' });
+    if (option) scrollOptionIntoListbox(listbox, option);
+  }
+
+  /** Raises `listHold` to the listbox's current height while the toolbar is shown. */
+  private holdListHeight(): void {
+    const listbox = this.listboxRef?.nativeElement;
+    if (!this.open || !this.toolsShown || !listbox) return;
+    this.listHold = Math.max(this.listHold ?? 0, listbox.getBoundingClientRect().height);
+    this.cdr.markForCheck();
   }
 
   private detachDocumentListener(): void {

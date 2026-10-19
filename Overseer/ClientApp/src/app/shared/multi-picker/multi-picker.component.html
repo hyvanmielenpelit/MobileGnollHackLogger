@@ -58,9 +58,15 @@
 
   @if (open) {
     @if (toolsTemplate) {
+      <!-- The tools are the popup's edge nearest the trigger: first downward, last upward. -->
       <div class="selector-popup" (focusout)="onFocusOut($event)" (mousedown)="onPopupMousedown($event)">
-        <ng-container [ngTemplateOutlet]="toolsTemplate" [ngTemplateOutletContext]="toolsContext"></ng-container>
-        <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>
+        @if (dropsUp) {
+          <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>
+          <ng-container [ngTemplateOutlet]="toolsTemplate" [ngTemplateOutletContext]="toolsContext"></ng-container>
+        } @else {
+          <ng-container [ngTemplateOutlet]="toolsTemplate" [ngTemplateOutletContext]="toolsContext"></ng-container>
+          <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>
+        }
       </div>
     } @else {
       <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>
@@ -73,10 +79,14 @@
        aria-multiselectable="true"
        [attr.aria-labelledby]="labelIdValue"
        [attr.aria-activedescendant]="activeOptionId"
-       [attr.aria-describedby]="entries.length === 0 && emptyHint ? emptyHintId : null"
+       [attr.aria-describedby]="listboxDescribedBy"
+       [style.min-block-size.px]="listHold"
        (keydown)="onListboxKeydown($event)" (focusout)="onFocusOut($event)">
     @if (entries.length === 0 && emptyHint) {
       <div class="empty-dropdown-hint" role="none" [id]="emptyHintId">{{ emptyHint }}</div>
+    }
+    @if (noMatchShown) {
+      <div class="empty-dropdown-hint" role="none" [id]="noMatchId">{{ noMatchHint }}</div>
     }
     @for (section of sections; track $index) {
       @if (section.headingId) {

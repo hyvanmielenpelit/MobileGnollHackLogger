@@ -54,7 +54,7 @@ let nextUid = 0;
  * note). Price and
  * parallel-execution badges are off by default, since choosing which models something covers is
  * not choosing what to run. Presentational: the host owns the selection and `status`, passed through.
- * From 6 options up it adds the view toolbar of `app-model-picker` (search, sort, provider filter,
+ * From 2 options up it adds the view toolbar of `app-model-picker` (search, sort, provider filter,
  * *Select all shown*), which narrows the list and never the selection.
  */
 @Component({
@@ -86,7 +86,7 @@ export class ModelMultiPickerComponent<M extends ModelPickerModel = ModelPickerM
   @Input() showParallel = false;
   @Input() chipStyle: 'pill' | 'card' = 'pill';
   @Input() status: MultiPickerStatus | null = null;
-  /** The search, sort and provider toolbar: `auto` shows it from 6 options up. */
+  /** The search, sort and provider toolbar: `auto` shows it from 2 options up. */
   @Input() viewTools: ModelPickerViewTools = 'auto';
   /** Names the picker's role; its view is stored as `overseer.modelPicker.view.<key>`. Null keeps it in memory only. */
   @Input() viewStateKey: string | null = null;
@@ -95,6 +95,8 @@ export class ModelMultiPickerComponent<M extends ModelPickerModel = ModelPickerM
   @Output() selectionChange = new EventEmitter<ModelMultiPickerSelection<M>>();
 
   @ViewChild(MultiPickerComponent, { static: true }) private picker!: MultiPickerComponent;
+  /** The toolbar `app-multi-picker` renders from this component's `#modelTools` template while open. */
+  @ViewChild(ModelPickerToolsComponent) private tools?: ModelPickerToolsComponent;
 
   readonly uid = `mmp-${++nextUid}`;
 
@@ -124,6 +126,19 @@ export class ModelMultiPickerComponent<M extends ModelPickerModel = ModelPickerM
 
   /** The shown models *Select all shown* would add, and why it cannot; one object until either changes. */
   selectShown: ModelPickerSelectShown = { count: 0, reason: null };
+
+  /** A character typed in the listbox opens the toolbar's search with it. */
+  readonly typeToTools = (char: string): boolean => {
+    if (!this.tools) return false;
+    this.tools.typeToSearch(char);
+    return true;
+  };
+
+  /** Shown in the listbox while the view hides every model; the same words as the toolbar's live line. */
+  get noMatchHint(): string {
+    const search = this.viewState.search.trim();
+    return search ? `No models match "${search}".` : 'No models match the filter.';
+  }
 
   ngOnInit(): void {
     this.viewState = readModelPickerView(this.viewStateKey);

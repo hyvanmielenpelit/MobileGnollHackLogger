@@ -19,6 +19,7 @@
                           [state]="viewState" [providers]="facets" [dateSortAvailable]="dateSortAvailable"
                           [shownCount]="visibleKeys?.length ?? options.length" [totalCount]="options.length"
                           [hiddenSelectionText]="hiddenSelectionText" [selectShown]="selectShown"
+                          [dropsUp]="dropsUp"
                           (stateChange)="onViewStateChange($event)"
                           (navigate)="navigate($event)"
                           (selectShownClick)="onSelectShown()"></app-model-picker-tools>
@@ -63,4 +64,5 @@
                   [optionTemplate]="modelOption" [chipTemplate]="modelChip" [chipStyle]="chipStyle"
                   [status]="status"
                   [visibleKeys]="visibleKeys" [toolsTemplate]="toolsShown ? modelTools : null"
+                  [typeToTools]="typeToTools" [noMatchHint]="toolsShown ? noMatchHint : null"
                   (selectionChange)="onSelectionChange($event)"></app-multi-picker>

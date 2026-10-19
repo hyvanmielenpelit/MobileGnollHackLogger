@@ -34,8 +34,10 @@ function names(options: readonly ModelPickerViewOption[], order: number[]): stri
 describe('model-picker-view', () => {
   describe('showsViewTools', () => {
     it('shows the toolbar from the threshold up in auto mode, and always or never on request', () => {
-      expect(showsViewTools('auto', MODEL_PICKER_TOOLS_MIN_OPTIONS - 1)).toBe(false);
-      expect(showsViewTools('auto', MODEL_PICKER_TOOLS_MIN_OPTIONS)).toBe(true);
+      expect(MODEL_PICKER_TOOLS_MIN_OPTIONS).toBe(2);
+      expect(showsViewTools('auto', 0)).toBe(false);
+      expect(showsViewTools('auto', 1)).toBe(false);
+      expect(showsViewTools('auto', 2)).toBe(true);
       expect(showsViewTools('always', 1)).toBe(true);
       expect(showsViewTools('never', 50)).toBe(false);
     });

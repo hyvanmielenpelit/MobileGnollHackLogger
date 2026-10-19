@@ -19,7 +19,8 @@
   <div #listbox class="selector-dropdown" role="listbox" tabindex="-1" [id]="listboxId"
        [attr.aria-labelledby]="labelIdValue"
        [attr.aria-activedescendant]="activeOptionId"
-       [attr.aria-describedby]="options.length === 0 && !hasNoneOption && emptyHint ? emptyHintId : null"
+       [attr.aria-describedby]="listboxDescribedBy"
+       [style.min-block-size.px]="listHold"
        (keydown)="onListboxKeydown($event)" (focusout)="onFocusOut($event)">
     @if (options.length === 0 && !hasNoneOption && emptyHint) {
       <div class="empty-dropdown-hint" role="none" [id]="emptyHintId">{{ emptyHint }}</div>
@@ -31,6 +32,9 @@
            (click)="commit(0)">
         <span class="model-name" [class.text-muted]="noneMuted">{{ noneLabel }}</span>
       </div>
+    }
+    @if (noMatchShown) {
+      <div class="empty-dropdown-hint" role="none" [id]="noMatchId">{{ noMatchText }}</div>
     }
     @for (section of sections; track $index) {
       @if (section.headingId) {
@@ -47,6 +51,15 @@
       }
     }
   </div>
+</ng-template>
+
+<ng-template #toolsTemplate>
+  <app-model-picker-tools [uid]="uid" [listboxId]="listboxId" [activeOptionId]="activeOptionId"
+                          [state]="viewState" [providers]="facets" [dateSortAvailable]="dateSortAvailable"
+                          [shownCount]="shownCount" [totalCount]="options.length"
+                          [hiddenSelectionText]="hiddenSelectionText" [dropsUp]="dropsUp"
+                          (stateChange)="onViewStateChange($event)"
+                          (navigate)="onNavigate($event)"></app-model-picker-tools>
 </ng-template>
 
 @if (!labelledBy && label) {
@@ -78,14 +91,15 @@
 
 @if (open) {
   @if (toolsShown) {
+    <!-- The toolbar is the popup's edge nearest the trigger: first downward, last upward. -->
     <div class="selector-popup" (focusout)="onFocusOut($event)" (mousedown)="onPopupMousedown($event)">
-      <app-model-picker-tools [uid]="uid" [listboxId]="listboxId" [activeOptionId]="activeOptionId"
-                              [state]="viewState" [providers]="facets" [dateSortAvailable]="dateSortAvailable"
-                              [shownCount]="shownCount" [totalCount]="options.length"
-                              [hiddenSelectionText]="hiddenSelectionText"
-                              (stateChange)="onViewStateChange($event)"
-                              (navigate)="onNavigate($event)"></app-model-picker-tools>
-      <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>
+      @if (dropsUp) {
+        <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>
+        <ng-container [ngTemplateOutlet]="toolsTemplate"></ng-container>
+      } @else {
+        <ng-container [ngTemplateOutlet]="toolsTemplate"></ng-container>
+        <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>
+      }
     </div>
   } @else {
     <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>

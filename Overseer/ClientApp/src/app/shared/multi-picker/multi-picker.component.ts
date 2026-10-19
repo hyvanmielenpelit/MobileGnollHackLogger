@@ -19,6 +19,7 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 
+import { scrollOptionIntoListbox } from '../../utils/listbox-scroll.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import {
   MultiPickerKey,
@@ -124,8 +125,19 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
    * None, `min` / `max` and the summary act on all `options`, so a hidden selected option stays chosen.
    */
   @Input() visibleKeys: readonly MultiPickerKey[] | null = null;
-  /** Rendered at the top of the popup, before and outside the listbox: a search field and view controls. */
+  /**
+   * Rendered in the popup outside the listbox, at the edge nearest the trigger: before the listbox,
+   * after it with `dropsUp`. A `[data-picker-search]` field in it takes typed characters, and takes
+   * focus on open on a fine pointer, only while it is rendered.
+   */
   @Input() toolsTemplate: TemplateRef<MultiPickerToolsContext> | null = null;
+  /**
+   * Offered a printable character typed in the listbox while no `[data-picker-search]` field is
+   * rendered; returning true means the tools took it (opening their search), false leaves it to type-ahead.
+   */
+  @Input() typeToTools: ((char: string) => boolean) | null = null;
+  /** Shown in the listbox while `visibleKeys` hides every option. */
+  @Input() noMatchHint: string | null = null;
 
   /** Once per toggle, All, None, chip removal or `addToSelection()`. */
   @Output() selectionChange = new EventEmitter<MultiPickerSelection>();
@@ -149,6 +161,11 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   selectedEntries: MultiPickerEntry[] = [];
   /** The live line's text. */
   announcement = '';
+  /**
+   * The listbox's least height, in px, while open with tools: it only rises, so a narrower view never
+   * shrinks the popup or moves the tools. Null when closed.
+   */
+  listHold: number | null = null;
 
   private selectedSet = new Set<MultiPickerKey>();
   private indexByKey = new Map<MultiPickerKey, number>();
@@ -181,6 +198,18 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   get listboxId(): string { return `${this.uid}-listbox`; }
 
   get emptyHintId(): string { return `${this.uid}-empty`; }
+
+  get noMatchId(): string { return `${this.uid}-no-match`; }
+
+  /** The view hides every option. */
+  get noMatchShown(): boolean {
+    return !!this.noMatchHint && this.visibleKeys !== null && this.flat.length === 0 && this.entries.length > 0;
+  }
+
+  get listboxDescribedBy(): string | null {
+    if (this.entries.length === 0 && this.emptyHint) return this.emptyHintId;
+    return this.noMatchShown ? this.noMatchId : null;
+  }
 
   get activeOptionId(): string | null {
     return this.open && this.flat.length > 0 ? this.optionId(this.activeIndex) : null;
@@ -236,7 +265,10 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
       this.rebuild();
     }
     if (changes['options'] || changes['visibleKeys']) {
-      this.rebuildRows(!!changes['visibleKeys'] && !changes['visibleKeys'].firstChange);
+      const viewChanged = !!changes['visibleKeys'] && !changes['visibleKeys'].firstChange;
+      // Measured before the rows change.
+      if (viewChanged) this.holdListHeight();
+      this.rebuildRows(viewChanged);
     }
     if (changes['options'] || changes['selectedKeys']) {
       this.rebuildSelection();
@@ -365,11 +397,11 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
           break;
         }
         if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-          // With a search field, typing goes there instead of type-ahead.
+          // A rendered search field takes typing, then the tools (which may open one), then type-ahead.
           const search = this.searchField();
           if (search) {
             appendToField(search, event.key);
-          } else {
+          } else if (!(this.toolsTemplate && this.typeToTools?.(event.key))) {
             this.typeAhead(event.key);
           }
           break;
@@ -595,6 +627,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
     } else {
       this.listboxRef?.nativeElement.focus();
     }
+    this.holdListHeight();
     this.scrollActiveIntoView();
     this.removeDocumentListener = this.renderer.listen('document', 'pointerdown', (event: PointerEvent) => {
       if (!this.fieldRef.nativeElement.contains(event.target as Node)) {
@@ -606,6 +639,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   private close(focusTrigger: boolean): void {
     if (!this.open) return;
     this.open = false;
+    this.listHold = null;
     this.detachDocumentListener();
     this.clearTypeahead();
     this.cdr.markForCheck();
@@ -682,9 +716,18 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
 
   private scrollActiveIntoView(): void {
     const id = this.activeOptionId;
-    if (!id) return;
+    const listbox = this.listboxRef?.nativeElement;
+    if (!id || !listbox) return;
     const option = this.host.nativeElement.querySelector<HTMLElement>(`#${id}`);
-    option?.scrollIntoView?.({ block: 'nearest' });
+    if (option) scrollOptionIntoListbox(listbox, option);
+  }
+
+  /** Raises `listHold` to the listbox's current height while open with tools. */
+  private holdListHeight(): void {
+    const listbox = this.listboxRef?.nativeElement;
+    if (!this.open || !this.toolsTemplate || !listbox) return;
+    this.listHold = Math.max(this.listHold ?? 0, listbox.getBoundingClientRect().height);
+    this.cdr.markForCheck();
   }
 
   private detachDocumentListener(): void {

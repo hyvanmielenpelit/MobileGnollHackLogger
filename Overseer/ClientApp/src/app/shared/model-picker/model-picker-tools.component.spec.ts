@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 
 import { ModelPickerSelectShown, ModelPickerToolsComponent } from './model-picker-tools.component';
 import { ModelPickerNavigateIntent, ModelPickerProviderFacet, ModelPickerViewState } from './model-picker-view';
@@ -19,6 +20,7 @@ const TWO_PROVIDERS: ModelPickerProviderFacet[] = [
       <app-model-picker-tools uid="tt" listboxId="tt-listbox" [activeOptionId]="activeOptionId"
                               [state]="state" [providers]="providers" [dateSortAvailable]="dates"
                               [shownCount]="shown" [totalCount]="10" [selectShown]="selectShown"
+                              [hiddenSelectionText]="hiddenSelectionText" [dropsUp]="dropsUp"
                               (stateChange)="onState($event)" (navigate)="intents.push($event)"
                               (selectShownClick)="selectShownClicks = selectShownClicks + 1"></app-model-picker-tools>
     </div>
@@ -32,6 +34,8 @@ class HostComponent {
   shown = 10;
   activeOptionId: string | null = 'tt-opt-1';
   selectShown: ModelPickerSelectShown | null = null;
+  hiddenSelectionText: string | null = null;
+  dropsUp = false;
   states: ModelPickerViewState[] = [];
   intents: ModelPickerNavigateIntent[] = [];
   outerKeys: string[] = [];
@@ -43,7 +47,8 @@ class HostComponent {
     this.cdr.markForCheck();
   }
 
-  set(changes: Partial<Pick<HostComponent, 'providers' | 'dates' | 'shown' | 'selectShown' | 'state'>>): void {
+  set(changes: Partial<Pick<HostComponent,
+    'providers' | 'dates' | 'shown' | 'selectShown' | 'state' | 'hiddenSelectionText' | 'dropsUp'>>): void {
     Object.assign(this, changes);
     this.cdr.markForCheck();
   }
@@ -63,7 +68,11 @@ describe('ModelPickerToolsComponent', () => {
   });
 
   const search = () => el.querySelector<HTMLInputElement>('.model-picker-search')!;
+  const searchToggle = () => el.querySelector<HTMLButtonElement>('.model-picker-search-toggle')!;
   const sortButton = () => el.querySelector<HTMLButtonElement>('.model-picker-sort')!;
+  const status = () => el.querySelector<HTMLElement>('.model-picker-status');
+  const rows = () => Array.from(el.querySelector('search.model-picker-tools')!.children)
+    .map(row => row.classList[0]);
   const sortPanel = () => el.querySelector<HTMLElement>('.model-picker-sort-panel')!;
   const radios = () => Array.from(sortPanel().querySelectorAll<HTMLInputElement>('input[type="radio"]'));
   const toggles = () => Array.from(el.querySelectorAll<HTMLButtonElement>('.model-picker-provider'));
@@ -81,13 +90,105 @@ describe('ModelPickerToolsComponent', () => {
     return event;
   }
 
+  function openField(): void {
+    if (search()) return;
+    searchToggle().click();
+    fixture.detectChanges();
+  }
+
   function type(text: string): void {
+    openField();
     search().value = text;
     search().dispatchEvent(new Event('input', { bubbles: true }));
     fixture.detectChanges();
   }
 
+  function tools(): ModelPickerToolsComponent {
+    return fixture.debugElement.query(By.directive(ModelPickerToolsComponent)).componentInstance as ModelPickerToolsComponent;
+  }
+
+  it('hides the search field behind a Search toggle, which shows and focuses it', () => {
+    expect(search()).toBeNull();
+    const toggle = searchToggle();
+    expect(toggle.closest('search')).not.toBeNull();
+    expect(toggle.getAttribute('aria-label')).toBe('Search models');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.hasAttribute('aria-controls')).toBe(false);
+    expect(el.querySelector(`#${toggle.getAttribute('interestfor')}`)!.textContent!.trim()).toBe('Search');
+    expect(toggle.querySelector('svg circle')).not.toBeNull();
+
+    toggle.click();
+    fixture.detectChanges();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-controls')).toBe(search().id);
+    expect(document.activeElement).toBe(search());
+  });
+
+  it('opens the field at once when the state carries a remembered search', () => {
+    const remembered = TestBed.createComponent(HostComponent);
+    remembered.componentInstance.state = { sort: 'default', providers: [], search: 'gpt' };
+    remembered.detectChanges();
+    const root = remembered.nativeElement as HTMLElement;
+    expect(root.querySelector<HTMLInputElement>('.model-picker-search')!.value).toBe('gpt');
+    expect(root.querySelector('.model-picker-search-toggle')!.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('clears the search when the open field is closed, keeping focus on the toggle', () => {
+    type('luna');
+    searchToggle().click();
+    fixture.detectChanges();
+    expect(search()).toBeNull();
+    expect(host.states.at(-1)!.search).toBe('');
+    expect(searchToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(searchToggle());
+
+    const emitted = host.states.length;
+    openField();
+    searchToggle().click();
+    fixture.detectChanges();
+    expect(host.states.length).toBe(emitted);
+  });
+
+  it('opens the field with a typed character and focuses it with the caret at the end', () => {
+    tools().typeToSearch('g');
+    fixture.detectChanges();
+    tools().typeToSearch('p');
+    fixture.detectChanges();
+    expect(search().value).toBe('gp');
+    expect(host.states.map(s => s.search)).toEqual(['g', 'gp']);
+    expect(document.activeElement).toBe(search());
+    expect(search().selectionStart).toBe(2);
+  });
+
+  it('puts the controls row nearest the trigger: first downward, last upward', () => {
+    type('a');
+    expect(rows()).toEqual(['model-picker-controls', 'model-picker-search-row', 'model-picker-status', 'visually-hidden']);
+    update({ dropsUp: true });
+    expect(rows()).toEqual(['model-picker-status', 'model-picker-search-row', 'model-picker-controls', 'visually-hidden']);
+    const actions = el.querySelector('.model-picker-actions')!;
+    expect(Array.from(actions.querySelectorAll('button')).map(b => b.classList[1]))
+      .toEqual(['model-picker-search-toggle', 'model-picker-sort']);
+  });
+
+  it('shows the status row only while the view narrows, sorts or hides the selection', () => {
+    expect(status()).toBeNull();
+    expect(liveRegion()).not.toBeNull();
+    toggles()[0].click();
+    fixture.detectChanges();
+    expect(status()!.textContent).toContain('10 models');
+    toggles()[0].click();
+    fixture.detectChanges();
+    expect(status()).toBeNull();
+
+    update({ state: { sort: 'name-asc', providers: [], search: '' } });
+    expect(status()).not.toBeNull();
+    update({ state: { sort: 'default', providers: [], search: '' }, hiddenSelectionText: 'selected model hidden' });
+    expect(status()!.textContent).toContain('selected model hidden');
+    expect(el.querySelector('.model-picker-reset')).toBeNull();
+  });
+
   it('makes the search field the combobox of the listbox, inside a search landmark', () => {
+    openField();
     const input = search();
     expect(input.closest('search')).not.toBeNull();
     expect(input.type).toBe('search');
@@ -157,6 +258,7 @@ describe('ModelPickerToolsComponent', () => {
   });
 
   it('turns arrow, page and Ctrl+Home / Ctrl+End keys into intents, and leaves plain Home to the caret', () => {
+    openField();
     key(search(), 'ArrowDown');
     key(search(), 'ArrowUp');
     key(search(), 'PageDown');
@@ -170,6 +272,7 @@ describe('ModelPickerToolsComponent', () => {
   });
 
   it('extends with Shift+Arrow only in a multi-select picker', () => {
+    openField();
     key(search(), 'ArrowDown', { shiftKey: true });
     update({ selectShown: { count: 2, reason: null } });
     key(search(), 'ArrowDown', { shiftKey: true });
@@ -190,12 +293,15 @@ describe('ModelPickerToolsComponent', () => {
 
   it('shows Reset view only while the view differs from the default, and resets everything', () => {
     expect(el.querySelector('.model-picker-reset')).toBeNull();
+    type('gp');
     update({ state: { sort: 'name-asc', providers: ['openai'], search: 'gp' }, shown: 1 });
-    expect(el.querySelector('.model-picker-status')!.textContent).toContain('1 of 10 models');
+    expect(status()!.textContent).toContain('1 of 10 models');
     el.querySelector<HTMLButtonElement>('.model-picker-reset')!.click();
     fixture.detectChanges();
     expect(host.states.at(-1)).toEqual({ sort: 'default', providers: [], search: '' });
-    expect(document.activeElement).toBe(search());
+    expect(search()).toBeNull();
+    expect(status()).toBeNull();
+    expect(document.activeElement).toBe(searchToggle());
   });
 
   it('shows Select all shown while the list is narrowed, aria-disabled with a reason', () => {

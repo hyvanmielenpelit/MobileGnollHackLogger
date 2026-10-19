@@ -137,6 +137,17 @@ describe('ModelMultiPickerComponent', () => {
     return event;
   }
 
+  it('adds the view toolbar from two options, in both pickers', () => {
+    const single = part('.single');
+    open(single);
+    expect(single.querySelector('.model-picker-tools')).not.toBeNull();
+    key(listbox(single)!, 'Escape');
+    const noted = part('.multi-noted');
+    open(noted);
+    expect(noted.querySelector('.model-picker-tools')).not.toBeNull();
+    expect(noted.querySelector('.model-picker-search-toggle')).not.toBeNull();
+  });
+
   it('draws the same badges as the single picker for the same model', () => {
     const single = part('.single');
     const multi = part('.multi');
@@ -414,6 +425,8 @@ const SIX: ModelPickerOption<TestModel>[] = [
     <app-model-multi-picker class="six-picker" label="Six" viewStateKey="spec.multi"
                             [options]="options" [selectedKeys]="selected" [max]="max"
                             (selectionChange)="onChange($event)"></app-model-multi-picker>
+    <app-model-multi-picker class="six-up" label="Six upward" [dropsUp]="true"
+                            [options]="options" [selectedKeys]="[]"></app-model-multi-picker>
   `
 })
 class SixHostComponent {
@@ -491,6 +504,48 @@ describe('ModelMultiPickerComponent view toolbar', () => {
     expect(labels()).toEqual(['GPT-6', 'GPT-6 Mini']);
     expect(picker().querySelector('.gh-multi-picker-chip-label')!.textContent!.trim()).toBe('Gemini Luna 2');
     expect(picker().querySelector('.model-picker-status')!.textContent).toContain('1 selected model hidden');
+  });
+
+  it('opens the toolbar search with a character typed in the listbox', () => {
+    open();
+    const box = picker().querySelector<HTMLElement>('[role="listbox"]')!;
+    expect(picker().querySelector('.model-picker-search')).toBeNull();
+    expect(document.activeElement).toBe(box);
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+    const search = picker().querySelector<HTMLInputElement>('.model-picker-search')!;
+    expect(search.value).toBe('g');
+    expect(document.activeElement).toBe(search);
+    expect(labels()).toEqual(['GPT-6', 'GPT-6 Mini', 'Gemini Luna 2', 'Gemini Flash 4']);
+  });
+
+  it('says in the listbox that no model matches', () => {
+    open();
+    picker().querySelector<HTMLButtonElement>('.model-picker-search-toggle')!.click();
+    fixture.detectChanges();
+    const search = picker().querySelector<HTMLInputElement>('.model-picker-search')!;
+    search.value = 'zzz';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+    const box = picker().querySelector<HTMLElement>('[role="listbox"]')!;
+    const hint = picker().querySelector<HTMLElement>(`#${box.getAttribute('aria-describedby')}`)!;
+    expect(box.contains(hint)).toBe(true);
+    expect(hint.textContent!.trim()).toBe('No models match "zzz".');
+  });
+
+  it('puts the toolbar after the listbox when the list opens upward, the controls row last', () => {
+    const up = el.querySelector<HTMLElement>('.six-up')!;
+    up.querySelector<HTMLButtonElement>('.selector-trigger')!.click();
+    fixture.detectChanges();
+    const popup = up.querySelector<HTMLElement>('.selector-popup')!;
+    expect(Array.from(popup.children).map(c => c.getAttribute('role') ?? c.tagName.toLowerCase()))
+      .toEqual(['listbox', 'app-model-picker-tools']);
+    const rows = Array.from(up.querySelector('.model-picker-tools')!.children).map(c => c.classList[0]);
+    expect(rows).toEqual(['model-picker-controls', 'visually-hidden']);
+    up.querySelector<HTMLButtonElement>('.model-picker-provider[data-provider="google"]')!.click();
+    fixture.detectChanges();
+    expect(Array.from(up.querySelector('.model-picker-tools')!.children).map(c => c.classList[0]))
+      .toEqual(['model-picker-status', 'model-picker-controls', 'visually-hidden']);
   });
 
   it('gives the max as the reason Select all shown cannot add', () => {

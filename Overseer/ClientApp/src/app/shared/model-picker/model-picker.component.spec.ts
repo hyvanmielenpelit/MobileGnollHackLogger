@@ -9,6 +9,7 @@ import {
   ModelPickerSelection,
   toModelPickerOptions
 } from './model-picker.component';
+import { ModelPickerViewTools } from './model-picker-view';
 
 interface TestModel extends ModelPickerModel {
   id: number;
@@ -39,7 +40,7 @@ const FLAGGED: TestModel[] = [
       <label id="pickerALabel">Model A</label>
       <app-model-picker class="picker-a marker" labelledBy="pickerALabel" describedBy="pickerAHint"
                         [noneLabel]="noneLabel" [noneMuted]="noneMutedA" [options]="optionsA" [selectedKey]="selectedA"
-                        [showPrice]="true" [showParallel]="true" [disabled]="disabledA"
+                        [showPrice]="true" [showParallel]="true" [disabled]="disabledA" [viewTools]="viewToolsA"
                         (selectionChange)="onSelect($event)"></app-model-picker>
       <span id="pickerAHint">Hint A</span>
       <app-model-picker class="picker-b" label="Model B" emptyHint="Nothing to choose from."
@@ -61,6 +62,7 @@ class HostComponent {
   optionsD: ModelPickerOption<TestModel>[] = toModelPickerOptions(FLAGGED);
   selectedA: ModelPickerKey | null = null;
   disabledA = false;
+  viewToolsA: ModelPickerViewTools = 'auto';
   selections: ModelPickerSelection<TestModel>[] = [];
   outerKeys: string[] = [];
 
@@ -70,7 +72,7 @@ class HostComponent {
     this.cdr.markForCheck();
   }
 
-  set(changes: Partial<Pick<HostComponent, 'noneLabel' | 'noneMutedA' | 'optionsA' | 'selectedA' | 'disabledA'>>): void {
+  set(changes: Partial<Pick<HostComponent, 'noneLabel' | 'noneMutedA' | 'optionsA' | 'selectedA' | 'disabledA' | 'viewToolsA'>>): void {
     Object.assign(this, changes);
     this.cdr.markForCheck();
   }
@@ -99,7 +101,7 @@ describe('ModelPickerComponent', () => {
     return id ? picker.querySelector<HTMLElement>(`#${id}`) : null;
   };
 
-  function update(changes: Partial<Pick<HostComponent, 'noneLabel' | 'noneMutedA' | 'optionsA' | 'selectedA' | 'disabledA'>>): void {
+  function update(changes: Partial<Pick<HostComponent, 'noneLabel' | 'noneMutedA' | 'optionsA' | 'selectedA' | 'disabledA' | 'viewToolsA'>>): void {
     host.set(changes);
     fixture.detectChanges();
   }
@@ -284,7 +286,7 @@ describe('ModelPickerComponent', () => {
         ]
       });
       openByClick();
-      const groups = Array.from(pickerA().querySelectorAll<HTMLElement>('[role="group"]'));
+      const groups = Array.from(listbox()!.querySelectorAll<HTMLElement>('[role="group"]'));
       expect(groups.length).toBe(2);
       const names = groups.map(g => pickerA().querySelector(`#${g.getAttribute('aria-labelledby')}`)!.textContent!.trim());
       expect(names).toEqual(['Your Models', 'System Models']);
@@ -383,6 +385,7 @@ describe('ModelPickerComponent', () => {
     });
 
     it('type-ahead matches the start of a name and a repeated letter cycles', fakeAsync(() => {
+      update({ viewToolsA: 'never' });
       openByClick();
       const box = listbox()!;
       key(box, 'b');
@@ -433,7 +436,7 @@ describe('ModelPickerComponent', () => {
     });
 
     it('take part in type-ahead', fakeAsync(() => {
-      update({ optionsA: TAGGED });
+      update({ optionsA: TAGGED, viewToolsA: 'never' });
       openByClick();
       key(listbox()!, 'p');
       expect(activeOption()!.textContent).toContain('Panel');
@@ -605,15 +608,24 @@ const VIEW_KEYS = ['spec.one', 'spec.two', 'spec.never'];
                         (selectionChange)="onSelect($event)"></app-model-picker>
     </dialog>
     <app-model-picker class="pk-two" label="Two" viewStateKey="spec.two" [options]="grouped"></app-model-picker>
-    <app-model-picker class="pk-five" label="Five" [options]="five"></app-model-picker>
+    <app-model-picker class="pk-single" label="Single" [options]="single"></app-model-picker>
+    <app-model-picker class="pk-pair" label="Pair" [options]="pair"></app-model-picker>
     <app-model-picker class="pk-never" label="Never" viewTools="never" viewStateKey="spec.never"
                       [options]="many"></app-model-picker>
+    <app-model-picker class="pk-up" label="Up" variant="compact" [dropsUp]="true" [options]="many"></app-model-picker>
+    <div class="scroller" style="block-size: 150px; overflow-y: auto;">
+      <div style="block-size: 600px;">
+        <app-model-picker class="pk-long" label="Long" [options]="long"></app-model-picker>
+      </div>
+    </div>
   `
 })
 class ToolsHostComponent {
   private cdr = inject(ChangeDetectorRef);
   many = toModelPickerOptions(MANY);
-  five = toModelPickerOptions(MANY.slice(0, 5));
+  single = toModelPickerOptions(MANY.slice(0, 1));
+  pair = toModelPickerOptions(MANY.slice(0, 2));
+  long = toModelPickerOptions(Array.from({ length: 24 }, (_, i) => ({ id: 100 + i, displayName: `Model ${i + 1}`, provider: 'OpenAI' })));
   grouped = [
     ...toModelPickerOptions(MANY.slice(0, 3), 'Your Models', 'u_'),
     ...toModelPickerOptions(MANY.slice(3), 'System Models', 's_')
@@ -679,6 +691,8 @@ describe('ModelPickerComponent view toolbar', () => {
   const listbox = (p: HTMLElement) => p.querySelector<HTMLElement>('[role="listbox"]');
   const tools = (p: HTMLElement) => p.querySelector<HTMLElement>('.model-picker-tools');
   const search = (p: HTMLElement) => p.querySelector<HTMLInputElement>('.model-picker-search')!;
+  const searchToggle = (p: HTMLElement) => p.querySelector<HTMLButtonElement>('.model-picker-search-toggle')!;
+  const status = (p: HTMLElement) => p.querySelector<HTMLElement>('.model-picker-status');
   const optionNames = (p: HTMLElement) =>
     Array.from(p.querySelectorAll<HTMLElement>('[role="option"] .model-name')).map(n => n.textContent!.trim());
   const headings = (p: HTMLElement) =>
@@ -690,6 +704,10 @@ describe('ModelPickerComponent view toolbar', () => {
   }
 
   function type(p: HTMLElement, text: string): void {
+    if (!search(p)) {
+      searchToggle(p).click();
+      fixture.detectChanges();
+    }
     const input = search(p);
     input.value = text;
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -703,19 +721,116 @@ describe('ModelPickerComponent view toolbar', () => {
     return event;
   }
 
-  it('has no toolbar at five options or with viewTools="never", and one at six', async () => {
+  it('has no toolbar at one option or with viewTools="never", and one at two', async () => {
     await create();
-    open(picker('five'));
-    expect(tools(picker('five'))).toBeNull();
-    expect(document.activeElement).toBe(listbox(picker('five')));
+    open(picker('single'));
+    expect(tools(picker('single'))).toBeNull();
+    expect(document.activeElement).toBe(listbox(picker('single')));
 
     open(picker('never'));
     expect(tools(picker('never'))).toBeNull();
 
-    open(picker('two'));
-    expect(tools(picker('two'))).not.toBeNull();
-    expect(listbox(picker('two'))!.closest('.selector-popup')).not.toBeNull();
-    expect(tools(picker('two'))!.closest('[role="listbox"]')).toBeNull();
+    open(picker('pair'));
+    expect(tools(picker('pair'))).not.toBeNull();
+    expect(listbox(picker('pair'))!.closest('.selector-popup')).not.toBeNull();
+    expect(tools(picker('pair'))!.closest('[role="listbox"]')).toBeNull();
+    expect(searchToggle(picker('pair'))).not.toBeNull();
+    expect(search(picker('pair'))).toBeNull();
+    expect(status(picker('pair'))).toBeNull();
+  });
+
+  it('focuses the listbox on open while the search field is closed, even on a fine pointer', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    expect(search(p)).toBeNull();
+    expect(document.activeElement).toBe(listbox(p));
+  });
+
+  it('opens the field with a remembered search, focused on a fine pointer only', async () => {
+    store('spec.one', { search: 'luna' });
+    await create();
+    const p = picker('one');
+    open(p);
+    expect(search(p).value).toBe('luna');
+    expect(document.activeElement).toBe(search(p));
+    expect(optionNames(p)).toEqual(['None', 'Gemini Luna 2']);
+    key(search(p), 'Escape');
+
+    finePointer = false;
+    open(p);
+    expect(search(p).value).toBe('luna');
+    expect(document.activeElement).toBe(listbox(p));
+  });
+
+  it('opens the field with a printable key typed in the listbox', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    key(listbox(p)!, 'l');
+    expect(document.activeElement).toBe(search(p));
+    expect(search(p).value).toBe('l');
+    type(p, 'lu');
+    expect(optionNames(p)).toEqual(['None', 'Gemini Luna 2']);
+  });
+
+  it('never lets the listbox shrink while open, and fits the list again on the next opening', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    const before = listbox(p)!.getBoundingClientRect().height;
+    picker('one').querySelector<HTMLButtonElement>('.model-picker-provider[data-provider="openai"]')!.click();
+    fixture.detectChanges();
+    expect(optionNames(p)).toEqual(['None', 'GPT-6', 'Alpha Custom']);
+    expect(listbox(p)!.getBoundingClientRect().height).toBeGreaterThanOrEqual(before - 0.5);
+
+    key(listbox(p)!, 'Escape');
+    open(p);
+    expect(listbox(p)!.getBoundingClientRect().height).toBeLessThan(before - 1);
+  });
+
+  it('puts the toolbar after the listbox in an upward picker, the controls row last', async () => {
+    await create();
+    const p = picker('up');
+    open(p);
+    const popup = p.querySelector<HTMLElement>('.selector-popup')!;
+    expect(Array.from(popup.children).map(c => c.getAttribute('role') ?? c.tagName.toLowerCase()))
+      .toEqual(['listbox', 'app-model-picker-tools']);
+    type(p, 'g');
+    expect(Array.from(tools(p)!.children).map(c => c.classList[0]))
+      .toEqual(['model-picker-status', 'model-picker-search-row', 'model-picker-controls', 'visually-hidden']);
+    expect(listbox(p)!.getBoundingClientRect().bottom).toBeLessThanOrEqual(tools(p)!.getBoundingClientRect().top + 1);
+  });
+
+  it('scrolls only the listbox on arrow keys, never the container around the picker', async () => {
+    await create();
+    const scroller = el.querySelector<HTMLElement>('.scroller')!;
+    const p = picker('long');
+    open(p);
+    scroller.scrollTop = 0;
+    const box = listbox(p)!;
+    key(box, 'End');
+    expect(box.scrollTop).toBeGreaterThan(0);
+    expect(scroller.scrollTop).toBe(0);
+    for (let i = 0; i < 5; i++) key(box, 'ArrowUp');
+    key(box, 'Home');
+    const first = box.querySelector<HTMLElement>('[role="option"]')!;
+    expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(box.getBoundingClientRect().top + box.clientTop - 0.5);
+    expect(box.scrollTop).toBeLessThan(first.getBoundingClientRect().height);
+    expect(scroller.scrollTop).toBe(0);
+  });
+
+  it('says in the listbox that no model matches, and describes the listbox with it', async () => {
+    await create();
+    const p = picker('two');
+    open(p);
+    type(p, 'zzz');
+    const box = listbox(p)!;
+    const hint = p.querySelector<HTMLElement>(`#${box.getAttribute('aria-describedby')}`)!;
+    expect(box.contains(hint)).toBe(true);
+    expect(hint.textContent!.trim()).toBe('No models match "zzz".');
+    type(p, '');
+    expect(box.hasAttribute('aria-describedby')).toBe(false);
   });
 
   it('does not apply a stored view where the toolbar is not shown', async () => {
@@ -729,7 +844,6 @@ describe('ModelPickerComponent view toolbar', () => {
     await create();
     const p = picker('one');
     open(p);
-    expect(document.activeElement).toBe(search(p));
     type(p, 'luna');
     expect(optionNames(p)).toEqual(['None', 'Gemini Luna 2']);
     expect(p.querySelector('mark.model-option-match')!.textContent).toBe('Luna');
@@ -822,6 +936,7 @@ describe('ModelPickerComponent view toolbar', () => {
     await create();
     const p = picker('one');
     open(p);
+    type(p, 'a');
     const option = p.querySelectorAll<HTMLElement>('[role="option"]')[2];
     const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
     option.dispatchEvent(down);
@@ -835,6 +950,7 @@ describe('ModelPickerComponent view toolbar', () => {
     await create();
     const p = picker('one');
     open(p);
+    type(p, 'g');
     const event = key(search(p), 'Escape');
     expect(event.defaultPrevented).toBe(true);
     expect(host.dialogKeys).toEqual([]);
@@ -850,8 +966,8 @@ describe('ModelPickerComponent view toolbar', () => {
     const p = picker('one');
     open(p);
     type(p, 'luna');
-    expect(p.querySelector('.model-picker-status')!.textContent).toContain('selected model hidden');
+    expect(status(p)!.textContent).toContain('selected model hidden');
     type(p, '');
-    expect(p.querySelector('.model-picker-status')!.textContent).not.toContain('selected model hidden');
+    expect(status(p)).toBeNull();
   });
 });

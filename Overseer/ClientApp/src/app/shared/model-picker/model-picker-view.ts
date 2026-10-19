@@ -21,8 +21,11 @@ export const DEFAULT_MODEL_PICKER_VIEW: ModelPickerViewState = Object.freeze({
   search: ''
 }) as ModelPickerViewState;
 
-/** The fewest options (the none option excluded) at which `viewTools="auto"` shows the toolbar. */
-export const MODEL_PICKER_TOOLS_MIN_OPTIONS = 6;
+/**
+ * The fewest options (the none option excluded) at which `viewTools="auto"` shows the toolbar. With
+ * one option there is nothing to sort or narrow.
+ */
+export const MODEL_PICKER_TOOLS_MIN_OPTIONS = 2;
 
 export type ModelPickerViewTools = 'auto' | 'always' | 'never';
 

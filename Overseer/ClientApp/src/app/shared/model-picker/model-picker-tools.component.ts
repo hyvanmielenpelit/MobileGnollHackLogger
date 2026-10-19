@@ -13,6 +13,7 @@ import {
   ViewChild,
   inject
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import {
@@ -35,14 +36,18 @@ export interface ModelPickerSelectShown {
 const LIVE_DELAY_MS = 400;
 
 /**
- * The view toolbar at the top of a model picker's popup: a search field that is the listbox's
- * combobox, a Sort popover of five radios, provider toggles and a status line. Presentational: the
- * host picker owns the view and feeds `state` back after each `stateChange`. Every id derives from
- * `uid`. The look is global (`styles.scss`, `.model-picker-tools`).
+ * The view toolbar of a model picker's popup: a controls row of provider toggles, a Search toggle and
+ * a Sort popover of five radios; the search field, shown by the toggle, which is the listbox's
+ * combobox; and a status line while the view narrows, sorts or hides the selection. The controls row
+ * is the edge nearest the trigger (`dropsUp` puts it last), and the DOM order is the visual order.
+ * Created on every opening, so the field starts open only with a remembered search. Presentational:
+ * the host picker owns the view and feeds `state` back after each `stateChange`. Every id derives
+ * from `uid`. The look is global (`styles.scss`, `.model-picker-tools`).
  */
 @Component({
   selector: 'app-model-picker-tools',
   standalone: true,
+  imports: [NgTemplateOutlet],
   templateUrl: './model-picker-tools.component.html',
   styleUrl: './model-picker-tools.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -64,13 +69,17 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
   @Input() hiddenSelectionText: string | null = null;
   /** Multi-select pickers only; its presence also turns Shift+Arrow into extend intents. */
   @Input() selectShown: ModelPickerSelectShown | null = null;
+  /** The host's list opens upward, so the controls row comes last, next to the trigger. */
+  @Input() dropsUp = false;
 
   @Output() stateChange = new EventEmitter<ModelPickerViewState>();
   @Output() navigate = new EventEmitter<ModelPickerNavigateIntent>();
   @Output() selectShownClick = new EventEmitter<void>();
 
-  @ViewChild('search', { static: true }) private searchRef!: ElementRef<HTMLInputElement>;
+  @ViewChild('search') private searchRef?: ElementRef<HTMLInputElement>;
 
+  /** Whether the search field is shown. A closed field never filters: closing it clears the search. */
+  searchOpen = false;
   /** Whether the Sort popover is open; the popover polyfill does not set `aria-expanded`. */
   sortOpen = false;
   /** The live region's text. */
@@ -84,6 +93,13 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
   get sortId(): string { return `${this.uid}-sort`; }
   get sortPanelId(): string { return `${this.uid}-sort-panel`; }
   get clearId(): string { return `${this.uid}-search-clear`; }
+  get searchToggleId(): string { return `${this.uid}-search-toggle`; }
+
+  /** For the host's focus on open. */
+  get searchShown(): boolean { return this.searchOpen; }
+
+  /** The status row is rendered only while the view narrows, sorts or hides the selection. */
+  get statusShown(): boolean { return this.viewActive || this.hiddenSelectionText !== null; }
 
   /** The sort as it applies: a release-date sort reads as the default order where no option has a date. */
   get shownSort(): ModelPickerSort {
@@ -114,6 +130,7 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
+    this.searchOpen = this.state.search.trim() !== '';
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -128,8 +145,10 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
     if (this.liveTimer !== null) clearTimeout(this.liveTimer);
   }
 
+  /** Focuses the search field with the caret at the end; does nothing while the field is closed. */
   focusSearch(): void {
-    const input = this.searchRef.nativeElement;
+    const input = this.searchRef?.nativeElement;
+    if (!this.searchOpen || !input) return;
     input.focus();
     const end = input.value.length;
     try {
@@ -139,11 +158,25 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
     }
   }
 
-  /** Appends a typed character to the search and moves focus there, as typing in the listbox does. */
-  appendToSearch(char: string): void {
+  /** Shows the field and focuses it; on an open field, hides it, clears the search and keeps focus on the toggle. */
+  toggleSearch(): void {
+    if (!this.searchOpen) {
+      this.showSearch();
+      this.focusSearch();
+      return;
+    }
+    this.hideSearch();
+    if (this.state.search !== '') this.emit({ ...this.state, search: '' });
+  }
+
+  /** Opens the field if needed and appends a character typed in the listbox, moving focus there. */
+  typeToSearch(char: string): void {
+    if (!this.searchOpen) this.showSearch();
+    const input = this.searchRef?.nativeElement;
+    if (!input) return;
     const search = this.state.search + char;
     // Written ahead of the binding, so the caret lands after the new character.
-    this.searchRef.nativeElement.value = search;
+    input.value = search;
     this.focusSearch();
     this.emit({ ...this.state, search });
   }
@@ -234,9 +267,10 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
     this.emit({ ...this.state, providers });
   }
 
+  /** Emits the default view and closes the field; focus goes to the Search toggle, since Reset view itself disappears. */
   resetView(): void {
+    this.hideSearch();
     this.emit({ sort: 'default', providers: [], search: '' });
-    this.focusSearch();
   }
 
   onSelectShown(): void {
@@ -245,6 +279,20 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
 
   private emit(state: ModelPickerViewState): void {
     this.stateChange.emit(state);
+  }
+
+  private showSearch(): void {
+    this.searchOpen = true;
+    this.cdr.markForCheck();
+    this.cdr.detectChanges();
+  }
+
+  /** Focus moves to the toggle before the field and its row are removed, so it never falls to the body. */
+  private hideSearch(): void {
+    this.searchToggle()?.focus();
+    this.searchOpen = false;
+    this.cdr.markForCheck();
+    this.cdr.detectChanges();
   }
 
   /** The live text settles 400 ms after the last change; a repeated message alternates a trailing space. */
@@ -267,5 +315,9 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
 
   private sortButton(): HTMLElement | null {
     return this.host.nativeElement.querySelector<HTMLElement>(`[id="${this.sortId}"]`);
+  }
+
+  private searchToggle(): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>(`[id="${this.searchToggleId}"]`);
   }
 }

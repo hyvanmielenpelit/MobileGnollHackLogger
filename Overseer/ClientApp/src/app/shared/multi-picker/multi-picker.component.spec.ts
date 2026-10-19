@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from '@angular/core';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 
 import { MultiPickerComponent } from './multi-picker.component';
 import { MultiPickerKey, MultiPickerOption, MultiPickerSelection, MultiPickerStatus } from './multi-picker.models';
@@ -593,13 +594,20 @@ describe('MultiPickerComponent', () => {
   imports: [MultiPickerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <app-multi-picker class="vk-picker" label="Visible" summaryNoun="sources"
-                      [options]="options" [selectedKeys]="selected" [max]="max"
-                      [visibleKeys]="visible" [toolsTemplate]="tools"
-                      (selectionChange)="onChange($event)"></app-multi-picker>
+    <div class="vk-scroller" style="block-size: 150px; overflow-y: auto;">
+      <div style="block-size: 600px;">
+        <app-multi-picker class="vk-picker" label="Visible" summaryNoun="sources"
+                          [options]="options" [selectedKeys]="selected" [max]="max"
+                          [visibleKeys]="visible" [toolsTemplate]="tools"
+                          [typeToTools]="typeToTools" [noMatchHint]="noMatchHint"
+                          (selectionChange)="onChange($event)"></app-multi-picker>
+      </div>
+    </div>
     <ng-template #tools let-listboxId="listboxId" let-navigate="navigate">
-      <input type="search" class="vk-search" data-picker-search [attr.aria-controls]="listboxId"
-             (keydown.enter)="$any($event).preventDefault(); navigate('commit')">
+      @if (fieldShown) {
+        <input type="search" class="vk-search" data-picker-search [attr.aria-controls]="listboxId"
+               (keydown.enter)="$any($event).preventDefault(); navigate('commit')">
+      }
     </ng-template>
   `
 })
@@ -609,6 +617,9 @@ class VisibleKeysHostComponent {
   selected: MultiPickerKey[] = [];
   max: number | null = null;
   visible: MultiPickerKey[] | null = ['d', 'b'];
+  fieldShown = true;
+  typeToTools: ((char: string) => boolean) | null = null;
+  noMatchHint: string | null = null;
   changes: MultiPickerSelection[] = [];
 
   onChange(selection: MultiPickerSelection): void {
@@ -617,7 +628,8 @@ class VisibleKeysHostComponent {
     this.cdr.markForCheck();
   }
 
-  set(changes: Partial<Pick<VisibleKeysHostComponent, 'selected' | 'max' | 'visible'>>): void {
+  set(changes: Partial<Pick<VisibleKeysHostComponent,
+    'options' | 'selected' | 'max' | 'visible' | 'fieldShown' | 'typeToTools' | 'noMatchHint'>>): void {
     Object.assign(this, changes);
     this.cdr.markForCheck();
   }
@@ -637,13 +649,23 @@ describe('MultiPickerComponent visible keys and tools', () => {
   });
 
   const picker = () => el.querySelector<HTMLElement>('.vk-picker')!;
-  const component = () => fixture.debugElement.children[0].componentInstance as MultiPickerComponent;
+  const component = () => fixture.debugElement.query(By.directive(MultiPickerComponent)).componentInstance as MultiPickerComponent;
   const labels = () => Array.from(picker().querySelectorAll<HTMLElement>('[role="option"] .model-name')).map(n => n.textContent!.trim());
   const chips = () => Array.from(picker().querySelectorAll<HTMLElement>('.gh-multi-picker-chip-label')).map(c => c.textContent!.trim());
   const liveLine = () => picker().querySelector<HTMLElement>(':scope > [role="status"]')!.textContent!.trim();
+  const listbox = () => picker().querySelector<HTMLElement>('[role="listbox"]');
+  const activeLabel = () => {
+    const id = listbox()!.getAttribute('aria-activedescendant');
+    return picker().querySelector<HTMLElement>(`#${id} .model-name`)!.textContent!.trim();
+  };
 
   function update(changes: Parameters<VisibleKeysHostComponent['set']>[0]): void {
     host.set(changes);
+    fixture.detectChanges();
+  }
+
+  function key(target: HTMLElement, keyName: string): void {
+    target.dispatchEvent(new KeyboardEvent('keydown', { key: keyName, bubbles: true, cancelable: true }));
     fixture.detectChanges();
   }
 
@@ -676,6 +698,70 @@ describe('MultiPickerComponent visible keys and tools', () => {
     fixture.detectChanges();
     expect(host.selected).toEqual(['d']);
     expect(picker().querySelector('[role="listbox"]')).not.toBeNull();
+  });
+
+  it('offers a typed character to typeToTools while no search field is rendered, and type-ahead when it declines', () => {
+    const typed: string[] = [];
+    let accept = true;
+    update({ fieldShown: false, typeToTools: char => { typed.push(char); return accept; } });
+    open();
+    const box = listbox()!;
+    expect(document.activeElement).toBe(box);
+    expect(activeLabel()).toBe('Charlie');
+
+    key(box, 'b');
+    expect(typed).toEqual(['b']);
+    expect(activeLabel()).toBe('Charlie');
+
+    accept = false;
+    key(box, 'b');
+    expect(typed).toEqual(['b', 'b']);
+    expect(activeLabel()).toBe('Beta');
+
+    update({ fieldShown: true });
+    key(box, 'x');
+    expect(typed).toEqual(['b', 'b']);
+    expect(picker().querySelector<HTMLInputElement>('.vk-search')!.value).toBe('x');
+  });
+
+  it('never lets the listbox shrink while open as the visible keys narrow, and says when none is left', () => {
+    update({ noMatchHint: 'No sources match.' });
+    open();
+    const before = listbox()!.getBoundingClientRect().height;
+    update({ visible: ['d'] });
+    expect(labels()).toEqual(['Charlie']);
+    expect(listbox()!.getBoundingClientRect().height).toBeGreaterThanOrEqual(before - 0.5);
+    expect(listbox()!.hasAttribute('aria-describedby')).toBe(false);
+
+    update({ visible: [] });
+    const box = listbox()!;
+    const hint = picker().querySelector<HTMLElement>(`#${box.getAttribute('aria-describedby')}`)!;
+    expect(box.contains(hint)).toBe(true);
+    expect(hint.textContent!.trim()).toBe('No sources match.');
+    expect(box.getBoundingClientRect().height).toBeGreaterThanOrEqual(before - 0.5);
+
+    picker().querySelector<HTMLButtonElement>('.selector-trigger')!.click();
+    fixture.detectChanges();
+    update({ visible: ['d'] });
+    open();
+    expect(listbox()!.getBoundingClientRect().height).toBeLessThan(before - 1);
+  });
+
+  it('scrolls only the listbox on arrow keys, never the container around the picker', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ key: `k${i}`, label: `Item ${i}` }));
+    update({ options: many, visible: null });
+    open();
+    const scroller = el.querySelector<HTMLElement>('.vk-scroller')!;
+    scroller.scrollTop = 0;
+    const box = listbox()!;
+    key(box, 'End');
+    expect(box.scrollTop).toBeGreaterThan(0);
+    expect(scroller.scrollTop).toBe(0);
+    key(box, 'Home');
+    const first = box.querySelector<HTMLElement>('[role="option"]')!;
+    expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(box.getBoundingClientRect().top + box.clientTop - 0.5);
+    expect(box.scrollTop).toBeLessThan(first.getBoundingClientRect().height);
+    expect(scroller.scrollTop).toBe(0);
   });
 
   it('adds the enabled unselected keys up to max with one change and one announcement', () => {

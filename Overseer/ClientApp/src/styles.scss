@@ -6504,8 +6504,10 @@ progress.job-progress {
 }
 
 /* A model picker's popup with the view toolbar (app-model-picker-tools): .selector-popup takes the
-   dropdown's place and frame, and holds the toolbar and then the listbox, which scrolls inside it.
-   Its width is fixed, so filtering never makes the popup jump. */
+   dropdown's place and frame, and holds the toolbar at the edge nearest the trigger and the listbox
+   beyond it, which scrolls inside it: toolbar first downward, last upward (.drops-up), in DOM order.
+   Its width is fixed, and while it is open the listbox never shrinks (an inline min-block-size the
+   picker raises before each view change and drops on close), so filtering never moves the controls. */
 .selector-popup {
   position: absolute;
   top: calc(100% + 4px);
@@ -6568,8 +6570,9 @@ progress.job-progress {
   }
 }
 
-/* The toolbar: search and Sort on one row, then the provider toggles, then the status line. It
-   keeps its own type size, so the compact trigger never shrinks the search field. */
+/* The toolbar, outward from the trigger: the controls row (provider toggles, then the Search and Sort
+   icons at its end), the search field while it is open, and the status line while it says something.
+   It keeps its own type size, so the compact trigger never shrinks the search field. */
 .model-picker-tools {
   display: flex;
   flex-wrap: wrap;
@@ -6579,6 +6582,40 @@ progress.job-progress {
   border-block-end: 1px solid var(--border-glass);
   font-size: 13px;
   line-height: 1.4;
+}
+
+/* Upward, the toolbar sits below the listbox. */
+.custom-model-selector.drops-up .model-picker-tools,
+.gh-multi-picker.drops-up .model-picker-tools {
+  border-block-end: 0;
+  border-block-start: 1px solid var(--border-glass);
+}
+
+/* The two icons keep the row's inline end whatever the search or the provider count. */
+.model-picker-controls {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px 8px;
+  flex: 1 1 100%;
+  min-inline-size: 0;
+}
+
+.model-picker-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+  margin-inline-start: auto;
+
+  .action-btn {
+    flex: none;
+    margin-left: 0;
+  }
+}
+
+/* Open: the gold of the open trigger. */
+.model-picker-search-toggle[aria-expanded="true"] {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
 }
 
 .model-picker-search-row {
@@ -6647,11 +6684,29 @@ progress.job-progress {
   #{'position-area'}: block-end span-inline-start;
 }
 
+/* In an upward picker the Sort popover opens upward too, over the list rather than off the viewport. */
+.custom-model-selector.drops-up .gh-facet-popover.model-picker-sort-panel,
+.gh-multi-picker.drops-up .gh-facet-popover.model-picker-sort-panel {
+  top: auto;
+  bottom: calc(anchor(top) + 6px);
+}
+
+.gh-anchor-native .custom-model-selector.drops-up .gh-facet-popover.model-picker-sort-panel,
+.gh-anchor-native .gh-multi-picker.drops-up .gh-facet-popover.model-picker-sort-panel {
+  top: auto;
+  bottom: auto;
+  margin: 0 0 6px;
+  #{'position-area'}: block-start span-inline-start;
+  #{'position-try-fallbacks'}: flip-block;
+}
+
+/* The provider toggles take the row's free width and wrap inside it. */
 .model-picker-providers {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  flex: 1 1 100%;
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }
 
 /* A provider toggle: the check glyph and aria-pressed carry the state; the colored edge is decorative. */
@@ -6751,7 +6806,8 @@ mark.model-option-match {
     color: MarkText;
   }
 
-  .model-picker-provider[aria-pressed="true"] {
+  .model-picker-provider[aria-pressed="true"],
+  .model-picker-search-toggle[aria-expanded="true"] {
     border-color: Highlight;
   }
 
