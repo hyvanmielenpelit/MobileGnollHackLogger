@@ -15,6 +15,9 @@ import {
   releaseMonthLabel,
   searchTerms,
   showsViewTools,
+  toolsToggleLabel,
+  viewNarrows,
+  withoutNarrowing,
   writeModelPickerView
 } from './model-picker-view';
 
@@ -212,6 +215,38 @@ describe('model-picker-view', () => {
       expect(isViewActive(view({ search: '  ' }))).toBe(false);
       expect(isViewActive(view({ sort: 'name-asc' }))).toBe(true);
       expect(isViewActive(view({ providers: ['openai'] }))).toBe(true);
+    });
+  });
+
+  describe('viewNarrows', () => {
+    it('is true for a search or a provider filter, and not for a sort or a blank search', () => {
+      expect(viewNarrows(view())).toBe(false);
+      expect(viewNarrows(view({ search: '  ' }))).toBe(false);
+      expect(viewNarrows(view({ sort: 'name-asc' }))).toBe(false);
+      expect(viewNarrows(view({ search: 'luna' }))).toBe(true);
+      expect(viewNarrows(view({ providers: ['openai'] }))).toBe(true);
+    });
+
+    it('ignores a stored provider no option has, through the effective view', () => {
+      const options = [opt('A', { provider: 'OpenAI' }), opt('B', { provider: 'Anthropic' })];
+      expect(viewNarrows(effectiveView(view({ providers: ['xai'] }), options))).toBe(false);
+    });
+  });
+
+  describe('withoutNarrowing', () => {
+    it('clears the search and the providers and keeps the sort', () => {
+      expect(withoutNarrowing(view({ sort: 'release-desc', providers: ['openai'], search: 'luna' })))
+        .toEqual(view({ sort: 'release-desc' }));
+    });
+  });
+
+  describe('toolsToggleLabel', () => {
+    it('says whether the view is filtered, sorted, or both', () => {
+      expect(toolsToggleLabel(view())).toBe('Filter and sort models');
+      expect(toolsToggleLabel(view({ search: 'luna' }))).toBe('Filter and sort models (filtered)');
+      expect(toolsToggleLabel(view({ sort: 'name-asc' }))).toBe('Filter and sort models (sorted)');
+      expect(toolsToggleLabel(view({ sort: 'name-asc', providers: ['openai'] })))
+        .toBe('Filter and sort models (filtered and sorted)');
     });
   });
 

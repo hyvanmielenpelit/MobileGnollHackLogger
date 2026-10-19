@@ -89,15 +89,29 @@
   <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
 </button>
 
+<!-- Laid over the trigger, just before the chevron (styles.scss); after it in the tab order. -->
+@if (toolsShown) {
+  <app-picker-tools-toggle [buttonId]="toolsToggleId" [label]="toolsToggleLabelText" tooltip="Filter and sort"
+                           [expanded]="toolsRendered" [controls]="toolsRendered ? uid + '-tools' : null"
+                           [active]="toolsToggleActive" [disabled]="disabled"
+                           (pressed)="onToolsToggle()" (keydown)="onToolsToggleKeydown($event)"
+                           (focusout)="onFocusOut($event)"></app-picker-tools-toggle>
+}
+
 @if (open) {
   @if (toolsShown) {
-    <!-- The toolbar is the popup's edge nearest the trigger: first downward, last upward. -->
+    <!-- The toolbar, while expanded, is the popup's edge nearest the trigger: first downward, last upward.
+         The popup keeps its frame and width while the toolbar is collapsed. -->
     <div class="selector-popup" (focusout)="onFocusOut($event)" (mousedown)="onPopupMousedown($event)">
       @if (dropsUp) {
         <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>
-        <ng-container [ngTemplateOutlet]="toolsTemplate"></ng-container>
+        @if (toolsExpanded) {
+          <ng-container [ngTemplateOutlet]="toolsTemplate"></ng-container>
+        }
       } @else {
-        <ng-container [ngTemplateOutlet]="toolsTemplate"></ng-container>
+        @if (toolsExpanded) {
+          <ng-container [ngTemplateOutlet]="toolsTemplate"></ng-container>
+        }
         <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>
       }
     </div>

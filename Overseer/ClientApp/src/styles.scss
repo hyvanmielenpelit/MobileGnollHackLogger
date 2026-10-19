@@ -6503,10 +6503,68 @@ progress.job-progress {
   }
 }
 
-/* A model picker's popup with the view toolbar (app-model-picker-tools): .selector-popup takes the
-   dropdown's place and frame, and holds the toolbar at the edge nearest the trigger and the listbox
-   beyond it, which scrolls inside it: toolbar first downward, last upward (.drops-up), in DOM order.
-   Its width is fixed. The listbox fits the models shown; a downward popup that reaches past its
+/* The filter button of a picker with the view toolbar (app-picker-tools-toggle): an .action-btn laid
+   over the trigger just before the chevron. The trigger reserves its room with an ::after spacer
+   between its content and the chevron, so a long name or the badges wrap before the button. The
+   compact trigger takes a 24 px button. */
+.custom-model-selector {
+  --picker-trigger-pad: 12px;
+  --picker-trigger-gap: 6px;
+  --picker-toggle-size: 32px;
+}
+
+.custom-model-selector.compact {
+  --picker-trigger-pad: 8px;
+  --picker-trigger-gap: 4px;
+  --picker-toggle-size: 24px;
+}
+
+.custom-model-selector > .picker-tools-toggle {
+  position: absolute;
+  inset-block-start: 50%;
+  /* The trigger's border, padding and chevron, and the gap before the chevron. */
+  inset-inline-end: calc(1px + var(--picker-trigger-pad) + 16px + var(--picker-trigger-gap));
+  transform: translateY(-50%);
+  z-index: 1;
+
+  .action-btn {
+    margin: 0;
+    inline-size: var(--picker-toggle-size);
+    block-size: var(--picker-toggle-size);
+  }
+}
+
+.custom-model-selector:has(> .picker-tools-toggle) > .selector-trigger {
+  &::after {
+    content: '';
+    flex: none;
+    order: 1;
+    inline-size: var(--picker-toggle-size);
+    margin-inline-start: auto;
+  }
+
+  .chevron {
+    order: 2;
+    margin-left: 0;
+  }
+}
+
+/* Hovering the button lights the trigger as hovering the trigger does. */
+.custom-model-selector:has(> .picker-tools-toggle:hover) > .selector-trigger:not([aria-disabled="true"]) {
+  border-color: var(--primary-color);
+  background: #1a1a1a;
+}
+
+.custom-model-selector.compact:has(> .picker-tools-toggle:hover) > .selector-trigger:not([aria-disabled="true"]) {
+  border-color: var(--gh-gold);
+  background: rgba(15, 15, 15, 0.8);
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.2);
+}
+
+/* A model picker's popup while the view toolbar is available (app-model-picker-tools): .selector-popup
+   takes the dropdown's place and frame, and holds the toolbar, while the filter button has expanded
+   it, at the edge nearest the trigger and the listbox beyond it, which scrolls inside it: toolbar
+   first downward, last upward (.drops-up), in DOM order. Its width is fixed, expanded or not. The listbox fits the models shown; a downward popup that reaches past its
    scroll container's visible end keeps an inline min-block-size that still reaches it, so filtering
    never scrolls the container back. */
 .selector-popup {
@@ -6571,9 +6629,10 @@ progress.job-progress {
   }
 }
 
-/* The toolbar, outward from the trigger: the controls row (provider toggles, then the Search and Sort
-   icons at its end), the search field while it is open, and the status line while it says something.
-   It keeps its own type size, so the compact trigger never shrinks the search field. */
+/* The toolbar, shown by the picker's filter button, outward from the trigger: the controls row
+   (provider toggles, then the Search and Sort icons at its end), the search field while it is open,
+   and the status line while it says something. It keeps its own type size, so the compact trigger
+   never shrinks the search field. */
 .model-picker-tools {
   display: flex;
   flex-wrap: wrap;
@@ -6614,7 +6673,8 @@ progress.job-progress {
 }
 
 /* Open: the gold of the open trigger. */
-.model-picker-search-toggle[aria-expanded="true"] {
+.model-picker-search-toggle[aria-expanded="true"],
+.picker-tools-toggle-btn[aria-expanded="true"] {
   border-color: var(--primary-color);
   color: var(--primary-color);
 }
@@ -6657,12 +6717,14 @@ progress.job-progress {
   }
 }
 
-.model-picker-sort {
+.model-picker-sort,
+.picker-tools-toggle-btn {
   position: relative;
 }
 
-/* A non-default sort; the button's name says which. */
-.model-picker-sort-dot {
+/* A non-default sort, or on the filter button a sorted or filtered view; the button's name says which. */
+.model-picker-sort-dot,
+.picker-tools-toggle-dot {
   position: absolute;
   inset-block-start: 4px;
   inset-inline-end: 4px;
@@ -6808,11 +6870,13 @@ mark.model-option-match {
   }
 
   .model-picker-provider[aria-pressed="true"],
-  .model-picker-search-toggle[aria-expanded="true"] {
+  .model-picker-search-toggle[aria-expanded="true"],
+  .picker-tools-toggle-btn[aria-expanded="true"] {
     border-color: Highlight;
   }
 
-  .model-picker-sort-dot {
+  .model-picker-sort-dot,
+  .picker-tools-toggle-dot {
     background: CanvasText;
   }
 

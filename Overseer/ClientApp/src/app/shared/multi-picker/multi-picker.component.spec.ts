@@ -808,4 +808,178 @@ describe('MultiPickerComponent visible keys and tools', () => {
     fixture.detectChanges();
     expect(liveLine()).toBe('All shown sources are already selected.');
   });
+
+  it('shows the tools on every opening without a toggle label, and no filter button', () => {
+    open();
+    expect(picker().querySelector('.vk-search')).not.toBeNull();
+    expect(picker().querySelector('.picker-tools-toggle-btn')).toBeNull();
+  });
+});
+
+/** A picker whose tools sit behind its filter button, inside a dialog. */
+@Component({
+  standalone: true,
+  imports: [MultiPickerComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <dialog open class="tg-dlg" (keydown)="dialogKeys.push($any($event).key)">
+      <app-multi-picker class="tg-picker" label="Toggled" summaryNoun="sources"
+                        [options]="options" [selectedKeys]="selected" [toolsTemplate]="tools"
+                        [toolsToggleLabel]="toggleLabel" [toolsToggleActive]="active"
+                        [toolsStartExpanded]="startExpanded" toolsId="tg-tools"
+                        (toolsExpandedChange)="expandedChanges.push($event)"></app-multi-picker>
+    </dialog>
+    <ng-template #tools>
+      <div id="tg-tools" class="tg-tools">
+        <input type="search" class="tg-search" data-picker-search value="be">
+      </div>
+    </ng-template>
+  `
+})
+class ToggleHostComponent {
+  private cdr = inject(ChangeDetectorRef);
+  options: MultiPickerOption[] = OPTIONS;
+  selected: MultiPickerKey[] = [];
+  toggleLabel: string | null = 'Filter and sort models';
+  active = false;
+  startExpanded = false;
+  expandedChanges: boolean[] = [];
+  dialogKeys: string[] = [];
+
+  set(changes: Partial<Pick<ToggleHostComponent, 'toggleLabel' | 'active' | 'startExpanded'>>): void {
+    Object.assign(this, changes);
+    this.cdr.markForCheck();
+  }
+}
+
+describe('MultiPickerComponent tools behind a filter button', () => {
+  let fixture: ComponentFixture<ToggleHostComponent>;
+  let host: ToggleHostComponent;
+  let el: HTMLElement;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({ imports: [ToggleHostComponent] }).compileComponents();
+    fixture = TestBed.createComponent(ToggleHostComponent);
+    host = fixture.componentInstance;
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+  });
+
+  const picker = () => el.querySelector<HTMLElement>('.tg-picker')!;
+  const component = () => fixture.debugElement.query(By.directive(MultiPickerComponent)).componentInstance as MultiPickerComponent;
+  const trigger = () => picker().querySelector<HTMLButtonElement>('.selector-trigger')!;
+  const button = () => picker().querySelector<HTMLButtonElement>('.picker-tools-toggle-btn')!;
+  const listbox = () => picker().querySelector<HTMLElement>('[role="listbox"]');
+  const tools = () => picker().querySelector<HTMLElement>('.tg-tools');
+
+  function update(changes: Parameters<ToggleHostComponent['set']>[0]): void {
+    host.set(changes);
+    fixture.detectChanges();
+  }
+
+  function open(): void {
+    trigger().click();
+    fixture.detectChanges();
+  }
+
+  function press(): void {
+    button().click();
+    fixture.detectChanges();
+  }
+
+  it('renders the filter button after the trigger in the field, and no tools on a trigger opening', () => {
+    expect(button().getAttribute('aria-label')).toBe('Filter and sort models');
+    expect(button().closest('.gh-multi-picker-field')).not.toBeNull();
+    expect(trigger().contains(button())).toBe(false);
+    expect(trigger().compareDocumentPosition(button()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(picker().querySelector(`#${button().getAttribute('interestfor')}`)!.textContent!.trim()).toBe('Filter and sort');
+    open();
+    expect(listbox()).not.toBeNull();
+    expect(listbox()!.closest('.selector-popup')).not.toBeNull();
+    expect(tools()).toBeNull();
+    expect(document.activeElement).toBe(listbox());
+  });
+
+  it('expands and collapses the tools of an open picker, emitting each change and keeping focus on the button', () => {
+    open();
+    button().focus();
+    press();
+    expect(tools()).not.toBeNull();
+    expect(button().getAttribute('aria-expanded')).toBe('true');
+    expect(button().getAttribute('aria-controls')).toBe('tg-tools');
+    expect(document.activeElement).toBe(button());
+
+    press();
+    expect(tools()).toBeNull();
+    expect(button().getAttribute('aria-expanded')).toBe('false');
+    expect(button().hasAttribute('aria-controls')).toBe(false);
+    expect(listbox()).not.toBeNull();
+    expect(document.activeElement).toBe(button());
+    expect(host.expandedChanges).toEqual([true, false]);
+  });
+
+  it('opens a closed picker with the tools expanded from the filter button', () => {
+    press();
+    expect(listbox()).not.toBeNull();
+    expect(tools()).not.toBeNull();
+    expect(host.expandedChanges).toEqual([true]);
+  });
+
+  it('collapses with focus in the tools by moving it to the button first', () => {
+    update({ startExpanded: true });
+    open();
+    expect(document.activeElement).toBe(picker().querySelector('.tg-search'));
+    press();
+    expect(tools()).toBeNull();
+    expect(listbox()).not.toBeNull();
+    expect(document.activeElement).toBe(button());
+  });
+
+  it('opens expanded from the trigger with toolsStartExpanded, and is collapsed again after closing', () => {
+    update({ startExpanded: true });
+    open();
+    expect(tools()).not.toBeNull();
+    expect(host.expandedChanges).toEqual([]);
+    open();
+    expect(listbox()).toBeNull();
+    update({ startExpanded: false });
+    open();
+    expect(tools()).toBeNull();
+  });
+
+  it('closes on Escape on the filter button without closing the enclosing dialog', () => {
+    open();
+    button().focus();
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    button().dispatchEvent(event);
+    fixture.detectChanges();
+    expect(event.defaultPrevented).toBe(true);
+    expect(listbox()).toBeNull();
+    expect(host.dialogKeys).toEqual([]);
+    expect(el.querySelector<HTMLDialogElement>('.tg-dlg')!.open).toBe(true);
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it('expands the tools on showTools() and focuses the field with the caret at the end', () => {
+    open();
+    component().showTools();
+    fixture.detectChanges();
+    const field = picker().querySelector<HTMLInputElement>('.tg-search')!;
+    expect(document.activeElement).toBe(field);
+    expect(field.selectionStart).toBe(2);
+    expect(host.expandedChanges).toEqual([true]);
+  });
+
+  it('shows the dot while active', () => {
+    expect(picker().querySelector('.picker-tools-toggle-dot')).toBeNull();
+    update({ active: true });
+    expect(picker().querySelector('.picker-tools-toggle-dot')).not.toBeNull();
+  });
+
+  it('has no filter button and shows the tools on every opening when the label is null', () => {
+    update({ toggleLabel: null });
+    expect(picker().querySelector('.picker-tools-toggle-btn')).toBeNull();
+    open();
+    expect(tools()).not.toBeNull();
+  });
 });

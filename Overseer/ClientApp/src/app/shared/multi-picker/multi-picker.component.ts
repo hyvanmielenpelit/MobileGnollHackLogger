@@ -21,6 +21,7 @@ import { NgTemplateOutlet } from '@angular/common';
 
 import { scrollOptionIntoListbox, scrollSafeListHold } from '../../utils/listbox-scroll.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
+import { PickerToolsToggleComponent } from '../picker-tools-toggle/picker-tools-toggle.component';
 import {
   MultiPickerKey,
   MultiPickerNavigateIntent,
@@ -66,7 +67,7 @@ let nextUid = 0;
 @Component({
   selector: 'app-multi-picker',
   standalone: true,
-  imports: [NgTemplateOutlet],
+  imports: [NgTemplateOutlet, PickerToolsToggleComponent],
   templateUrl: './multi-picker.component.html',
   styleUrl: './multi-picker.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -128,9 +129,21 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   /**
    * Rendered in the popup outside the listbox, at the edge nearest the trigger: before the listbox,
    * after it with `dropsUp`. A `[data-picker-search]` field in it takes typed characters, and takes
-   * focus on open on a fine pointer, only while it is rendered.
+   * focus on open on a fine pointer, only while it is rendered. Shown on every opening, unless
+   * `toolsToggleLabel` puts it behind a filter button.
    */
   @Input() toolsTemplate: TemplateRef<MultiPickerToolsContext> | null = null;
+  /**
+   * With `toolsTemplate`, renders a filter button with this accessible name on the trigger, before
+   * the chevron, and the tools only while it has expanded them; null shows the tools on every opening.
+   */
+  @Input() toolsToggleLabel: string | null = null;
+  /** The filter button's dot. */
+  @Input() toolsToggleActive = false;
+  /** Whether an opening by the trigger starts with the tools expanded. */
+  @Input() toolsStartExpanded = false;
+  /** The tools' id, the filter button's `aria-controls` while they are rendered. */
+  @Input() toolsId: string | null = null;
   /**
    * Offered a printable character typed in the listbox while no `[data-picker-search]` field is
    * rendered; returning true means the tools took it (opening their search), false leaves it to type-ahead.
@@ -141,10 +154,13 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
 
   /** Once per toggle, All, None, chip removal or `addToSelection()`. */
   @Output() selectionChange = new EventEmitter<MultiPickerSelection>();
+  /** The filter button, or `showTools()`, expanded or collapsed the tools; not emitted on close. */
+  @Output() toolsExpandedChange = new EventEmitter<boolean>();
 
   @ViewChild('field', { static: true }) private fieldRef!: ElementRef<HTMLElement>;
   @ViewChild('trigger', { static: true }) private triggerRef!: ElementRef<HTMLButtonElement>;
   @ViewChild('listbox') private listboxRef?: ElementRef<HTMLElement>;
+  @ViewChild(PickerToolsToggleComponent) private toolsToggleRef?: PickerToolsToggleComponent;
 
   readonly uid = `msp-${++nextUid}`;
 
@@ -166,6 +182,8 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
    * visible end, so a narrower view never scrolls that container back; null otherwise.
    */
   listHold: number | null = null;
+  /** Whether the filter button has expanded the tools; reset on close. */
+  toolsExpanded = false;
 
   private selectedSet = new Set<MultiPickerKey>();
   private indexByKey = new Map<MultiPickerKey, number>();
@@ -199,6 +217,16 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   }
 
   get listboxId(): string { return `${this.uid}-listbox`; }
+
+  get toolsToggleId(): string { return `${this.uid}-tools-toggle`; }
+
+  /** The tools sit behind a filter button. */
+  get toolsToggleShown(): boolean { return !!this.toolsTemplate && this.toolsToggleLabel !== null; }
+
+  /** The tools are in the open popup. */
+  get toolsRendered(): boolean {
+    return this.open && !!this.toolsTemplate && (!this.toolsToggleShown || this.toolsExpanded);
+  }
 
   get emptyHintId(): string { return `${this.uid}-empty`; }
 
@@ -415,6 +443,63 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
     event.preventDefault();
   }
 
+  /**
+   * The filter button: on a closed picker it opens the list with the tools expanded; on an open one
+   * it expands or collapses them and keeps focus.
+   */
+  onToolsToggle(): void {
+    if (!this.open) {
+      this.openList(this.firstSelectedIndex() ?? 0, true);
+      this.toolsExpandedChange.emit(true);
+      return;
+    }
+    if (!this.toolsExpanded) {
+      this.toolsExpanded = true;
+    } else {
+      // Focus left inside the tools would fall to the body when they go, and close the picker.
+      const active = document.activeElement;
+      const popup = this.fieldRef.nativeElement.querySelector('.selector-popup');
+      const listbox = this.listboxRef?.nativeElement;
+      if (active && popup?.contains(active) && !listbox?.contains(active)) {
+        this.toolsToggleRef?.focus();
+      }
+      this.toolsExpanded = false;
+      // Measured while the tools are still in the popup.
+      this.keepScrollPosition();
+    }
+    this.toolsExpandedChange.emit(this.toolsExpanded);
+    this.cdr.markForCheck();
+    this.cdr.detectChanges();
+  }
+
+  /** Escape on the filter button closes the list, and stops there so an enclosing <dialog> stays open. */
+  onToolsToggleKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || !this.open) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.close(true);
+  }
+
+  /** While open: expands the tools, then focuses a rendered `[data-picker-search]` field with the caret at the end. */
+  showTools(): void {
+    if (!this.open) return;
+    if (this.toolsToggleShown && !this.toolsExpanded) {
+      this.toolsExpanded = true;
+      this.toolsExpandedChange.emit(true);
+      this.cdr.markForCheck();
+      this.cdr.detectChanges();
+    }
+    const search = this.searchField();
+    if (!search) return;
+    search.focus();
+    const end = search.value.length;
+    try {
+      search.setSelectionRange(end, end);
+    } catch {
+      // Not every input type supports a selection.
+    }
+  }
+
   onFocusOut(event: FocusEvent): void {
     const next = event.relatedTarget as Node | null;
     if (!next && this.pressInside) return;
@@ -622,10 +707,12 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
     return count === 1 ? this.summaryNoun.replace(/s$/, '') : this.summaryNoun;
   }
 
-  private openList(activeIndex: number): void {
+  /** Behind a filter button the tools start expanded when asked, or with `toolsStartExpanded`. */
+  private openList(activeIndex: number, expandTools = false): void {
     if (this.open) return;
     this.open = true;
     this.activeIndex = this.clampIndex(activeIndex);
+    this.toolsExpanded = this.toolsToggleShown && (expandTools || this.toolsStartExpanded);
     this.clearTypeahead();
     this.cdr.markForCheck();
     this.cdr.detectChanges();
@@ -653,6 +740,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   private close(focusTrigger: boolean): void {
     if (!this.open) return;
     this.open = false;
+    this.toolsExpanded = false;
     this.listHold = null;
     this.detachDocumentListener();
     this.clearTypeahead();
@@ -736,7 +824,10 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
     if (option) scrollOptionIntoListbox(listbox, option);
   }
 
-  /** Before a view change: sets `listHold` so a downward popup still reaches its scroll container's visible end. */
+  /**
+   * Before a view change or a collapse: sets `listHold` so a downward popup still reaches its scroll
+   * container's visible end, counting tools still rendered above the listbox that are collapsing.
+   */
   private keepScrollPosition(): void {
     const listbox = this.listboxRef?.nativeElement;
     const popup = listbox?.parentElement;
@@ -744,7 +835,10 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
       this.listHold = null;
       return;
     }
-    this.listHold = scrollSafeListHold(popup, listbox);
+    const removedBefore = this.toolsRendered
+      ? 0
+      : listbox.getBoundingClientRect().top - popup.getBoundingClientRect().top - popup.clientTop;
+    this.listHold = scrollSafeListHold(popup, listbox, removedBefore);
     this.cdr.markForCheck();
   }
 

@@ -64,5 +64,8 @@
                   [optionTemplate]="modelOption" [chipTemplate]="modelChip" [chipStyle]="chipStyle"
                   [status]="status"
                   [visibleKeys]="visibleKeys" [toolsTemplate]="toolsShown ? modelTools : null"
+                  [toolsToggleLabel]="toolsShown ? toolsToggleLabelText : null" [toolsToggleActive]="toolsToggleActive"
+                  [toolsStartExpanded]="startsExpanded" [toolsId]="uid + '-tools'"
                   [typeToTools]="typeToTools" [noMatchHint]="toolsShown ? noMatchHint : null"
+                  (toolsExpandedChange)="onToolsExpandedChange($event)"
                   (selectionChange)="onSelectionChange($event)"></app-multi-picker>

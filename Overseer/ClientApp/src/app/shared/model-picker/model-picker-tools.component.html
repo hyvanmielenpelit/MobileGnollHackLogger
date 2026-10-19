@@ -128,7 +128,7 @@
 </ng-template>
 
 <!-- The rows run outward from the trigger: controls, search, status, mirrored when the list opens upward. -->
-<search class="model-picker-tools">
+<search class="model-picker-tools" [id]="toolsId">
   @if (dropsUp) {
     <ng-container [ngTemplateOutlet]="statusRow"></ng-container>
     <ng-container [ngTemplateOutlet]="searchRow"></ng-container>

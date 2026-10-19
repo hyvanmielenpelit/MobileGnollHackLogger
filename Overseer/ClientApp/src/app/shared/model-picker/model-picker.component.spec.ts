@@ -572,6 +572,18 @@ describe('ModelPickerComponent', () => {
       expect(button.getAttribute('aria-expanded')).toBe('false');
     });
 
+    it('marks the filter button aria-disabled, and it opens nothing', () => {
+      update({ disabledA: true });
+      const button = pickerA().querySelector<HTMLButtonElement>('.picker-tools-toggle-btn')!;
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.disabled).toBe(false);
+      button.click();
+      fixture.detectChanges();
+      expect(listbox()).toBeNull();
+      expect(pickerA().querySelector('.model-picker-tools')).toBeNull();
+      expect(button.getAttribute('aria-expanded')).toBe('false');
+    });
+
     it('closes an open list when it becomes disabled', () => {
       openByClick();
       expect(listbox()).not.toBeNull();
@@ -703,12 +715,22 @@ describe('ModelPickerComponent view toolbar', () => {
   const headings = (p: HTMLElement) =>
     Array.from(p.querySelectorAll<HTMLElement>('.model-group-title')).map(h => h.textContent!.trim());
 
+  const filterButton = (p: HTMLElement) => p.querySelector<HTMLButtonElement>('.picker-tools-toggle-btn');
+
   function open(p: HTMLElement): void {
     trigger(p).click();
     fixture.detectChanges();
   }
 
+  /** Shows the toolbar of an open picker with the filter button, unless it is already shown. */
+  function expand(p: HTMLElement): void {
+    if (tools(p)) return;
+    filterButton(p)!.click();
+    fixture.detectChanges();
+  }
+
   function type(p: HTMLElement, text: string): void {
+    expand(p);
     if (!search(p)) {
       searchToggle(p).click();
       fixture.detectChanges();
@@ -726,22 +748,199 @@ describe('ModelPickerComponent view toolbar', () => {
     return event;
   }
 
-  it('has no toolbar at one option or with viewTools="never", and one at two', async () => {
+  it('has no filter button at one option or with viewTools="never", and one at two', async () => {
     await create();
+    expect(filterButton(picker('single'))).toBeNull();
     open(picker('single'));
     expect(tools(picker('single'))).toBeNull();
     expect(document.activeElement).toBe(listbox(picker('single')));
 
+    expect(filterButton(picker('never'))).toBeNull();
     open(picker('never'));
     expect(tools(picker('never'))).toBeNull();
 
-    open(picker('pair'));
-    expect(tools(picker('pair'))).not.toBeNull();
-    expect(listbox(picker('pair'))!.closest('.selector-popup')).not.toBeNull();
-    expect(tools(picker('pair'))!.closest('[role="listbox"]')).toBeNull();
-    expect(searchToggle(picker('pair'))).not.toBeNull();
-    expect(search(picker('pair'))).toBeNull();
-    expect(status(picker('pair'))).toBeNull();
+    const pair = picker('pair');
+    expect(filterButton(pair)).not.toBeNull();
+    open(pair);
+    expect(tools(pair)).toBeNull();
+    expand(pair);
+    expect(tools(pair)).not.toBeNull();
+    expect(listbox(pair)!.closest('.selector-popup')).not.toBeNull();
+    expect(tools(pair)!.closest('[role="listbox"]')).toBeNull();
+    expect(searchToggle(pair)).not.toBeNull();
+    expect(search(pair)).toBeNull();
+    expect(status(pair)).toBeNull();
+  });
+
+  it('names the filter button, gives it the Filter and sort hint, and follows the trigger in the DOM', async () => {
+    await create();
+    const p = picker('one');
+    const button = filterButton(p)!;
+    expect(button.getAttribute('aria-label')).toBe('Filter and sort models');
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(button.hasAttribute('aria-controls')).toBe(false);
+    expect(p.querySelector(`#${button.getAttribute('interestfor')}`)!.textContent!.trim()).toBe('Filter and sort');
+    expect(trigger(p).contains(button)).toBe(false);
+    expect(trigger(p).compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  for (const name of ['one', 'up']) {
+    it(`lays the filter button over the ${name === 'up' ? 'compact' : 'form'} trigger, just before the chevron`, async () => {
+      await create();
+      host.select(name === 'one' ? 2 : null);
+      fixture.detectChanges();
+      const p = picker(name);
+      const box = trigger(p).getBoundingClientRect();
+      const button = filterButton(p)!.getBoundingClientRect();
+      const chevron = trigger(p).querySelector('.chevron')!.getBoundingClientRect();
+      const content = trigger(p).querySelector('.selector-trigger-content')!.getBoundingClientRect();
+      expect(button.width).toBeGreaterThanOrEqual(24);
+      expect(button.left).toBeGreaterThanOrEqual(box.left);
+      expect(button.top).toBeGreaterThanOrEqual(box.top - 0.5);
+      expect(button.bottom).toBeLessThanOrEqual(box.bottom + 0.5);
+      expect(button.right).toBeLessThanOrEqual(chevron.left + 0.5);
+      expect(chevron.left - button.right).toBeLessThanOrEqual(8);
+      expect(content.right).toBeLessThanOrEqual(button.left + 0.5);
+    });
+  }
+
+  it('opens from the trigger with the toolbar collapsed', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    expect(listbox(p)).not.toBeNull();
+    expect(tools(p)).toBeNull();
+    expect(listbox(p)!.closest('.selector-popup')).not.toBeNull();
+    expect(document.activeElement).toBe(listbox(p));
+  });
+
+  it('opens a closed picker with the toolbar expanded from the filter button', async () => {
+    await create();
+    const p = picker('one');
+    filterButton(p)!.click();
+    fixture.detectChanges();
+    expect(listbox(p)).not.toBeNull();
+    expect(tools(p)).not.toBeNull();
+    expect(trigger(p).getAttribute('aria-expanded')).toBe('true');
+    expect(filterButton(p)!.getAttribute('aria-expanded')).toBe('true');
+    expect(filterButton(p)!.getAttribute('aria-controls')).toBe(tools(p)!.id);
+    expect(document.activeElement).toBe(listbox(p));
+  });
+
+  it('expands and collapses the toolbar of an open picker, keeping the list open and focus on the button', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    const box = listbox(p)!;
+    const button = filterButton(p)!;
+    button.focus();
+    button.click();
+    fixture.detectChanges();
+    expect(tools(p)).not.toBeNull();
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(button);
+
+    button.click();
+    fixture.detectChanges();
+    expect(tools(p)).toBeNull();
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(button.hasAttribute('aria-controls')).toBe(false);
+    expect(listbox(p)).toBe(box);
+    expect(document.activeElement).toBe(button);
+    expect(trigger(p).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('clears the search and the provider filter on collapse, and keeps and stores the sort', async () => {
+    store('spec.one', { sort: 'name-asc' });
+    await create();
+    const p = picker('one');
+    open(p);
+    expect(tools(p)).toBeNull();
+    expect(filterButton(p)!.getAttribute('aria-label')).toBe('Filter and sort models (sorted)');
+    expect(p.querySelector('.picker-tools-toggle-dot')).not.toBeNull();
+
+    expand(p);
+    p.querySelector<HTMLButtonElement>('.model-picker-provider[data-provider="google"]')!.click();
+    fixture.detectChanges();
+    type(p, 'gemini');
+    expect(filterButton(p)!.getAttribute('aria-label')).toBe('Filter and sort models (filtered and sorted)');
+    expect(optionNames(p)).toEqual(['None', 'Gemini Flash 4', 'Gemini Luna 2']);
+
+    filterButton(p)!.click();
+    fixture.detectChanges();
+    expect(tools(p)).toBeNull();
+    expect(document.activeElement).toBe(filterButton(p));
+    expect(stored('spec.one')).toEqual({ version: 1, sort: 'name-asc', providers: [], search: '' });
+    expect(optionNames(p)).toEqual(['None', 'Alpha Custom', 'Claude Haiku 5', 'Claude Opus 5.5', 'Gemini Flash 4', 'Gemini Luna 2', 'GPT-6']);
+    expect(filterButton(p)!.getAttribute('aria-label')).toBe('Filter and sort models (sorted)');
+    expect(p.querySelector('.picker-tools-toggle-dot')).not.toBeNull();
+  });
+
+  it('opens expanded for a remembered provider filter or search, and collapsed for a remembered sort alone', async () => {
+    store('spec.one', { providers: ['openai'] });
+    store('spec.two', { sort: 'name-desc' });
+    await create();
+    open(picker('one'));
+    expect(tools(picker('one'))).not.toBeNull();
+    expect(filterButton(picker('one'))!.getAttribute('aria-label')).toBe('Filter and sort models (filtered)');
+    key(listbox(picker('one'))!, 'Escape');
+
+    open(picker('two'));
+    expect(tools(picker('two'))).toBeNull();
+    key(listbox(picker('two'))!, 'Escape');
+  });
+
+  it('opens collapsed when the remembered provider filter matches no option', async () => {
+    store('spec.one', { providers: ['xai'] });
+    await create();
+    open(picker('one'));
+    expect(tools(picker('one'))).toBeNull();
+    expect(filterButton(picker('one'))!.getAttribute('aria-label')).toBe('Filter and sort models');
+  });
+
+  it('closes on Escape on the filter button without closing the enclosing dialog', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    const button = filterButton(p)!;
+    button.focus();
+    const event = key(button, 'Escape');
+    expect(event.defaultPrevented).toBe(true);
+    expect(host.dialogKeys).toEqual([]);
+    expect(listbox(p)).toBeNull();
+    expect(el.querySelector<HTMLDialogElement>('.dlg')!.open).toBe(true);
+    expect(document.activeElement).toBe(trigger(p));
+  });
+
+  it('closes when focus leaves the filter button for an element outside', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    filterButton(p)!.focus();
+    fixture.detectChanges();
+    expect(listbox(p)).not.toBeNull();
+    trigger(picker('two')).focus();
+    fixture.detectChanges();
+    expect(listbox(p)).toBeNull();
+  });
+
+  it('never scrolls the container back when the toolbar of a popup that reaches past it collapses', async () => {
+    await create();
+    const scroller = el.querySelector<HTMLElement>('.edge-scroller')!;
+    const p = picker('edge');
+    open(p);
+    expand(p);
+    scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
+    const scrolled = scroller.scrollTop;
+    expect(scrolled).toBeGreaterThan(0);
+    const visibleEnd = () => scroller.getBoundingClientRect().top + scroller.clientTop + scroller.clientHeight;
+
+    filterButton(p)!.click();
+    fixture.detectChanges();
+    expect(tools(p)).toBeNull();
+    expect(Math.abs(scroller.scrollTop - scrolled)).toBeLessThanOrEqual(1);
+    expect(p.querySelector<HTMLElement>('.selector-popup')!.getBoundingClientRect().bottom)
+      .toBeGreaterThanOrEqual(visibleEnd() - 1);
   });
 
   it('focuses the listbox on open while the search field is closed, even on a fine pointer', async () => {
@@ -768,11 +967,14 @@ describe('ModelPickerComponent view toolbar', () => {
     expect(document.activeElement).toBe(listbox(p));
   });
 
-  it('opens the field with a printable key typed in the listbox', async () => {
+  it('expands the toolbar and opens the field with a printable key typed in the listbox', async () => {
     await create();
     const p = picker('one');
     open(p);
+    expect(tools(p)).toBeNull();
     key(listbox(p)!, 'l');
+    expect(tools(p)).not.toBeNull();
+    expect(filterButton(p)!.getAttribute('aria-expanded')).toBe('true');
     expect(document.activeElement).toBe(search(p));
     expect(search(p).value).toBe('l');
     type(p, 'lu');
@@ -783,6 +985,7 @@ describe('ModelPickerComponent view toolbar', () => {
     await create();
     const p = picker('one');
     open(p);
+    expand(p);
     const before = listbox(p)!.getBoundingClientRect().height;
     p.querySelector<HTMLButtonElement>('.model-picker-provider[data-provider="openai"]')!.click();
     fixture.detectChanges();
@@ -796,6 +999,7 @@ describe('ModelPickerComponent view toolbar', () => {
     await create();
     const p = picker('up');
     open(p);
+    expand(p);
     const before = listbox(p)!.getBoundingClientRect().height;
     const controlsTop = p.querySelector<HTMLElement>('.model-picker-controls')!.getBoundingClientRect().top;
     type(p, 'claude');
@@ -831,6 +1035,7 @@ describe('ModelPickerComponent view toolbar', () => {
     await create();
     const p = picker('one');
     open(p);
+    expand(p);
     await userEvent.click(p.querySelector<HTMLButtonElement>('.model-picker-sort')!);
     fixture.detectChanges();
     const panel = p.querySelector<HTMLElement>('.model-picker-sort-panel')!;
@@ -857,6 +1062,7 @@ describe('ModelPickerComponent view toolbar', () => {
     await create();
     const p = picker('one');
     open(p);
+    expand(p);
     const toggle = p.querySelector<HTMLButtonElement>('.model-picker-provider[data-provider="openai"]')!;
     toggle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     (document.activeElement as HTMLElement | null)?.blur();
@@ -885,6 +1091,7 @@ describe('ModelPickerComponent view toolbar', () => {
     await create();
     const p = picker('up');
     open(p);
+    expand(p);
     const popup = p.querySelector<HTMLElement>('.selector-popup')!;
     expect(Array.from(popup.children).map(c => c.getAttribute('role') ?? c.tagName.toLowerCase()))
       .toEqual(['listbox', 'app-model-picker-tools']);
@@ -985,6 +1192,7 @@ describe('ModelPickerComponent view toolbar', () => {
   it('remembers each picker on its own key', async () => {
     await create();
     open(picker('two'));
+    expand(picker('two'));
     const toggle = picker('two').querySelector<HTMLButtonElement>('.model-picker-provider[data-provider="openai"]')!;
     toggle.click();
     fixture.detectChanges();

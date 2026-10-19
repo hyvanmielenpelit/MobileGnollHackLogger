@@ -137,6 +137,27 @@ export function isViewActive(state: ModelPickerViewState): boolean {
   return state.sort !== 'default' || state.providers.length > 0 || state.search.trim() !== '';
 }
 
+/** Whether the view hides models: a search or a provider filter. Pass the effective view. */
+export function viewNarrows(state: ModelPickerViewState): boolean {
+  return state.search.trim() !== '' || state.providers.length > 0;
+}
+
+/** The view with its search and provider filter cleared and its sort kept. */
+export function withoutNarrowing(state: ModelPickerViewState): ModelPickerViewState {
+  return { sort: state.sort, providers: [], search: '' };
+}
+
+/** The filter button's accessible name for the effective view: whether it is filtered, sorted, or both. */
+export function toolsToggleLabel(state: ModelPickerViewState): string {
+  const filtered = viewNarrows(state);
+  const sorted = state.sort !== 'default';
+  const base = 'Filter and sort models';
+  if (filtered && sorted) return `${base} (filtered and sorted)`;
+  if (filtered) return `${base} (filtered)`;
+  if (sorted) return `${base} (sorted)`;
+  return base;
+}
+
 export function sameModelPickerView(a: ModelPickerViewState, b: ModelPickerViewState): boolean {
   return a.sort === b.sort && a.search === b.search
     && a.providers.length === b.providers.length && a.providers.every((p, i) => p === b.providers[i]);

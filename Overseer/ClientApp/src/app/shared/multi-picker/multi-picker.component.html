@@ -56,15 +56,29 @@
     <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
   </button>
 
+  <!-- Laid over the trigger, just before the chevron (styles.scss); after it in the tab order. -->
+  @if (toolsToggleShown) {
+    <app-picker-tools-toggle [buttonId]="toolsToggleId" [label]="toolsToggleLabel ?? ''" tooltip="Filter and sort"
+                             [expanded]="toolsRendered" [controls]="toolsRendered ? toolsId : null"
+                             [active]="toolsToggleActive"
+                             (pressed)="onToolsToggle()" (keydown)="onToolsToggleKeydown($event)"
+                             (focusout)="onFocusOut($event)"></app-picker-tools-toggle>
+  }
+
   @if (open) {
     @if (toolsTemplate) {
-      <!-- The tools are the popup's edge nearest the trigger: first downward, last upward. -->
+      <!-- The tools, while rendered, are the popup's edge nearest the trigger: first downward, last upward.
+           The popup keeps its frame and width while they are collapsed. -->
       <div class="selector-popup" (focusout)="onFocusOut($event)" (mousedown)="onPopupMousedown($event)">
         @if (dropsUp) {
           <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>
-          <ng-container [ngTemplateOutlet]="toolsTemplate" [ngTemplateOutletContext]="toolsContext"></ng-container>
+          @if (toolsRendered) {
+            <ng-container [ngTemplateOutlet]="toolsTemplate" [ngTemplateOutletContext]="toolsContext"></ng-container>
+          }
         } @else {
-          <ng-container [ngTemplateOutlet]="toolsTemplate" [ngTemplateOutletContext]="toolsContext"></ng-container>
+          @if (toolsRendered) {
+            <ng-container [ngTemplateOutlet]="toolsTemplate" [ngTemplateOutletContext]="toolsContext"></ng-container>
+          }
           <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>
         }
       </div>

@@ -14,16 +14,18 @@ export function scrollOptionIntoListbox(listbox: HTMLElement, option: HTMLElemen
  * The least block size `listbox` must keep so that `popup`, which opens downward and is about to
  * change its rows, still reaches the visible end of its scroll container; null when it may fit its
  * rows. An absolutely positioned popup past that end extends the container's scrollable area, and
- * shrinking it there would clamp the container's scrollTop.
+ * shrinking it there would clamp the container's scrollTop. `removedBefore` is the block size about
+ * to be removed above the listbox inside the popup, such as a toolbar being collapsed.
  */
-export function scrollSafeListHold(popup: HTMLElement, listbox: HTMLElement): number | null {
+export function scrollSafeListHold(popup: HTMLElement, listbox: HTMLElement, removedBefore = 0): number | null {
   const { visibleEnd, scrollEnd } = scrollContainerEnds(popup);
   const popupRect = popup.getBoundingClientRect();
   // Ends inside the visible area, or short of content that keeps the scrollable area as it is.
   if (popupRect.bottom < visibleEnd - 0.5 || popupRect.bottom < scrollEnd - 1) return null;
   const listRect = listbox.getBoundingClientRect();
   const frameBelow = popupRect.bottom - listRect.bottom;
-  const hold = Math.min(listRect.height, Math.max(0, Math.ceil(visibleEnd - frameBelow - listRect.top)));
+  const hold = Math.min(listRect.height + removedBefore,
+    Math.max(0, Math.ceil(visibleEnd - frameBelow - (listRect.top - removedBefore))));
   return hold > 0 ? hold : null;
 }
 

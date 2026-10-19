@@ -40,7 +40,8 @@ const LIVE_DELAY_MS = 400;
  * a Sort popover of five radios; the search field, shown by the toggle, which is the listbox's
  * combobox; and a status line while the view narrows, sorts or hides the selection. The controls row
  * is the edge nearest the trigger (`dropsUp` puts it last), and the DOM order is the visual order.
- * Created on every opening, so the field starts open only with a remembered search. Presentational:
+ * Shown by the picker's filter button, which points `aria-controls` at `toolsId`. Created each time
+ * it is shown, so the field starts open only with a remembered search. Presentational:
  * the host picker owns the view and feeds `state` back after each `stateChange`. Every id derives
  * from `uid`. The look is global (`styles.scss`, `.model-picker-tools`).
  */
@@ -89,6 +90,7 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
 
   readonly sortChoices: readonly ModelPickerSort[] = ['default', 'name-asc', 'name-desc', 'release-desc', 'release-asc'];
 
+  get toolsId(): string { return `${this.uid}-tools`; }
   get searchId(): string { return `${this.uid}-search`; }
   get sortId(): string { return `${this.uid}-sort`; }
   get sortPanelId(): string { return `${this.uid}-sort-panel`; }

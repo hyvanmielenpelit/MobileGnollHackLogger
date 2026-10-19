@@ -137,15 +137,21 @@ describe('ModelMultiPickerComponent', () => {
     return event;
   }
 
-  it('adds the view toolbar from two options, in both pickers', () => {
-    const single = part('.single');
-    open(single);
-    expect(single.querySelector('.model-picker-tools')).not.toBeNull();
-    key(listbox(single)!, 'Escape');
-    const noted = part('.multi-noted');
-    open(noted);
-    expect(noted.querySelector('.model-picker-tools')).not.toBeNull();
-    expect(noted.querySelector('.model-picker-search-toggle')).not.toBeNull();
+  it('adds the filter button and the view toolbar behind it from two options, in both pickers', () => {
+    for (const name of ['.single', '.multi-noted']) {
+      const p = part(name);
+      const button = p.querySelector<HTMLButtonElement>('.picker-tools-toggle-btn')!;
+      expect(button.getAttribute('aria-label')).toBe('Filter and sort models');
+      open(p);
+      expect(p.querySelector('.model-picker-tools')).toBeNull();
+      button.click();
+      fixture.detectChanges();
+      const tools = p.querySelector<HTMLElement>('.model-picker-tools')!;
+      expect(tools).not.toBeNull();
+      expect(button.getAttribute('aria-controls')).toBe(tools.id);
+      expect(p.querySelector('.model-picker-search-toggle')).not.toBeNull();
+      key(listbox(p)!, 'Escape');
+    }
   });
 
   it('draws the same badges as the single picker for the same model', () => {
@@ -467,16 +473,89 @@ describe('ModelMultiPickerComponent view toolbar', () => {
   const picker = () => el.querySelector<HTMLElement>('.six-picker')!;
   const labels = () => Array.from(picker().querySelectorAll<HTMLElement>('[role="option"] .model-name')).map(n => n.textContent!.trim());
   const selectShown = () => picker().querySelector<HTMLButtonElement>('.model-picker-select-shown');
+  const tools = (p = picker()) => p.querySelector<HTMLElement>('.model-picker-tools');
+  const filterButton = (p = picker()) => p.querySelector<HTMLButtonElement>('.picker-tools-toggle-btn')!;
+  const listbox = () => picker().querySelector<HTMLElement>('[role="listbox"]');
 
   function open(): void {
     picker().querySelector<HTMLButtonElement>('.selector-trigger')!.click();
     fixture.detectChanges();
   }
 
+  /** Shows the toolbar of an open picker with the filter button, unless it is already shown. */
+  function expand(p = picker()): void {
+    if (tools(p)) return;
+    filterButton(p).click();
+    fixture.detectChanges();
+  }
+
   function pressProvider(key: string): void {
+    expand();
     picker().querySelector<HTMLButtonElement>(`.model-picker-provider[data-provider="${key}"]`)!.click();
     fixture.detectChanges();
   }
+
+  function typeSearch(text: string): void {
+    expand();
+    if (!picker().querySelector('.model-picker-search')) {
+      picker().querySelector<HTMLButtonElement>('.model-picker-search-toggle')!.click();
+      fixture.detectChanges();
+    }
+    const search = picker().querySelector<HTMLInputElement>('.model-picker-search')!;
+    search.value = text;
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+  }
+
+  it('opens from the trigger with the toolbar collapsed', () => {
+    open();
+    expect(listbox()).not.toBeNull();
+    expect(tools()).toBeNull();
+    expect(filterButton().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('clears the search and the provider filter on collapse, and keeps and stores the sort', () => {
+    localStorage.setItem('overseer.modelPicker.view.spec.multi',
+      JSON.stringify({ version: 1, sort: 'name-asc', providers: [], search: '' }));
+    fixture.destroy();
+    fixture = TestBed.createComponent(SixHostComponent);
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+
+    open();
+    expect(tools()).toBeNull();
+    expect(filterButton().getAttribute('aria-label')).toBe('Filter and sort models (sorted)');
+    pressProvider('google');
+    typeSearch('luna');
+    expect(labels()).toEqual(['Gemini Luna 2']);
+    expect(filterButton().getAttribute('aria-label')).toBe('Filter and sort models (filtered and sorted)');
+
+    filterButton().click();
+    fixture.detectChanges();
+    expect(tools()).toBeNull();
+    expect(listbox()).not.toBeNull();
+    expect(document.activeElement).toBe(filterButton());
+    expect(labels()).toEqual(['Claude Haiku 5', 'Claude Opus 5.5', 'Gemini Flash 4', 'Gemini Luna 2', 'GPT-6', 'GPT-6 Mini']);
+    expect(JSON.parse(localStorage.getItem('overseer.modelPicker.view.spec.multi')!))
+      .toEqual({ version: 1, sort: 'name-asc', providers: [], search: '' });
+    expect(filterButton().getAttribute('aria-label')).toBe('Filter and sort models (sorted)');
+    expect(picker().querySelector('.picker-tools-toggle-dot')).not.toBeNull();
+  });
+
+  it('opens expanded for a remembered provider filter', () => {
+    localStorage.setItem('overseer.modelPicker.view.spec.multi',
+      JSON.stringify({ version: 1, sort: 'default', providers: ['openai'], search: '' }));
+    fixture.destroy();
+    fixture = TestBed.createComponent(SixHostComponent);
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+
+    open();
+    expect(tools()).not.toBeNull();
+    expect(labels()).toEqual(['GPT-6', 'GPT-6 Mini']);
+    expect(picker().querySelector<HTMLButtonElement>('.model-picker-provider[data-provider="openai"]')!
+      .getAttribute('aria-pressed')).toBe('true');
+  });
 
   it('narrows the list by provider, and Select all shown adds only the shown enabled models', () => {
     open();
@@ -506,27 +585,38 @@ describe('ModelMultiPickerComponent view toolbar', () => {
     expect(picker().querySelector('.model-picker-status')!.textContent).toContain('1 selected model hidden');
   });
 
-  it('opens the toolbar search with a character typed in the listbox', () => {
+  it('expands the toolbar and opens its search with a character typed in the collapsed listbox', () => {
     open();
-    const box = picker().querySelector<HTMLElement>('[role="listbox"]')!;
-    expect(picker().querySelector('.model-picker-search')).toBeNull();
+    const box = listbox()!;
+    expect(tools()).toBeNull();
     expect(document.activeElement).toBe(box);
     box.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true, cancelable: true }));
     fixture.detectChanges();
+    expect(tools()).not.toBeNull();
+    expect(filterButton().getAttribute('aria-expanded')).toBe('true');
     const search = picker().querySelector<HTMLInputElement>('.model-picker-search')!;
     expect(search.value).toBe('g');
     expect(document.activeElement).toBe(search);
+    expect(search.selectionStart).toBe(1);
     expect(labels()).toEqual(['GPT-6', 'GPT-6 Mini', 'Gemini Luna 2', 'Gemini Flash 4']);
+  });
+
+  it('opens the toolbar search with a character typed in the listbox while the toolbar is expanded', () => {
+    open();
+    expand();
+    const box = listbox()!;
+    box.focus();
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+    const search = picker().querySelector<HTMLInputElement>('.model-picker-search')!;
+    expect(search.value).toBe('c');
+    expect(document.activeElement).toBe(search);
+    expect(labels()).toEqual(['Claude Opus 5.5', 'Claude Haiku 5']);
   });
 
   it('says in the listbox that no model matches', () => {
     open();
-    picker().querySelector<HTMLButtonElement>('.model-picker-search-toggle')!.click();
-    fixture.detectChanges();
-    const search = picker().querySelector<HTMLInputElement>('.model-picker-search')!;
-    search.value = 'zzz';
-    search.dispatchEvent(new Event('input', { bubbles: true }));
-    fixture.detectChanges();
+    typeSearch('zzz');
     const box = picker().querySelector<HTMLElement>('[role="listbox"]')!;
     const hint = picker().querySelector<HTMLElement>(`#${box.getAttribute('aria-describedby')}`)!;
     expect(box.contains(hint)).toBe(true);
@@ -537,6 +627,7 @@ describe('ModelMultiPickerComponent view toolbar', () => {
     const up = el.querySelector<HTMLElement>('.six-up')!;
     up.querySelector<HTMLButtonElement>('.selector-trigger')!.click();
     fixture.detectChanges();
+    expand(up);
     const popup = up.querySelector<HTMLElement>('.selector-popup')!;
     expect(Array.from(popup.children).map(c => c.getAttribute('role') ?? c.tagName.toLowerCase()))
       .toEqual(['listbox', 'app-model-picker-tools']);

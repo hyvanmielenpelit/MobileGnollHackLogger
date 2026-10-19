@@ -107,6 +107,12 @@ describe('ModelPickerToolsComponent', () => {
     return fixture.debugElement.query(By.directive(ModelPickerToolsComponent)).componentInstance as ModelPickerToolsComponent;
   }
 
+  it('gives the toolbar the id the picker\'s filter button controls', () => {
+    const toolbar = el.querySelector<HTMLElement>('search.model-picker-tools')!;
+    expect(toolbar.id).toBe('tt-tools');
+    expect(tools().toolsId).toBe('tt-tools');
+  });
+
   it('hides the search field behind a Search toggle, which shows and focuses it', () => {
     expect(search()).toBeNull();
     const toggle = searchToggle();

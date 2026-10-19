@@ -18,6 +18,7 @@ import {
 import { NgTemplateOutlet } from '@angular/common';
 import { ModelOptionBadgesComponent } from './model-option-badges.component';
 import { ModelPickerToolsComponent } from './model-picker-tools.component';
+import { PickerToolsToggleComponent } from '../picker-tools-toggle/picker-tools-toggle.component';
 import {
   DEFAULT_MODEL_PICKER_VIEW,
   ModelPickerMatchPart,
@@ -30,13 +31,17 @@ import {
   effectiveView,
   hasReleaseDates,
   isReleaseSort,
+  isViewActive,
   matchParts,
   providerFacets,
   readModelPickerView,
   releaseMonthLabel,
   sameModelPickerView,
   searchTerms,
-  showsViewTools
+  showsViewTools,
+  toolsToggleLabel,
+  viewNarrows,
+  withoutNarrowing
 } from './model-picker-view';
 import type { ModelAvailability } from '../model-availability/model-availability';
 import { scrollOptionIntoListbox, scrollSafeListHold } from '../../utils/listbox-scroll.util';
@@ -139,7 +144,7 @@ let nextUid = 0;
 @Component({
   selector: 'app-model-picker',
   standalone: true,
-  imports: [ModelOptionBadgesComponent, ModelPickerToolsComponent, NgTemplateOutlet],
+  imports: [ModelOptionBadgesComponent, ModelPickerToolsComponent, NgTemplateOutlet, PickerToolsToggleComponent],
   templateUrl: './model-picker.component.html',
   styleUrl: './model-picker.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -180,7 +185,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   @Input() narrowHidesBadges = false;
   /** The trigger is aria-disabled and the list does not open; the host names the reason through describedBy. */
   @Input() disabled = false;
-  /** The search, sort and provider toolbar: `auto` shows it from 2 options up. */
+  /** The filter button that shows the search, sort and provider toolbar: `auto` from 2 options up. */
   @Input() viewTools: ModelPickerViewTools = 'auto';
   /** Names the picker's role; its view is stored as `overseer.modelPicker.view.<key>`. Null keeps it in memory only. */
   @Input() viewStateKey: string | null = null;
@@ -191,6 +196,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   @ViewChild('trigger', { static: true }) private triggerRef!: ElementRef<HTMLButtonElement>;
   @ViewChild('listbox') private listboxRef?: ElementRef<HTMLElement>;
   @ViewChild(ModelPickerToolsComponent) private toolsRef?: ModelPickerToolsComponent;
+  @ViewChild(PickerToolsToggleComponent) private toolsToggleRef?: PickerToolsToggleComponent;
 
   readonly uid = `mp-${++nextUid}`;
 
@@ -199,8 +205,10 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   flat: FlatEntry<M>[] = [];
   sections: Section<M>[] = [];
 
-  /** Whether the popup has the view toolbar; without it the stored view is not applied. */
+  /** Whether the view toolbar is available, behind the filter button; without it the stored view is not applied. */
   toolsShown = false;
+  /** Whether the filter button has expanded the toolbar; reset on close, never stored. */
+  toolsExpanded = false;
   /** The stored view, shown in the toolbar as is. */
   viewState: ModelPickerViewState = DEFAULT_MODEL_PICKER_VIEW;
   facets: ModelPickerProviderFacet[] = [];
@@ -234,6 +242,16 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   }
 
   get listboxId(): string { return `${this.uid}-listbox`; }
+
+  get toolsToggleId(): string { return `${this.uid}-tools-toggle`; }
+
+  /** The toolbar is in the open popup. */
+  get toolsRendered(): boolean { return this.open && this.toolsShown && this.toolsExpanded; }
+
+  get toolsToggleLabelText(): string { return toolsToggleLabel(effectiveView(this.viewState, this.options)); }
+
+  /** The filter button's dot: the view sorts or narrows the list. */
+  get toolsToggleActive(): boolean { return isViewActive(effectiveView(this.viewState, this.options)); }
 
   get emptyHintId(): string { return `${this.uid}-empty`; }
 
@@ -373,7 +391,12 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
         return;
       default:
         if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-          // With the toolbar, typing opens its search field instead of type-ahead.
+          // With the toolbar, typing expands it and opens its search field instead of type-ahead.
+          if (this.toolsShown && !this.toolsExpanded) {
+            this.toolsExpanded = true;
+            this.cdr.markForCheck();
+            this.cdr.detectChanges();
+          }
           if (this.toolsShown && this.toolsRef) {
             this.toolsRef.typeToSearch(event.key);
           } else {
@@ -384,6 +407,44 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
         return;
     }
     event.preventDefault();
+  }
+
+  /**
+   * The filter button: on a closed picker it opens the list with the toolbar expanded; on an open
+   * one it expands or collapses the toolbar and keeps focus. Collapsing clears the search and the
+   * provider filter and keeps the sort, so a collapsed toolbar never hides models.
+   */
+  onToolsToggle(): void {
+    if (this.disabled) return;
+    if (!this.open) {
+      this.openList(this.selectedIndex() ?? 0, true);
+      return;
+    }
+    if (!this.toolsExpanded) {
+      this.toolsExpanded = true;
+    } else {
+      // Focus left inside the toolbar would fall to the body when it goes, and close the picker.
+      const active = document.activeElement;
+      if (active && this.host.nativeElement.querySelector('.model-picker-tools')?.contains(active)) {
+        this.toolsToggleRef?.focus();
+      }
+      this.toolsExpanded = false;
+      if (viewNarrows(effectiveView(this.viewState, this.options))) {
+        this.onViewStateChange(withoutNarrowing(this.viewState));
+      } else {
+        this.keepScrollPosition();
+      }
+    }
+    this.cdr.markForCheck();
+    this.cdr.detectChanges();
+  }
+
+  /** Escape on the filter button closes the list, and stops there so an enclosing <dialog> stays open. */
+  onToolsToggleKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || !this.open) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.close(true);
   }
 
   onFocusOut(event: FocusEvent): void {
@@ -460,10 +521,12 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     this.close(true);
   }
 
-  private openList(activeIndex: number): void {
+  /** The toolbar starts expanded when asked, or when the remembered view narrows the list. */
+  private openList(activeIndex: number, expandTools = false): void {
     if (this.open) return;
     this.open = true;
     this.activeIndex = this.clampIndex(this.toolsShown && this.hasSearch() ? this.firstModelIndex() : activeIndex);
+    this.toolsExpanded = this.toolsShown && (expandTools || viewNarrows(effectiveView(this.viewState, this.options)));
     this.clearTypeahead();
     this.cdr.markForCheck();
     this.cdr.detectChanges();
@@ -491,6 +554,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   private close(focusTrigger: boolean): void {
     if (!this.open) return;
     this.open = false;
+    this.toolsExpanded = false;
     this.listHold = null;
     this.detachDocumentListener();
     this.clearTypeahead();
@@ -559,7 +623,10 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     if (option) scrollOptionIntoListbox(listbox, option);
   }
 
-  /** Before a view change: sets `listHold` so a downward popup still reaches its scroll container's visible end. */
+  /**
+   * Before a view change or a collapse: sets `listHold` so a downward popup still reaches its scroll
+   * container's visible end, counting a toolbar still rendered above the listbox that is collapsing.
+   */
   private keepScrollPosition(): void {
     const listbox = this.listboxRef?.nativeElement;
     const popup = listbox?.parentElement;
@@ -567,7 +634,10 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
       this.listHold = null;
       return;
     }
-    this.listHold = scrollSafeListHold(popup, listbox);
+    const removedBefore = !this.toolsExpanded && popup.querySelector('.model-picker-tools')
+      ? listbox.getBoundingClientRect().top - popup.getBoundingClientRect().top - popup.clientTop
+      : 0;
+    this.listHold = scrollSafeListHold(popup, listbox, removedBefore);
     this.cdr.markForCheck();
   }
 
@@ -615,6 +685,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
    */
   private rebuild(viewChanged = false): void {
     this.toolsShown = showsViewTools(this.viewTools, this.options.length);
+    if (!this.toolsShown) this.toolsExpanded = false;
     const view = this.toolsShown ? effectiveView(this.viewState, this.options) : DEFAULT_MODEL_PICKER_VIEW;
     const order = this.toolsShown ? applyModelPickerView(this.options, view) : this.options.map((_, i) => i);
     const terms = searchTerms(view.search);

@@ -236,6 +236,7 @@ you already read the label, it is noise; drop it.
 | calendar (Feather *calendar*: a rounded rectangle, two rings and a rule) | **Choose {label} on a calendar** (icon-only `.action-btn` at the end of every `app-date-field`, §4h) | "Choose a date on a calendar" — the one glyph that opens a date picker, and nothing else |
 | search (a magnifier) | The leading glyph of a search field (the Download Center's *Search documents*); **Search models** (icon-only `.action-btn`, the model pickers' view toolbar, §4e; shows the search field) | "Type to find". In a field it is decorative, `aria-hidden`: the field's label names it. The model pickers' toggle is the one button that carries it, and it still means "type to find": it shows the field where the typing happens |
 | x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar), **Clear selection** (`.btn-ghost`, the Model Comparison wizard's step-1 selection bar, §8i), **Clear search** (icon-only `.action-btn`, the model pickers' view toolbar, §4e) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}*. Clear selection drops every selected source as removing one selection chip drops one, and deletes nothing |
+| filter (Feather *filter*: a funnel, `<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3">`) | **Filter and sort models** (icon-only `.action-btn`, the model pickers' trigger, just before the chevron, §4e; shows the view toolbar), the Admin System Configs filter button (`config-filter.component.html`; opens its filter panel) | "Show the filter controls" — the controls appear; the button itself narrows nothing |
 | arrow-down-up (Lucide *arrow-down-up* geometry, matching Feather's 24×24 stroke: `<path d="m3 16 4 4 4-4"/>`, `<path d="M7 20V4"/>`, `<path d="m21 8-4-4-4 4"/>`, `<path d="M17 4v16"/>`) | **Sort models** (icon-only `.action-btn`, the model pickers' view toolbar, §4e; opens the Sort popover) | "Change the order of this list" — it reorders and hides nothing; the filters are the provider toggles beside it |
 | arrow-right (Feather: a line and a chevron head, `<line x1="5" y1="12" x2="19" y2="12">`, `<polyline points="12 5 19 12 12 19">`) | The admin alert's call-to-action link (trailing, `aria-hidden`; the one glyph that ends a label rather than leading it) | "Go there": the link opens the page where the alert is dealt with |
 | bar-chart-2 (Feather: three vertical lines of different heights) | **Charts** (`.btn-gh`, the AI Telemetry tab's header; opens the charts dialog), **Usage charts** (icon-only, each card of the AI Telemetry Users view; the dialog for that user) | "Show it over time as charts" |
@@ -613,6 +614,14 @@ Search, Sort) is now the popup's edge nearest the trigger in both directions. No
 from the toolbar's own (`.model-picker-controls`, `.model-picker-actions`,
 `.model-picker-search-toggle`).*
 
+*Changed 2026-10-19 (model picker filter button, §4e): the view toolbar is shown only on request,
+by an icon-only **Filter and sort models** `.action-btn` laid over the pickers' trigger just before
+the chevron, with a *Filter and sort* tooltip. It takes the* filter *funnel, which already meant "show
+the filter controls" on the Admin System Configs filter button, so the glyph keeps one meaning;*
+sliders *was not used, since it means "adjust settings" (**Manage limits**). The button is
+`app-picker-tools-toggle` (`shared/picker-tools-toggle/`, `.picker-tools-toggle-btn`); its gold dot
+is `.picker-tools-toggle-dot`.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -989,7 +998,7 @@ opens a popup `role="listbox"`, which takes focus and tracks the active option w
 | `showPrice` / `showParallel` | The price and parallel-execution badges; thinking level, reasoning mode and provider are always shown |
 | `variant="compact"`, `dropsUp`, `narrowHidesBadges` | The composer and Models page look; `narrowHidesBadges` hides the provider and parallel badges below 992 px |
 | `disabled` | The trigger is `aria-disabled` and stays focusable; the list does not open, and an open one closes; the host names the reason through `describedBy` |
-| `viewTools` | `'auto'` (default), `'always'` or `'never'`: the view toolbar below. `auto` shows it from `MODEL_PICKER_TOOLS_MIN_OPTIONS` (2) options up, the none option not counted. `never` for a short list of roles, such as the Calibration tab's *Compare against* |
+| `viewTools` | `'auto'` (default), `'always'` or `'never'`: the filter button, and with it the view toolbar below on request. `auto` shows the button from `MODEL_PICKER_TOOLS_MIN_OPTIONS` (2) options up, the none option not counted. `never` for a short list of roles, such as the Calibration tab's *Compare against* |
 | `viewStateKey` | Names the picker's **role** (`benchmark.run.assessor`); the toolbar's view is stored as `overseer.modelPicker.view.<key>`. `null` (default) keeps the view in memory for the component's lifetime. **Every picker host passes one** |
 | `ModelPickerModel.releaseDate` | Optional, `yyyy-MM-dd`: the catalog date the server puts on `SystemAiConfigDto` and `UserAiModel`. Where no option has one, the release-date sorts are not offered |
 
@@ -1045,20 +1054,56 @@ selected option, so the handler must be idempotent.
 
 #### View toolbar
 
-A model picker gets a toolbar in its popup: a controls row of provider toggles, an icon-only
-**Search** toggle and a **Sort** popover, then the search field while it is open, then a status line
-while it says something. It is `app-model-picker-tools` (`shared/model-picker/`, presentational,
-every id derived from the host's `uid`), and its logic is the pure module `model-picker-view.ts`,
+A model picker gets a toolbar in its popup, shown on request by a filter button on the trigger: a
+controls row of provider toggles, an icon-only **Search** toggle and a **Sort** popover, then the
+search field while it is open, then a status line while it says something. It is
+`app-model-picker-tools` (`shared/model-picker/`, presentational, every id derived from the host's
+`uid`; the toolbar's own id is `{uid}-tools`), and its logic is the pure module `model-picker-view.ts`,
 which `app-model-multi-picker` shares.
 
-- **Threshold.** `viewTools="auto"` shows it from 2 options up: with one option there is nothing to
-  sort or narrow. Below that the popup is exactly the listbox described above, and a stored view is
-  **not applied**, so a filter can never hide models behind a toolbar the user cannot see. A regular
-  user's chat composer with 3 system models has it: one slim controls row.
+- **Threshold.** The toolbar is **available** from 2 options up with `viewTools="auto"`: with one
+  option there is nothing to sort or narrow. Available means the filter button is on the trigger and
+  the stored view applies, so a remembered sort orders the list while the toolbar is collapsed; it is
+  **expanded** (rendered in the popup) only when the user asks for it or a remembered filter needs it.
+  Below the threshold there is no button, the popup is exactly the listbox described above, and a
+  stored view is **not applied**, so a filter can never hide models behind a toolbar the user cannot
+  see. A regular user's chat composer with 3 system models has the button, and behind it one slim
+  controls row.
+- **The filter button** is `app-picker-tools-toggle` (`shared/picker-tools-toggle/`, model-agnostic, so
+  `app-multi-picker` renders it too): an icon-only `.action-btn.picker-tools-toggle-btn` with the
+  **filter** funnel (§3a), laid over the trigger immediately before the chevron. It is outside the
+  trigger in the DOM (a button in a button is invalid) and after it, so Tab goes trigger → filter
+  button → the toolbar's controls; Tab from the listbox returns focus to the trigger and the browser
+  moves on to the filter button, with the list closed. The trigger reserves its room with an `::after`
+  spacer between its content and the chevron, so a long name or the badges wrap before the button;
+  32 px on the form trigger, 24 px on the compact one. Hovering it lights the trigger's border.
+  - Named *Filter and sort models*, then *(filtered)*, *(sorted)* or *(filtered and sorted)* for the
+    effective view (`toolsToggleLabel()`), with a *Filter and sort* tooltip (§4.2, no `title`);
+    `aria-expanded` is whether the toolbar is rendered and `aria-controls` its id while it is. A gold
+    dot (`aria-hidden`, the Sort dot's look) marks a view that sorts or narrows; the name says which.
+    Expanded, it is drawn gold like the open Search toggle (`Highlight` in forced colors).
+  - On a **closed** picker a click opens the list with the toolbar expanded (focus to the listbox, or
+    to the field with a remembered search on a fine pointer). On an **open** one it expands or
+    collapses the toolbar, the list stays open and focus stays on the button, which is never removed.
+  - **Collapsing clears the search and the provider filter and keeps the sort** (`withoutNarrowing()`),
+    written to storage at once: a sort hides nothing, so it survives behind the dot, while a filter
+    behind a collapsed toolbar would hide models the user cannot see. Focus left inside the toolbar
+    moves to the button first.
+  - **It opens itself** when the picker opens with a remembered filter: a search, or a provider toggle
+    that matches an option (`viewNarrows()` of the effective view). A remembered sort alone opens
+    collapsed. Whether it is expanded is **not stored**, and every close collapses it.
+  - Escape on the button closes the list and returns focus to the trigger, with `preventDefault()`
+    and `stopPropagation()` (an enclosing `<dialog>` stays open). A `disabled` picker's button is
+    `aria-disabled`, stays focusable and does nothing.
+  - Collapsing a downward popup at the end of its scroll container keeps the scroll-safe floor
+    (*The list fits the models shown*), counting the toolbar's height that goes
+    (`scrollSafeListHold(popup, listbox, removedBefore)`).
 - **Structure.** `div.selector-popup` takes the dropdown's position and frame (a fixed
-  `min(480px, 100vw - 32px)` width, at least the trigger's, so filtering never makes it jump) and holds
-  the toolbar (`<search class="model-picker-tools">`, no `role` needed) and the listbox
-  `.selector-dropdown`, which scrolls inside it; specs still find the listbox by `.selector-dropdown`.
+  `min(480px, 100vw - 32px)` width, at least the trigger's, so filtering never makes it jump) whenever
+  the toolbar is available, expanded or not, so the frame never jumps when it toggles; it holds the
+  toolbar (`<search class="model-picker-tools">`, no `role` needed) while expanded, and the listbox
+  `.selector-dropdown`, which scrolls inside it and keeps its element, focus and scroll position
+  through a toggle; specs still find the listbox by `.selector-dropdown`.
   The wrapper has the `focusout` close rule, and a `mousedown` on anything but a form control
   (`input`, `button`, `select`, `textarea`) is `preventDefault()`ed — options, padding, status text,
   and also labels and the Sort panel's legend and padding, since a press that blurs to the body would
@@ -1094,9 +1139,9 @@ which `app-model-multi-picker` shares.
   and, while it is, `aria-controls` the field; it is drawn gold from `[aria-expanded="true"]`, like the
   open trigger (`Highlight` in forced colors). A click shows the field and focuses it; a click on the
   open toggle hides the field, **clears the search** and keeps focus on the toggle, so a closed field
-  never filters. A printable key typed in the listbox opens the field with that character in it. The
-  field opens by itself when the popup opens with a remembered search, so remembered text is never
-  hidden. Whether it is open is not stored: it follows from the search text and this opening.
+  never filters. A printable key typed in the listbox expands a collapsed toolbar and opens the field
+  with that character in it. The field opens by itself when the popup opens with a remembered search,
+  so remembered text is never hidden. Whether it is open is not stored: it follows from the search text and this opening.
 - **The search field is the listbox's combobox**: `type="search"`, `role="combobox"`,
   `aria-expanded="true"`, `aria-controls` the listbox, `aria-autocomplete="list"`,
   `aria-activedescendant` the active option, named *Search models*, with `autocomplete`, `autocorrect`,
@@ -1110,8 +1155,9 @@ which `app-model-multi-picker` shares.
 - **Focus on open** goes to the listbox, on every pointer type, unless the field opens with a
   remembered search: then to the field on a fine pointer (`matchMedia('(pointer: fine)')`) and to the
   listbox on a coarse one, so a phone raises no keyboard until the field is tapped. In the listbox, a
-  printable key opens the search field and types there; type-ahead remains only in pickers without
-  the toolbar (`viewTools="never"`, or fewer than 2 options).
+  printable key expands the toolbar if it is collapsed, opens the search field and types there;
+  type-ahead remains only in pickers without the toolbar (`viewTools="never"`, or fewer than 2
+  options).
 - **Sort** is an icon-only `.action-btn` (**arrow-down-up**, §3a) named *Sort models: {order}*, with a
   *Sort* tooltip, `popovertarget` and `aria-expanded` bound from the panel's `toggle` event; a gold dot
   (`aria-hidden`) marks a non-default order. Its panel is `popover="auto"` in the `.gh-facet-popover`
@@ -1141,7 +1187,8 @@ which `app-model-multi-picker` shares.
   line, always rendered so no announcement is lost when the row goes, settles 400 ms after the last
   change: *12 of 27 models shown.* or *No models match "luna".*
 - **Focus never falls to the body.** A control the toolbar removes (the open field, Reset view) hands
-  focus to the Search toggle first, since the picker closes when focus leaves it. A press inside the
+  focus to the Search toggle first, since the picker closes when focus leaves it; collapsing the whole
+  toolbar hands it to the filter button, which is never removed. A press inside the
   picker never closes it: while a pointer press that began inside is down, a `focusout` to nowhere is
   ignored, and if the press leaves focus on the body (browsers that do not focus a pressed button or
   radio) it returns to the listbox.
@@ -1151,8 +1198,9 @@ which `app-model-multi-picker` shares.
   `localStorage` reads as the default. The key names the role, not the instance: several battery
   report dialogs share `benchmark.batteryReport.reportWriter`. It is separate from every stored model
   choice. **A new picker host passes a `viewStateKey` naming its role.**
-- **Styles** are global in `styles.scss` beside `.selector-dropdown` (`.selector-popup`,
-  `.model-picker-tools`, `.model-picker-controls`, `.model-picker-actions`,
+- **Styles** are global in `styles.scss` beside `.selector-dropdown` (`.picker-tools-toggle` and its
+  `--picker-trigger-pad`, `--picker-trigger-gap` and `--picker-toggle-size` on `.custom-model-selector`,
+  `.selector-popup`, `.model-picker-tools`, `.model-picker-controls`, `.model-picker-actions`,
   `.model-picker-search-toggle`, `.model-picker-provider`, `mark.model-option-match`, `.model-option-release`,
   forced-colors `Mark` / `MarkText`, `Highlight` and `CanvasText`); the search field is 16 px on a
   coarse pointer, so iOS does not zoom. The component SCSS is `:host { display: block }`.
@@ -1199,13 +1247,24 @@ the input of a Generate, an export or a job. Never use one for the other's job.
 | `status` | `MultiPickerStatus` `{ tone: 'busy' \| 'ok' \| 'warning' \| 'error', text }` or `null` (default): a read-out after the count (and after All / None in pill mode) with a glyph, the `.dc-ring` spinner for `busy`; its id joins the trigger's `aria-describedby`. **Not a live region.** `busy` sets `data-checking` on the chips `ul`, which dims each chip's note or note list once; never `aria-busy`, which may hide the remove buttons |
 | `visibleKeys` | The listbox's options and their order; `null` (default) for all, in option order. **Selection, chips, All, None, `min` / `max` and the trigger summary act on all `options`**: a selected option the list hides stays selected and keeps its chip. A change moves the active option to the first row |
 | `toolsTemplate` | `TemplateRef<MultiPickerToolsContext>` (`{ listboxId, activeOptionId, navigate }`, in `multi-picker.models.ts`), rendered outside the listbox at the popup's edge nearest the trigger — before the listbox, after it with `dropsUp` — in a `.selector-popup` wrapper as in §4e's view toolbar, whose list fitting, scroll-safe floor and listbox-local scroll apply here too. A `[data-picker-search]` field inside it takes focus on open on a fine pointer, and a printable key in the listbox types there, **only while the field is rendered**; `navigate(intent)` is how the field's keys move the list |
-| `typeToTools` | `((char) => boolean) \| null`: offered a printable key typed in the listbox while no `[data-picker-search]` field is rendered. `true` means the tools took it (the model picker toolbar opens its search with it); `false`, or no function, leaves it to type-ahead |
+| `typeToTools` | `((char) => boolean) \| null`: offered a printable key typed in the listbox while no `[data-picker-search]` field is rendered, the tools collapsed included. `true` means the tools took it (the model picker toolbar opens its search with it, expanding itself through `showTools()`); `false`, or no function, leaves it to type-ahead |
+| `toolsToggleLabel` | `string \| null` (default `null`). With `toolsTemplate`, renders §4e's filter button (`app-picker-tools-toggle`) after the trigger in `.gh-multi-picker-field`, with this name and the *Filter and sort* tooltip, and renders the tools only while it has expanded them. `null` keeps the tools on every opening, as before |
+| `toolsToggleActive` | The filter button's dot (default `false`) |
+| `toolsStartExpanded` | Whether an opening by the trigger starts with the tools expanded (default `false`); the button on a closed picker always opens them expanded |
+| `toolsId` | `string \| null`: the tools' id, the button's `aria-controls` while they are rendered |
 | `noMatchHint` | Shown in the listbox, `.empty-dropdown-hint` and the listbox's `aria-describedby`, while `visibleKeys` hides every option |
 
 `selectionChange` emits `{ keys }`, the chosen keys in option order, **once per toggle, All, None,
 chip removal or `addToSelection()`**. The public `addToSelection(keys)` adds the enabled ones not yet
 selected, in option order, up to `max`, with one `selectionChange` and one announcement (*2 added. 3 of
 5 selected.*), or announces why it cannot (*All shown sources are already selected.*, the `max` reason).
+
+Behind a filter button, `toolsExpandedChange` emits `true` or `false` when the button (or
+`showTools()`) expands or collapses the tools, and never on close, which collapses them silently. The
+public `showTools()` expands them on an open picker, then focuses a rendered `[data-picker-search]`
+field with the caret at the end. The button behaves as in §4e: on a closed picker it opens the list
+expanded, on an open one it toggles the tools and keeps focus, Escape on it closes the list
+(`stopPropagation`), and collapsing keeps the scroll-safe floor.
 
 **In a tools search field** Enter **toggles the active option and keeps the list open** (Space types a
 space there, and a batch is chosen several at a time), Shift+ArrowUp / ArrowDown keep their
@@ -1287,7 +1346,7 @@ Test*, `.batch-models-picker`).
 | `selectedKeys`, `min`, `max`, `labelledBy` / `label`, `describedBy`, `placeholder`, `emptyHint`, `chips`, `maxChips`, `showAllNone`, `dropsUp`, `status` | Passed through to `app-multi-picker`; `summaryNoun` is fixed to *models*, and with one model selected the trigger reads its name |
 | `showPrice` / `showParallel` | The price and parallel-execution badges, **both off by default**; they apply to the chips too |
 | `chipStyle` | Passed through to `app-multi-picker` (default `'pill'`) |
-| `viewTools` / `viewStateKey` | As §4e: the view toolbar from 2 options up, remembered under the role's key. It narrows and orders the list through `visibleKeys` and never the selection; its status line says *N selected models hidden* while the view hides chosen ones |
+| `viewTools` / `viewStateKey` | As §4e: the filter button and the view toolbar behind it from 2 options up, remembered under the role's key. It passes the button through to `app-multi-picker` (`toolsToggleLabel`, `toolsToggleActive`, `toolsStartExpanded` for a remembered filter, `toolsId`), and clears the search and the provider filter when the toolbar collapses. It narrows and orders the list through `visibleKeys` and never the selection; its status line says *N selected models hidden* while the view hides chosen ones |
 
 `selectionChange` emits `{ keys, models }`, the chosen keys and their `ModelPickerModel`s in option order.
 

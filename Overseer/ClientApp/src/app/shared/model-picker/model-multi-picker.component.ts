@@ -29,13 +29,17 @@ import {
   effectiveView,
   hasReleaseDates,
   isReleaseSort,
+  isViewActive,
   matchParts,
   providerFacets,
   readModelPickerView,
   releaseMonthLabel,
   sameModelPickerView,
   searchTerms,
-  showsViewTools
+  showsViewTools,
+  toolsToggleLabel,
+  viewNarrows,
+  withoutNarrowing
 } from './model-picker-view';
 
 export interface ModelMultiPickerSelection<M extends ModelPickerModel = ModelPickerModel> {
@@ -55,7 +59,7 @@ let nextUid = 0;
  * parallel-execution badges are off by default, since choosing which models something covers is
  * not choosing what to run. Presentational: the host owns the selection and `status`, passed through.
  * From 2 options up it adds the view toolbar of `app-model-picker` (search, sort, provider filter,
- * *Select all shown*), which narrows the list and never the selection.
+ * *Select all shown*) behind the same filter button, which narrows the list and never the selection.
  */
 @Component({
   selector: 'app-model-multi-picker',
@@ -86,7 +90,7 @@ export class ModelMultiPickerComponent<M extends ModelPickerModel = ModelPickerM
   @Input() showParallel = false;
   @Input() chipStyle: 'pill' | 'card' = 'pill';
   @Input() status: MultiPickerStatus | null = null;
-  /** The search, sort and provider toolbar: `auto` shows it from 2 options up. */
+  /** The filter button that shows the search, sort and provider toolbar: `auto` from 2 options up. */
   @Input() viewTools: ModelPickerViewTools = 'auto';
   /** Names the picker's role; its view is stored as `overseer.modelPicker.view.<key>`. Null keeps it in memory only. */
   @Input() viewStateKey: string | null = null;
@@ -127,12 +131,29 @@ export class ModelMultiPickerComponent<M extends ModelPickerModel = ModelPickerM
   /** The shown models *Select all shown* would add, and why it cannot; one object until either changes. */
   selectShown: ModelPickerSelectShown = { count: 0, reason: null };
 
-  /** A character typed in the listbox opens the toolbar's search with it. */
+  /**
+   * A character typed in the listbox opens the toolbar's search with it. A collapsed toolbar is
+   * expanded with the search already in its state, so its field opens itself.
+   */
   readonly typeToTools = (char: string): boolean => {
-    if (!this.tools) return false;
-    this.tools.typeToSearch(char);
+    if (!this.toolsShown) return false;
+    if (this.picker.toolsRendered && this.tools) {
+      this.tools.typeToSearch(char);
+      return true;
+    }
+    this.onViewStateChange({ ...this.viewState, search: this.viewState.search + char });
+    this.cdr.detectChanges();
+    this.picker.showTools();
     return true;
   };
+
+  get toolsToggleLabelText(): string { return toolsToggleLabel(effectiveView(this.viewState, this.options)); }
+
+  /** The filter button's dot: the view sorts or narrows the list. */
+  get toolsToggleActive(): boolean { return isViewActive(effectiveView(this.viewState, this.options)); }
+
+  /** The remembered view narrows the list, so the toolbar opens expanded. */
+  get startsExpanded(): boolean { return viewNarrows(effectiveView(this.viewState, this.options)); }
 
   /** Shown in the listbox while the view hides every model; the same words as the toolbar's live line. */
   get noMatchHint(): string {
@@ -209,6 +230,13 @@ export class ModelMultiPickerComponent<M extends ModelPickerModel = ModelPickerM
     this.viewWriter.write(state, searchOnly);
     this.rebuildView();
     this.cdr.markForCheck();
+  }
+
+  /** Collapsing the toolbar clears the search and the provider filter and keeps the sort. */
+  onToolsExpandedChange(expanded: boolean): void {
+    if (!expanded && viewNarrows(effectiveView(this.viewState, this.options))) {
+      this.onViewStateChange(withoutNarrowing(this.viewState));
+    }
   }
 
   onSelectShown(): void {

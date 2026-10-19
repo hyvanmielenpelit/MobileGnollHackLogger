@@ -108,6 +108,31 @@ describe('scrollSafeListHold', () => {
     expect(Math.abs(l.top + hold! + (p.bottom - l.bottom) - visibleEnd)).toBeLessThanOrEqual(1);
   });
 
+  it('holds the block size about to be removed above the listbox as well', () => {
+    const scroller = document.createElement('div');
+    scroller.style.cssText = 'height: 200px; overflow-y: auto;';
+    const content = document.createElement('div');
+    content.style.cssText = 'height: 220px;';
+    scroller.appendChild(content);
+    root.appendChild(scroller);
+    const { popup, listbox } = popupAt(scroller, 0);
+    scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
+
+    const without = scrollSafeListHold(popup, listbox);
+    const withRemoved = scrollSafeListHold(popup, listbox, 40);
+    expect(without).not.toBeNull();
+    expect(withRemoved).toBe(without! + 40);
+    expect(withRemoved!).toBeLessThanOrEqual(listbox.getBoundingClientRect().height + 40);
+  });
+
+  it('is null with a removed block when the popup ends inside its scroller', () => {
+    const scroller = document.createElement('div');
+    scroller.style.cssText = 'height: 400px; overflow-y: auto;';
+    root.appendChild(scroller);
+    const { popup, listbox } = popupAt(scroller, 20);
+    expect(scrollSafeListHold(popup, listbox, 40)).toBeNull();
+  });
+
   it('is null for a popup that reaches past the visible end but not past the scroller\'s content', () => {
     const scroller = document.createElement('div');
     scroller.style.cssText = 'height: 200px; overflow-y: auto;';
