@@ -605,6 +605,7 @@ describe('MultiPickerComponent', () => {
     </div>
     <ng-template #tools let-listboxId="listboxId" let-navigate="navigate">
       @if (fieldShown) {
+        <label class="vk-label">Scope</label>
         <input type="search" class="vk-search" data-picker-search [attr.aria-controls]="listboxId"
                (keydown.enter)="$any($event).preventDefault(); navigate('commit')">
       }
@@ -724,13 +725,13 @@ describe('MultiPickerComponent visible keys and tools', () => {
     expect(picker().querySelector<HTMLInputElement>('.vk-search')!.value).toBe('x');
   });
 
-  it('never lets the listbox shrink while open as the visible keys narrow, and says when none is left', () => {
+  it('fits the listbox to the visible options as they narrow, and says when none is left', () => {
     update({ noMatchHint: 'No sources match.' });
     open();
     const before = listbox()!.getBoundingClientRect().height;
     update({ visible: ['d'] });
     expect(labels()).toEqual(['Charlie']);
-    expect(listbox()!.getBoundingClientRect().height).toBeGreaterThanOrEqual(before - 0.5);
+    expect(listbox()!.getBoundingClientRect().height).toBeLessThan(before - 1);
     expect(listbox()!.hasAttribute('aria-describedby')).toBe(false);
 
     update({ visible: [] });
@@ -738,13 +739,39 @@ describe('MultiPickerComponent visible keys and tools', () => {
     const hint = picker().querySelector<HTMLElement>(`#${box.getAttribute('aria-describedby')}`)!;
     expect(box.contains(hint)).toBe(true);
     expect(hint.textContent!.trim()).toBe('No sources match.');
-    expect(box.getBoundingClientRect().height).toBeGreaterThanOrEqual(before - 0.5);
+  });
 
-    picker().querySelector<HTMLButtonElement>('.selector-trigger')!.click();
-    fixture.detectChanges();
-    update({ visible: ['d'] });
+  it('keeps focus where it is when a label in the tools is pressed', () => {
     open();
-    expect(listbox()!.getBoundingClientRect().height).toBeLessThan(before - 1);
+    const onLabel = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    picker().querySelector<HTMLElement>('.vk-label')!.dispatchEvent(onLabel);
+    expect(onLabel.defaultPrevented).toBe(true);
+    const inField = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    picker().querySelector<HTMLElement>('.vk-search')!.dispatchEvent(inField);
+    expect(inField.defaultPrevented).toBe(false);
+  });
+
+  it('stays open through a press that leaves focus on the body, and gives focus back to the listbox', async () => {
+    open();
+    picker().querySelector<HTMLElement>('.vk-search')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    (document.activeElement as HTMLElement | null)?.blur();
+    picker().querySelector<HTMLElement>('.selector-popup')!
+      .dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+    fixture.detectChanges();
+    expect(listbox()).not.toBeNull();
+
+    document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    await new Promise(r => setTimeout(r));
+    fixture.detectChanges();
+    expect(listbox()).not.toBeNull();
+    expect(document.activeElement).toBe(listbox());
+  });
+
+  it('still closes on a press outside', () => {
+    open();
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    fixture.detectChanges();
+    expect(listbox()).toBeNull();
   });
 
   it('scrolls only the listbox on arrow keys, never the container around the picker', () => {

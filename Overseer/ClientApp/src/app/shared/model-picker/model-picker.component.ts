@@ -39,7 +39,7 @@ import {
   showsViewTools
 } from './model-picker-view';
 import type { ModelAvailability } from '../model-availability/model-availability';
-import { scrollOptionIntoListbox } from '../../utils/listbox-scroll.util';
+import { scrollOptionIntoListbox, scrollSafeListHold } from '../../utils/listbox-scroll.util';
 
 /** The fields a picker renders. Structural, so SystemAiConfigDto and UserAiModel both fit. */
 export interface ModelPickerModel {
@@ -208,14 +208,17 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   /** The models the view shows, the none option excluded. */
   shownCount = 0;
   /**
-   * The listbox's least height, in px, while open with the toolbar: it only rises, so filtering
-   * never shrinks the popup or moves the controls. Null when closed.
+   * The listbox's least height, in px, while a downward popup reaches past its scroll container's
+   * visible end, so a narrower view never scrolls that container back; null otherwise.
    */
   listHold: number | null = null;
 
   private visibleKeys = new Set<ModelPickerKey>();
   private viewWriter = new ModelPickerViewWriter(() => this.viewStateKey);
-  private removeDocumentListener: (() => void) | null = null;
+  private removeDocumentListeners: (() => void)[] = [];
+  /** A pointer press that began inside the picker is down. */
+  private pressInside = false;
+  private pressTimer: ReturnType<typeof setTimeout> | null = null;
   private typeahead = '';
   private typeaheadTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -293,6 +296,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
 
   ngOnDestroy(): void {
     this.detachDocumentListener();
+    this.clearPressTimer();
     this.clearTypeahead();
     this.viewWriter.dispose();
   }
@@ -384,15 +388,20 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
 
   onFocusOut(event: FocusEvent): void {
     const next = event.relatedTarget as Node | null;
+    if (!next && this.pressInside) return;
     if (!next || !this.host.nativeElement.contains(next)) {
       this.close(false);
     }
   }
 
-  /** Keeps focus where it is (the search field) when the popup's non-interactive parts are pressed; a click still commits. */
+  /**
+   * Keeps focus where it is when anything but a form control is pressed — an option, a label, the
+   * Sort panel's legend or padding — since a press that blurs to the body would close the picker; a
+   * click still commits, and a label still checks its radio.
+   */
   onPopupMousedown(event: MouseEvent): void {
     const target = event.target as Element | null;
-    if (target && !target.closest('input, button, label, select, textarea, [popover]')) {
+    if (target && !target.closest('input, button, select, textarea')) {
       event.preventDefault();
     }
   }
@@ -437,7 +446,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
       && previous.providers.every((p, i) => p === state.providers[i]);
     this.viewWriter.write(state, searchOnly);
     // Measured before the rows change.
-    this.holdListHeight();
+    this.keepScrollPosition();
     this.rebuild(true);
     this.cdr.markForCheck();
     this.cdr.detectChanges();
@@ -465,13 +474,18 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     } else {
       this.listboxRef?.nativeElement.focus();
     }
-    this.holdListHeight();
     this.scrollActiveIntoView();
-    this.removeDocumentListener = this.renderer.listen('document', 'pointerdown', (event: PointerEvent) => {
-      if (!this.host.nativeElement.contains(event.target as Node)) {
-        this.close(false);
-      }
-    });
+    this.removeDocumentListeners = [
+      this.renderer.listen('document', 'pointerdown', (event: PointerEvent) => {
+        if (this.host.nativeElement.contains(event.target as Node)) {
+          this.pressInside = true;
+        } else {
+          this.close(false);
+        }
+      }),
+      this.renderer.listen('document', 'pointerup', () => this.endPress()),
+      this.renderer.listen('document', 'pointercancel', () => this.endPress())
+    ];
   }
 
   private close(focusTrigger: boolean): void {
@@ -545,17 +559,45 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     if (option) scrollOptionIntoListbox(listbox, option);
   }
 
-  /** Raises `listHold` to the listbox's current height while the toolbar is shown. */
-  private holdListHeight(): void {
+  /** Before a view change: sets `listHold` so a downward popup still reaches its scroll container's visible end. */
+  private keepScrollPosition(): void {
     const listbox = this.listboxRef?.nativeElement;
-    if (!this.open || !this.toolsShown || !listbox) return;
-    this.listHold = Math.max(this.listHold ?? 0, listbox.getBoundingClientRect().height);
+    const popup = listbox?.parentElement;
+    if (!this.open || !this.toolsShown || this.dropsUp || !listbox || !popup?.classList.contains('selector-popup')) {
+      this.listHold = null;
+      return;
+    }
+    this.listHold = scrollSafeListHold(popup, listbox);
     this.cdr.markForCheck();
   }
 
+  /**
+   * Some browsers do not focus a pressed button or radio and leave focus on the body; it returns to
+   * the listbox, so keys still reach the picker.
+   */
+  private endPress(): void {
+    this.pressInside = false;
+    this.clearPressTimer();
+    this.pressTimer = setTimeout(() => {
+      this.pressTimer = null;
+      const active = document.activeElement;
+      if (this.open && (!active || active === document.body)) {
+        this.listboxRef?.nativeElement.focus();
+      }
+    }, 0);
+  }
+
+  private clearPressTimer(): void {
+    if (this.pressTimer !== null) {
+      clearTimeout(this.pressTimer);
+      this.pressTimer = null;
+    }
+  }
+
   private detachDocumentListener(): void {
-    this.removeDocumentListener?.();
-    this.removeDocumentListener = null;
+    for (const remove of this.removeDocumentListeners) remove();
+    this.removeDocumentListeners = [];
+    this.pressInside = false;
   }
 
   private hasSearch(): boolean {

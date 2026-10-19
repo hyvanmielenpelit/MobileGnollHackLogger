@@ -1059,9 +1059,11 @@ which `app-model-multi-picker` shares.
   `min(480px, 100vw - 32px)` width, at least the trigger's, so filtering never makes it jump) and holds
   the toolbar (`<search class="model-picker-tools">`, no `role` needed) and the listbox
   `.selector-dropdown`, which scrolls inside it; specs still find the listbox by `.selector-dropdown`.
-  The wrapper has the `focusout` close rule, and a `mousedown` on its non-interactive parts (options,
-  padding, status text) is `preventDefault()`ed, so pressing an option keeps focus in the search
-  field; the `click` still commits.
+  The wrapper has the `focusout` close rule, and a `mousedown` on anything but a form control
+  (`input`, `button`, `select`, `textarea`) is `preventDefault()`ed — options, padding, status text,
+  and also labels and the Sort panel's legend and padding, since a press that blurs to the body would
+  close the picker; a label's click still checks its radio. So pressing an option keeps focus in the
+  search field; the `click` still commits.
 - **The controls sit next to the trigger, in both directions.** The toolbar is the popup's edge nearest
   the trigger, and inside it the rows run outward: `.model-picker-controls`, then
   `.model-picker-search-row`, then `.model-picker-status`. Downward the toolbar comes first and the
@@ -1072,14 +1074,17 @@ which `app-model-multi-picker` shares.
   row the provider toggles take the free width and wrap inside it, and `.model-picker-actions` (Search,
   then Sort, 32 px each) keeps the row's inline end, so neither icon moves with the search or the
   provider count.
-- **The list never shrinks while the popup is open.** On open, and before each view change, the
-  picker raises the listbox's inline `min-block-size` to its current measured height (it only rises,
-  and never exceeds the 300 px `max-height`); a narrower view leaves blank space at the list's far end
-  instead of shrinking the popup, so neither the controls nor the page or dialog around the picker
-  move (a shrinking popup would clamp their `scrollTop`). The hold is released on close, so the next
-  opening fits the list. While the view hides every model the reserved space says so:
+- **The list fits the models shown.** After every view change the listbox fits its rows, and blank
+  space never stands in for hidden models. The controls stay put because the popup is anchored at the
+  trigger edge. The one exception is a downward popup that reaches past the visible end of its scroll
+  container (a dialog body, the page) and sets that container's scrollable end: before the rows
+  change, `scrollSafeListHold()` (`utils/listbox-scroll.util.ts`) sets an inline `min-block-size` that
+  keeps it reaching that end, so the container's `scrollTop` is never clamped; an upward popup never
+  needs it, since overflow above a container's start is not scrollable. The floor is dropped on close.
+  While the view hides every model the listbox says so:
   *No models match "luna".* (or *No models match the filter.*), an `.empty-dropdown-hint` inside the
-  listbox that is also its `aria-describedby`.
+  listbox that is also its `aria-describedby`. (Until 2026-10-19 the list never shrank while open,
+  which left a filtered list standing over blank space.)
 - **The listbox scrolls only itself.** Moving the active option calls `scrollOptionIntoListbox()`
   (`utils/listbox-scroll.util.ts`), which sets the listbox's own `scrollTop` as `block: 'nearest'`
   would. Never `scrollIntoView()`: it scrolls every ancestor too, and its `container: 'nearest'`
@@ -1136,7 +1141,10 @@ which `app-model-multi-picker` shares.
   line, always rendered so no announcement is lost when the row goes, settles 400 ms after the last
   change: *12 of 27 models shown.* or *No models match "luna".*
 - **Focus never falls to the body.** A control the toolbar removes (the open field, Reset view) hands
-  focus to the Search toggle first, since the picker closes when focus leaves it.
+  focus to the Search toggle first, since the picker closes when focus leaves it. A press inside the
+  picker never closes it: while a pointer press that began inside is down, a `focusout` to nowhere is
+  ignored, and if the press leaves focus on the body (browsers that do not focus a pressed button or
+  radio) it returns to the listbox.
 - **Storage.** `overseer.modelPicker.view.<viewStateKey>` holds `{ version: 1, sort, providers,
   search }` — the search text too. Search keystrokes are written after 300 ms of quiet and on close,
   everything else at once; the default view removes the entry; an unreadable entry or a throwing
@@ -1190,7 +1198,7 @@ the input of a Generate, an export or a job. Never use one for the other's job.
 | `chipStyle` | `'pill'` (default) or `'card'`. Card mode sets `.gh-multi-picker--cards` on the host: the field keeps a 44 rem trigger, All / None and a muted count read-out (*2 selected · max 12*, *2 selected* without `max`; ordinary visible text, rendered only with `showAllNone`) sit beside it, and each chip is a glass card as wide as its name or badge row plus its remove button (at least 15 rem, at most the host's width), in a row that wraps; a narrower host moves cards to the next line rather than narrowing them |
 | `status` | `MultiPickerStatus` `{ tone: 'busy' \| 'ok' \| 'warning' \| 'error', text }` or `null` (default): a read-out after the count (and after All / None in pill mode) with a glyph, the `.dc-ring` spinner for `busy`; its id joins the trigger's `aria-describedby`. **Not a live region.** `busy` sets `data-checking` on the chips `ul`, which dims each chip's note or note list once; never `aria-busy`, which may hide the remove buttons |
 | `visibleKeys` | The listbox's options and their order; `null` (default) for all, in option order. **Selection, chips, All, None, `min` / `max` and the trigger summary act on all `options`**: a selected option the list hides stays selected and keeps its chip. A change moves the active option to the first row |
-| `toolsTemplate` | `TemplateRef<MultiPickerToolsContext>` (`{ listboxId, activeOptionId, navigate }`, in `multi-picker.models.ts`), rendered outside the listbox at the popup's edge nearest the trigger — before the listbox, after it with `dropsUp` — in a `.selector-popup` wrapper as in §4e's view toolbar, whose list height hold and listbox-local scroll apply here too. A `[data-picker-search]` field inside it takes focus on open on a fine pointer, and a printable key in the listbox types there, **only while the field is rendered**; `navigate(intent)` is how the field's keys move the list |
+| `toolsTemplate` | `TemplateRef<MultiPickerToolsContext>` (`{ listboxId, activeOptionId, navigate }`, in `multi-picker.models.ts`), rendered outside the listbox at the popup's edge nearest the trigger — before the listbox, after it with `dropsUp` — in a `.selector-popup` wrapper as in §4e's view toolbar, whose list fitting, scroll-safe floor and listbox-local scroll apply here too. A `[data-picker-search]` field inside it takes focus on open on a fine pointer, and a printable key in the listbox types there, **only while the field is rendered**; `navigate(intent)` is how the field's keys move the list |
 | `typeToTools` | `((char) => boolean) \| null`: offered a printable key typed in the listbox while no `[data-picker-search]` field is rendered. `true` means the tools took it (the model picker toolbar opens its search with it); `false`, or no function, leaves it to type-ahead |
 | `noMatchHint` | Shown in the listbox, `.empty-dropdown-hint` and the listbox's `aria-describedby`, while `visibleKeys` hides every option |
 

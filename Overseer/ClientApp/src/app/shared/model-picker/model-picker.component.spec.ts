@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from '@angular/core';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { userEvent } from 'vitest/browser';
 
 import {
   ModelPickerComponent,
@@ -618,6 +619,10 @@ const VIEW_KEYS = ['spec.one', 'spec.two', 'spec.never'];
         <app-model-picker class="pk-long" label="Long" [options]="long"></app-model-picker>
       </div>
     </div>
+    <div class="edge-scroller" style="block-size: 200px; overflow-y: auto;">
+      <div style="block-size: 220px;"></div>
+      <app-model-picker class="pk-edge" label="Edge" [options]="long"></app-model-picker>
+    </div>
   `
 })
 class ToolsHostComponent {
@@ -774,19 +779,106 @@ describe('ModelPickerComponent view toolbar', () => {
     expect(optionNames(p)).toEqual(['None', 'Gemini Luna 2']);
   });
 
-  it('never lets the listbox shrink while open, and fits the list again on the next opening', async () => {
+  it('fits the list to the models a filter leaves', async () => {
     await create();
     const p = picker('one');
     open(p);
     const before = listbox(p)!.getBoundingClientRect().height;
-    picker('one').querySelector<HTMLButtonElement>('.model-picker-provider[data-provider="openai"]')!.click();
+    p.querySelector<HTMLButtonElement>('.model-picker-provider[data-provider="openai"]')!.click();
     fixture.detectChanges();
     expect(optionNames(p)).toEqual(['None', 'GPT-6', 'Alpha Custom']);
-    expect(listbox(p)!.getBoundingClientRect().height).toBeGreaterThanOrEqual(before - 0.5);
+    const box = listbox(p)!;
+    expect(box.getBoundingClientRect().height).toBeLessThan(before - 1);
+    expect(box.scrollHeight).toBeLessThanOrEqual(box.clientHeight + 1);
+  });
 
-    key(listbox(p)!, 'Escape');
+  it('keeps an upward list\'s controls in place while the list fits a filter', async () => {
+    await create();
+    const p = picker('up');
     open(p);
+    const before = listbox(p)!.getBoundingClientRect().height;
+    const controlsTop = p.querySelector<HTMLElement>('.model-picker-controls')!.getBoundingClientRect().top;
+    type(p, 'claude');
     expect(listbox(p)!.getBoundingClientRect().height).toBeLessThan(before - 1);
+    expect(Math.abs(p.querySelector<HTMLElement>('.model-picker-controls')!.getBoundingClientRect().top - controlsTop))
+      .toBeLessThanOrEqual(0.5);
+  });
+
+  it('never scrolls the container back when a filter narrows a popup that reaches past it', async () => {
+    await create();
+    const scroller = el.querySelector<HTMLElement>('.edge-scroller')!;
+    const p = picker('edge');
+    open(p);
+    // Opened first: focusing the field scrolls it into view.
+    type(p, '');
+    scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
+    const scrolled = scroller.scrollTop;
+    expect(scrolled).toBeGreaterThan(0);
+    const visibleEnd = () => scroller.getBoundingClientRect().top + scroller.clientTop + scroller.clientHeight;
+    const popup = () => p.querySelector<HTMLElement>('.selector-popup')!;
+
+    type(p, 'model 2');
+    expect(optionNames(p).length).toBe(7);
+    expect(Math.abs(scroller.scrollTop - scrolled)).toBeLessThanOrEqual(1);
+    expect(popup().getBoundingClientRect().bottom).toBeGreaterThanOrEqual(visibleEnd() - 1);
+
+    type(p, 'model 24');
+    expect(optionNames(p)).toEqual(['Model 24']);
+    expect(Math.abs(scroller.scrollTop - scrolled)).toBeLessThanOrEqual(1);
+  });
+
+  it('keeps the picker open when a sort option\'s text is clicked', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    await userEvent.click(p.querySelector<HTMLButtonElement>('.model-picker-sort')!);
+    fixture.detectChanges();
+    const panel = p.querySelector<HTMLElement>('.model-picker-sort-panel')!;
+    await vi.waitFor(() => expect(panel.matches(':popover-open')).toBe(true));
+    const label = Array.from(panel.querySelectorAll<HTMLElement>('.gh-facet-option-label'))
+      .find(l => l.textContent!.trim() === 'Name (A–Z)')!;
+
+    await userEvent.click(label);
+    fixture.detectChanges();
+    expect(listbox(p)).not.toBeNull();
+    expect(trigger(p).getAttribute('aria-expanded')).toBe('true');
+    expect(stored('spec.one')!['sort']).toBe('name-asc');
+    expect(panel.matches(':popover-open')).toBe(true);
+    expect(document.activeElement).toBe(label.closest('label')!.querySelector('input'));
+
+    await userEvent.click(panel.querySelector<HTMLElement>('.gh-facet-legend')!);
+    fixture.detectChanges();
+    expect(listbox(p)).not.toBeNull();
+    expect(trigger(p).getAttribute('aria-expanded')).toBe('true');
+    expect(stored('spec.one')!['sort']).toBe('name-asc');
+  });
+
+  it('stays open through a press that leaves focus on the body, and gives focus back to the listbox', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    const toggle = p.querySelector<HTMLButtonElement>('.model-picker-provider[data-provider="openai"]')!;
+    toggle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    (document.activeElement as HTMLElement | null)?.blur();
+    p.querySelector<HTMLElement>('.selector-popup')!
+      .dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+    fixture.detectChanges();
+    expect(listbox(p)).not.toBeNull();
+
+    document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    await new Promise(r => setTimeout(r));
+    fixture.detectChanges();
+    expect(listbox(p)).not.toBeNull();
+    expect(document.activeElement).toBe(listbox(p));
+  });
+
+  it('still closes on a press outside', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    picker('two').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    fixture.detectChanges();
+    expect(listbox(p)).toBeNull();
   });
 
   it('puts the toolbar after the listbox in an upward picker, the controls row last', async () => {
@@ -941,6 +1033,9 @@ describe('ModelPickerComponent view toolbar', () => {
     const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
     option.dispatchEvent(down);
     expect(down.defaultPrevented).toBe(true);
+    const inField = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    search(p).dispatchEvent(inField);
+    expect(inField.defaultPrevented).toBe(false);
     option.click();
     fixture.detectChanges();
     expect(host.selections.at(-1)!.key).toBe(2);

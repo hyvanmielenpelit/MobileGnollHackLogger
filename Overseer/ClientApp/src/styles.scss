@@ -6506,8 +6506,9 @@ progress.job-progress {
 /* A model picker's popup with the view toolbar (app-model-picker-tools): .selector-popup takes the
    dropdown's place and frame, and holds the toolbar at the edge nearest the trigger and the listbox
    beyond it, which scrolls inside it: toolbar first downward, last upward (.drops-up), in DOM order.
-   Its width is fixed, and while it is open the listbox never shrinks (an inline min-block-size the
-   picker raises before each view change and drops on close), so filtering never moves the controls. */
+   Its width is fixed. The listbox fits the models shown; a downward popup that reaches past its
+   scroll container's visible end keeps an inline min-block-size that still reaches it, so filtering
+   never scrolls the container back. */
 .selector-popup {
   position: absolute;
   top: calc(100% + 4px);

@@ -19,7 +19,7 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 
-import { scrollOptionIntoListbox } from '../../utils/listbox-scroll.util';
+import { scrollOptionIntoListbox, scrollSafeListHold } from '../../utils/listbox-scroll.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import {
   MultiPickerKey,
@@ -162,8 +162,8 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   /** The live line's text. */
   announcement = '';
   /**
-   * The listbox's least height, in px, while open with tools: it only rises, so a narrower view never
-   * shrinks the popup or moves the tools. Null when closed.
+   * The listbox's least height, in px, while a downward popup reaches past its scroll container's
+   * visible end, so a narrower view never scrolls that container back; null otherwise.
    */
   listHold: number | null = null;
 
@@ -172,7 +172,10 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   private pendingFocus: PendingFocus | null = null;
   private anchorsChanged = false;
   private scrollPending = false;
-  private removeDocumentListener: (() => void) | null = null;
+  private removeDocumentListeners: (() => void)[] = [];
+  /** A pointer press that began inside the picker is down. */
+  private pressInside = false;
+  private pressTimer: ReturnType<typeof setTimeout> | null = null;
   private typeahead = '';
   private typeaheadTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -267,7 +270,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
     if (changes['options'] || changes['visibleKeys']) {
       const viewChanged = !!changes['visibleKeys'] && !changes['visibleKeys'].firstChange;
       // Measured before the rows change.
-      if (viewChanged) this.holdListHeight();
+      if (viewChanged) this.keepScrollPosition();
       this.rebuildRows(viewChanged);
     }
     if (changes['options'] || changes['selectedKeys']) {
@@ -297,6 +300,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
 
   ngOnDestroy(): void {
     this.detachDocumentListener();
+    this.clearPressTimer();
     this.clearTypeahead();
   }
 
@@ -413,15 +417,20 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
 
   onFocusOut(event: FocusEvent): void {
     const next = event.relatedTarget as Node | null;
+    if (!next && this.pressInside) return;
     if (!next || !this.fieldRef.nativeElement.contains(next)) {
       this.close(false);
     }
   }
 
-  /** Keeps focus where it is (the search field) when the popup's non-interactive parts are pressed; a click still acts. */
+  /**
+   * Keeps focus where it is when anything but a form control is pressed — an option, a label, the
+   * Sort panel's legend or padding — since a press that blurs to the body would close the picker; a
+   * click still acts, and a label still checks its radio.
+   */
   onPopupMousedown(event: MouseEvent): void {
     const target = event.target as Element | null;
-    if (target && !target.closest('input, button, label, select, textarea, [popover]')) {
+    if (target && !target.closest('input, button, select, textarea')) {
       event.preventDefault();
     }
   }
@@ -627,13 +636,18 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
     } else {
       this.listboxRef?.nativeElement.focus();
     }
-    this.holdListHeight();
     this.scrollActiveIntoView();
-    this.removeDocumentListener = this.renderer.listen('document', 'pointerdown', (event: PointerEvent) => {
-      if (!this.fieldRef.nativeElement.contains(event.target as Node)) {
-        this.close(false);
-      }
-    });
+    this.removeDocumentListeners = [
+      this.renderer.listen('document', 'pointerdown', (event: PointerEvent) => {
+        if (this.fieldRef.nativeElement.contains(event.target as Node)) {
+          this.pressInside = true;
+        } else {
+          this.close(false);
+        }
+      }),
+      this.renderer.listen('document', 'pointerup', () => this.endPress()),
+      this.renderer.listen('document', 'pointercancel', () => this.endPress())
+    ];
   }
 
   private close(focusTrigger: boolean): void {
@@ -722,17 +736,45 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
     if (option) scrollOptionIntoListbox(listbox, option);
   }
 
-  /** Raises `listHold` to the listbox's current height while open with tools. */
-  private holdListHeight(): void {
+  /** Before a view change: sets `listHold` so a downward popup still reaches its scroll container's visible end. */
+  private keepScrollPosition(): void {
     const listbox = this.listboxRef?.nativeElement;
-    if (!this.open || !this.toolsTemplate || !listbox) return;
-    this.listHold = Math.max(this.listHold ?? 0, listbox.getBoundingClientRect().height);
+    const popup = listbox?.parentElement;
+    if (!this.open || !this.toolsTemplate || this.dropsUp || !listbox || !popup?.classList.contains('selector-popup')) {
+      this.listHold = null;
+      return;
+    }
+    this.listHold = scrollSafeListHold(popup, listbox);
     this.cdr.markForCheck();
   }
 
+  /**
+   * Some browsers do not focus a pressed button or radio and leave focus on the body; it returns to
+   * the listbox, so keys still reach the picker.
+   */
+  private endPress(): void {
+    this.pressInside = false;
+    this.clearPressTimer();
+    this.pressTimer = setTimeout(() => {
+      this.pressTimer = null;
+      const active = document.activeElement;
+      if (this.open && (!active || active === document.body)) {
+        this.listboxRef?.nativeElement.focus();
+      }
+    }, 0);
+  }
+
+  private clearPressTimer(): void {
+    if (this.pressTimer !== null) {
+      clearTimeout(this.pressTimer);
+      this.pressTimer = null;
+    }
+  }
+
   private detachDocumentListener(): void {
-    this.removeDocumentListener?.();
-    this.removeDocumentListener = null;
+    for (const remove of this.removeDocumentListeners) remove();
+    this.removeDocumentListeners = [];
+    this.pressInside = false;
   }
 
   private rebuild(): void {
