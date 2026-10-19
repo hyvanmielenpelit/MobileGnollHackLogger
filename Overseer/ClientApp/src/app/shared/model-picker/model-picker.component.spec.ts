@@ -608,7 +608,15 @@ const MANY: TestModel[] = [
   { id: 6, displayName: 'Alpha Custom', modelId: 'alpha', provider: 'OpenAI' }
 ];
 
-const VIEW_KEYS = ['spec.one', 'spec.two', 'spec.never'];
+/** One model at three thinking levels, in the order an administrator might have created them. */
+const LEVELS: TestModel[] = [
+  { id: 21, displayName: 'Claude Opus 5.5', modelId: 'claude-opus-5-5', provider: 'Anthropic', thinkingLevel: 'high' },
+  { id: 22, displayName: 'Claude Opus 5.5', modelId: 'claude-opus-5-5', provider: 'Anthropic', thinkingLevel: 'low' },
+  { id: 23, displayName: 'Claude Sonnet 5.5', modelId: 'claude-sonnet-5-5', provider: 'Anthropic' },
+  { id: 24, displayName: 'Claude Opus 5.5', modelId: 'claude-opus-5-5', provider: 'Anthropic', thinkingLevel: 'max' }
+];
+
+const VIEW_KEYS = ['spec.one', 'spec.two', 'spec.never', 'spec.levels'];
 
 @Component({
   standalone: true,
@@ -635,6 +643,7 @@ const VIEW_KEYS = ['spec.one', 'spec.two', 'spec.never'];
       <div style="block-size: 220px;"></div>
       <app-model-picker class="pk-edge" label="Edge" [options]="long"></app-model-picker>
     </div>
+    <app-model-picker class="pk-levels" label="Levels" viewStateKey="spec.levels" [options]="levels"></app-model-picker>
   `
 })
 class ToolsHostComponent {
@@ -642,6 +651,7 @@ class ToolsHostComponent {
   many = toModelPickerOptions(MANY);
   single = toModelPickerOptions(MANY.slice(0, 1));
   pair = toModelPickerOptions(MANY.slice(0, 2));
+  levels = toModelPickerOptions(LEVELS);
   long = toModelPickerOptions(Array.from({ length: 24 }, (_, i) => ({ id: 100 + i, displayName: `Model ${i + 1}`, provider: 'OpenAI' })));
   grouped = [
     ...toModelPickerOptions(MANY.slice(0, 3), 'Your Models', 'u_'),
@@ -870,7 +880,7 @@ describe('ModelPickerComponent view toolbar', () => {
     fixture.detectChanges();
     expect(tools(p)).toBeNull();
     expect(document.activeElement).toBe(filterButton(p));
-    expect(stored('spec.one')).toEqual({ version: 1, sort: 'name-asc', providers: [], search: '' });
+    expect(stored('spec.one')).toEqual({ version: 1, sort: 'name-asc', thinking: 'lowest-first', providers: [], search: '' });
     expect(optionNames(p)).toEqual(['None', 'Alpha Custom', 'Claude Haiku 5', 'Claude Opus 5.5', 'Gemini Flash 4', 'Gemini Luna 2', 'GPT-6']);
     expect(filterButton(p)!.getAttribute('aria-label')).toBe('Filter and sort models (sorted)');
     expect(p.querySelector('.picker-tools-toggle-dot')).not.toBeNull();
@@ -1196,9 +1206,84 @@ describe('ModelPickerComponent view toolbar', () => {
     const toggle = picker('two').querySelector<HTMLButtonElement>('.model-picker-provider[data-provider="openai"]')!;
     toggle.click();
     fixture.detectChanges();
-    expect(stored('spec.two')).toEqual({ version: 1, sort: 'default', providers: ['openai'], search: '' });
+    expect(stored('spec.two')).toEqual({ version: 1, sort: 'default', thinking: null, providers: ['openai'], search: '' });
     expect(stored('spec.one')).toBeNull();
     expect(optionNames(picker('two'))).toEqual(['GPT-6', 'Alpha Custom']);
+  });
+
+  describe('thinking level order', () => {
+    const levelNames = (p: HTMLElement) => Array.from(p.querySelectorAll<HTMLElement>('[role="option"]')).map(o => {
+      const level = o.querySelector('.thinking-badge')?.textContent!.replace('thinking level', '').trim();
+      return [o.querySelector('.model-name')!.textContent!.trim(), level].filter(Boolean).join(' ');
+    });
+    const sortPanel = (p: HTMLElement) => p.querySelector<HTMLElement>('.model-picker-sort-panel')!;
+    const sortRadio = (p: HTMLElement, sort: string) => p.querySelector<HTMLInputElement>(`.model-picker-sort-panel input[value="${sort}"]`)!;
+    const thinkingRadio = (p: HTMLElement, label: string) => Array.from(p.querySelectorAll<HTMLElement>('.model-picker-thinking label'))
+      .find(l => l.textContent!.trim() === label)!.querySelector<HTMLInputElement>('input')!;
+
+    function click(target: HTMLElement): void {
+      target.click();
+      fixture.detectChanges();
+    }
+
+    it('keeps the host order by default, orders the levels under a name sort either way, stores it, and Clear sorting restores the host order', async () => {
+      await create();
+      const p = picker('levels');
+      open(p);
+      expect(levelNames(p)).toEqual(['Claude Opus 5.5 High', 'Claude Opus 5.5 Low', 'Claude Sonnet 5.5', 'Claude Opus 5.5 Max']);
+      expect(filterButton(p)!.getAttribute('aria-label')).toBe('Filter and sort models');
+
+      expand(p);
+      sortPanel(p).showPopover();
+      fixture.detectChanges();
+      expect(p.querySelector<HTMLFieldSetElement>('.model-picker-thinking')!.disabled).toBe(true);
+
+      click(sortRadio(p, 'name-asc'));
+      expect(levelNames(p)).toEqual(['Claude Opus 5.5 Low', 'Claude Opus 5.5 High', 'Claude Opus 5.5 Max', 'Claude Sonnet 5.5']);
+      expect(stored('spec.levels')).toEqual({ version: 1, sort: 'name-asc', thinking: 'lowest-first', providers: [], search: '' });
+      expect(thinkingRadio(p, 'Lowest first').checked).toBe(true);
+
+      click(thinkingRadio(p, 'Highest first'));
+      expect(levelNames(p)).toEqual(['Claude Opus 5.5 Max', 'Claude Opus 5.5 High', 'Claude Opus 5.5 Low', 'Claude Sonnet 5.5']);
+      expect(stored('spec.levels')!['thinking']).toBe('highest-first');
+      expect(sortPanel(p).matches(':popover-open')).toBe(true);
+
+      click(thinkingRadio(p, 'Not sorted'));
+      expect(levelNames(p)).toEqual(['Claude Opus 5.5 High', 'Claude Opus 5.5 Low', 'Claude Opus 5.5 Max', 'Claude Sonnet 5.5']);
+      expect(stored('spec.levels')!['thinking']).toBeNull();
+
+      click(thinkingRadio(p, 'Highest first'));
+      click(p.querySelector<HTMLButtonElement>('.model-picker-sort-clear button')!);
+      expect(levelNames(p)).toEqual(['Claude Opus 5.5 High', 'Claude Opus 5.5 Low', 'Claude Sonnet 5.5', 'Claude Opus 5.5 Max']);
+      expect(stored('spec.levels')).toBeNull();
+      sortPanel(p).hidePopover();
+    });
+
+    it('applies a remembered order, and reads a remembered name sort stored without one as lowest first', async () => {
+      store('spec.levels', { sort: 'name-desc', thinking: 'highest-first' });
+      await create();
+      const p = picker('levels');
+      open(p);
+      expect(levelNames(p)).toEqual(['Claude Sonnet 5.5', 'Claude Opus 5.5 Max', 'Claude Opus 5.5 High', 'Claude Opus 5.5 Low']);
+      key(listbox(p)!, 'Escape');
+
+      fixture.destroy();
+      store('spec.levels', { sort: 'name-asc' });
+      fixture = TestBed.createComponent(ToolsHostComponent);
+      fixture.detectChanges();
+      el = fixture.nativeElement as HTMLElement;
+      open(picker('levels'));
+      expect(levelNames(picker('levels'))).toEqual(['Claude Opus 5.5 Low', 'Claude Opus 5.5 High', 'Claude Opus 5.5 Max', 'Claude Sonnet 5.5']);
+    });
+
+    it('offers no thinking-level group where no models differ in thinking level alone', async () => {
+      await create();
+      const p = picker('one');
+      open(p);
+      expand(p);
+      expect(p.querySelector('.model-picker-thinking')).toBeNull();
+      expect(p.querySelector('.model-picker-sort-clear button')).not.toBeNull();
+    });
   });
 
   it('writes the search after 300 ms of quiet, and at once on close', async () => {

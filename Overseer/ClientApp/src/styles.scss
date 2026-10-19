@@ -6769,6 +6769,40 @@ progress.job-progress {
   #{'position-try-fallbacks'}: flip-block;
 }
 
+/* The Sort popover's later groups: the thinking-level order, then Clear sorting. */
+.model-picker-sort-panel .gh-facet-group + .gh-facet-group,
+.model-picker-sort-panel .model-picker-sort-clear {
+  margin-block-start: 2px;
+  padding-block-start: 8px;
+  border-block-start: 1px solid var(--border-glass);
+}
+
+.model-picker-sort-panel .model-picker-sort-clear {
+  padding-inline: 8px;
+}
+
+.model-picker-sort-clear .btn-link[aria-disabled="true"] {
+  color: #8a8a8a;
+  text-decoration: none;
+  cursor: default;
+}
+
+.model-picker-thinking-hint {
+  margin: 0;
+  padding: 0 8px 4px;
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+.model-picker-thinking:disabled .gh-facet-option {
+  opacity: 0.55;
+  cursor: default;
+
+  &:hover {
+    background: none;
+  }
+}
+
 /* The provider toggles take the row's free width and wrap inside it. */
 .model-picker-providers {
   display: flex;
@@ -6890,7 +6924,8 @@ mark.model-option-match {
     outline-color: Highlight;
   }
 
-  .model-picker-status .btn-link[aria-disabled="true"] {
+  .model-picker-status .btn-link[aria-disabled="true"],
+  .model-picker-sort-clear .btn-link[aria-disabled="true"] {
     color: GrayText;
   }
 }

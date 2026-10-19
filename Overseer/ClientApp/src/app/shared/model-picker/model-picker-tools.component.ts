@@ -19,12 +19,16 @@ import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/po
 import {
   DEFAULT_MODEL_PICKER_VIEW,
   MODEL_PICKER_SORT_LABELS,
+  MODEL_PICKER_THINKING_LABELS,
   ModelPickerNavigateIntent,
   ModelPickerProviderFacet,
   ModelPickerSort,
+  ModelPickerThinkingOrder,
   ModelPickerViewState,
   isReleaseSort,
-  isViewActive
+  isViewActive,
+  withSort,
+  withoutSorting
 } from './model-picker-view';
 
 /** The *Select all shown* link of a multi-select picker: how many it would add, and why it cannot. */
@@ -37,7 +41,8 @@ const LIVE_DELAY_MS = 400;
 
 /**
  * The view toolbar of a model picker's popup: a controls row of provider toggles, a Search toggle and
- * a Sort popover of five radios; the search field, shown by the toggle, which is the listbox's
+ * a Sort popover (five sort radios, the thinking-level order where options differ in thinking level
+ * alone, and Clear sorting); the search field, shown by the toggle, which is the listbox's
  * combobox; and a status line while the view narrows, sorts or hides the selection. The controls row
  * is the edge nearest the trigger (`dropsUp` puts it last), and the DOM order is the visual order.
  * Shown by the picker's filter button, which points `aria-controls` at `toolsId`. Created each time
@@ -64,6 +69,8 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
   @Input() providers: readonly ModelPickerProviderFacet[] = [];
   /** Whether the two release-date sorts are offered. */
   @Input() dateSortAvailable = false;
+  /** Whether the thinking-level order is offered: some options differ in thinking level alone. */
+  @Input() thinkingSortAvailable = false;
   /** The models shown, the none option excluded. */
   @Input() shownCount = 0;
   @Input() totalCount = 0;
@@ -89,6 +96,7 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
   private liveTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly sortChoices: readonly ModelPickerSort[] = ['default', 'name-asc', 'name-desc', 'release-desc', 'release-asc'];
+  readonly thinkingChoices: readonly (ModelPickerThinkingOrder | null)[] = [null, 'lowest-first', 'highest-first'];
 
   get toolsId(): string { return `${this.uid}-tools`; }
   get searchId(): string { return `${this.uid}-search`; }
@@ -108,7 +116,16 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
     return isReleaseSort(this.state.sort) && !this.dateSortAvailable ? 'default' : this.state.sort;
   }
 
-  get sortLabel(): string { return MODEL_PICKER_SORT_LABELS[this.shownSort]; }
+  /** The thinking-level order as it applies: none under the default order or where it is not offered. */
+  get shownThinking(): ModelPickerThinkingOrder | null {
+    return this.thinkingSortAvailable && this.shownSort !== 'default' ? this.state.thinking : null;
+  }
+
+  get sortLabel(): string {
+    const sort = MODEL_PICKER_SORT_LABELS[this.shownSort];
+    const thinking = this.shownThinking;
+    return thinking === null ? sort : `${sort}, thinking level ${MODEL_PICKER_THINKING_LABELS[thinking].toLowerCase()}`;
+  }
 
   get viewActive(): boolean { return isViewActive(this.state); }
 
@@ -127,6 +144,10 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   sortChoiceLabel(sort: ModelPickerSort): string { return MODEL_PICKER_SORT_LABELS[sort]; }
+
+  thinkingChoiceLabel(order: ModelPickerThinkingOrder | null): string {
+    return order === null ? 'Not sorted' : MODEL_PICKER_THINKING_LABELS[order];
+  }
 
   isProviderPressed(facet: ModelPickerProviderFacet): boolean { return this.state.providers.includes(facet.key); }
 
@@ -230,7 +251,16 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   chooseSort(sort: ModelPickerSort): void {
-    this.emit({ ...this.state, sort });
+    this.emit(withSort(this.state, sort));
+  }
+
+  chooseThinking(thinking: ModelPickerThinkingOrder | null): void {
+    this.emit({ ...this.state, thinking });
+  }
+
+  /** Returns to the default order and keeps the search and the provider filter; the button stays, and so does focus. */
+  clearSorting(): void {
+    this.emit(withoutSorting(this.state));
   }
 
   onSortToggle(event: Event): void {
@@ -272,7 +302,7 @@ export class ModelPickerToolsComponent implements OnInit, OnChanges, OnDestroy {
   /** Emits the default view and closes the field; focus goes to the Search toggle, since Reset view itself disappears. */
   resetView(): void {
     this.hideSearch();
-    this.emit({ sort: 'default', providers: [], search: '' });
+    this.emit({ sort: 'default', thinking: null, providers: [], search: '' });
   }
 
   onSelectShown(): void {

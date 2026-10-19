@@ -17,6 +17,7 @@
 <ng-template #modelTools let-listboxId="listboxId" let-activeOptionId="activeOptionId" let-navigate="navigate">
   <app-model-picker-tools [uid]="uid" [listboxId]="listboxId" [activeOptionId]="activeOptionId"
                           [state]="viewState" [providers]="facets" [dateSortAvailable]="dateSortAvailable"
+                          [thinkingSortAvailable]="thinkingSortAvailable"
                           [shownCount]="visibleKeys?.length ?? options.length" [totalCount]="options.length"
                           [hiddenSelectionText]="hiddenSelectionText" [selectShown]="selectShown"
                           [dropsUp]="dropsUp"

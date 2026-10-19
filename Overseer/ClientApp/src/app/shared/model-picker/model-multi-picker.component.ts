@@ -28,9 +28,11 @@ import {
   applyModelPickerView,
   effectiveView,
   hasReleaseDates,
+  hasThinkingLevelChoice,
   isReleaseSort,
   isViewActive,
   matchParts,
+  onlySearchChanged,
   providerFacets,
   readModelPickerView,
   releaseMonthLabel,
@@ -111,6 +113,7 @@ export class ModelMultiPickerComponent<M extends ModelPickerModel = ModelPickerM
   viewState: ModelPickerViewState = DEFAULT_MODEL_PICKER_VIEW;
   facets: ModelPickerProviderFacet[] = [];
   dateSortAvailable = false;
+  thinkingSortAvailable = false;
   /** The listbox's keys in display order, or null without the toolbar. */
   visibleKeys: ModelPickerKey[] | null = null;
 
@@ -224,10 +227,7 @@ export class ModelMultiPickerComponent<M extends ModelPickerModel = ModelPickerM
     const previous = this.viewState;
     if (sameModelPickerView(previous, state)) return;
     this.viewState = state;
-    const searchOnly = previous.sort === state.sort
-      && previous.providers.length === state.providers.length
-      && previous.providers.every((p, i) => p === state.providers[i]);
-    this.viewWriter.write(state, searchOnly);
+    this.viewWriter.write(state, onlySearchChanged(previous, state));
     this.rebuildView();
     this.cdr.markForCheck();
   }
@@ -256,6 +256,7 @@ export class ModelMultiPickerComponent<M extends ModelPickerModel = ModelPickerM
     if (!this.toolsShown) {
       this.facets = [];
       this.dateSortAvailable = false;
+      this.thinkingSortAvailable = false;
       this.visibleKeys = null;
       this.visibleSet = new Set(this.options.map(o => o.key));
       return;
@@ -265,6 +266,7 @@ export class ModelMultiPickerComponent<M extends ModelPickerModel = ModelPickerM
     const releaseShown = isReleaseSort(view.sort);
     this.facets = providerFacets(this.options);
     this.dateSortAvailable = hasReleaseDates(this.options);
+    this.thinkingSortAvailable = hasThinkingLevelChoice(this.options);
     this.visibleKeys = applyModelPickerView(this.options, view).map(i => {
       const option = this.options[i];
       if (terms.length > 0) this.nameParts.set(option.key, matchParts(this.modelName(option.model), terms));

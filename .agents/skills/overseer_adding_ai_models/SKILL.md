@@ -44,7 +44,7 @@ Each file is a **flat JSON array** of catalog entries, and each entry is deseria
 | `prefixes` | string array | **yes** | — | The provider's exact model IDs. Almost always a single-element array. |
 | `displayName` | string | **yes** | `""` | Shown in the model picker. Also used as `Description`. |
 | `releaseDate` | string `YYYY-MM-DD` | **yes** | `""` | Drives the `createdAt` sort key sent to the Angular client (`SettingsController`), so the picker sorts newest-first by this value. |
-| `thinkingLevels` | string array | yes, if the model reasons | `[]` | Passed through verbatim as the provider's effort/thinking parameter. Provider-specific — see below. |
+| `thinkingLevels` | string array | yes, if the model reasons | `[]` | Passed through verbatim as the provider's effort/thinking parameter. Provider-specific — see below. Listed **lowest to highest**; a level not yet in `Overseer/Services/ModelCatalogs/ThinkingLevelOrder.json` goes into that file at the rank the provider intends, or `ThinkingLevelOrderTests` fails. |
 | `reasoningModes` | string array | no | `[]` | OpenAI only, and only for models with a "pro" mode. |
 | `reasoningSummaries` | string array | no | `[]` | Anthropic and OpenAI. Provider-specific — see below. |
 | `contextWindowSize` | int | **yes** | `0` | Total context window in tokens. |
@@ -87,6 +87,13 @@ provider's API actually accepts.
 | Anthropic | `["low", "medium", "high", "xhigh", "max"]` — but **drop `xhigh`** for Claude 4.6 Opus and 4.6 Sonnet, which support `max` without it | `["summarized", "omitted"]` | *(omit)* |
 | Google | Per model — see below; commonly `["low", "medium", "high"]` | *(omit)* | *(omit)* |
 | OpenAI | `["none", "low", "medium", "high", "xhigh", "max"]` | `["auto", "concise", "detailed"]` | `[]`, or `["standard", "pro"]` for pro-capable models |
+
+Every `thinkingLevels` array lists the model's levels **lowest to highest**, as an in-order
+subsequence of the standardized order in `Overseer/Services/ModelCatalogs/ThinkingLevelOrder.json`
+(lowest first; read the file rather than a copy of it), which the model pickers sort same-name models
+by. A provider level outside that list is added to the file at the rank the provider
+intends, in the same change; `ThinkingLevelOrderTests` fails on an unknown level, an array out of
+order, or a level in the file that no catalog or retired entry uses.
 
 For Anthropic, `AnthropicProvider` sends the chosen level as `output_config.effort` next to
 `thinking: { type: "adaptive" }`. All supported Claude models use adaptive thinking; there is no

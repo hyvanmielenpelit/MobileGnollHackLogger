@@ -1,0 +1,4 @@
+{
+  "description": "Every thinking level the provider catalogs in this folder use, lowest first. Each catalog entry's thinkingLevels must be an in-order subsequence of this list. A provider level outside this list is added at the rank the provider intends. The model pickers sort by it (Overseer/ClientApp/src/app/shared/model-picker/model-picker-view.ts), and ThinkingLevelOrderTests checks the catalogs against it.",
+  "levels": ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+}

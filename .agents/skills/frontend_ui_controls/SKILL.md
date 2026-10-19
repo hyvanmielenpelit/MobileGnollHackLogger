@@ -1001,6 +1001,7 @@ opens a popup `role="listbox"`, which takes focus and tracks the active option w
 | `viewTools` | `'auto'` (default), `'always'` or `'never'`: the filter button, and with it the view toolbar below on request. `auto` shows the button from `MODEL_PICKER_TOOLS_MIN_OPTIONS` (2) options up, the none option not counted. `never` for a short list of roles, such as the Calibration tab's *Compare against* |
 | `viewStateKey` | Names the picker's **role** (`benchmark.run.assessor`); the toolbar's view is stored as `overseer.modelPicker.view.<key>`. `null` (default) keeps the view in memory for the component's lifetime. **Every picker host passes one** |
 | `ModelPickerModel.releaseDate` | Optional, `yyyy-MM-dd`: the catalog date the server puts on `SystemAiConfigDto` and `UserAiModel`. Where no option has one, the release-date sorts are not offered |
+| `ModelPickerModel.thinkingLevel` | Optional: the option's thinking level, shown as a badge. Where two options of one group share a name and model id and differ in level (`hasThinkingLevelChoice()`), the Sort popover offers the *Thinking level* order |
 
 `selectionChange` emits `{ key, model }` on every committed choice, including re-choosing the
 selected option, so the handler must be idempotent.
@@ -1165,12 +1166,28 @@ which `app-model-multi-picker` shares.
   upward picker it opens upward, over the list, with a `flip-block` fallback): a
   `fieldset` *Sort by* of five radios — *Default order* (which clears the sorting), *Name (A–Z)*,
   *Name (Z–A)*, *Release date (newest first)*, *Release date (oldest first)*, the date pair only where
-  an option has a date. A radio applies at once and **the panel stays open**, so the arrow keys walk the
-  orders; its Escape closes only the panel (`preventDefault` and `stopPropagation`).
+  an option has a date. Then, where `hasThinkingLevelChoice()`, a `fieldset` *Thinking level*
+  (`.model-picker-thinking`) of three radios — *Not sorted*, *Lowest first*, *Highest first* — shown
+  **disabled** under the default order with *Not sorted* checked and the hint *Applies with a name or
+  release-date sort.* as its `aria-describedby`, so it is discoverable and plainly inert; it is hidden
+  only where no two options differ in level alone. Last, below a rule, **Clear sorting**
+  (`.btn-link` in `.model-picker-sort-clear`), which returns to the default order and keeps the search
+  and the provider filter; it is `aria-disabled` while there is nothing to clear and is never removed, so
+  focus stays on it (**Reset view** in the status line clears all three). Each group has its own radio
+  `name`, so the arrow keys walk one group and Tab moves between them. A radio applies at once and **the
+  panel stays open**; its Escape closes only the panel (`preventDefault` and `stopPropagation`). The
+  button's name gains *, thinking level lowest first* (or *highest first*) while that order applies.
 - **Sorting** happens within each run of consecutive options sharing a `group`, and the runs keep
   their order, so *Your Models* and *System Models* sort separately under one control. Names use a
-  numeric `Intl.Collator` (*GPT-6.2* before *GPT-6.10*), ties break on model id, then on original
-  order. **An unknown release date sorts last in both directions**, ties by name. While a date sort
+  numeric `Intl.Collator` (*GPT-6.2* before *GPT-6.10*), ties break on model id, then on thinking level
+  while that order is set, then on original order. **The default order is never sorted**: it is the
+  host's (the administrator's) order, and choosing it clears the thinking-level order too
+  (`withSort()`); a name or release-date sort chosen from it starts at *Lowest first*, and a move
+  between two other sorts keeps the order as it is, *Not sorted* included. The thinking-level tie runs
+  in its own direction, independent of the name direction, by
+  `Overseer/Services/ModelCatalogs/ThinkingLevelOrder.json` (imported at build time; guarded against
+  the catalogs by `ThinkingLevelOrderTests`); unrecognized and then unset levels sort last in both
+  directions. **An unknown release date sorts last in both directions**, ties by name. While a date sort
   applies, each option shows a muted `.model-option-release` (*released Mar 2026*, or *date unknown*);
   the trigger never does. The none option is always first and always shown; a group with no shown
   option has no heading.
@@ -1192,8 +1209,10 @@ which `app-model-multi-picker` shares.
   picker never closes it: while a pointer press that began inside is down, a `focusout` to nowhere is
   ignored, and if the press leaves focus on the body (browsers that do not focus a pressed button or
   radio) it returns to the listbox.
-- **Storage.** `overseer.modelPicker.view.<viewStateKey>` holds `{ version: 1, sort, providers,
-  search }` — the search text too. Search keystrokes are written after 300 ms of quiet and on close,
+- **Storage.** `overseer.modelPicker.view.<viewStateKey>` holds `{ version: 1, sort, thinking,
+  providers, search }` — the search text too; `thinking` is `'lowest-first'`, `'highest-first'` or
+  `null` (not set), and a missing or unknown one reads as `withSort()` would set it (`null` under the
+  default order, *Lowest first* under any other sort). Search keystrokes are written after 300 ms of quiet and on close,
   everything else at once; the default view removes the entry; an unreadable entry or a throwing
   `localStorage` reads as the default. The key names the role, not the instance: several battery
   report dialogs share `benchmark.batteryReport.reportWriter`. It is separate from every stored model
@@ -1201,7 +1220,8 @@ which `app-model-multi-picker` shares.
 - **Styles** are global in `styles.scss` beside `.selector-dropdown` (`.picker-tools-toggle` and its
   `--picker-trigger-pad`, `--picker-trigger-gap` and `--picker-toggle-size` on `.custom-model-selector`,
   `.selector-popup`, `.model-picker-tools`, `.model-picker-controls`, `.model-picker-actions`,
-  `.model-picker-search-toggle`, `.model-picker-provider`, `mark.model-option-match`, `.model-option-release`,
+  `.model-picker-search-toggle`, `.model-picker-provider`, `.model-picker-thinking`,
+  `.model-picker-sort-clear`, `mark.model-option-match`, `.model-option-release`,
   forced-colors `Mark` / `MarkText`, `Highlight` and `CanvasText`); the search field is 16 px on a
   coarse pointer, so iOS does not zoom. The component SCSS is `:host { display: block }`.
 

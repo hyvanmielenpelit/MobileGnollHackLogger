@@ -63,6 +63,27 @@
             </label>
           }
         </fieldset>
+        @if (thinkingSortAvailable) {
+          <fieldset class="gh-facet-group model-picker-thinking" [disabled]="shownSort === 'default'"
+                    [attr.aria-describedby]="shownSort === 'default' ? uid + '-thinking-hint' : null">
+            <legend class="gh-facet-legend">Thinking level</legend>
+            @if (shownSort === 'default') {
+              <p class="model-picker-thinking-hint" [id]="uid + '-thinking-hint'">Applies with a name or release-date sort.</p>
+            }
+            @for (order of thinkingChoices; track order) {
+              <label class="gh-radio gh-facet-option">
+                <input type="radio" [name]="uid + '-thinking-choice'" [id]="uid + '-thinking-' + (order ?? 'none')"
+                       [checked]="shownThinking === order" (change)="chooseThinking(order)">
+                <span class="gh-facet-option-label">{{ thinkingChoiceLabel(order) }}</span>
+              </label>
+            }
+          </fieldset>
+        }
+        <div class="model-picker-sort-clear">
+          <button type="button" class="btn-link" [id]="uid + '-sort-clear'"
+                  [attr.aria-disabled]="shownSort === 'default' ? 'true' : null"
+                  (click)="shownSort !== 'default' && clearSorting()">Clear sorting</button>
+        </div>
       </div>
     </div>
   </div>

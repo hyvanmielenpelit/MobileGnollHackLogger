@@ -56,6 +56,7 @@
 <ng-template #toolsTemplate>
   <app-model-picker-tools [uid]="uid" [listboxId]="listboxId" [activeOptionId]="activeOptionId"
                           [state]="viewState" [providers]="facets" [dateSortAvailable]="dateSortAvailable"
+                          [thinkingSortAvailable]="thinkingSortAvailable"
                           [shownCount]="shownCount" [totalCount]="options.length"
                           [hiddenSelectionText]="hiddenSelectionText" [dropsUp]="dropsUp"
                           (stateChange)="onViewStateChange($event)"

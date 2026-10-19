@@ -30,9 +30,11 @@ import {
   applyModelPickerView,
   effectiveView,
   hasReleaseDates,
+  hasThinkingLevelChoice,
   isReleaseSort,
   isViewActive,
   matchParts,
+  onlySearchChanged,
   providerFacets,
   readModelPickerView,
   releaseMonthLabel,
@@ -213,6 +215,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   viewState: ModelPickerViewState = DEFAULT_MODEL_PICKER_VIEW;
   facets: ModelPickerProviderFacet[] = [];
   dateSortAvailable = false;
+  thinkingSortAvailable = false;
   /** The models the view shows, the none option excluded. */
   shownCount = 0;
   /**
@@ -502,10 +505,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     const previous = this.viewState;
     if (sameModelPickerView(previous, state)) return;
     this.viewState = state;
-    const searchOnly = previous.sort === state.sort
-      && previous.providers.length === state.providers.length
-      && previous.providers.every((p, i) => p === state.providers[i]);
-    this.viewWriter.write(state, searchOnly);
+    this.viewWriter.write(state, onlySearchChanged(previous, state));
     // Measured before the rows change.
     this.keepScrollPosition();
     this.rebuild(true);
@@ -692,6 +692,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     const releaseShown = isReleaseSort(view.sort);
     this.facets = this.toolsShown ? providerFacets(this.options) : [];
     this.dateSortAvailable = this.toolsShown && hasReleaseDates(this.options);
+    this.thinkingSortAvailable = this.toolsShown && hasThinkingLevelChoice(this.options);
 
     const flat: FlatEntry<M>[] = [];
     if (this.noneLabel !== null) {

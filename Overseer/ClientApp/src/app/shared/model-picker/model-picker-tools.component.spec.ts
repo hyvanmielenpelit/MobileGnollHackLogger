@@ -19,6 +19,7 @@ const TWO_PROVIDERS: ModelPickerProviderFacet[] = [
     <div class="outer" (keydown)="outerKeys.push($any($event).key)">
       <app-model-picker-tools uid="tt" listboxId="tt-listbox" [activeOptionId]="activeOptionId"
                               [state]="state" [providers]="providers" [dateSortAvailable]="dates"
+                              [thinkingSortAvailable]="thinking"
                               [shownCount]="shown" [totalCount]="10" [selectShown]="selectShown"
                               [hiddenSelectionText]="hiddenSelectionText" [dropsUp]="dropsUp"
                               (stateChange)="onState($event)" (navigate)="intents.push($event)"
@@ -28,9 +29,10 @@ const TWO_PROVIDERS: ModelPickerProviderFacet[] = [
 })
 class HostComponent {
   private cdr = inject(ChangeDetectorRef);
-  state: ModelPickerViewState = { sort: 'default', providers: [], search: '' };
+  state: ModelPickerViewState = { sort: 'default', thinking: null, providers: [], search: '' };
   providers: ModelPickerProviderFacet[] = TWO_PROVIDERS;
   dates = true;
+  thinking = false;
   shown = 10;
   activeOptionId: string | null = 'tt-opt-1';
   selectShown: ModelPickerSelectShown | null = null;
@@ -48,7 +50,7 @@ class HostComponent {
   }
 
   set(changes: Partial<Pick<HostComponent,
-    'providers' | 'dates' | 'shown' | 'selectShown' | 'state' | 'hiddenSelectionText' | 'dropsUp'>>): void {
+    'providers' | 'dates' | 'thinking' | 'shown' | 'selectShown' | 'state' | 'hiddenSelectionText' | 'dropsUp'>>): void {
     Object.assign(this, changes);
     this.cdr.markForCheck();
   }
@@ -75,8 +77,17 @@ describe('ModelPickerToolsComponent', () => {
     .map(row => row.classList[0]);
   const sortPanel = () => el.querySelector<HTMLElement>('.model-picker-sort-panel')!;
   const radios = () => Array.from(sortPanel().querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+  const thinkingGroup = () => sortPanel().querySelector<HTMLFieldSetElement>('.model-picker-thinking');
+  const thinkingRadios = () => Array.from(thinkingGroup()!.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+  const clearSorting = () => el.querySelector<HTMLButtonElement>('#tt-sort-clear')!;
   const toggles = () => Array.from(el.querySelectorAll<HTMLButtonElement>('.model-picker-provider'));
   const liveRegion = () => el.querySelector<HTMLElement>('[role="status"]')!;
+
+  function choose(radio: HTMLInputElement): void {
+    radio.checked = true;
+    radio.dispatchEvent(new Event('change', { bubbles: true }));
+    fixture.detectChanges();
+  }
 
   function update(changes: Parameters<HostComponent['set']>[0]): void {
     host.set(changes);
@@ -132,7 +143,7 @@ describe('ModelPickerToolsComponent', () => {
 
   it('opens the field at once when the state carries a remembered search', () => {
     const remembered = TestBed.createComponent(HostComponent);
-    remembered.componentInstance.state = { sort: 'default', providers: [], search: 'gpt' };
+    remembered.componentInstance.state = { sort: 'default', thinking: null, providers: [], search: 'gpt' };
     remembered.detectChanges();
     const root = remembered.nativeElement as HTMLElement;
     expect(root.querySelector<HTMLInputElement>('.model-picker-search')!.value).toBe('gpt');
@@ -172,7 +183,7 @@ describe('ModelPickerToolsComponent', () => {
     update({ dropsUp: true });
     expect(rows()).toEqual(['model-picker-status', 'model-picker-search-row', 'model-picker-controls', 'visually-hidden']);
     const actions = el.querySelector('.model-picker-actions')!;
-    expect(Array.from(actions.querySelectorAll('button')).map(b => b.classList[1]))
+    expect(Array.from(actions.querySelectorAll(':scope > button')).map(b => b.classList[1]))
       .toEqual(['model-picker-search-toggle', 'model-picker-sort']);
   });
 
@@ -186,9 +197,9 @@ describe('ModelPickerToolsComponent', () => {
     fixture.detectChanges();
     expect(status()).toBeNull();
 
-    update({ state: { sort: 'name-asc', providers: [], search: '' } });
+    update({ state: { sort: 'name-asc', thinking: null, providers: [], search: '' } });
     expect(status()).not.toBeNull();
-    update({ state: { sort: 'default', providers: [], search: '' }, hiddenSelectionText: 'selected model hidden' });
+    update({ state: { sort: 'default', thinking: null, providers: [], search: '' }, hiddenSelectionText: 'selected model hidden' });
     expect(status()!.textContent).toContain('selected model hidden');
     expect(el.querySelector('.model-picker-reset')).toBeNull();
   });
@@ -242,6 +253,87 @@ describe('ModelPickerToolsComponent', () => {
     expect(sortPanel().matches(':popover-open')).toBe(true);
     expect(sortButton().getAttribute('aria-label')).toBe('Sort models: Name (Z–A)');
     expect(el.querySelector('.model-picker-sort-dot')).not.toBeNull();
+    sortPanel().hidePopover();
+  });
+
+  describe('thinking level', () => {
+    const labels = () => thinkingRadios().map(r => r.closest('label')!.textContent!.trim());
+
+    it('is not offered where no options differ in thinking level alone, while Clear sorting is', () => {
+      expect(thinkingGroup()).toBeNull();
+      expect(radios().length).toBe(5);
+      expect(clearSorting().textContent!.trim()).toBe('Clear sorting');
+    });
+
+    it('is shown disabled under the default order, Not sorted checked, with its hint', () => {
+      update({ thinking: true });
+      const group = thinkingGroup()!;
+      expect(group.querySelector('legend')!.textContent!.trim()).toBe('Thinking level');
+      expect(labels()).toEqual(['Not sorted', 'Lowest first', 'Highest first']);
+      expect(group.disabled).toBe(true);
+      expect(thinkingRadios().map(r => r.checked)).toEqual([true, false, false]);
+      const hint = el.querySelector<HTMLElement>(`#${group.getAttribute('aria-describedby')}`)!;
+      expect(hint.textContent!.trim()).toBe('Applies with a name or release-date sort.');
+      expect(sortButton().getAttribute('aria-label')).toBe('Sort models: Default order');
+    });
+
+    it('starts at Lowest first when a sort is chosen from the default order, and clears with the default order', () => {
+      update({ thinking: true });
+      sortPanel().showPopover();
+      fixture.detectChanges();
+      choose(radios().find(r => r.value === 'name-asc')!);
+      expect(host.states.at(-1)).toEqual({ sort: 'name-asc', thinking: 'lowest-first', providers: [], search: '' });
+      expect(thinkingGroup()!.disabled).toBe(false);
+      expect(thinkingGroup()!.hasAttribute('aria-describedby')).toBe(false);
+      expect(thinkingRadios().map(r => r.checked)).toEqual([false, true, false]);
+      expect(sortButton().getAttribute('aria-label')).toBe('Sort models: Name (A–Z), thinking level lowest first');
+
+      choose(radios().find(r => r.value === 'default')!);
+      expect(host.states.at(-1)).toEqual({ sort: 'default', thinking: null, providers: [], search: '' });
+      sortPanel().hidePopover();
+    });
+
+    it('emits a thinking-level choice at once and keeps the panel open', () => {
+      update({ thinking: true, state: { sort: 'name-asc', thinking: 'lowest-first', providers: [], search: '' } });
+      sortPanel().showPopover();
+      fixture.detectChanges();
+      choose(thinkingRadios()[2]);
+      expect(host.states.at(-1)!.thinking).toBe('highest-first');
+      expect(sortPanel().matches(':popover-open')).toBe(true);
+      expect(sortButton().getAttribute('aria-label')).toBe('Sort models: Name (A–Z), thinking level highest first');
+
+      choose(radios().find(r => r.value === 'release-desc')!);
+      expect(host.states.at(-1)).toEqual({ sort: 'release-desc', thinking: 'highest-first', providers: [], search: '' });
+
+      choose(thinkingRadios()[0]);
+      expect(host.states.at(-1)!.thinking).toBeNull();
+      expect(sortButton().getAttribute('aria-label')).toBe('Sort models: Release date (newest first)');
+      sortPanel().hidePopover();
+    });
+
+    it('leaves the label without the suffix where the order is not offered', () => {
+      update({ state: { sort: 'name-asc', thinking: 'lowest-first', providers: [], search: '' } });
+      expect(sortButton().getAttribute('aria-label')).toBe('Sort models: Name (A–Z)');
+    });
+  });
+
+  it('makes Clear sorting inert under the default order, and otherwise clears the sort and keeps the rest', () => {
+    sortPanel().showPopover();
+    fixture.detectChanges();
+    expect(clearSorting().getAttribute('aria-disabled')).toBe('true');
+    clearSorting().click();
+    fixture.detectChanges();
+    expect(host.states).toEqual([]);
+
+    update({ thinking: true, state: { sort: 'name-desc', thinking: 'highest-first', providers: ['openai'], search: 'gp' } });
+    expect(clearSorting().hasAttribute('aria-disabled')).toBe(false);
+    clearSorting().focus();
+    clearSorting().click();
+    fixture.detectChanges();
+    expect(host.states.at(-1)).toEqual({ sort: 'default', thinking: null, providers: ['openai'], search: 'gp' });
+    expect(clearSorting().getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(clearSorting());
+    expect(sortPanel().matches(':popover-open')).toBe(true);
     sortPanel().hidePopover();
   });
 
@@ -300,11 +392,11 @@ describe('ModelPickerToolsComponent', () => {
   it('shows Reset view only while the view differs from the default, and resets everything', () => {
     expect(el.querySelector('.model-picker-reset')).toBeNull();
     type('gp');
-    update({ state: { sort: 'name-asc', providers: ['openai'], search: 'gp' }, shown: 1 });
+    update({ state: { sort: 'name-asc', thinking: 'highest-first', providers: ['openai'], search: 'gp' }, shown: 1 });
     expect(status()!.textContent).toContain('1 of 10 models');
     el.querySelector<HTMLButtonElement>('.model-picker-reset')!.click();
     fixture.detectChanges();
-    expect(host.states.at(-1)).toEqual({ sort: 'default', providers: [], search: '' });
+    expect(host.states.at(-1)).toEqual({ sort: 'default', thinking: null, providers: [], search: '' });
     expect(search()).toBeNull();
     expect(status()).toBeNull();
     expect(document.activeElement).toBe(searchToggle());

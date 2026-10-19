@@ -2,22 +2,29 @@ import {
   DEFAULT_MODEL_PICKER_VIEW,
   MODEL_PICKER_TOOLS_MIN_OPTIONS,
   MODEL_PICKER_VIEW_STORAGE_PREFIX,
+  THINKING_LEVEL_ORDER,
   ModelPickerViewOption,
   ModelPickerViewState,
   ModelPickerViewWriter,
   applyModelPickerView,
   effectiveView,
   hasReleaseDates,
+  hasThinkingLevelChoice,
   isViewActive,
   matchParts,
+  onlySearchChanged,
   providerFacets,
   readModelPickerView,
   releaseMonthLabel,
+  sameModelPickerView,
   searchTerms,
   showsViewTools,
+  thinkingLevelRank,
   toolsToggleLabel,
   viewNarrows,
+  withSort,
   withoutNarrowing,
+  withoutSorting,
   writeModelPickerView
 } from './model-picker-view';
 
@@ -27,7 +34,7 @@ function opt(displayName: string, extra: Partial<ModelPickerViewOption['model']>
 }
 
 function view(changes: Partial<ModelPickerViewState> = {}): ModelPickerViewState {
-  return { sort: 'default', providers: [], search: '', ...changes };
+  return { sort: 'default', thinking: null, providers: [], search: '', ...changes };
 }
 
 function names(options: readonly ModelPickerViewOption[], order: number[]): string[] {
@@ -157,7 +164,7 @@ describe('model-picker-view', () => {
     it('round-trips a view', () => {
       const state = view({ sort: 'name-desc', providers: ['openai'], search: 'luna' });
       writeModelPickerView(KEY, state);
-      expect(JSON.parse(localStorage.getItem(storageKey)!)).toEqual({ version: 1, sort: 'name-desc', providers: ['openai'], search: 'luna' });
+      expect(JSON.parse(localStorage.getItem(storageKey)!)).toEqual({ version: 1, sort: 'name-desc', thinking: null, providers: ['openai'], search: 'luna' });
       expect(readModelPickerView(KEY)).toEqual(state);
     });
 
@@ -238,6 +245,11 @@ describe('model-picker-view', () => {
       expect(withoutNarrowing(view({ sort: 'release-desc', providers: ['openai'], search: 'luna' })))
         .toEqual(view({ sort: 'release-desc' }));
     });
+
+    it('keeps the thinking-level order', () => {
+      expect(withoutNarrowing(view({ sort: 'name-asc', thinking: 'highest-first', search: 'opus' })))
+        .toEqual(view({ sort: 'name-asc', thinking: 'highest-first' }));
+    });
   });
 
   describe('toolsToggleLabel', () => {
@@ -264,6 +276,134 @@ describe('model-picker-view', () => {
 
     it('returns the whole text unmarked without terms', () => {
       expect(matchParts('Alpha', [])).toEqual([{ text: 'Alpha', match: false }]);
+    });
+  });
+
+  describe('thinking level order', () => {
+    const levels = (options: readonly ModelPickerViewOption[], order: number[]): string[] =>
+      order.map(i => `${options[i].model.displayName} ${options[i].model.thinkingLevel ?? '-'}`);
+    const opus = (thinkingLevel: string | null, more: Partial<ModelPickerViewOption['model']> = {}): ModelPickerViewOption =>
+      opt('Opus', { modelId: 'opus', thinkingLevel, ...more });
+
+    it('reads the standardized order from the catalog folder, lowest first', () => {
+      expect(THINKING_LEVEL_ORDER).toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+      expect(thinkingLevelRank(' HIGH ')).toBe(4);
+      expect(thinkingLevelRank('ultra')).toBe(7);
+      expect(thinkingLevelRank('  ')).toBe(8);
+      expect(thinkingLevelRank(null)).toBe(8);
+    });
+
+    it('leaves the default order untouched whatever the thinking-level order says', () => {
+      const options = [opus('high'), opus('low'), opt('Sonnet'), opus('max')];
+      for (const thinking of [null, 'lowest-first', 'highest-first'] as const) {
+        expect(applyModelPickerView(options, view({ thinking }))).toEqual([0, 1, 2, 3]);
+      }
+    });
+
+    it('orders same-name options by thinking level under a name sort, either way, or not at all', () => {
+      const options = [opus('max'), opus('low'), opus('HIGH'), opus('none'), opt('Alpha')];
+      expect(levels(options, applyModelPickerView(options, view({ sort: 'name-asc', thinking: 'lowest-first' }))))
+        .toEqual(['Alpha -', 'Opus none', 'Opus low', 'Opus HIGH', 'Opus max']);
+      expect(levels(options, applyModelPickerView(options, view({ sort: 'name-asc', thinking: 'highest-first' }))))
+        .toEqual(['Alpha -', 'Opus max', 'Opus HIGH', 'Opus low', 'Opus none']);
+      expect(levels(options, applyModelPickerView(options, view({ sort: 'name-asc' }))))
+        .toEqual(['Alpha -', 'Opus max', 'Opus low', 'Opus HIGH', 'Opus none']);
+    });
+
+    it('keeps the thinking direction independent of the name direction', () => {
+      const options = [opus('max'), opt('Alpha'), opus('low')];
+      expect(levels(options, applyModelPickerView(options, view({ sort: 'name-desc', thinking: 'lowest-first' }))))
+        .toEqual(['Opus low', 'Opus max', 'Alpha -']);
+      expect(levels(options, applyModelPickerView(options, view({ sort: 'name-desc', thinking: 'highest-first' }))))
+        .toEqual(['Opus max', 'Opus low', 'Alpha -']);
+    });
+
+    it('breaks a release-date tie on name, then thinking level', () => {
+      const date = { releaseDate: '2026-05-01' };
+      const options = [opus('high', date), opt('Alpha', date), opus('low', date), opt('Newer', { releaseDate: '2026-09-01' })];
+      expect(levels(options, applyModelPickerView(options, view({ sort: 'release-desc', thinking: 'lowest-first' }))))
+        .toEqual(['Newer -', 'Alpha -', 'Opus low', 'Opus high']);
+      expect(levels(options, applyModelPickerView(options, view({ sort: 'release-asc', thinking: 'highest-first' }))))
+        .toEqual(['Alpha -', 'Opus high', 'Opus low', 'Newer -']);
+    });
+
+    it('puts unrecognized and then unset levels last in both directions', () => {
+      const options = [opus(null), opus('ultra'), opus('high'), opus('beyond'), opus('low')];
+      expect(levels(options, applyModelPickerView(options, view({ sort: 'name-asc', thinking: 'lowest-first' }))))
+        .toEqual(['Opus low', 'Opus high', 'Opus beyond', 'Opus ultra', 'Opus -']);
+      expect(levels(options, applyModelPickerView(options, view({ sort: 'name-asc', thinking: 'highest-first' }))))
+        .toEqual(['Opus high', 'Opus low', 'Opus beyond', 'Opus ultra', 'Opus -']);
+    });
+
+    it('starts at Lowest first from the default order, keeps the order between sorts, and clears it with the default order', () => {
+      expect(withSort(view(), 'name-asc')).toEqual(view({ sort: 'name-asc', thinking: 'lowest-first' }));
+      expect(withSort(view({ sort: 'name-asc' }), 'release-desc')).toEqual(view({ sort: 'release-desc' }));
+      expect(withSort(view({ sort: 'name-asc', thinking: 'highest-first' }), 'release-asc'))
+        .toEqual(view({ sort: 'release-asc', thinking: 'highest-first' }));
+      expect(withSort(view({ sort: 'name-desc', thinking: 'highest-first', search: 'x' }), 'default'))
+        .toEqual(view({ search: 'x' }));
+      expect(withoutSorting(view({ sort: 'name-desc', thinking: 'lowest-first', providers: ['openai'], search: 'opus' })))
+        .toEqual(view({ providers: ['openai'], search: 'opus' }));
+    });
+
+    it('offers the choice only for same-name, same-id options of one group at different levels', () => {
+      expect(hasThinkingLevelChoice([opus('low')])).toBe(false);
+      expect(hasThinkingLevelChoice([opus('low'), opus('LOW ')])).toBe(false);
+      expect(hasThinkingLevelChoice([opus('low'), { ...opus('high'), group: 'System Models' }])).toBe(false);
+      expect(hasThinkingLevelChoice([opus('low'), opus('high', { modelId: 'opus-2' })])).toBe(false);
+      expect(hasThinkingLevelChoice([opt('Sonnet'), opus('low'), opus('high')])).toBe(true);
+      expect(hasThinkingLevelChoice([opus('ultra'), opus('beyond')])).toBe(true);
+      expect(hasThinkingLevelChoice([opus(null), opus('low')])).toBe(true);
+    });
+
+    it('drops the order from the effective view under the default order, a fallen-back release sort, or without a choice', () => {
+      const options = [opus('low'), opus('high')];
+      expect(effectiveView(view({ thinking: 'lowest-first' }), options).thinking).toBeNull();
+      expect(effectiveView(view({ sort: 'release-desc', thinking: 'lowest-first' }), options)).toEqual(view());
+      expect(effectiveView(view({ sort: 'name-asc', thinking: 'highest-first' }), [opus('low'), opt('Sonnet')]).thinking).toBeNull();
+      expect(effectiveView(view({ sort: 'name-asc', thinking: 'highest-first' }), options).thinking).toBe('highest-first');
+    });
+
+    it('compares the order in sameModelPickerView and onlySearchChanged', () => {
+      const a = view({ sort: 'name-asc', thinking: 'lowest-first' });
+      expect(sameModelPickerView(a, { ...a })).toBe(true);
+      expect(sameModelPickerView(a, { ...a, thinking: 'highest-first' })).toBe(false);
+      expect(onlySearchChanged(a, { ...a, search: 'opus' })).toBe(true);
+      expect(onlySearchChanged(a, { ...a, thinking: null })).toBe(false);
+      expect(onlySearchChanged(a, { ...a, providers: ['openai'] })).toBe(false);
+      expect(onlySearchChanged(a, { ...a, sort: 'name-desc' })).toBe(false);
+    });
+
+    describe('storage', () => {
+      const KEY = 'spec.thinking';
+      const storageKey = MODEL_PICKER_VIEW_STORAGE_PREFIX + KEY;
+      const store = (value: Record<string, unknown>): void =>
+        localStorage.setItem(storageKey, JSON.stringify({ version: 1, providers: [], search: '', ...value }));
+
+      afterEach(() => localStorage.removeItem(storageKey));
+
+      it('round-trips each thinking-level order, not set included', () => {
+        for (const thinking of [null, 'lowest-first', 'highest-first'] as const) {
+          const state = view({ sort: 'name-asc', thinking });
+          writeModelPickerView(KEY, state);
+          expect(JSON.parse(localStorage.getItem(storageKey)!).thinking).toBe(thinking);
+          expect(readModelPickerView(KEY)).toEqual(state);
+        }
+      });
+
+      it('reads a view stored without the order as a sort chosen from the default order would set it', () => {
+        store({ sort: 'default', search: 'x' });
+        expect(readModelPickerView(KEY)).toEqual(view({ search: 'x' }));
+        store({ sort: 'name-asc' });
+        expect(readModelPickerView(KEY)).toEqual(view({ sort: 'name-asc', thinking: 'lowest-first' }));
+      });
+
+      it('reads an unknown order as missing, and any order under the default order as not set', () => {
+        store({ sort: 'release-desc', thinking: 'sideways' });
+        expect(readModelPickerView(KEY).thinking).toBe('lowest-first');
+        store({ sort: 'default', thinking: 'highest-first', search: 'x' });
+        expect(readModelPickerView(KEY)).toEqual(view({ search: 'x' }));
+      });
     });
   });
 

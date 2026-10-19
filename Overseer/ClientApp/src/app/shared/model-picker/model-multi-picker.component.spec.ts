@@ -537,9 +537,34 @@ describe('ModelMultiPickerComponent view toolbar', () => {
     expect(document.activeElement).toBe(filterButton());
     expect(labels()).toEqual(['Claude Haiku 5', 'Claude Opus 5.5', 'Gemini Flash 4', 'Gemini Luna 2', 'GPT-6', 'GPT-6 Mini']);
     expect(JSON.parse(localStorage.getItem('overseer.modelPicker.view.spec.multi')!))
-      .toEqual({ version: 1, sort: 'name-asc', providers: [], search: '' });
+      .toEqual({ version: 1, sort: 'name-asc', thinking: 'lowest-first', providers: [], search: '' });
     expect(filterButton().getAttribute('aria-label')).toBe('Filter and sort models (sorted)');
     expect(picker().querySelector('.picker-tools-toggle-dot')).not.toBeNull();
+  });
+
+  it('orders same-name models by thinking level under a remembered name sort, lowest first unless stored otherwise', () => {
+    const levels: ModelPickerOption<TestModel>[] = ['high', 'low', 'max'].map((thinkingLevel, i) => ({
+      key: 31 + i,
+      model: { id: 31 + i, displayName: 'Claude Opus 5.5', modelId: 'claude-opus-5-5', provider: 'Anthropic', thinkingLevel }
+    }));
+    const shownLevels = () => Array.from(picker().querySelectorAll<HTMLElement>('[role="option"] .thinking-badge'))
+      .map(b => b.textContent!.replace('thinking level', '').trim());
+    const reopen = (stored: Record<string, unknown>): void => {
+      localStorage.setItem('overseer.modelPicker.view.spec.multi', JSON.stringify({ version: 1, providers: [], search: '', ...stored }));
+      fixture.destroy();
+      fixture = TestBed.createComponent(SixHostComponent);
+      fixture.componentInstance.options = levels;
+      fixture.detectChanges();
+      el = fixture.nativeElement as HTMLElement;
+      open();
+    };
+
+    reopen({ sort: 'name-asc' });
+    expect(shownLevels()).toEqual(['Low', 'High', 'Max']);
+    reopen({ sort: 'name-asc', thinking: 'highest-first' });
+    expect(shownLevels()).toEqual(['Max', 'High', 'Low']);
+    reopen({ sort: 'default', thinking: 'highest-first' });
+    expect(shownLevels()).toEqual(['High', 'Low', 'Max']);
   });
 
   it('opens expanded for a remembered provider filter', () => {
