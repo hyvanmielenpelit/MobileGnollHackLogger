@@ -6504,9 +6504,9 @@ progress.job-progress {
 }
 
 /* The filter button of a picker with the view toolbar (app-picker-tools-toggle): an .action-btn laid
-   over the trigger just before the chevron. The trigger reserves its room with an ::after spacer
-   between its content and the chevron, so a long name or the badges wrap before the button. The
-   compact trigger takes a 24 px button. */
+   over the trigger just before the chevron, frameless like the chevron. The trigger reserves its room
+   with an ::after spacer between its content and the chevron, so a long name or the badges wrap
+   before the button. The compact trigger takes a 24 px button. */
 .custom-model-selector {
   --picker-trigger-pad: 12px;
   --picker-trigger-gap: 6px;
@@ -6531,6 +6531,12 @@ progress.job-progress {
     margin: 0;
     inline-size: var(--picker-toggle-size);
     block-size: var(--picker-toggle-size);
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .action-btn:not([aria-disabled="true"]):hover {
+    background: rgba(212, 175, 55, 0.15);
   }
 }
 
@@ -6871,7 +6877,7 @@ mark.model-option-match {
 
   .model-picker-provider[aria-pressed="true"],
   .model-picker-search-toggle[aria-expanded="true"],
-  .picker-tools-toggle-btn[aria-expanded="true"] {
+  .custom-model-selector > .picker-tools-toggle .picker-tools-toggle-btn[aria-expanded="true"] {
     border-color: Highlight;
   }
 
