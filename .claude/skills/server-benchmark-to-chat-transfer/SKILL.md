@@ -2,17 +2,17 @@
 name: server-benchmark-to-chat-transfer
 description: >-
   Mandatory method for turning Overseer AI benchmark (GnollBench) findings into improvements
-  to the production chat agent — better answer quality, lower latency, lower cost. Covers the fact
-  that the benchmark grades the production chat system prompt, the required triage of every
-  finding into harness defect / suite defect / chat-transferable, the evidence bar a finding
-  must clear before any chat prompt is changed, the configuration-parity check, what the
-  benchmark does not measure, the ordered ladder of safe changes from knowledge-base article
-  up to prompt edit, the mandatory post-change verification and rollback rule, the
-  anti-overfitting rules, the fourth triage category for a corpus or environment defect, the
-  route into tool-layer diagnostics when a finding turns on what a tool returned, and the
-  per-run model behaviour notes this skill accumulates. Read before analysing any benchmark
-  run report, diagnostics or assessment, and before writing any implementation plan derived
-  from one.
+  to the production chat agent: quality, latency, cost. Covers the priority order (the chat
+  first, the benchmark second, model results third); that the benchmark grades the
+  production chat system prompt; triage of every finding into harness, suite, chat-transferable
+  or corpus / environment defect; the configuration-parity check; what the benchmark does not
+  measure; the route into the tool-layer skills; the evidence bar, version boundaries and
+  panel reading; the ladder of safe changes from knowledge-base article to prompt edit;
+  anti-overfitting; verification and rollback; the required Chat Transfer output and Developer
+  Runbook; and the record: the recent entries, the standing cautions, and the ledgers of
+  changes that reached the chat and of verifier failures in references/. Read before analyzing any
+  benchmark run report, diagnostics or assessment, and before writing any implementation plan
+  derived from one.
 ---
 
 The full skill lives in this repository's tool-neutral agent directory (`.agents/`),

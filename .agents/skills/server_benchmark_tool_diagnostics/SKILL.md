@@ -234,7 +234,7 @@ an ordinary success, placed after the body and any `[Not compiled: …]` line an
 notice (`server_tool_parameter_reference` § 4). **Its absence dates a run**: run 68's `priest_talk`
 definition, read as live, is the case that motivated it. A note on a function something does call —
 through a macro that builds its name, say — is a false positive worth a finding, and trips the T2
-rollback in `server_benchmark_to_chat_transfer`'s runs 68–72 entry.
+rollback recorded in `server_benchmark_to_chat_transfer`'s `references/chat_change_ledger.md`.
 
 **A `wiki_view` or `nethack_wiki_view` section miss on an over-cap article is capped from harness 41.**
 The marker line keeps its heading list and ends *"Showing the first M of N characters; call wiki_view
