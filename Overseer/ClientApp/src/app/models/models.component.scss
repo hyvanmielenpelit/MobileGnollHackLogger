@@ -21,17 +21,10 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-.models-list {
-  padding: 0;
-}
 
-.model-item {
-  background-color: var(--panel-glass-bg);
-  box-shadow: inset 0 0 10px rgba(212, 175, 55, 0.1);
-}
-
-.model-details {
+  h3 {
+    margin: 0;
+  }
 }
 
 // The page status line after a resolution; it takes no space while empty.
@@ -45,10 +38,6 @@
   }
 }
 
-.model-row-notice {
-  display: block;
-  margin-top: 8px;
-}
 .empty-state {
   text-align: center;
   padding: 3rem;
@@ -119,15 +108,6 @@
 
 .d-inline-block {
   display: inline-block;
-}
-
-.badge-system-wide {
-  background-color: #28a745;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.8em;
-  white-space: nowrap;
 }
 
 .ml-8 {
@@ -215,49 +195,4 @@ input:checked + .gh-slider {
 input:checked + .gh-slider:before {
   transform: translateX(20px);
   background-color: #1a1a1a;
-}
-
-.model-price-line {
-  font-size: 0.85em;
-  margin-top: 4px;
-  color: var(--gh-text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-// The long-prompt rate card, shown only for the models that publish one.
-.model-price-long-context {
-  font-size: 0.8em;
-  margin-top: 2px;
-  color: var(--gh-text-secondary);
-}
-
-// An announced future price change reads as a quiet note; one whose date has already passed is an
-// advisory, because the catalog entry now needs folding down even though the price it produces is right.
-.model-price-schedule {
-  font-size: 0.8em;
-  margin-top: 2px;
-  color: var(--gh-text-secondary);
-  font-style: italic;
-
-  &.elapsed {
-    color: #f1c40f;
-    font-style: normal;
-  }
-}
-
-.status-badge {
-  &.badge-custom {
-    background-color: rgba(241, 196, 15, 0.15);
-    border: 1px solid rgba(241, 196, 15, 0.4);
-    color: #f1c40f;
-  }
-
-  &.badge-catalog {
-    background-color: rgba(59, 130, 246, 0.15);
-    border: 1px solid rgba(59, 130, 246, 0.4);
-    color: #60a5fa;
-  }
 }

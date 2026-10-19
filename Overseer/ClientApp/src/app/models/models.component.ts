@@ -16,7 +16,6 @@ import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.
 import { ModelPickerComponent, ModelPickerKey, ModelPickerOption, toModelPickerOptions } from '../shared/model-picker/model-picker.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import { formatCalendarDate } from '../utils/date.util';
-import { formatThinkingLevel } from '../utils/model-badge-format.util';
 import {
   AvailabilityChip,
   ModelResolutionResult,
@@ -27,6 +26,8 @@ import {
 } from '../shared/model-availability/model-availability';
 import { ModelAvailabilityNoticeComponent } from '../shared/model-availability/model-availability-notice.component';
 import { ModelResolutionDialogComponent } from '../shared/model-resolution-dialog/model-resolution-dialog.component';
+import { ModelCardSettingsComponent } from '../shared/model-card/model-card-settings.component';
+import { ModelCardFactsComponent } from '../shared/model-card/model-card-facts.component';
 
 /** The extra sentence under a system-provided model that needs attention. */
 export const SYSTEM_MODEL_ATTENTION_TEXT = 'An administrator needs to update this model. You can choose another model in chat.';
@@ -35,7 +36,7 @@ export const SYSTEM_MODEL_ATTENTION_TEXT = 'An administrator needs to update thi
     selector: 'app-models',
     imports: [
       NgTemplateOutlet, FormsModule, RouterModule, AiModelFormComponent, ProviderBadgeComponent, ModelPickerComponent,
-      ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent
+      ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent, ModelCardSettingsComponent, ModelCardFactsComponent
     ],
     templateUrl: './models.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
@@ -207,6 +208,14 @@ export class ModelsComponent implements OnInit {
     return `Resolve "${this.modelName(model)}"`;
   }
 
+  editLabel(model: UserAiModel): string {
+    return 'Edit model ' + this.modelName(model);
+  }
+
+  deleteLabel(model: UserAiModel): string {
+    return 'Delete model ' + this.modelName(model);
+  }
+
   openResolve(model: UserAiModel): void {
     if (model.id == null || !model.modelAvailability) return;
     this.resolvingModel = model;
@@ -294,7 +303,7 @@ export class ModelsComponent implements OnInit {
   onDragEnd(event: DragEvent) {
     const target = event.target as HTMLElement;
     target.classList.remove('dragging');
-    const items = document.querySelectorAll('.model-item');
+    const items = this.host.nativeElement.querySelectorAll('.gh-model-card-item');
     items.forEach(item => item.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom'));
   }
 
@@ -303,7 +312,7 @@ export class ModelsComponent implements OnInit {
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = 'move';
     }
-    const targetItem = (event.target as HTMLElement).closest('.model-item');
+    const targetItem = (event.target as HTMLElement).closest('.gh-model-card-item');
     if (targetItem) {
       const rect = targetItem.getBoundingClientRect();
       const midY = rect.top + rect.height / 2;
@@ -317,7 +326,7 @@ export class ModelsComponent implements OnInit {
   }
 
   onDragLeave(event: DragEvent) {
-    const targetItem = (event.target as HTMLElement).closest('.model-item');
+    const targetItem = (event.target as HTMLElement).closest('.gh-model-card-item');
     if (targetItem) {
       targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
     }
@@ -325,7 +334,7 @@ export class ModelsComponent implements OnInit {
 
   onDrop(event: DragEvent, dropIndex: number, type: 'user' | 'system' = 'user') {
     event.preventDefault();
-    const targetItem = (event.target as HTMLElement).closest('.model-item, .system-model-item');
+    const targetItem = (event.target as HTMLElement).closest('.gh-model-card-item');
     if (targetItem) {
       targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
     }
@@ -635,91 +644,6 @@ export class ModelsComponent implements OnInit {
     } else {
       this.onAddModel(formData);
     }
-  }
-
-  readonly formatThinkingLevel = formatThinkingLevel;
-
-  formatServiceTier(tier: string | null | undefined): string {
-    if (!tier) return 'None';
-    if (tier.toLowerCase() === 'standard_only') return 'Standard Only';
-    return tier.charAt(0).toUpperCase() + tier.slice(1);
-  }
-
-  formatReasoningSummary(level: string | null | undefined, provider?: string): string {
-    if (!level) {
-      if (provider === 'Anthropic') {
-        return 'Default';
-      }
-      return 'None';
-    }
-    return level.charAt(0).toUpperCase() + level.slice(1);
-  }
-
-  private formatRate(val: number): string {
-    const formatted = new Intl.NumberFormat('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 6
-    }).format(val);
-    return `$${formatted}`;
-  }
-
-  formatPrice(model: UserAiModel): string {
-    const input = model.effectiveInputPricePerMillion ?? (model.pricingMode === 'custom' ? model.inputPricePerMillion : null);
-    const output = model.effectiveOutputPricePerMillion ?? (model.pricingMode === 'custom' ? model.outputPricePerMillion : null);
-    const cached = model.effectiveCachedInputPricePerMillion ?? (model.pricingMode === 'custom' ? model.cachedInputPricePerMillion : null);
-
-    if (input == null || output == null) {
-      return '';
-    }
-
-    const fmt = (val: number) => this.formatRate(val);
-
-    let result = `${fmt(input)} in / ${fmt(output)} out`;
-    if (cached != null) {
-      result += ` / ${fmt(cached)} cached`;
-    }
-    result += ' per 1M';
-    return result;
-  }
-
-  /**
-   * The model's long-prompt rate card, shown beside the base price. Empty for a flat-rate model — which
-   * is every Anthropic model except Claude Haiku 5.5, every Gemini Flash model, and every custom price
-   * override.
-   */
-  formatLongContextPrice(model: UserAiModel): string {
-    const threshold = model.effectiveLongContextThresholdTokens;
-    const input = model.effectiveLongContextInputPricePerMillion;
-    const output = model.effectiveLongContextOutputPricePerMillion;
-    if (threshold == null || input == null || output == null) {
-      return '';
-    }
-    const tokens = new Intl.NumberFormat('en-US').format(threshold);
-    return `Prompts over ${tokens} tokens: ${this.formatRate(input)} in / ${this.formatRate(output)} out per 1M`;
-  }
-
-  /**
-   * A quiet note about an announced future price change, or — once its date has passed — the advisory
-   * that the base rates already carry it. The cost is correct either way; the advisory exists so the
-   * catalog does not silently turn into a changelog of elapsed schedules.
-   */
-  formatPricingSchedule(model: UserAiModel): string {
-    if (model.pricingScheduleElapsed) {
-      return 'A scheduled price change is in effect — fold it into the base rates and re-verify.';
-    }
-    if (!model.pricingScheduledChangeFrom) {
-      return '';
-    }
-    const input = model.pricingScheduledChangeInputPricePerMillion;
-    const output = model.pricingScheduledChangeOutputPricePerMillion;
-    const change = (input != null && output != null)
-      ? `Price changes to ${this.formatRate(input)} in / ${this.formatRate(output)} out per 1M on ${model.pricingScheduledChangeFrom}.`
-      : `Price changes on ${model.pricingScheduledChangeFrom}.`;
-    return model.pricingScheduledChangeNote ? `${change} ${model.pricingScheduledChangeNote}` : change;
-  }
-
-  getPricingBadge(model: UserAiModel): 'Custom' | 'Catalog' {
-    return (model.pricingSource === 'custom' || model.pricingMode === 'custom') ? 'Custom' : 'Catalog';
   }
 
   /** False for a legacy row and for anything still on the Unknown rung. */

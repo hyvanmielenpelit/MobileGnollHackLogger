@@ -1,0 +1,39 @@
+@if (hasCardFacts(model)) {
+  <div class="gh-model-card-facts-area">
+    @let price = formatCardPrice(model);
+    @if (model.maxInputTokens || model.maxOutputTokens || price) {
+      <dl class="gh-model-card-facts">
+        @if (model.maxInputTokens) {
+          <div class="gh-model-card-fact">
+            <dt>Max input</dt>
+            <dd>{{ model.maxInputTokens | number }}</dd>
+          </div>
+        }
+        @if (model.maxOutputTokens) {
+          <div class="gh-model-card-fact">
+            <dt>Max output</dt>
+            <dd>{{ model.maxOutputTokens | number }}</dd>
+          </div>
+        }
+        @if (price) {
+          @let badge = pricingBadge(model);
+          <div class="gh-model-card-fact is-wide">
+            <dt>Price per 1M tokens</dt>
+            <dd>
+              <span class="gh-model-card-price">{{ price }}</span>
+              <span class="status-badge" [class.badge-catalog]="badge === 'Catalog'" [class.badge-custom]="badge === 'Custom'">{{ badge }}</span>
+            </dd>
+          </div>
+        }
+      </dl>
+    }
+    @let longContext = formatLongContextPrice(model);
+    @if (longContext) {
+      <p class="gh-model-card-price-note model-price-long-context">{{ longContext }}</p>
+    }
+    @let schedule = formatPricingSchedule(model);
+    @if (schedule) {
+      <p class="gh-model-card-price-note model-price-schedule" [class.is-elapsed]="model.pricingScheduleElapsed">{{ schedule }}</p>
+    }
+  </div>
+}

@@ -192,7 +192,10 @@ Harness-neutral, and the floor for any Overseer frontend work.
   § *Retiring a Model*); never copied into a component:
   - **`.status-badge.badge-availability`** — the row badge on the Models page and the System Configs
     tab: *Removed* (`badge-warning`), *Not in catalog* (`badge-info`), *Custom model*
-    (`badge-neutral`), each a 12 px `aria-hidden` glyph before the word.
+    (`badge-neutral`), each a 12 px `aria-hidden` glyph before the word. Where it carries an
+    `interestfor` tooltip it is a `button type="button"` (`button.status-badge.badge-availability`,
+    reset beside `button.gh-account-badge`), so the tooltip is reachable by keyboard; the My Models
+    *Custom model* badge has no tooltip and stays a `span`.
   - **`.model-option-notice`** — the picker chip (`data-tone="warning"` or `"info"`), drawn by
     `app-model-option-badges`; contract in [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md)
     § 4e.
@@ -210,6 +213,29 @@ Harness-neutral, and the floor for any Overseer frontend work.
   - **`.gh-dialog.model-resolution-dialog`** — the frame of `app-model-resolution-dialog` (§ *Popups*
     below): at most 40 rem wide, header and footer fixed, only `.mrd-body` scrolls; its parts are the
     `mrd-` classes.
+- **Model cards** (since 2026-10-19) — the *Model cards (Admin System Configs, My Models)* block of
+  `styles.scss`, after the *Status Badge* block; its header comment lists every class. A
+  `ul.gh-model-cards` (the `gh-model-cards` inline-size container) of draggable `li.gh-model-card-item`
+  (`.dragging`, and `.drag-over-top` / `.drag-over-bottom` drawn as a 2 px gold shadow, a border in
+  forced colors), each an `article.gh-model-card` grid: `.gh-model-card-grip` (the reorderable list's six
+  dots, `aria-hidden`), `.gh-model-card-head` (`-title`, an `h4`; `-identity` with `-model-id`; `-note`),
+  `.gh-model-card-actions`, the badge rows `.gh-model-card-badges` (`.gh-model-card-settings` and the
+  page's `.gh-model-card-status`, each a named `ul role="list"`), the facts and `.gh-model-card-notice`.
+  Below 36 rem of the list the actions move under the name. Two shared parts in `shared/model-card/`
+  draw the rows every model card has, both `OnPush` with a `display: contents` host and an input
+  `model` typed `ModelCardModel`: **`app-model-card-settings`** (the *Model settings* row:
+  `.thinking-badge` and `.reasoning-badge` as the pickers draw them, then *Summary: …* and the service
+  tier as `.config-badge`s, each only where set) and **`app-model-card-facts`**
+  (`.gh-model-card-facts-area`: a `dl.gh-model-card-facts` of 9 rem `.gh-model-card-fact`s — *Max
+  input*, *Max output*, and the `.is-wide` *Price per 1M tokens* with its Catalog or Custom badge —
+  then the `.gh-model-card-price-note`s). Their formatters are `model-card-format.ts`. Users: Admin
+  System Configs (`app-admin-configs-tab`) and both lists of Settings → Models (`app-models`). Never
+  copied into a component. Contract: [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) § 8h.
+- **`.badge-system-wide`**, **`.badge-disabled`**, **`.status-badge.badge-catalog`** and
+  **`.status-badge.badge-custom`** are global (since 2026-10-19): the outlined green *System Wide* /
+  *System Config* and red *Disabled* pills of the model cards and the Configuration Access dialog, and
+  the price source after a card's price. **`button.posture-badge`** is the My Models trust posture
+  badge, a button because its tooltip carries the verification date.
 - **`.settings-dialog.model-form-dialog`** is the near-full-screen frame of every dialog hosting
   `app-ai-model-form` (Admin config, My Models add and edit): `min(96rem, 100dvw - 32px)` by
   `100dvh - 32px`, 8 px inset on a phone, a flex column in which only the form body scrolls. It

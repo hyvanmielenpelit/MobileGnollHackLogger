@@ -205,10 +205,10 @@ you already read the label, it is noise; drop it.
 | plus | New Profile, Create Suite, Add Question | "Something new appears" — recognised without reading |
 | play | Start Benchmark, Acknowledge & Start Run, **Continue — <reason>** (the battery and series progress dialogs), **Build makedefs** (the Services tab's GnollHack Source dashboard) | "This begins now", and it reinforces the consequence of a button that starts real work |
 | trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center, on each written row of the Model Comparison wizard's step 3 *Documents of this comparison*, and on the run report's AI Reports tab, and the **Delete** of its confirmation), **Delete** a saved Chat Consistency analysis (`.btn-ghost.btn-ghost-danger`, each Analysis History card, and the **Delete** of its confirmation), **Delete the default {provider} key** (icon-only `.action-btn-danger`, each card of the Default API Keys dialog) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
-| pencil (Feather *edit-3*) | **Edit** (a battery card's actions), **Rename comparison** (icon-only `.action-btn` beside *Comparison #N — name* in the Model Comparison wizard's header; opens the nested rename dialog), **Replace the default {provider} key** (icon-only `.action-btn`, each card of the Default API Keys dialog; reveals the key input) | "Change this thing's text in place" — it edits a name or a definition and runs nothing |
+| pencil (Feather *edit-3*) | **Edit** (a battery card's actions), **Rename comparison** (icon-only `.action-btn` beside *Comparison #N — name* in the Model Comparison wizard's header; opens the nested rename dialog), **Replace the default {provider} key** (icon-only `.action-btn`, each card of the Default API Keys dialog; reveals the key input), **Edit configuration {name}** (icon-only, each System Configs card; opens the configuration's form), **Edit model {name}** (icon-only, each My Models card; opens the model's form) | "Change this thing's text in place" — it edits a name or a definition and runs nothing |
 | refresh / rotate | Refresh, Re-run failed questions, Re-run question, Re-assess question, **Re-run** (the run report's popover trigger, followed by a chevron state indicator), the icon-only **Recompute** of the Model Comparison, the icon-only **Reload runs** (the Chat Consistency wizard's header, steps 1 and 2), **Re-index Source Files** (`.btn-gh`, the GnollHack Source dashboard) and its load error's **Retry** (`.btn-ghost`), **Re-index wiki** and **Reload articles** (`.btn-gh`, the GnollHack Wiki, NetHack Wiki and Knowledge Base dashboards), **Re-check** (`.btn-ghost`, the Configuration Health dashboard) | "This runs again" — the circular-arrow convention is universal; the repair verbs that use it are in §4g |
 | flask | **Try another assessor (does not change the score)** (`.btn-ghost`, each question of the run report) | "An experiment": it records another assessor's verdict beside the score and changes nothing, so it must not look like the repairs beside it |
-| undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
+| undo (curved arrow back) | Reset a settings section to its defaults, **Reset the order of system-provided models** (icon-only `.action-btn`, Settings → Models) | "Back to where it started" — distinct from rotate, which means "runs again" |
 | file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog and the Model Comparison wizard's Write step), **Open Download Center** (`.btn-ghost`, the Model Comparison launcher's *Comparison reports*, `app-report-documents-launcher`), **Download Markdown report** (icon-only, each Run History card), **Documents (N)** (`.btn-ghost`, the Chat Consistency launcher's *Latest analysis*; opens the wizard on step 6, *Documents*) | "A file arrives on your disk" |
 | download (one arrow into a tray) | Download one chart (Model Comparison; each tile and the *Single chart* toolbar of the Chat Consistency wizard's Charts step), **Download** a Results section as an image (icon-only, the export group beside the Chat Consistency Results tabs) | "This one image arrives on your disk" |
 | download-all (two arrows into one tray) | Download all charts (the *All charts* toolbar of Model Comparison and of the Chat Consistency Charts step) | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
@@ -239,8 +239,8 @@ you already read the label, it is noise; drop it.
 | filter (Feather *filter*: a funnel, `<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3">`) | **Filter and sort models** (icon-only `.action-btn`, the model pickers' trigger, just before the chevron, §4e; shows the view toolbar), the Admin System Configs filter button (`config-filter.component.html`; opens its filter panel) | "Show the filter controls" — the controls appear; the button itself narrows nothing |
 | arrow-down-up (Lucide *arrow-down-up* geometry, matching Feather's 24×24 stroke: `<path d="m3 16 4 4 4-4"/>`, `<path d="M7 20V4"/>`, `<path d="m21 8-4-4-4 4"/>`, `<path d="M17 4v16"/>`) | **Sort models** (icon-only `.action-btn`, the model pickers' view toolbar, §4e; opens the Sort popover) | "Change the order of this list" — it reorders and hides nothing; the filters are the provider toggles beside it |
 | arrow-right (Feather: a line and a chevron head, `<line x1="5" y1="12" x2="19" y2="12">`, `<polyline points="12 5 19 12 12 19">`) | The admin alert's call-to-action link (trailing, `aria-hidden`; the one glyph that ends a label rather than leading it) | "Go there": the link opens the page where the alert is dealt with |
-| bar-chart-2 (Feather: three vertical lines of different heights) | **Charts** (`.btn-gh`, the AI Telemetry tab's header; opens the charts dialog), **Usage charts** (icon-only, each card of the AI Telemetry Users view; the dialog for that user) | "Show it over time as charts" |
-| sliders (Feather *sliders*: three vertical lines with a knob each) | **Manage limits** (icon-only, each card of the AI Telemetry Users view; opens the user's *AI configuration access* dialog in the Users tab) | "Adjust settings" — the limits are tuned there, not here |
+| bar-chart-2 (Feather: three vertical lines of different heights) | **Charts** (`.btn-gh`, the AI Telemetry tab's header; opens the charts dialog), **Usage charts** (icon-only, each card of the AI Telemetry Users view; the dialog for that user), **Usage analytics of {name}** (icon-only, each System Configs card; opens the configuration's analytics dialog) | "Show it over time as charts" |
+| sliders (Feather *sliders*: three vertical lines with a knob each) | **Manage limits** (icon-only, each card of the AI Telemetry Users view; opens the user's *AI configuration access* dialog in the Users tab), **Rate limits of {name}** (icon-only, each System Configs card; opens the configuration's rate-limits dialog) | "Adjust settings" — the limits are tuned there, not here |
 | key (Feather *key*) | **API Keys** (`.btn-ghost`, the Admin System Configs header, `aria-haspopup="dialog"`; opens the *Default API Keys* dialog) | "Credentials": the stored keys the configurations sign in with |
 
 *Changed 2026-09-12 (harness 24 round): Import Default Suite(s) moved from `upload` to `download` —
@@ -621,6 +621,13 @@ the filter controls" on the Admin System Configs filter button, so the glyph kee
 sliders *was not used, since it means "adjust settings" (**Manage limits**). The button is
 `app-picker-tools-toggle` (`shared/picker-tools-toggle/`, `.picker-tools-toggle-btn`); its gold dot
 is `.picker-tools-toggle-dot`.*
+
+*Changed 2026-10-19 (model cards): the System Configs list and both My Models lists are §8h cards
+built on `app-model-card-settings` and `app-model-card-facts` (`shared/model-card/`). Their icon-only
+actions take* pencil *(Edit),* bar-chart-2 *(Usage analytics),* sliders *(Rate limits, replacing an
+unregistered gauge) and* trash *(Delete); the System-Provided Models reset takes* undo *instead of*
+rotate*. The drag grip is the reorderable list's six dots, decorative. Tooltip badges (availability,
+trust posture) are buttons. No glyph or button class is new.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -1173,7 +1180,10 @@ which `app-model-multi-picker` shares.
   only where no two options differ in level alone. Last, below a rule, **Clear sorting**
   (`.btn-link` in `.model-picker-sort-clear`), which returns to the default order and keeps the search
   and the provider filter; it is `aria-disabled` while there is nothing to clear and is never removed, so
-  focus stays on it (**Reset view** in the status line clears all three). Each group has its own radio
+  focus stays on it (**Reset view** in the status line clears all three). The panel is exempt from the
+  facet popovers' 24 rem cap (`max-block-size: calc(100dvh - 32px)`), so its at most nine rows never
+  scroll on an ordinary viewport, and the rule between *Sort by* and *Thinking level* is *Sort by*'s
+  bottom border, because a fieldset draws its legend over its own top border. Each group has its own radio
   `name`, so the arrow keys walk one group and Tab moves between them. A radio applies at once and **the
   panel stays open**; its Escape closes only the panel (`preventDefault` and `stopPropagation`). The
   button's name gains *, thinking level lowest first* (or *highest first*) while that order applies.
@@ -2221,7 +2231,15 @@ with the shared `app-user-criteria-bar`, 2026-10-13) are the twelfth; the **User
 accounts (`app-bulk-review-step`, `app-bulk-results-step`, 2026-10-13) are two more; and the **document
 progress cards** of every report-writing job (`app-report-job-documents`, 2026-10-16: the Report Pack
 panel, the Chat Consistency reports step and the run- and battery-completion writing dialog) are the
-sixteenth. The progress cards have two recorded exceptions: like the AI Telemetry breakdown they are
+sixteenth; the **System Configs cards** (`app-admin-configs-tab`, 2026-10-19) are the seventeenth; and
+the **My Models cards** (`app-models`, 2026-10-19, two lists: *your* models and *System-Provided
+Models*) are the eighteenth. Those two share the global `.gh-model-card*` block and the parts
+`app-model-card-settings` and `app-model-card-facts` (`shared/model-card/`), in the Users cards'
+layout: head, a *Model settings* badge row and a page status row (each a `ul role="list"` named by
+`aria-label`), a `dl` of facts under a hairline, icon-only actions top right. Their recorded exception:
+no `CardListState`, no Sort by and no batching, because the order is the user's own dragged order and
+the lists are short; System Configs filters with its `app-config-filter`. The drag grip is decorative
+(`aria-hidden`), so reordering has no keyboard path yet. The progress cards have two recorded exceptions: like the AI Telemetry breakdown they are
 read-only, with no filters, sort or paging, so they take no `CardListState`; and the enclosing
 section's heading is already an `h6`, so each card's title is a `<p class="rjd-title">` the `<article>`
 is labelled by, not a heading. Their head lets the status chip's group wrap under the title, and the chip

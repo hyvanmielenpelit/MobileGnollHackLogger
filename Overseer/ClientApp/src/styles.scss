@@ -1011,6 +1011,30 @@ button.gh-account-badge {
   }
 }
 
+/* Badges whose tooltip carries what the badge has no room for (a model's availability, its trust
+   posture) are buttons, so the tooltip is reachable by keyboard. */
+button.status-badge.badge-availability,
+button.posture-badge {
+  appearance: none;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: help;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+/* The availability badges draw no border; every posture level draws its own. */
+button.status-badge.badge-availability {
+  border: 0;
+
+  @media (forced-colors: active) {
+    border: 1px solid CanvasText;
+  }
+}
+
 @keyframes gh-account-badge-new {
   from {
     outline: 2px solid var(--primary-color);
@@ -3404,6 +3428,293 @@ label.checkbox-label,
   }
 }
 
+/* Where a model's price comes from, after the price on a model card. */
+.status-badge {
+  &.badge-custom {
+    background-color: rgba(241, 196, 15, 0.15);
+    border: 1px solid rgba(241, 196, 15, 0.4);
+    color: #f1c40f;
+  }
+
+  &.badge-catalog {
+    background-color: rgba(59, 130, 246, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    color: #60a5fa;
+  }
+}
+
+/* A configuration every user gets, and one switched off: outlined pills on the System Configs cards,
+   the Configuration Access dialog and the My Models cards. */
+.badge-system-wide,
+.badge-disabled {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-system-wide {
+  background-color: rgba(40, 167, 69, 0.2);
+  border: 1px solid var(--color-success);
+  color: var(--color-success);
+}
+
+.badge-disabled {
+  background-color: rgba(220, 53, 69, 0.2);
+  border: 1px solid var(--color-error);
+  color: var(--color-error);
+}
+
+/* --- Model cards (Admin System Configs, My Models) ---
+   One <article class="gh-model-card"> per model in a draggable li.gh-model-card-item of
+   ul.gh-model-cards: .gh-model-card-grip, .gh-model-card-head (.gh-model-card-title,
+   .gh-model-card-identity, .gh-model-card-model-id, .gh-model-card-note), .gh-model-card-actions,
+   the badge rows .gh-model-card-badges (.gh-model-card-settings from app-model-card-settings, and the
+   page's .gh-model-card-status), the facts from app-model-card-facts (.gh-model-card-facts-area,
+   .gh-model-card-facts, .gh-model-card-fact, .gh-model-card-price, .gh-model-card-price-note) and
+   .gh-model-card-notice. The actions move under the name below 36 rem of the list. */
+.gh-model-cards {
+  container: gh-model-cards / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+}
+
+/* The drop side is a shadow, so nothing shifts by a pixel while dragging. */
+.gh-model-card-item {
+  &.dragging .gh-model-card {
+    opacity: 0.5;
+  }
+
+  &.drag-over-top .gh-model-card {
+    box-shadow: 0 -2px 0 var(--primary-color);
+  }
+
+  &.drag-over-bottom .gh-model-card {
+    box-shadow: 0 2px 0 var(--primary-color);
+  }
+}
+
+.gh-model-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "grip head     actions"
+    "grip settings settings"
+    "grip status   status"
+    "grip facts    facts"
+    "grip notice   notice";
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 1rem 0.875rem 0.5rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+}
+
+@container gh-model-cards (max-width: 36rem) {
+  .gh-model-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "grip head"
+      "grip actions"
+      "grip settings"
+      "grip status"
+      "grip facts"
+      "grip notice";
+  }
+
+  .gh-model-card-actions {
+    justify-content: flex-start;
+  }
+}
+
+.gh-model-card-grip {
+  grid-area: grip;
+  align-self: start;
+  padding-block-start: 0.25rem;
+  color: #8a8a8a;
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.gh-model-card-head {
+  grid-area: head;
+  min-inline-size: 0;
+}
+
+.gh-model-card-title {
+  margin: 0;
+  font-size: 1.1875rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  color: var(--title-color);
+  overflow-wrap: anywhere;
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+.gh-model-card-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.5rem;
+  margin: 0.25rem 0 0;
+  font-size: var(--text-secondary);
+}
+
+.gh-model-card-model-id {
+  font-family: var(--font-mono);
+  color: #d4d4d8;
+  overflow-wrap: anywhere;
+}
+
+.gh-model-card-note {
+  margin: 0.25rem 0 0;
+  font-size: var(--text-secondary);
+  font-style: italic;
+  color: #a1a1aa;
+}
+
+.gh-model-card-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+/* Each li is a flex box rather than display: contents, which drops list semantics in Safari. */
+.gh-model-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  > li {
+    display: flex;
+  }
+}
+
+.gh-model-card-settings {
+  grid-area: settings;
+}
+
+.gh-model-card-status {
+  grid-area: status;
+}
+
+.gh-model-card-facts-area {
+  grid-area: facts;
+  min-inline-size: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-glass);
+}
+
+/* Fixed 9 rem columns, so the facts line up down the list. */
+.gh-model-card-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0;
+  font-size: var(--text-secondary);
+}
+
+.gh-model-card-fact {
+  flex: 0 0 9rem;
+  min-inline-size: 0;
+
+  dt {
+    color: #a1a1aa;
+  }
+
+  dd {
+    margin: 0;
+    color: #e4e4e7;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &.is-wide {
+    flex: 1 1 18rem;
+
+    dd {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+  }
+}
+
+.gh-model-card-price-note {
+  margin: 0.25rem 0 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+
+  /* A date already passed is an advisory: the catalog entry needs folding down. */
+  &.model-price-schedule {
+    font-style: italic;
+
+    &.is-elapsed {
+      color: #f1c40f;
+      font-style: normal;
+    }
+  }
+}
+
+.gh-model-card-notice {
+  grid-area: notice;
+  display: block;
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gh-model-card {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .gh-model-card {
+    border-color: CanvasText;
+  }
+
+  /* Forced colors drop box shadows, so the drop side is a border there. */
+  .gh-model-card-item {
+    &.drag-over-top .gh-model-card {
+      border-block-start: 2px solid Highlight;
+    }
+
+    &.drag-over-bottom .gh-model-card {
+      border-block-end: 2px solid Highlight;
+    }
+  }
+}
+
 /* --- Error Message --- */
 .error-message {
   padding: 10px;
@@ -3844,38 +4155,6 @@ app-model-availability-notice[data-variant="composer"] .model-availability-notic
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
-}
-
-/* --- Models List --- */
-.models-list {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  padding: 10px 0; 
-}
-
-.model-item {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  padding: 15px;
-  border: 1px solid var(--border-glass);
-  border-radius: 4px;
-  background-color: rgba(17, 17, 17, 0.65);
-  box-shadow: inset 0 0 10px rgba(212, 175, 55, 0.1);
-  transition: all 0.2s;
-  
-  &.dragging {
-    opacity: 0.5;
-  }
-  
-  &.drag-over-top {
-    border-top: 2px solid var(--gh-gold);
-  }
-
-  &.drag-over-bottom {
-    border-bottom: 2px solid var(--gh-gold);
-  }
 }
 
 .drag-handle {
@@ -4972,46 +5251,6 @@ app-table-pager {
   }
 }
 
-.model-info {
-  flex: 1 1 0%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.model-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  
-  h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--title-color);
-  }
-}
-
-.model-details {
-  font-size: 0.85rem;
-  color: #aaa;
-}
-
-.model-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-@media (max-width: 600px) {
-  .model-actions {
-    width: 100%;
-    justify-content: flex-end;
-    margin-top: 15px;
-  }
-}
-
 /* --- Flex Utilities --- */
 .flex-between {
   display: flex;
@@ -5216,17 +5455,6 @@ app-table-pager {
   font-weight: 500;
   white-space: nowrap;
   user-select: none;
-}
-
-/* The models list makes the indicator a focus stop, because the tooltip carries the
-   verification date the badge text has no room for. */
-.posture-badge[tabindex] {
-  cursor: help;
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 3px;
-  }
 }
 
 .posture-strong {
@@ -6745,6 +6973,7 @@ progress.job-progress {
   left: auto;
   right: anchor(right);
   min-inline-size: 14rem;
+  max-block-size: calc(100dvh - 32px);
 }
 
 .gh-anchor-native .gh-facet-popover.model-picker-sort-panel {
@@ -6769,12 +6998,21 @@ progress.job-progress {
   #{'position-try-fallbacks'}: flip-block;
 }
 
-/* The Sort popover's later groups: the thinking-level order, then Clear sorting. */
-.model-picker-sort-panel .gh-facet-group + .gh-facet-group,
+/* The Sort popover's rules: under Sort by when the thinking-level order follows it, and above Clear sorting. */
 .model-picker-sort-panel .model-picker-sort-clear {
   margin-block-start: 2px;
   padding-block-start: 8px;
   border-block-start: 1px solid var(--border-glass);
+}
+
+/* A fieldset draws its legend over its top border, so the rule between two groups is the earlier group's bottom border. */
+.model-picker-sort-panel .gh-facet-group:has(+ .gh-facet-group) {
+  padding-block-end: 8px;
+  border-block-end: 1px solid var(--border-glass);
+}
+
+.model-picker-sort-panel .gh-facet-group + .gh-facet-group {
+  margin-block-start: 2px;
 }
 
 .model-picker-sort-panel .model-picker-sort-clear {

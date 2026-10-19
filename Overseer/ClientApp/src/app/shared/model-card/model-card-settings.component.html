@@ -1,0 +1,17 @@
+<!-- Each badge carries a visually hidden prefix: a bare MEDIUM or PRIORITY means nothing read aloud. -->
+@if (hasSettingsBadges(model)) {
+  <ul class="gh-model-card-badges gh-model-card-settings" role="list" aria-label="Model settings">
+    @if (model.thinkingLevel) {
+      <li><span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(model.thinkingLevel) }}</span></li>
+    }
+    @if (showReasoningBadge(model.reasoningMode)) {
+      <li><span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ model.reasoningMode }}</span></li>
+    }
+    @if (model.reasoningSummary) {
+      <li><span class="config-badge">Summary: {{ formatReasoningSummary(model.reasoningSummary) }}</span></li>
+    }
+    @if (model.serviceTier) {
+      <li><span class="config-badge"><span class="visually-hidden">service tier </span>{{ formatServiceTier(model.serviceTier) }}</span></li>
+    }
+  </ul>
+}

@@ -180,7 +180,7 @@ describe('ModelsComponent', () => {
   describe('catalog availability', () => {
     const el = () => fixture.nativeElement as HTMLElement;
     const text = (node: Element | null | undefined) => (node?.textContent ?? '').replace(/\s+/g, ' ').trim();
-    const userRow = (id: number) => el().querySelector(`#user-model-name-${id}`)!.closest('.model-item') as HTMLElement;
+    const userRow = (id: number) => el().querySelector(`#user-model-name-${id}`)!.closest('.gh-model-card-item') as HTMLElement;
     const systemRow = () => el().querySelector('.system-model-item') as HTMLElement;
     const resolveButton = (id: number) => el().querySelector<HTMLButtonElement>(`#resolve-model-${id}`);
 
@@ -205,6 +205,9 @@ describe('ModelsComponent', () => {
       const row = userRow(5);
       const badge = row.querySelector('.status-badge.badge-availability')!;
       expect(text(badge)).toBe('Removed');
+      expect(badge.tagName).toBe('BUTTON');
+      expect(badge.getAttribute('type')).toBe('button');
+      expect(badge.hasAttribute('tabindex')).toBe(false);
       expect(badge.classList).toContain('badge-warning');
       expect(badge.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
       expect(badge.getAttribute('interestfor')).toBe('tip-availability-u-5');
@@ -333,6 +336,7 @@ describe('ModelsComponent', () => {
       const row = userRow(6);
       const badge = row.querySelector('.status-badge.badge-availability')!;
       expect(badge.classList).toContain('badge-neutral');
+      expect(badge.tagName).toBe('SPAN');
       expect(text(badge)).toBe('Custom model');
       expect(badge.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
       expect(row.querySelector('.model-availability-notice')).toBeNull();
@@ -348,6 +352,75 @@ describe('ModelsComponent', () => {
       expect(sentence).toBe(`Old System was removed from the model catalog on September 30, 2026. ${SYSTEM_MODEL_ATTENTION_TEXT}`);
       expect(row.querySelector('.model-resolve-btn')).toBeNull();
       expect(row.querySelector('.alert-actions button')).toBeNull();
+    });
+
+    it('names each user card\'s Edit and Delete for the model, with hint tooltips and no title', () => {
+      showModels([flash(AVAILABLE)]);
+
+      const row = userRow(5);
+      const group = row.querySelector<HTMLElement>('.gh-model-card-actions')!;
+      expect(group.getAttribute('role')).toBe('group');
+      expect(group.getAttribute('aria-label')).toBe('Actions for Flash 3.7');
+      const buttons = Array.from(group.querySelectorAll<HTMLButtonElement>('button'));
+      expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual(['Edit model Flash 3.7', 'Delete model Flash 3.7']);
+      for (const button of buttons) {
+        expect(button.getAttribute('type')).toBe('button');
+        expect(button.hasAttribute('title')).toBe(false);
+        expect(el().querySelector('#' + button.getAttribute('interestfor'))!.getAttribute('popover')).toBe('hint');
+        expect(button.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+      }
+      expect(row.querySelector('.gh-model-card-grip')!.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('makes the trust posture badge a button with a hint tooltip', () => {
+      showModels([flash(AVAILABLE), OLD_SYSTEM]);
+
+      for (const row of [userRow(5), systemRow()]) {
+        const posture = row.querySelector<HTMLElement>('.gh-model-card-status .posture-badge')!;
+        expect(posture.tagName).toBe('BUTTON');
+        expect(posture.getAttribute('type')).toBe('button');
+        expect(posture.hasAttribute('tabindex')).toBe(false);
+        expect(el().querySelector('#' + posture.getAttribute('interestfor'))!.getAttribute('popover')).toBe('hint');
+      }
+      expect(text(systemRow().querySelector('.gh-model-card-status .badge-system-wide'))).toBe('System Config');
+    });
+
+    it('names the two lists and the reset button, and draws no plain-text setting labels', () => {
+      showModels([flash(AVAILABLE, { thinkingLevel: 'high' }), OLD_SYSTEM]);
+
+      const userList = el().querySelector<HTMLElement>('ul.gh-model-cards[aria-label="Your models"]')!;
+      expect(userList.getAttribute('role')).toBe('list');
+      expect(userList.contains(userRow(5))).toBe(true);
+      const systemList = systemRow().closest('ul')!;
+      expect(systemList.getAttribute('role')).toBe('list');
+      expect(systemList.getAttribute('aria-labelledby')).toBe('system-models-heading');
+      expect(text(el().querySelector('#system-models-heading'))).toBe('System-Provided Models');
+
+      const reset = el().querySelector<HTMLButtonElement>('button[aria-label="Reset the order of system-provided models"]')!;
+      expect(reset.getAttribute('type')).toBe('button');
+      expect(reset.hasAttribute('title')).toBe(false);
+      expect(el().querySelector('#' + reset.getAttribute('interestfor'))!.getAttribute('popover')).toBe('hint');
+
+      expect(text(userRow(5).querySelector('.gh-model-card-settings .thinking-badge'))).toBe('thinking level High');
+      expect(el().querySelector('.detail-label')).toBeNull();
+    });
+
+    it('clears the drop markers on drag end only inside the page', () => {
+      showModels([flash(AVAILABLE)]);
+      const item = userRow(5);
+      item.classList.add('drag-over-top');
+      const stray = document.createElement('li');
+      stray.className = 'gh-model-card-item drag-over-top';
+      document.body.appendChild(stray);
+
+      try {
+        component.onDragEnd({ target: item } as unknown as DragEvent);
+
+        expect(item.classList).not.toContain('drag-over-top');
+        expect(stray.classList).toContain('drag-over-top');
+      } finally {
+        stray.remove();
+      }
     });
 
     it('passes each title-generation option its availability for the picker chip', () => {

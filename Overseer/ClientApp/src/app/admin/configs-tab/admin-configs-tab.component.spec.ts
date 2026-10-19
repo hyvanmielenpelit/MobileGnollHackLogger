@@ -360,6 +360,89 @@ describe('AdminConfigsTabComponent', () => {
     });
   });
 
+  describe('configuration cards', () => {
+    const prod = buildSystemConfig({
+      id: 42, displayName: 'Prod GPT-5', provider: 'OpenAI', modelId: 'gpt-5',
+      thinkingLevel: 'medium', reasoningMode: 'default', isSystemWide: true, modelRole: 5
+    });
+
+    const el = (): HTMLElement => fixture.nativeElement;
+    const card = () => el().querySelector<HTMLElement>('article.gh-model-card')!;
+
+    beforeEach(() => {
+      store.setConfigs([{ ...prod }]);
+      fixture.detectChanges();
+    });
+
+    it('lists the cards under the tab heading, each an article named by its title', () => {
+      const list = el().querySelector<HTMLElement>('ul.gh-model-cards')!;
+      expect(list.getAttribute('role')).toBe('list');
+      expect(list.getAttribute('aria-labelledby')).toBe('configs-heading');
+      expect(el().querySelector('#configs-heading')!.textContent!.trim()).toBe('System AI Configurations');
+      expect(list.querySelectorAll(':scope > li.gh-model-card-item').length).toBe(1);
+
+      expect(card().getAttribute('aria-labelledby')).toBe('config-title-42');
+      const title = el().querySelector<HTMLElement>('h4#config-title-42')!;
+      expect(title.classList).toContain('gh-model-card-title');
+      expect(title.textContent!.trim()).toBe('Prod GPT-5');
+    });
+
+    it('shows the thinking level as the pickers\' badge, in the Model settings row', () => {
+      const settings = card().querySelector<HTMLElement>('.gh-model-card-settings')!;
+      expect(settings.getAttribute('aria-label')).toBe('Model settings');
+      expect(settings.querySelector('.thinking-badge')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('thinking level Medium');
+      expect(settings.querySelector('.reasoning-badge')).toBeNull();
+      expect(el().querySelector('.detail-label')).toBeNull();
+
+      const status = card().querySelector<HTMLElement>('.gh-model-card-status')!;
+      expect(status.getAttribute('aria-label')).toBe('Use and access');
+      expect(Array.from(status.querySelectorAll('li')).map(li => li.textContent!.replace(/\s+/g, ' ').trim()))
+        .toEqual(['role Chat', 'role Benchmark', 'System Wide', 'Key Saved']);
+    });
+
+    it('names each icon-only action for the configuration, with a hint tooltip and no title', () => {
+      const group = card().querySelector<HTMLElement>('.gh-model-card-actions')!;
+      expect(group.getAttribute('role')).toBe('group');
+      expect(group.getAttribute('aria-label')).toBe('Actions for Prod GPT-5');
+
+      const buttons = Array.from(group.querySelectorAll<HTMLButtonElement>('button'));
+      expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual([
+        'Edit configuration Prod GPT-5', 'Usage analytics of Prod GPT-5', 'Rate limits of Prod GPT-5', 'Delete config Prod GPT-5'
+      ]);
+      for (const button of buttons) {
+        expect(button.getAttribute('type')).toBe('button');
+        expect(button.hasAttribute('title')).toBe(false);
+        expect(el().querySelector('#' + button.getAttribute('interestfor'))!.getAttribute('popover')).toBe('hint');
+        expect(button.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+      }
+    });
+
+    it('keeps the drag grip decorative and out of the focus order', () => {
+      const grip = card().querySelector<HTMLElement>('.gh-model-card-grip')!;
+      expect(grip.getAttribute('aria-hidden')).toBe('true');
+      expect(grip.tabIndex).toBe(-1);
+      expect(grip.hasAttribute('title')).toBe(false);
+      expect(grip.hasAttribute('aria-label')).toBe(false);
+    });
+
+    it('clears the drop markers on drag end only inside this tab', () => {
+      const item = el().querySelector<HTMLElement>('.gh-model-card-item')!;
+      item.classList.add('drag-over-top');
+      const stray = document.createElement('li');
+      stray.className = 'gh-model-card-item drag-over-top';
+      document.body.appendChild(stray);
+
+      try {
+        component.onConfigDragEnd({ target: item } as unknown as DragEvent);
+
+        expect(item.classList).not.toContain('drag-over-top');
+        expect(stray.classList).toContain('drag-over-top');
+      } finally {
+        stray.remove();
+      }
+    });
+  });
+
   describe('default API keys', () => {
     const keyStatus = (provider: string, overrides: Partial<DefaultApiKeyStatus> = {}): DefaultApiKeyStatus => ({
       provider, hasKey: false, keyHint: null, updatedAtUtc: null,
@@ -569,7 +652,7 @@ describe('AdminConfigsTabComponent', () => {
     const el = (): HTMLElement => fixture.nativeElement;
     const banner = () => el().querySelector<HTMLElement>('.config-attention-banner');
     const bannerButtons = () => Array.from(el().querySelectorAll<HTMLButtonElement>('.config-attention-resolve'));
-    const rows = () => Array.from(el().querySelectorAll<HTMLElement>('.model-item'));
+    const rows = () => Array.from(el().querySelectorAll<HTMLElement>('.gh-model-card-item'));
     const rowResolve = (id: number) => el().querySelector<HTMLButtonElement>(`#config-resolve-${id}`);
     const dialog = (): ModelResolutionDialogComponent =>
       fixture.debugElement.query(By.directive(ModelResolutionDialogComponent)).componentInstance;
@@ -622,6 +705,8 @@ describe('AdminConfigsTabComponent', () => {
       fixture.detectChanges();
 
       const badge = rows()[0].querySelector<HTMLElement>('.config-availability-badge')!;
+      expect(badge.tagName).toBe('BUTTON');
+      expect(badge.getAttribute('type')).toBe('button');
       expect(badge.classList).toContain('badge-availability');
       expect(badge.classList).toContain('badge-warning');
       expect(badge.textContent!.trim()).toBe('Removed');
@@ -657,6 +742,8 @@ describe('AdminConfigsTabComponent', () => {
         .toContain("model-1 isn't in Overseer's model catalog");
 
       const second = rows()[1].querySelector<HTMLElement>('.config-availability-badge')!;
+      expect(second.tagName).toBe('BUTTON');
+      expect(second.getAttribute('type')).toBe('button');
       expect(second.textContent!.trim()).toBe('Custom model');
       expect(second.classList).toContain('badge-neutral');
       expect(rows()[1].querySelector('app-model-availability-notice')).toBeNull();

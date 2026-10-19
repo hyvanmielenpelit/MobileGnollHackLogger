@@ -15,187 +15,137 @@
 }
 
 @if (!(loading && firstLoad)) {
-  <div class="models-list">
-    @if (userModels.length === 0) {
-      <div class="empty-state">
-        You haven't added any models yet. Click "Add Model" to get started.
-      </div>
-    }
-    @for (model of userModels; track model.id; let i = $index) {
-      <div
-        class="model-item"
-        draggable="true"
-        (dragstart)="onDragStart($event, i)"
-        (dragend)="onDragEnd($event)"
-        (dragover)="onDragOver($event)"
-        (dragleave)="onDragLeave($event)"
-        (drop)="onDrop($event, i)">
-        <div class="drag-handle" title="Drag to reorder">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-        </div>
-        <div class="model-info">
-          <div class="model-title">
-            <h3 [id]="'user-model-name-' + model.id" tabindex="-1">{{ model.displayName || model.modelId }}</h3>
-          </div>
-          <div class="model-details">
-            <div class="mb-4 d-flex align-items-center" style="flex-wrap: wrap; gap: 8px;">
-              <span>{{ model.modelId }}</span>
-              <app-provider-badge [provider]="model.provider"></app-provider-badge>
-              <ng-container *ngTemplateOutlet="availabilityBadge; context: { $implicit: model }"></ng-container>
-              <span class="posture-badge"
-                    [class.posture-strong]="postureLevel(model) === 'strong'"
-                    [class.posture-moderate]="postureLevel(model) === 'moderate'"
-                    [class.posture-weak]="postureLevel(model) === 'weak'"
-                    [attr.interestfor]="postureTipId(model)"
-                    [attr.style]="'anchor-name: --' + postureTipId(model)"
-                    tabindex="0">{{ postureBadgeText(model) }}</span>
-              <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="postureTipId(model)"
-                   [attr.style]="'position-anchor: --' + postureTipId(model)">
-                @for (line of postureTooltipLines(model); track $index) {
-                  <div class="gh-tooltip-line">{{ line }}</div>
-                }
-              </div>
+  @if (userModels.length === 0) {
+    <div class="empty-state">
+      You haven't added any models yet. Click "Add Model" to get started.
+    </div>
+  } @else {
+    <ul class="gh-model-cards" role="list" aria-label="Your models">
+      @for (model of userModels; track model.id; let i = $index) {
+        @let name = modelName(model);
+        <li class="gh-model-card-item"
+            draggable="true"
+            (dragstart)="onDragStart($event, i)"
+            (dragend)="onDragEnd($event)"
+            (dragover)="onDragOver($event)"
+            (dragleave)="onDragLeave($event)"
+            (drop)="onDrop($event, i)">
+          <article class="gh-model-card" [attr.aria-labelledby]="'user-model-name-' + model.id">
+            <div class="gh-model-card-grip" aria-hidden="true">
+              <ng-container *ngTemplateOutlet="gripGlyph"></ng-container>
             </div>
-            @if (model.thinkingLevel) {
-              <div>
-                <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatThinkingLevel(model.thinkingLevel) }}
-              </div>
-            }
-            <div>
-              <span class="detail-label thinking ml-0">Reasoning Mode:</span> {{ formatThinkingLevel(model.reasoningMode) }}
+
+            <div class="gh-model-card-head">
+              <h4 class="gh-model-card-title" [id]="'user-model-name-' + model.id" tabindex="-1">{{ name }}</h4>
+              <p class="gh-model-card-identity">
+                <code class="gh-model-card-model-id">{{ model.modelId }}</code>
+                <app-provider-badge [provider]="model.provider"></app-provider-badge>
+                <ng-container *ngTemplateOutlet="availabilityBadge; context: { $implicit: model }"></ng-container>
+              </p>
             </div>
-            <div>
-              <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatReasoningSummary(model.reasoningSummary, model.provider) }}
+
+            <div class="gh-model-card-actions" role="group" [attr.aria-label]="'Actions for ' + name">
+              <button type="button" class="action-btn" [disabled]="saving"
+                      [attr.aria-label]="editLabel(model)"
+                      [attr.interestfor]="'tip-edit-model-u-' + model.id"
+                      [attr.style]="'anchor-name: --tip-edit-model-u-' + model.id"
+                      (click)="openEdit(model)">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+              </button>
+              <div popover="hint" class="gh-tooltip" [id]="'tip-edit-model-u-' + model.id"
+                   [attr.style]="'position-anchor: --tip-edit-model-u-' + model.id">Edit</div>
+
+              <button type="button" class="action-btn action-btn-danger" [disabled]="saving"
+                      [attr.aria-label]="deleteLabel(model)"
+                      [attr.interestfor]="'tip-delete-model-u-' + model.id"
+                      [attr.style]="'anchor-name: --tip-delete-model-u-' + model.id"
+                      (click)="deleteModel(model.id)">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+              </button>
+              <div popover="hint" class="gh-tooltip" [id]="'tip-delete-model-u-' + model.id"
+                   [attr.style]="'position-anchor: --tip-delete-model-u-' + model.id">Delete</div>
             </div>
-            @if (model.serviceTier) {
-              <div>
-                <span class="detail-label thinking ml-0">Service Tier:</span> {{ formatServiceTier(model.serviceTier) }}
-              </div>
-            }
-            @if (formatPrice(model)) {
-              <div class="model-price-line" style="font-size: 0.85em; margin-top: 4px; color: var(--gh-text-secondary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                <span>{{ formatPrice(model) }}</span>
-                <span class="status-badge" [class.badge-custom]="getPricingBadge(model) === 'Custom'" [class.badge-catalog]="getPricingBadge(model) === 'Catalog'">
-                  {{ getPricingBadge(model) }}
-                </span>
-              </div>
-            }
-            @if (formatLongContextPrice(model)) {
-              <div class="model-price-long-context">{{ formatLongContextPrice(model) }}</div>
-            }
-            @if (formatPricingSchedule(model)) {
-              <div class="model-price-schedule" [class.elapsed]="model.pricingScheduleElapsed">{{ formatPricingSchedule(model) }}</div>
-            }
+
+            <app-model-card-settings [model]="model" />
+
+            <ul class="gh-model-card-badges gh-model-card-status" role="list" aria-label="Source and trust">
+              <li><ng-container *ngTemplateOutlet="postureBadge; context: { $implicit: model }"></ng-container></li>
+            </ul>
+
+            <app-model-card-facts [model]="model" />
+
             @if (needsAttention(model)) {
-              <app-model-availability-notice class="model-row-notice" variant="row"
+              <app-model-availability-notice class="model-row-notice gh-model-card-notice" variant="row"
                                              [availability]="model.modelAvailability"
-                                             [modelName]="modelName(model)" [modelId]="model.modelId">
+                                             [modelName]="name" [modelId]="model.modelId">
                 <button type="button" class="btn-ghost model-resolve-btn" [id]="'resolve-model-' + model.id"
                         aria-haspopup="dialog" [attr.aria-label]="resolveLabel(model)"
                         (click)="openResolve(model)">Resolve…</button>
               </app-model-availability-notice>
             }
-          </div>
-        </div>
-        <div class="model-actions">
-          <button class="action-btn" (click)="openEdit(model)" [disabled]="saving" aria-label="Edit" title="Edit">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-          </button>
-          <button class="action-btn action-btn-danger" (click)="deleteModel(model.id)" [disabled]="saving" aria-label="Delete" title="Delete">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-          </button>
-        </div>
-      </div>
-    }
-  </div>
+          </article>
+        </li>
+      }
+    </ul>
+  }
 }
 
 @if (systemModels.length > 0) {
   <div class="mt-30">
     <div class="section-header">
-      <h3 style="margin: 0;">System-Provided Models</h3>
-      <button class="action-btn" (click)="resetSystemOrder()" [disabled]="saving" title="Reset order to default">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg>
+      <h3 id="system-models-heading">System-Provided Models</h3>
+      <button type="button" class="action-btn" [disabled]="saving"
+              aria-label="Reset the order of system-provided models"
+              interestfor="tip-reset-system-order"
+              style="anchor-name: --tip-reset-system-order"
+              (click)="resetSystemOrder()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path></svg>
       </button>
+      <div popover="hint" class="gh-tooltip" id="tip-reset-system-order"
+           style="position-anchor: --tip-reset-system-order">Reset order</div>
     </div>
-    <div class="models-list">
+    <ul class="gh-model-cards" role="list" aria-labelledby="system-models-heading">
       @for (model of systemModels; track model.id; let i = $index) {
-        <div 
-          class="model-item system-model-item"
-          draggable="true"
-          (dragstart)="onDragStart($event, i, 'system')"
-          (dragend)="onDragEnd($event)"
-          (dragover)="onDragOver($event)"
-          (dragleave)="onDragLeave($event)"
-          (drop)="onDrop($event, i, 'system')">
-          <div class="drag-handle" title="Drag to reorder">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-          </div>
-          <div class="model-info">
-            <div class="model-title d-flex align-items-center" style="flex-wrap: wrap; gap: 10px;">
-              <h3 style="margin: 0;">{{ model.displayName || model.modelId }}</h3>
-              <span class="badge-system-wide">System Config</span>
+        <li class="gh-model-card-item system-model-item"
+            draggable="true"
+            (dragstart)="onDragStart($event, i, 'system')"
+            (dragend)="onDragEnd($event)"
+            (dragover)="onDragOver($event)"
+            (dragleave)="onDragLeave($event)"
+            (drop)="onDrop($event, i, 'system')">
+          <article class="gh-model-card" [attr.aria-labelledby]="'system-model-name-' + model.id">
+            <div class="gh-model-card-grip" aria-hidden="true">
+              <ng-container *ngTemplateOutlet="gripGlyph"></ng-container>
             </div>
-            <div class="model-details">
-              <div class="mb-4 d-flex align-items-center" style="flex-wrap: wrap; gap: 8px;">
-                <span>{{ model.modelId }}</span>
+
+            <div class="gh-model-card-head">
+              <h4 class="gh-model-card-title" [id]="'system-model-name-' + model.id">{{ modelName(model) }}</h4>
+              <p class="gh-model-card-identity">
+                <code class="gh-model-card-model-id">{{ model.modelId }}</code>
                 <app-provider-badge [provider]="model.provider"></app-provider-badge>
                 <ng-container *ngTemplateOutlet="availabilityBadge; context: { $implicit: model }"></ng-container>
-                <span class="posture-badge"
-                      [class.posture-strong]="postureLevel(model) === 'strong'"
-                      [class.posture-moderate]="postureLevel(model) === 'moderate'"
-                      [class.posture-weak]="postureLevel(model) === 'weak'"
-                      [attr.interestfor]="postureTipId(model)"
-                      [attr.style]="'anchor-name: --' + postureTipId(model)"
-                      tabindex="0">{{ postureBadgeText(model) }}</span>
-                <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="postureTipId(model)"
-                     [attr.style]="'position-anchor: --' + postureTipId(model)">
-                  @for (line of postureTooltipLines(model); track $index) {
-                    <div class="gh-tooltip-line">{{ line }}</div>
-                  }
-                </div>
-              </div>
-              @if (model.thinkingLevel) {
-                <div>
-                  <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatThinkingLevel(model.thinkingLevel) }}
-                </div>
-              }
-              <div>
-                <span class="detail-label thinking ml-0">Reasoning Mode:</span> {{ formatThinkingLevel(model.reasoningMode) }}
-              </div>
-              <div>
-                <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatReasoningSummary(model.reasoningSummary, model.provider) }}
-              </div>
-              @if (model.serviceTier) {
-                <div>
-                  <span class="detail-label thinking ml-0">Service Tier:</span> {{ formatServiceTier(model.serviceTier) }}
-                </div>
-              }
-              @if (formatPrice(model)) {
-                <div class="model-price-line" style="font-size: 0.85em; margin-top: 4px; color: var(--gh-text-secondary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                  <span>{{ formatPrice(model) }}</span>
-                  <span class="status-badge" [class.badge-custom]="getPricingBadge(model) === 'Custom'" [class.badge-catalog]="getPricingBadge(model) === 'Catalog'">
-                    {{ getPricingBadge(model) }}
-                  </span>
-                </div>
-              }
-              @if (formatLongContextPrice(model)) {
-                <div class="model-price-long-context">{{ formatLongContextPrice(model) }}</div>
-              }
-              @if (formatPricingSchedule(model)) {
-                <div class="model-price-schedule" [class.elapsed]="model.pricingScheduleElapsed">{{ formatPricingSchedule(model) }}</div>
-              }
-              @if (needsAttention(model)) {
-                <app-model-availability-notice class="model-row-notice" variant="row"
-                                               [availability]="model.modelAvailability"
-                                               [modelName]="modelName(model)" [modelId]="model.modelId"
-                                               [extraText]="systemModelAttentionText"></app-model-availability-notice>
-              }
+              </p>
             </div>
-          </div>
-        </div>
+
+            <app-model-card-settings [model]="model" />
+
+            <ul class="gh-model-card-badges gh-model-card-status" role="list" aria-label="Source and trust">
+              <li><span class="badge-system-wide">System Config</span></li>
+              <li><ng-container *ngTemplateOutlet="postureBadge; context: { $implicit: model }"></ng-container></li>
+            </ul>
+
+            <app-model-card-facts [model]="model" />
+
+            @if (needsAttention(model)) {
+              <app-model-availability-notice class="model-row-notice gh-model-card-notice" variant="row"
+                                             [availability]="model.modelAvailability"
+                                             [modelName]="modelName(model)" [modelId]="model.modelId"
+                                             [extraText]="systemModelAttentionText"></app-model-availability-notice>
+            }
+          </article>
+        </li>
       }
-    </div>
+    </ul>
   </div>
 }
 
@@ -269,16 +219,44 @@
      availability sentence as its tooltip, or Custom model. -->
 <ng-template #availabilityBadge let-model>
   @if (availabilityChip(model); as chip) {
-    <span class="status-badge badge-availability"
-          [class.badge-warning]="chip.tone === 'warning'" [class.badge-info]="chip.tone === 'info'"
-          [attr.interestfor]="availabilityTipId(model)"
-          [attr.style]="'anchor-name: --' + availabilityTipId(model)"
-          tabindex="0">@if (chip.tone === 'warning') {<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>} @else {<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>}{{ chip.text }}</span>
-    <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="availabilityTipId(model)"
-         [attr.style]="'position-anchor: --' + availabilityTipId(model)">{{ availabilitySentence(model) }}</div>
+    <button type="button" class="status-badge badge-availability"
+            [class.badge-warning]="chip.tone === 'warning'" [class.badge-info]="chip.tone === 'info'"
+            [attr.interestfor]="availabilityTipId(model)"
+            [attr.style]="'anchor-name: --' + availabilityTipId(model)">@if (chip.tone === 'warning') {<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>} @else {<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>}{{ chip.text }}</button>
+    <span popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="availabilityTipId(model)"
+          [attr.style]="'position-anchor: --' + availabilityTipId(model)">{{ availabilitySentence(model) }}</span>
   } @else if (isCustomMode(model)) {
     <span class="status-badge badge-availability badge-neutral"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>Custom model</span>
   }
+</ng-template>
+
+<!-- The trust posture badge, a button because its tooltip carries the verification date the badge has
+     no room for. -->
+<ng-template #postureBadge let-model>
+  <button type="button" class="posture-badge"
+          [class.posture-strong]="postureLevel(model) === 'strong'"
+          [class.posture-moderate]="postureLevel(model) === 'moderate'"
+          [class.posture-weak]="postureLevel(model) === 'weak'"
+          [attr.interestfor]="postureTipId(model)"
+          [attr.style]="'anchor-name: --' + postureTipId(model)">{{ postureBadgeText(model) }}</button>
+  <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="postureTipId(model)"
+       [attr.style]="'position-anchor: --' + postureTipId(model)">
+    @for (line of postureTooltipLines(model); track $index) {
+      <div class="gh-tooltip-line">{{ line }}</div>
+    }
+  </div>
+</ng-template>
+
+<!-- The drag grip of a model card: the reorderable list's six dots, decorative. -->
+<ng-template #gripGlyph>
+  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="16" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true" focusable="false">
+    <circle cx="2.5" cy="3" r="1.5"></circle>
+    <circle cx="7.5" cy="3" r="1.5"></circle>
+    <circle cx="2.5" cy="8" r="1.5"></circle>
+    <circle cx="7.5" cy="8" r="1.5"></circle>
+    <circle cx="2.5" cy="13" r="1.5"></circle>
+    <circle cx="7.5" cy="13" r="1.5"></circle>
+  </svg>
 </ng-template>
 
 <dialog #deleteModelConfirmDialog class="gh-dialog">

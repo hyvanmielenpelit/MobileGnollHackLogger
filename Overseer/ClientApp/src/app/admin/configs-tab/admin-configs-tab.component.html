@@ -1,5 +1,5 @@
 <div class="tab-header-row">
-  <h3 class="m-0" #configsHeading tabindex="-1">System AI Configurations</h3>
+  <h3 class="m-0" id="configs-heading" #configsHeading tabindex="-1">System AI Configurations</h3>
   <app-config-filter [filter]="configFilter"
                      [providers]="adminProviders"
                      (filterChange)="onConfigFilterChange($event)"></app-config-filter>
@@ -58,42 +58,38 @@
   </div>
 }
 @if (visibleConfigs.length > 0) {
-  <div class="models-list">
+  <ul class="gh-model-cards" role="list" aria-labelledby="configs-heading">
     @for (config of visibleConfigs; track config.id; let i = $index) {
-      <div 
-        class="model-item"
-        draggable="true"
-        (dragstart)="onConfigDragStart($event, i)"
-        (dragend)="onConfigDragEnd($event)"
-        (dragover)="onConfigDragOver($event)"
-        (dragleave)="onConfigDragLeave($event)"
-        (drop)="onConfigDrop($event, i)">
-        <div class="drag-handle"
-             [attr.aria-label]="'Drag to reorder ' + (config.displayName || config.modelId)"
-             [attr.interestfor]="'tip-drag-config-' + config.id"
-             [attr.style]="'anchor-name: --tip-drag-config-' + config.id">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-        </div>
-        <div popover="hint" class="gh-tooltip" [id]="'tip-drag-config-' + config.id"
-             [attr.style]="'position-anchor: --tip-drag-config-' + config.id">Drag to reorder</div>
-        <div class="model-info">
-          <div class="model-title">
-            <h3 [id]="'config-title-' + config.id" tabindex="-1">{{ config.displayName || config.modelId }}</h3>
+      @let name = configName(config);
+      <li class="gh-model-card-item"
+          draggable="true"
+          (dragstart)="onConfigDragStart($event, i)"
+          (dragend)="onConfigDragEnd($event)"
+          (dragover)="onConfigDragOver($event)"
+          (dragleave)="onConfigDragLeave($event)"
+          (drop)="onConfigDrop($event, i)">
+        <article class="gh-model-card" [attr.data-config-id]="config.id" [attr.aria-labelledby]="'config-title-' + config.id">
+          <div class="gh-model-card-grip" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="16" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true" focusable="false">
+              <circle cx="2.5" cy="3" r="1.5"></circle>
+              <circle cx="7.5" cy="3" r="1.5"></circle>
+              <circle cx="2.5" cy="8" r="1.5"></circle>
+              <circle cx="7.5" cy="8" r="1.5"></circle>
+              <circle cx="2.5" cy="13" r="1.5"></circle>
+              <circle cx="7.5" cy="13" r="1.5"></circle>
+            </svg>
           </div>
-          <div class="model-details">
-            @if (config.note) {
-              <div class="mb-4 text-muted" style="font-size: 0.9em; font-style: italic;">
-                {{ config.note }}
-              </div>
-            }
-            <div class="mb-4 d-flex align-items-center" style="flex-wrap: wrap; gap: 8px;">
-              <span>{{ config.modelId }}</span>
+
+          <div class="gh-model-card-head">
+            <h4 class="gh-model-card-title" [id]="'config-title-' + config.id" tabindex="-1">{{ name }}</h4>
+            <p class="gh-model-card-identity">
+              <code class="gh-model-card-model-id">{{ config.modelId }}</code>
               <app-provider-badge [provider]="config.provider"></app-provider-badge>
               @let availability = availabilityBadge(config);
               @if (availability) {
-                <span class="status-badge badge-availability config-availability-badge" [ngClass]="availability.cssClass"
-                      [attr.interestfor]="'tip-availability-config-' + config.id"
-                      [attr.style]="'anchor-name: --tip-availability-config-' + config.id">
+                <button type="button" class="status-badge badge-availability config-availability-badge" [ngClass]="availability.cssClass"
+                        [attr.interestfor]="'tip-availability-config-' + config.id"
+                        [attr.style]="'anchor-name: --tip-availability-config-' + config.id">
                   @switch (availability.icon) {
                     @case ('warning') {
                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
@@ -106,101 +102,91 @@
                     }
                   }
                   {{ availability.text }}
-                </span>
-                <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="'tip-availability-config-' + config.id"
-                     [attr.style]="'position-anchor: --tip-availability-config-' + config.id">{{ availability.tip }}</div>
+                </button>
+                <span popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="'tip-availability-config-' + config.id"
+                      [attr.style]="'position-anchor: --tip-availability-config-' + config.id">{{ availability.tip }}</span>
               }
-              @for (badge of modelRoleBadges(config.modelRole); track badge.label) {
-                <span class="status-badge" [ngClass]="badge.cssClass">{{ badge.label }}</span>
-              }
-              @if (config.isSystemWide) {
-                <span class="badge-system-wide">System Wide</span>
-              }
-              @if (!config.isEnabled) {
-                <span class="badge-disabled">Disabled</span>
-              }
-              @let keyBadge = configKeyBadge(config);
-              <span class="status-badge config-key-badge" [ngClass]="keyBadge.cssClass">{{ keyBadge.label }}</span>
-            </div>
-            @if (config.thinkingLevel) {
-              <div>
-                <span class="detail-label thinking ml-0">Thinking Level:</span> {{ formatLevel(config.thinkingLevel) }}
-              </div>
-            }
-            <div>
-              <span class="detail-label thinking ml-0">Reasoning Mode:</span> {{ formatReasoningMode(config.reasoningMode) }}
-            </div>
-            <div>
-              <span class="detail-label thinking ml-0">Reasoning Summary:</span> {{ formatReasoningSummary(config.reasoningSummary, config.provider) }}
-            </div>
-            @if (config.serviceTier) {
-              <div>
-                <span class="detail-label thinking ml-0">Service Tier:</span> {{ formatServiceTier(config.serviceTier) }}
-              </div>
-            }
-            @if (config.maxInputTokens || config.maxOutputTokens) {
-              <div style="font-size: 0.85em; margin-top: 4px; color: var(--gh-text-secondary);">
-                @if (config.maxInputTokens) {
-                  <span>Max Input: {{ config.maxInputTokens | number }}</span>
-                }
-                @if (config.maxInputTokens && config.maxOutputTokens) {
-                  <span style="margin: 0 5px;">|</span>
-                }
-                @if (config.maxOutputTokens) {
-                  <span>Max Output: {{ config.maxOutputTokens | number }}</span>
-                }
-              </div>
-            }
-            @if (formatPrice(config)) {
-              <div class="model-price-line" style="font-size: 0.85em; margin-top: 4px; color: var(--gh-text-secondary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                <span>{{ formatPrice(config) }}</span>
-                <span class="status-badge" [class.badge-custom]="getPricingBadge(config) === 'Custom'" [class.badge-catalog]="getPricingBadge(config) === 'Catalog'">
-                  {{ getPricingBadge(config) }}
-                </span>
-              </div>
-            }
-            @if (formatLongContextPrice(config)) {
-              <div class="model-price-long-context">{{ formatLongContextPrice(config) }}</div>
-            }
-            @if (formatPricingSchedule(config)) {
-              <div class="model-price-schedule" [class.elapsed]="config.pricingScheduleElapsed">{{ formatPricingSchedule(config) }}</div>
-            }
-            @if (isFlagged(config)) {
-              <app-model-availability-notice class="config-availability-notice" variant="row"
-                                             [availability]="config.modelAvailability"
-                                             [modelName]="availabilityModelName(config)"
-                                             [modelId]="config.modelId">
-                <button type="button" class="btn-ghost config-row-resolve" [id]="'config-resolve-' + config.id"
-                        aria-haspopup="dialog" [attr.aria-label]="resolveLabel(config)"
-                        (click)="openResolve(config)">Resolve…</button>
-              </app-model-availability-notice>
+            </p>
+            @if (config.note) {
+              <p class="gh-model-card-note">{{ config.note }}</p>
             }
           </div>
-        </div>
-        <div class="model-actions">
-          <button class="action-btn" title="Edit Config" (click)="openEditConfig(config)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-          </button>
-          <button class="action-btn" title="Analytics" (click)="openAnalytics(config)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
-          </button>
-          <button class="action-btn" title="Rate Limits" (click)="rateLimits.open('system', config)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
-          </button>
-          <button type="button" class="action-btn action-btn-danger"
-                  [attr.aria-label]="'Delete config ' + (config.displayName || config.modelId)"
-                  [attr.aria-disabled]="deleteConfigCheckingId === config.id ? 'true' : null"
-                  [attr.interestfor]="'tip-delete-config-' + config.id"
-                  [attr.style]="'anchor-name: --tip-delete-config-' + config.id"
-                  (click)="requestDeleteConfig(config)">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-          </button>
-          <div popover="hint" class="gh-tooltip" [id]="'tip-delete-config-' + config.id"
-               [attr.style]="'position-anchor: --tip-delete-config-' + config.id">Delete config</div>
-        </div>
-      </div>
+
+          <div class="gh-model-card-actions" role="group" [attr.aria-label]="'Actions for ' + name">
+            <button type="button" class="action-btn"
+                    [attr.aria-label]="'Edit configuration ' + name"
+                    [attr.interestfor]="'tip-edit-config-' + config.id"
+                    [attr.style]="'anchor-name: --tip-edit-config-' + config.id"
+                    (click)="openEditConfig(config)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="'tip-edit-config-' + config.id"
+                 [attr.style]="'position-anchor: --tip-edit-config-' + config.id">Edit</div>
+
+            <button type="button" class="action-btn"
+                    [attr.aria-label]="'Usage analytics of ' + name"
+                    [attr.interestfor]="'tip-analytics-config-' + config.id"
+                    [attr.style]="'anchor-name: --tip-analytics-config-' + config.id"
+                    (click)="openAnalytics(config)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="'tip-analytics-config-' + config.id"
+                 [attr.style]="'position-anchor: --tip-analytics-config-' + config.id">Analytics</div>
+
+            <button type="button" class="action-btn"
+                    [attr.aria-label]="'Rate limits of ' + name"
+                    [attr.interestfor]="'tip-limits-config-' + config.id"
+                    [attr.style]="'anchor-name: --tip-limits-config-' + config.id"
+                    (click)="rateLimits.open('system', config)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="'tip-limits-config-' + config.id"
+                 [attr.style]="'position-anchor: --tip-limits-config-' + config.id">Rate limits</div>
+
+            <button type="button" class="action-btn action-btn-danger"
+                    [attr.aria-label]="'Delete config ' + name"
+                    [attr.aria-disabled]="deleteConfigCheckingId === config.id ? 'true' : null"
+                    [attr.interestfor]="'tip-delete-config-' + config.id"
+                    [attr.style]="'anchor-name: --tip-delete-config-' + config.id"
+                    (click)="requestDeleteConfig(config)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="'tip-delete-config-' + config.id"
+                 [attr.style]="'position-anchor: --tip-delete-config-' + config.id">Delete config</div>
+          </div>
+
+          <app-model-card-settings [model]="config" />
+
+          <ul class="gh-model-card-badges gh-model-card-status" role="list" aria-label="Use and access">
+            @for (badge of modelRoleBadges(config.modelRole); track badge.label) {
+              <li><span class="status-badge" [ngClass]="badge.cssClass"><span class="visually-hidden">role </span>{{ badge.label }}</span></li>
+            }
+            @if (config.isSystemWide) {
+              <li><span class="badge-system-wide">System Wide</span></li>
+            }
+            @if (!config.isEnabled) {
+              <li><span class="badge-disabled">Disabled</span></li>
+            }
+            @let keyBadge = configKeyBadge(config);
+            <li><span class="status-badge config-key-badge" [ngClass]="keyBadge.cssClass">{{ keyBadge.label }}</span></li>
+          </ul>
+
+          <app-model-card-facts [model]="config" />
+
+          @if (isFlagged(config)) {
+            <app-model-availability-notice class="config-availability-notice gh-model-card-notice" variant="row"
+                                           [availability]="config.modelAvailability"
+                                           [modelName]="availabilityModelName(config)"
+                                           [modelId]="config.modelId">
+              <button type="button" class="btn-ghost config-row-resolve" [id]="'config-resolve-' + config.id"
+                      aria-haspopup="dialog" [attr.aria-label]="resolveLabel(config)"
+                      (click)="openResolve(config)">Resolve…</button>
+            </app-model-availability-notice>
+          }
+        </article>
+      </li>
     }
-  </div>
+  </ul>
 }
 
 <dialog #configDialog class="settings-dialog model-form-dialog">

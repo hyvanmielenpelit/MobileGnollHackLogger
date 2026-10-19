@@ -315,6 +315,36 @@ describe('ModelPickerToolsComponent', () => {
       update({ state: { sort: 'name-asc', thinking: 'lowest-first', providers: [], search: '' } });
       expect(sortButton().getAttribute('aria-label')).toBe('Sort models: Name (A–Z)');
     });
+
+    it('shows every choice of the Sort panel without scrolling when the thinking-level group is shown', () => {
+      const expectWhole = () => {
+        const panel = sortPanel();
+        expect(panel.scrollHeight).toBeLessThanOrEqual(panel.clientHeight);
+        const clear = panel.querySelector<HTMLElement>('.model-picker-sort-clear')!;
+        expect(clear.getBoundingClientRect().bottom).toBeLessThanOrEqual(panel.getBoundingClientRect().bottom + 0.5);
+      };
+
+      update({ thinking: true });
+      sortPanel().showPopover();
+      fixture.detectChanges();
+      expect(el.querySelector('.model-picker-thinking-hint')).not.toBeNull();
+      expectWhole();
+
+      choose(radios().find(r => r.value === 'name-asc')!);
+      expectWhole();
+      sortPanel().hidePopover();
+    });
+
+    it('draws the rule between the groups under Sort by, not through the Thinking level legend', () => {
+      update({ thinking: true });
+      sortPanel().showPopover();
+      fixture.detectChanges();
+      const [sortBy, thinkingLevel] = Array.from(sortPanel().querySelectorAll<HTMLFieldSetElement>('fieldset.gh-facet-group'));
+      expect(thinkingLevel).toBe(thinkingGroup()!);
+      expect(getComputedStyle(thinkingLevel).borderBlockStartWidth).toBe('0px');
+      expect(getComputedStyle(sortBy).borderBlockEndWidth).toBe('1px');
+      sortPanel().hidePopover();
+    });
   });
 
   it('makes Clear sorting inert under the default order, and otherwise clears the sort and keeps the rest', () => {
