@@ -156,9 +156,13 @@ an added or deleted question, or an accepted rubric addition (§ 5) all move the
 
 ## 4. The Deliverable
 
-**One file, `agent-rubric-repair-<slug>.yaml`, written beside the export, outside every
-repository.** `<slug>` follows the same rule `server_snapshot_suite_authoring` uses for its own
-output — the suite name, lower-cased and reduced to `[a-z0-9-]`. The file carries:
+**One file, `agent-rubric-repair-<slug>.yaml`, written in the task directory of the
+implementation plan that creates it**, beside the plan in the plans repository, with the plans
+repository's version suffix — `agent-rubric-repair-<slug>_v1.yaml`, then `_v2` for a revision,
+never overwriting an earlier version. A repair made without a plan is written beside the export.
+Either way it stays outside this repository. `<slug>` follows the same rule
+`server_snapshot_suite_authoring` uses for its own output — the suite name, lower-cased and
+reduced to `[a-z0-9-]`. The file carries:
 
 - The **two header lines** `format: overseer-benchmark-questions` and `version: 1` —
   `question-yaml-format.ts`'s H1/H2, the same header every suite YAML in this repository's tool
@@ -177,8 +181,9 @@ output — the suite name, lower-cased and reduced to `[a-z0-9-]`. The file carr
   § 4a's self-check, which drops such an item for the same reason).
 - **UTF-8 without a BOM, LF line endings, spaces only** — the same convention
   `server_snapshot_suite_authoring` uses for its own output files, and for the same reason: these
-  files live outside every repository, so the repository's CRLF convention does not apply to
-  them, and LF keeps a byte comparison against the export meaningful.
+  files live outside this repository, so its CRLF convention does not apply to them, and LF keeps
+  a byte comparison against the export meaningful. The plans repository's `.gitattributes` pins
+  `*.yaml` to LF for the same reason.
 
 Beside the file, in prose:
 

@@ -701,7 +701,8 @@ A runbook's artifacts go in **one version folder** of the run-artifacts folder:
   `<model folder>\Battery` and `<model folder>\Run <id>` for the reports and tool-call logs, `UI\`
   for every screenshot, capture and downloaded image a criterion is read from, and, when the step
   asks for them, the suite YAML exports.
-- A rubric repair file stays beside the export it was made from.
+- A rubric repair file, and any suite or questions YAML an implementation plan creates, stays in
+  that plan's task directory in the plans repository; a step that imports one names that path.
 - The next round's runbook starts `v<N+1>`.
 - Each `SAVE` step names the exact subfolder, so the developer never chooses one.
 

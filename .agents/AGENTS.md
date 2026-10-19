@@ -139,7 +139,7 @@ Rationale, the `[Trait("Category", "UsesExternalApi")]` convention, live-model p
 ## Environment & Shell Conventions
 
 - **Operating System:** Development and tool execution take place on Windows. For PowerShell commands, syntax rules, quoting, and file I/O best practices, follow the global `agent-powershell-guidelines` skill.
-- **Snapshot Suite Wizard files:** Files written for the Snapshot Suite Wizard (`agent-new-suite-<slug>.yaml`, `agent-new-questions-<slug>.yaml`) and the rubric-repair handoff (`agent-rubric-repair-<slug>.yaml`) live outside the repository and are written UTF-8 without a BOM with **LF** line endings, matching Overseer's own downloads; the repository's CRLF convention does not apply to them. The rules and their reasons are in the `server_snapshot_suite_authoring` and `server_rubric_handoff` skills.
+- **Snapshot Suite Wizard files:** Files written for the Snapshot Suite Wizard (`agent-new-suite-<slug>.yaml`, `agent-new-questions-<slug>.yaml`) and the rubric-repair handoff (`agent-rubric-repair-<slug>.yaml`) live outside the repository. One that an implementation plan creates goes in that plan's task directory in the plans repository, beside the plan, with a `_v<N>` suffix; one made without a plan goes beside its input file. They are written UTF-8 without a BOM with **LF** line endings, matching Overseer's own downloads; the repository's CRLF convention does not apply to them. The rules and their reasons are in the `server_snapshot_suite_authoring` and `server_rubric_handoff` skills.
 
 ## Implementation Plans
 
