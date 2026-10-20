@@ -3738,6 +3738,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   onEnter(event: Event) {
     const keyboardEvent = event as KeyboardEvent;
     if (!keyboardEvent.shiftKey) {
+      // Enter that confirms an IME composition belongs to the IME. keyCode 229 catches
+      // Safari, which fires compositionend before this keydown (WebKit bug 165004).
+      if (keyboardEvent.isComposing || keyboardEvent.keyCode === 229) {
+        return;
+      }
       keyboardEvent.preventDefault();
       this.sendMessage();
     }

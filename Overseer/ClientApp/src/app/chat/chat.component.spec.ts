@@ -3367,3 +3367,63 @@ describe('ChatComponent Overseer AI chat block', () => {
     expect(sendButton().hasAttribute('aria-disabled')).toBe(false);
   });
 });
+
+describe('ChatComponent Enter-to-send', () => {
+  let component: ChatComponent;
+  let fixture: ComponentFixture<ChatComponent>;
+  let sendSpy: Mock;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ChatComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting()
+      ]
+    }).compileComponents();
+
+    stubSignalRConnection();
+    fixture = TestBed.createComponent(ChatComponent);
+    component = fixture.componentInstance;
+    sendSpy = vi.spyOn(component, 'sendMessage').mockResolvedValue();
+    fixture.detectChanges();
+  });
+
+  /** Dispatches a keydown on the prompt textarea and returns the event. */
+  function pressEnter(init: KeyboardEventInit): KeyboardEvent {
+    const textarea = fixture.nativeElement.querySelector('textarea.transparent-textarea') as HTMLTextAreaElement;
+    expect(textarea).not.toBeNull();
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...init });
+    textarea.dispatchEvent(event);
+    return event;
+  }
+
+  it('sends on a plain Enter and keeps the newline out', () => {
+    const event = pressEnter({});
+
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('does not send while an IME composition is active', () => {
+    const event = pressEnter({ isComposing: true });
+
+    expect(sendSpy).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("does not send on Safari's keyCode 229 confirming Enter", () => {
+    const event = pressEnter({ keyCode: 229 });
+
+    expect(sendSpy).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('inserts a newline on Shift+Enter', () => {
+    const event = pressEnter({ shiftKey: true });
+
+    expect(sendSpy).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
