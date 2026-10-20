@@ -416,7 +416,20 @@
         <li class="tl-item">
           <article class="tl-card" [attr.aria-labelledby]="'tl-card-' + i + '-title'">
             <div class="tl-card-head">
-              <h5 class="tl-card-title" [id]="'tl-card-' + i + '-title'">@for (part of titleParts(card); track $index) {@if (part.match) {<mark class="model-option-match">{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</h5>
+              <div class="tl-card-title-row">
+                <h5 class="tl-card-title" [id]="'tl-card-' + i + '-title'">@for (part of titleParts(card); track $index) {@if (part.match) {<mark class="model-option-match">{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</h5>
+                <div class="tl-card-actions" role="group" [attr.aria-label]="'Actions for ' + cardLabel(card)">
+                  <button type="button" class="action-btn tl-card-users" aria-haspopup="dialog"
+                          [attr.aria-label]="'Usage by user: ' + cardLabel(card)"
+                          [attr.interestfor]="'tl-card-' + i + '-users-tip'"
+                          [attr.style]="'anchor-name: --tl-card-' + i + '-users'"
+                          (click)="openModelUsers(card, $event)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tl-card-' + i + '-users-tip'"
+                       [attr.style]="'position-anchor: --tl-card-' + i + '-users'">Usage by user</div>
+                </div>
+              </div>
               <p class="gh-model-card-identity tl-card-identity">
                 @if (card.modelName) {
                   <code class="gh-model-card-model-id">@for (part of modelIdParts(card); track $index) {@if (part.match) {<mark class="model-option-match">{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</code>
@@ -489,3 +502,5 @@
 </section>
 
 <app-telemetry-charts-dialog #chartsDialog />
+
+<app-telemetry-model-users-dialog #modelUsersDialog />

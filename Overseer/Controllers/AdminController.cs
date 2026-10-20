@@ -1389,6 +1389,25 @@ public class AdminController : ControllerBase
         => Ok(await summaryService.GetUsersAsync(startDate, endDate, search,
             string.IsNullOrWhiteSpace(userId) ? null : userId, sort, skip, take));
 
+    /// <summary>Usage of one model by user, in one key source and the given role groups.</summary>
+    /// <param name="keys">system (default) | user.</param>
+    /// <param name="roles">Comma-separated role groups: chat, title, benchmark, other.</param>
+    [HttpGet("ai-telemetry/model-users")]
+    public async Task<IActionResult> GetAiTelemetryModelUsers([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromQuery] string? keys, [FromQuery] string? provider, [FromQuery] string? modelId, [FromQuery] string? roles,
+        [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
+    {
+        if (string.IsNullOrWhiteSpace(provider) || string.IsNullOrWhiteSpace(modelId))
+        {
+            return BadRequest(new { message = "provider and modelId are required." });
+        }
+
+        var roleList = (roles ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+        return Ok(await summaryService.GetModelUsersAsync(startDate, endDate, keys, provider, modelId, roleList));
+    }
+
     // --- Helper Methods ---
 
     private void EncryptApiKey(SystemAiApiConfiguration config, string plainText)

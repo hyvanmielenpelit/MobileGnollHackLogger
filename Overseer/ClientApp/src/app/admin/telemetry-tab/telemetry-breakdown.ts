@@ -12,6 +12,9 @@ import {
   searchTerms,
   thinkingLevelRank
 } from '../../shared/model-picker/model-picker-view';
+import { formatThinkingLevel } from '../../utils/model-badge-format.util';
+import { formatCost } from '../benchmark/batteries/battery.models';
+import { formatInteger } from '../benchmark/shared/provider-availability/provider-availability';
 
 /** Every role group, in display order. */
 export const ROLE_GROUPS: readonly AiUsageRoleGroup[] = ['chat', 'title', 'benchmark', 'other'];
@@ -173,9 +176,30 @@ export function isDefaultBreakdownSort(sort: BreakdownSort): boolean {
   return sort.field === DEFAULT_BREAKDOWN_SORT.field && sort.direction === DEFAULT_BREAKDOWN_SORT.direction;
 }
 
-type Sums = Omit<BreakdownMetrics, 'cacheHitRatio' | 'avgDurationMs' | 'unpricedRequests' | 'pricedShare'>;
+/** The additive part of `BreakdownMetrics`. */
+export type MetricSums = Omit<BreakdownMetrics, 'cacheHitRatio' | 'avgDurationMs' | 'unpricedRequests' | 'pricedShare'>;
 
-function emptySums(): Sums {
+/** What `addMetricRow` adds: a usage row or a sum of rows; a row without attempt figures adds none. */
+export interface MetricRow {
+  /** Present on a sum: the rows it holds; a row counts as one. */
+  rowCount?: number;
+  requests: number;
+  promptTokens: number;
+  uncachedInputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  outputTokens: number;
+  durationSumMs: number;
+  durationCount: number;
+  estimatedCost: number;
+  pricedRequests: number;
+  validAttempts?: number;
+  providerErrors?: number;
+  unattributedErrors?: number;
+  ourSideFailures?: number;
+}
+
+export function emptyMetricSums(): MetricSums {
   return {
     rowCount: 0, requests: 0, promptTokens: 0, uncachedInputTokens: 0, cacheReadTokens: 0,
     cacheCreationTokens: 0, outputTokens: 0, durationSumMs: 0, durationCount: 0, estimatedCost: 0,
@@ -183,8 +207,8 @@ function emptySums(): Sums {
   };
 }
 
-function addRow(sums: Sums, row: AiUsageBreakdownRowDto | Sums): void {
-  sums.rowCount += 'rowCount' in row ? row.rowCount : 1;
+export function addMetricRow(sums: MetricSums, row: MetricRow): void {
+  sums.rowCount += row.rowCount ?? 1;
   sums.requests += row.requests;
   sums.promptTokens += row.promptTokens;
   sums.uncachedInputTokens += row.uncachedInputTokens;
@@ -195,13 +219,13 @@ function addRow(sums: Sums, row: AiUsageBreakdownRowDto | Sums): void {
   sums.durationCount += row.durationCount;
   sums.estimatedCost += row.estimatedCost;
   sums.pricedRequests += row.pricedRequests;
-  sums.validAttempts += row.validAttempts;
-  sums.providerErrors += row.providerErrors;
-  sums.unattributedErrors += row.unattributedErrors;
-  sums.ourSideFailures += row.ourSideFailures;
+  sums.validAttempts += row.validAttempts ?? 0;
+  sums.providerErrors += row.providerErrors ?? 0;
+  sums.unattributedErrors += row.unattributedErrors ?? 0;
+  sums.ourSideFailures += row.ourSideFailures ?? 0;
 }
 
-function derive(sums: Sums): BreakdownMetrics {
+export function deriveMetrics(sums: MetricSums): BreakdownMetrics {
   return {
     ...sums,
     cacheHitRatio: sums.promptTokens > 0 ? sums.cacheReadTokens / sums.promptTokens : null,
@@ -233,7 +257,7 @@ function groupKey(row: AiUsageBreakdownRowDto, separateThinkingLevels: boolean):
  */
 export function buildBreakdown(rows: readonly AiUsageBreakdownRowDto[], options: BreakdownOptions): Breakdown {
   const roles = new Set(options.roles);
-  const groups = new Map<string, { head: Omit<BreakdownCard, keyof BreakdownMetrics | 'thinkingLevels'>; levels: Set<string>; sums: Sums }>();
+  const groups = new Map<string, { head: Omit<BreakdownCard, keyof BreakdownMetrics | 'thinkingLevels'>; levels: Set<string>; sums: MetricSums }>();
 
   for (const row of rows) {
     if (!roles.has(row.roleGroup)) {
@@ -255,7 +279,7 @@ export function buildBreakdown(rows: readonly AiUsageBreakdownRowDto[], options:
           thinkingLevel: options.separateThinkingLevels ? row.thinkingLevel ?? null : undefined
         },
         levels: new Set<string>(),
-        sums: emptySums()
+        sums: emptyMetricSums()
       };
       groups.set(key, group);
     } else {
@@ -268,13 +292,13 @@ export function buildBreakdown(rows: readonly AiUsageBreakdownRowDto[], options:
     if (level) {
       group.levels.add(level);
     }
-    addRow(group.sums, row);
+    addMetricRow(group.sums, row);
   }
 
   const all: BreakdownCard[] = Array.from(groups.values(), g => ({
     ...g.head,
     thinkingLevels: [...g.levels].sort((a, b) => thinkingLevelRank(a) - thinkingLevelRank(b) || collator.compare(a, b)),
-    ...derive(g.sums)
+    ...deriveMetrics(g.sums)
   }));
   all.sort(compareByDefault);
 
@@ -283,17 +307,17 @@ export function buildBreakdown(rows: readonly AiUsageBreakdownRowDto[], options:
     filterBreakdownCards(all, { search: options.search ?? '', providers }),
     options.sort ?? DEFAULT_BREAKDOWN_SORT);
 
-  const total = emptySums();
+  const total = emptyMetricSums();
   for (const card of cards) {
-    addRow(total, card);
+    addMetricRow(total, card);
   }
-  return { all, cards, total: derive(total) };
+  return { all, cards, total: deriveMetrics(total) };
 }
 
 const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 
 /** The catalog's order; an unset level last, and of the two unset ones not recorded before none sent; then by name. */
-function compareThinkingLevels(a: string | null | undefined, b: string | null | undefined): number {
+export function compareThinkingLevels(a: string | null | undefined, b: string | null | undefined): number {
   const recorded = (level: string | null | undefined): number => level === null || level === undefined ? 0 : 1;
   return thinkingLevelRank(a) - thinkingLevelRank(b)
     || recorded(a) - recorded(b)
@@ -431,6 +455,50 @@ export function roleCosts(rows: readonly AiUsageBreakdownRowDto[]): Record<AiUsa
     }
   }
   return costs;
+}
+
+// --- Card text -------------------------------------------------------------------------------
+
+/** A badge of a breakdown card's badge row; `prefix` is read before the text by assistive technology only. */
+export interface TelemetryCardBadge {
+  cssClass: string;
+  prefix: string;
+  text: string;
+}
+
+/** A metric's value, and the qualifier line under it when there is one. */
+export interface TelemetryMetricText {
+  value: string;
+  note: string | null;
+  /** The value is a placeholder rather than a figure. */
+  muted: boolean;
+}
+
+/**
+ * Shown separately, the card's one level, or None sent or Not recorded in a neutral badge, since
+ * those are not levels; grouped, one badge per recorded level, none for the others.
+ */
+export function thinkingBadgesOf(card: Pick<BreakdownCard, 'thinkingLevel' | 'thinkingLevels'>): TelemetryCardBadge[] {
+  const prefix = 'thinking level';
+  if (card.thinkingLevel === undefined) {
+    return card.thinkingLevels.map(level => ({ cssClass: 'thinking-badge', prefix, text: formatThinkingLevel(level) }));
+  }
+  if (card.thinkingLevel === null || card.thinkingLevel === '') {
+    return [{ cssClass: 'config-badge', prefix, text: thinkingLevelLabel(card.thinkingLevel) }];
+  }
+  return [{ cssClass: 'thinking-badge', prefix, text: formatThinkingLevel(card.thinkingLevel.trim().toLowerCase()) }];
+}
+
+/** The estimated cost, with `3 unpriced` while part of the requests has no price. */
+export function costMetricText(m: BreakdownMetrics): TelemetryMetricText {
+  if (m.requests > 0 && m.pricedRequests === 0) {
+    return { value: '—', note: `${formatInteger(m.unpricedRequests)} unpriced`, muted: true };
+  }
+  return {
+    value: formatCost(m.estimatedCost),
+    note: m.unpricedRequests > 0 ? `${formatInteger(m.unpricedRequests)} unpriced` : null,
+    muted: false
+  };
 }
 
 // --- View settings ---------------------------------------------------------------------------

@@ -95,6 +95,45 @@ button (*Date range and keys*, `aria-expanded`) collapses the bar to one line, *
 configurations*. The head's height is kept in `--tl-sticky-clearance`, so a focused or scrolled-to element
 stops below it.
 
+## 7a. Usage of a model by user
+
+Each model card (not *All shown*) has a *pie-chart* icon button at the end of its title, *Usage by user:
+{model} · {role}* (plus the level under *Show separately* and the key badge's text where there is one, so
+every button's name is distinct). It opens the full-screen **Usage by user** dialog
+(`model-users/telemetry-model-users-dialog.component.ts`), which lists every user of that model as one
+full-width card.
+
+- **Scope.** The card's provider, model id, role group and key source, over the tab's range: a *System*
+  card lists the users of that model on system AI configurations; a *User key* card lists every user who
+  used that model on **their own key**, not only the card's user. All thinking levels are fetched; the
+  *Thinking level* filter (*All levels*, each recorded level, *None sent*, *Not recorded*; shown from two
+  level values up) is preset to the card's level when the card was opened under *Show separately*, else
+  *All levels*, so a system card's dialog totals equal the card's own figures. The filter applies to the
+  rows before grouping.
+- **Cards.** One per user, or per user and level with *Thinking levels: Show separately* (the dialog's own
+  setting, stored apart from the main list's). Each card shows the rank, the user name (*Unknown user* when
+  the account is gone), the thinking badges, the last request in UTC, a share bar and the figures:
+  *Requests*, *Est. cost*, *Input (uncached)*, *Cache read*, *Cache created*, *Output*, *Total tokens*,
+  *Cache hit*, *Avg duration*. Every additive figure carries *{p} of total*.
+- **Shares and rank are of the scope**: the users matching the level filter, **before the search**. The
+  search is a find tool, so a found user still shows its share of the whole and its rank in the current
+  sort. The summary strip above the list shows that total: *Users*, *Requests*, *Est. cost*, *Total
+  tokens* and *Top user* (rank 1, with its share of the sort field, or of requests when the sort is not an
+  additive figure; the share bars follow the same rule). *All matching*, after the shown cards, sums every
+  card that matches the search and the level filter, including those a batch has not shown yet.
+- **Sort**: *Est. cost* (the default, highest first), *Requests*, *Input (uncached)*, *Cache read*, *Cache
+  created*, *Output*, *Total tokens*, *Cache hit*, *Avg duration*, *Last request* (*Newest first* /
+  *Oldest first*) or *User name* (*A–Z* / *Z–A*). A user without a figure for the field (an unpriced cost,
+  no cache hit or duration, no name under *User name*) sorts last in both orders. Ties go by user name,
+  then thinking level, then the card key.
+- **Provider errors are not shown per user.** `ChatProviderAttempt.AspNetUserId` is set on user-key
+  attempts only, so system-configuration attempts cannot be attributed to a user; the dialog leaves the
+  metric out and, for system scope, says so under the summary.
+- **Batches** of 50 cards, with *Show N more* and *Show all M*; focus moves to the first new card's
+  title. The endpoint returns every group of the model, so sorting and shares are exact on the client.
+- **Storage**: `overseer.admin.telemetry.modelUsers` = `{ version: 1, separateThinkingLevels, sort }`; the
+  search and the level filter are not stored.
+
 ## 8. Estimated cost
 
 Cost is priced **per call at record time**, because long-context rates (Claude Haiku 5.5 above 100,000
@@ -236,17 +275,20 @@ controls hidden through `hiddenKeys`), and **Download** (size and format).
 | `GET` | `api/admin/ai-telemetry/summary?startDate&endDate&keys` | totals, breakdown rows, cost, availability, activity |
 | `GET` | `api/admin/ai-telemetry/series?startDate&endDate&keys&roles&bucket&splitBy&userId` | the series (400 past 1,100 buckets) |
 | `GET` | `api/admin/ai-telemetry/users?startDate&endDate&search&userId&sort&skip&take` | the Users view page (`take` 1–100) |
+| `GET` | `api/admin/ai-telemetry/model-users?startDate&endDate&keys&provider&modelId&roles` | one model's usage by user, role context and thinking level (`keys` system or user; 400 without `provider` or `modelId`) |
 
 The breakdown's view settings are stored as `overseer.admin.telemetry.breakdown`
 (`{ version: 1, roles, separateThinkingLevels, keys, sort, providers, toolbarCollapsed }`, `sort` being
 `{ field, direction }`; a record without the last three reads them as their defaults); the search is not
 stored, so an old search never hides cards on a later visit. The Users view's settings are stored as
-`overseer.admin.telemetry.users.view`.
+`overseer.admin.telemetry.users.view`, and the Usage by user dialog's as
+`overseer.admin.telemetry.modelUsers` (`{ version: 1, separateThinkingLevels, sort }`).
 
 ## 15. Tests
 
 `AdminTelemetrySummaryTests`, `AdminTelemetrySeriesTests`, `AdminTelemetryUsersTests`,
-`ActivityCounterTests`, `ActivityCountingCallSiteTests`, `SystemAiUsageRecordingTests`,
+`AdminTelemetryModelUsersTests`, `ActivityCounterTests`, `ActivityCountingCallSiteTests`, `SystemAiUsageRecordingTests`,
 `ChatProviderAttemptLedgerTests`, `TitleAttemptClassificationTests`, `ProviderTitleUsageTests` and
 `ChatProviderAttemptMaintenanceTests` in `Overseer.Tests/UnitTests/`; the client specs beside the tab,
-the Users view and the charts dialog.
+the Users view, the charts dialog and the Usage by user dialog (`telemetry-model-users.spec.ts`,
+`telemetry-model-users-dialog.component.spec.ts`).

@@ -18,7 +18,6 @@ import {
   matchParts,
   searchTerms
 } from '../../shared/model-picker/model-picker-view';
-import { formatThinkingLevel } from '../../utils/model-badge-format.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { formatCost } from '../benchmark/batteries/battery.models';
 import {
@@ -32,6 +31,7 @@ import {
 } from '../benchmark/shared/provider-availability/provider-availability';
 import { AdminPageStore, TelemetryTimeSpan } from '../admin-page.store';
 import { TelemetryChartsDialogComponent } from './charts/telemetry-charts-dialog.component';
+import { TelemetryModelUsersDialogComponent } from './model-users/telemetry-model-users-dialog.component';
 import {
   BREAKDOWN_SORT_FIELDS,
   Breakdown,
@@ -45,18 +45,22 @@ import {
   KEY_SOURCE_LABELS,
   NAMED_ROLE_GROUPS,
   TelemetryBreakdownView,
+  TelemetryCardBadge,
+  TelemetryMetricText,
   breakdownDirectionLabel,
   breakdownProviderFacets,
   breakdownSortField,
   breakdownSortLabel,
   buildBreakdown,
   cardTitle,
+  costMetricText,
   effectiveBreakdownProviders,
   isDefaultBreakdownSort,
   readBreakdownView,
   roleCosts,
   roleCounts,
   roleGroupLabel,
+  thinkingBadgesOf,
   thinkingLevelLabel,
   writeBreakdownView
 } from './telemetry-breakdown';
@@ -75,13 +79,6 @@ export const TELEMETRY_TIME_SPAN_LABELS: Readonly<Record<TelemetryTimeSpan, stri
 
 const TIME_SPANS = Object.keys(TELEMETRY_TIME_SPAN_LABELS) as TelemetryTimeSpan[];
 
-/** A badge of a breakdown card's badge row; `prefix` is read before the text by assistive technology only. */
-export interface TelemetryCardBadge {
-  cssClass: string;
-  prefix: string;
-  text: string;
-}
-
 const ROLE_BADGE_CLASSES: Readonly<Record<AiUsageRoleGroup, string>> = {
   chat: 'badge-role-chat',
   title: 'badge-role-title',
@@ -91,14 +88,6 @@ const ROLE_BADGE_CLASSES: Readonly<Record<AiUsageRoleGroup, string>> = {
 
 /** The applied search follows the field after this much quiet, so the status line is not announced per keystroke. */
 const SEARCH_DEBOUNCE_MS = 200;
-
-/** A metric's value, and the qualifier line under it when there is one. */
-export interface TelemetryMetricText {
-  value: string;
-  note: string | null;
-  /** The value is a placeholder rather than a figure. */
-  muted: boolean;
-}
 
 /** A labeled line of a summary card. */
 export interface TelemetrySummaryLine {
@@ -116,7 +105,7 @@ const NO_ROWS: readonly AiUsageBreakdownRowDto[] = [];
  */
 @Component({
   selector: 'app-admin-telemetry-tab',
-  imports: [CommonModule, FormsModule, ProviderBadgeComponent, TelemetryUsersComponent, TelemetryChartsDialogComponent],
+  imports: [CommonModule, FormsModule, ProviderBadgeComponent, TelemetryUsersComponent, TelemetryChartsDialogComponent, TelemetryModelUsersDialogComponent],
   templateUrl: './admin-telemetry-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
   styleUrl: './admin-telemetry-tab.component.scss'
@@ -127,6 +116,7 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
   private host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   @ViewChild('chartsDialog') chartsDialog?: TelemetryChartsDialogComponent;
+  @ViewChild('modelUsersDialog') modelUsersDialog?: TelemetryModelUsersDialogComponent;
   @ViewChild(TelemetryUsersComponent, { static: true }) usersView?: TelemetryUsersComponent;
   @ViewChild('tlHead') private tlHead?: ElementRef<HTMLElement>;
 
@@ -480,6 +470,35 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
       userId: user.userId,
       userName: user.userName
     });
+  }
+
+  // --- Usage by user ---
+
+  /** `Claude X · Chat`, with the level under Show separately and the key badge's text where there is one. */
+  cardLabel(card: BreakdownCard): string {
+    const parts = [cardTitle(card), roleGroupLabel(card.roleGroup)];
+    if (card.thinkingLevel !== undefined) {
+      parts.push(thinkingLevelLabel(card.thinkingLevel));
+    }
+    const key = this.keyLabel(card);
+    if (key) {
+      parts.push(key);
+    }
+    return parts.join(' · ');
+  }
+
+  /** Opens the Usage by user dialog for the card's model, role group, key source and level, over the tab's range. */
+  openModelUsers(card: BreakdownCard, event?: Event) {
+    this.modelUsersDialog?.open({
+      start: this.telemetryStartDate,
+      end: this.telemetryEndDate,
+      keySource: card.keySource,
+      provider: card.provider,
+      modelId: card.modelId,
+      modelTitle: cardTitle(card),
+      roleGroup: card.roleGroup,
+      thinkingLevel: card.thinkingLevel
+    }, (event?.currentTarget as HTMLElement | null) ?? undefined);
   }
 
   // --- Users view ---
@@ -887,14 +906,7 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
   thinkingBadges(card: BreakdownCard): TelemetryCardBadge[] {
     let badges = this.badgeMemo.get(card);
     if (!badges) {
-      const prefix = 'thinking level';
-      if (card.thinkingLevel === undefined) {
-        badges = card.thinkingLevels.map(level => ({ cssClass: 'thinking-badge', prefix, text: formatThinkingLevel(level) }));
-      } else if (card.thinkingLevel === null || card.thinkingLevel === '') {
-        badges = [{ cssClass: 'config-badge', prefix, text: thinkingLevelLabel(card.thinkingLevel) }];
-      } else {
-        badges = [{ cssClass: 'thinking-badge', prefix, text: formatThinkingLevel(card.thinkingLevel.trim().toLowerCase()) }];
-      }
+      badges = thinkingBadgesOf(card);
       this.badgeMemo.set(card, badges);
     }
     return badges;
@@ -938,14 +950,7 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
 
   /** The estimated cost, with `3 unpriced` while part of the requests has no price. */
   costMetric(m: BreakdownMetrics): TelemetryMetricText {
-    if (m.requests > 0 && m.pricedRequests === 0) {
-      return { value: '—', note: `${formatInteger(m.unpricedRequests)} unpriced`, muted: true };
-    }
-    return {
-      value: formatCost(m.estimatedCost),
-      note: m.unpricedRequests > 0 ? `${formatInteger(m.unpricedRequests)} unpriced` : null,
-      muted: false
-    };
+    return costMetricText(m);
   }
 
   /**

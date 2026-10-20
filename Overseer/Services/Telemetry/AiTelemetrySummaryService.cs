@@ -907,6 +907,123 @@ public class AiTelemetrySummaryService
         };
     }
 
+    // --- Model users -----------------------------------------------------------------------------
+
+    /// <summary>One user's sums of one model in one role context and thinking level.</summary>
+    private sealed record ModelUserUsage(string UserId, int RoleContext, string? ThinkingLevel, long Requests, long Input, long Output,
+        long CacheRead, long CacheWrite, decimal Cost, long Priced, long DurationSum, long DurationCount, DateTime Last);
+
+    /// <summary>Usage of one model by user, in one key source and the given role groups.</summary>
+    /// <param name="keySource">user reads the user-key log; anything else, <c>both</c> included, reads the system log.</param>
+    /// <param name="roles">Role groups to include; null or empty: the three named groups.</param>
+    public async Task<AiTelemetryModelUsersDto> GetModelUsersAsync(DateTime? start, DateTime? end, string? keySource, string provider,
+        string modelId, IReadOnlyCollection<string>? roles, CancellationToken ct = default)
+    {
+        string keys = NormalizeKeySource(keySource) == "user" ? "user" : "system";
+        var roleSet = new HashSet<string>(roles is { Count: > 0 } ? roles : AiUsageRoles.NamedGroups, StringComparer.OrdinalIgnoreCase);
+
+        List<ModelUserUsage> usage;
+        DateTime? costSince;
+        if (keys == "user")
+        {
+            var q = InRange(_db.UserKeyAiUsageLogs.AsNoTracking(), start, end);
+            usage = (await q
+                .Where(l => l.Provider == provider && l.ModelId == modelId)
+                .GroupBy(l => new { l.AspNetUserId, l.RoleContext, l.ThinkingLevel })
+                .Select(g => new
+                {
+                    g.Key.AspNetUserId, g.Key.RoleContext, g.Key.ThinkingLevel,
+                    Requests = g.LongCount(),
+                    Input = g.Sum(x => (long)(x.InputTokens ?? 0)),
+                    Output = g.Sum(x => (long)(x.OutputTokens ?? 0)),
+                    CacheRead = g.Sum(x => (long)(x.CacheReadInputTokens ?? 0)),
+                    CacheWrite = g.Sum(x => (long)(x.CacheCreationInputTokens ?? 0)),
+                    Cost = g.Sum(x => x.EstimatedCost ?? 0m),
+                    Priced = g.LongCount(x => x.EstimatedCost != null),
+                    DurationSum = g.Sum(x => (long)(x.TotalDurationMs ?? 0)),
+                    DurationCount = g.LongCount(x => x.TotalDurationMs != null),
+                    Last = g.Max(x => x.TimestampUtc)
+                })
+                .ToListAsync(ct))
+                .Select(a => new ModelUserUsage(a.AspNetUserId, a.RoleContext, a.ThinkingLevel, a.Requests, a.Input, a.Output, a.CacheRead,
+                    a.CacheWrite, a.Cost, a.Priced, a.DurationSum, a.DurationCount, a.Last))
+                .ToList();
+            costSince = await q.Where(l => l.EstimatedCost != null).MinAsync(l => (DateTime?)l.TimestampUtc, ct);
+        }
+        else
+        {
+            var q = InRange(_db.SystemAiUsageLogs.AsNoTracking(), start, end);
+            usage = (await q
+                .Where(l => l.Provider == provider && l.ModelId == modelId)
+                .GroupBy(l => new { l.AspNetUserId, l.RoleContext, l.ThinkingLevel })
+                .Select(g => new
+                {
+                    g.Key.AspNetUserId, g.Key.RoleContext, g.Key.ThinkingLevel,
+                    Requests = g.LongCount(),
+                    Input = g.Sum(x => (long)(x.InputTokens ?? 0)),
+                    Output = g.Sum(x => (long)(x.OutputTokens ?? 0)),
+                    CacheRead = g.Sum(x => (long)(x.CacheReadInputTokens ?? 0)),
+                    CacheWrite = g.Sum(x => (long)(x.CacheCreationInputTokens ?? 0)),
+                    Cost = g.Sum(x => x.EstimatedCost ?? 0m),
+                    Priced = g.LongCount(x => x.EstimatedCost != null),
+                    DurationSum = g.Sum(x => (long)(x.TotalDurationMs ?? 0)),
+                    DurationCount = g.LongCount(x => x.TotalDurationMs != null),
+                    Last = g.Max(x => x.TimestampUtc)
+                })
+                .ToListAsync(ct))
+                .Select(a => new ModelUserUsage(a.AspNetUserId, a.RoleContext, a.ThinkingLevel, a.Requests, a.Input, a.Output, a.CacheRead,
+                    a.CacheWrite, a.Cost, a.Priced, a.DurationSum, a.DurationCount, a.Last))
+                .ToList();
+            costSince = await q.Where(l => l.EstimatedCost != null).MinAsync(l => (DateTime?)l.TimestampUtc, ct);
+        }
+
+        usage = usage.Where(u => roleSet.Contains(AiUsageRoles.GroupOf(u.RoleContext))).ToList();
+
+        var ids = usage.Select(u => u.UserId).Distinct().ToList();
+        var names = ids.Count == 0
+            ? new Dictionary<string, string?>()
+            : await _db.Users.AsNoTracking().Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.UserName, ct);
+
+        var rows = usage
+            .Select(u => new AiTelemetryModelUserRowDto
+            {
+                UserId = u.UserId,
+                UserName = names.TryGetValue(u.UserId, out var name) ? name : null,
+                RoleContext = u.RoleContext,
+                RoleGroup = AiUsageRoles.GroupOf(u.RoleContext),
+                ThinkingLevel = u.ThinkingLevel,
+                Requests = u.Requests,
+                PromptTokens = AiUsageRoles.PromptTokens(u.RoleContext, u.Input, u.CacheRead),
+                UncachedInputTokens = AiUsageRoles.UncachedInputTokens(u.RoleContext, u.Input, u.CacheRead, u.CacheWrite),
+                CacheReadTokens = u.CacheRead,
+                CacheCreationTokens = u.CacheWrite,
+                OutputTokens = u.Output,
+                DurationSumMs = u.DurationSum,
+                DurationCount = u.DurationCount,
+                EstimatedCost = u.Cost,
+                PricedRequests = u.Priced,
+                LastRequestUtc = DateTime.SpecifyKind(u.Last, DateTimeKind.Utc)
+            })
+            .OrderByDescending(r => r.EstimatedCost)
+            .ThenBy(r => r.UserName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.UserId, StringComparer.Ordinal)
+            .ThenBy(r => r.RoleContext)
+            .ThenBy(r => r.ThinkingLevel ?? string.Empty, StringComparer.Ordinal)
+            .ToList();
+
+        return new AiTelemetryModelUsersDto
+        {
+            KeySource = keys,
+            Provider = provider,
+            ModelId = modelId,
+            ModelName = ModelName(provider, modelId, new Dictionary<(string, string), string?>()),
+            Roles = AiUsageRoles.NamedGroups.Concat(new[] { AiUsageRoles.Other })
+                .Where(roleSet.Contains).ToList(),
+            CostRecordedSinceUtc = Utc(costSince),
+            Rows = rows
+        };
+    }
+
     /// <summary>A daily counter as the next request would see it: 0 when its last reset was before today (UTC).</summary>
     private static int EffectiveDaily(IRateLimitedEntity entity, DateTime now, int count) =>
         entity.LastDailyReset == null || entity.LastDailyReset.Value.Date < now.Date ? 0 : count;

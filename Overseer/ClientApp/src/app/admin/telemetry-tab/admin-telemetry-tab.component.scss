@@ -510,6 +510,25 @@ progress.telemetry-progress-bar {
   overflow-wrap: anywhere;
 }
 
+/* The title, and the card's icon buttons at its end. */
+.tl-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+
+  .tl-card-title {
+    flex: 1;
+    min-inline-size: 0;
+  }
+}
+
+.tl-card-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
 .tl-card-meta {
   margin: 0;
   font-size: var(--text-secondary);

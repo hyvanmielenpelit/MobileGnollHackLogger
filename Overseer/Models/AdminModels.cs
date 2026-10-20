@@ -401,6 +401,48 @@ public class AiUsageBreakdownRowDto
     public int OurSideFailures { get; set; }
 }
 
+/// <summary>The users of one model in one key source and role group, over a date range.</summary>
+public class AiTelemetryModelUsersDto
+{
+    /// <summary>system | user.</summary>
+    public string KeySource { get; set; } = "system";
+    public string Provider { get; set; } = string.Empty;
+    public string ModelId { get; set; } = string.Empty;
+
+    /// <summary>The catalog name, else the retired entry's, else null.</summary>
+    public string? ModelName { get; set; }
+
+    /// <summary>The role groups included: chat | title | benchmark | other.</summary>
+    public List<string> Roles { get; set; } = new();
+    public DateTime? CostRecordedSinceUtc { get; set; }
+    public List<AiTelemetryModelUserRowDto> Rows { get; set; } = new();
+}
+
+/// <summary>One user's usage of the model in one role context and thinking level.</summary>
+public class AiTelemetryModelUserRowDto
+{
+    public string UserId { get; set; } = string.Empty;
+
+    /// <summary>The user's current name; null when the account is gone.</summary>
+    public string? UserName { get; set; }
+    public int RoleContext { get; set; }
+    public string RoleGroup { get; set; } = string.Empty;
+
+    /// <summary>"" when none was sent, null when not recorded.</summary>
+    public string? ThinkingLevel { get; set; }
+    public long Requests { get; set; }
+    public long PromptTokens { get; set; }
+    public long UncachedInputTokens { get; set; }
+    public long CacheReadTokens { get; set; }
+    public long CacheCreationTokens { get; set; }
+    public long OutputTokens { get; set; }
+    public long DurationSumMs { get; set; }
+    public long DurationCount { get; set; }
+    public decimal EstimatedCost { get; set; }
+    public long PricedRequests { get; set; }
+    public DateTime? LastRequestUtc { get; set; }
+}
+
 /// <summary>
 /// Provider availability of the Overseer chat and title generation, from the provider-attempt ledger, with the
 /// same outcome classes, denominator and 10-minute cluster interval as GnollBench.

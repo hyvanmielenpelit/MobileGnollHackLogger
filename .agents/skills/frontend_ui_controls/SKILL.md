@@ -242,6 +242,7 @@ you already read the label, it is noise; drop it.
 | bar-chart-2 (Feather: three vertical lines of different heights) | **Charts** (`.btn-gh`, the AI Telemetry tab's header; opens the charts dialog), **Usage charts** (icon-only, each card of the AI Telemetry Users view; the dialog for that user), **Usage analytics of {name}** (icon-only, each System Configs card; opens the configuration's analytics dialog) | "Show it over time as charts" |
 | sliders (Feather *sliders*: three vertical lines with a knob each) | **Manage limits** (icon-only, each card of the AI Telemetry Users view; opens the user's *AI configuration access* dialog in the Users tab), **Rate limits of {name}** (icon-only, each System Configs card; opens the configuration's rate-limits dialog) | "Adjust settings" — the limits are tuned there, not here |
 | key (Feather *key*) | **API Keys** (`.btn-ghost`, the Admin System Configs header, `aria-haspopup="dialog"`; opens the *Default API Keys* dialog) | "Credentials": the stored keys the configurations sign in with |
+| pie-chart (Feather *pie-chart*: `<path d="M21.21 15.89A10 10 0 1 1 8 2.83">`, `<path d="M22 12A10 10 0 0 0 12 2v10z">`) | **Usage by user** (icon-only `.action-btn`, each model card of the AI Telemetry breakdown, `aria-haspopup="dialog"`; opens the full-screen *Usage by user* dialog) | "Break a whole into shares: who accounts for how much". Not *users*, which already means **Manage groups** on the Admin Users cards (see the 2026-10-13 note) |
 
 *Changed 2026-09-12 (harness 24 round): Import Default Suite(s) moved from `upload` to `download` —
 importing brings suites from the server's catalog into the application, which is the same
@@ -635,6 +636,15 @@ popover built like the model pickers', and the tab's sticky Date Range / Keys ba
 **Date range and keys** `.action-btn` with the down/up* chevron *as its state glyph. The provider
 toggles reuse the pickers' `.model-picker-provider` with its* check *state glyph. No glyph or class is
 new.*
+
+*Changed 2026-10-20 (AI Telemetry usage by user): one glyph is new.* pie-chart *marks the icon-only
+**Usage by user** `.action-btn` at the end of each breakdown card's title (in a `role="group"`
+*Actions for {card}*), named *Usage by user: {model} · {role}* with the level and key where they tell
+cards apart, and a *Usage by user* tooltip. The glyph that names people,* users*, was not used: it is
+the Admin Users cards' **Manage groups**, and one glyph keeps one meaning. The dialog it opens has a
+text-only **Done** (`btn-gh btn-gh-cancel`), a `.btn-ghost` **Retry** with* rotate *after a load
+error, the breakdown's `.btn-ghost` **Sort** trigger with* arrow-down-up*, and text-only **Show N
+more** (`.btn-ghost`) and **Show all M** (`.btn-link`) under its cards.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -2260,6 +2270,14 @@ tooltips. A table fights such rows at every width: it overflows sideways, wraps 
 and below some breakpoint has to fake cards anyway. A list of few values to scan and compare stays a §8
 table. Where a card list still has to scan like a table, give its metrics fixed-width columns so they
 line up down the list at a wide width, as Run History's `.rh-metrics` does.
+
+The **AI Telemetry Usage by user** dialog (`app-telemetry-model-users-dialog`, 2026-10-20) is the
+nineteenth: one full-width card per user of one model, with a rank, a share bar and the breakdown's
+metric columns, a user-name search, a *Thinking level* filter, a *Thinking levels* grouping select and
+the breakdown's Sort popover, in batches of 50 with *Show N more* / *Show all M*. Its recorded
+exception, like the breakdown's: no `CardListState`. Its filters are two selects, its sort the
+field-and-order popover the breakdown uses, and it is read-only and selects nothing, so the batching is
+a `visibleCount` in the component.
 
 **A metrics grid gets a definite track count.** `repeat(auto-fill, …)` inside a grid item that sits
 in an `auto` (content-sized) track repeats only once, because the item has no definite width, so

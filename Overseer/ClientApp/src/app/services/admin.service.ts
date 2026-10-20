@@ -652,6 +652,52 @@ export interface AiTelemetrySeriesQuery {
   userId?: string;
 }
 
+/** One user's usage of one model in one role context and thinking level; token figures normalized as the breakdown's. */
+export interface AiTelemetryModelUserRowDto {
+  userId: string;
+  /** The user's current name; null when the account is gone. */
+  userName?: string | null;
+  roleContext: number;
+  roleGroup: AiUsageRoleGroup;
+  /** "" when none was sent, null when not recorded. */
+  thinkingLevel?: string | null;
+  requests: number;
+  promptTokens: number;
+  uncachedInputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  outputTokens: number;
+  durationSumMs: number;
+  durationCount: number;
+  estimatedCost: number;
+  pricedRequests: number;
+  lastRequestUtc?: string | null;
+}
+
+/** The users of one model in one key source and the requested role groups, over a date range. */
+export interface AiTelemetryModelUsersDto {
+  keySource: 'system' | 'user';
+  provider: string;
+  modelId: string;
+  /** The catalog name, else the retired entry's, else null. */
+  modelName?: string | null;
+  /** The role groups included. */
+  roles: AiUsageRoleGroup[];
+  /** The earliest priced row of the chosen log in the range, of any model. */
+  costRecordedSinceUtc?: string | null;
+  rows: AiTelemetryModelUserRowDto[];
+}
+
+export interface AiTelemetryModelUsersQuery {
+  startDate?: string;
+  endDate?: string;
+  keys: 'system' | 'user';
+  provider: string;
+  modelId: string;
+  /** Role groups; empty: the three named groups. */
+  roles: AiUsageRoleGroup[];
+}
+
 export interface AiGovernorKeyStatusDto {
   credentialKey: string;
   isRateLimited: boolean;
@@ -1195,5 +1241,17 @@ export class AdminService {
     if (query.skip) params.skip = query.skip;
     if (query.take) params.take = query.take;
     return this.http.get<AiTelemetryUsersPage>('/api/Admin/ai-telemetry/users', { params });
+  }
+
+  /** Usage of one model by user, in one key source and the given role groups; 400 without a provider or model id. */
+  getAiTelemetryModelUsers(query: AiTelemetryModelUsersQuery): Observable<AiTelemetryModelUsersDto> {
+    const params: any = {};
+    if (query.startDate) params.startDate = query.startDate;
+    if (query.endDate) params.endDate = query.endDate;
+    params.keys = query.keys;
+    params.provider = query.provider;
+    params.modelId = query.modelId;
+    if (query.roles.length) params.roles = query.roles.join(',');
+    return this.http.get<AiTelemetryModelUsersDto>('/api/Admin/ai-telemetry/model-users', { params });
   }
 }

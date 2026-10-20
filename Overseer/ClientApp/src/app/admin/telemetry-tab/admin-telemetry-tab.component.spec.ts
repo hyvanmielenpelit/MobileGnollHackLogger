@@ -21,12 +21,19 @@ import { AdminPageStore } from '../admin-page.store';
 import { spyAdminService } from '../admin.component.testing';
 import { AdminTelemetryTabComponent } from './admin-telemetry-tab.component';
 import { TelemetryChartsDialogComponent } from './charts/telemetry-charts-dialog.component';
+import { TelemetryModelUsersDialogComponent } from './model-users/telemetry-model-users-dialog.component';
 import { TELEMETRY_BREAKDOWN_STORAGE_KEY } from './telemetry-breakdown';
 import { TELEMETRY_USERS_VIEW_STORAGE_KEY } from './users/telemetry-users.component';
 
 /** Stands in for the charts dialog, so the tab's spec does not depend on chart rendering. */
 @Component({ selector: 'app-telemetry-charts-dialog', template: '' })
 class ChartsDialogStub {
+  open = vi.fn();
+}
+
+/** Stands in for the Usage by user dialog, so every test of the tab does not compile and run it. */
+@Component({ selector: 'app-telemetry-model-users-dialog', template: '' })
+class ModelUsersDialogStub {
   open = vi.fn();
 }
 
@@ -93,8 +100,8 @@ describe('AdminTelemetryTabComponent', () => {
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(), AdminPageStore]
     })
       .overrideComponent(AdminTelemetryTabComponent, {
-        remove: { imports: [TelemetryChartsDialogComponent] },
-        add: { imports: [ChartsDialogStub] }
+        remove: { imports: [TelemetryChartsDialogComponent, TelemetryModelUsersDialogComponent] },
+        add: { imports: [ChartsDialogStub, ModelUsersDialogStub] }
       })
       .compileComponents();
 
@@ -160,6 +167,9 @@ describe('AdminTelemetryTabComponent', () => {
 
     const chartsDialog = (): ChartsDialogStub =>
       fixture.debugElement.query(By.directive(ChartsDialogStub)).componentInstance;
+
+    const modelUsersDialog = (): ModelUsersDialogStub =>
+      fixture.debugElement.query(By.directive(ModelUsersDialogStub)).componentInstance;
 
     it('renders Clear All Cooldowns as a small image button, aria-disabled only when nothing is rate-limited', () => {
       openTab();
@@ -847,6 +857,99 @@ describe('AdminTelemetryTabComponent', () => {
         keys: 'system',
         roles: ['chat', 'title', 'benchmark']
       });
+    });
+
+    // --- Usage by user ---
+
+    const usersButtons = (): HTMLButtonElement[] =>
+      Array.from(host().querySelectorAll<HTMLButtonElement>('.tl-cards button.tl-card-users'));
+
+    it('gives each model card a Usage by user button, and the total card none', () => {
+      summarySpy.mockReturnValue(of(summary({
+        rows: [row({ requests: 3 }), row({ modelId: 'b', modelName: 'B', roleGroup: 'title', roleContext: 2 })]
+      })));
+      openTab();
+
+      expect(cards().map(c => c.querySelectorAll('button.tl-card-users').length)).toEqual([1, 1]);
+      expect(host().querySelector('.tl-card-total button')).toBeNull();
+      const button = usersButtons()[0];
+      expect(button.matches('.action-btn[type="button"][aria-haspopup="dialog"]')).toBe(true);
+      expect(button.getAttribute('aria-label')).toBe('Usage by user: Claude X · Chat');
+      expect(button.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+      expect(button.closest('.tl-card-actions')?.getAttribute('role')).toBe('group');
+      expect(button.closest('.tl-card-actions')?.getAttribute('aria-label')).toBe('Actions for Claude X · Chat');
+      const tip = host().querySelector('#' + button.getAttribute('interestfor'));
+      expect(tip?.textContent?.trim()).toBe('Usage by user');
+      expect(tip?.getAttribute('popover')).toBe('hint');
+    });
+
+    it('names each Usage by user button apart: by level under Show separately, by key under Both', () => {
+      summarySpy.mockReturnValue(of(summary({
+        rows: [row({ thinkingLevel: 'high', requests: 4 }), row({ thinkingLevel: 'low', requests: 2 })]
+      })));
+      openTab();
+      const thinking = host().querySelector('#tl-thinking-select') as HTMLSelectElement;
+      thinking.value = 'separate';
+      thinking.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      expect(usersButtons().map(b => b.getAttribute('aria-label')))
+        .toEqual(['Usage by user: Claude X · Chat · high', 'Usage by user: Claude X · Chat · low']);
+
+      summarySpy.mockReturnValue(of(summary({
+        keySource: 'both',
+        rows: [row({ requests: 3 }), row({ keySource: 'user', userId: 'u-1', userName: 'alice', requests: 2 })]
+      })));
+      thinking.value = 'grouped';
+      thinking.dispatchEvent(new Event('change'));
+      const keys = host().querySelector('#telemetryKeysSelect') as HTMLSelectElement;
+      keys.value = 'both';
+      keys.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      expect(usersButtons().map(b => b.getAttribute('aria-label')))
+        .toEqual(['Usage by user: Claude X · Chat · System key', 'Usage by user: Claude X · Chat · User key: alice']);
+    });
+
+    it('opens the Usage by user dialog with the card\'s scope and the tab\'s dates, the button as the opener', () => {
+      summarySpy.mockReturnValue(of(summary({
+        rows: [row({ provider: 'OpenAI', modelId: 'gpt-x', modelName: 'GPT X', roleGroup: 'title', roleContext: 2, thinkingLevel: 'low' })]
+      })));
+      openTab();
+
+      const button = usersButtons()[0];
+      button.click();
+
+      expect(modelUsersDialog().open).toHaveBeenCalledWith({
+        start: component.telemetryStartDate,
+        end: component.telemetryEndDate,
+        keySource: 'system',
+        provider: 'OpenAI',
+        modelId: 'gpt-x',
+        modelTitle: 'GPT X',
+        roleGroup: 'title',
+        thinkingLevel: undefined
+      }, button);
+
+      const thinking = host().querySelector('#tl-thinking-select') as HTMLSelectElement;
+      thinking.value = 'separate';
+      thinking.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      usersButtons()[0].click();
+
+      expect(modelUsersDialog().open).toHaveBeenLastCalledWith(expect.objectContaining({ thinkingLevel: 'low' }), usersButtons()[0]);
+    });
+
+    it('opens a user-key card\'s dialog on user keys', () => {
+      summarySpy.mockReturnValue(of(summary({
+        keySource: 'user',
+        rows: [row({ keySource: 'user', userId: 'u-1', userName: 'alice' })]
+      })));
+      openTab();
+
+      usersButtons()[0].click();
+
+      expect(modelUsersDialog().open).toHaveBeenCalledWith(expect.objectContaining({ keySource: 'user', modelId: 'claude-x' }), usersButtons()[0]);
     });
 
     // --- Users view ---

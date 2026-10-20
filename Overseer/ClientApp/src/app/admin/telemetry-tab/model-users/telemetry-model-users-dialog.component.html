@@ -1,0 +1,251 @@
+<!-- USAGE BY USER: header / summary, filters and the user cards / footer. Its own close and cancel
+     events stop here, so the tab and the page never hear them. No light dismiss: the full-screen
+     frame leaves no honest backdrop target. -->
+<dialog #dialog class="gh-dialog gh-dialog-fullscreen tl-mu-dialog" aria-labelledby="tl-mu-title"
+        (cancel)="onCancel($event)" (close)="onDialogClose($event)">
+  <div class="dialog-content">
+    <div class="dialog-header tl-mu-header">
+      <div class="dialog-title-group tl-mu-title-group">
+        <!-- The focus target on open, so the Close button's tooltip does not open by itself. -->
+        <h3 #title id="tl-mu-title" tabindex="-1">{{ dialogTitle }}</h3>
+        <p class="dialog-subtitle tl-mu-subtitle">{{ subtitle }}</p>
+        @if (request) {
+          <p class="gh-model-card-identity tl-mu-identity">
+            @if (showModelId) {
+              <code class="gh-model-card-model-id">{{ request.modelId }}</code>
+            }
+            <app-provider-badge [provider]="request.provider"></app-provider-badge>
+          </p>
+        }
+      </div>
+      <button type="button" class="btn-icon-action tl-mu-close" aria-label="Close usage by user"
+              interestfor="tl-mu-tip-close" [attr.style]="'anchor-name: --tl-mu-tip-close'"
+              (click)="close()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="tl-mu-tip-close"
+           [attr.style]="'position-anchor: --tl-mu-tip-close'">Close</div>
+    </div>
+
+    <div class="dialog-body tl-mu-body">
+      @if (loading && !dto) {
+        <p class="tl-mu-loading">
+          <svg class="dc-ring" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+            <circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle>
+            <circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle>
+          </svg>
+          <span class="visually-hidden">Loading users…</span>
+        </p>
+      } @else if (error) {
+        <div class="tl-mu-error">
+          <p class="tl-mu-error-text">{{ error }}</p>
+          <button type="button" class="btn-ghost tl-mu-retry" (click)="retry()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+            <span>Retry</span>
+          </button>
+        </div>
+      } @else if (dto && !hasRows) {
+        <p class="text-muted tl-mu-empty">No user used this model in this range.</p>
+      } @else if (dto) {
+        <!-- Scope totals: before the search, after the level filter. -->
+        <dl class="tl-mu-summary">
+          <div class="tl-mu-summary-item"><dt>Users</dt><dd>{{ formatInteger(model.sorted.length) }}</dd></div>
+          <div class="tl-mu-summary-item"><dt>Requests</dt><dd>{{ formatInteger(model.total.requests) }}</dd></div>
+          @if (costMetric(model.total); as cost) {
+            <div class="tl-mu-summary-item tl-mu-summary-cost">
+              <dt>Est. cost</dt>
+              <dd [class.tl-metric-muted]="cost.muted">{{ cost.value }}</dd>
+              @if (cost.note) {
+                <dd class="tl-mu-summary-note">{{ cost.note }}</dd>
+              }
+            </div>
+          }
+          <div class="tl-mu-summary-item"><dt>Total tokens</dt><dd>{{ formatInteger(totalTokens) }}</dd></div>
+          <div class="tl-mu-summary-item tl-mu-summary-top"><dt>Top user</dt><dd>{{ topUserText }}</dd></div>
+        </dl>
+        @if (systemScope || costRecordedLate) {
+          <p class="tl-mu-scope-note">
+            @if (systemScope) {
+              <span class="tl-mu-scope-errors">Provider errors are not recorded per user for system AI configurations.</span>
+            }
+            @if (costRecordedLate) {
+              <span class="tl-mu-scope-cost">Cost recorded since {{ utcDay(dto.costRecordedSinceUtc) }}.</span>
+            }
+          </p>
+        }
+
+        <div class="gh-filter-bar tl-mu-filters">
+          <div class="gh-filter-bar-row tl-mu-filters-row">
+            <div class="gh-search-field tl-mu-search">
+              <label class="visually-hidden" for="tl-mu-search">Search by user name</label>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input type="search" class="gh-input" id="tl-mu-search" autocomplete="off"
+                     autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"
+                     placeholder="Search user" [value]="searchInput"
+                     (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+            </div>
+            @if (showLevelFilter) {
+              <div class="control-group tl-mu-level">
+                <label for="tl-mu-level">Thinking level</label>
+                <select id="tl-mu-level" class="gh-input" (change)="onLevelChange($event)">
+                  @for (option of model.levelOptions; track option.value) {
+                    <option [value]="option.value" [selected]="option.value === levelOption">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+            }
+            <div class="control-group tl-mu-thinking">
+              <label for="tl-mu-thinking">Thinking levels</label>
+              <select id="tl-mu-thinking" class="gh-input" (change)="onThinkingChange($event)">
+                <option value="grouped" [selected]="!view.separateThinkingLevels">Group together</option>
+                <option value="separate" [selected]="view.separateThinkingLevels">Show separately</option>
+              </select>
+            </div>
+            <div class="tl-mu-sort">
+              <button type="button" class="btn-ghost tl-mu-sort-trigger" id="tl-mu-sort-trigger"
+                      popovertarget="tl-mu-sort-panel" [attr.aria-expanded]="sortOpen"
+                      style="anchor-name: --tl-mu-sort-trigger">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 4 4 4-4"></path><path d="M7 20V4"></path><path d="m21 8-4-4-4 4"></path><path d="M17 4v16"></path></svg>
+                <span>Sort: {{ sortLabel }}</span>
+              </button>
+              <div popover="auto" class="gh-facet-popover model-picker-sort-panel tl-mu-sort-panel" id="tl-mu-sort-panel"
+                   style="position-anchor: --tl-mu-sort-trigger"
+                   (toggle)="onSortToggle($event)" (keydown)="onSortPanelKeydown($event)">
+                <fieldset class="gh-facet-group">
+                  <legend class="gh-facet-legend">Sort by</legend>
+                  @for (option of sortFields; track option.field) {
+                    <label class="gh-radio gh-facet-option">
+                      <input type="radio" name="tl-mu-sort-field" [id]="'tl-mu-sort-field-' + option.field" [value]="option.field"
+                             [checked]="view.sort.field === option.field" (change)="chooseSortField(option.field)">
+                      <span class="gh-facet-option-label">{{ option.label }}</span>
+                    </label>
+                  }
+                </fieldset>
+                <fieldset class="gh-facet-group">
+                  <legend class="gh-facet-legend">Order</legend>
+                  @for (direction of sortDirections; track direction) {
+                    <label class="gh-radio gh-facet-option">
+                      <input type="radio" name="tl-mu-sort-direction" [id]="'tl-mu-sort-direction-' + direction" [value]="direction"
+                             [checked]="view.sort.direction === direction" (change)="chooseSortDirection(direction)">
+                      <span class="gh-facet-option-label">{{ directionLabel(direction) }}</span>
+                    </label>
+                  }
+                </fieldset>
+                <div class="model-picker-sort-clear">
+                  <button type="button" class="btn-link" id="tl-mu-sort-reset"
+                          [attr.aria-disabled]="sortIsDefault ? 'true' : null"
+                          (click)="resetSort()">Reset sorting</button>
+                </div>
+              </div>
+            </div>
+            @if (filtersActive) {
+              <button type="button" class="btn-link gh-filter-clear" id="tl-mu-clear" (click)="clearFilters()">Clear filters</button>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- The list's one polite live region; rendered while empty, so it is in the tree before its first message. -->
+      <p class="gh-list-status tl-mu-status" role="status">{{ status }}</p>
+
+      @if (dto && hasRows) {
+        @if (model.matching.length === 0) {
+          <div class="tl-mu-no-match">
+            <p class="text-muted tl-mu-empty">{{ status }}</p>
+            <button type="button" class="btn-link gh-filter-clear tl-mu-no-match-clear" (click)="clearFilters()">Clear filters</button>
+          </div>
+        } @else {
+          <ul role="list" class="tl-mu-cards" aria-labelledby="tl-mu-title">
+            @for (card of visibleCards; track card.key; let i = $index) {
+              @let shares = sharesOf(card);
+              <li class="tl-mu-item">
+                <article class="tl-mu-card" [attr.aria-labelledby]="'tl-mu-' + i + '-title'">
+                  <div class="tl-mu-head">
+                    <p class="tl-mu-rank"><span aria-hidden="true">#{{ rankOf(card) }}</span><span class="visually-hidden">rank {{ rankOf(card) }} by {{ sortLabel }}</span></p>
+                    @if (card.userName) {
+                      <h4 class="tl-mu-title" [id]="'tl-mu-' + i + '-title'" tabindex="-1">@for (part of nameParts(card); track $index) {@if (part.match) {<mark class="model-option-match">{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</h4>
+                    } @else {
+                      <h4 class="tl-mu-title tl-mu-title-unknown" [id]="'tl-mu-' + i + '-title'" tabindex="-1">{{ unknownUserText }}</h4>
+                    }
+                    @if (thinkingBadges(card).length > 0) {
+                      <ul class="gh-model-card-badges tl-mu-badges" role="list" aria-label="Thinking levels">
+                        @for (badge of thinkingBadges(card); track badge.text) {
+                          <li><span [class]="badge.cssClass"><span class="visually-hidden">{{ badge.prefix }} </span>{{ badge.text }}</span></li>
+                        }
+                      </ul>
+                    }
+                    @if (card.lastRequestUtc) {
+                      <p class="tl-mu-meta">Last request <time [attr.datetime]="card.lastRequestUtc">{{ timeText(card.lastRequestUtc) }}</time> UTC</p>
+                    }
+                    <div class="tl-mu-share">
+                      <span class="tl-mu-share-label">Share of {{ shareFieldLabel }}</span>
+                      <span class="tl-mu-share-track" aria-hidden="true"><span class="tl-mu-share-fill" [style.inline-size.%]="shareWidth(shares[shareField])"></span></span>
+                      <span class="tl-mu-share-value">{{ shareText(shares[shareField]) }}</span>
+                    </div>
+                  </div>
+                  <ng-container *ngTemplateOutlet="metrics; context: { $implicit: card, shares: shares }"></ng-container>
+                </article>
+              </li>
+            }
+            <li class="tl-mu-item">
+              <article class="tl-mu-card tl-mu-card-total" aria-labelledby="tl-mu-total-title">
+                <div class="tl-mu-head">
+                  <h4 class="tl-mu-title" id="tl-mu-total-title">All matching</h4>
+                  <p class="tl-mu-meta">{{ model.matching.length === 1 ? '1 user' : formatInteger(model.matching.length) + ' users' }}</p>
+                </div>
+                <ng-container *ngTemplateOutlet="metrics; context: { $implicit: model.matchingTotal, shares: null }"></ng-container>
+              </article>
+            </li>
+          </ul>
+          @if (remaining > 0) {
+            <div class="gh-load-more tl-mu-load-more">
+              <button type="button" class="btn-ghost tl-mu-more" (click)="showMore()">Show {{ formatInteger(nextBatch) }} more</button>
+              @if (remaining > nextBatch) {
+                <button type="button" class="btn-link gh-filter-clear tl-mu-all" (click)="showMore(true)">Show all {{ formatInteger(model.matching.length) }}</button>
+              }
+            </div>
+          }
+        }
+      }
+    </div>
+
+    <div class="dialog-footer tl-mu-footer">
+      <button type="button" class="btn-gh btn-gh-cancel tl-mu-done" (click)="close()">Done</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- One card's figures; every additive one with its share of the scope total, except on the total card. -->
+<ng-template #metrics let-m let-shares="shares">
+  <dl class="tl-metrics tl-mu-metrics">
+    <div class="tl-metric"><dt>Requests</dt><dd>{{ formatInteger(m.requests) }}</dd>
+      @if (shares) {<dd class="tl-metric-note">{{ shareText(shares.requests) }} of total</dd>}</div>
+    @if (costMetric(m); as cost) {
+      <div class="tl-metric tl-metric-cost">
+        <dt>Est. cost</dt>
+        <dd [class.tl-metric-muted]="cost.muted">{{ cost.value }}</dd>
+        @if (cost.note) {
+          <dd class="tl-metric-note">{{ cost.note }}</dd>
+        }
+        @if (shares && shares.cost !== null) {
+          <dd class="tl-metric-note">{{ shareText(shares.cost) }} of total</dd>
+        }
+      </div>
+    }
+    <div class="tl-metric"><dt>Input (uncached)</dt><dd>{{ formatInteger(m.uncachedInputTokens) }}</dd>
+      @if (shares) {<dd class="tl-metric-note">{{ shareText(shares.uncached) }} of total</dd>}</div>
+    <div class="tl-metric"><dt>Cache read</dt><dd>{{ formatInteger(m.cacheReadTokens) }}</dd>
+      @if (shares) {<dd class="tl-metric-note">{{ shareText(shares.cacheRead) }} of total</dd>}</div>
+    <div class="tl-metric"><dt>Cache created</dt><dd>{{ formatInteger(m.cacheCreationTokens) }}</dd>
+      @if (shares) {<dd class="tl-metric-note">{{ shareText(shares.cacheCreated) }} of total</dd>}</div>
+    <div class="tl-metric"><dt>Output</dt><dd>{{ formatInteger(m.outputTokens) }}</dd>
+      @if (shares) {<dd class="tl-metric-note">{{ shareText(shares.output) }} of total</dd>}</div>
+    <div class="tl-metric"><dt>Total tokens</dt><dd>{{ formatInteger(m.promptTokens + m.outputTokens) }}</dd>
+      @if (shares) {<dd class="tl-metric-note">{{ shareText(shares.totalTokens) }} of total</dd>}</div>
+    <div class="tl-metric"><dt>Cache hit</dt><dd>{{ cacheHitText(m) }}</dd></div>
+    <div class="tl-metric"><dt>Avg duration</dt><dd>{{ durationText(m) }}</dd></div>
+  </dl>
+</ng-template>
