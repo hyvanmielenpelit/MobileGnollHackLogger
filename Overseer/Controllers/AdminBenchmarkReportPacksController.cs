@@ -161,7 +161,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 ? BadRequest(new { error = preview.Refusal })
                 : Ok(preview);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -210,7 +210,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 "Report Pack {Scope} documents: {Count} listed in {Ms} ms.", request.Scope, count, watch.ElapsedMilliseconds);
             return Ok(documents);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -296,7 +296,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         {
             return StatusCode(StatusCodes.Status413PayloadTooLarge, new { error = ex.Message });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -974,7 +974,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
             return Launch(job);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1234,7 +1234,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 Audiences = toWrite.ToList()
             });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1258,7 +1258,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             var view = RunJobView(run);
             return view == null ? NoContent() : Ok(view);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1285,7 +1285,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             }
             return Accepted(RunJobView(run));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1350,7 +1350,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             estimate.EstimatedTotalCostWithRepairUsd = TotalCostWithRepair(estimate.Estimates);
             return Ok(estimate);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1384,7 +1384,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             }
             return Ok(RootCauseControlsDtoOf(controls, controlRun));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1442,7 +1442,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             _factsCache.Remove(documentId);
             return NoContent();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1474,7 +1474,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 : await _db.BenchmarkReportDocuments.AsNoTracking().Where(d => ids.Contains(d.Id)).ToDictionaryAsync(d => d.Id, ct);
             return Content(BenchmarkReportPackWriterReplies.BuildMarkdown(job, DateTime.UtcNow, stored), "text/markdown; charset=utf-8");
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

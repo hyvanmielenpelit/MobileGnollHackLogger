@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 using Overseer.Models;
+using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Benchmarking.Pdf;
 using Overseer.Services.Benchmarking.Word;
@@ -89,7 +90,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
                 Take = take
             }, subjectKey, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -130,7 +131,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             var detail = await _renderService.GetAsync(id, ct);
             return detail == null ? NotFound() : Ok(detail);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -155,7 +156,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
 
             return Content(markdown!, "text/markdown; charset=utf-8");
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -205,7 +206,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             }
             return File(pdf, "application/pdf", name);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -245,7 +246,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
 
             return File(docx, BenchmarkWordRenderer.ContentType, BenchmarkPdfFileNames.ForReportDocument(document!, options!, "docx"));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -258,7 +259,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
         {
             return await _renderService.DeleteAsync(id, ct) ? NoContent() : NotFound();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -282,7 +283,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             if (refusal != null) return BadRequest(new { error = refusal });
             return Ok(summary);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -305,7 +306,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             if (refusal != null) return BadRequest(new { error = refusal });
             return Ok(summary);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -319,7 +320,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
         {
             return await _renderService.DeleteChartsAsync(id, ct) ? NoContent() : NotFound();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

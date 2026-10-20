@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
+using Overseer.Services;
 using Overseer.Services.Benchmarking;
 
 /// <summary>
@@ -49,7 +50,7 @@ public class AdminBenchmarkComparisonsController : ControllerBase
 
             return Ok(ToDto(comparison));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -74,7 +75,7 @@ public class AdminBenchmarkComparisonsController : ControllerBase
 
             return Ok(ToDto(comparison));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -100,7 +101,7 @@ public class AdminBenchmarkComparisonsController : ControllerBase
                 CreatedAtUtc = c.CreatedAtUtc
             }).ToList());
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

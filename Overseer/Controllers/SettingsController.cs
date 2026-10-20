@@ -430,7 +430,7 @@ public class SettingsController : ControllerBase
                 warning = check.Verdict == ApiKeyVerdict.ValidWithWarning ? check.Message : null
             });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -475,7 +475,7 @@ public class SettingsController : ControllerBase
 
             return Ok(new { verification = ToVerificationDto(entry) });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

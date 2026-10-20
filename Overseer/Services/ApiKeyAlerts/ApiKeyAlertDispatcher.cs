@@ -62,6 +62,10 @@ public sealed class ApiKeyAlertDispatcher : BackgroundService
                 {
                     break;
                 }
+                catch (Exception ex) when (ex.IsCanceledBy(stoppingToken))
+                {
+                    break;
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to process an API key failure alert for {Provider} System AI Config {ConfigId}.",
@@ -141,6 +145,10 @@ public sealed class ApiKeyAlertDispatcher : BackgroundService
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            throw new OperationCanceledException(ex.Message, ex, ct);
         }
         catch (Exception ex)
         {

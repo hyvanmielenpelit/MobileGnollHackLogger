@@ -466,7 +466,7 @@ public class AdminController : ControllerBase
 
             return Ok(new { id = config.Id });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -596,7 +596,7 @@ public class AdminController : ControllerBase
 
             return Ok();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -697,7 +697,7 @@ public class AdminController : ControllerBase
                 Model = ToSystemConfigDto(resolved, userAssignmentCount, groupAssignmentCount)
             });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -714,7 +714,7 @@ public class AdminController : ControllerBase
 
             return Ok(await _usageGuard.CheckDeletionAsync(config, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

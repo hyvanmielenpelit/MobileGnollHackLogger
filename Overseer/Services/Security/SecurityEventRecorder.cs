@@ -65,7 +65,7 @@ public sealed class SecurityEventRecorder : BackgroundService, ISecurityEventRec
                 await ProcessPendingAsync(stoppingToken);
             }
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(stoppingToken))
         {
         }
     }
@@ -90,7 +90,7 @@ public sealed class SecurityEventRecorder : BackgroundService, ISecurityEventRec
             }
             await db.SaveChangesAsync(CancellationToken.None);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        catch (Exception ex) when (!ex.IsCanceledBy(ct))
         {
             _logger.LogWarning(ex, "Could not record {Count} security event(s).", batch.Count);
         }

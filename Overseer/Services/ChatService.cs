@@ -327,7 +327,7 @@ public class ChatService
             {
                 // Reached by the turn's timeout token and ChatHub.CancelGeneration as well as by failures.
                 string errorText;
-                if (ex is OperationCanceledException)
+                if (ex.IsCanceledBy(cancellationToken) || ex is OperationCanceledException)
                 {
                     _logger?.LogInformation(ex, "Chat turn for session {SessionId} was canceled or timed out.", wireRef);
                     errorText = "The answer was canceled or timed out.";

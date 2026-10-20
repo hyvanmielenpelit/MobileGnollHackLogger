@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -506,6 +507,23 @@ public class BenchmarkReportPackServiceTests
 
         var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, cts.Token);
 
+        Assert.Equal(BenchmarkReportPackJobStatus.Canceled, job.Status);
+        Assert.Equal(BenchmarkReportPackDocumentStatus.Canceled, Assert.Single(job.Documents).Status);
+        Assert.Empty(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task AJobWhosePreparationQueryIsCanceledMidFlight_IsMarkedCanceled_NotFailed()
+    {
+        using var cts = new CancellationTokenSource();
+        var interceptor = new CanceledMaterializationInterceptor(cts, entity => entity is BenchmarkRun);
+        await using var h = await Harness.CreateAsync(interceptor: interceptor);
+        interceptor.Armed = true;
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, cts.Token);
+
+        Assert.True(interceptor.Fired);
         Assert.Equal(BenchmarkReportPackJobStatus.Canceled, job.Status);
         Assert.Equal(BenchmarkReportPackDocumentStatus.Canceled, Assert.Single(job.Documents).Status);
         Assert.Empty(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
@@ -2794,9 +2812,14 @@ public class BenchmarkReportPackServiceTests
         /// <summary>The seeded runs' own configuration: provider, model id and thinking level.</summary>
         public SystemAiApiConfiguration SameConfiguration { get; private set; } = default!;
 
-        public static async Task<Harness> CreateAsync(int maxRunsPerHour = 100, int? maxOutputTokens = null, int? previewPreparationTimeoutSeconds = null)
+        public static async Task<Harness> CreateAsync(int maxRunsPerHour = 100, int? maxOutputTokens = null, int? previewPreparationTimeoutSeconds = null,
+            IInterceptor? interceptor = null)
         {
             var options = BenchmarkRunExamTests.InMemoryOptions();
+            if (interceptor != null)
+            {
+                options = new DbContextOptionsBuilder<ApplicationDbContext>(options).AddInterceptors(interceptor).Options;
+            }
             var seeded = await BenchmarkRunExamTests.SeedSuiteWithRunsAsync(options);
             var settings = new Dictionary<string, string?>
             {

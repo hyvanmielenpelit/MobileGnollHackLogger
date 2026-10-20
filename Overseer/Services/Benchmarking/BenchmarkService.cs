@@ -1194,6 +1194,20 @@ public class BenchmarkService
                 await db.SaveChangesAsync();
             }
         }
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var run = await db.BenchmarkRuns.FindAsync(runId);
+            if (run != null)
+            {
+                run.Status = BenchmarkRunStatus.Canceled;
+                run.CompletedAtUtc = DateTime.UtcNow;
+                runStopwatch.Stop();
+                await ApplyAbortedTotalsAsync(db, run, runStopwatch.ElapsedMilliseconds);
+                await db.SaveChangesAsync();
+            }
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Benchmark run {RunId} failed with exception.", runId);
@@ -1486,6 +1500,18 @@ public class BenchmarkService
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var run = await db.BenchmarkRuns.FindAsync(runId);
+            if (run != null)
+            {
+                rerunStopwatch.Stop();
+                run.RerunCompletedAtUtc = DateTime.UtcNow;
+                await RestoreTerminalStatusAsync(db, run, "Failed-question re-run canceled.");
+            }
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -2632,6 +2658,10 @@ public class BenchmarkService
         {
             throw;
         }
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
+        {
+            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
@@ -3189,6 +3219,10 @@ public class BenchmarkService
                 }
             }
             catch (OperationCanceledException) { throw; }
+            catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
+            {
+                throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex,
@@ -3863,6 +3897,10 @@ public class BenchmarkService
             {
                 throw;
             }
+            catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
+            {
+                throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex,
@@ -3973,6 +4011,10 @@ public class BenchmarkService
                 catch (OperationCanceledException)
                 {
                     throw;
+                }
+                catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
+                {
+                    throw new OperationCanceledException(ex.Message, ex, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -5652,6 +5694,10 @@ public class BenchmarkService
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
+        {
+            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -7856,6 +7902,10 @@ public class BenchmarkService
         {
             FinalizeIfStillRunning(job, BenchmarkDifficultyJobStatus.Cancelled);
         }
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
+        {
+            FinalizeIfStillRunning(job, BenchmarkDifficultyJobStatus.Cancelled);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Difficulty assessment job {JobId} failed.", jobId);
@@ -8177,7 +8227,7 @@ public class BenchmarkService
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
             {
                 _logger.LogError(ex, "Error processing difficulty assessment batch [{BatchIds}]", string.Join(",", batchQuestionIds));
 
@@ -8654,6 +8704,11 @@ public class BenchmarkService
             run.RerunCompletedAtUtc = DateTime.UtcNow;
             await RestoreTerminalStatusAsync(db, run, "Answer re-run canceled.");
         }
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
+        {
+            run.RerunCompletedAtUtc = DateTime.UtcNow;
+            await RestoreTerminalStatusAsync(db, run, "Answer re-run canceled.");
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Rerun failed for answer {AnswerId}.", answerId);
@@ -8877,6 +8932,17 @@ public class BenchmarkService
                 await RestoreCapturedStatusAsync(db, run, originalStatus, originalCompletedAtUtc);
             }
         }
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
+        {
+            if (!trial)
+            {
+                await RestoreTerminalStatusAsync(db, run, "Reassessment canceled.");
+            }
+            else
+            {
+                await RestoreCapturedStatusAsync(db, run, originalStatus, originalCompletedAtUtc);
+            }
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Reassessment failed for answer {AnswerId}.", answerId);
@@ -8990,6 +9056,10 @@ public class BenchmarkService
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
+        {
+            await RestoreTerminalStatusAsync(db, run, "Synthesis re-run canceled.");
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             await RestoreTerminalStatusAsync(db, run, "Synthesis re-run canceled.");
         }
@@ -9119,6 +9189,10 @@ public class BenchmarkService
         {
             await RestoreTerminalStatusAsync(db, run, "Assessment retry canceled.");
         }
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
+        {
+            await RestoreTerminalStatusAsync(db, run, "Assessment retry canceled.");
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Retry failed assessments failed for run {RunId}.", runId);
@@ -9225,6 +9299,11 @@ public class BenchmarkService
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Claim verification retry canceled for run {RunId}.", runId);
+            await RestoreTerminalStatusAsync(db, run, "Claim verification retry canceled.");
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogInformation("Claim verification retry canceled for run {RunId}.", runId);
             await RestoreTerminalStatusAsync(db, run, "Claim verification retry canceled.");

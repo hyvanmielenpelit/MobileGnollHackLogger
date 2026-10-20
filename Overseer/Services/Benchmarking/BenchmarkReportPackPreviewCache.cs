@@ -208,7 +208,7 @@ public sealed class BenchmarkReportPackPreviewCache
                 if (result.Entry != null) Set(key, result.Entry);
                 return result;
             }
-            catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested)
+            catch (Exception ex) when (ex.IsCanceledBy(timeoutSource.Token))
             {
                 _logger.LogWarning("Report Pack preview preparation stopped after its timeout of {Timeout}.", timeout);
                 return new BenchmarkReportPackPreviewPreparationResult { Refusal = TimeoutRefusal(timeout) };

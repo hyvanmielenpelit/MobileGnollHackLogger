@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Overseer.Models;
+using Overseer.Services;
 using Overseer.Services.Benchmarking;
 
 /// <summary>
@@ -35,7 +36,7 @@ public class AdminBenchmarkBaselineModelController : ControllerBase
             var baselineModel = await _baselineModel.GetAsync(ct);
             return baselineModel == null ? NoContent() : Ok(baselineModel);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -59,7 +60,7 @@ public class AdminBenchmarkBaselineModelController : ControllerBase
 
             return result == null ? NoContent() : Ok(result);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

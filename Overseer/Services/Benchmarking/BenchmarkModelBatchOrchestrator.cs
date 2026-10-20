@@ -774,6 +774,10 @@ public class BenchmarkModelBatchOrchestrator
             {
                 _logger.LogInformation("Model batch {BatchId} was canceled.", batchId);
             }
+            catch (Exception ex) when (ex.IsCanceledBy(cts.Token))
+            {
+                _logger.LogInformation("Model batch {BatchId} was canceled.", batchId);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Model batch {BatchId} failed.", batchId);

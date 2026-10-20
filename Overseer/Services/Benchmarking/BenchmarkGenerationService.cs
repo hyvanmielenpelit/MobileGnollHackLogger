@@ -147,6 +147,12 @@ public class BenchmarkGenerationService
             job.MarkUnfinishedItemsCancelled();
             job.SetStatus(BenchmarkGenerationJobStatus.Cancelled);
         }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            job.AddLog("Question generation was canceled.", "warning");
+            job.MarkUnfinishedItemsCancelled();
+            job.SetStatus(BenchmarkGenerationJobStatus.Cancelled);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Question generation job {JobId} failed.", jobId);

@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Overseer.Models;
+using Overseer.Services;
 using Overseer.Services.Security;
 
 namespace Overseer.Controllers;
@@ -10,8 +11,9 @@ namespace Overseer.Controllers;
 /// <summary>
 /// The admin Users tab: the list, facet counts, per-user actions, the Bulk Actions wizard and the admin log.
 /// Errors are <c>{ message, code }</c>: 400 for invalid input, 404, 409 for a refusal whose code names it, 403 for
-/// another administrator's bulk preview, 500 for a failed deletion. Reads answer 499 when the client aborts, whatever
-/// the exception: SqlClient reports a query canceled mid-execution as a <c>SqlException</c>, not an
+/// another administrator's bulk preview, 500 for a failed deletion. Reads answer 499 when the client aborts,
+/// recognizing the exceptions a cancellation produces (<see cref="CancellationExceptionExtensions.IsCanceledBy"/>):
+/// SqlClient reports a query canceled mid-execution as a <c>SqlException</c>, not an
 /// <see cref="OperationCanceledException"/>. Actions that change an account take no request token, so a dropped
 /// connection never stops one part-way.
 /// </summary>
@@ -53,7 +55,7 @@ public class AdminUsersController : ControllerBase
             if (query.Validate() is string error) return CriteriaError(error);
             return Ok(await _users.ListAsync(Actor, query, query.Sort, query.Skip, query.Take, ct));
         }
-        catch (Exception) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -68,7 +70,7 @@ public class AdminUsersController : ControllerBase
                 return CriteriaError($"The search can be at most {AdminUserCriteria.MaxSearchLength} characters.");
             return Ok(await _users.FacetCountsAsync(search, ct));
         }
-        catch (Exception) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -82,7 +84,7 @@ public class AdminUsersController : ControllerBase
         {
             return Ok(await _users.ListLogAsync(search, kinds, actor, subjectUserId, bulkOperationId, skip, take, ct));
         }
-        catch (Exception) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -97,7 +99,7 @@ public class AdminUsersController : ControllerBase
         {
             return ToResult(await _bulk.PreviewAsync(Actor, request ?? new AdminBulkPreviewRequest(), ct));
         }
-        catch (Exception) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -110,7 +112,7 @@ public class AdminUsersController : ControllerBase
         {
             return Ok(await _bulk.HistoryAsync(skip, take, includePreviews, ct));
         }
-        catch (Exception) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -124,7 +126,7 @@ public class AdminUsersController : ControllerBase
         {
             return ToResult(await _bulk.GetAsync(opId, outcome, skip, take, ct));
         }
-        catch (Exception) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -148,7 +150,7 @@ public class AdminUsersController : ControllerBase
             return File(new UTF8Encoding(encoderShouldEmitUTF8Identifier: true).GetPreamble().Concat(Encoding.UTF8.GetBytes(result.Value!)).ToArray(),
                 "text/csv; charset=utf-8", $"bulk-operation-{opId}.csv");
         }
-        catch (Exception) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -163,7 +165,7 @@ public class AdminUsersController : ControllerBase
         {
             return ToResult(await _users.GetAsync(Actor, id, ct));
         }
-        catch (Exception) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -222,7 +224,7 @@ public class AdminUsersController : ControllerBase
         {
             return ToResult(await _users.GetDeletionImpactAsync(Actor, id, ct));
         }
-        catch (Exception) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

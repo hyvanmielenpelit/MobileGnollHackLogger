@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Controllers;
@@ -19,9 +20,11 @@ using Xunit;
 /// <summary>
 /// Every Overseer controller action that takes the request's <see cref="CancellationToken"/> catches
 /// its own cancellation and answers 499 Client Closed Request, so an aborted request never leaves
-/// the action as an unhandled <see cref="OperationCanceledException"/>. A catch of any
-/// <see cref="Exception"/> under the same filter also qualifies: SqlClient reports a query canceled
-/// mid-execution as a <c>SqlException</c>.
+/// the action as an unhandled exception. The catch is
+/// <c>catch (Exception ex) when (ex.IsCanceledBy(token))</c>: SqlClient reports a query canceled
+/// mid-execution as a <c>SqlException</c>, not an <see cref="OperationCanceledException"/>, and the
+/// predicate accepts only the exceptions a cancellation produces, so a genuine failure on an action
+/// whose write runs without the token still surfaces.
 /// </summary>
 public class ControllerClientAbortTests
 {
@@ -103,8 +106,7 @@ public class ControllerClientAbortTests
 
                 string body = string.Join("\n", lines[(end + 1)..bodyEnd]);
                 string tokenName = token.Groups["name"].Value;
-                if (!(body.Contains($"catch (OperationCanceledException) when ({tokenName}.IsCancellationRequested)", StringComparison.Ordinal)
-                        || body.Contains($"catch (Exception) when ({tokenName}.IsCancellationRequested)", StringComparison.Ordinal))
+                if (!body.Contains($"catch (Exception ex) when (ex.IsCanceledBy({tokenName}))", StringComparison.Ordinal)
                     || !body.Contains("Status499ClientClosedRequest", StringComparison.Ordinal))
                 {
                     offenders.Add(action);
@@ -116,6 +118,7 @@ public class ControllerClientAbortTests
         Assert.True(checkedActions.Count >= 100, $"Only {checkedActions.Count} actions taking a CancellationToken were found; the source scan is broken.");
         Assert.Contains("AdminBenchmarkReportDocumentsController.List", checkedActions);
         Assert.Contains("AdminChatConsistencyController.Runs", checkedActions);
+        Assert.Contains("AdminBenchmarkController.ResumeRunSeries", checkedActions);
         Assert.True(offenders.Count == 0,
             "These actions take a CancellationToken but do not answer 499 when the client aborts: " + string.Join(", ", offenders));
     }
@@ -131,5 +134,26 @@ public class ControllerClientAbortTests
 
         Assert.Equal(StatusCodes.Status499ClientClosedRequest,
             Assert.IsType<StatusCodeResult>(await controller.List(null, null, null, aborted.Token)).StatusCode);
+    }
+
+    [Fact]
+    public async Task ReportDocumentsListAnswers499WhenAQueryIsCanceledMidExecution()
+    {
+        using var connection = SqliteSchemaTemplate.OpenCopy();
+        using var aborted = new CancellationTokenSource();
+        var interceptor = new CanceledQueryInterceptor(aborted);
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connection)
+            .AddInterceptors(interceptor)
+            .Options;
+        using var db = new ApplicationDbContext(options);
+        var controller = new AdminBenchmarkReportDocumentsController(
+            new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
+        interceptor.Arm();
+
+        var result = await controller.List(null, null, null, aborted.Token);
+
+        Assert.True(interceptor.Fired);
+        Assert.Equal(StatusCodes.Status499ClientClosedRequest, Assert.IsType<StatusCodeResult>(result).StatusCode);
     }
 }

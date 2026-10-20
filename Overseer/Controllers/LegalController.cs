@@ -50,7 +50,7 @@ public class LegalController : ControllerBase
         {
             return await GetTermsCoreAsync(key, ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -97,7 +97,7 @@ public class LegalController : ControllerBase
         {
             return Ok(new { version = await _terms.GetRequiredVersionAsync(key, ct) });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -123,7 +123,7 @@ public class LegalController : ControllerBase
         {
             return await AcceptTermsCoreAsync(key, request, pendingGreetings, greetingStarter, userManager, dbContext, ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

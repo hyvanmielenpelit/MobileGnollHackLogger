@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Overseer.Models;
+using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.ChatConsistency;
 
@@ -62,7 +63,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return Payload(await _evidence.ListModelAxesAsync(ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -84,7 +85,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return Payload(await _evidence.GetTimelineAsync(modelKey!, fromUtc, toUtc, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -101,7 +102,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return Payload(await _evidence.GetRunTableAsync(modelKey!, fromUtc, toUtc, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -121,7 +122,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return Payload(await _evidence.GetBatteryRunTableAsync(modelKey!, fromUtc, toUtc, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -141,7 +142,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return Payload(await _evidence.GetComparisonSetsAsync(modelKey!, fromUtc, toUtc, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -178,7 +179,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -192,7 +193,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return Payload(await _analysis.ListAnalysesAsync(ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -207,7 +208,7 @@ public class AdminChatConsistencyController : ControllerBase
             var result = await _analysis.GetAnalysisAsync(id, ct);
             return result == null ? NotFound() : Payload(result);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -226,7 +227,7 @@ public class AdminChatConsistencyController : ControllerBase
             var freshness = await _analysis.CheckFreshnessAsync(id, ct);
             return freshness == null ? NotFound() : Payload(freshness);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -243,7 +244,7 @@ public class AdminChatConsistencyController : ControllerBase
             if (!outcome.Deleted) return Conflict(new { error = outcome.Refusal });
             return NoContent();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -264,7 +265,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return ReportResult(await _reports.EstimateChatConsistencyDocumentsAsync(id, request.WriterModelConfigurationId, request.Audiences, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -292,7 +293,7 @@ public class AdminChatConsistencyController : ControllerBase
                 id, request.WriterModelConfigurationId, request.Audiences, request.AcknowledgeSameProvider, userId, ct,
                 request.AcknowledgeOutOfDate));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -309,7 +310,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return ReportResult(await _reports.GetChatConsistencyJobAsync(id, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -327,7 +328,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return ReportResult(await _reports.CancelChatConsistencyJobAsync(id, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -356,7 +357,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return Payload(await _regrade.EstimateAsync(ids, request.AssessorConfigId, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -379,7 +380,7 @@ public class AdminChatConsistencyController : ControllerBase
                 ? Payload(outcome.Job, StatusCodes.Status202Accepted)
                 : BadRequest(new { error = outcome.Refusal });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -413,7 +414,7 @@ public class AdminChatConsistencyController : ControllerBase
             if (!await _analysis.SetAnchorAsync(id, request.IsAnchor, ct)) return NotFound();
             return Payload(new ChatConsistencyAnchorResponse { RunId = id, IsAnchor = request.IsAnchor });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -429,7 +430,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return Payload(await _analysis.ListAnnotationsAsync(Clean(provider), Clean(modelId), ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -461,7 +462,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -475,7 +476,7 @@ public class AdminChatConsistencyController : ControllerBase
         {
             return await _analysis.DeleteAnnotationAsync(id, ct) ? NoContent() : NotFound();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

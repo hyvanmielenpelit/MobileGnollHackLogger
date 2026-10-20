@@ -855,7 +855,7 @@ public sealed class BenchmarkReportPackPreparation
             }
             return (reference, allPairs, null);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException && !ct.IsCancellationRequested)
         {
             return (null, null, "The paired tests could not be computed: " + ExceptionDetails.DescribeShort(ex));
         }
@@ -1175,6 +1175,16 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             job.AddLog($"Report pack finished: {completed} document(s) written, {failed} failed.");
         }
         catch (OperationCanceledException)
+        {
+            foreach (var d in job.Documents.Where(d => d.Status is BenchmarkReportPackDocumentStatus.Pending
+                         or BenchmarkReportPackDocumentStatus.Writing or BenchmarkReportPackDocumentStatus.Repairing).ToList())
+            {
+                job.SetDocumentStatus(d, BenchmarkReportPackDocumentStatus.Canceled);
+            }
+            job.AddLog("Report pack generation was canceled.", "warning");
+            job.SetStatus(BenchmarkReportPackJobStatus.Canceled);
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             foreach (var d in job.Documents.Where(d => d.Status is BenchmarkReportPackDocumentStatus.Pending
                          or BenchmarkReportPackDocumentStatus.Writing or BenchmarkReportPackDocumentStatus.Repairing).ToList())
@@ -2966,6 +2976,16 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             job.AddLog($"Report pack finished: {completed} document(s) written, {failed} failed.");
         }
         catch (OperationCanceledException)
+        {
+            foreach (var d in job.Documents.Where(d => d.Status is BenchmarkReportPackDocumentStatus.Pending
+                         or BenchmarkReportPackDocumentStatus.Writing or BenchmarkReportPackDocumentStatus.Repairing).ToList())
+            {
+                job.SetDocumentStatus(d, BenchmarkReportPackDocumentStatus.Canceled);
+            }
+            job.AddLog("Report pack generation was canceled.", "warning");
+            job.SetStatus(BenchmarkReportPackJobStatus.Canceled);
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             foreach (var d in job.Documents.Where(d => d.Status is BenchmarkReportPackDocumentStatus.Pending
                          or BenchmarkReportPackDocumentStatus.Writing or BenchmarkReportPackDocumentStatus.Repairing).ToList())

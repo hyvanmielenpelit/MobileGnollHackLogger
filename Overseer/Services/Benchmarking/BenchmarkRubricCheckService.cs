@@ -219,6 +219,11 @@ public class BenchmarkRubricCheckService
             job.AddLog("Rubric verification was canceled.", "warning");
             job.SetStatus(BenchmarkRubricCheckJobStatus.Cancelled);
         }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            job.AddLog("Rubric verification was canceled.", "warning");
+            job.SetStatus(BenchmarkRubricCheckJobStatus.Cancelled);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Rubric verification job {JobId} failed.", jobId);

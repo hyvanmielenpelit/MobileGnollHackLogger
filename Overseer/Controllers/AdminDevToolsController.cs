@@ -81,7 +81,7 @@ public class AdminDevToolsController : ControllerBase
             return await BenchmarkRunConflict(acknowledgeActiveBenchmark, "the GnollHack source", cancellationToken)
                 ?? Started(_gnollHackSource.RequestReindex(SourceIndexTrigger.Manual));
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -100,7 +100,7 @@ public class AdminDevToolsController : ControllerBase
             return await BenchmarkRunConflict(acknowledgeActiveBenchmark, "the GnollHack source", cancellationToken)
                 ?? Started(_gnollHackSource.RequestMakedefsBuild());
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -134,7 +134,7 @@ public class AdminDevToolsController : ControllerBase
             return await StartCorpusReindex(acknowledgeActiveBenchmark, "the GnollHack wiki", _wiki.GetStatus,
                 _wiki.RequestReindex, () => _wiki.LastStartedJobId, cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -150,7 +150,7 @@ public class AdminDevToolsController : ControllerBase
             return await StartCorpusReindex(acknowledgeActiveBenchmark, "the NetHack wiki", _netHackWiki.GetStatus,
                 _netHackWiki.RequestReindex, () => _netHackWiki.LastStartedJobId, cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -166,7 +166,7 @@ public class AdminDevToolsController : ControllerBase
             return await StartCorpusReindex(acknowledgeActiveBenchmark, "the knowledge base", _knowledgeBase.GetStatus,
                 _knowledgeBase.RequestReindex, () => _knowledgeBase.LastStartedJobId, cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -180,7 +180,7 @@ public class AdminDevToolsController : ControllerBase
         {
             return await Probe("wiki_search", "query", "category", request, cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -197,7 +197,7 @@ public class AdminDevToolsController : ControllerBase
         {
             return await Probe("nethack_wiki_search", "query", null, request, cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -211,7 +211,7 @@ public class AdminDevToolsController : ControllerBase
         {
             return await Probe("get_knowledge_article", "topic", null, request, cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -246,7 +246,7 @@ public class AdminDevToolsController : ControllerBase
         {
             return Ok(await _toolUsage.GetAsync(days, cancellationToken));
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

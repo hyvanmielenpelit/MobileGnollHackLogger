@@ -170,7 +170,7 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
                 Audiences = toWrite.ToList()
             });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -194,7 +194,7 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
             var view = JobView(batteryRun);
             return view == null ? NoContent() : Ok(view);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -221,7 +221,7 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
             }
             return Accepted(JobView(batteryRun));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -290,7 +290,7 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
             estimate.EstimatedTotalCostWithRepairUsd = priced ? estimate.Estimates.Sum(e => e.EstimatedCostWithRepairUsd!.Value) : null;
             return Ok(estimate);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -324,7 +324,7 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
             }
             return Ok(AdminBenchmarkReportPacksController.RootCauseControlsDtoOf(controls, controlRun));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -358,7 +358,7 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
 
             return await BenchmarkReportRenderService.DeleteDocumentAsync(_db, documentId, ct) ? NoContent() : NotFound();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

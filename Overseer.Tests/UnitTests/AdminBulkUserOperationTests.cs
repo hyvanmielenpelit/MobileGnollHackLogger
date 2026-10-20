@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Security;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -490,6 +492,27 @@ public sealed class AdminBulkUserOperationTests : IDisposable
         Assert.Equal(1, items.Count(i => i.Outcome == AdminBulkItemOutcome.Changed));
         Assert.Equal(2, items.Count(i => i.Outcome == AdminBulkItemOutcome.Pending));
         Assert.Single(_host.Events.Entries);
+    }
+
+    [Fact]
+    public async Task AnAccountWhoseQueryTheStoppingTokenCancelsIsNotRecordedFailed()
+    {
+        long opId = await QueuedBanOfThreeAsync();
+        using var stopping = new CancellationTokenSource();
+        // SqlClient reports a query canceled mid-execution as a provider exception, not an OperationCanceledException.
+        _host.Events.OnRecord = entry =>
+        {
+            if (entry.Kind != SecurityEventKind.AdminBanned) return;
+            stopping.Cancel();
+            throw new CanceledQueryException();
+        };
+
+        var thrown = await Record.ExceptionAsync(() => _host.Runner.ProcessOperationAsync(opId, stopping.Token));
+
+        Assert.IsType<CanceledQueryException>(thrown);
+        var op = await ReadOperationAsync(opId);
+        Assert.Equal(0, op.FailedCount);
+        Assert.DoesNotContain(await ReadItemsAsync(opId), i => i.Outcome == AdminBulkItemOutcome.Failed);
     }
 
     [Fact]

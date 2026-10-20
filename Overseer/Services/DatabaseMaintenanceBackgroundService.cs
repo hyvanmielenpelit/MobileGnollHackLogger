@@ -37,6 +37,10 @@ public class DatabaseMaintenanceBackgroundService : BackgroundService
         {
             return;
         }
+        catch (Exception ex) when (ex.IsCanceledBy(stoppingToken))
+        {
+            return;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during initial database maintenance pass");
@@ -57,6 +61,10 @@ public class DatabaseMaintenanceBackgroundService : BackgroundService
                 await RunMaintenancePassAsync(MaintenanceTriggers.Scheduled, stoppingToken);
             }
             catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex) when (ex.IsCanceledBy(stoppingToken))
             {
                 break;
             }

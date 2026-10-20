@@ -1662,6 +1662,10 @@ public class BenchmarkBatteryOrchestrator
             {
                 await ReconcileBatteryRunAsync(batteryRunId, cancellationToken);
             }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex.IsCanceledBy(cancellationToken))
+            {
+                throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex,
@@ -1822,6 +1826,10 @@ public class BenchmarkBatteryOrchestrator
                 await DriveAsync(batteryRunId, cts.Token);
             }
             catch (OperationCanceledException)
+            {
+                _logger.LogInformation("Benchmark battery run {BatteryRunId} was canceled.", batteryRunId);
+            }
+            catch (Exception ex) when (ex.IsCanceledBy(cts.Token))
             {
                 _logger.LogInformation("Benchmark battery run {BatteryRunId} was canceled.", batteryRunId);
             }
@@ -2270,6 +2278,10 @@ public class BenchmarkBatteryOrchestrator
         {
             throw;
         }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            throw new OperationCanceledException(ex.Message, ex, ct);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "The analysis of benchmark battery run {BatteryRunId} failed.", batteryRunId);
@@ -2298,7 +2310,7 @@ public class BenchmarkBatteryOrchestrator
                 ErrorMessageMaxLength);
             await db.SaveChangesAsync(ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException && !ct.IsCancellationRequested)
         {
             _logger.LogError(ex, "Could not record the analysis problem of benchmark battery run {BatteryRunId}.", batteryRunId);
         }

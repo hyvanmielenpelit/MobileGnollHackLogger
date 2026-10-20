@@ -667,6 +667,10 @@ public class BenchmarkSeriesOrchestrator
             {
                 _logger.LogInformation("Benchmark run series {SeriesId} was cancelled.", seriesId);
             }
+            catch (Exception ex) when (ex.IsCanceledBy(cts.Token))
+            {
+                _logger.LogInformation("Benchmark run series {SeriesId} was cancelled.", seriesId);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Benchmark run series {SeriesId} failed.", seriesId);

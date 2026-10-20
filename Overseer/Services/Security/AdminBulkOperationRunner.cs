@@ -36,7 +36,11 @@ public sealed class AdminBulkOperationRunner : BackgroundService, IAdminBulkOper
         {
             await RecoverInterruptedAsync(stoppingToken);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex.IsCanceledBy(stoppingToken))
+        {
+            return;
+        }
+        catch (Exception ex)
         {
             _logger.LogWarning(ex, "Could not mark interrupted bulk operations.");
         }
@@ -51,7 +55,7 @@ public sealed class AdminBulkOperationRunner : BackgroundService, IAdminBulkOper
                 }
             }
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(stoppingToken))
         {
         }
     }
@@ -81,7 +85,7 @@ public sealed class AdminBulkOperationRunner : BackgroundService, IAdminBulkOper
         {
             await ProcessCoreAsync(operationId, ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        catch (Exception ex) when (!ex.IsCanceledBy(ct))
         {
             _logger.LogError(ex, "Bulk operation {OperationId} stopped unexpectedly.", operationId);
             try
@@ -151,7 +155,7 @@ public sealed class AdminBulkOperationRunner : BackgroundService, IAdminBulkOper
                 var bulk = itemScope.ServiceProvider.GetRequiredService<AdminBulkUserOperationService>();
                 result = await bulk.ProcessItemAsync(op, options, criteria, item.UserId, ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!ex.IsCanceledBy(ct))
             {
                 _logger.LogWarning(ex, "Bulk operation {OperationId} failed on user {UserId}.", op.Id, item.UserId);
                 result = new AdminBulkItemResult(AdminBulkItemOutcome.Failed, ex.Message);

@@ -766,7 +766,7 @@ public class AdminBenchmarkController : ControllerBase
                 return BadRequest(new { error = ex.Message });
             }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -993,14 +993,14 @@ public class AdminBenchmarkController : ControllerBase
             {
                 return BadRequest(ex.Message);
             }
-            catch (DbUpdateException)
+            catch (DbUpdateException) when (!ct.IsCancellationRequested)
             {
                 return Conflict(new { error = "The snapshot was attached to another suite a moment ago. Import again." });
             }
 
             return Ok(ToSuiteDto(suite));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1482,7 +1482,7 @@ public class AdminBenchmarkController : ControllerBase
                 return BadRequest(new { error = ex.Message });
             }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1755,7 +1755,7 @@ public class AdminBenchmarkController : ControllerBase
                 BoardFactsCheck = await CheckBoardFactsAsync(suiteId, ct)
             });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1775,7 +1775,7 @@ public class AdminBenchmarkController : ControllerBase
             if (!await _dbContext.BenchmarkSuites.AnyAsync(s => s.Id == id, ct)) return NotFound();
             return Ok(await CheckBoardFactsAsync(id, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1829,7 +1829,7 @@ public class AdminBenchmarkController : ControllerBase
 
             return Ok(ToQuestionDto(question));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1860,7 +1860,7 @@ public class AdminBenchmarkController : ControllerBase
             await _dbContext.SaveChangesAsync(ct);
             return Ok(new { reviewedCount = count, suite = ToSuiteDto(suite) });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1954,7 +1954,7 @@ public class AdminBenchmarkController : ControllerBase
 
             return Ok(info);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2025,7 +2025,7 @@ public class AdminBenchmarkController : ControllerBase
                 return BadRequest(new { error = ex.Message });
             }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2062,7 +2062,7 @@ public class AdminBenchmarkController : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2110,7 +2110,7 @@ public class AdminBenchmarkController : ControllerBase
 
             return Ok(boards);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2158,7 +2158,7 @@ public class AdminBenchmarkController : ControllerBase
                 }
             });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2191,7 +2191,7 @@ public class AdminBenchmarkController : ControllerBase
             }
             return Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2211,7 +2211,7 @@ public class AdminBenchmarkController : ControllerBase
                 "text/plain; charset=utf-8",
                 $"{safeName}.snapshot.txt");
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2259,7 +2259,7 @@ public class AdminBenchmarkController : ControllerBase
             var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
             return Ok(ToSnapshotDto(board, suite?.Id, suite?.Name));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2302,7 +2302,7 @@ public class AdminBenchmarkController : ControllerBase
                 BoardFactsCheck = suite == null ? null : await CheckBoardFactsAsync(suite.Id, ct)
             });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2324,7 +2324,7 @@ public class AdminBenchmarkController : ControllerBase
             var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
             return Ok(ToSnapshotDto(board, suite?.Id, suite?.Name));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2350,7 +2350,7 @@ public class AdminBenchmarkController : ControllerBase
 
             return NoContent();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2432,7 +2432,7 @@ public class AdminBenchmarkController : ControllerBase
 
             return Accepted(new { jobId = job.Id });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2551,7 +2551,7 @@ public class AdminBenchmarkController : ControllerBase
 
             return Accepted(new { jobId = job.Id });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2656,7 +2656,7 @@ public class AdminBenchmarkController : ControllerBase
 
             return Accepted(new { jobId = job.Id });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2764,7 +2764,7 @@ public class AdminBenchmarkController : ControllerBase
 
             return Accepted(new { jobId = job.Id });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2907,7 +2907,7 @@ public class AdminBenchmarkController : ControllerBase
 
             return Accepted(new { jobId = job.Id });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -3025,7 +3025,7 @@ public class AdminBenchmarkController : ControllerBase
                 ExpectedPoints = question.ExpectedPoints
             });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -4897,7 +4897,7 @@ public class AdminBenchmarkController : ControllerBase
             var info = BenchmarkPdfDocumentInfo.ForRunReport(run, GetOverseerVersion(), pdfPaper);
             return await PdfFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalPdfName(filename!), ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -4920,7 +4920,7 @@ public class AdminBenchmarkController : ControllerBase
             var info = BenchmarkPdfDocumentInfo.ForRunReport(run, GetOverseerVersion(), wordPaper);
             return await WordFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalFileName(filename!, "docx"), ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -4959,7 +4959,7 @@ public class AdminBenchmarkController : ControllerBase
             var info = BenchmarkPdfDocumentInfo.ForToolCallLog(run, pdfPaper);
             return await PdfFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalPdfName(filename!), ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -4982,7 +4982,7 @@ public class AdminBenchmarkController : ControllerBase
             var info = BenchmarkPdfDocumentInfo.ForToolCallLog(run, wordPaper);
             return await WordFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalFileName(filename!, "docx"), ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -5023,7 +5023,7 @@ public class AdminBenchmarkController : ControllerBase
             string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_run{run.Id}_diagnostics_INTERNAL.pdf";
             return await PdfFileAsync(request.Text, plainText: true, info, filename, ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -5063,7 +5063,7 @@ public class AdminBenchmarkController : ControllerBase
             string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_run{run.Id}_diagnostics_INTERNAL.docx";
             return await WordFileAsync(request.Text, plainText: true, info, filename, ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -5369,16 +5369,23 @@ public class AdminBenchmarkController : ControllerBase
     }
 
     [HttpPost("runs/series/{id}/resume")]
-    public async Task<IActionResult> ResumeRunSeries(long id, [FromBody] ResumeBenchmarkRunSeriesRequest? request)
+    public async Task<IActionResult> ResumeRunSeries(long id, [FromBody] ResumeBenchmarkRunSeriesRequest? request, CancellationToken ct = default)
     {
-        string? batchRefusal = await AdminBenchmarkBatteriesController.ModelBatchOwnershipRefusalAsync(
-            _dbContext, null, id, HttpContext?.RequestAborted ?? default);
-        if (batchRefusal != null) return Conflict(batchRefusal);
+        try
+        {
+            string? batchRefusal = await AdminBenchmarkBatteriesController.ModelBatchOwnershipRefusalAsync(
+                _dbContext, null, id, ct);
+            if (batchRefusal != null) return Conflict(batchRefusal);
 
-        var result = await _seriesOrchestrator.ResumeSeriesAsync(
-            id, request?.AcknowledgeInstrumentChange ?? false);
+            var result = await _seriesOrchestrator.ResumeSeriesAsync(
+                id, request?.AcknowledgeInstrumentChange ?? false);
 
-        return SeriesResultToActionResult(result);
+            return SeriesResultToActionResult(result);
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -6320,7 +6327,7 @@ public class AdminBenchmarkController : ControllerBase
                 ? BadRequest(error ?? "The comparison could not be computed.")
                 : Ok(result);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -6345,7 +6352,7 @@ public class AdminBenchmarkController : ControllerBase
         {
             return await BuildComparabilityIndexAsync(request, indexService, ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -6365,7 +6372,7 @@ public class AdminBenchmarkController : ControllerBase
         {
             return await BuildComparabilityIndexAsync(request, indexService, ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -6408,7 +6415,7 @@ public class AdminBenchmarkController : ControllerBase
                 ? BadRequest(error ?? "The paired tests could not be computed.")
                 : Ok(result);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -6434,7 +6441,7 @@ public class AdminBenchmarkController : ControllerBase
                 ? NotFound(error ?? "Battery run not found.")
                 : BadRequest(error ?? "The paired test could not be computed.");
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -6462,7 +6469,7 @@ public class AdminBenchmarkController : ControllerBase
                 ? NotFound(error ?? "Run not found.")
                 : BadRequest(error ?? "The paired test could not be computed.");
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -6488,7 +6495,7 @@ public class AdminBenchmarkController : ControllerBase
                 ? NotFound(error ?? "Run not found.")
                 : BadRequest(error ?? "The runs could not be classified.");
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

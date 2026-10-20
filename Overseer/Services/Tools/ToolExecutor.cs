@@ -243,6 +243,19 @@ namespace Overseer.Services.Tools
                         result = new ToolResult { Success = false, ErrorMessage = $"Tool execution timed out after {handler.TimeoutSeconds} seconds." };
                     }
                 }
+                catch (Exception ex) when (ex.IsCanceledBy(cancellationToken) || ex.IsCanceledBy(timeoutCts.Token))
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        _logger.LogInformation("Tool {ToolName} canceled by outer request for Session {SessionId}", toolName, callContext.SessionId);
+                        result = new ToolResult { Success = false, ErrorMessage = "Tool execution was canceled (request stopped)." };
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Tool {ToolName} timed out after {Timeout}s for Session {SessionId}", toolName, handler.TimeoutSeconds, callContext.SessionId);
+                        result = new ToolResult { Success = false, ErrorMessage = $"Tool execution timed out after {handler.TimeoutSeconds} seconds." };
+                    }
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error executing tool {ToolName} for Session {SessionId}", toolName, callContext.SessionId);

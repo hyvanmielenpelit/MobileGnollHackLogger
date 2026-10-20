@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Http;
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Overseer.Services;
 
 namespace Overseer.Controllers
 {
@@ -142,7 +143,7 @@ namespace Overseer.Controllers
                     return BadRequest("Invalid envelope header JSON.");
                 }
             }
-            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            catch (Exception ex) when (ex.IsCanceledBy(HttpContext.RequestAborted))
             {
                 return StatusCode(StatusCodes.Status499ClientClosedRequest);
             }

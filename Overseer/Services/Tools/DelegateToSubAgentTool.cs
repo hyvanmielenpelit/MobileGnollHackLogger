@@ -341,7 +341,7 @@ public class DelegateToSubAgentTool : IToolHandler
                     pricing = pricingService.ResolveDefault(resolved.Provider, resolved.ModelId);
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException && !cancellationToken.IsCancellationRequested)
             {
                 _logger.LogWarning(ex, "Failed to resolve pricing for subagent {AgentName} ({Provider}/{ModelId}); the run is unpriced.",
                     agentName, resolved.Provider, resolved.ModelId);

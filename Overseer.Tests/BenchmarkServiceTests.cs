@@ -318,6 +318,61 @@ public class BenchmarkServiceTests
     }
 
     [Fact]
+    public async Task RunDifficultyAssessmentAsync_WhenAQueryIsCanceledMidFlight_EndsJobCancelledNotFailed()
+    {
+        using var cts = new CancellationTokenSource();
+        var interceptor = new CanceledMaterializationInterceptor(cts, entity => entity is BenchmarkSuite);
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .AddInterceptors(interceptor)
+            .Options;
+        await using (var seed = new ApplicationDbContext(dbOptions))
+        {
+            seed.BenchmarkSuites.Add(new BenchmarkSuite { Id = 1, Name = "Test Suite" });
+            await seed.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(dbOptions));
+        services.AddScoped(sp => new SystemAiConfigService(sp.GetRequiredService<ApplicationDbContext>(), NullLogger<SystemAiConfigService>.Instance));
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
+        var manager = new BenchmarkDifficultyJobManager();
+        var benchmarkService = new BenchmarkService(
+            scopeFactory,
+            null!,
+            null!,
+            null!,
+            new BenchmarkRunManager(),
+            manager,
+            null!,
+            null!,
+            new ConfigurationBuilder().Build(),
+            NullLogger<BenchmarkService>.Instance);
+
+        var job = new BenchmarkDifficultyJob
+        {
+            SuiteId = 1,
+            SuiteName = "Test Suite",
+            Scope = "suite",
+            AssessorConfigId = 1,
+            AssessorDisplayName = "Assessor Model",
+            Cts = cts,
+            Items = new List<BenchmarkDifficultyJobItem>
+            {
+                new() { QuestionId = 1, OrderIndex = 1, QuestionTextExcerpt = "Q1" }
+            }
+        };
+        Assert.True(manager.TryStart(job, out _));
+        interceptor.Armed = true;
+
+        await benchmarkService.RunDifficultyAssessmentAsync(job.Id, cts.Token);
+
+        Assert.True(interceptor.Fired);
+        Assert.Equal(BenchmarkDifficultyJobStatus.Cancelled, job.Status);
+        Assert.All(job.Items, i => Assert.Equal(BenchmarkDifficultyItemStatus.Cancelled, i.Status));
+    }
+
+    [Fact]
     public async Task CleanupOrphanedRuns_PublishesNoIndex_AndRecordsTotals()
     {
         var ct = TestContext.Current.CancellationToken;

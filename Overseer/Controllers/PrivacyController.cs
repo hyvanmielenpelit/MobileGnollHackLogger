@@ -11,6 +11,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Extensions;
 using Overseer.Security;
 using System.Security.Claims;
+using Overseer.Services;
 
 namespace Overseer.Controllers;
 
@@ -110,7 +111,7 @@ public class PrivacyController : ControllerBase
                 JsonSerializer.SerializeToUtf8Bytes(payload, new JsonSerializerOptions { WriteIndented = true }),
                 "application/json");
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(cancellationToken))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

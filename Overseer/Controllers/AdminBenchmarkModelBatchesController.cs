@@ -102,7 +102,7 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
                 MaxModels = BenchmarkModelBatchOptions.From(_configuration).MaxModels
             });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -123,7 +123,7 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             var dto = await GetDtoAsync(result.BatchId!.Value, ct);
             return StatusCode(StatusCodes.Status201Created, dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -152,7 +152,7 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             var dto = await GetDtoAsync(id.Value, ct);
             return dto == null ? NoContent() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -184,7 +184,7 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
 
             return Ok(dtos);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -199,7 +199,7 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             var dto = await GetDtoAsync(id, ct);
             return dto == null ? NotFound() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -218,7 +218,7 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             string text = BenchmarkModelBatchDiagnostics.BuildText(dto, labels);
             return Content(text, "text/plain", Encoding.UTF8);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -239,7 +239,7 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             var dto = await sources.BuildAsync(id, ct);
             return dto == null ? NotFound() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -260,7 +260,7 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             var dto = await GetDtoAsync(id, ct);
             return dto == null ? NotFound() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -277,7 +277,7 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             var dto = await GetDtoAsync(id, ct);
             return dto == null ? NotFound() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -294,7 +294,7 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             var dto = await GetDtoAsync(id, ct);
             return dto == null ? NotFound() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -322,7 +322,7 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             foreach (var member in batch.Members) ResultCache.TryRemove(member.Id, out _);
             return NoContent();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

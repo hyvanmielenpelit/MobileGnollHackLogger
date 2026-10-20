@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
+using Overseer.Services;
 using Overseer.Services.Benchmarking;
 
 /// <summary>
@@ -97,7 +98,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
             return Ok(await BuildBatteryDtosAsync(batteries, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -111,7 +112,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var dto = await GetBatteryDtoAsync(id, ct);
             return dto == null ? NotFound() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -152,7 +153,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var dto = await GetBatteryDtoAsync(battery.Id, ct);
             return dto == null ? NotFound() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -209,7 +210,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var dto = await GetBatteryDtoAsync(battery.Id, ct);
             return dto == null ? NotFound() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -244,7 +245,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
             return Ok();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -266,7 +267,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var dto = await GetBatteryDtoAsync(id, ct);
             return dto == null ? NotFound() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -527,7 +528,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
             return Ok(await BuildRunDtosAsync(batteryRuns, ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -542,7 +543,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var result = await _orchestrator.StartAsync(request, CurrentUserId(), ct);
             return StartResultToActionResult(result);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -580,7 +581,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var dto = await GetRunDtoAsync(id.Value, ct, includeLiveFigures: true, costEstimator);
             return dto == null ? NoContent() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -601,7 +602,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var dto = await GetRunDtoAsync(id, ct, includeLiveFigures: true, costEstimator);
             return dto == null ? NotFound() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -628,7 +629,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             bool canceled = await _orchestrator.CancelAsync(id, ct);
             return canceled ? Ok() : NotFound();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -645,7 +646,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var result = await _orchestrator.ResumeAsync(id, request?.Mode ?? BenchmarkBatteryResumeMode.Continue, ct);
             return StartResultToActionResult(result);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -714,7 +715,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
             return NoContent();
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -734,7 +735,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var result = await _orchestrator.PreviewReuseAsync(request, ct);
             return result.Succeeded ? Ok(result.Preview) : AttachResultToActionResult(result);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -758,7 +759,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var dto = await GetRunDtoAsync(id, ct);
             return dto == null ? NotFound() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -781,7 +782,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var result = await _orchestrator.GetAttachCandidatesAsync(id, suiteIndex, round, ct);
             return result.Succeeded ? Ok(result.Candidates) : AttachResultToActionResult(result);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1775,7 +1776,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var dto = await BuildAnalysisDtoAsync(analysis, ct);
             return dto == null ? NotFound() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1792,7 +1793,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var dto = await BuildAnalysisDtoAsync(analysis, ct);
             return dto == null ? NoContent() : Ok(dto);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -1938,7 +1939,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
             return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -2079,7 +2080,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
                     .ToList()
             });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }

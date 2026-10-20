@@ -418,6 +418,15 @@ public class ChatConsistencyRegradeService
                 {
                     job.AddError(runId, "The calibration of this run was canceled.");
                 }
+                catch (Exception ex) when (ex.IsCanceledBy(token))
+                {
+                    job.SetStatus(ChatConsistencyRegradeJobStatus.Canceled);
+                    return;
+                }
+                catch (Exception ex) when (ex.IsCanceledBy(runCts.Token))
+                {
+                    job.AddError(runId, "The calibration of this run was canceled.");
+                }
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Chat consistency re-grade of run {RunId} failed.", runId);

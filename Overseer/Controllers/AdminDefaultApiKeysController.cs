@@ -31,7 +31,7 @@ public class AdminDefaultApiKeysController : ControllerBase
         {
             return Ok(await _service.GetStatusAsync(ct));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -51,7 +51,7 @@ public class AdminDefaultApiKeysController : ControllerBase
                 _ => BadRequest(new { message = outcome.Error })
             };
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -74,7 +74,7 @@ public class AdminDefaultApiKeysController : ControllerBase
             }
             return Ok(new DefaultApiKeyVerifyResultDto { Status = status });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -92,7 +92,7 @@ public class AdminDefaultApiKeysController : ControllerBase
             }
             return Ok(check);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
@@ -115,7 +115,7 @@ public class AdminDefaultApiKeysController : ControllerBase
             }
             return Ok(new DefaultApiKeyDeleteResultDto { DisabledCount = disabledCount.Value });
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
