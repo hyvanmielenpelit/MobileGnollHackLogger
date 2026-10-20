@@ -2,6 +2,7 @@ import { Component, ChangeDetectionStrategy, ElementRef, OnInit, ViewChild, inje
 import { FormsModule } from '@angular/forms';
 import { AdminService, GroupDto } from '../../services/admin.service';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
+import { isImeComposing } from '../../utils/ime.util';
 import { AdminPageStore } from '../admin-page.store';
 import { AdminConfirmDialogComponent } from '../admin-dialogs/admin-confirm-dialog.component';
 import { ConfigAccessDialogComponent } from '../admin-dialogs/config-access-dialog/config-access-dialog.component';
@@ -63,6 +64,11 @@ export class AdminGroupsTabComponent implements OnInit {
         this.createGroupError = err.error || 'An error occurred while creating the group.';
       }
     });
+  }
+
+  onGroupNameEnter(event: Event) {
+    if (isImeComposing(event)) return;
+    this.saveCreateGroup();
   }
 
   deleteGroup(group: GroupDto) {

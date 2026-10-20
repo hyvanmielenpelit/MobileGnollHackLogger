@@ -22,6 +22,7 @@ import { AttachedSnapshotService, type AttachedSnapshotInfo } from '../services/
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import { parseServerUtcDate } from '../utils/date.util';
 import { formatThinkingLevel, showReasoningBadge } from '../utils/model-badge-format.util';
+import { isImeComposing } from '../utils/ime.util';
 import * as signalR from '@microsoft/signalr';
 import { firstValueFrom, filter, Observable, Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 export interface ToolClientRequest {
@@ -845,6 +846,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   cancelRename() {
     this.isRenamingTitle = false;
     this.renameError = null;
+  }
+
+  onRenameEnter(event: Event) {
+    if (isImeComposing(event)) return;
+    this.saveRename();
+  }
+
+  onRenameEscape(event: Event) {
+    if (isImeComposing(event)) return;
+    this.cancelRename();
   }
 
   selectModel(model: import('../services/settings.service').UserAiModel | undefined) {
@@ -3738,9 +3749,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   onEnter(event: Event) {
     const keyboardEvent = event as KeyboardEvent;
     if (!keyboardEvent.shiftKey) {
-      // Enter that confirms an IME composition belongs to the IME. keyCode 229 catches
-      // Safari, which fires compositionend before this keydown (WebKit bug 165004).
-      if (keyboardEvent.isComposing || keyboardEvent.keyCode === 229) {
+      if (isImeComposing(keyboardEvent)) {
         return;
       }
       keyboardEvent.preventDefault();

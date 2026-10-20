@@ -48,7 +48,7 @@
     <h3>Create Group</h3>
     <div class="form-group mt-20">
       <label for="newGroupName">Group Name</label>
-      <input type="text" id="newGroupName" [(ngModel)]="newGroupName" (keyup.enter)="saveCreateGroup()" class="gh-input w-100">
+      <input type="text" id="newGroupName" [(ngModel)]="newGroupName" (keydown.enter)="onGroupNameEnter($event)" class="gh-input w-100">
       @if (createGroupError) {
         <div class="error-text mt-10">
           {{ createGroupError }}

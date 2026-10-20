@@ -54,6 +54,7 @@ Harness-neutral, and the floor for any Overseer frontend work.
 - Every control has an accessible name. An icon-only button needs `aria-label`, and the name must be **distinct**: `aria-label="Copy reply to question 3"`, not three buttons all named "Copy".
 - State the user must notice goes in a live region: `aria-live="polite"` for transient confirmations ("Copied"), `role="status"` for progress that advances on its own. A change that is only visible is invisible to a screen-reader user.
 - Keyboard reachable in a sensible order, with a **visible** focus ring. Never `outline: none` without a replacement.
+- A text field that submits on Enter or closes on Escape binds **`keydown`**, never `keyup`, and returns first when `isImeComposing($event)` (`utils/ime.util.ts`) is true: that key belongs to the IME, which uses it to commit or cancel a Japanese, Chinese or Korean conversion. Number, password and API-key fields open no IME and need no guard.
 - Respect `prefers-reduced-motion` for spinners, transitions, and auto-scrolling.
 - Colour is never the only carrier of meaning — pair it with text or shape.
 

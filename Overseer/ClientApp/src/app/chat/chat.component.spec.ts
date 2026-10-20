@@ -3427,3 +3427,69 @@ describe('ChatComponent Enter-to-send', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 });
+
+describe('ChatComponent rename keys', () => {
+  let component: ChatComponent;
+  let fixture: ComponentFixture<ChatComponent>;
+  let saveSpy: Mock;
+  let cancelSpy: Mock;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ChatComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting()
+      ]
+    }).compileComponents();
+
+    stubSignalRConnection();
+    fixture = TestBed.createComponent(ChatComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+    component.currentSessionId = '5';
+    component.isEphemeralSession = false;
+    component.startRename();
+    fixture.detectChanges();
+    saveSpy = vi.spyOn(component, 'saveRename').mockImplementation(() => {});
+    cancelSpy = vi.spyOn(component, 'cancelRename').mockImplementation(() => {});
+  });
+
+  /** Dispatches a keydown on the rename input. */
+  function press(init: KeyboardEventInit): void {
+    const input = fixture.nativeElement.querySelector('input.rename-input') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }));
+  }
+
+  it('saves on Enter', () => {
+    press({ key: 'Enter' });
+
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not save while an IME composition is active', () => {
+    press({ key: 'Enter', isComposing: true });
+
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not save on Safari's keyCode 229 confirming Enter", () => {
+    press({ key: 'Enter', keyCode: 229 });
+
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+
+  it('cancels on Escape', () => {
+    press({ key: 'Escape' });
+
+    expect(cancelSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the editor open when Escape cancels a composition', () => {
+    press({ key: 'Escape', isComposing: true });
+
+    expect(cancelSpy).not.toHaveBeenCalled();
+  });
+});
