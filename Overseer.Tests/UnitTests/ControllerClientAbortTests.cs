@@ -19,7 +19,9 @@ using Xunit;
 /// <summary>
 /// Every Overseer controller action that takes the request's <see cref="CancellationToken"/> catches
 /// its own cancellation and answers 499 Client Closed Request, so an aborted request never leaves
-/// the action as an unhandled <see cref="OperationCanceledException"/>.
+/// the action as an unhandled <see cref="OperationCanceledException"/>. A catch of any
+/// <see cref="Exception"/> under the same filter also qualifies: SqlClient reports a query canceled
+/// mid-execution as a <c>SqlException</c>.
 /// </summary>
 public class ControllerClientAbortTests
 {
@@ -101,7 +103,8 @@ public class ControllerClientAbortTests
 
                 string body = string.Join("\n", lines[(end + 1)..bodyEnd]);
                 string tokenName = token.Groups["name"].Value;
-                if (!body.Contains($"catch (OperationCanceledException) when ({tokenName}.IsCancellationRequested)", StringComparison.Ordinal)
+                if (!(body.Contains($"catch (OperationCanceledException) when ({tokenName}.IsCancellationRequested)", StringComparison.Ordinal)
+                        || body.Contains($"catch (Exception) when ({tokenName}.IsCancellationRequested)", StringComparison.Ordinal))
                     || !body.Contains("Status499ClientClosedRequest", StringComparison.Ordinal))
                 {
                     offenders.Add(action);
