@@ -1,5 +1,6 @@
 @use '../admin-shared' as shared;
 @use 'telemetry-cards' as cards;
+@use 'telemetry-sort' as sort;
 
 :host {
   display: block;
@@ -12,6 +13,7 @@
 @include shared.modern-table;
 @include shared.text-align;
 @include cards.sticky-clearance;
+@include sort.sort-panel('.tl-sort-panel');
 
 /* The header and the Date Range / Keys bar stay at the top together, as the Services tab's head does. */
 .tl-head {

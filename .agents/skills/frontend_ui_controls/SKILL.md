@@ -2382,7 +2382,11 @@ in `telemetry-breakdown.ts` (`filterBreakdownCards`, `sortBreakdownCards`). It s
 `CardListState`, because its filters are toggles and checkboxes rather than facets, its sort is a field
 and a direction in a Sort popover built like the pickers' (`.gh-facet-popover.model-picker-sort-panel`
 behind a `.btn-ghost` *Sort: {field}, {order}* trigger), its cards are read-only, and it neither pages
-nor selects; it holds tens of groups at most. Its *Roles* checkboxes, thinking-level *Group together* /
+nor selects; it holds tens of groups at most. Its eleven sort fields would not fit beside the trigger in
+one column, so the panel is `min(28rem, 100vw − 32px)` wide with *Sort by* in two column-major columns
+(one below 20 rem of the panel, a container query) and *Order* as a segmented pair of native radios in a
+`role="radiogroup"` on one footer row with *Reset sorting* — `admin/telemetry-tab/_telemetry-sort.scss`,
+shared with the Usage by user dialog; the model pickers' own Sort popover keeps one column. Its *Roles* checkboxes, thinking-level *Group together* /
 *Show separately* select, sort, provider toggles and the collapsed state of the tab's Date Range / Keys
 bar are **view settings** stored in the tab's view record (`overseer.admin.telemetry.breakdown`: `roles`,
 `separateThinkingLevels`, `keys`, `sort`, `providers`, `toolbarCollapsed`); the search is not stored. The

@@ -248,6 +248,79 @@ describe('TelemetryModelUsersDialogComponent', () => {
     expect(titles()).toEqual(['alice', 'bob', 'Unknown user']);
   });
 
+  describe('Sort popover layout', () => {
+    /** Opens the dialog and its Sort popover from the trigger, runs the check, and closes the popover again. */
+    function withSortPanel(check: (panel: HTMLElement) => void): void {
+      create();
+      open();
+      respond(0);
+      q<HTMLButtonElement>('#tl-mu-sort-trigger')!.click();
+      fixture.detectChanges();
+      const panel = q('#tl-mu-sort-panel')!;
+      try {
+        expect(panel.matches(':popover-open')).toBe(true);
+        check(panel);
+      } finally {
+        try { panel.hidePopover(); } catch { /* already closed */ }
+      }
+    }
+
+    const options = (panel: HTMLElement) => Array.from(panel.querySelectorAll<HTMLElement>('.tl-sort-fields .gh-facet-option'));
+    const lefts = (panel: HTMLElement) => options(panel).map(o => Math.round(o.getBoundingClientRect().left));
+
+    it('lays Sort by out in two column-major columns of at most six rows', () => {
+      withSortPanel(panel => {
+        const all = lefts(panel);
+        const columns = [...new Set(all)].sort((a, b) => a - b);
+        expect(columns.length).toBe(2);
+        for (const left of columns) {
+          expect(all.filter(l => l === left).length).toBeLessThanOrEqual(6);
+        }
+        const firstColumn = options(panel).filter((_, i) => all[i] === columns[0]).map(text);
+        expect(firstColumn[0]).toBe('Est. cost');
+      });
+    });
+
+    it('fits its content without scrolling', () => {
+      withSortPanel(panel => {
+        expect(panel.scrollHeight).toBeLessThanOrEqual(360);
+        expect(panel.scrollHeight - panel.clientHeight).toBeLessThanOrEqual(1);
+      });
+    });
+
+    it('puts Order and Reset sorting on one row', () => {
+      withSortPanel(panel => {
+        const segments = panel.querySelector('.tl-sort-segments')!.getBoundingClientRect();
+        const reset = panel.querySelector('#tl-mu-sort-reset')!.getBoundingClientRect();
+        expect(reset.top).toBeLessThan(segments.bottom);
+        expect(reset.bottom).toBeGreaterThan(segments.top);
+      });
+    });
+
+    it('falls back to one column when the panel is narrow', () => {
+      withSortPanel(panel => {
+        panel.style.inlineSize = '18rem';
+        void panel.offsetWidth;
+        expect(new Set(lefts(panel)).size).toBe(1);
+      });
+    });
+
+    it('groups Order as a labeled radio group of two focusable radios', () => {
+      withSortPanel(panel => {
+        const group = panel.querySelector<HTMLElement>('[role="radiogroup"]')!;
+        expect(group).not.toBeNull();
+        expect(text(panel.querySelector('#' + group.getAttribute('aria-labelledby')))).toBe('Order');
+        const radios = Array.from(group.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+        expect(radios.length).toBe(2);
+        for (const radio of radios) {
+          expect(radio.name).toBe('tl-mu-sort-direction');
+          radio.focus();
+          expect(document.activeElement).toBe(radio);
+        }
+      });
+    });
+  });
+
   it('splits a user into one card per level with Show separately', () => {
     create();
     open();

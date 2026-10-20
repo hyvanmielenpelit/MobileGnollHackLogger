@@ -116,28 +116,34 @@
                    (toggle)="onSortToggle($event)" (keydown)="onSortPanelKeydown($event)">
                 <fieldset class="gh-facet-group">
                   <legend class="gh-facet-legend">Sort by</legend>
-                  @for (option of sortFields; track option.field) {
-                    <label class="gh-radio gh-facet-option">
-                      <input type="radio" name="tl-mu-sort-field" [id]="'tl-mu-sort-field-' + option.field" [value]="option.field"
-                             [checked]="view.sort.field === option.field" (change)="chooseSortField(option.field)">
-                      <span class="gh-facet-option-label">{{ option.label }}</span>
-                    </label>
-                  }
+                  <div class="tl-sort-fields">
+                    @for (option of sortFields; track option.field) {
+                      <label class="gh-radio gh-facet-option">
+                        <input type="radio" name="tl-mu-sort-field" [id]="'tl-mu-sort-field-' + option.field" [value]="option.field"
+                               [checked]="view.sort.field === option.field" (change)="chooseSortField(option.field)">
+                        <span class="gh-facet-option-label">{{ option.label }}</span>
+                      </label>
+                    }
+                  </div>
                 </fieldset>
-                <fieldset class="gh-facet-group">
-                  <legend class="gh-facet-legend">Order</legend>
-                  @for (direction of sortDirections; track direction) {
-                    <label class="gh-radio gh-facet-option">
-                      <input type="radio" name="tl-mu-sort-direction" [id]="'tl-mu-sort-direction-' + direction" [value]="direction"
-                             [checked]="view.sort.direction === direction" (change)="chooseSortDirection(direction)">
-                      <span class="gh-facet-option-label">{{ directionLabel(direction) }}</span>
-                    </label>
-                  }
-                </fieldset>
-                <div class="model-picker-sort-clear">
-                  <button type="button" class="btn-link" id="tl-mu-sort-reset"
-                          [attr.aria-disabled]="sortIsDefault ? 'true' : null"
-                          (click)="resetSort()">Reset sorting</button>
+                <div class="tl-sort-footer">
+                  <div class="tl-sort-order" role="radiogroup" aria-labelledby="tl-mu-sort-order-label">
+                    <span class="gh-facet-legend" id="tl-mu-sort-order-label">Order</span>
+                    <div class="tl-sort-segments">
+                      @for (direction of sortDirections; track direction) {
+                        <label class="tl-sort-segment">
+                          <input type="radio" name="tl-mu-sort-direction" [id]="'tl-mu-sort-direction-' + direction" [value]="direction"
+                                 [checked]="view.sort.direction === direction" (change)="chooseSortDirection(direction)">
+                          <span>{{ directionLabel(direction) }}</span>
+                        </label>
+                      }
+                    </div>
+                  </div>
+                  <div class="model-picker-sort-clear">
+                    <button type="button" class="btn-link" id="tl-mu-sort-reset"
+                            [attr.aria-disabled]="sortIsDefault ? 'true' : null"
+                            (click)="resetSort()">Reset sorting</button>
+                  </div>
                 </div>
               </div>
             </div>

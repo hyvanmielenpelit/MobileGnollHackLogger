@@ -1,10 +1,13 @@
 @use '../telemetry-cards' as cards;
+@use '../telemetry-sort' as sort;
 
 // The dialog lives in the top layer, so the host takes no box of its own. `.gh-dialog-fullscreen`,
 // `.gh-filter-bar`, `.gh-load-more`, the popover, tooltip, badge and button classes are global.
 :host {
   display: contents;
 }
+
+@include sort.sort-panel('.tl-mu-sort-panel');
 
 .tl-mu-dialog {
   .dialog-content {
