@@ -147,6 +147,12 @@ describe('AdminTelemetryTabComponent', () => {
 
     const status = () => host().querySelector('.tl-breakdown-status')?.textContent?.trim() ?? '';
 
+    const normalize = (text: string | null | undefined) => (text ?? '').replace(/\s+/g, ' ').trim();
+
+    /** The texts of a card's badges matching the selector, visually hidden prefix included. */
+    const badgeTexts = (card: HTMLElement, selector: string): string[] =>
+      Array.from(card.querySelectorAll(`.tl-card-badges ${selector}`)).map(b => normalize(b.textContent));
+
     /** Each `dt`/`dd` pair of a summary card's term lists, whitespace collapsed. */
     const termValues = (cardSelector: string): string[][] =>
       Array.from(host().querySelectorAll(`${cardSelector} dl > div`)).map(pair =>
@@ -368,10 +374,44 @@ describe('AdminTelemetryTabComponent', () => {
       select.dispatchEvent(new Event('change'));
       fixture.detectChanges();
 
-      expect(cards().map(c => c.querySelector('.tl-card-thinking')?.textContent?.trim())).toEqual(['Thinking: high', 'Thinking: None sent']);
+      const [high, none] = cards();
+      expect(badgeTexts(high, '.thinking-badge')).toEqual(['thinking level High']);
+      expect(badgeTexts(none, '.thinking-badge')).toEqual([]);
+      expect(badgeTexts(none, '.config-badge')).toEqual(['thinking level None sent']);
     });
 
-    it('titles a card with the model name and shows the id beside it, else titles it with the id', () => {
+    it('shows one thinking badge per recorded level of a grouped card, in the catalog order', () => {
+      summarySpy.mockReturnValue(of(summary({
+        rows: [row({ thinkingLevel: 'high' }), row({ thinkingLevel: 'medium' }), row({ thinkingLevel: '' }), row({ thinkingLevel: null })]
+      })));
+      openTab();
+
+      expect(cards().length).toBe(1);
+      expect(badgeTexts(cards()[0], '.thinking-badge')).toEqual(['thinking level Medium', 'thinking level High']);
+      expect(badgeTexts(cards()[0], '.config-badge')).toEqual([]);
+    });
+
+    it('gives each card a role badge in its role color', () => {
+      summarySpy.mockReturnValue(of(summary({
+        rows: [
+          row({ requests: 4 }),
+          row({ modelId: 'b', modelName: 'B', roleGroup: 'title', roleContext: 2, requests: 3 }),
+          row({ modelId: 'c', modelName: 'C', roleGroup: 'benchmark', roleContext: 4, requests: 2 }),
+          row({ modelId: 'd', modelName: 'D', roleGroup: 'other', roleContext: 9, requests: 1 })
+        ]
+      })));
+      openTab();
+      (host().querySelector('#tl-role-other') as HTMLInputElement).click();
+      fixture.detectChanges();
+
+      const roleBadges = cards().map(c => c.querySelector<HTMLElement>('.tl-card-badges .status-badge')!);
+      expect(roleBadges.map(b => normalize(b.textContent))).toEqual(['role Chat', 'role Title Generation', 'role Benchmark', 'role Other']);
+      expect(roleBadges.map(b => Array.from(b.classList).find(c => c.startsWith('badge-role-'))))
+        .toEqual(['badge-role-chat', 'badge-role-title', 'badge-role-benchmark', 'badge-role-other']);
+      expect(cards()[0].querySelector('.tl-card-badges')?.getAttribute('role')).toBe('list');
+    });
+
+    it('titles a card with the model name and shows the id and the provider under it, else titles it with the id', () => {
       summarySpy.mockReturnValue(of(summary({
         rows: [row({ requests: 2 }), row({ modelId: 'mystery-1', modelName: null })]
       })));
@@ -379,10 +419,11 @@ describe('AdminTelemetryTabComponent', () => {
 
       const [named, unnamed] = cards();
       expect(named.querySelector('h5')?.textContent?.trim()).toBe('Claude X');
-      expect(named.querySelector('.model-id-chip')?.textContent?.trim()).toBe('claude-x');
-      expect(named.querySelector('app-provider-badge')).not.toBeNull();
+      expect(named.querySelector('.tl-card-identity .gh-model-card-model-id')?.textContent?.trim()).toBe('claude-x');
+      expect(named.querySelector('.tl-card-identity app-provider-badge')).not.toBeNull();
       expect(unnamed.querySelector('h5')?.textContent?.trim()).toBe('mystery-1');
-      expect(unnamed.querySelector('.model-id-chip')).toBeNull();
+      expect(unnamed.querySelector('.tl-card-identity app-provider-badge')).not.toBeNull();
+      expect(unnamed.querySelector('.tl-card-identity .gh-model-card-model-id')).toBeNull();
     });
 
     it('names the user of a user-key card and marks system cards under Both', () => {
@@ -397,7 +438,232 @@ describe('AdminTelemetryTabComponent', () => {
       select.dispatchEvent(new Event('change'));
       fixture.detectChanges();
 
-      expect(cards().map(c => c.querySelector('.tl-card-key')?.textContent?.trim())).toEqual(['System', 'User key: alice']);
+      expect(cards().map(c => normalize(c.querySelector('.tl-key-badge')?.textContent))).toEqual(['key System key', 'key User key: alice']);
+    });
+
+    // --- Breakdown search, provider toggles and sort ---
+
+    const threeProviders = () => summary({
+      rows: [
+        row({ provider: 'Google', modelId: 'gemini-flash', modelName: 'Gemini Flash', requests: 5, estimatedCost: 3, pricedRequests: 5 }),
+        row({ provider: 'Anthropic', modelId: 'claude-opus', modelName: 'Claude Opus', requests: 3, estimatedCost: 1, pricedRequests: 3 }),
+        row({ provider: 'OpenAI', modelId: 'gpt-x', modelName: 'GPT X', requests: 2, estimatedCost: 2, pricedRequests: 2 }),
+        row({ provider: 'OpenAI', modelId: 'gpt-y', modelName: 'GPT Y', requests: 1, pricedRequests: 0 })
+      ]
+    });
+
+    const searchField = () => host().querySelector('#tl-breakdown-search') as HTMLInputElement;
+    const titlesShown = () => cards().map(c => c.querySelector('h5')?.textContent?.trim());
+
+    const typeSearch = (text: string) => {
+      searchField().value = text;
+      searchField().dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    };
+
+    it('filters the cards by the search after a short quiet, marks the match and updates the status line', () => {
+      vi.useFakeTimers();
+      try {
+        summarySpy.mockReturnValue(of(threeProviders()));
+        openTab();
+        expect(host().querySelector('label[for="tl-breakdown-search"]')?.textContent).toContain('Search by model name');
+
+        typeSearch('flash');
+        expect(cards().length).toBe(4);
+
+        vi.advanceTimersByTime(200);
+        fixture.detectChanges();
+
+        expect(titlesShown()).toEqual(['Gemini Flash']);
+        expect(cards()[0].querySelector('h5 mark.model-option-match')?.textContent).toBe('Flash');
+        expect(cards()[0].querySelector('.gh-model-card-model-id mark.model-option-match')?.textContent).toBe('flash');
+        expect(status()).toBe('Showing 1 of 4 entries · 5 of 11 requests');
+        expect(host().querySelector('.tl-card-total .tl-metrics')?.textContent).toContain('5');
+        expect(JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY) ?? '{}').search).toBeUndefined();
+
+        typeSearch('zzz');
+        vi.advanceTimersByTime(200);
+        fixture.detectChanges();
+        expect(cards().length).toBe(0);
+        expect(status()).toBe('No entries match "zzz".');
+        expect(host().querySelector('.tl-no-match .tl-empty')?.textContent?.trim()).toBe('No entries match "zzz".');
+      }
+      finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('clears the search on Escape with text, and leaves Escape alone without it', () => {
+      vi.useFakeTimers();
+      try {
+        summarySpy.mockReturnValue(of(threeProviders()));
+        openTab();
+        typeSearch('gpt');
+        vi.advanceTimersByTime(200);
+        fixture.detectChanges();
+        expect(cards().length).toBe(2);
+
+        const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+        const stop = vi.spyOn(escape, 'stopPropagation');
+        searchField().dispatchEvent(escape);
+        fixture.detectChanges();
+
+        expect(stop).toHaveBeenCalled();
+        expect(escape.defaultPrevented).toBe(true);
+        expect(searchField().value).toBe('');
+        expect(cards().length).toBe(4);
+
+        const second = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+        const stopSecond = vi.spyOn(second, 'stopPropagation');
+        searchField().dispatchEvent(second);
+        expect(stopSecond).not.toHaveBeenCalled();
+        expect(second.defaultPrevented).toBe(false);
+      }
+      finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('shows provider toggles from two providers, ORs them, stores them, and Clear filters clears them and the search', () => {
+      vi.useFakeTimers();
+      try {
+        summarySpy.mockReturnValue(of(threeProviders()));
+        openTab();
+
+        const group = host().querySelector('.tl-providers') as HTMLElement;
+        expect(group.getAttribute('role')).toBe('group');
+        expect(group.getAttribute('aria-label')).toBe('Filter by provider');
+        const toggle = (key: string) => host().querySelector(`#tl-provider-${key}`) as HTMLButtonElement;
+        expect(Array.from(group.querySelectorAll('button')).map(b =>
+          [b.querySelector('span')?.textContent, normalize(b.querySelector('.model-picker-provider-count')?.textContent)]))
+          .toEqual([['Anthropic', '1 entry'], ['Google', '1 entry'], ['OpenAI', '2 entries']]);
+        expect(toggle('google').getAttribute('aria-pressed')).toBe('false');
+        expect(host().querySelector('#tl-breakdown-clear')).toBeNull();
+
+        toggle('google').click();
+        fixture.detectChanges();
+        toggle('openai').click();
+        fixture.detectChanges();
+
+        expect(toggle('google').getAttribute('aria-pressed')).toBe('true');
+        expect(titlesShown()).toEqual(['Gemini Flash', 'GPT X', 'GPT Y']);
+        expect(status()).toBe('Showing 3 of 4 entries · 8 of 11 requests');
+        expect(JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY)!).providers).toEqual(['google', 'openai']);
+
+        typeSearch('gpt');
+        vi.advanceTimersByTime(200);
+        fixture.detectChanges();
+        expect(titlesShown()).toEqual(['GPT X', 'GPT Y']);
+
+        (host().querySelector('#tl-breakdown-clear') as HTMLButtonElement).click();
+        fixture.detectChanges();
+
+        expect(cards().length).toBe(4);
+        expect(searchField().value).toBe('');
+        expect(toggle('google').getAttribute('aria-pressed')).toBe('false');
+        expect(document.activeElement).toBe(searchField());
+        expect(host().querySelector('#tl-breakdown-clear')).toBeNull();
+        expect(JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY)!).providers).toEqual([]);
+      }
+      finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('hides the provider toggles with one provider', () => {
+      summarySpy.mockReturnValue(of(summary({ rows: [row(), row({ modelId: 'b', modelName: 'B' })] })));
+      openTab();
+      expect(host().querySelector('.tl-providers')).toBeNull();
+    });
+
+    it('sorts the cards from the Sort popover, keeps All shown last, and stores the sort', () => {
+      summarySpy.mockReturnValue(of(threeProviders()));
+      openTab();
+
+      const trigger = host().querySelector('#tl-sort-trigger') as HTMLButtonElement;
+      expect(trigger.matches('button.btn-ghost[type="button"]')).toBe(true);
+      expect(normalize(trigger.textContent)).toBe('Sort: Requests, highest first');
+      expect(trigger.getAttribute('popovertarget')).toBe('tl-sort-panel');
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      const panel = host().querySelector('#tl-sort-panel') as HTMLElement;
+      expect(panel.getAttribute('popover')).toBe('auto');
+      expect(Array.from(panel.querySelectorAll('fieldset legend')).map(l => l.textContent?.trim())).toEqual(['Sort by', 'Order']);
+      const reset = host().querySelector('#tl-sort-reset') as HTMLButtonElement;
+      expect(reset.getAttribute('aria-disabled')).toBe('true');
+
+      (host().querySelector('#tl-sort-field-cost') as HTMLInputElement).click();
+      fixture.detectChanges();
+      expect(titlesShown()).toEqual(['Gemini Flash', 'GPT X', 'Claude Opus', 'GPT Y']);
+
+      (host().querySelector('#tl-sort-direction-asc') as HTMLInputElement).click();
+      fixture.detectChanges();
+
+      expect(titlesShown()).toEqual(['Claude Opus', 'GPT X', 'Gemini Flash', 'GPT Y']);
+      expect(host().querySelector('.tl-cards > li:last-child article')?.classList.contains('tl-card-total')).toBe(true);
+      expect(normalize(trigger.textContent)).toBe('Sort: Est. cost, lowest first');
+      expect(reset.hasAttribute('aria-disabled')).toBe(false);
+      expect(JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY)!).sort).toEqual({ field: 'cost', direction: 'asc' });
+
+      (host().querySelector('#tl-sort-field-name') as HTMLInputElement).click();
+      fixture.detectChanges();
+      expect(normalize(host().querySelector('label:has(#tl-sort-direction-asc)')?.textContent)).toBe('A–Z');
+      expect(titlesShown()).toEqual(['Claude Opus', 'Gemini Flash', 'GPT X', 'GPT Y']);
+
+      reset.click();
+      fixture.detectChanges();
+      expect(normalize(trigger.textContent)).toBe('Sort: Requests, highest first');
+      expect(reset.getAttribute('aria-disabled')).toBe('true');
+      expect(host().querySelector('#tl-sort-reset')).toBe(reset);
+    });
+
+    // --- Sticky, collapsible Date Range and Keys bar ---
+
+    it('keeps the header and the Date Range and Keys bar in one sticky head', () => {
+      openTab();
+
+      const head = host().querySelector('.tl-head') as HTMLElement;
+      expect(head.querySelector('.tab-header-row')).not.toBeNull();
+      expect(head.querySelector('.telemetry-toolbar')).not.toBeNull();
+      const style = getComputedStyle(head);
+      expect(style.position).toBe('sticky');
+      expect(style.top).toBe('0px');
+      expect(getComputedStyle(head.querySelector('.tl-toolbar-ground')!).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    });
+
+    it('collapses the bar to a summary line, keeps focus on the toggle, and remembers it', () => {
+      openTab();
+
+      const toggle = host().querySelector('#tl-toolbar-toggle') as HTMLButtonElement;
+      const controls = host().querySelector('#tl-toolbar-controls') as HTMLElement;
+      expect(toggle.getAttribute('aria-label')).toBe('Date range and keys');
+      expect(toggle.getAttribute('aria-controls')).toBe('tl-toolbar-controls');
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(host().querySelector('#' + toggle.getAttribute('interestfor'))?.getAttribute('popover')).toBe('hint');
+      expect(host().querySelector('.tl-toolbar-summary')).toBeNull();
+
+      toggle.focus();
+      toggle.click();
+      fixture.detectChanges();
+
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(controls.hidden).toBe(true);
+      expect(host().querySelector('#telemetryKeysSelect')).not.toBeNull();
+      expect(host().querySelector('.tl-toolbar-summary')?.textContent?.trim()).toBe('Last 30 days · System AI configurations');
+      expect(document.activeElement).toBe(toggle);
+      expect(JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY)!).toolbarCollapsed).toBe(true);
+
+      store.telemetryRange.timeSpan = 'custom';
+      store.telemetryRange.start = '2026-09-01';
+      store.telemetryRange.end = '2026-09-30';
+      fixture.detectChanges();
+      expect(host().querySelector('.tl-toolbar-summary')?.textContent?.trim()).toBe('2026-09-01 – 2026-09-30 · System AI configurations');
+
+      const again = TestBed.createComponent(AdminTelemetryTabComponent);
+      again.detectChanges();
+      const restored = again.nativeElement as HTMLElement;
+      expect(restored.querySelector('#tl-toolbar-toggle')?.getAttribute('aria-expanded')).toBe('false');
+      expect((restored.querySelector('#tl-toolbar-controls') as HTMLElement).hidden).toBe(true);
+      again.destroy();
     });
 
     it('is a labeled list of articles, each labeled by its title, ending in the All shown total', () => {

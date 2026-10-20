@@ -1,50 +1,70 @@
-<div class="tab-header-row d-flex justify-content-between align-items-center mb-15">
-  <h3 class="m-0">AI Telemetry & Request Governor</h3>
-  <div class="d-flex align-items-center telemetry-header-actions">
-    <button type="button" class="btn-gh telemetry-charts-btn" (click)="openCharts()">
-      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-      Charts
-    </button>
-    <button type="button" class="btn-gh" (click)="refreshTelemetryTab(true)" [disabled]="telemetryLoading || governorLoading">
-      @if (telemetryLoading || governorLoading) {
-        <span class="gh-spinner-small"></span>
-      }
-      Refresh Telemetry
-    </button>
+<!-- The header and the Date Range / Keys bar stay at the top while the tab scrolls. -->
+<div class="tl-head" #tlHead>
+  <div class="tab-header-row d-flex justify-content-between align-items-center">
+    <h3 class="m-0">AI Telemetry & Request Governor</h3>
+    <div class="d-flex align-items-center telemetry-header-actions">
+      <button type="button" class="btn-gh telemetry-charts-btn" (click)="openCharts()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+        Charts
+      </button>
+      <button type="button" class="btn-gh" (click)="refreshTelemetryTab(true)" [disabled]="telemetryLoading || governorLoading">
+        @if (telemetryLoading || governorLoading) {
+          <span class="gh-spinner-small"></span>
+        }
+        Refresh Telemetry
+      </button>
+    </div>
   </div>
-</div>
 
-<!-- Date Filter Toolbar -->
-<div class="telemetry-toolbar mb-20">
-  <div class="control-group">
-    <label for="telemetryTimeSpanSelect">Date Range</label>
-    <select id="telemetryTimeSpanSelect" class="gh-input" [(ngModel)]="telemetryTimeSpan" (ngModelChange)="onTelemetryTimeSpanChange()">
-      <option value="7d">Last 7 days</option>
-      <option value="28d">Last 28 days</option>
-      <option value="30d">Last 30 days</option>
-      <option value="90d">Last 90 days</option>
-      <option value="180d">Last 180 days</option>
-      <option value="1y">Last year</option>
-      <option value="custom">Custom date range</option>
-    </select>
-  </div>
-  @if (telemetryTimeSpan === 'custom') {
-    <div class="control-group">
-      <label for="telemetryStartDateInput">Start Date</label>
-      <input id="telemetryStartDateInput" type="date" class="gh-input" [(ngModel)]="telemetryStartDate" (ngModelChange)="onCustomDateChange()" [max]="todayDate">
-    </div>
-    <div class="control-group">
-      <label for="telemetryEndDateInput">End Date</label>
-      <input id="telemetryEndDateInput" type="date" class="gh-input" [(ngModel)]="telemetryEndDate" (ngModelChange)="onCustomDateChange()" [min]="telemetryStartDate" [max]="todayDate">
-    </div>
-  }
-  <div class="control-group">
-    <label for="telemetryKeysSelect">Keys</label>
-    <select id="telemetryKeysSelect" class="gh-input" [ngModel]="keys" (ngModelChange)="onKeysChange($event)">
-      @for (source of keySources; track source) {
-        <option [value]="source">{{ keySourceLabels[source] }}</option>
+  <!-- Date Filter Toolbar: collapsible to one summary line. The controls are hidden, not removed, so their ids and bindings stay. -->
+  <div class="tl-toolbar-ground">
+    <div class="telemetry-toolbar" [class.is-collapsed]="view.toolbarCollapsed">
+      <div class="tl-toolbar-controls" id="tl-toolbar-controls" [hidden]="view.toolbarCollapsed">
+        <div class="control-group">
+          <label for="telemetryTimeSpanSelect">Date Range</label>
+          <select id="telemetryTimeSpanSelect" class="gh-input" [(ngModel)]="telemetryTimeSpan" (ngModelChange)="onTelemetryTimeSpanChange()">
+            @for (span of timeSpans; track span) {
+              <option [value]="span">{{ timeSpanLabels[span] }}</option>
+            }
+          </select>
+        </div>
+        @if (telemetryTimeSpan === 'custom') {
+          <div class="control-group">
+            <label for="telemetryStartDateInput">Start Date</label>
+            <input id="telemetryStartDateInput" type="date" class="gh-input" [(ngModel)]="telemetryStartDate" (ngModelChange)="onCustomDateChange()" [max]="todayDate">
+          </div>
+          <div class="control-group">
+            <label for="telemetryEndDateInput">End Date</label>
+            <input id="telemetryEndDateInput" type="date" class="gh-input" [(ngModel)]="telemetryEndDate" (ngModelChange)="onCustomDateChange()" [min]="telemetryStartDate" [max]="todayDate">
+          </div>
+        }
+        <div class="control-group">
+          <label for="telemetryKeysSelect">Keys</label>
+          <select id="telemetryKeysSelect" class="gh-input" [ngModel]="keys" (ngModelChange)="onKeysChange($event)">
+            @for (source of keySources; track source) {
+              <option [value]="source">{{ keySourceLabels[source] }}</option>
+            }
+          </select>
+        </div>
+      </div>
+      @if (view.toolbarCollapsed) {
+        <p class="tl-toolbar-summary">{{ toolbarSummary }}</p>
       }
-    </select>
+      <!-- A constant name; aria-expanded carries the state and the chevron shows it. -->
+      <button type="button" class="action-btn tl-toolbar-toggle" id="tl-toolbar-toggle"
+              aria-label="Date range and keys" aria-controls="tl-toolbar-controls"
+              [attr.aria-expanded]="!view.toolbarCollapsed"
+              [attr.interestfor]="'tl-toolbar-toggle-tip'" style="anchor-name: --tl-toolbar-toggle"
+              (click)="toggleToolbar()">
+        @if (view.toolbarCollapsed) {
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        } @else {
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>
+        }
+      </button>
+      <div popover="hint" class="gh-tooltip" id="tl-toolbar-toggle-tip"
+           style="position-anchor: --tl-toolbar-toggle">{{ view.toolbarCollapsed ? 'Expand' : 'Collapse' }}</div>
+    </div>
   </div>
 </div>
 
@@ -291,23 +311,90 @@
   </div>
 
   @if (hasBreakdownRows) {
-    <div class="tl-breakdown-filters">
-      <fieldset class="tl-roles">
-        <legend>Roles</legend>
-        @for (group of roleOptions; track group) {
-          <label class="checkbox-label tl-role-option" [for]="'tl-role-' + group">
-            <input type="checkbox" [id]="'tl-role-' + group" [checked]="isRoleSelected(group)" (change)="toggleRole(group, $event)">
-            <span>{{ roleGroupLabel(group) }}</span>
-            <span class="tl-role-count">{{ formatInteger(roleRequestCounts[group]) }}<span class="visually-hidden"> requests</span></span>
-          </label>
+    <div class="gh-filter-bar tl-breakdown-filters">
+      <div class="gh-filter-bar-row tl-breakdown-filters-row">
+        <div class="gh-search-field tl-breakdown-search">
+          <label class="visually-hidden" for="tl-breakdown-search">Search by model name, model id or provider</label>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="search" class="gh-input" id="tl-breakdown-search" autocomplete="off"
+                 autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"
+                 placeholder="Search model or provider" [value]="searchInput"
+                 (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+        </div>
+        <div class="control-group tl-thinking">
+          <label for="tl-thinking-select">Thinking levels</label>
+          <select id="tl-thinking-select" class="gh-input" (change)="onThinkingChange($event)">
+            <option value="grouped" [selected]="!view.separateThinkingLevels">Group together</option>
+            <option value="separate" [selected]="view.separateThinkingLevels">Show separately</option>
+          </select>
+        </div>
+        <div class="tl-sort">
+          <button type="button" class="btn-ghost tl-sort-trigger" id="tl-sort-trigger"
+                  popovertarget="tl-sort-panel" [attr.aria-expanded]="sortOpen"
+                  style="anchor-name: --tl-sort-trigger">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 4 4 4-4"></path><path d="M7 20V4"></path><path d="m21 8-4-4-4 4"></path><path d="M17 4v16"></path></svg>
+            <span>Sort: {{ sortLabel }}</span>
+          </button>
+          <div popover="auto" class="gh-facet-popover model-picker-sort-panel tl-sort-panel" id="tl-sort-panel"
+               style="position-anchor: --tl-sort-trigger"
+               (toggle)="onSortToggle($event)" (keydown)="onSortPanelKeydown($event)">
+            <fieldset class="gh-facet-group">
+              <legend class="gh-facet-legend">Sort by</legend>
+              @for (option of sortFields; track option.field) {
+                <label class="gh-radio gh-facet-option">
+                  <input type="radio" name="tl-sort-field" [id]="'tl-sort-field-' + option.field" [value]="option.field"
+                         [checked]="view.sort.field === option.field" (change)="chooseSortField(option.field)">
+                  <span class="gh-facet-option-label">{{ option.label }}</span>
+                </label>
+              }
+            </fieldset>
+            <fieldset class="gh-facet-group">
+              <legend class="gh-facet-legend">Order</legend>
+              @for (direction of sortDirections; track direction) {
+                <label class="gh-radio gh-facet-option">
+                  <input type="radio" name="tl-sort-direction" [id]="'tl-sort-direction-' + direction" [value]="direction"
+                         [checked]="view.sort.direction === direction" (change)="chooseSortDirection(direction)">
+                  <span class="gh-facet-option-label">{{ directionLabel(direction) }}</span>
+                </label>
+              }
+            </fieldset>
+            <div class="model-picker-sort-clear">
+              <button type="button" class="btn-link" id="tl-sort-reset"
+                      [attr.aria-disabled]="sortIsDefault ? 'true' : null"
+                      (click)="resetSort()">Reset sorting</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="gh-filter-bar-row tl-breakdown-filters-row">
+        <fieldset class="tl-roles">
+          <legend>Roles</legend>
+          @for (group of roleOptions; track group) {
+            <label class="checkbox-label tl-role-option" [for]="'tl-role-' + group">
+              <input type="checkbox" [id]="'tl-role-' + group" [checked]="isRoleSelected(group)" (change)="toggleRole(group, $event)">
+              <span>{{ roleGroupLabel(group) }}</span>
+              <span class="tl-role-count">{{ formatInteger(roleRequestCounts[group]) }}<span class="visually-hidden"> requests</span></span>
+            </label>
+          }
+        </fieldset>
+        @if (providerFacets.length >= 2) {
+          <div class="model-picker-providers tl-providers" role="group" aria-label="Filter by provider">
+            @for (facet of providerFacets; track facet.key) {
+              <button type="button" class="model-picker-provider" [attr.data-provider]="facet.key"
+                      [id]="'tl-provider-' + facet.key" [attr.aria-pressed]="isProviderPressed(facet)"
+                      (click)="toggleProvider(facet)">
+                @if (isProviderPressed(facet)) {
+                  <svg class="model-picker-provider-check" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                }
+                <span>{{ facet.provider }}</span>
+                <span class="model-picker-provider-count">{{ facet.count }}<span class="visually-hidden"> {{ facet.count === 1 ? 'entry' : 'entries' }}</span></span>
+              </button>
+            }
+          </div>
         }
-      </fieldset>
-      <div class="control-group tl-thinking">
-        <label for="tl-thinking-select">Thinking levels</label>
-        <select id="tl-thinking-select" class="gh-input" (change)="onThinkingChange($event)">
-          <option value="grouped" [selected]="!view.separateThinkingLevels">Group together</option>
-          <option value="separate" [selected]="view.separateThinkingLevels">Show separately</option>
-        </select>
+        @if (breakdownFiltersActive) {
+          <button type="button" class="btn-link gh-filter-clear" id="tl-breakdown-clear" (click)="clearBreakdownFilters()">Clear filters</button>
+        }
       </div>
     </div>
   }
@@ -316,32 +403,35 @@
     <p class="text-muted telemetry-empty tl-empty">No AI usage logged for the selected date range.</p>
   } @else if (view.roles.length === 0) {
     <p class="text-muted telemetry-empty tl-empty">No role is selected. Select a role above to show its usage.</p>
-  } @else if (breakdown.cards.length === 0) {
+  } @else if (breakdown.all.length === 0) {
     <p class="text-muted telemetry-empty tl-empty">No usage for the selected roles in this range.</p>
+  } @else if (breakdown.cards.length === 0) {
+    <div class="tl-no-match">
+      <p class="text-muted telemetry-empty tl-empty">{{ breakdownStatus }}</p>
+      <button type="button" class="btn-link gh-filter-clear tl-no-match-clear" (click)="clearBreakdownFilters()">Clear filters</button>
+    </div>
   } @else {
     <ul role="list" class="tl-cards" aria-labelledby="tl-breakdown-heading">
       @for (card of breakdown.cards; track card.key; let i = $index) {
         <li class="tl-item">
           <article class="tl-card" [attr.aria-labelledby]="'tl-card-' + i + '-title'">
             <div class="tl-card-head">
-              <!-- A dot on screen between the parts, a comma for assistive technology. -->
-              <div class="tl-card-kicker">
+              <h5 class="tl-card-title" [id]="'tl-card-' + i + '-title'">@for (part of titleParts(card); track $index) {@if (part.match) {<mark class="model-option-match">{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</h5>
+              <p class="gh-model-card-identity tl-card-identity">
+                @if (card.modelName) {
+                  <code class="gh-model-card-model-id">@for (part of modelIdParts(card); track $index) {@if (part.match) {<mark class="model-option-match">{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</code>
+                }
                 <app-provider-badge [provider]="card.provider"></app-provider-badge>
-                <span class="tl-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                <span class="tl-card-role">{{ roleGroupLabel(card.roleGroup) }}</span>
+              </p>
+              <ul class="gh-model-card-badges tl-card-badges" role="list" aria-label="Usage group">
+                <li><span class="status-badge" [ngClass]="roleBadgeClass(card.roleGroup)"><span class="visually-hidden">role </span>{{ roleGroupLabel(card.roleGroup) }}</span></li>
+                @for (badge of thinkingBadges(card); track badge.text) {
+                  <li><span [class]="badge.cssClass"><span class="visually-hidden">{{ badge.prefix }} </span>{{ badge.text }}</span></li>
+                }
                 @if (keyLabel(card); as keyText) {
-                  <span class="tl-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                  <span class="tl-card-key">{{ keyText }}</span>
+                  <li><span class="config-badge tl-key-badge"><span class="visually-hidden">key </span>{{ keyText }}</span></li>
                 }
-                @if (view.separateThinkingLevels) {
-                  <span class="tl-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                  <span class="tl-card-thinking">Thinking: {{ thinkingLevelLabel(card.thinkingLevel) }}</span>
-                }
-              </div>
-              <h5 class="tl-card-title" [id]="'tl-card-' + i + '-title'">{{ cardTitle(card) }}</h5>
-              @if (card.modelName) {
-                <p class="tl-card-meta"><span class="model-id-chip">{{ card.modelId }}</span></p>
-              }
+              </ul>
             </div>
             <ng-container *ngTemplateOutlet="metrics; context: { $implicit: card, role: card.roleGroup }"></ng-container>
           </article>

@@ -63,7 +63,39 @@ User-key rows show the user's current name. Calls on a user's own key are logged
 key writes nothing** — no usage row and no attempt row. Incognito turns on a system configuration keep
 recording as before (they spend the operator's quota), and confidential turns record on both key sources.
 
-## 7. Estimated cost
+## 7. The breakdown: badges, search, provider filter, sort and the sticky bar
+
+*Usage by Model and Role* shows one card per key source, user, provider, model and role group. Each card
+is titled with the model name (§ 5), with the model id and the provider badge on the line under it, then a
+badge row: the role (*Chat*, *Title Generation*, *Benchmark*, *Other*, each in its role color), the
+thinking level and, under *Keys: Both*, the key (*System key*, *User key: alice*). With *Show separately*
+a card has one thinking badge — the level, or *None sent* / *Not recorded* in a neutral badge; with
+*Group together* it has one badge per level its rows recorded, in `ThinkingLevelOrder.json` order, and
+none for *None sent* or *Not recorded*.
+
+The filter bar over the cards has two rows. The first holds the **search** (model name, model id,
+provider, and a user key's user name; whitespace-separated terms must all match, matches are highlighted
+in the title and the id; Escape clears it), the *Thinking levels* select and the **Sort** popover. The
+second holds the *Roles* checkboxes and, from two providers up, the **provider toggles**: pressed toggles
+OR together and none pressed shows every provider, while no role checked shows nothing. *Clear filters*
+clears the search and the provider toggles. The search, matching and highlighting are the model pickers'
+(`shared/model-picker/model-picker-view.ts`); the filtering and sorting are pure functions in
+`telemetry-breakdown.ts`.
+
+**Sort** is a field — *Requests* (the default, highest first), *Est. cost*, *Input (uncached)*, *Cache
+read*, *Cache created*, *Output*, *Cache hit*, *Avg duration*, *Provider errors*, *Model name* or
+*Provider* — and an order, *Highest first* / *Lowest first* or *A–Z* / *Z–A*. A card without a figure for
+the field (an unpriced cost, no cache hit or duration, provider errors *In GnollBench* or without attempts)
+sorts last in both orders. Ties go by title, then thinking level in the catalog order, then the card key.
+*All shown* sums the shown cards and stays last. The charts dialog does not take the search, the provider
+toggles or the sort.
+
+The tab header and the **Date Range / Keys** bar form one sticky head at the top of the tab. A chevron
+button (*Date range and keys*, `aria-expanded`) collapses the bar to one line, *Last 30 days · System AI
+configurations*. The head's height is kept in `--tl-sticky-clearance`, so a focused or scrolled-to element
+stops below it.
+
+## 8. Estimated cost
 
 Cost is priced **per call at record time**, because long-context rates (Claude Haiku 5.5 above 100,000
 prompt tokens, GPT-5.x above 272,000) apply per request and a sum of a turn's tokens cannot be repriced.
@@ -81,7 +113,7 @@ has a price card; a null cost means **unpriced**, never $0.
 Rows written before this existed stay unpriced (no backfill); the Estimated Cost card says *n of N
 requests unpriced* and *Cost recorded since {date}* when the range starts earlier.
 
-## 8. Chat provider availability
+## 9. Chat provider availability
 
 `AgentLoopRunner` classifies every attempt of every agent run into GnollBench's `ProviderAttemptOutcome`
 classes (`ai-benchmark-provider-availability.md`); the chat turn, each sub-agent run and title generation
@@ -107,14 +139,14 @@ are *System* with no configuration id. Configuration id 0 is attribution only, n
 model-level aggregates group by provider and model and include these rows; the Users view shows them as a
 *Server key: …* configuration line, and no counter changes for them.
 
-## 9. Retention
+## 10. Retention
 
 `ChatRetentionSettings:PruneChatProviderAttemptDays` (400; 0 disables) prunes the ledger as full-pass
 phase 10, through `POST api/admin/maintenance/prune-chat-provider-attempts`, and in the Database tab
 (policy, Next Pass Preview, both pass-step lists, a granular card, and a *Provider Attempts* history
 column). See `chat-data-retention.md`.
 
-## 10. Activity: users, chats and messages
+## 11. Activity: users, chats and messages
 
 Chats and messages are purged by retention, so counting them would give a history that falls away into
 the past. `OverseerDailyActivity` counts them **when they are created**, so purging never changes it:
@@ -143,7 +175,7 @@ logged and never fails a chat. Upgrading an existing chat to confidential is not
 The privacy framework's incognito promise covers the four chat tables; this counter is outside them and is
 disclosed in the privacy notice (*Activity counts*).
 
-## 11. The Users view: system AI usage by user
+## 12. The Users view: system AI usage by user
 
 Below the breakdown, *System AI usage by user* lists each user's usage of **system AI configurations only**
 (user keys are the user's own business), so that an administrator can set limits on problem users. Search
@@ -172,7 +204,7 @@ opens its *AI configuration access for {user}* dialog, where the Rate Limits dia
 no limit editing is duplicated here), and *Block* / *Unblock*. The Security tab's *Usage* action lands
 here with that one user selected.
 
-## 12. The charts dialog
+## 13. The charts dialog
 
 **Charts** opens a full-screen dialog on the shared GnollBench figure layer (`overseer_frontend` skill):
 nine composed bitmap figures — *Requests*, *Estimated cost (USD)* (optionally cumulative), *Tokens*,
@@ -197,7 +229,7 @@ controls hidden through `hiddenKeys`), and **Download** (size and format).
 - **Storage:** `overseer.admin.telemetry.charts` and its `.chartSize`, `.figureStyle`,
   `.figureStylePanel.open` and `.download` keys, each `{ version: 1, … }`; the user filter is not stored.
 
-## 13. API
+## 14. API
 
 | Method | Route | Returns |
 |---|---|---|
@@ -206,10 +238,12 @@ controls hidden through `hiddenKeys`), and **Download** (size and format).
 | `GET` | `api/admin/ai-telemetry/users?startDate&endDate&search&userId&sort&skip&take` | the Users view page (`take` 1–100) |
 
 The breakdown's view settings are stored as `overseer.admin.telemetry.breakdown`
-(`{ version: 1, roles, separateThinkingLevels, keys }`); the Users view's as
+(`{ version: 1, roles, separateThinkingLevels, keys, sort, providers, toolbarCollapsed }`, `sort` being
+`{ field, direction }`; a record without the last three reads them as their defaults); the search is not
+stored, so an old search never hides cards on a later visit. The Users view's settings are stored as
 `overseer.admin.telemetry.users.view`.
 
-## 14. Tests
+## 15. Tests
 
 `AdminTelemetrySummaryTests`, `AdminTelemetrySeriesTests`, `AdminTelemetryUsersTests`,
 `ActivityCounterTests`, `ActivityCountingCallSiteTests`, `SystemAiUsageRecordingTests`,

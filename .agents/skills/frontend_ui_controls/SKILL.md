@@ -231,13 +231,13 @@ you already read the label, it is noise; drop it.
 | clipboard | Check Rubrics | A checklist to go through; the rubric is what is being inspected |
 | check | Verify All | The same tick the "Reviewed" badge shows, so the button reads as "mark reviewed" |
 | star | Set Default | The marker used for the default item elsewhere in the UI; the icon *is* the concept |
-| chevron | Show / Hide Model Reasoning; the state glyph that ends a §4f trigger (**Re-run**, **Actions**, step 3's **Preview layout**) | A **state** indicator: which way it points says whether the section or popover is open |
+| chevron | Show / Hide Model Reasoning; the state glyph that ends a §4f trigger (**Re-run**, **Actions**, step 3's **Preview layout**); **Date range and keys** (icon-only `.action-btn`, the AI Telemetry tab's sticky bar; collapses it to one summary line, *Collapse* / *Expand* tooltip, `aria-expanded`) | A **state** indicator: which way it points says whether the section or popover is open |
 | chevron-left / chevron-right (Feather *chevron-left* `<polyline points="15 18 9 12 15 6">`, *chevron-right* `<polyline points="9 18 15 12 9 6">`) | **Previous figure** / **Next figure** (icon-only, Model Comparison's *Single chart* toolbar), **Previous chart** / **Next chart** (icon-only, the Chat Consistency Charts step's *Single chart* toolbar), **Previous month** / **Next month** (icon-only, the header of `app-date-field`'s calendar, §4h) | **Previous / next** in a sequence: the item before or after this one, of the same kind. Never a state indicator — that is the down/up *chevron* above |
 | calendar (Feather *calendar*: a rounded rectangle, two rings and a rule) | **Choose {label} on a calendar** (icon-only `.action-btn` at the end of every `app-date-field`, §4h) | "Choose a date on a calendar" — the one glyph that opens a date picker, and nothing else |
 | search (a magnifier) | The leading glyph of a search field (the Download Center's *Search documents*); **Search models** (icon-only `.action-btn`, the model pickers' view toolbar, §4e; shows the search field) | "Type to find". In a field it is decorative, `aria-hidden`: the field's label names it. The model pickers' toggle is the one button that carries it, and it still means "type to find": it shows the field where the typing happens |
 | x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar), **Clear selection** (`.btn-ghost`, the Model Comparison wizard's step-1 selection bar, §8i), **Clear search** (icon-only `.action-btn`, the model pickers' view toolbar, §4e) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}*. Clear selection drops every selected source as removing one selection chip drops one, and deletes nothing |
 | filter (Feather *filter*: a funnel, `<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3">`) | **Filter and sort models** (icon-only `.action-btn`, the model pickers' trigger, just before the chevron, §4e; shows the view toolbar), the Admin System Configs filter button (`config-filter.component.html`; opens its filter panel) | "Show the filter controls" — the controls appear; the button itself narrows nothing |
-| arrow-down-up (Lucide *arrow-down-up* geometry, matching Feather's 24×24 stroke: `<path d="m3 16 4 4 4-4"/>`, `<path d="M7 20V4"/>`, `<path d="m21 8-4-4-4 4"/>`, `<path d="M17 4v16"/>`) | **Sort models** (icon-only `.action-btn`, the model pickers' view toolbar, §4e; opens the Sort popover) | "Change the order of this list" — it reorders and hides nothing; the filters are the provider toggles beside it |
+| arrow-down-up (Lucide *arrow-down-up* geometry, matching Feather's 24×24 stroke: `<path d="m3 16 4 4 4-4"/>`, `<path d="M7 20V4"/>`, `<path d="m21 8-4-4-4 4"/>`, `<path d="M17 4v16"/>`) | **Sort models** (icon-only `.action-btn`, the model pickers' view toolbar, §4e; opens the Sort popover), **Sort** (`.btn-ghost` with the visible label *Sort: {field}, {order}*, the AI Telemetry breakdown's filter bar; opens its Sort popover) | "Change the order of this list" — it reorders and hides nothing; the filters are the provider toggles beside it |
 | arrow-right (Feather: a line and a chevron head, `<line x1="5" y1="12" x2="19" y2="12">`, `<polyline points="12 5 19 12 12 19">`) | The admin alert's call-to-action link (trailing, `aria-hidden`; the one glyph that ends a label rather than leading it) | "Go there": the link opens the page where the alert is dealt with |
 | bar-chart-2 (Feather: three vertical lines of different heights) | **Charts** (`.btn-gh`, the AI Telemetry tab's header; opens the charts dialog), **Usage charts** (icon-only, each card of the AI Telemetry Users view; the dialog for that user), **Usage analytics of {name}** (icon-only, each System Configs card; opens the configuration's analytics dialog) | "Show it over time as charts" |
 | sliders (Feather *sliders*: three vertical lines with a knob each) | **Manage limits** (icon-only, each card of the AI Telemetry Users view; opens the user's *AI configuration access* dialog in the Users tab), **Rate limits of {name}** (icon-only, each System Configs card; opens the configuration's rate-limits dialog) | "Adjust settings" — the limits are tuned there, not here |
@@ -628,6 +628,13 @@ actions take* pencil *(Edit),* bar-chart-2 *(Usage analytics),* sliders *(Rate l
 unregistered gauge) and* trash *(Delete); the System-Provided Models reset takes* undo *instead of*
 rotate*. The drag grip is the reorderable list's six dots, decorative. Tooltip badges (availability,
 trust posture) are buttons. No glyph or button class is new.*
+
+*Changed 2026-10-20 (AI Telemetry breakdown, §8h): the breakdown's filter bar gains a `.btn-ghost`
+**Sort** trigger with* arrow-down-up *and the visible label *Sort: {field}, {order}*, opening a Sort
+popover built like the model pickers', and the tab's sticky Date Range / Keys bar gains an icon-only
+**Date range and keys** `.action-btn` with the down/up* chevron *as its state glyph. The provider
+toggles reuse the pickers' `.model-picker-provider` with its* check *state glyph. No glyph or class is
+new.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -2349,11 +2356,20 @@ there and is not used (below). The sixth, the Chat Consistency Analysis History,
 *Provider*, *Compared* and *Reports*). The seventh, the Model Comparison sources, uses three:
 `runList`, `groupList` and `batteryList` (`idPrefix` `csp-runs` / `csp-groups` / `csp-batteries`, batch
 20, `overseer.benchmark.comparisonSources.{runs|groups|batteries}.view`). The eighth, the AI Telemetry
-breakdown, does **not** use it, and that is a recorded exception, not an oversight: its cards are
-read-only (no actions, no selection), it neither searches, facets, pages nor selects, it holds tens of
-groups at most, and its two controls — a *Roles* checkbox fieldset and a thinking-level *Group together* /
-*Show separately* select — are **view settings** stored with the tab's view record
-(`overseer.admin.telemetry.breakdown`), not list filters. The ninth, the AI Telemetry Users view, uses it
+breakdown, does **not** use it, and that is a recorded exception, not an oversight. It searches, filters
+by provider and sorts, with the model pickers' semantics — `searchTerms`, `matchParts` and the
+`.model-picker-providers` toggles from `model-picker-view.ts` and §4e (all terms must match, matches in
+`mark.model-option-match`; pressed providers OR together, none pressed means all) — through pure functions
+in `telemetry-breakdown.ts` (`filterBreakdownCards`, `sortBreakdownCards`). It still has no
+`CardListState`, because its filters are toggles and checkboxes rather than facets, its sort is a field
+and a direction in a Sort popover built like the pickers' (`.gh-facet-popover.model-picker-sort-panel`
+behind a `.btn-ghost` *Sort: {field}, {order}* trigger), its cards are read-only, and it neither pages
+nor selects; it holds tens of groups at most. Its *Roles* checkboxes, thinking-level *Group together* /
+*Show separately* select, sort, provider toggles and the collapsed state of the tab's Date Range / Keys
+bar are **view settings** stored in the tab's view record (`overseer.admin.telemetry.breakdown`: `roles`,
+`separateThinkingLevels`, `keys`, `sort`, `providers`, `toolbarCollapsed`); the search is not stored. The
+`model-picker-*` classes it reuses are global, so a rename there must update it. The ninth, the AI
+Telemetry Users view, uses it
 with **server-side paging** (`idPrefix: 'tl-users'`, batch 20, `overseer.admin.telemetry.users.view`;
 search and Sort by refetch page 1, *Show N more* fetches the next page, a `userId` filter set by the
 Security tab's *Usage* action shows one user with a *Clear* button). The tenth, the Security tab's events

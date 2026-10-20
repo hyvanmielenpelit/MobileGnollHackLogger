@@ -110,6 +110,7 @@
 }
 
 @include cards.separator;
+@include cards.sticky-clearance;
 
 /* The words carry each state; the outlines reinforce them. */
 .tl-user-blocked {

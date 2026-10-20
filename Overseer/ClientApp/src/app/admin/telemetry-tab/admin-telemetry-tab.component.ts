@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, OnInit, OnDestroy, ViewChild, inject } from '@angular/core';
+import { AfterViewInit, Component, ChangeDetectionStrategy, ElementRef, OnInit, OnDestroy, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Observable, Subscription, forkJoin, of } from 'rxjs';
@@ -12,6 +12,14 @@ import {
   AiUsageRoleGroup
 } from '../../services/admin.service';
 import { ProviderBadgeComponent } from '../../shared/provider-badge/provider-badge.component';
+import {
+  ModelPickerMatchPart,
+  ModelPickerProviderFacet,
+  matchParts,
+  searchTerms
+} from '../../shared/model-picker/model-picker-view';
+import { formatThinkingLevel } from '../../utils/model-badge-format.util';
+import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { formatCost } from '../benchmark/batteries/battery.models';
 import {
   FEW_ATTEMPTS_THRESHOLD,
@@ -25,15 +33,26 @@ import {
 import { AdminPageStore, TelemetryTimeSpan } from '../admin-page.store';
 import { TelemetryChartsDialogComponent } from './charts/telemetry-charts-dialog.component';
 import {
+  BREAKDOWN_SORT_FIELDS,
   Breakdown,
   BreakdownCard,
   BreakdownMetrics,
+  BreakdownSort,
+  BreakdownSortDirection,
+  BreakdownSortField,
+  DEFAULT_BREAKDOWN_SORT,
   KEY_SOURCES,
   KEY_SOURCE_LABELS,
   NAMED_ROLE_GROUPS,
   TelemetryBreakdownView,
+  breakdownDirectionLabel,
+  breakdownProviderFacets,
+  breakdownSortField,
+  breakdownSortLabel,
   buildBreakdown,
   cardTitle,
+  effectiveBreakdownProviders,
+  isDefaultBreakdownSort,
   readBreakdownView,
   roleCosts,
   roleCounts,
@@ -42,6 +61,36 @@ import {
   writeBreakdownView
 } from './telemetry-breakdown';
 import { TelemetryUserRef, TelemetryUsersComponent } from './users/telemetry-users.component';
+
+/** The Date Range select's options, also the collapsed bar's summary. */
+export const TELEMETRY_TIME_SPAN_LABELS: Readonly<Record<TelemetryTimeSpan, string>> = {
+  '7d': 'Last 7 days',
+  '28d': 'Last 28 days',
+  '30d': 'Last 30 days',
+  '90d': 'Last 90 days',
+  '180d': 'Last 180 days',
+  '1y': 'Last year',
+  'custom': 'Custom date range'
+};
+
+const TIME_SPANS = Object.keys(TELEMETRY_TIME_SPAN_LABELS) as TelemetryTimeSpan[];
+
+/** A badge of a breakdown card's badge row; `prefix` is read before the text by assistive technology only. */
+export interface TelemetryCardBadge {
+  cssClass: string;
+  prefix: string;
+  text: string;
+}
+
+const ROLE_BADGE_CLASSES: Readonly<Record<AiUsageRoleGroup, string>> = {
+  chat: 'badge-role-chat',
+  title: 'badge-role-title',
+  benchmark: 'badge-role-benchmark',
+  other: 'badge-role-other'
+};
+
+/** The applied search follows the field after this much quiet, so the status line is not announced per keystroke. */
+const SEARCH_DEBOUNCE_MS = 200;
 
 /** A metric's value, and the qualifier line under it when there is one. */
 export interface TelemetryMetricText {
@@ -72,15 +121,21 @@ const NO_ROWS: readonly AiUsageBreakdownRowDto[] = [];
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
   styleUrl: './admin-telemetry-tab.component.scss'
 })
-export class AdminTelemetryTabComponent implements OnInit, OnDestroy {
+export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDestroy {
   private adminService = inject(AdminService);
   private store = inject(AdminPageStore);
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   @ViewChild('chartsDialog') chartsDialog?: TelemetryChartsDialogComponent;
   @ViewChild(TelemetryUsersComponent, { static: true }) usersView?: TelemetryUsersComponent;
+  @ViewChild('tlHead') private tlHead?: ElementRef<HTMLElement>;
 
   readonly keySources = KEY_SOURCES;
   readonly keySourceLabels = KEY_SOURCE_LABELS;
+  readonly timeSpans = TIME_SPANS;
+  readonly timeSpanLabels = TELEMETRY_TIME_SPAN_LABELS;
+  readonly sortFields = BREAKDOWN_SORT_FIELDS;
+  readonly sortDirections: readonly BreakdownSortDirection[] = ['desc', 'asc'];
   readonly roleGroupLabel = roleGroupLabel;
   readonly thinkingLevelLabel = thinkingLevelLabel;
   readonly cardTitle = cardTitle;
@@ -97,15 +152,30 @@ export class AdminTelemetryTabComponent implements OnInit, OnDestroy {
   /** The Keys filter and the breakdown's view settings, remembered per browser. */
   view: TelemetryBreakdownView = readBreakdownView();
 
+  /** The breakdown's search field as typed. */
+  searchInput = '';
+  /** The search the breakdown applies; follows `searchInput` after a short quiet. Never stored. */
+  search = '';
+  /** Whether the Sort popover is open; the popover polyfill does not set `aria-expanded`. */
+  sortOpen = false;
+
   private governorCountdownTimer?: ReturnType<typeof setInterval>;
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  private headObserver?: ResizeObserver;
   private telemetryUserSub?: Subscription;
   private breakdownMemo: {
     rows: readonly AiUsageBreakdownRowDto[];
     roles: readonly AiUsageRoleGroup[];
     separate: boolean;
+    search: string;
+    providers: readonly string[];
+    sort: BreakdownSort;
     breakdown: Breakdown;
   } | null = null;
+  private facetsMemo: { all: readonly BreakdownCard[]; facets: ModelPickerProviderFacet[] } | null = null;
   private roleCountsMemo: { rows: readonly AiUsageBreakdownRowDto[]; counts: Record<AiUsageRoleGroup, number> } | null = null;
+  private matchMemo = new WeakMap<BreakdownCard, { search: string; title: ModelPickerMatchPart[]; modelId: ModelPickerMatchPart[] }>();
+  private badgeMemo = new WeakMap<BreakdownCard, TelemetryCardBadge[]>();
 
   /** The date range lives in the page store, so it survives a tab switch. */
   get telemetryTimeSpan(): TelemetryTimeSpan {
@@ -134,6 +204,7 @@ export class AdminTelemetryTabComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
+    ensureOverlayPolyfills();
     this.todayDate = this.formatLocalDate(new Date());
     if (!this.telemetryStartDate && !this.telemetryEndDate) {
       this.applyTelemetryPreset(this.telemetryTimeSpan, false);
@@ -147,9 +218,24 @@ export class AdminTelemetryTabComponent implements OnInit, OnDestroy {
     this.refreshTelemetryTab();
   }
 
+  /** Focused or scrolled-to elements stop below the sticky head: its height, plus a gap, as `--tl-sticky-clearance`. */
+  ngAfterViewInit() {
+    const head = this.tlHead?.nativeElement;
+    if (!head || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    this.headObserver = new ResizeObserver(() => {
+      const height = head.getBoundingClientRect().height;
+      this.host.nativeElement.style.setProperty('--tl-sticky-clearance', `${Math.ceil(height) + 8}px`);
+    });
+    this.headObserver.observe(head);
+  }
+
   ngOnDestroy() {
     this.stopGovernorCountdown();
     this.telemetryUserSub?.unsubscribe();
+    this.headObserver?.disconnect();
+    this.cancelSearchTimer();
   }
 
   formatLocalDate(d: Date): string {
@@ -206,6 +292,19 @@ export class AdminTelemetryTabComponent implements OnInit, OnDestroy {
     }
     this.saveView({ ...this.view, keys });
     this.loadTelemetry();
+  }
+
+  /** The collapsed bar's line: `Last 30 days · System AI configurations`, or the custom range's two dates. */
+  get toolbarSummary(): string {
+    const span = this.telemetryTimeSpan === 'custom'
+      ? `${this.telemetryStartDate} – ${this.telemetryEndDate}`
+      : TELEMETRY_TIME_SPAN_LABELS[this.telemetryTimeSpan] ?? this.telemetryTimeSpan;
+    return `${span} · ${KEY_SOURCE_LABELS[this.keys]}`;
+  }
+
+  /** Collapses the Date Range and Keys bar to its summary line, or expands it; stored. The toggle stays, and so does focus. */
+  toggleToolbar() {
+    this.saveView({ ...this.view, toolbarCollapsed: !this.view.toolbarCollapsed });
   }
 
   loadTelemetry(showFeedback = false) {
@@ -558,33 +657,247 @@ export class AdminTelemetryTabComponent implements OnInit, OnDestroy {
     return (this.telemetrySummary?.rows ?? NO_ROWS).length > 0;
   }
 
-  /** The cards and their total; memoized on the rows and the view settings. */
+  /**
+   * The cards and their total; memoized on the rows, the view settings and the applied search.
+   * `saveView` always replaces the providers and the sort, so their identity marks a change.
+   */
   get breakdown(): Breakdown {
     const rows = this.telemetrySummary?.rows ?? NO_ROWS;
+    const { roles, separateThinkingLevels: separate, providers, sort } = this.view;
+    const search = this.search;
     const memo = this.breakdownMemo;
-    if (memo && memo.rows === rows && memo.roles === this.view.roles && memo.separate === this.view.separateThinkingLevels) {
+    if (memo && memo.rows === rows && memo.roles === roles && memo.separate === separate
+      && memo.search === search && memo.providers === providers && memo.sort === sort) {
       return memo.breakdown;
     }
-    const breakdown = buildBreakdown(rows, { roles: this.view.roles, separateThinkingLevels: this.view.separateThinkingLevels });
-    this.breakdownMemo = { rows, roles: this.view.roles, separate: this.view.separateThinkingLevels, breakdown };
+    const breakdown = buildBreakdown(rows, { roles, separateThinkingLevels: separate, search, providers, sort });
+    this.breakdownMemo = { rows, roles, separate, search, providers, sort, breakdown };
     return breakdown;
   }
 
-  /** `Showing 4 entries · 1,200 of 1,500 requests`; empty with nothing to show. */
+  /** One provider toggle per provider of the selected roles' cards, counting cards whatever the search. */
+  get providerFacets(): ModelPickerProviderFacet[] {
+    const all = this.breakdown.all;
+    if (this.facetsMemo?.all !== all) {
+      this.facetsMemo = { all, facets: breakdownProviderFacets(all) };
+    }
+    return this.facetsMemo.facets;
+  }
+
+  /** The pressed providers that some card has. */
+  get effectiveProviders(): string[] {
+    return effectiveBreakdownProviders(this.view.providers, this.providerFacets);
+  }
+
+  /** The applied search or a provider filter narrows the cards. */
+  get breakdownFiltered(): boolean {
+    return this.search.trim() !== '' || this.effectiveProviders.length > 0;
+  }
+
+  /** Clear filters is offered while the field has text or a provider toggle is pressed. */
+  get breakdownFiltersActive(): boolean {
+    return this.searchInput.trim() !== '' || this.breakdownFiltered;
+  }
+
+  /**
+   * `Showing 4 entries · 1,200 of 1,500 requests`; filtered, `Showing 4 of 13 entries · 1,200 of
+   * 5,270 requests`, or `No entries match "luna".`; empty with nothing to show.
+   */
   get breakdownStatus(): string {
     if (!this.hasBreakdownRows) {
       return '';
     }
-    const { cards, total } = this.breakdown;
-    if (cards.length === 0) {
+    const { all, cards, total } = this.breakdown;
+    if (all.length === 0) {
       return '';
     }
-    const all = (this.telemetrySummary?.rows ?? NO_ROWS).reduce((sum, r) => sum + r.requests, 0);
+    const allRequests = (this.telemetrySummary?.rows ?? NO_ROWS).reduce((sum, r) => sum + r.requests, 0);
+    if (this.breakdownFiltered) {
+      if (cards.length === 0) {
+        const search = this.search.trim();
+        return search && this.effectiveProviders.length === 0 ? `No entries match "${search}".` : 'No entries match the filters.';
+      }
+      return `Showing ${cards.length} of ${all.length} ${all.length === 1 ? 'entry' : 'entries'}`
+        + ` · ${formatInteger(total.requests)} of ${formatInteger(allRequests)} requests`;
+    }
     const entries = cards.length === 1 ? 'One entry' : `Showing ${cards.length} entries`;
-    const requests = total.requests === all
-      ? `${formatInteger(all)} ${all === 1 ? 'request' : 'requests'}`
-      : `${formatInteger(total.requests)} of ${formatInteger(all)} requests`;
+    const requests = total.requests === allRequests
+      ? `${formatInteger(allRequests)} ${allRequests === 1 ? 'request' : 'requests'}`
+      : `${formatInteger(total.requests)} of ${formatInteger(allRequests)} requests`;
     return `${entries} · ${requests}`;
+  }
+
+  // --- Breakdown search and provider filter ---
+
+  onSearchInput(event: Event) {
+    this.searchInput = (event.target as HTMLInputElement).value;
+    this.cancelSearchTimer();
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = null;
+      this.search = this.searchInput;
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  /** Escape with text clears the search at once; with none, Escape is left alone. */
+  onSearchKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || this.searchInput === '') {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    this.clearSearch();
+  }
+
+  isProviderPressed(facet: ModelPickerProviderFacet): boolean {
+    return this.view.providers.includes(facet.key);
+  }
+
+  /** Presses or releases a provider toggle and stores the view. */
+  toggleProvider(facet: ModelPickerProviderFacet) {
+    const providers = this.isProviderPressed(facet)
+      ? this.view.providers.filter(p => p !== facet.key)
+      : [...this.view.providers, facet.key];
+    this.saveView({ ...this.view, providers });
+  }
+
+  /** Clears the search and the provider toggles, not the roles, the thinking setting or the sort, and focuses the search field. */
+  clearBreakdownFilters() {
+    this.clearSearch();
+    if (this.view.providers.length > 0) {
+      this.saveView({ ...this.view, providers: [] });
+    }
+    this.host.nativeElement.querySelector<HTMLInputElement>('#tl-breakdown-search')?.focus();
+  }
+
+  private clearSearch() {
+    this.cancelSearchTimer();
+    this.searchInput = '';
+    this.search = '';
+  }
+
+  private cancelSearchTimer() {
+    if (this.searchTimer !== null) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+  }
+
+  // --- Breakdown sort ---
+
+  /** `Requests, highest first`. */
+  get sortLabel(): string {
+    return breakdownSortLabel(this.view.sort);
+  }
+
+  get sortIsDefault(): boolean {
+    return isDefaultBreakdownSort(this.view.sort);
+  }
+
+  /** `Highest first` or `A–Z`, by the kind of the chosen field. */
+  directionLabel(direction: BreakdownSortDirection): string {
+    return breakdownDirectionLabel(breakdownSortField(this.view.sort.field).kind, direction);
+  }
+
+  /** Applies at once and keeps the direction; the popover stays open. */
+  chooseSortField(field: BreakdownSortField) {
+    if (field !== this.view.sort.field) {
+      this.saveView({ ...this.view, sort: { field, direction: this.view.sort.direction } });
+    }
+  }
+
+  chooseSortDirection(direction: BreakdownSortDirection) {
+    if (direction !== this.view.sort.direction) {
+      this.saveView({ ...this.view, sort: { field: this.view.sort.field, direction } });
+    }
+  }
+
+  /** Back to most requests first; refused at the default (the button is aria-disabled), and the button keeps focus. */
+  resetSort() {
+    if (!this.sortIsDefault) {
+      this.saveView({ ...this.view, sort: DEFAULT_BREAKDOWN_SORT });
+    }
+  }
+
+  onSortToggle(event: Event) {
+    this.sortOpen = (event as ToggleEvent).newState === 'open';
+    const panel = this.sortPanel();
+    if (this.sortOpen) {
+      refreshAnchorPositioning();
+      (panel?.querySelector<HTMLInputElement>('input:checked') ?? panel?.querySelector<HTMLInputElement>('input'))?.focus();
+      return;
+    }
+    const active = document.activeElement;
+    if (!active || active === document.body || !!panel?.contains(active)) {
+      this.sortTrigger()?.focus();
+    }
+  }
+
+  /** Escape closes the Sort popover only. */
+  onSortPanelKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape') {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      this.sortPanel()?.hidePopover();
+    } catch {
+      // Already hidden.
+    }
+    this.sortTrigger()?.focus();
+  }
+
+  private sortPanel(): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>('#tl-sort-panel');
+  }
+
+  private sortTrigger(): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>('#tl-sort-trigger');
+  }
+
+  // --- Breakdown cards ---
+
+  /** The title split into runs that match the applied search and runs that do not. */
+  titleParts(card: BreakdownCard): ModelPickerMatchPart[] {
+    return this.matchesOf(card).title;
+  }
+
+  modelIdParts(card: BreakdownCard): ModelPickerMatchPart[] {
+    return this.matchesOf(card).modelId;
+  }
+
+  private matchesOf(card: BreakdownCard) {
+    let memo = this.matchMemo.get(card);
+    if (!memo || memo.search !== this.search) {
+      const terms = searchTerms(this.search);
+      memo = { search: this.search, title: matchParts(cardTitle(card), terms), modelId: matchParts(card.modelId, terms) };
+      this.matchMemo.set(card, memo);
+    }
+    return memo;
+  }
+
+  roleBadgeClass(group: AiUsageRoleGroup): string {
+    return ROLE_BADGE_CLASSES[group] ?? ROLE_BADGE_CLASSES.other;
+  }
+
+  /**
+   * Shown separately, the card's one level, or None sent or Not recorded in a neutral badge, since
+   * those are not levels; grouped, one badge per recorded level, none for the others.
+   */
+  thinkingBadges(card: BreakdownCard): TelemetryCardBadge[] {
+    let badges = this.badgeMemo.get(card);
+    if (!badges) {
+      const prefix = 'thinking level';
+      if (card.thinkingLevel === undefined) {
+        badges = card.thinkingLevels.map(level => ({ cssClass: 'thinking-badge', prefix, text: formatThinkingLevel(level) }));
+      } else if (card.thinkingLevel === null || card.thinkingLevel === '') {
+        badges = [{ cssClass: 'config-badge', prefix, text: thinkingLevelLabel(card.thinkingLevel) }];
+      } else {
+        badges = [{ cssClass: 'thinking-badge', prefix, text: formatThinkingLevel(card.thinkingLevel.trim().toLowerCase()) }];
+      }
+      this.badgeMemo.set(card, badges);
+    }
+    return badges;
   }
 
   isRoleSelected(group: AiUsageRoleGroup): boolean {
@@ -607,12 +920,12 @@ export class AdminTelemetryTabComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** The kicker's key part: `User key: alice` for a user's key, `System` under Both. */
+  /** The key badge: `User key: alice` for a user's key, `System key` under Both. */
   keyLabel(card: BreakdownCard): string | null {
     if (card.keySource === 'user') {
       return `User key: ${card.userName || card.userId || 'unknown user'}`;
     }
-    return this.keys === 'both' ? 'System' : null;
+    return this.keys === 'both' ? 'System key' : null;
   }
 
   cacheHitText(m: BreakdownMetrics): string {

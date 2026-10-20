@@ -77,3 +77,10 @@
     color: #71717a;
   }
 }
+
+/* Focused or scrolled-to elements stop below the tab's sticky head; the tab host sets the height. */
+@mixin sticky-clearance {
+  * {
+    scroll-margin-block-start: var(--tl-sticky-clearance, 0px);
+  }
+}

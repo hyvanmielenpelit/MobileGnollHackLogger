@@ -3395,6 +3395,12 @@ label.checkbox-label,
     border: 1px solid rgba(16, 185, 129, 0.5);
     color: #34d399;
   }
+
+  &.badge-role-other {
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #d4d4d8;
+  }
 }
 
 /* An availability badge on a model row (Removed, Not in catalog, Custom model): a status-badge
