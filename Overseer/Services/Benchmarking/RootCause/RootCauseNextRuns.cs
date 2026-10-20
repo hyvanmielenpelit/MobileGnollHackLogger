@@ -26,7 +26,7 @@ public static class RootCauseNextRuns
     /// <summary>The <c>ModelRole</c> bit of a Benchmark-role configuration.</summary>
     public const int BenchmarkRoleBit = 4;
 
-    /// <summary>Runs per model (or Number of Runs) of a replicate and a time-stratum run.</summary>
+    /// <summary>Runs per model of a replicate, and the launches of a time-of-day run.</summary>
     public const int ReplicateRuns = 3;
 
     private static readonly string[] KindOrder =
@@ -115,15 +115,22 @@ public static class RootCauseNextRuns
 
     /// <summary>
     /// <c>about $7.50 and 14 minutes</c>, <c>about $240 and 7 h 50 min</c>: each figure to two significant figures,
-    /// whole dollars from $10 and cents below, and from 90 minutes up in hours and minutes. Empty when the run
-    /// is not estimated.
+    /// whole dollars from $10 and cents below, and from 90 minutes up in hours and minutes. A run of several launches
+    /// states the estimate of one launch times <see cref="RootCauseRecommendedRun.Launches"/>, <c>about $23 and 42 minutes
+    /// over 3 launches</c>. Empty when the run is not estimated.
     /// </summary>
     public static string EstimateText(RootCauseRecommendedRun run)
     {
         ArgumentNullException.ThrowIfNull(run);
         if (run.EstimatedCostUsd is not double cost) return string.Empty;
-        return "about " + Dollars(cost) + (run.EstimatedMinutes is double minutes ? " and " + Duration(minutes) : string.Empty);
+        int launches = Math.Max(1, run.Launches);
+        return "about " + Dollars(cost * launches) + (run.EstimatedMinutes is double minutes ? " and " + Duration(minutes * launches) : string.Empty)
+            + (launches > 1 ? " over " + Inv(launches) + " launches" : string.Empty);
     }
+
+    /// <summary>The <see cref="RootCauseRecommendedRun.When"/> of a time-of-day run.</summary>
+    public static readonly string TimeOfDayWhen = "Launch it " + Inv(ReplicateRuns) + " times, each at a different time of day; Number of Runs "
+        + Inv(ReplicateRuns) + ", Runs per model " + Inv(ReplicateRuns) + " or a model batch would run them back to back";
 
     /// <summary><c>$7.50</c>, <c>$0.046</c>, <c>$240</c>, <c>$1,200</c>: two significant figures, whole dollars from $10.</summary>
     public static string Dollars(double usd)
@@ -233,7 +240,10 @@ public static class RootCauseNextRuns
         /// <summary>The unexpected results the plan settles, each with the kind of run it was planned for.</summary>
         public List<(RootCauseAnomaly Anomaly, string Kind)> Anomalies { get; } = new();
 
-        /// <summary>A time-of-day repeat was folded into the plan: its runs start at different times of day.</summary>
+        /// <summary>
+        /// The plan is a time-of-day repeat, or one was folded into it: one pass per model, launched
+        /// <see cref="ReplicateRuns"/> times, each at a different time of day.
+        /// </summary>
         public bool TimeOfDay { get; set; }
     }
 
@@ -367,8 +377,7 @@ public static class RootCauseNextRuns
                     plan = GetOrAdd("time:" + worse.Token, kind, p =>
                     {
                         p.Purpose = RootCausePurposes.Chat;
-                        p.RunCount = ReplicateRuns;
-                        p.Notes.Add("Start each of the " + Inv(ReplicateRuns) + " runs at a different time of day.");
+                        p.TimeOfDay = true;
                     });
                     AddModel(plan, worse);
                     break;
@@ -464,7 +473,7 @@ public static class RootCauseNextRuns
     /// <summary>
     /// Folds every time-of-day repeat and thinking-level pair whose analyzed models all belong to a replicate of
     /// <see cref="ReplicateRuns"/> or more runs per suite into that replicate: it settles their hypotheses and unexpected results too,
-    /// runs the plan's models from the catalog as well, starts each run at a different time of day when a
+    /// runs the plan's models from the catalog as well, is launched once per time of day when a
     /// time-of-day repeat was folded, and takes the most urgent purpose among them (the chat, then the benchmark,
     /// then model selection).
     /// </summary>
@@ -668,7 +677,8 @@ public static class RootCauseNextRuns
     {
         var settings = anchor.Evidence.Settings;
         bool battery = settings.BatteryId.HasValue || ctx.Battery;
-        bool batch = plan.Batch || plan.Models.Count > 1;
+        // A time-of-day run is one pass per model in each launch; a batch only when it holds several models.
+        bool batch = plan.TimeOfDay ? plan.Models.Count > 1 : plan.Batch || plan.Models.Count > 1;
         var run = new RootCauseRecommendedRun
         {
             Number = number,
@@ -687,8 +697,9 @@ public static class RootCauseNextRuns
             BatteryName = battery ? settings.BatteryName : null,
             RunMode = batch ? "Batch" : "Single",
             Order = "Randomized",
-            RunsPerModel = batch ? plan.RunsPerModel : 1,
-            RunCount = batch ? 1 : plan.RunCount,
+            RunsPerModel = batch && !plan.TimeOfDay ? plan.RunsPerModel : 1,
+            RunCount = batch || plan.TimeOfDay ? 1 : plan.RunCount,
+            Launches = plan.TimeOfDay ? ReplicateRuns : 1,
             ScoringProfileId = settings.ScoringProfileId,
             VerboseMode = plan.VerboseModeOverride ?? settings.VerboseMode,
             AllowSourceCodeReferences = settings.AllowSourceCodeReferences,
@@ -704,7 +715,7 @@ public static class RootCauseNextRuns
             ClaimVerifierName = settings.ClaimVerifierName,
             ReportWriterModelConfigurationId = null,
             AfterSystemHypotheses = systemFirst && plan.Purpose == RootCausePurposes.ModelSelection,
-            When = plan.TimeOfDay ? "Start each run at a different time of day" : null
+            When = plan.TimeOfDay ? TimeOfDayWhen : null
         };
 
         foreach (var model in plan.Models)
@@ -727,6 +738,7 @@ public static class RootCauseNextRuns
         if (!battery && settings.SuiteId == null) run.Notes.Add("The analyzed runs' suite could not be resolved; choose it in the launcher.");
         if (battery && settings.BatteryId == null) run.Notes.Add("The battery could not be resolved; choose it in the launcher.");
         run.Notes.AddRange(plan.Notes);
+        if (plan.TimeOfDay) run.Notes.Add("Launch this setup " + Inv(ReplicateRuns) + " times, each at a different time of day.");
         if (run.AfterSystemHypotheses) run.Notes.Add("Make this run after the system hypotheses are settled.");
 
         run.PredictedTier = plan.Kind switch
@@ -791,8 +803,9 @@ public static class RootCauseNextRuns
     }
 
     /// <summary>
-    /// The run's cost and minutes from the analyzed runs' own: each model's cost and duration per run times
-    /// its runs, a model without analyzed runs at the analyzed models' mean; null when nothing is known.
+    /// The cost and minutes of one launch of the run from the analyzed runs' own: each model's cost and duration per
+    /// run times its runs (one on a time-of-day run), a model without analyzed runs at the analyzed models' mean; null
+    /// when nothing is known.
     /// </summary>
     private static (double? Cost, double? Minutes, bool Estimated) Estimate(RootCauseContext ctx, Plan plan, bool batch)
     {
@@ -800,7 +813,7 @@ public static class RootCauseNextRuns
         var knownMinutes = ctx.Models.Select(m => m.Evidence.MeanMinutesPerRun).Where(c => c.HasValue).Select(c => c!.Value).ToList();
         double? meanCost = knownCost.Count > 0 ? knownCost.Average() : null;
         double? meanMinutes = knownMinutes.Count > 0 ? knownMinutes.Average() : null;
-        int runs = batch ? plan.RunsPerModel : plan.RunCount;
+        int runs = plan.TimeOfDay ? 1 : batch ? plan.RunsPerModel : plan.RunCount;
 
         double cost = 0, minutes = 0;
         bool costKnown = true, minutesKnown = true, estimated = false;

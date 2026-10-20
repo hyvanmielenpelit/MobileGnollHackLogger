@@ -214,9 +214,12 @@ public static class RootCauseEngine
     /// has its cost ratio at equal prices, the analyzed pairs include the same model at adjacent thinking levels and the
     /// pairs of unexpected results, the unexpected results are stored, HQ5 is one hypothesis in comparison scope, and a
     /// profile has where the model gained points and leaves the shared lowest dimension out of where it lost them. From
-    /// version 11 the comparison's HQ5 statement names the response-style margin it counts.
+    /// version 11 the comparison's HQ5 statement names the response-style margin it counts. From version 12 WS1 fails a
+    /// robustness check when most of the model's visible text arrived in one burst, the summed time to first output is
+    /// the wait before output, each share has a <c>.shareOf</c> fact, WQ4 and HQ6 need the profile's minimum of answers,
+    /// and a time-of-day run is one pass launched once per time of day.
     /// </summary>
-    public const int Version = 11;
+    public const int Version = 12;
 
     /// <summary>The list output price ratio from which two models of one provider are in different price tiers.</summary>
     public const double TierPriceRatio = 1.5;
@@ -1524,7 +1527,7 @@ internal sealed class RootCauseContext
 ///   rca.axis.&lt;axis&gt;.status, rca.axis.&lt;axis&gt;.best                                      axis = intelligence, speed, cost
 ///   rca.known.&lt;n&gt;
 ///   rca.hypothesis.&lt;id&gt;.&lt;n&gt;.statement, .label, .ref, .axis, .models, .locus, .grade, .gradeReasons, .for, .against,
-///     .refutedIf, .nextRun or .check, .share, .interval, .priceCard (a price effect only)
+///     .refutedIf, .nextRun or .check, .share, .shareOf, .interval, .priceCard (a price effect only)
 ///   rca.rule.&lt;id&gt;.shareSpan, .count: a rule with two or more hypotheses that carry a share, as a group
 ///   rca.graders.familyGap.count; rca.graders.familyGap.&lt;n&gt;.providers, .underA, .underB, .contrast, .notable
 ///   rca.question.&lt;n&gt;.text, .model, .neighbor (questions 1 and 2), .status, .hypotheses, .signals
@@ -1618,6 +1621,30 @@ public static class RootCauseFacts
     /// <summary>Whether <paramref name="key"/> stays off the Root Cause Analysis writer's fact list (<see cref="RootCauseWriterHidden(RootCauseResult?)"/>).</summary>
     public static bool RootCauseWriterHidden(RootCauseResult? result, string? key) => RootCauseWriterHidden(result)(key);
 
+    /// <summary>
+    /// What a hypothesis' share is a share of, as a noun phrase: <c>the gap</c> for a pair hypothesis; for a within-model
+    /// one, by axis, <c>its model time</c>, <c>its cost</c> or <c>its points at risk</c>, except WQ4's rate of answers
+    /// (<c>its wrong or not-attempted answers</c>) and WS4's share of the wall time (<c>its wall time</c>).
+    /// </summary>
+    public static string ShareTotal(string kind, string axis, string id)
+    {
+        if (kind != "within") return "the gap";
+        return id switch
+        {
+            "WQ4" => "its wrong or not-attempted answers",
+            "WS4" => "its wall time",
+            _ => axis switch
+            {
+                RootCauseAxes.Speed => "its model time",
+                RootCauseAxes.Cost => "its cost",
+                _ => "its points at risk"
+            }
+        };
+    }
+
+    /// <summary>The display of a hypothesis' <c>.shareOf</c> fact, which follows its <c>.share</c>: <c>of</c> and <see cref="ShareTotal"/>.</summary>
+    public static string ShareOf(string kind, string axis, string id) => "of " + ShareTotal(kind, axis, id);
+
     /// <summary>The <c>rca.*</c> facts of <paramref name="result"/>; <paramref name="name"/> names a model by token.</summary>
     internal static void Add(BenchmarkReportFacts.FactList facts, RootCauseResult result, Func<string, string> name)
     {
@@ -1656,6 +1683,7 @@ public static class RootCauseFacts
             if (h.Share is double share)
             {
                 facts.Add(prefix + "share", share, RootCauseHypotheses.Pct(share));
+                facts.Text(prefix + "shareOf", ShareOf(h.Kind, h.Axis, h.Id));
                 if (h.ShareLower is double lo && h.ShareUpper is double hi) facts.Text(prefix + "interval", RootCauseHypotheses.Interval(lo, hi));
             }
         }
@@ -2015,7 +2043,7 @@ public static class RootCauseLabels
         ["WQ4"] = "guessing instead of abstaining",
         ["WQ5"] = "budget, truncation or output defects",
         ["WQ6"] = "grader disagreement",
-        ["WS1"] = "wait before the first word (time to first token)",
+        ["WS1"] = "wait before output",
         ["WS2"] = "time spent generating output",
         ["WS3"] = "time spent on tool rounds",
         ["WS4"] = "tool execution time",

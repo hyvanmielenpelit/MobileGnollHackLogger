@@ -133,8 +133,20 @@ An analysis that fails to classify its findings into this taxonomy is incomplete
 - **Chat-Transferable Findings (T1–T6)**:
   - T1/T2: Completeness lowest (83.0 vs 97.7 Accuracy) under the concise instruction, a reading the
     run-12 controlled pair did not bear out (T7, § 3).
-  - **T3 — WITHDRAWN.** Source code tools accounted for 71% of tool calls, and the report described this as occurring despite a prompt rule *"Prefer wiki tools over source code tools"*. **No such rule exists.** That sentence was hardcoded in `BenchmarkReportBuilder.cs`, not read from the prompt. What `Overseer/ToolGuides/_policy.md` actually says is narrower and conditional: it prefers GnollHack tools over *web search*; it routes strategy and general "what is X" questions to wiki tools first; it routes **specific mechanics questions** (exact AC, damage dice, MR, resistances, speed, material, artifact flags) to the structured stats tools; and it places source code tools at rung 4 of a seven-rung hierarchy, for questions that require reading game logic. On a suite weighted toward mechanics, a high source share may be **prompt-compliant**. The routing-inefficiency reading is withdrawn; the correlation with turn latency ($r = 0.53$) survives as a **cost** observation. Reclassified: **Harness Defect**.
-  - **T4 — WITHDRAWN.** Knowledge base was called only once in 18 questions (`get_knowledge_article` under-use), and the report described this as under-use. **The prompt explicitly directs the model to skip the knowledge base for game mechanics** (the frozen segment's "Information Routing" section in `ChatService.BuildSegmentedSystemPrompt`, scoping it to app navigation, settings, controls, replay, vault, and troubleshooting). On an all-mechanics suite, zero calls is **prompt-compliant**. Reclassified: **Harness Defect** and fixed in `BenchmarkReportBuilder` by guarding the line on question topics.
+  - **T3 — WITHDRAWN.** The report said source tools took 71% of calls despite a prompt rule *"Prefer
+    wiki tools over source code tools"*. **No such rule exists**: the sentence was hardcoded in
+    `BenchmarkReportBuilder.cs`. `Overseer/ToolGuides/_policy.md` prefers GnollHack tools over *web
+    search*, sends strategy and "what is X" questions to the wiki first, specific mechanics (AC,
+    damage dice, MR, resistances, speed, material, artifact flags) to the stats tools, and source
+    tools to rung 4 of seven, for game logic. On a mechanics-weighted suite a high source share may
+    be **prompt-compliant**; the latency correlation ($r = 0.53$) survives as a **cost** observation.
+    Reclassified: **Harness Defect**.
+  - **T4 — WITHDRAWN.** One `get_knowledge_article` call in 18 questions was reported as under-use,
+    but **the prompt directs the model to skip the knowledge base for game mechanics** ("Information
+    Routing" in `ChatService.BuildSegmentedSystemPrompt` scopes it to app navigation, settings,
+    controls, replay, vault and troubleshooting), so zero calls is **prompt-compliant** there.
+    Reclassified: **Harness Defect**, fixed in `BenchmarkReportBuilder` by guarding the line on
+    question topics.
   - T5: refuted claims on Q9 (spell-skill saving throws) and Q16 (simultaneous attacker cap).
   - T6: a systematic framework required to guide chat prompt updates.
 
@@ -634,147 +646,137 @@ two-run reproduction.
 
 ### Earlier Runs
 
-Runs 11 to 97 (battery run 11) were distilled into this skill on 2026-10-19: their chat changes
-into the chat change ledger, their version boundaries into § 5, their lessons into the method sections
-and the standing cautions below, and their verifier instances into the verifier ledger. Their
-registry rows are at
-`git show 94018d76:.agents/skills/server_benchmark_to_chat_transfer/SKILL.md`, § 11; a full entry
-folded before then is in this file's Git history before the round that folded it; and each
-round's own record is in its task directory under `hyvanmielenpelit/MobileGnollHackLogger/` in the
-plans repository.
+Runs 11 to 97 (battery run 11) were distilled into this skill on 2026-10-19: chat changes into the
+chat change ledger, version boundaries into § 5, lessons into the method sections and the standing
+cautions, verifier instances into the verifier ledger. Their registry rows are at
+`git show 94018d76:.agents/skills/server_benchmark_to_chat_transfer/SKILL.md`, § 11; an entry
+folded earlier is in this file's Git history before its folding round. Battery run 12 (runs 98, 99)
+was retired on 2026-10-20: chat changes in the ledger, open items in the bones-round entry below.
+Each round's own record is in its task directory under `hyvanmielenpelit/MobileGnollHackLogger/` in
+the plans repository.
 
 ### Standing Cautions
 
 - **Comparability keys move with their definition.** The scoring-profile key hashes
   `BenchmarkScoringProfileService.CanonicalSignature`, the profile's scoring semantics only (H9,
-  2026-09-07), and comparability key definition version 2 (2026-09-24) moved the candidate and
-  grader keys (§ 5). A group analysis stored before a definition change shows *Comparability
-  definition changed* until it is re-analyzed, and its recorded `ComparabilityKeyHash` reflects
-  the old definition until then. The budget key (`BudgetSignature`) was widened after runs 19–21,
-  so a replicate series is extended with a fresh set, never with appended members.
-- **A critical error is a grader judgment, not a fact.** It caps quality at 25, so it is the
-  judgment most worth re-reading on disk. Spurious caps were published on runs 28 (Q3, rubric
-  units), 31 (Q18, `src/engrave.c`), 35 (Q1, where the blind second opinion agreed with the false
-  verdict), 39, 40, 43, 44, 45 and 57. `ContestedCriticalError` (harness 19: the assessor's
-  `criticalErrorQuote` sent to the claim verifier) and `ContestedAccuracyDeduction` (harness 20:
-  an out-of-rubric deduction's basis sent to it) are **advisory and say *contested*, never
-  *overturned***; they move no score, cap or index. Read the flag, and the cited code path, before
-  the count. From scoring method 13 a cap is confirmed before it applies (§ 5).
+  2026-09-07); comparability key definition version 2 (2026-09-24) moved the candidate and grader
+  keys (§ 5). A group analysis stored before a definition change shows *Comparability definition
+  changed*, and keeps the old `ComparabilityKeyHash`, until re-analyzed. The budget key
+  (`BudgetSignature`) was widened after runs 19–21, so a replicate series is extended with a fresh
+  set, never with appended members.
+- **A critical error is a grader judgment, not a fact.** It caps quality at 25, so re-read it on
+  disk first. Spurious caps were published on runs 28 (Q3, rubric units), 31 (Q18,
+  `src/engrave.c`), 35 (Q1; the blind second opinion agreed with the false verdict), 39, 40, 43, 44,
+  45 and 57. `ContestedCriticalError` (harness 19: the assessor's `criticalErrorQuote` sent to the
+  claim verifier) and `ContestedAccuracyDeduction` (harness 20: an out-of-rubric deduction's basis
+  sent to it) are **advisory and say *contested*, never *overturned***; they move no score, cap or
+  index. Read the flag and the cited code path before the count. From scoring method 13 a cap is
+  confirmed before it applies (§ 5).
 - **A claim-verifier verdict is advisory evidence, and a human reads the cited line before any
-  change rests on it.** Sixty-nine wrong verdicts are recorded, from run 24 to battery run 11; the
-  recurring shape is a citation of a default flag, a data table, a wiki page, a declaration or the
-  wrong function that misses the code applying or overriding it. Instructions 3a–3m and the
-  deterministic citation notes (no live call site, not in the indexed source, a file without a
-  line, a definition line, a macro definition), which demote a verdict to Indeterminate and never
-  to its opposite, answer most shapes. **Still caution-only**: a default flag or the wrong array
-  element; a verdict citing the very lines that implement the claim; absence concluded from one
-  place inside the wrong live function; a constant's name read as the claim's meaning; a function
-  read without its callers; a descriptive adjective read as a species name and variable names read
-  as semantics (one more instance of either would justify a new instruction); a recomputation from
-  the wrong baseline despite 3g; a hedge refuted as false. Treat a refutation about
-  GnollHack-specific behavior as unverified until a human reads the overriding code path, read
-  what the verifier says it refuted before its citation, and distrust a **Supported** accused
-  sentence most, because a wrong support clears a genuine error. Every instance, shape and guard
-  is in [`references/verifier_caution_ledger.md`](references/verifier_caution_ledger.md): open it
-  when a verdict is in doubt, when numbering a new instance (appended there) or before proposing a
-  verifier instruction.
+  change rests on it.** Sixty-nine wrong verdicts are recorded, run 24 to battery run 11; the
+  recurring shape cites a default flag, a data table, a wiki page, a declaration or the wrong
+  function, and misses the code applying or overriding it. Instructions 3a–3m and the deterministic
+  citation notes (no live call site, not in the indexed source, a file without a line, a definition
+  line, a macro definition) demote a verdict to Indeterminate, never to its opposite, and answer most
+  shapes. **Still caution-only**: a default flag or the wrong array element; a verdict citing the
+  very lines that implement the claim; absence concluded from one place inside the wrong live
+  function; a constant's name read as the claim's meaning; a function read without its callers; a
+  descriptive adjective read as a species name, and variable names read as semantics (one more
+  instance of either justifies a new instruction); a recomputation from the wrong baseline despite
+  3g; a hedge refuted as false. A refutation about GnollHack-specific behavior is unverified until a
+  human reads the overriding code path; read what the verifier says it refuted before its citation;
+  distrust a **Supported** accused sentence most, because a wrong support clears a genuine error.
+  Every instance, shape and guard is in
+  [`references/verifier_caution_ledger.md`](references/verifier_caution_ledger.md): open it when a
+  verdict is in doubt, when numbering a new instance (appended there) or before proposing a verifier
+  instruction.
   - **The assessor-side class: a true, tool-grounded fact charged as fabricated.** The assessor
     grades without tools and never sees the candidate's tool results; on run 53 it called true
     GnollHack facts "invented" on seven of 18 answers. From harness 31 an accused sentence (an
     Accuracy deduction at 4 or below, or a contested verdict; from harness 38 at 5 too) goes to the
     verifier, widened to its whole sentence from harness 33, and a Supported verdict raises the
-    advisory `ContestedAccuracyDeduction`. The check finds only accusations the assessor quoted, so
-    an "invented" charge in evidence is unverified until someone reads the tool-call log and the
-    source.
-  - **Read a verdict's polarity from its role.** Before harness 33 the harness could send
-    sentences of the assessor's *own* evidence to the verifier as candidate claims, so a Refuted
-    verdict there meant the *candidate* was right yet counted as a refuted claim (run 55 Q15). From
-    harness 33 those items carry the role `assessorStatement`. A report of an earlier run lists
-    them as ordinary claims: read each refuted claim against the answer before counting it.
+    advisory `ContestedAccuracyDeduction`. Only accusations the assessor quoted are checked, so an
+    "invented" charge in evidence is unverified until someone reads the tool-call log and the source.
+  - **Read a verdict's polarity from its role.** Before harness 33 the harness could send sentences
+    of the assessor's *own* evidence to the verifier as candidate claims, so a Refuted verdict there
+    meant the *candidate* was right yet counted as a refuted claim (run 55 Q15). From harness 33
+    those items carry the role `assessorStatement`; in an earlier run's report, read each refuted
+    claim against the answer before counting it.
 - **One deferred controlled run remains.** The verbose pair (one model, one suite, `verboseMode`
-  false vs. true) was declined on 2026-09-27. The tool-policy variant run, to test whether the
-  source-family-share-versus-latency correlation is causal, is open; when it runs, both halves sit
-  on one side of every § 5 boundary.
+  false vs. true) was declined on 2026-09-27. The tool-policy variant run, testing whether the
+  source-family-share-versus-latency correlation is causal, is open; both its halves must sit on
+  one side of every § 5 boundary.
 - **Band drift was the difficulty prompt's in part, and its repair is a comparability break
-  (harness 26).** From run 29 to run 41 every suite-6 run assessed its items 25–29 points above
-  the authored bands. The run-41 round re-anchored `BenchmarkDifficultyPrompt` on the work an
-  answer needs and re-assessed the whole suite, so no later suite-6 run is comparable with runs
-  29–41 on the Intelligence Index (§ 5). The criterion was missed (8 of 18 outside the band, mean
-  signed +12.8, against ≤ 6 and ± 10) and the residual is two-sided: Q13 and Q14 are single
-  stats lookups authored Advanced, Q3 and Q5 need unit conversions and an `rnz` derivation and are
-  authored Simple. Revising an authored band is a Fundamental change for a round of its own.
-  **Do not re-edit the difficulty prompt to chase the residual.**
+  (harness 26).** Runs 29–41 assessed every suite-6 run's items 25–29 points above the authored
+  bands. The run-41 round re-anchored `BenchmarkDifficultyPrompt` on the work an answer needs and
+  re-assessed the suite, so no later suite-6 run is comparable with runs 29–41 on the Intelligence
+  Index (§ 5). The criterion was missed (8 of 18 outside the band, mean signed +12.8, against ≤ 6
+  and ± 10), and the residual is two-sided: Q13, Q14 are single stats lookups authored Advanced; Q3,
+  Q5 need unit conversions and an `rnz` derivation and are authored Simple. Revising an authored
+  band is a Fundamental change for a round of its own. **Do not re-edit the difficulty prompt to
+  chase the residual.**
 - **An Intelligence Index is a number on its assessor's scale, and the grader effect dwarfs the
   candidates (runs 43–46).** Four suite-6 runs at identical item revisions, assessed difficulties,
-  prompt options and instrument SHAs gave 70 / 68 / 72 under GPT-5.6 Sol @ `medium` and **97**
-  under Gemini 3.7 Flash @ `high`, and the blind second reader's sign flipped with the roster
-  (higher on every re-graded answer under Sol, −13.3 under Gemini). Gemini 3.7 Flash @ `high` has
-  produced 95 and 97 where Sol @ `medium` and Claude 5 Opus @ `low` produce 68–78 on the same
-  suite. **No run graded by one may be ranked against a run graded by the other until the T5
-  calibration re-assessment is done**; its pre-declared measurement is in
-  `benchmark_runs_43_46_analysis/` (2026-09-12). The comparison view enforces this through the `Instrument`
-  grader keys; the run history, the run report and the Run Detail dialog do not, and print a 97 in
-  the same typography as a 70.
+  prompt options and instrument SHAs gave 70 / 68 / 72 under GPT-5.6 Sol @ `medium` and **97** under
+  Gemini 3.7 Flash @ `high`, and the blind second reader's sign flipped with the roster (higher on
+  every re-graded answer under Sol, −13.3 under Gemini). Gemini 3.7 Flash @ `high` gave 95 and 97
+  where Sol @ `medium` and Claude 5 Opus @ `low` give 68–78 on the same suite. **No run graded by
+  one may be ranked against a run graded by the other until the T5 calibration re-assessment is
+  done** (its measurement: `benchmark_runs_43_46_analysis/`, 2026-09-12). The comparison view
+  enforces this through the `Instrument` grader keys; run history, the run report and the Run Detail
+  dialog do not, and print a 97 in the same typography as a 70.
 
-**Correction, 2026-09-10 (run-33 H1): every Gemini-role token and cost figure in this registry —
-the earlier registry rows (§ *Earlier Runs*) and every entry recorded before the fix — is inflated.** Until the run-33 round `GoogleProvider`
-emitted one usage report per streamed chunk and `AgentLoopRunner` summed them, so each Gemini model
-call was counted roughly once per chunk (≈ 11× on run 33). That covers the primary assessor and the
-synthesis on every run, and the candidate on run 22 — its tokens, its cost and possibly its 21.1 %
-cache-read share. Anthropic and OpenAI figures are unaffected. Every "grading share" below overstates
-the assessor, and a cost comparison across the fix is not like-for-like. The stored figures are not
-rewritten; see `docs/overseer/ai-benchmark.md` § *Harness Version 18 Updates*.
-
-**Correction, 2026-09-17 (harness-29 round, H1): runs 36, 37, 38, 42, 46, 47 and 51 are prompt-less
-OpenAI runs.** `BuildCandidateSeedHistory` put the board (when present) ahead of the system prompt in
-the history it built for a candidate call, and `OpenAiResponsesProvider` builds `instructions` from
-the history's own system messages rather than from `SegmentedPrompt` — so from 2026-09-10 until the fix
-an OpenAI candidate received **no system prompt at all**: on a suite with no board the seed carried no
-system message, so `instructions` was omitted outright; on a snapshot suite the board was the only
-system message, so the board became the entire system text. **Run 47 is one of them.** Its registry row (§ *Earlier Runs*)
-records what the run measured, but its Intelligence Index (83 ± 5) is not an OpenAI-candidate
-measurement under the production prompt, and **the 47–48 pair is not usable as a clean Tier A pair on
-the model axis** — the two runs differ on more than the candidate model, and of the two only 48
-(Gemini) reliably received the prompt the harness recorded as having been sent. See
-`docs/overseer/ai-benchmark.md` § *Harness Version 29 Updates* for the full defect, the three-provider
-breakdown, and the wire-level check now in place.
-
-### Battery run 12 (runs 98, 99): 2026-10-08, Claude 5.5 Haiku (`xhigh`), suites 6 and 8
-- **Candidate**: Claude 5.5 Haiku (`claude-haiku-5-5`) @ `xhigh`, default tier, parallel mode 2, max output 128,000; R1 of the battery run 11 round.
-- **Prompt options**: mode 0, concise, tools, no web search, no subagents, source refs **Disallowed**, spoiler-free off, snapshot per suite, no history, no pre-injected wiki context.
-- **Grading regime**: harness 54, scoring 14, Standard profile; panel A Claude 5 Opus @ `medium` (the candidate's family), B GPT-5.6 Sol @ `medium`; reference reader and claim verifier Gemini 3.8 Flash @ `medium`, every answer, blind; report writer GPT-6.1 Sol @ `medium`.
-- **Instrument SHAs**: `ChatService.cs` `24710d18`, `Overseer/ToolGuides` `5ff6a192`, KB `d2af7241`; prompt `ce36c4b442c3` / `9f25393be387`; ToolGuides `733b710f7524`; wiki `4bb80dc5bfa1` (the battery run 11 W1–W4 commit), source `9df8a6993d7b`; WIKI-IDX `346bfbab651f`, SRC-IDX `caf9a8b06625`, KB-IDX `3d6d96512061`, NHW-IDX `e5dc755ab200`, NHS-IDX `c3929071a8d9`; suite 8 board 22,993 characters, format 8. NotComparable with battery run 11 (`HarnessVersion`; suite 8 Q5, Q14, Q18 and suite 6 Q18 item revisions and assessed difficulties).
-- **Quality**: Overall Index 81.67 [79.17, 84.16]; run 98 83 (A 86, B 81, reference 92, ICC 0.48), run 99 80 (A 84, B 76, reference 90, ICC 0.25); pooled ICC 0.38, mean B − A −5.86; panel verification-cleared 82.37; critical errors 0 raised; claims 173: 139 supported, 11 refuted, 23 indeterminate; 10 supported accusations (H6); Completeness 67.8 lowest.
-- **Speed**: pooled median model time 38.7 s, P90 85.4 s, max 147.9 s (run 98 Q18); TTFT P50 2.2 s; 1.5–1.6 calls per tool round; run 98 Q2 `iteration_limit` after 22 one-call rounds.
-- **Cost**: US$9.23 per pass; candidate US$0.32 (US$0.0088 per question); claim verifier 40.3 %. 270 tool calls, 0 failed, 0 refused.
-- **Verification Outcome (battery run 11 round)**: harness 54, the wiki W1–W4 commit and the four rubric repairs landed; K1, K7 vacuous; K2, K4–K6, K8, W-K1–W-K3, S-K1–S-K4 passed; **K3 failed** on run 98 Q16 (member B named source files as omissions).
-- **Verifier caution**: run 99 Q15 again refuted the hedge "about 1500 turns" as false (instance 69's shape); run 98 Q8, Q9 lost to a Google 503 with no retry.
-- **Transfer Action**: see `battery_run_12_analysis/implementation_plan_v2.md` — wiki W1 (wrong-alignment wield, two pages) and W2 (peaceful-kill Luck, two pages); harness 54 → 55: B1 source-location rule and its report-time count, B2 verifier stage retry, B3 the "inverts" word lists; Chat Consistency battery mode (analysis code version 4). No change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides/` or `RecommendedModels`.
-- **Still outstanding**: H6 (kept as recorded, decision of 2026-10-08); T6 *steals amulet* on 14 monster pages and in `src/do.c:5523` (deferred, decision of 2026-10-08); the suite 8 board refresh (format 8 while GnollHack writes 16), which also carries the run-73 rubric repairs S1–S2 deferred to it; the controlled verbose pair (declined 2026-09-27); NetHack wiki converter E1; T4 `get_monster_stats` near names; B8 verifier coverage on long answers; T3 stall watchdog; R2 (Haiku at a lower thinking level).
+- **Two registry corrections bind on older figures**: every Gemini-role token and cost figure
+  recorded before 2026-09-10 is inflated, and runs 36, 37, 38, 42, 46, 47 and 51 are prompt-less OpenAI
+  runs. Read [`references/registry_corrections.md`](references/registry_corrections.md) before using
+  a figure from those runs or that period.
 
 ### Comparison #4 (battery runs 100–119): 2026-10-11, nine models, battery *Two initial suites*
-- **Candidates**: GPT-6 Astra @ `medium`; GPT-6 Luna @ `max` and `high` (the reference); GPT-5.6 Luna @ `max` and `high`; Claude 5.5 Haiku @ `xhigh`; Claude 5.5 Sonnet @ `high` and `medium`; Claude 5.5 Opus @ `medium`. One run per suite each (18 member runs, 36 questions).
-- **Prompt options**: concise, tools on, web search and subagents off, source references **Disallowed**; identical on every analyzed run.
-- **Grading regime**: harness 55, scoring method 14, scoring profile 1; grader configurations 19 (member A, Anthropic) / 14 (member B, OpenAI) / 16 (reference reader) / 16 (claim verifier), blind. Root Cause Analysis document 63, format 18, engine 3, writer Gemini 4 Argon @ `medium`.
-- **Instrument SHAs**: prompt `ce36c4b442c3` / `9f25393be387`; `ToolGuidesSha256` `733b710f7524` as the document prints it. The `ChatService.cs` commit and the knowledge-base HEAD were **not read in this round**: the document does not print them, and no corpus fingerprint either.
-- **Quality**: GPT-6 Astra (medium) leads at 87 (85–89), the only model established above the reference GPT-6 Luna (high) at 83 (80–86); Claude 5.5 Sonnet (medium) last at 76 (72–80). Completeness the lowest dimension for every model. **Grader-family gap** (member B − member A, from the panel table): OpenAI candidates −1.2 on average, Anthropic candidates −6.1, so the OpenAI-over-Anthropic order depends on the panel's balance and no configured panel can test it today.
-- **Speed**: median model time from 8.9 s (Sonnet `medium`) to 60.3 s (GPT-6 Luna `max`, 2.47× its own `high` setting).
-- **Cost**: per question from US$0.0029 (GPT-6 Luna `high`, the cheapest) to US$0.194 (GPT-6 Astra, about 66.5 times the reference); Claude thinking was printed as zero reasoning (E5).
-- **Transfer Action**: generator fixes in `comparison_4_rca_review/implementation_plan_v2.md` (Root Cause Analysis engine 4 → 5, comparison format 19 → 20, per-model format 14 → 15); no change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides` or `RecommendedModels`. Claude 5.5 Sonnet (medium) answered 9 of 36 questions without any tool call (T1, routing, rung 6 then 3 after replication): logged, not acted on, one run per suite being motivating only.
-- **Verification Outcome**: pending the runbook's R1 (the replicate of all nine models).
-- **Round A** (2026-10-16, `comparison_4_rca_review/implementation_plan_A_v3.md`): battery panel diagnostics in the report path; price effects known from the cards; Appendix G limited to cited and critical-error questions. No chat change.
-- **Round C** (2026-10-16, `comparison_4_rca_review/implementation_plan_C_v3.md`): sentence trimming and a shortening turn, honest added-by-Overseer notes, check summaries and the cost price note, sentence case in every document; progress cards. No chat change.
+- **Candidates**: GPT-6 Astra @ `medium`; GPT-6 Luna @ `max`, `high` (the reference); GPT-5.6 Luna @ `max`, `high`; Claude 5.5 Haiku @ `xhigh`; Claude 5.5 Sonnet @ `high`, `medium`; Claude 5.5 Opus @ `medium`. One run per suite each (18 member runs, 36 questions).
+- **Prompt options**: concise, tools on, web search and subagents off, source references **Disallowed**; identical on every run.
+- **Grading regime**: harness 55, scoring 14, profile 1; graders 19 (A, Anthropic) / 14 (B, OpenAI) / 16 (reference reader, claim verifier), blind. RCA document 63, format 18, engine 3, writer Gemini 4 Argon @ `medium`.
+- **Instrument SHAs**: prompt `ce36c4b442c3` / `9f25393be387`; `ToolGuidesSha256` `733b710f7524`. `ChatService.cs` commit, KB HEAD and corpus fingerprints **not read** (not printed).
+- **Quality**: GPT-6 Astra (medium) 87 (85–89), the only model established above the reference GPT-6 Luna (high) 83 (80–86); Claude 5.5 Sonnet (medium) last, 76 (72–80). Completeness lowest for every model. **Grader-family gap** (B − A): OpenAI candidates −1.2, Anthropic −6.1, so the OpenAI-over-Anthropic order rests on the panel's balance, which no configured panel can test today.
+- **Speed**: median model time 8.9 s (Sonnet `medium`) to 60.3 s (GPT-6 Luna `max`, 2.47× its `high`).
+- **Cost**: per question US$0.0029 (GPT-6 Luna `high`, cheapest) to US$0.194 (GPT-6 Astra, ≈ 66.5× the reference); Claude thinking printed as zero reasoning (E5).
+- **Transfer Action**: generator fixes, `comparison_4_rca_review/implementation_plan_v2.md` (RCA engine 4 → 5, comparison format 19 → 20, per-model 14 → 15); no change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides` or `RecommendedModels`. T1: Claude 5.5 Sonnet (medium) answered 9 of 36 without a tool call (routing, rung 6 then 3 after replication); logged, not acted on (one run per suite is motivating only).
+- **Verification Outcome**: pending the runbook's R1 (replicate of all nine).
+- **Rounds A and C** (2026-10-16, `comparison_4_rca_review/implementation_plan_A_v3.md`, `_C_v3.md`): A — battery panel diagnostics in the report path, price effects from the cards, Appendix G limited to cited and critical-error questions; C — sentence trimming and a shortening turn, honest added-by-Overseer notes, check summaries and the cost price note, sentence case, progress cards. No chat change.
 
 ### Bones quest-artifact trap (runs not identified): 2026-10-18, cheaper models (not identified)
-- **Candidates**: not read. The round started from the user's observation that every cheaper model answers "What quest artifacts can you find in bones files, if any?" wrongly. No run report, tool-call log or suite export was exported, so the runs, the models and their thinking levels are unidentified, and the plan's Stage 1 diagnosis (classes D1–D6) was not done.
-- **Prompt options**: not read (no report).
-- **Grading regime**: not read (no report).
-- **Instrument SHAs**: none from a report, so **this entry cannot serve as half of a reproduction**. Repository state during the round, not of any run: `ChatService.cs` `53373897`, `Overseer/ToolGuides` `a3de3901`; GnollHack source HEAD `eb2f2a9e4d4f` (every cited file unchanged since `5db1d790e7d2`); GnollHack wiki HEAD `bc4ed286cd87` (`Bones Files.md` and `Quest Artifacts.md` unchanged since `33fb5526`). `ToolGuidesSha256`, the knowledge-base HEAD and the index fingerprints were not read.
-- **Quality, Speed, Cost**: not measured; no run was read.
-- **Ground truth** (verified at `eb2f2a9e4d4f`): on loading bones, an artifact reverts to an ordinary item when it already exists in the game or is the **loading** hero's quest artifact (`src/bones.c:140-203`, `src/questpgr.c:196-200`); a non-generable base becomes the artifact's counterpart item or a random item of its class (`src/bones.c:146-183`); another role's quest artifact stays real, blasts the hero on touch and evades a hero whose alignment also differs or whose record is negative (`src/artifact.c:863-964`). The deciding predicate reads as absolute and is relative to the current hero, the two-hop trap T1 names.
-- **Transfer Action**: see `bones_quest_artifact_trap/implementation_plan_v2.md` — W1 at rung 2, `wiki_handoff_prompt_v2.md` written, validation pending (runbook Step 6); B1 the new suite *GnollHack Trap Questions* (`agent-new-suite-gnollhack-trap-questions.yaml`: bones A1–A4, control A5, held-out B1–B3; B2 narrowed to a monster that vanishes from the game, the one route the source settles); S1 open, the original rubric not checked (no export); T1, the rung-3 `_policy.md` sentence, deferred with its precondition, criterion and rollback; M1 deferred to R2. No change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides/` or `RecommendedModels`.
-- **Verification Outcome**: pending R0 and R1 (runbook Steps 8 and 14). W1 closes when R1 answers at least max(3, R0 + 2) of A1–A4 correctly in the report's own outcome class and reaches `Bones Files` or `Quest Artifacts` on at least 3 of them.
-- **Still outstanding**: the Stage 1 diagnosis and the Stage 2 check of the original rubric, both waiting for the runbook Step 1 exports; the items battery run 12 lists.
+- **Candidates**: not read. The round started from the user's observation that every cheaper model answers "What quest artifacts can you find in bones files, if any?" wrongly. Nothing was exported (report, tool-call log, suite), so runs, models and thinking levels are unidentified, and the Stage 1 diagnosis (classes D1–D6) was not done.
+- **Prompt options, Grading regime, Quality, Speed, Cost**: not read or measured (no report).
+- **Instrument SHAs**: none from a report, so **this entry cannot serve as half of a reproduction**. Repository state during the round: `ChatService.cs` `53373897`, `Overseer/ToolGuides` `a3de3901`; GnollHack source HEAD `eb2f2a9e4d4f` (cited files unchanged since `5db1d790e7d2`); wiki HEAD `bc4ed286cd87` (`Bones Files.md`, `Quest Artifacts.md` unchanged since `33fb5526`). `ToolGuidesSha256`, KB HEAD and index fingerprints not read.
+- **Ground truth** (at `eb2f2a9e4d4f`): on loading bones, an artifact reverts to an ordinary item when it already exists in the game or is the **loading** hero's quest artifact (`src/bones.c:140-203`, `src/questpgr.c:196-200`); a non-generable base becomes the counterpart item or a random item of its class (`src/bones.c:146-183`); another role's quest artifact stays real, blasts the hero on touch and evades a hero whose alignment also differs or whose record is negative (`src/artifact.c:863-964`). The predicate reads as absolute and is relative to the current hero: T1's two-hop trap.
+- **Transfer Action**: `bones_quest_artifact_trap/implementation_plan_v2.md` — W1 rung 2 (`wiki_handoff_prompt_v2.md`); B1 the suite *GnollHack Trap Questions* (`agent-new-suite-gnollhack-trap-questions.yaml`: bones A1–A4, control A5, held-out B1–B3; B2 narrowed to a monster that vanishes from the game, the one route the source settles); S1 open (original rubric not checked, no export); T1, the rung-3 `_policy.md` sentence, deferred with precondition, criterion and rollback; M1 deferred to R2. No change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides/` or `RecommendedModels`.
+- **Verification Outcome**: W1 closes when R1 answers ≥ max(3, R0 + 2) of A1–A4 correctly in the report's outcome class and reaches `Bones Files` or `Quest Artifacts` on ≥ 3 (run 122 below).
+- **Still outstanding**: the Stage 1 diagnosis and the Stage 2 rubric check (waiting for exports). From battery run 12 (retired 2026-10-20): the suite 8 board refresh (format 8 while GnollHack writes 16), carrying the run-73 rubric repairs S1–S2; NetHack wiki converter E1; T4 `get_monster_stats` near names; B8 verifier coverage on long answers; R2 (Haiku at a lower thinking level); T6 and T3 are ledger rows; its H6 stays as recorded (2026-10-08).
+
+### Run 122 — 2026-10-20: GPT-6 Luna (high), GnollHack Trap Questions
+- **Candidate**: GPT-6 Luna (`gpt-6-luna`) @ `high`, default tier, parallel mode 2, max output 128,000. The bones round's R1, without its R0.
+- **Prompt options**: mode 0, concise, tools on, no web search, no subagents, source refs **Disallowed**, spoiler-free off, no snapshot, no history, no pre-injected wiki context.
+- **Grading regime**: harness 56, scoring 14, Standard profile (1). Panel: A Claude 5 Opus @ `medium`, B GPT-5.6 Sol @ `medium` (the candidate's family). Reference reader and claim verifier: Gemini 3.8 Flash @ `medium`, every answer, blind. Report writer: Gemini 4 Argon @ `medium`.
+- **Instrument SHAs**:
+  - `ChatService.cs` `53373897`, `Overseer/ToolGuides` `a3de3901`, `appsettings.json` `53373897`
+  - Prompt `ce36c4b442c3`; ToolGuides `639ba74661d9`
+  - KB `d2af7241`; wiki `6602759b` (the W1 commit); source `1ba33370`
+  - WIKI-IDX `7cb798461028`, SRC-IDX `49a062d361aa`, KB-IDX `1fd04d3e2f09`, NHW-IDX `e5dc755ab200`, NHS-IDX `c3929071a8d9`
+  - Suite 9, item revisions all r1
+- **Quality**:
+  - Index 70 ± 19 (A 69, B 70, reference reader 79), ICC 0.99, 0 disagreements.
+  - 1 confirmed critical error (Q6).
+  - Outcomes 3/3/2/0; Completeness 65.4 lowest.
+  - Claims 10 supported; accused sentences 2 supported, 2 refuted. All 14 verdicts right.
+- **Speed**: median model time 17.2 s, P90 36.1 s, TTFT P50 2.26 s; 4.5 model calls per answer; source-family share r = 0.89 with model time (n = 8).
+- **Cost**: US$1.36 per run; candidate US$0.0179 (US$0.0022 per question); claim verifier 43 %; candidate cache-read share 91 %. 36 tool calls, 0 failed, 0 refused.
+- **Transfer Action**: see `benchmark_run_122_analysis/implementation_plan_v2.md`.
+  - W2 (rung 2, `wiki_handoff_prompt_v2.md`).
+  - Generator and client fixes H1–H5 (Root Cause Analysis engine 11 → 12).
+  - UI tasks U1–U3.
+  - T1 deferred to R1's outcome.
+  - No change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides/` or `RecommendedModels`.
+- **Verification Outcome (bones round)**: R0 not made. W1 criterion 2 met (4 of 4), criterion 1 failed (1 of 4 correct, Completeness-limited); W1 partially closed.
+- **Still outstanding**: T1 (precondition pending R1); W2 validation; the items the bones-round entry carries from battery run 12.
 ---
 
 ## 12. Cross-References
@@ -791,3 +793,4 @@ breakdown, and the wire-level check now in place.
 - [`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) — the Developer Runbook every analysis ends in: one numbered step list, the following runs included as steps
 - [`references/chat_change_ledger.md`](references/chat_change_ledger.md) — every change that reached the chat and every decision not to make one, with rung, criterion, outcome and task directory (§ 9 rule 4, § 11)
 - [`references/verifier_caution_ledger.md`](references/verifier_caution_ledger.md) — every recorded claim-verifier failure instance and shape, with the guard each has today (§ 11, Standing Cautions)
+- [`references/registry_corrections.md`](references/registry_corrections.md) — corrections to recorded token, cost and prompt figures of earlier runs (§ 11, Standing Cautions)

@@ -104,7 +104,7 @@ describe('cc-report-job-view', () => {
       const rows = ccReportJobRows(ccReportJob(), NOW);
       expect(rows.map(row => [row.title, row.statusWord, row.chipClass, row.duration, row.modelCalls, row.documentId])).toEqual([
         ['Executive Summary', 'Completed', 'job-status-chip status-completed', '1 min 00 s', '2', 501],
-        ['Provider Issue Report', 'Writing', 'job-status-chip status-generating', '25 s', '1', null]
+        ['Provider Issue Report', 'Writing draft', 'job-status-chip status-generating', '25 s', '1', null]
       ]);
       // The step adds the charts line; the cards carry no meta line, no tips and no View.
       expect(rows.map(row => [row.phrase, row.meta, row.charts, row.doc, row.viewable])).toEqual([

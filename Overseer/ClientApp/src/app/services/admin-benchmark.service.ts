@@ -3930,6 +3930,11 @@ export interface RecommendedRun {
   runsPerModel: number;
   /** The Number of Runs of a single-model run (Runs per Suite on a battery). */
   runCount: number;
+  /**
+   * How many times to launch the run as set up: one per time of day for a time-of-day run. Absent from a
+   * document written before engine version 12, which means one.
+   */
+  launches?: number;
   scoringProfileId: number | null;
   verboseMode: boolean | null;
   allowSourceCodeReferences: boolean | null;

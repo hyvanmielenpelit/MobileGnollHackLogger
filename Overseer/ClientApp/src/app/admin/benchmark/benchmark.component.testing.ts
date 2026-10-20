@@ -404,7 +404,7 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
   }));
   benchmarkServiceMock.startModelBatch.mockReturnValue(of(buildModelBatchRun()));
 
-  // ngOnInit loads the launcher's batteries and reattaches a live battery run; the Multi-Suite tab
+  // ngOnInit loads the launcher's batteries and reattaches a live battery run; the Batteries tab
   // and the Battery Progress dialog read the rest.
   benchmarkServiceMock.getBatteries.mockReturnValue(of([]));
   benchmarkServiceMock.getActiveBatteryRun.mockReturnValue(of(null));

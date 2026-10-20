@@ -47,14 +47,27 @@ export function rootCauseRunSourceLabel(documentId: number, runNumber: number): 
   return `Set up from Root Cause Analysis #${documentId}, run ${runNumber}`;
 }
 
-/** `about $1.20 · about 35 min`; null when neither is known. */
-export function recommendedRunEstimate(run: Pick<RecommendedRun, 'estimatedCostUsd' | 'estimatedMinutes'>): string | null {
+/** How many times a run is launched: its `launches`, one when absent or not a whole number above one. */
+export function recommendedRunLaunches(run: Pick<RecommendedRun, 'launches'>): number {
+  const launches = run.launches;
+  return launches !== null && launches !== undefined && Number.isInteger(launches) && launches > 1 ? launches : 1;
+}
+
+/**
+ * `about $1.20 · about 35 min`; a run of several launches, the estimate of one launch times their number,
+ * `about $3.60 · about 104 min · over 3 launches`. Null when neither is known.
+ */
+export function recommendedRunEstimate(run: Pick<RecommendedRun, 'estimatedCostUsd' | 'estimatedMinutes' | 'launches'>): string | null {
+  const launches = recommendedRunLaunches(run);
   const parts: string[] = [];
   if (run.estimatedCostUsd !== null && run.estimatedCostUsd !== undefined && Number.isFinite(run.estimatedCostUsd)) {
-    parts.push(`about ${formatCostUsd(run.estimatedCostUsd)}`);
+    parts.push(`about ${formatCostUsd(run.estimatedCostUsd * launches)}`);
   }
   if (run.estimatedMinutes !== null && run.estimatedMinutes !== undefined && Number.isFinite(run.estimatedMinutes)) {
-    parts.push(`about ${Math.max(1, Math.round(run.estimatedMinutes))} min`);
+    parts.push(`about ${Math.max(1, Math.round(run.estimatedMinutes * launches))} min`);
+  }
+  if (parts.length > 0 && launches > 1) {
+    parts.push(`over ${launches} launches`);
   }
   return parts.length > 0 ? parts.join(' · ') : null;
 }
@@ -87,6 +100,10 @@ export function recommendedRunSettings(run: RecommendedRun): RecommendedRunSetti
       term: battery ? 'Runs per Suite' : (batch ? 'Runs per model' : 'Number of Runs'),
       value: String(runs)
     });
+  }
+  const launches = recommendedRunLaunches(run);
+  if (launches > 1) {
+    settings.push({ key: 'launches', term: 'Launches', value: `${launches}, each at a different time of day` });
   }
   if (run.verboseMode !== null && run.verboseMode !== undefined) {
     settings.push({ key: 'style', term: 'Response style', value: run.verboseMode ? 'Detailed' : 'Concise' });

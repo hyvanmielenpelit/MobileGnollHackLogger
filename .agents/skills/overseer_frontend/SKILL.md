@@ -614,7 +614,7 @@ To find specific popups, look in the corresponding component's `.html` template:
   comparison wizard, the multi-run and battery progress dialogs, the Battery Run Report). The eight
   sub-tabs, in the order of `subTabs` in `benchmark.component.ts` (labels from `subTabLabels`), are
   **Run Benchmark** (`run`), **Run History** (`history`), **Multi-Run Analysis** (`multirun`),
-  **Multi-Suite** (`multisuite`), **Manage Suites** (`suites`), **Scoring Profiles** (`profiles`),
+  **Batteries** (`multisuite`, URL slug `multi-suite`), **Manage Suites** (`suites`), **Scoring Profiles** (`profiles`),
   **Model Comparison** (`modelcomparison`) and **Chat Consistency** (`chatconsistency`, always last).
   The row is one `@for` over `subTabs` — an `@switch` supplies each tab's whole `<svg>` — inside
   `.gh-tabs.gh-tabs-secondary.gh-tabs-wrap`, so it **wraps onto further lines instead of scrolling**
@@ -1379,16 +1379,19 @@ To find specific popups, look in the corresponding component's `.html` template:
     analyses and AI documents go with it, a `.checkbox-label` **Also delete its M member runs**,
     unchecked by default, and **Delete** (`btn-gh btn-gh-delete`, *trash*) calling
     `deleteBatteryRun(id, deleteMembers)`; focus afterwards moves as after a run delete.
-  - **The Multi-Suite tab** (`#bm-tab-multisuite` / `#bm-panel-multisuite`, `activeSubTab ===
+  - **The Batteries tab** (`#bm-tab-multisuite` / `#bm-panel-multisuite`, `activeSubTab ===
     'multisuite'`) is the fourth tab, after *Multi-Run Analysis*; the tab row passes positional indexes
     to `onTabKeydown($event, n)`, so a tab inserted before the end moves the indexes and the spec's
     tab-order pins after it. The panel is `app-benchmark-batteries` (`batteries/`, `bb-` classes and ids)
     and holds the battery **definitions only** — battery runs are in Run History, and the analysis, the
     leaderboard and the paired test are dialogs (below); there is no *Battery Runs* table, *Analysis*
-    panel or *Compare two results* section. The head is `h4.gh-section-title#bb-batteries-title`
-    *Batteries* with a click-mode info tip, the polite `#bb-list-status.gh-list-status` (*Showing 3 of 3
-    batteries*), **Show archived (n)** (a `gh-filter-toggle` with `aria-pressed`, shown while an archived
-    battery exists; a view setting that **Clear all** keeps) and **New Battery** (`.btn-gh`, *plus*). A
+    panel or *Compare two results* section. The panel has no visible heading: `h4#bb-batteries-title`
+    *Batteries* is `visually-hidden` and labels `section#bb-section` (`tabindex="-1"`, the focus target
+    after the last visible battery is deleted) and the card list. The toolbar row `.bb-section-head`
+    holds, in order, **New Battery** (`.btn-gh`, *plus*), **Show archived (n)** (a `gh-filter-toggle`
+    with `aria-pressed`, shown while an archived battery exists; a view setting that **Clear all**
+    keeps), the click-mode info tip and the polite `#bb-list-status.gh-list-status` (*Showing 3 of 3
+    batteries*), which fills the rest of the row with its text at the end. A
     card list (`frontend_ui_controls` §8h) on `CardListState`: the filter bar shows above
     `BATTERY_FILTER_BAR_MIN_EXCLUSIVE` (3) batteries or while a filter is active — `#bb-search` (name,
     description, suite names), `#bb-sort` (*Recently modified*, *Name (A–Z)*, *Most runs*, *Most
@@ -1666,8 +1669,11 @@ To find specific popups, look in the corresponding component's `.html` template:
     a run's AI report writing job, opened after a write and by **Show Progress**. A `role="status"` line
     that changes with the phase only (never with the clock), the shared `.run-stage-rail` (*Queued*,
     *Preparing*, one stage per document, *Done*), an indeterminate `progress`, a `.run-stat-strip`
-    (elapsed on the server's clock, writer, model calls, tokens, cost so far or total, estimate), a
-    documents table with **View** once finished, and a *Diagnostics* `gh-disclosure` with icon-only
+    (elapsed on the server's clock, writer with its provider and thinking badges, model calls, one
+    *Tokens* stat "N in · M out", cost so far or *Cost*, estimate), the document cards of
+    `app-report-job-documents` with the Model Comparison wizard's vocabulary (`documentProgressLabel`:
+    *Writing draft*, *Revising*; the first-draft issues and *why* tips; the error line whenever the
+    server sends one), and a *Log and diagnostics* `gh-disclosure` with icon-only
     **Copy** (*copy*) and **Download** (*file-with-arrow*,
     `run-<id>_ai-report-writing-diagnostics_<yyyyMMdd-HHmmss>.txt`). It polls through the worker
     ticker every 2 s, backing off 2 → 4 → 8 → 16 → 30 s on failures. **Run in Background** and the
@@ -1675,7 +1681,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     *Queued* starting view (empty writer, shown as *—*) from the moment a write is accepted; a 204 while
     the run's stored status is Pending or Writing keeps polling for up to 30 s after `open()`
     (`RUN_REPORT_JOB_START_GRACE_MS`), and otherwise shows the run's stored status. It is
-    `frame($width: 60rem, $max-height: 92dvh)`, so the finished documents table fits with **View**.
+    `frame($width: 60rem, $max-height: 92dvh)`.
     Finished, it offers **Open Download Center** and **Done**. It and its confirmation stop their own
     `close` and `cancel` events.
   - `app-pdf-viewer-dialog` (`shared/pdf-viewer/`): a **generic, shared** full-screen PDF viewer; the

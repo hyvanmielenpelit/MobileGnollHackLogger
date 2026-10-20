@@ -70,7 +70,7 @@ Features:
 - **Model Comparison** wizard with charts.
 - **Report packs** — AI-written documents rendered to PDF and Word — and the **Download Center**.
 
-The tab's sub-tabs are *Run Benchmark, Run History, Multi-Run Analysis, Multi-Suite, Manage Suites, Scoring Profiles* and *Model Comparison*.
+The tab's sub-tabs are *Run Benchmark, Run History, Multi-Run Analysis, Batteries, Manage Suites, Scoring Profiles, Model Comparison* and *Chat Consistency*.
 
 Code: `Overseer/Services/Benchmarking/`, `Overseer/Controllers/AdminBenchmark*.cs`, `Overseer/ClientApp/src/app/admin/benchmark/`, `GnollHackServer.Data/Benchmark*.cs`, and the default suites in `Overseer/Data/DefaultSuites/`. Its four documents are listed under [GnollBench](#gnollbench) in the Documentation section.
 

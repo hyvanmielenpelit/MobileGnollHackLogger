@@ -539,8 +539,9 @@ public class RootCauseEngineTests
     [Fact]
     public void AReplicate_FoldsTheTimeOfDayAndThinkingPairRunsItCovers()
     {
-        // The subject's time is mostly time to first token (WS1, a time-of-day repeat), and it answered every
-        // fourth question without tools (WQ1, a replicate): the replicate covers the subject, so it folds the repeat in.
+        // The subject's time is mostly the wait before output (WS1, a time-of-day repeat), and it answered every
+        // fourth question without tools (WQ1, a replicate): the replicate covers the subject, so it folds the repeat in,
+        // and is then one pass launched once per time of day, since a batch or a series would run back to back.
         var input = Input(Controls(("Vega Pro (medium)", "Anthropic", "vega-pro", 85), ("Nova Flash (high)", "Google", "nova-flash", 80)));
         var withTtft = new RootCauseInput
         {
@@ -562,14 +563,30 @@ public class RootCauseEngineTests
         Assert.DoesNotContain(result.RecommendedRuns, r => r.Kind == RootCauseRunKinds.TimeStratum);
         Assert.Contains(ws1.Key, replicate.HypothesisIds);
         Assert.Equal(replicate.Number, ws1.NextRunNumber);
-        Assert.Equal("Start each run at a different time of day", replicate.When);
+        Assert.Equal("Launch it 3 times, each at a different time of day; Number of Runs 3, Runs per model 3 or a model batch would run them back to back",
+            replicate.When);
+        Assert.Equal(RootCauseNextRuns.TimeOfDayWhen, replicate.When);
+        Assert.Equal(RootCauseNextRuns.ReplicateRuns, replicate.Launches);
+        Assert.Equal("Single", replicate.RunMode);
+        Assert.Equal(1, replicate.RunsPerModel);
+        Assert.Equal(1, replicate.RunCount);
+        Assert.Contains("Launch this setup 3 times, each at a different time of day.", replicate.Notes);
         Assert.Equal(RootCausePurposes.Chat, replicate.Purpose);
         Assert.Equal(1, replicate.Number);
         Assert.Equal(Enumerable.Range(1, result.RecommendedRuns.Count), result.RecommendedRuns.Select(r => r.Number));
 
+        // The estimate is one launch's; its text states all three.
+        Assert.Equal(0.22, replicate.EstimatedCostUsd!.Value, 9);
+        Assert.Equal(9, replicate.EstimatedMinutes!.Value, 9);
+        Assert.Equal("about $0.66 and 27 minutes over 3 launches", RootCauseNextRuns.EstimateText(replicate));
+
         string summary = RootCauseNextRuns.Summary(replicate);
         Assert.StartsWith("Run 1, a replicate of ", summary);
+        Assert.EndsWith("(about $0.66 and 27 minutes over 3 launches)", summary);
         Assert.DoesNotContain(replicate.Decides, summary);
+
+        // Every other run is launched once.
+        Assert.All(result.RecommendedRuns.Where(r => r != replicate), r => Assert.Equal(1, r.Launches));
     }
 
     [Fact]
@@ -809,9 +826,9 @@ public class RootCauseEngineTests
     }
 
     [Fact]
-    public void TheEngineVersion_IsEleven()
+    public void TheEngineVersion_IsTwelve()
     {
-        Assert.Equal(11, RootCauseEngine.Version);
+        Assert.Equal(12, RootCauseEngine.Version);
     }
 
     [Fact]

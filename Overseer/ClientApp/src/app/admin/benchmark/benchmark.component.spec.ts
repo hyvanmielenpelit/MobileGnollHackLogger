@@ -1597,13 +1597,13 @@ describe('AdminBenchmarkComponent', () => {
       expect(tabList().classList.contains('gh-tabs-wrap')).toBe(true);
     });
 
-    it('should place Multi-Suite fourth, right after Multi-Run Analysis', () => {
+    it('should place Batteries fourth, right after Multi-Run Analysis', () => {
       expect(tabs().map(t => t.id)).toEqual([
         'bm-tab-run', 'bm-tab-history', 'bm-tab-multirun', 'bm-tab-multisuite',
         'bm-tab-suites', 'bm-tab-profiles', 'bm-tab-modelcomparison', 'bm-tab-chatconsistency'
       ]);
       const multiSuite = tabs()[3];
-      expect((multiSuite.textContent || '').trim()).toBe('Multi-Suite');
+      expect((multiSuite.textContent || '').trim()).toBe('Batteries');
       expect(multiSuite.getAttribute('aria-controls')).toBe('bm-panel-multisuite');
       expect(component.subTabs[3]).toBe('multisuite');
     });
@@ -1675,7 +1675,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(panel.querySelector('app-benchmark-multi-run')).toBeTruthy();
     });
 
-    it('should render the Multi-Suite panel, and nothing else, on the multisuite tab', () => {
+    it('should render the Batteries panel, and nothing else, on the multisuite tab', () => {
       fixture.nativeElement.querySelector('#bm-tab-multisuite').click();
       fixture.detectChanges();
 

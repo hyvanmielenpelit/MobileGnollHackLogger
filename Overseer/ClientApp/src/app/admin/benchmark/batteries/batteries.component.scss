@@ -1,6 +1,5 @@
-/* Multi-Suite sub-tab: layout and component-local presentation only. Buttons, .gh-tag,
- * .config-badge, .gh-table, the filter bar, .gh-section-title, .gh-field-error and the tooltips come
- * from styles.scss. */
+/* Batteries sub-tab: layout and component-local presentation only. Buttons, .gh-tag,
+ * .config-badge, .gh-table, the filter bar, .gh-field-error and the tooltips come from styles.scss. */
 
 :host {
   display: block;
@@ -21,45 +20,31 @@
   min-inline-size: 0;
 }
 
-/* The heading, its info button, the status line and the head actions, centered on one row. The
-   status line wraps under the heading where the row is narrow. */
+.bb-section:focus {
+  outline: none;
+}
+
+.bb-section:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+/* The toolbar: New Battery, Show archived and the info button, then the status line filling the
+   rest of the row with its text at the end. The status line wraps under the buttons where the row is
+   narrow. */
 .bb-section-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 8px;
+  gap: 10px;
   padding-block-end: 6px;
   border-bottom: 1px solid var(--border-glass);
-
-  .gh-section-title {
-    margin: 0;
-    padding: 0;
-    border-bottom: 0;
-    text-box: trim-both cap alphabetic;
-
-    &:focus:not(:focus-visible) {
-      outline: none;
-    }
-
-    &:focus-visible {
-      outline: 2px solid var(--primary-color);
-      outline-offset: 4px;
-      border-radius: 2px;
-    }
-  }
 }
 
 .bb-list-status {
-  margin-inline-start: auto;
-}
-
-/* Show archived and New Battery, at the end of the row. */
-.bb-head-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-inline-start: auto;
+  flex: 1 1 12rem;
+  text-align: end;
 }
 
 .bb-battery-error,
@@ -120,7 +105,9 @@
 }
 
 /* The header, the metrics and the actions on one row, the suites under a hairline. The metric
-   columns have a fixed width, so they line up down the list. */
+   columns have a fixed width, so they line up down the list. The header never gets less than 18rem,
+   which with the padding, the gaps, the 34.5rem of metrics and up to 22rem of actions needs a list
+   of 80rem (the container query below). */
 .bb-card {
   --bb-pad-block: 1rem;
   --bb-pad-inline: 1.25rem;
@@ -128,7 +115,7 @@
   --bb-row-gap: 0.875rem;
 
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(min(100%, 18rem), 1fr) auto auto;
   grid-template-areas:
     "head metrics actions"
     "suites suites suites";
@@ -156,7 +143,8 @@
   min-inline-size: 0;
 }
 
-/* The id, the revision, the scheme and the battery's states, each a word. */
+/* The id, the revision, the scheme and the battery's states, each a word. The chips wrap onto a
+   second line rather than overflow the header. */
 .bb-card-kicker {
   display: flex;
   flex-wrap: wrap;
@@ -166,11 +154,15 @@
   font-size: var(--text-secondary);
   color: #a1a1aa;
 
-  // Inline with the other parts, without the block layout the global tags take under a name.
+  // Inline with the other parts, without the block layout the global tags take under a name. A chip
+  // wider than the header wraps its own words.
   .gh-tag,
   .config-badge {
     display: inline-flex;
+    max-inline-size: 100%;
     margin: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 
@@ -378,11 +370,12 @@
   font-size: var(--text-secondary);
 }
 
-/* A narrower list: the metrics move under the header, spread across the card's width, with their
-   hairline above them. */
-@container bb-cards (inline-size < 60rem) {
+/* A narrower list: the metrics move under the header, spread across the card's width in four equal
+   columns, with their hairline above them. The header keeps its 18rem beside up to 22rem of actions
+   down to a list of 44rem. */
+@container bb-cards (inline-size < 80rem) {
   .bb-card {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(min(100%, 18rem), 1fr) auto;
     grid-template-areas:
       "head actions"
       "metrics metrics"
@@ -390,7 +383,7 @@
   }
 
   .bb-metrics {
-    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     border-inline-start: 0;
     padding-inline-start: 0;
     padding-block-start: 0.75rem;
@@ -398,8 +391,8 @@
   }
 }
 
-/* A phone: one column, the actions on their own line under the header. */
-@container bb-cards (inline-size < 30rem) {
+/* One column, the actions on their own line under the header. */
+@container bb-cards (inline-size < 44rem) {
   .bb-card {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
@@ -412,6 +405,13 @@
   .bb-card-actions {
     justify-content: flex-start;
     max-inline-size: none;
+  }
+}
+
+/* A phone: the four metrics in two rows of two, so none is left alone on the last row. */
+@container bb-cards (inline-size < 36rem) {
+  .bb-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

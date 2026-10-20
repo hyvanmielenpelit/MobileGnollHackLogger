@@ -113,13 +113,13 @@ The first known fact: No earlier run of another model answered these questions u
 
 ### Where the time goes
 
-| Model | Wall time per question (median, tools included) | Time to first token | Output generation | Tool execution | Own waits and retries | Other |
+| Model | Wall time per question (median, tools included) | Wait before output | Output generation | Tool execution | Own waits and retries | Other |
 |---|---|---|---|---|---|---|
 | GPT-5.6 Luna | 22.5 s | 2.6 s | 14.6 s | 2.0 s | 0.1 s | 3.2 s |
 | Suite 1: Item lore | 20.5 s | 2.6 s | 13.0 s | 2.0 s | 0.1 s | 2.9 s |
 | Suite 2: Hazards | 24.5 s | 2.6 s | 16.2 s | 2.0 s | 0.1 s | 3.6 s |
 
-*Wall time per question: the median time per question, tool execution included, split into its parts in proportion to their mean times. The parts are time to first token (the wait before the model starts writing, mostly its thinking), output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. It differs from the median model time the other tables of this document give, which leaves tool execution out.*
+*Wall time per question: the median time per question, tool execution included, split into its parts in proportion to their mean times. The parts are the wait before output, output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. The wait before output is summed over every model call of the answer, hidden thinking included; the run report's time to first token (the wait before the model starts writing, mostly its thinking) is the first call's alone. It differs from the median model time the other tables of this document give, which leaves tool execution out.*
 
 The speed tables split the time per question into its components.
 
@@ -1236,6 +1236,11 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "of its cost",
+      "key": "rca.hypothesis.WC1.1.shareOf"
+    },
+    {
+      "available": true,
       "display": "Output (with reasoning) is GPT-5.6 Luna's largest cost component (where its cost goes, not a comparison).",
       "key": "rca.hypothesis.WC1.1.statement"
     },
@@ -1304,6 +1309,11 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "of its points at risk",
+      "key": "rca.hypothesis.WQ2.1.shareOf"
+    },
+    {
+      "available": true,
       "display": "GPT-5.6 Luna's points are lost mostly in suite 2 (where its points go, not a comparison).",
       "key": "rca.hypothesis.WQ2.1.statement"
     },
@@ -1363,6 +1373,11 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "66%",
       "key": "rca.hypothesis.WQ3.1.share",
       "value": 0.6617647058823529
+    },
+    {
+      "available": true,
+      "display": "of its points at risk",
+      "key": "rca.hypothesis.WQ3.1.shareOf"
     },
     {
       "available": true,
@@ -1436,6 +1451,11 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "83%",
       "key": "rca.hypothesis.WS2.1.share",
       "value": 0.8295454545454546
+    },
+    {
+      "available": true,
+      "display": "of its model time",
+      "key": "rca.hypothesis.WS2.1.shareOf"
     },
     {
       "available": true,
@@ -2167,7 +2187,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 11,
+    "engineVersion": 12,
     "evidence": [
       {
         "atRisk": [
@@ -2232,7 +2252,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "time": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 2.575
           },
           {
@@ -2725,6 +2745,7 @@ The counts and the configuration facts the analysis states, each numbered as the
           "WQ2.1"
         ],
         "kind": "control",
+        "launches": 1,
         "mark": "Recommended",
         "modelNames": [
           "Lyra Mini (high)",
@@ -2765,6 +2786,7 @@ The counts and the configuration facts the analysis states, each numbered as the
           "WS2.1"
         ],
         "kind": "thinkingPair",
+        "launches": 1,
         "mark": "Recommended",
         "modelNames": [
           "GPT-5.6 Luna",
@@ -2798,7 +2820,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "segments": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 2.575
           },
           {
@@ -2832,7 +2854,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "segments": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 2.55
           },
           {
@@ -2865,7 +2887,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "segments": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 2.6
           },
           {
@@ -2923,6 +2945,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 202 · format version 23 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 202 · format version 24 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

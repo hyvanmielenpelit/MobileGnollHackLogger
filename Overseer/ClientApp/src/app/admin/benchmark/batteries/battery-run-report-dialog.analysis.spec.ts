@@ -12,7 +12,7 @@ import {
   tearDownBatteryRunReport
 } from './battery-run-report-dialog.testing';
 
-// The analysis and paired-comparison views that moved from the Multi-Suite tab into the Battery Run
+// The analysis and paired-comparison views that moved from the Batteries tab into the Battery Run
 // Report, with their bb- classes.
 describe('BatteryRunReportDialogComponent analysis', () => {
   let h: BatteryRunReportHarness;

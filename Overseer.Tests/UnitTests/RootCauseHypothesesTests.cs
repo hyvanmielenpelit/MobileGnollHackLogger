@@ -10,8 +10,9 @@ using Xunit;
 /// The grading of the root-cause hypotheses (§ A2): every grade boundary, the null cap, the control
 /// limit, the per-axis keep limits and the hypothesis a research question reserves (question 1 only one about the
 /// pair itself, the slowest model its preferred partner's), the amount a hypothesis explains, the axis status
-/// with and without pairs and beside a price effect, the noun phrase of a check a draft proposes, and the cost rules of
-/// a pair split into input and output.
+/// with and without pairs and beside a price effect, the noun phrase of a check a draft proposes, the cost rules of
+/// a pair split into input and output, WS1 on a model whose visible text arrives in one burst, and the answers WQ4 and
+/// HQ6 need.
 /// </summary>
 public class RootCauseHypothesesTests
 {
@@ -768,6 +769,142 @@ public class RootCauseHypothesesTests
         Assert.True(hc2.PriceEffect);
         Assert.Contains(hc2.Against, line => line.StartsWith("The caching effect is ", StringComparison.Ordinal));
         Assert.DoesNotContain(listDrafts, d => d.Id is "HC1" or "HC3" or "HC4");
+    }
+
+    // --- WS1 on a decode that cannot be measured; WQ4 and HQ6 on too few answers ------------------------------
+
+    /// <summary>
+    /// A model on twelve scored and timed questions, two runs per suite, whose time is mostly the wait before its output
+    /// (WS1 fires): <paramref name="wrong"/> answers Incorrect, the next <paramref name="notAttempted"/> NotAttempted and the
+    /// rest Correct; the first <paramref name="burst"/> answers' visible text arrived in one burst, and with
+    /// <paramref name="telemetry"/> false none says either way.
+    /// </summary>
+    private static RootCauseModelInput Answering(string token, double index, int wrong = 0, int notAttempted = 0, int burst = 0, bool telemetry = true)
+    {
+        var questions = Enumerable.Range(1, 12).ToList();
+        return new RootCauseModelInput
+        {
+            Token = token,
+            Letter = token,
+            Label = "Model label " + token,
+            Provider = "Provider " + token,
+            ModelId = "model-" + token.ToLowerInvariant(),
+            ThinkingLevel = "high",
+            EntryKey = "run:" + token,
+            QualityIndex = index,
+            Evidence = new RootCauseModelEvidence
+            {
+                RunCount = 2,
+                RunsPerSuite = 2,
+                CriticalErrorsConfirmed = true,
+                Answers = questions.Select(q => new RootCauseAnswerRecord
+                {
+                    RunId = 1,
+                    ItemKey = "q" + q + "@1",
+                    QuestionKey = "q" + q,
+                    Band = "Simple",
+                    Ok = true,
+                    Counting = true,
+                    Quality = q <= wrong + notAttempted ? 20 : 80 + q,
+                    Outcome = q <= wrong ? Overseer.Services.Benchmarking.BenchmarkOutcomeClass.Incorrect
+                        : q <= wrong + notAttempted ? Overseer.Services.Benchmarking.BenchmarkOutcomeClass.NotAttempted
+                        : Overseer.Services.Benchmarking.BenchmarkOutcomeClass.Correct,
+                    ModelTimeMs = 12000 + 150 * q,
+                    DurationMs = 14000 + 150 * q,
+                    Telemetry = true,
+                    TtftSumMs = 9000 + 100 * q,
+                    DecodeSumMs = 2000 + 50 * q,
+                    StreamingRateUnmeasurable = telemetry ? q <= burst : null
+                }).ToList(),
+                SpeedItems = questions.Select(q => new RootCauseItem
+                {
+                    Key = "q" + q,
+                    Band = "Simple",
+                    TtftMs = 9000 + 100 * q,
+                    DecodeMs = 2000 + 50 * q,
+                    ModelTimeMs = 12000 + 150 * q,
+                    DurationMs = 14000 + 150 * q,
+                    ToolMs = 1000,
+                    Calls = 2,
+                    OutputTokens = 800
+                }).ToList()
+            }
+        };
+    }
+
+    private static List<RootCauseDraft> Within(RootCauseModelInput model, string axis)
+        => RootCauseHypotheses.WithinRules(new RootCauseContext(new RootCauseInput { Scope = RootCauseEngine.ModelScope, Models = new[] { model } }),
+            model, new[] { axis }, (null, null));
+
+    [Fact]
+    public void WS1_OnAModelWhoseTextArrivesInOneBurst_FailsDecodeMeasurable_AndGradesOneLevelLower()
+    {
+        var measurable = Assert.Single(Within(Answering("A", 80), RootCauseAxes.Speed), d => d.Id == "WS1");
+        var burst = Assert.Single(Within(Answering("A", 80, burst: 12), RootCauseAxes.Speed), d => d.Id == "WS1");
+
+        const string reason = "On 12 of 12 answers the visible text arrived in one burst after hidden thinking, "
+                              + "so the wait before output cannot be told from deliberation, and the decode share cannot be measured.";
+        var check = Assert.Single(burst.Robustness, r => r.Name == RootCauseHypotheses.DecodeMeasurable);
+        Assert.Equal(RootCauseCheckStatuses.Failed, check.Status);
+        Assert.Equal(reason, check.Detail);
+        Assert.Contains(reason, burst.Against);
+
+        var high = Grade(measurable);
+        var lower = Grade(burst);
+        Assert.Equal(RootCauseGrades.High, high.Grade);
+        Assert.Equal(RootCauseGrades.Moderate, lower.Grade);
+        Assert.Contains(RootCauseHypotheses.CheckReason(check), lower.GradeReasons);
+        Assert.StartsWith("Wait before output: ", burst.Short, StringComparison.Ordinal);
+        Assert.Contains(burst.For, line => line.StartsWith("Wait before output is ", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(6, true)]
+    [InlineData(12, false)]
+    public void WS1_WithAMeasurableDecode_OrNoTelemetryFlag_IsUnchanged(int burst, bool telemetry)
+    {
+        // Half the answers or fewer in one burst, or answers that say nothing either way, add no check.
+        var ws1 = Assert.Single(Within(Answering("A", 80, burst: burst, telemetry: telemetry), RootCauseAxes.Speed), d => d.Id == "WS1");
+
+        Assert.DoesNotContain(ws1.Robustness, r => r.Name == RootCauseHypotheses.DecodeMeasurable);
+        Assert.DoesNotContain(ws1.Against, line => line.Contains("one burst", StringComparison.Ordinal));
+        Assert.Equal(RootCauseGrades.High, Grade(ws1).Grade);
+    }
+
+    [Fact]
+    public void WS1_FailsDecodeMeasurable_OnMoreThanHalfOfTheAnswers()
+    {
+        var ws1 = Assert.Single(Within(Answering("A", 80, burst: 7), RootCauseAxes.Speed), d => d.Id == "WS1");
+
+        var check = Assert.Single(ws1.Robustness, r => r.Name == RootCauseHypotheses.DecodeMeasurable);
+        Assert.StartsWith("On 7 of 12 answers the visible text arrived in one burst", check.Detail, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(2, false)]
+    [InlineData(3, true)]
+    public void WQ4_NeedsTheProfilesMinimumOfWrongOrNotAttemptedAnswers(int wrong, bool raised)
+    {
+        Assert.Equal(3, Overseer.Services.Benchmarking.BenchmarkComparisonModelProfile.WrongInsteadOfAbstainingMinAnswers);
+
+        var drafts = Within(Answering("A", 70, wrong: wrong), RootCauseAxes.Intelligence);
+
+        Assert.Equal(raised, drafts.Any(d => d.Id == "WQ4"));
+    }
+
+    [Theory]
+    [InlineData(2, 1, 2, false)]
+    [InlineData(3, 1, 2, true)]
+    [InlineData(3, 0, 2, false)]
+    public void HQ6_NeedsTheProfilesMinimumOnEachSide(int worseWrong, int betterWrong, int betterNotAttempted, bool raised)
+    {
+        // The worse model was wrong on every such answer; the better one abstained on most of its own.
+        var ctx = Compared(Answering("A", 60, wrong: worseWrong), Answering("B", 80, wrong: betterWrong, notAttempted: betterNotAttempted));
+
+        var drafts = RootCauseHypotheses.PairRules(ctx, new RootCausePair("A", "B"), new Dictionary<string, bool>());
+
+        Assert.Equal(raised, drafts.Any(d => d.Id == "HQ6"));
     }
 
     [Fact]

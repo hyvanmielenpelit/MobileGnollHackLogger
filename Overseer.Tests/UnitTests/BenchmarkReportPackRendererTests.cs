@@ -1531,12 +1531,12 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion27()
+    public void AComparisonDocument_IsCurrentAtFormatVersion28()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(27, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 27 · ", text);
+        Assert.Equal(28, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 28 · ", text);
         Assert.Contains(" · models named*", text);
     }
 
@@ -1630,7 +1630,7 @@ public class BenchmarkReportPackRendererTests
 
         string speed = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaNamed), "### Where the time goes");
 
-        Assert.Contains("| Model | Wall time per question (median, tools included) | Time to first token | Output generation | Tool execution |\n", speed);
+        Assert.Contains("| Model | Wall time per question (median, tools included) | Wait before output | Output generation | Tool execution |\n", speed);
         Assert.DoesNotContain("| Own waits and retries |", speed);
         Assert.Contains("Left out because they are zero or not recorded in every row: own waits and retries and other.", speed);
         Assert.Contains("It differs from the median model time the other tables of this document give, which leaves tool execution out.", speed);
@@ -3283,7 +3283,7 @@ public class BenchmarkReportPackRendererTests
 
         string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
 
-        Assert.Contains(" · generated under format version 19 · rendered with format version 27 · ", text);
+        Assert.Contains(" · generated under format version 19 · rendered with format version 28 · ", text);
         Assert.DoesNotContain("Grader family:", text);
         foreach (string resolution in new[] { "agreed by both members", "upheld by the claim verifier", "overturned by the claim verifier", "unresolved (averaged)", "single assessor" })
         {
@@ -3495,10 +3495,10 @@ public class BenchmarkReportPackRendererTests
     {
         Assert.Equal(6, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
         Assert.Equal(6, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
-        Assert.Equal(23, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(27, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
-        Assert.Equal(23, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(27, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(24, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
+        Assert.Equal(28, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(24, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(28, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
         Assert.Contains(" · format version 6 · ", text);

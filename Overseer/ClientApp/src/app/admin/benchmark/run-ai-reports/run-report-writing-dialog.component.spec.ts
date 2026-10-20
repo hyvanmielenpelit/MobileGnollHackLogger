@@ -240,7 +240,10 @@ describe('RunReportWritingDialogComponent', () => {
 
     tick(2000);
     fixture.detectChanges();
-    expect(text('.rw-status')).toBe('Writing the Executive Summary');
+    expect(text('.rw-status')).toBe('Writing the draft of the Executive Summary');
+    // The chip's words as the Model Comparison wizard's cards show them; CSS sets them in capitals.
+    expect(text(`.rjd-card[data-audience="${ExecutiveSummary}"] .job-status-chip`)).toBe('Writing draft');
+    expect(text(`.rjd-card[data-audience="${RootCauseAnalysis}"] .job-status-chip`)).toBe('Pending');
     const current = el('.run-stage.is-current')!;
     expect(current.getAttribute('data-stage')).toBe(`doc-${ExecutiveSummary}`);
     expect(current.getAttribute('aria-current')).toBe('step');
@@ -253,7 +256,8 @@ describe('RunReportWritingDialogComponent', () => {
 
     tick(2000);
     fixture.detectChanges();
-    expect(text('.rw-status')).toBe('Repairing the Executive Summary');
+    expect(text('.rw-status')).toBe('Revising the draft of the Executive Summary');
+    expect(text(`.rjd-card[data-audience="${ExecutiveSummary}"] .job-status-chip`)).toBe('Revising');
 
     tick(2000);
     fixture.detectChanges();
@@ -288,7 +292,9 @@ describe('RunReportWritingDialogComponent', () => {
     open();
     expect(text('.rw-cost-label')).toBe('Cost so far');
     expect(text('.rw-cost')).toBe('Unknown');
-    expect(text('.rw-input-tokens')).toBe('12,345');
+    expect(text('.rw-tokens')).toBe('12,345 in · 1,200 out');
+    expect(el('.rw-input-tokens')).toBeNull();
+    expect(el('.rw-output-tokens')).toBeNull();
     expect(text('.rw-estimate')).toBe('$0.50');
     expect(text('.rw-stat-writer .model-name')).toBe('Claude Opus writer');
     expect(el('.rw-stat-writer app-provider-badge')).not.toBeNull();
@@ -409,7 +415,7 @@ describe('RunReportWritingDialogComponent', () => {
 
     expect(finished).toEqual([view]);
     expect(text('.rw-summary')).toBe('2 reports written in 3 min 05 s for $0.42.');
-    expect(text('.rw-cost-label')).toBe('Total cost');
+    expect(text('.rw-cost-label')).toBe('Cost');
     expect(text('.rw-elapsed')).toBe('3 min 05 s');
     expect(el('.rw-cancel')).toBeNull();
     expect(el('.rw-background')).toBeNull();
@@ -450,7 +456,47 @@ describe('RunReportWritingDialogComponent', () => {
     expect(text(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-error`)).toBe('The model refused.');
     expect(el(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-error`)!.classList).toContain('gh-field-error');
     expect(el(`.rjd-card[data-audience="${ExecutiveSummary}"]`)!.getAttribute('data-tone')).toBe('failed');
+    // As on the Model Comparison wizard's cards, a failed document's chip offers why it failed.
+    expect(el(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-why`)).not.toBeNull();
+    expect(el(`.rjd-card[data-audience="${RootCauseAnalysis}"] .rjd-why`)).toBeNull();
     expect(el('.rjd-view')).toBeNull();
+    stop();
+  }));
+
+  it('shows a document’s error whenever the server sends one, and the fallback reason only for a failed one', fakeAsync(() => {
+    service.getRunReportJob.mockReturnValue(of(jobView({}, {
+      documents: [
+        doc(ExecutiveSummary, 'Repairing', { errorMessage: 'The first draft failed validation.' }),
+        doc(RootCauseAnalysis, 'Pending')
+      ]
+    })));
+    open();
+    expect(text(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-error`)).toBe('The first draft failed validation.');
+    expect(el(`.rjd-card[data-audience="${RootCauseAnalysis}"] .rjd-error`)).toBeNull();
+    stop();
+
+    service.getRunReportJob.mockReturnValue(of(jobView({ phase: 'Finished', status: BenchmarkRunReportDocumentsStatus.Failed, finishedAtUtc: '2026-09-29T12:01:00Z' }, { documents: [doc(ExecutiveSummary, 'Failed'), doc(RootCauseAnalysis, 'Canceled')] })));
+    open();
+    expect(text(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-error`)).toBe('No reason was recorded.');
+    expect(el(`.rjd-card[data-audience="${RootCauseAnalysis}"] .rjd-error`)).toBeNull();
+    stop();
+  }));
+
+  it('offers the first draft’s issues beside the chip of a document being revised', fakeAsync(() => {
+    service.getRunReportJob.mockReturnValue(of(jobView({}, {
+      documents: [
+        doc(ExecutiveSummary, 'Repairing', {
+          phase: 'Revising',
+          phaseDetail: 'Revising the draft.',
+          firstTurnIssues: [{ rule: 16, location: 'Conclusions, paragraph 1', message: 'A figure was not from the fact sheet.', dropped: true }]
+        }),
+        doc(RootCauseAnalysis, 'Pending')
+      ]
+    })));
+    open();
+    const card = el(`.rjd-card[data-audience="${ExecutiveSummary}"]`)!;
+    expect(card.querySelector('.rjd-status .rjd-draft')).not.toBeNull();
+    expect(el(`.rjd-card[data-audience="${RootCauseAnalysis}"] .rjd-draft`)).toBeNull();
     stop();
   }));
 
@@ -494,7 +540,7 @@ describe('RunReportWritingDialogComponent', () => {
     open();
     const details = el<HTMLDetailsElement>('details.rw-diagnostics')!;
     expect(details.open).toBe(false);
-    expect(text('details.rw-diagnostics summary')).toBe('Diagnostics');
+    expect(text('details.rw-diagnostics summary')).toBe('Log and diagnostics');
     const button = el<HTMLButtonElement>('.rw-copy-diagnostics')!;
     expect(button.getAttribute('aria-label')).toBe('Copy the report writing diagnostics for run 42');
     expect(button.hasAttribute('title')).toBe(false);

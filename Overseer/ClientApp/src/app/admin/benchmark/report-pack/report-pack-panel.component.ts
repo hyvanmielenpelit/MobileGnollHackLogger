@@ -1695,8 +1695,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     }
     const range = this.estimateTotalUsd;
     const repair = range !== null && isCostRange(range.low, range.high)
-      ? 'From the first call alone to one repair turn per document.'
-      : 'A repair turn can roughly double a document’s cost.';
+      ? 'From the first call alone to one revision turn per document.'
+      : 'A revision turn can roughly double a document’s cost.';
     if (this.scopeMode === 'comparison') {
       return `For ${this.coveredKeys.length} models, compared as equals. ${repair}`;
     }
@@ -2197,6 +2197,11 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (doc) {
       this.chartRetryRequested.emit(doc);
     }
+  }
+
+  /** The job's model calls with thousands separators, or `—` before the job is known. */
+  get jobModelCalls(): string {
+    return this.job ? numberFormat.format(this.job.totalModelCalls) : '—';
   }
 
   get jobTokens(): string {

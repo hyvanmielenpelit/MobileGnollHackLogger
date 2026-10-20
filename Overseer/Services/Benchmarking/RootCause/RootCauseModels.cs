@@ -225,7 +225,7 @@ public static class RootCauseSegments
         BudgetOrDefect => "budget, truncation or output defects",
         CriticalError => "confirmed critical errors",
         OtherLow => "other low-scoring answers",
-        Ttft => "time to first token",
+        Ttft => "wait before output",
         OutputGeneration => "output generation",
         ToolExecution => "tool execution",
         OwnWaits => "own waits and retries",
@@ -369,7 +369,7 @@ public sealed class RootCauseResult
     /// <summary>R1: index points at risk per model, or per difficulty band or suite of a stand-alone subject.</summary>
     public List<RootCauseChartRow> PointsAtRisk { get; set; } = new();
 
-    /// <summary>R2: seconds per question, split into time to first token, output generation, tools, waits and other.</summary>
+    /// <summary>R2: seconds per question, split into the wait before output (summed over the calls), output generation, tools, waits and other.</summary>
     public List<RootCauseChartRow> SpeedRows { get; set; } = new();
 
     /// <summary>
@@ -763,7 +763,7 @@ public sealed class RootCauseHypothesis
 /// <summary>One robustness check of a hypothesis.</summary>
 public sealed class RootCauseRobustnessCheck
 {
-    /// <summary><c>Leave one question out</c>, <c>Across suites</c>, <c>Replicates</c>, <c>Panel agreement</c>, <c>Configuration</c> or <c>Share interval</c>.</summary>
+    /// <summary><c>Leave one question out</c>, <c>Across suites</c>, <c>Replicates</c>, <c>Panel agreement</c>, <c>Configuration</c>, <c>Share interval</c> or <c>Decode measurable</c>.</summary>
     public string Name { get; set; } = string.Empty;
 
     /// <summary>One of <see cref="RootCauseCheckStatuses"/>.</summary>
@@ -848,8 +848,8 @@ public sealed class RootCauseRecommendedRun
     public bool AfterSystemHypotheses { get; set; }
 
     /// <summary>
-    /// When to make the run's passes, in words (<c>Start each run at a different time of day</c>; lowercase in a result
-    /// written before engine version 7); null for any time.
+    /// When to make the run's passes, in words (<c>Launch it 3 times, each at a different time of day; …</c>; <c>Start each
+    /// run at a different time of day</c> before engine version 12, lowercase before engine version 7); null for any time.
     /// </summary>
     public string? When { get; set; }
 
@@ -878,6 +878,12 @@ public sealed class RootCauseRecommendedRun
 
     /// <summary>The Number of Runs of a single-model run.</summary>
     public int RunCount { get; set; } = 1;
+
+    /// <summary>
+    /// How many times to launch the run as set up: one, or for a time-of-day run one launch per time of day
+    /// (<see cref="When"/>); 1 in a result written before engine version 12.
+    /// </summary>
+    public int Launches { get; set; } = 1;
 
     public long? ScoringProfileId { get; set; }
     public bool? VerboseMode { get; set; }

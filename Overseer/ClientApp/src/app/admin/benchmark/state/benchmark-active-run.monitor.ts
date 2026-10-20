@@ -357,7 +357,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   /** The Battery Progress dialog's visibility. The dialog element itself belongs to that component. */
   batteryDialogVisible = false;
 
-  /** A battery run opened from the Multi-Suite tab rather than the one this page drives. */
+  /** A battery run opened from the Batteries tab rather than the one this page drives. */
   batteryDialogRunId: number | null = null;
 
   batteryErrorMessage: string | null = null;
@@ -1247,7 +1247,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
       + `Retrying every ${notice.retryIntervalMs! / 1000} s for up to ${giveUpMinutes} minutes.`;
   }
 
-  /** Opens the Battery Progress dialog on the live battery run, or on one the Multi-Suite tab names. */
+  /** Opens the Battery Progress dialog on the live battery run, or on one the Batteries tab names. */
   openBatteryDialog(batteryRunId?: number): void {
     if (batteryRunId != null && batteryRunId !== this.activeBatteryRunId) {
       this.batteryDialogRunId = batteryRunId;

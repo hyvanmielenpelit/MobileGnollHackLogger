@@ -810,7 +810,7 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
     const battery = this.launcher.selectedBattery;
     if (!battery) {
       return this.launcher.runnableBatteries.length === 0
-        ? 'Create a battery on the Multi-Suite tab first.'
+        ? 'Create a battery on the Batteries tab first.'
         : 'Select a battery first.';
     }
     const unassessed = this.selectedBatteryUnassessedSuites;

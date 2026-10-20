@@ -1,6 +1,6 @@
 import type { Mock, MockedObject } from "vitest";
 import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { AdminBenchmarkService, BenchmarkRunReportDocumentsStatus } from '../../services/admin-benchmark.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
@@ -1535,6 +1535,124 @@ describe('AdminBenchmarkComponent', () => {
 
         ctx.monitor.activeRunDetail = buildCompletedRun();
         expect(component.runDiagnosticsText).not.toContain('--- REPORTS ---');
+      });
+
+      describe('the run report after its reports are written', () => {
+        /** The run report's run as the dialog opened it, while the writer had not named its model yet. */
+        function openedWhileWriting(): any {
+          return writerRun({
+            reportWriterProvider: null,
+            reportWriterModelId: null,
+            reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Writing,
+            reportDocumentsWrittenCount: 0,
+            reportDocumentsDurationMs: null,
+            reportDocumentsInputTokens: null,
+            reportDocumentsOutputTokens: null,
+            reportDocumentsCostUsd: null
+          });
+        }
+
+        function writtenRun(): any {
+          return writerRun({
+            reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Completed,
+            reportDocumentsWrittenCount: 2,
+            reportDocumentsDurationMs: 72000,
+            reportDocumentsInputTokens: 1000,
+            reportDocumentsOutputTokens: 500,
+            reportDocumentsCostUsd: 0.12
+          });
+        }
+
+        function reportDiagnostics(): string {
+          const run = component.selectedRunDetail!;
+          return component.runDiagnosticsTextFor(run, component.runStageOf(run));
+        }
+
+        it('should read the run again on a Completed status change, so its REPORTS block counts the documents and names the writer', () => {
+          component.selectedRunDetail = openedWhileWriting();
+          benchmarkServiceMock.getRun.mockClear();
+          benchmarkServiceMock.getRun.mockReturnValue(of(writtenRun()));
+
+          component.onRunReportStatusChange({
+            status: BenchmarkRunReportDocumentsStatus.Writing, message: null, writerId: 9, writerName: 'Report Writer Model'
+          });
+          expect(benchmarkServiceMock.getRun).not.toHaveBeenCalled();
+          expect(reportDiagnostics()).toContain('Documents written: 0');
+
+          component.onRunReportStatusChange({
+            status: BenchmarkRunReportDocumentsStatus.Completed, message: null, writerId: 9, writerName: 'Report Writer Model'
+          });
+          expect(benchmarkServiceMock.getRun).toHaveBeenCalledTimes(1);
+          expect(benchmarkServiceMock.getRun).toHaveBeenCalledWith(55);
+
+          const text = reportDiagnostics();
+          expect(text).toContain('Writer: Report Writer Model (Anthropic / claude-writer), thinking: high');
+          expect(text).toContain('Status: Completed');
+          expect(text).toContain('Documents written: 2');
+          expect(text).toContain('Duration: 1m 12s');
+          expect(text).toContain('Tokens: input 1000, output 500');
+          expect(text).toContain("Cost: $0.1200 (outside the run's own cost)");
+        });
+
+        it('should read the run again on every terminal status and on no other', () => {
+          const terminal = [
+            BenchmarkRunReportDocumentsStatus.Completed,
+            BenchmarkRunReportDocumentsStatus.CompletedWithWarnings,
+            BenchmarkRunReportDocumentsStatus.Failed,
+            BenchmarkRunReportDocumentsStatus.Canceled
+          ];
+          const others = [
+            BenchmarkRunReportDocumentsStatus.NotRequested,
+            BenchmarkRunReportDocumentsStatus.Pending,
+            BenchmarkRunReportDocumentsStatus.Writing,
+            BenchmarkRunReportDocumentsStatus.Skipped
+          ];
+          component.selectedRunDetail = openedWhileWriting();
+          benchmarkServiceMock.getRun.mockClear();
+          benchmarkServiceMock.getRun.mockReturnValue(of(writtenRun()));
+
+          for (const status of others) {
+            component.onRunReportStatusChange({ status, message: null, writerId: 9, writerName: 'Report Writer Model' });
+          }
+          expect(benchmarkServiceMock.getRun).not.toHaveBeenCalled();
+
+          for (const status of terminal) {
+            component.onRunReportStatusChange({ status, message: null, writerId: 9, writerName: 'Report Writer Model' });
+          }
+          expect(benchmarkServiceMock.getRun).toHaveBeenCalledTimes(terminal.length);
+        });
+
+        it('should keep the status change\'s patch when the run cannot be read again', () => {
+          component.selectedRunDetail = openedWhileWriting();
+          benchmarkServiceMock.getRun.mockClear();
+          benchmarkServiceMock.getRun.mockReturnValue(throwError(() => new Error('offline')));
+
+          component.onRunReportStatusChange({
+            status: BenchmarkRunReportDocumentsStatus.Completed, message: null, writerId: 9, writerName: 'Report Writer Model'
+          });
+          expect(benchmarkServiceMock.getRun).toHaveBeenCalledTimes(1);
+
+          const text = reportDiagnostics();
+          expect(text).toContain('Status: Completed');
+          expect(text).toContain('Writer: Report Writer Model (n/a / n/a), thinking: high');
+          expect(text).toContain('Documents written: 0');
+        });
+
+        it('should not write a fresh read into a run report that has moved to another run', () => {
+          component.selectedRunDetail = openedWhileWriting();
+          const fresh = new Subject<any>();
+          benchmarkServiceMock.getRun.mockReturnValue(fresh.asObservable());
+
+          component.onRunReportStatusChange({
+            status: BenchmarkRunReportDocumentsStatus.Completed, message: null, writerId: 9, writerName: 'Report Writer Model'
+          });
+          const other = buildCompletedRun({ id: 56 });
+          component.selectedRunDetail = other;
+          fresh.next(writtenRun());
+          fresh.complete();
+
+          expect(other.reportDocumentsWrittenCount).toBeUndefined();
+        });
       });
     });
 

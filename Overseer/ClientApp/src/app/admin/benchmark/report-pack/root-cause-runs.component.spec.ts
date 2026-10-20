@@ -120,6 +120,32 @@ describe('RootCauseRunsComponent', () => {
     expect(prefills[0].runMode).toBe('Single');
   });
 
+  it('shows the launches of a time-of-day run with the estimate of all of them, and sets up one launch', () => {
+    fixture.componentRef.setInput('recommendedRuns', [
+      recommendedRun({ kind: 'replicate', purpose: 'C', runsPerModel: 1, runCount: 1, launches: 3 }),
+      recommendedRun({ number: 2 })
+    ]);
+    fixture.componentRef.setInput('checks', []);
+    fixture.componentRef.setInput('open', true);
+    fixture.detectChanges();
+
+    const [timed, once] = cards();
+    expect(text(timed.querySelector('[data-fact="runs"] dt'))).toBe('Runs per model');
+    expect(text(timed.querySelector('[data-fact="runs"] dd'))).toBe('1');
+    expect(text(timed.querySelector('[data-fact="launches"] dt'))).toBe('Launches');
+    expect(text(timed.querySelector('[data-fact="launches"] dd'))).toBe('3, each at a different time of day');
+    expect(text(timed.querySelector('[data-fact="estimate"] dd'))).toBe('about $3.60 · about 105 min · over 3 launches');
+    // A run without launches, as a document written before them sends it, is launched once.
+    expect(once.querySelector('[data-fact="launches"]')).toBeNull();
+    expect(text(once.querySelector('[data-fact="estimate"] dd'))).toBe('about $1.20 · about 35 min');
+
+    timed.querySelector<HTMLButtonElement>('.rcr-set-up')!.click();
+    expect(prefills.length).toBe(1);
+    expect(prefills[0].runMode).toBe('Batch');
+    expect(prefills[0].runsPerModel).toBe(1);
+    expect(prefills[0].runCount).toBe(1);
+  });
+
   it('refuses while the active sub-tab cannot be left, and says why on the card', () => {
     fixture.componentRef.setInput('recommendedRuns', [recommendedRun()]);
     fixture.componentRef.setInput('checks', []);

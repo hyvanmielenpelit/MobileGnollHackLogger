@@ -97,6 +97,7 @@ directory is under `hyvanmielenpelit/MobileGnollHackLogger/` in the plans reposi
 | Wiki: wrong-alignment wield (W1), peaceful-kill Luck (W2), two pages each | 2 | battery 12 | — | not recorded | `battery_run_12_analysis/` |
 | *Steals amulet* on 14 monster pages and in `src/do.c:5523` (T6) | 2 | battery 12 | deferred 2026-10-08 | outstanding | `battery_run_12_analysis/` |
 | Routing: Claude 5.5 Sonnet (`medium`) answered 9 of 36 without a tool call (T1) | 6, then 3 | Comparison #4 | pending the replicate R1 | outstanding | `comparison_4_rca_review/` |
-| Wiki: W1 (`Bones Files`, `Quest Artifacts`) | 2 | bones trap | R1: ≥ max(3, R0 + 2) of A1–A4 correct, reaching those pages on ≥ 3 | outstanding | `bones_quest_artifact_trap/` |
-| `_policy.md` sentence (T1) | 3 | bones trap | deferred with its precondition, criterion and rollback | outstanding | `bones_quest_artifact_trap/` |
+| Wiki: W1 (`Bones Files`, `Quest Artifacts`) | 2 | bones trap → 122 | R1: ≥ max(3, R0 + 2) of A1–A4 correct, reaching those pages on ≥ 3 | partially closed: criterion 2 met (4/4), criterion 1 failed (1/4), R0 not made; run 122 | `bones_quest_artifact_trap/` |
+| `_policy.md` sentence (T1) | 3 | bones trap → 122 | deferred with its precondition, criterion and rollback | outstanding: precondition half-met on run 122 (D3 on Q6, Q8); decided by R1 of `benchmark_run_122_analysis/`; Q6 no longer held out once W2 lands | `bones_quest_artifact_trap/` |
 | Model selection (M1) | — | bones trap | deferred to R2 | outstanding | `bones_quest_artifact_trap/` |
+| Wiki: W2 (`Quest Artifacts`, `Wishable Artifacts`, `Wishing Guide`: another role's quest artifact is wishable, your own is not) | 2 | 122 | R2: Q6 carries no critical error and states that another role's quest artifact can be wished for; Q1 and Q3 do not attribute the bones rule to the dead character's role | outstanding | `benchmark_run_122_analysis/` |

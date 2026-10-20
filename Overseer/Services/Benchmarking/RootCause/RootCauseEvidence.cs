@@ -83,6 +83,12 @@ public sealed class RootCauseAnswerRecord
     /// <summary>The final call's visible decode rate, tokens per second.</summary>
     public double? DecodeRate { get; init; }
 
+    /// <summary>
+    /// The final call's visible text arrived in one burst, so its decode rate cannot be measured
+    /// (<see cref="CallTelemetryMeasures.IsStreamingRateUnmeasurable"/>); null without telemetry.
+    /// </summary>
+    public bool? StreamingRateUnmeasurable { get; init; }
+
     /// <summary>A candidate call was served at another tier than requested.</summary>
     public bool ServedTierMismatch { get; init; }
 
@@ -449,6 +455,7 @@ public static class RootCauseEvidence
             DecodeSumMs = decodeSum,
             CallTtftMs = callTtft,
             DecodeRate = CallTelemetryMeasures.AnswerStreamingRate(answer)?.TokensPerSecond,
+            StreamingRateUnmeasurable = telemetry ? CallTelemetryMeasures.IsStreamingRateUnmeasurable(answer) : null,
             ServedTierMismatch = !ChatConsistencyMeasures.AnswerTierMatches(answer, run),
             InputTokens = answer.InputTokens,
             OutputTokens = answer.OutputTokens,

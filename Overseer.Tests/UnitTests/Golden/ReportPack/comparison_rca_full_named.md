@@ -169,7 +169,7 @@ The first known fact: Uncached input, price per token accounts for 45% (44–46%
 
 ### Where the time goes
 
-| Model | Wall time per question (median, tools included) | Time to first token | Output generation | Tool execution | Other |
+| Model | Wall time per question (median, tools included) | Wait before output | Output generation | Tool execution | Other |
 |---|---|---|---|---|---|
 | Orion Max | 8.9 s | 1.9 s | 5.2 s | 1.5 s | 0.3 s |
 | Vega Pro | 10.4 s | 2.5 s | 6.1 s | 1.5 s | 0.3 s |
@@ -177,7 +177,7 @@ The first known fact: Uncached input, price per token accounts for 45% (44–46%
 | Nova Lite | 13.4 s | 3.8 s | 7.9 s | 1.5 s | 0.3 s |
 | Zeta Prime | 14.9 s | 4.4 s | 8.7 s | 1.5 s | 0.3 s |
 
-*Wall time per question: the median time per question, tool execution included, split into its parts in proportion to their mean times. The parts are time to first token (the wait before the model starts writing, mostly its thinking), output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. It differs from the median model time the other tables of this document give, which leaves tool execution out. Left out because it is zero or not recorded in every row: own waits and retries.*
+*Wall time per question: the median time per question, tool execution included, split into its parts in proportion to their mean times. The parts are the wait before output, output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. The wait before output is summed over every model call of the answer, hidden thinking included; the run report's time to first token (the wait before the model starts writing, mostly its thinking) is the first call's alone. It differs from the median model time the other tables of this document give, which leaves tool execution out. Left out because it is zero or not recorded in every row: own waits and retries.*
 
 ### Paired tests against Orion Max
 
@@ -8435,6 +8435,11 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "of the gap",
+      "key": "rca.hypothesis.HC2.1.shareOf"
+    },
+    {
+      "available": true,
       "display": "Model E costs more than Model A mainly from its price per token.",
       "key": "rca.hypothesis.HC2.1.statement"
     },
@@ -8505,6 +8510,11 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "70%",
       "key": "rca.hypothesis.HC2.2.share",
       "value": 0.6968068304832366
+    },
+    {
+      "available": true,
+      "display": "of the gap",
+      "key": "rca.hypothesis.HC2.2.shareOf"
     },
     {
       "available": true,
@@ -8581,6 +8591,11 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "of the gap",
+      "key": "rca.hypothesis.HC2.3.shareOf"
+    },
+    {
+      "available": true,
       "display": "Model C costs more than Model A mainly from its price per token.",
       "key": "rca.hypothesis.HC2.3.statement"
     },
@@ -8651,6 +8666,11 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "65%",
       "key": "rca.hypothesis.HC2.4.share",
       "value": 0.6491469867604399
+    },
+    {
+      "available": true,
+      "display": "of the gap",
+      "key": "rca.hypothesis.HC2.4.shareOf"
     },
     {
       "available": true,
@@ -8727,6 +8747,11 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "of the gap",
+      "key": "rca.hypothesis.HC2.5.shareOf"
+    },
+    {
+      "available": true,
       "display": "Model B costs more than Model A mainly from its price per token.",
       "key": "rca.hypothesis.HC2.5.statement"
     },
@@ -8791,6 +8816,11 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "9%",
       "key": "rca.hypothesis.HC4.1.share",
       "value": 0.09029929603239982
+    },
+    {
+      "available": true,
+      "display": "of the gap",
+      "key": "rca.hypothesis.HC4.1.shareOf"
     },
     {
       "available": true,
@@ -8861,6 +8891,11 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "of the gap",
+      "key": "rca.hypothesis.HC4.2.shareOf"
+    },
+    {
+      "available": true,
       "display": "Weak prompt caching raises Model D's cost against Model A.",
       "key": "rca.hypothesis.HC4.2.statement"
     },
@@ -8928,6 +8963,11 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "of the gap",
+      "key": "rca.hypothesis.HC4.3.shareOf"
+    },
+    {
+      "available": true,
       "display": "Weak prompt caching raises Model E's cost against Model D.",
       "key": "rca.hypothesis.HC4.3.statement"
     },
@@ -8992,6 +9032,11 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "8%",
       "key": "rca.hypothesis.HC4.4.share",
       "value": 0.07581269767407409
+    },
+    {
+      "available": true,
+      "display": "of the gap",
+      "key": "rca.hypothesis.HC4.4.shareOf"
     },
     {
       "available": true,
@@ -9119,6 +9164,11 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "of its cost",
+      "key": "rca.hypothesis.WC1.1.shareOf"
+    },
+    {
+      "available": true,
       "display": "Output (with reasoning) is Model E's largest cost component (where its cost goes, not a comparison).",
       "key": "rca.hypothesis.WC1.1.statement"
     },
@@ -9181,6 +9231,11 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "of its cost",
+      "key": "rca.hypothesis.WC1.2.shareOf"
+    },
+    {
+      "available": true,
       "display": "Output (with reasoning) is Model D's largest cost component (where its cost goes, not a comparison).",
       "key": "rca.hypothesis.WC1.2.statement"
     },
@@ -9240,6 +9295,11 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "69%",
       "key": "rca.hypothesis.WC1.3.share",
       "value": 0.6922390722569134
+    },
+    {
+      "available": true,
+      "display": "of its cost",
+      "key": "rca.hypothesis.WC1.3.shareOf"
     },
     {
       "available": true,
@@ -9310,6 +9370,11 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "of its model time",
+      "key": "rca.hypothesis.WS2.1.shareOf"
+    },
+    {
+      "available": true,
       "display": "Most of Model E's time is output generation, driven by reasoning tokens (where its time goes, not a comparison).",
       "key": "rca.hypothesis.WS2.1.statement"
     },
@@ -9377,6 +9442,11 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "of its model time",
+      "key": "rca.hypothesis.WS2.2.shareOf"
+    },
+    {
+      "available": true,
       "display": "Most of Model D's time is output generation, driven by reasoning tokens (where its time goes, not a comparison).",
       "key": "rca.hypothesis.WS2.2.statement"
     },
@@ -9441,6 +9511,11 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "70%",
       "key": "rca.hypothesis.WS2.3.share",
       "value": 0.7038770053475936
+    },
+    {
+      "available": true,
+      "display": "of its model time",
+      "key": "rca.hypothesis.WS2.3.shareOf"
     },
     {
       "available": true,
@@ -12915,7 +12990,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 11,
+    "engineVersion": 12,
     "evidence": [
       {
         "atRisk": [
@@ -12983,7 +13058,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "time": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 1.915
           },
           {
@@ -13103,7 +13178,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "time": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 2.545
           },
           {
@@ -13223,7 +13298,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "time": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 3.165
           },
           {
@@ -13343,7 +13418,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "time": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 3.795
           },
           {
@@ -13463,7 +13538,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "time": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 4.415
           },
           {
@@ -15882,6 +15957,7 @@ The counts and the configuration facts the analysis states, each numbered as the
           "WS3.3"
         ],
         "kind": "replicate",
+        "launches": 1,
         "mark": "Recommended",
         "modelNames": [
           "Orion Max",
@@ -16001,7 +16077,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "segments": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 1.893674832962138
           },
           {
@@ -16036,7 +16112,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "segments": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 2.5208309591642926
           },
           {
@@ -16071,7 +16147,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "segments": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 3.1385809682804675
           },
           {
@@ -16106,7 +16182,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "segments": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 3.766951219512195
           },
           {
@@ -16141,7 +16217,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "segments": [
           {
             "key": "ttft",
-            "label": "time to first token",
+            "label": "wait before output",
             "value": 4.385527369826436
           },
           {
@@ -16202,6 +16278,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 212 · format version 27 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
+*Document ID 212 · format version 28 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

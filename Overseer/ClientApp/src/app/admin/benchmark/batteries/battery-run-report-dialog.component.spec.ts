@@ -404,6 +404,98 @@ describe('BatteryRunReportDialogComponent', () => {
       expect(h.component.detail?.reportDocumentsStatus).toBe(BenchmarkRunReportDocumentsStatus.Writing);
       expect(h.component.detail?.reportWriterModelConfigurationId).toBe(12);
     });
+
+    describe('after the battery documents are written', () => {
+      /** The battery run as the dialog opened it, while the writer was writing. */
+      function writingRun() {
+        return batteryRun({
+          reportWriterModelConfigurationId: 12,
+          reportWriterDisplayName: 'Writer',
+          reportWriterProvider: null,
+          reportWriterModelId: null,
+          reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Writing,
+          reportDocumentsWrittenCount: 0
+        });
+      }
+
+      function writtenRun() {
+        return batteryRun({
+          reportWriterModelConfigurationId: 12,
+          reportWriterDisplayName: 'Writer',
+          reportWriterProvider: 'Anthropic',
+          reportWriterModelId: 'claude-writer',
+          reportWriterThinkingLevel: 'high',
+          reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Completed,
+          reportDocumentsMessage: null,
+          reportDocumentsWrittenCount: 2
+        });
+      }
+
+      it('reads the battery run again on a Completed status change, for the documents written and the writer', () => {
+        h.service.getBatteryRun.mockReturnValue(of(writingRun()));
+        h.open();
+        expect(h.service.getBatteryRun).toHaveBeenCalledTimes(1);
+        h.service.getBatteryRun.mockReturnValue(of(writtenRun()));
+
+        const reports = h.aiReports();
+        reports.reportStatusChange.emit({ status: BenchmarkRunReportDocumentsStatus.Writing, message: null, writerId: 12, writerName: 'Writer' });
+        expect(h.service.getBatteryRun).toHaveBeenCalledTimes(1);
+
+        reports.reportStatusChange.emit({ status: BenchmarkRunReportDocumentsStatus.Completed, message: null, writerId: 12, writerName: 'Writer' });
+        expect(h.service.getBatteryRun).toHaveBeenCalledTimes(2);
+        expect(h.service.getBatteryRun).toHaveBeenLastCalledWith(7);
+        const detail = h.component.detail!;
+        expect(detail.reportDocumentsStatus).toBe(BenchmarkRunReportDocumentsStatus.Completed);
+        expect(detail.reportDocumentsWrittenCount).toBe(2);
+        expect(detail.reportWriterProvider).toBe('Anthropic');
+        expect(detail.reportWriterModelId).toBe('claude-writer');
+        expect(detail.reportWriterThinkingLevel).toBe('high');
+      });
+
+      it('reads the battery run again on every terminal status and on no other', () => {
+        h.service.getBatteryRun.mockReturnValue(of(writingRun()));
+        h.open();
+        h.service.getBatteryRun.mockClear();
+        h.service.getBatteryRun.mockReturnValue(of(writtenRun()));
+
+        const reports = h.aiReports();
+        for (const status of [
+          BenchmarkRunReportDocumentsStatus.NotRequested,
+          BenchmarkRunReportDocumentsStatus.Pending,
+          BenchmarkRunReportDocumentsStatus.Writing,
+          BenchmarkRunReportDocumentsStatus.Skipped
+        ]) {
+          reports.reportStatusChange.emit({ status, message: null, writerId: 12, writerName: 'Writer' });
+        }
+        expect(h.service.getBatteryRun).not.toHaveBeenCalled();
+
+        const terminal = [
+          BenchmarkRunReportDocumentsStatus.Completed,
+          BenchmarkRunReportDocumentsStatus.CompletedWithWarnings,
+          BenchmarkRunReportDocumentsStatus.Failed,
+          BenchmarkRunReportDocumentsStatus.Canceled
+        ];
+        for (const status of terminal) {
+          reports.reportStatusChange.emit({ status, message: null, writerId: 12, writerName: 'Writer' });
+        }
+        expect(h.service.getBatteryRun).toHaveBeenCalledTimes(terminal.length);
+      });
+
+      it('keeps the status change\'s patch when the battery run cannot be read again', () => {
+        h.service.getBatteryRun.mockReturnValue(of(writingRun()));
+        h.open();
+        h.service.getBatteryRun.mockReturnValue(throwError(() => ({ status: 0 })));
+
+        h.aiReports().reportStatusChange.emit({
+          status: BenchmarkRunReportDocumentsStatus.Completed, message: null, writerId: 12, writerName: 'Writer'
+        });
+        const detail = h.component.detail!;
+        expect(detail.reportDocumentsStatus).toBe(BenchmarkRunReportDocumentsStatus.Completed);
+        expect(detail.reportDocumentsWrittenCount).toBe(0);
+        expect(detail.reportWriterModelId).toBeNull();
+        expect(h.component.loadError).toBeNull();
+      });
+    });
   });
 
   describe('Summary key figures', () => {

@@ -82,6 +82,17 @@ public class RootCauseLanguageTests
         Assert.Equal("about $7.50", RootCauseNextRuns.EstimateText(new RootCauseRecommendedRun { EstimatedCostUsd = 7.5 }));
     }
 
+    [Fact]
+    public void ARunOfSeveralLaunches_EstimatesThemAll_AndAStoredRunWithoutLaunchesIsLaunchedOnce()
+    {
+        var run = new RootCauseRecommendedRun { EstimatedCostUsd = 2.5, EstimatedMinutes = 14, Launches = 3 };
+        Assert.Equal("about $7.50 and 42 minutes over 3 launches", RootCauseNextRuns.EstimateText(run));
+
+        var stored = BenchmarkReportJson.Deserialize<RootCauseRecommendedRun>("{\"number\":1,\"estimatedCostUsd\":2.5}");
+        Assert.Equal(1, stored.Launches);
+        Assert.Equal("about $2.50", RootCauseNextRuns.EstimateText(stored));
+    }
+
     // --- Grade reasons ------------------------------------------------------------------------------------
 
     private static RootCauseRobustnessCheck Check(string name, string status, string detail)

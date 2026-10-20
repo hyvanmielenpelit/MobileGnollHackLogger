@@ -47,7 +47,7 @@ The launcher's *Test Setup* fieldset opens with **Run Target**, a radio group:
 series, and a battery banner follows it. Every launcher setting is remembered across reloads as soon as
 it is changed, Run Target and the battery included; the reuse choice is not. A *Report Writer* chosen in battery mode writes the battery's two documents, the Executive Summary and the Root Cause Analysis, once it
 has finished and been analyzed, and the member runs write none. Batteries are defined on the
-**Multi-Suite** tab, and battery runs are listed in **Run History**. Everything about batteries is in
+**Batteries** tab, and battery runs are listed in **Run History**. Everything about batteries is in
 [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md).
 
 **Models: one model or a model batch.** Above *Test Setup*, the card opens with **Models**, a radio
@@ -77,7 +77,7 @@ The stage comes from the server's `BenchmarkRunDetailDto.Stage` whenever there i
 
 **Stage 4 — Writing reports.** When the run names a report writer (`reportWriterModelConfigurationId`), the roster has a *Report writer* row (name, thinking level, provider badge, from `ReportWriterDisplayName`, `ReportWriterThinkingLevel` and `ReportWriterProvider`), the stage rail has a fourth item, *Writing reports*, and every stage label reads *Stage n of 4* (*of 3* without a writer, the diagnostics' `Stage:` line included). The run itself is not in this stage: it ends **Completed** when scoring ends, and stage 4 follows it, driven by the run's `reportDocumentsStatus` (the automatic run-completion documents of [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 11).
 
-- **Current** while a Completed run's status is *Pending* or *Writing*, and — because the server queues the job just after scoring — while it is still *NotRequested* for up to `RUN_REPORT_STAGE_GRACE_MS` = 30 s after the dialog first saw the run terminal. Stages 1–3 then show as done. The dialog keeps polling the run, and polls the run's report job (`GET …/runs/{runId}/report-documents/job`) beside it; the status line reads, for example, *"Stage 4 of 4 — Writing reports: waiting for the report writer (1 job ahead)"*, *"… preparing the fact sheet"* or *"… writing the Executive Summary (1 of 2)"* (*repairing* during a repair turn).
+- **Current** while a Completed run's status is *Pending* or *Writing*, and — because the server queues the job just after scoring — while it is still *NotRequested* for up to `RUN_REPORT_STAGE_GRACE_MS` = 30 s after the dialog first saw the run terminal. Stages 1–3 then show as done. The dialog keeps polling the run, and polls the run's report job (`GET …/runs/{runId}/report-documents/job`) beside it; the status line reads, for example, *"Stage 4 of 4 — Writing reports: waiting for the report writer (1 job ahead)"*, *"… preparing the fact sheet"* or *"… writing the Executive Summary (1 of 2)"* (*revising* during a revision turn).
 - **Done** at *Completed* or *CompletedWithWarnings*: the status line appends *"Reports written: 2 documents, 1m 48s."* (*"Reports written with warnings: …"*) to the run's own result. *Failed*, *Skipped* and *Canceled* end the stage without marking it done, and the status line appends *"Report writing failed: <message>."*, *"Report writing skipped: <message>."* or *"Report writing canceled: <message>."*. A run that did not end Completed, or whose writing never appeared within the grace, gets no stage-4 sentence.
 - **The stat strip** has a *Reports* cell: *Waiting*, then the live elapsed time since the writer took the report-pack slot (*"1m 05s · writing"*, on the server's clock from the job view), then the stored count and duration (*"2 documents, 1m 48s"*), *None written* or *Not written*.
 - **The cost panel** has a *Report writer* row — the job's running cost while writing, then `ReportDocumentsCostUsd` — and *Run total with reports*, in a block of its own under the note that the AI-written reports are outside the benchmark's own cost. The run's stored `EstimatedCost` and every figure above that block are unchanged.
@@ -6062,7 +6062,7 @@ Intelligence Index**. The design, the execution rules and the full statistical m
   recorded instrument hashes can fill it instead of a new launch, at start (*Reuse earlier runs*) or
   later from the progress dialog.
 
-New: the **Multi-Suite** tab (fourth, after *Multi-Run Analysis*; *Manage Suites*, *Scoring Profiles*
+New: the **Multi-Suite** tab (named **Batteries** since 2026-10-20; fourth, after *Multi-Run Analysis*; *Manage Suites*, *Scoring Profiles*
 and *Model Comparison* move one place right), the launcher's **Run Target** (§ 1), a battery banner and
 progress dialog, a *Battery #id · suite s/K* badge on member runs in Run History, the endpoints under
 `/api/admin/benchmark/batteries` (§ 6), `maxMembersPerBattery` on `GET runs/limits`, and the
@@ -6120,7 +6120,7 @@ run**.
 - The *INSTRUMENT CHANGED* badge and the other helpers still read the run list in server order, so
   interleaved battery cards move no badge.
 
-**The Multi-Suite tab** holds the battery definitions only, as full-width cards with a stacked weight
+**The Multi-Suite tab** (now **Batteries**) holds the battery definitions only, as full-width cards with a stacked weight
 bar and a four-row suite table, and a filter bar from four batteries. Its *Battery Runs* table, the
 inline analysis, the leaderboard and *Compare two results* are gone: battery runs are in Run History,
 and the leaderboard and the **Battery Run Report** are full-screen dialogs. The report mirrors the

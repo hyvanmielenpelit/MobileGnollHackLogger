@@ -699,6 +699,7 @@ public static class BenchmarkReportFactLabels
         ["nextRun"] = "next run",
         ["check"] = "check",
         ["share"] = "share of the difference",
+        ["shareOf"] = "what the share is of",
         ["interval"] = "95% interval of the share",
         ["priceCard"] = "price effect, known from the price cards",
     };

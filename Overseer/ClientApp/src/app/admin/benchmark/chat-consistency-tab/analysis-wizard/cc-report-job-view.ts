@@ -6,10 +6,10 @@ import {
 import {
   audienceLabel,
   documentChipClass,
+  documentProgressLabel,
   documentRowPhaseLine,
   formatCostUsd,
-  formatElapsed,
-  statusLabel
+  formatElapsed
 } from '../../report-pack/report-document-format';
 import {
   REPORT_JOB_DOCUMENT_CARD_DEFAULTS,
@@ -188,7 +188,7 @@ export function ccReportJobRows(job: BenchmarkRunReportJobDto, nowUtc: Date): Cc
       title,
       phrase: `the ${title}`,
       status: doc.status,
-      statusWord: statusLabel(doc.status),
+      statusWord: documentProgressLabel(doc.status),
       chipClass: documentChipClass(doc.status),
       tone: reportJobDocumentTone(doc.status),
       phaseLine: documentRowPhaseLine(doc),

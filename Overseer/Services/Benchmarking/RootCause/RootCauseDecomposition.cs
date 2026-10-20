@@ -421,7 +421,7 @@ public static class RootCauseDecomposition
 
     /// <summary>
     /// Mean milliseconds per question of a model's wall time by segment (<see cref="RootCauseSegments.Time"/>):
-    /// time to first token, output generation, tool execution, own waits and retries, and the rest of the
+    /// the wait before output summed over the calls, output generation, tool execution, own waits and retries, and the rest of the
     /// turn. <c>other</c> is what the turn spent outside the four, floored at zero, so the segments sum to
     /// their own total. Null without a question with candidate telemetry.
     /// </summary>

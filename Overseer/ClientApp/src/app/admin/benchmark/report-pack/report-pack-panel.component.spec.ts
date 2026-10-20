@@ -1244,13 +1244,13 @@ describe('ReportPackPanelComponent', () => {
       ['Root Cause Analysis', '$0.16']
     ]);
     expect(text('#rp-estimate .gh-estimate-note')).toContain('For 3 models, compared as equals.');
-    expect(text('#rp-estimate .gh-estimate-note')).toContain('A repair turn can roughly double a document’s cost.');
+    expect(text('#rp-estimate .gh-estimate-note')).toContain('A revision turn can roughly double a document’s cost.');
     expect(generateButton().getAttribute('aria-describedby')).toBe('rp-estimate');
     expect(generateButton().disabled).toBe(false);
     fixture.destroy();
   }));
 
-  it('shows the estimate as a range from the first call to one repair turn per document, when both are known and differ', fakeAsync(() => {
+  it('shows the estimate as a range from the first call to one revision turn per document, when both are known and differ', fakeAsync(() => {
     openPanel();
     chooseWriter(7, comparisonPreview({
       estimates: [
@@ -1263,14 +1263,14 @@ describe('ReportPackPanelComponent', () => {
     const parts = Array.from(host.querySelectorAll('#rp-estimate .gh-estimate-parts > div'))
       .map(part => part.querySelector('dd')!.textContent!.trim());
     expect(parts).toEqual(['$0.34 to $0.69', '$0.70 to $1.41']);
-    expect(text('#rp-estimate .gh-estimate-note')).toContain('From the first call alone to one repair turn per document.');
+    expect(text('#rp-estimate .gh-estimate-note')).toContain('From the first call alone to one revision turn per document.');
 
     // One document without a repair-inclusive figure: the first-call total alone.
     chooseWriter(8, comparisonPreview({
       estimates: [{ ...estimate(ExecutiveSummary, 0.34), estimatedCostWithRepairUsd: 0.69 }, estimate(RootCauseAnalysis, 0.7)]
     }));
     expect(text('#rp-estimate .gh-estimate-total')).toBe('about $1.04');
-    expect(text('#rp-estimate .gh-estimate-note')).toContain('A repair turn can roughly double a document’s cost.');
+    expect(text('#rp-estimate .gh-estimate-note')).toContain('A revision turn can roughly double a document’s cost.');
     fixture.destroy();
   }));
 

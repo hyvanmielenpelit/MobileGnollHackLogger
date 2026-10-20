@@ -1572,7 +1572,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                     string invalid = (BlockingHeadlineIssue(audience, parsed.Headline, prep)?.Message ?? "it is not valid").TrimEnd('.');
                     parsed.Headline = firstOutput.Headline;
                     cleaned = BenchmarkReportPackValidator.DropInvalid(audience, parsed, prep.Sheet, prep.Content);
-                    rescues.Add(HeadlineRescueNote($"The repaired headline was invalid ({invalid}); the first draft's headline was kept."));
+                    rescues.Add(HeadlineRescueNote($"The revised headline was invalid ({invalid}); the first draft's headline was kept."));
                     headlineRescued = true;
                 }
 
@@ -1699,8 +1699,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                             if (usedHeadline)
                             {
                                 rescues.Add(HeadlineRescueNote(slots.Count > 0
-                                    ? $"The repaired headline was invalid ({invalid}); it was rewritten in a final turn."
-                                    : $"The repaired headline was invalid ({invalid}); it was rewritten in a headline-only turn."));
+                                    ? $"The revised headline was invalid ({invalid}); it was rewritten in a final turn."
+                                    : $"The revised headline was invalid ({invalid}); it was rewritten in a headline-only turn."));
                             }
                         }
                         else
@@ -1726,7 +1726,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 if (cleaned.Fatal)
                 {
                     if (fatalReason == null) finalIssues = cleaned.Notes;
-                    return Fail(fatalReason ?? cleaned.FatalReason ?? "Required content failed validation after the repair turn.");
+                    return Fail(fatalReason ?? cleaned.FatalReason ?? "Required content failed validation after the revision turn.");
                 }
 
                 var (restored, cleanedNotes) = RestoreUncitedAxes(parsed, cleaned.Output, prep.Sheet, cleaned.Notes);

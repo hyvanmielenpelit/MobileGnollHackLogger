@@ -1646,14 +1646,18 @@ public static partial class BenchmarkReportPackRenderer
         Slot(sb, ctx, BenchmarkReportSlots.EvidenceCost);
     }
 
-    /// <summary>The note under the time table: how the seconds are split, each part named, the first two glossed at their first use.</summary>
+    /// <summary>
+    /// The note under the time table: how the seconds are split, each part named, what the wait before output sums,
+    /// output generation and time to first token glossed at their first use.
+    /// </summary>
     private static string RcaTimeNote(Context ctx)
     {
         UseTerms(ctx, RootCauseGlossary.MedianAndMean);
         return "Wall time per question: the median time per question, tool execution included, split into its parts in proportion to their mean times. "
-            + "The parts are time to first token" + Gloss(ctx, RootCauseGlossary.TimeToFirstToken)
-            + ", output generation" + Gloss(ctx, RootCauseGlossary.OutputGeneration)
+            + "The parts are the wait before output, output generation" + Gloss(ctx, RootCauseGlossary.OutputGeneration)
             + ", tool execution, the model's own waits and retries, and other time. "
+            + "The wait before output is summed over every model call of the answer, hidden thinking included; the run report's time to first token"
+            + Gloss(ctx, RootCauseGlossary.TimeToFirstToken) + " is the first call's alone. "
             + "It differs from the median model time the other tables of this document give, which leaves tool execution out.";
     }
 
@@ -2077,8 +2081,8 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// When to make a run, after its label: <c>Start each run at a different time of day; after the system hypotheses are
-    /// settled</c>, its first word capitalized; empty for any time.
+    /// When to make a run, after its label: <c>Launch it 3 times, each at a different time of day; …; after the system
+    /// hypotheses are settled</c>, its first word capitalized; empty for any time.
     /// </summary>
     private static string RcaWhenText(RootCauseRecommendedRun run)
     {
@@ -2106,7 +2110,8 @@ public static partial class BenchmarkReportPackRenderer
     /// Every launcher field of a recommended run, labeled as Run Benchmark labels it, in the launcher's order;
     /// a setting the analyzed runs did not share says so. A grader and the scoring profile are named with their id,
     /// <c>Claude 5 Opus @ medium (configuration 19)</c>; by the id alone on a result stored without the names, and
-    /// for a grader whose name an anonymized copy withholds (<see cref="RcaGraderNameShown"/>).
+    /// for a grader whose name an anonymized copy withholds (<see cref="RcaGraderNameShown"/>). A run of several launches
+    /// ends with their number.
     /// </summary>
     private static List<(string Field, string Setting)> RcaLauncherSettings(Context ctx, RootCauseRecommendedRun run)
     {
@@ -2155,6 +2160,10 @@ public static partial class BenchmarkReportPackRenderer
         if (batch)
         {
             settings.Add(("Model order", string.Equals(run.Order, "AsListed", StringComparison.Ordinal) ? "As listed" : "Randomized (recommended)"));
+        }
+        if (run.Launches > 1)
+        {
+            settings.Add(("Launches", Inv(run.Launches) + ", each at a different time of day"));
         }
         return settings;
     }

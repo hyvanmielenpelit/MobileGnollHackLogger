@@ -1,10 +1,24 @@
 <div class="bb">
 
   <!-- The battery definitions as a filterable list of full-width cards shown ten at a time. -->
-  <section class="bb-section" aria-labelledby="bb-batteries-title">
+  <!-- Focused after a delete that leaves no card to focus. -->
+  <section class="bb-section" id="bb-section" tabindex="-1" aria-labelledby="bb-batteries-title">
+    <!-- The sub-tab names the panel, so its heading only labels the section and the card list. -->
+    <h4 class="visually-hidden" id="bb-batteries-title">Batteries</h4>
     <div class="bb-section-head">
-      <!-- Focused after a delete that leaves no card to focus. -->
-      <h4 class="gh-section-title" id="bb-batteries-title" tabindex="-1">Batteries</h4>
+      <button type="button" class="btn-gh bb-new-battery" (click)="newBattery()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        New Battery
+      </button>
+      @if (archivedCount > 0) {
+        <!-- A view setting, not a filter: Clear all leaves it as it is. -->
+        <button type="button" class="gh-filter-toggle bb-show-archived" [attr.aria-pressed]="showArchived ? 'true' : 'false'"
+                (click)="toggleShowArchived()">Show archived ({{ archivedCount }})</button>
+      }
       <app-info-tip trigger="click" tipId="bb-batteries-tip" subject="Batteries">
         A battery is a fixed set of two or more suites with declared weights. A battery run tests one model on
         every suite, one after another, and combines the results into an Overall Intelligence Index with an
@@ -13,21 +27,6 @@
       </app-info-tip>
       <!-- The list's one polite live region. -->
       <p class="gh-list-status bb-list-status" id="bb-list-status" role="status">{{ listStatus }}</p>
-      <div class="bb-head-actions">
-        @if (archivedCount > 0) {
-          <!-- A view setting, not a filter: Clear all leaves it as it is. -->
-          <button type="button" class="gh-filter-toggle bb-show-archived" [attr.aria-pressed]="showArchived ? 'true' : 'false'"
-                  (click)="toggleShowArchived()">Show archived ({{ archivedCount }})</button>
-        }
-        <button type="button" class="btn-gh bb-new-battery" (click)="newBattery()">
-          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-          New Battery
-        </button>
-      </div>
     </div>
 
     @if (batteryActionError) {

@@ -102,12 +102,8 @@
             <dd class="rw-model-calls">{{ formatCount(view?.job?.totalModelCalls) }}</dd>
           </div>
           <div class="run-stat">
-            <dt>Input tokens</dt>
-            <dd class="rw-input-tokens">{{ formatCount(view?.job?.inputTokens) }}</dd>
-          </div>
-          <div class="run-stat">
-            <dt>Output tokens</dt>
-            <dd class="rw-output-tokens">{{ formatCount(view?.job?.outputTokens) }}</dd>
+            <dt>Tokens</dt>
+            <dd class="rw-tokens">{{ tokensValue }}</dd>
           </div>
           <div class="run-stat">
             <dt class="rw-cost-label">{{ costLabel }}</dt>
@@ -138,7 +134,7 @@
       }
 
       <details class="gh-disclosure rw-diagnostics">
-        <summary>Diagnostics</summary>
+        <summary>Log and diagnostics</summary>
         <div class="gh-disclosure-body">
           <div class="rw-diagnostics-toolbar">
             <button type="button" class="action-btn rw-copy-diagnostics"

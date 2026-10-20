@@ -226,7 +226,7 @@ you already read the label, it is noise; drop it.
 | heart | Suite Health | The health check; the glyph *is* the concept |
 | compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard, **Open Comparison Wizard** (the Model Comparison launcher), **Open in Model Comparison** (the battery leaderboard dialog; opens the same wizard), **Open Chat Consistency Wizard** (the Chat Consistency launcher's *New analysis*; the launcher's other gold button, **Open Analysis #N**, is text-only), **Bulk Actions** (the gold `.btn-gh` in the Admin Users tab's header, `aria-haspopup="dialog"`; opens the Bulk Actions wizard) | A guided route through several steps: the wizard finds the way, the admin follows it |
 | clock (Feather *clock*: a circle and two hands, the glyph the Run History sub-tab shows) | **Open Analysis History** (`.btn-ghost`, the Chat Consistency launcher's *Analysis history* bar; opens the Analysis History dialog) | "History": the saved records of earlier work, listed by when they were made |
-| award (a medal over two ribbon tails) | **Leaderboard** (`.btn-ghost`, first in each battery card's actions on the Multi-Suite tab) | "Rankings": it opens the ranked results of the battery's definition |
+| award (a medal over two ribbon tails) | **Leaderboard** (`.btn-ghost`, first in each battery card's actions on the Batteries tab) | "Rankings": it opens the ranked results of the battery's definition |
 | columns (two columns side by side) | **Paired tests** (the Model Comparison wizard's fifth step-2 view tab) | Two models side by side, compared on the same questions |
 | clipboard | Check Rubrics | A checklist to go through; the rubric is what is being inspected |
 | check | Verify All | The same tick the "Reviewed" badge shows, so the button reads as "mark reviewed" |
@@ -2216,7 +2216,7 @@ never receive it.
 ### 8h. Card lists
 
 The Download Center's documents (`app-download-center-panel`) are the first card list; **Run
-History** (`history-tab/`, `#bm-panel-history`) is the second; the **Multi-Suite** tab's battery
+History** (`history-tab/`, `#bm-panel-history`) is the second; the **Batteries** tab's battery
 definitions (`app-benchmark-batteries`) are the third; the **Chat Consistency wizard's step 1 runs**
 (`app-cc-model-step`, 2026-10-07) are the fourth; the **Chat Consistency wizard's step 3 period
 cards** (`app-cc-period-units`, 2026-10-09) are the fifth; the **Chat Consistency Analysis History
@@ -2479,14 +2479,18 @@ every `historyTable` accessor (search, facets, flags, sorts) read either kind, a
 - **The status line counts each card once** — a battery run is one run — and adds a note per endpoint
   whose limit was reached (*· Only the newest 1000 runs are loaded*, *· newest 500 battery runs*).
 
-**The Multi-Suite tab's battery cards** are the third list, with the same filter bar, chips, status line
+**The Batteries tab's battery cards** are the third list, with the same filter bar, chips, status line
 and batches, shown with more than three batteries or while a filter is active. **Show archived (n)** is
 a `gh-filter-toggle` view setting, not a chip, kept by **Clear all**. The cards are **full width, one per
 row**, not a fixed-width grid: a grid of 22 rem cards turns ragged when one battery has 2 suites and its
 neighbor 12, while a full-width card pushes only itself down. Each card's grid is
-`"head metrics actions" / "suites suites suites"` in the `bb-cards` inline-size container (metrics under
-the head below 60 rem, one column below 30 rem); its metrics are fixed 7.5 rem columns behind a hairline,
-as Run History's are; and its suite table shows four rows, the rest in a hidden `<tbody>` behind a
+`"head metrics actions" / "suites suites suites"` in the `bb-cards` inline-size container, with the head
+column `minmax(min(100%, 18rem), 1fr)` so the title always has room. That one-row layout needs 80 rem:
+the fixed metrics (about 34.5 rem) and actions (up to 22 rem) plus the 18 rem head, padding and gaps.
+From 44 rem to 80 rem it is `"head actions" / "metrics metrics" / "suites suites"`, and below 44 rem one
+column. In the one-row layout the metrics are fixed 7.5 rem columns behind a hairline, as Run History's
+are; outside it they are `repeat(4, minmax(0, 1fr))`, and `repeat(2, minmax(0, 1fr))` below 36 rem, so no
+metric is left alone on a row. The kicker's chips wrap rather than overflow; and its suite table shows four rows, the rest in a hidden `<tbody>` behind a
 link-style **Show all K suites** / **Show fewer** (`aria-expanded`, `aria-controls`, focus stays on it), so
 a card is never taller than four suite rows unless asked.
 

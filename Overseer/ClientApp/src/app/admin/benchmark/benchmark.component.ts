@@ -205,6 +205,14 @@ export interface RunRailItem {
   note: string | null;
 }
 
+/** The report statuses after which a run's stored report fields no longer change. */
+const TERMINAL_REPORT_STATUSES: ReadonlySet<BenchmarkRunReportDocumentsStatus> = new Set([
+  BenchmarkRunReportDocumentsStatus.Completed,
+  BenchmarkRunReportDocumentsStatus.CompletedWithWarnings,
+  BenchmarkRunReportDocumentsStatus.Failed,
+  BenchmarkRunReportDocumentsStatus.Canceled
+]);
+
 /** A sub-tab change `subTabChange` reports: `byUser` when a click or Enter/Space on the tab row chose it. */
 export interface BenchmarkSubTabChange {
   tab: BenchmarkSubTab;
@@ -424,7 +432,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /**
    * Tab order, and the source of truth for arrow-key navigation indices. Multi-Run Analysis sits
    * immediately right of Run History because a group is built out of the runs listed there, so the
-   * two are read in that order, and Multi-Suite follows them. Scoring Profiles sits right of Manage
+   * two are read in that order, and Batteries follows them. Scoring Profiles sits right of Manage
    * Suites. Chat Consistency is last.
    */
   readonly subTabs = [
@@ -436,7 +444,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     run: 'Run Benchmark',
     history: 'Run History',
     multirun: 'Multi-Run Analysis',
-    multisuite: 'Multi-Suite',
+    multisuite: 'Batteries',
     suites: 'Manage Suites',
     profiles: 'Scoring Profiles',
     modelcomparison: 'Model Comparison',
@@ -1529,7 +1537,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.batteryRunReport?.open(batteryRunId);
   }
 
-  /** The Multi-Suite tab changed a battery; the launcher's list follows. */
+  /** The Batteries tab changed a battery; the launcher's list follows. */
   onBatteriesChanged(): void {
     this.workspace.loadBatteries();
   }
@@ -1769,7 +1777,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         const active = documents.find(doc => doc.status === 'Writing' || doc.status === 'Repairing');
         if (!active) return 'writing the reports';
         const position = audiences.indexOf(active.audience) + 1;
-        const verb = active.status === 'Repairing' ? 'repairing' : 'writing';
+        const verb = active.status === 'Repairing' ? 'revising' : 'writing';
         const count = position > 0 ? ` (${position} of ${audiences.length})` : '';
         return `${verb} the ${audienceLabel(active.audience)}${count}`;
       }
@@ -3583,7 +3591,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return !!this.runDetailDialog?.nativeElement?.open;
   }
 
-  /** The AI Reports tab read new report fields: the run the dialog shows follows them. */
+  /**
+   * The AI Reports tab read new report fields: the run the dialog shows follows them. A terminal
+   * status also reads the run again, for the writer and document fields the change does not carry.
+   */
   onRunReportStatusChange(change: RunReportStatusChange): void {
     const run = this.selectedRunDetail;
     if (!run) {
@@ -3593,6 +3604,40 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     run.reportWriterDisplayName = change.writerName;
     run.reportDocumentsStatus = change.status;
     run.reportDocumentsMessage = change.message;
+    if (TERMINAL_REPORT_STATUSES.has(change.status)) {
+      this.refreshRunReportFields(run.id);
+    }
+  }
+
+  /**
+   * Replaces the shown run's report writer and report document fields with the server's. A failed
+   * read, or a dialog that has moved to another run, keeps what is shown.
+   */
+  private refreshRunReportFields(runId: number): void {
+    this.benchmarkService.getRun(runId).subscribe({
+      next: fresh => {
+        const run = this.selectedRunDetail;
+        if (!fresh || !run || run.id !== runId) {
+          return;
+        }
+        run.reportWriterModelConfigurationId = fresh.reportWriterModelConfigurationId;
+        run.reportWriterDisplayName = fresh.reportWriterDisplayName;
+        run.reportWriterProvider = fresh.reportWriterProvider;
+        run.reportWriterModelId = fresh.reportWriterModelId;
+        run.reportWriterThinkingLevel = fresh.reportWriterThinkingLevel;
+        run.reportDocumentsStatus = fresh.reportDocumentsStatus;
+        run.reportDocumentsMessage = fresh.reportDocumentsMessage;
+        run.reportDocumentsWrittenCount = fresh.reportDocumentsWrittenCount;
+        run.reportDocumentsDurationMs = fresh.reportDocumentsDurationMs;
+        run.reportDocumentsInputTokens = fresh.reportDocumentsInputTokens;
+        run.reportDocumentsOutputTokens = fresh.reportDocumentsOutputTokens;
+        run.reportDocumentsCostUsd = fresh.reportDocumentsCostUsd;
+        this.viewSync.notify();
+      },
+      error: () => {
+        // The patch from the status change stays.
+      }
+    });
   }
 
   /** Copies the viewed run's diagnostics, the text the Download Center saves for it. */

@@ -330,7 +330,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Cite at most two hypotheses in one sentence. Cite several hypotheses of one rule once, as a range of their first and last .ref tokens joined by an en dash: '{{rca.hypothesis.<id>.1.ref}}–{{rca.hypothesis.<id>.3.ref}}'. When more hypotheses share a topic, name the topic and how many there are, and cite the strongest one or their range.");
         Line(sb, "- Never put a parenthesis inside another, and never put a model token inside parentheses: model names carry their own.");
         Line(sb, "- Write an axis's name before its status token (Speed: {{rca.axis.speed.status}}); never put two status or grade tokens side by side.");
-        Line(sb, "- Give a hypothesis's share after the cause it measures, as its .share token followed by 'of the gap': 'longer waits per call, {{rca.hypothesis.<id>.<n>.share}} of the gap'. A share belongs to its own hypothesis: put it beside that hypothesis's .ref only, never beside a range or a list, and never write 'led by' a share.");
+        Line(sb, "- Give a hypothesis's share after the cause it measures, as its .share token followed by its .shareOf token, which says what the share is of (the gap between two models, or one model's own time, cost or points at risk): 'longer waits per call, {{rca.hypothesis.<id>.<n>.share}} {{rca.hypothesis.<id>.<n>.shareOf}}'. Never write what a share is of in your own words. A share belongs to its own hypothesis: put it beside that hypothesis's .ref only, never beside a range or a list, and never write 'led by' a share.");
         Line(sb, "- Describe a group of hypotheses of one rule by the rule's span of shares, {{rca.rule.<id>.shareSpan}}, beside their ref range: 'longer waits per call, {{rca.rule.<id>.shareSpan}} ({{rca.hypothesis.<id>.1.ref}}–{{rca.hypothesis.<id>.3.ref}})'. A share span already says 'of each gap': never put 'across' or 'for' directly before it.");
         Line(sb, "- " + ControlWordRule);
         Line(sb, "- A token whose value is a whole sentence (a statement, a known fact, a check, a profile flag) stands as a sentence of its own, or follows a colon. Never put it after 'at', 'with', 'as' or 'and' inside another sentence.");
@@ -777,7 +777,7 @@ public static partial class BenchmarkReportPackPrompt
             .GroupBy(p => p.Split('.')[2], StringComparer.Ordinal)
             .Select(g => g.OrderBy(p => int.TryParse(p.Split('.')[3], NumberStyles.None, CultureInfo.InvariantCulture, out int n) ? n : int.MaxValue).ToList())
             .FirstOrDefault(g => g.Count >= 2);
-        string? share = prefixes.FirstOrDefault(p => !IsNull(p) && facts.ContainsKey(p + "share") && facts.ContainsKey(p + "ref"));
+        string? share = prefixes.FirstOrDefault(p => !IsNull(p) && facts.ContainsKey(p + "share") && facts.ContainsKey(p + "shareOf") && facts.ContainsKey(p + "ref"));
         Line(sb, "- Rule 31, sentence shapes: " + (hypothesis != null
             ? $"{T(hypothesis + "statement")} stands alone as a sentence of its own, as does every known fact and check"
             : "a hypothesis's statement, a known fact and a check each stand alone as a sentence of its own")
@@ -785,7 +785,7 @@ public static partial class BenchmarkReportPackPrompt
             + (label != null ? $"; a label such as {T(label)} is a noun phrase, never a sentence of its own" : "; a hypothesis's label is a noun phrase, never a sentence of its own")
             + "; the prose cites a hypothesis by its .ref token, after your own words for what it is about"
             + (range != null ? $", and several of one rule once, as a range such as {T(range[0] + "ref")}–{T(range[^1] + "ref")}" : ", and several of one rule once, as a range of their first and last .ref tokens")
-            + (share != null ? $"; a share follows its cause as '{T(share + "share")} of the gap'" : "; a share follows its cause as its .share token and 'of the gap'")
+            + (share != null ? $"; a share follows its cause as '{T(share + "share")} {T(share + "shareOf")}'" : "; a share follows its cause as its .share token and its .shareOf token")
             + "; never put a parenthesis inside another, or a model token inside parentheses; never join two worded facts with 'to'.");
 
         // A group example is a rule's share span beside the first and last .ref of that rule.
@@ -828,7 +828,7 @@ public static partial class BenchmarkReportPackPrompt
             + "; never name the signal beside them or open the sentence with it, as in 'On tool calls,', 'Across the panel,' or 'answers without tools, most notably'.");
 
         Line(sb, "- Rule 38, shares: " + (share != null
-                ? $"a share stands beside its own hypothesis's .ref only, as '{T(share + "share")} of the gap ({T(share + "ref")})'"
+                ? $"a share stands beside its own hypothesis's .ref only, as '{T(share + "share")} {T(share + "shareOf")} ({T(share + "ref")})'"
                 : "a share stands beside its own hypothesis's .ref only")
             + "; describe a group of hypotheses by " + group + "; never put a share beside a range or a list, and never write 'led by' a share.");
 
@@ -844,8 +844,13 @@ public static partial class BenchmarkReportPackPrompt
         string cause = causal != null && causal.EndsWith(".ref", StringComparison.Ordinal)
             ? "<what it is about, in your own words> (" + T(causal) + ")"
             : causal != null ? T(causal) : string.Empty;
+        // A pair hypothesis explains part of the gap; a within-model one part of its model's own total.
+        string? causalPrefix = causal != null ? RootCauseClaimSupport.HypothesisPrefixOf(causal) : null;
+        var causalHypothesis = causalPrefix == null ? null : sheet.RootCause?.Hypotheses.FirstOrDefault(h =>
+            string.Equals("rca.hypothesis." + h.Id + "." + h.Number.ToString(CultureInfo.InvariantCulture) + ".", causalPrefix, StringComparison.Ordinal));
+        string part = "Part of " + (causalHypothesis != null ? RootCauseFacts.ShareTotal(causalHypothesis.Kind, causalHypothesis.Axis, causalHypothesis.Id) : "the gap");
         Line(sb, "- Rule 33, causes: " + (causal != null
-            ? claims.IsLowHypothesisToken(causal) ? $"'Part of the gap may be due to {cause}.'" : $"'Part of the gap is due to {cause}.'"
+            ? claims.IsLowHypothesisToken(causal) ? $"'{part} may be due to {cause}.'" : $"'{part} is due to {cause}.'"
             : axisToken != null
                 ? $"a causal word needs a token of a hypothesis graded Low or higher, such as its .ref, or an axis token such as {T(axisToken)} in the same sentence."
                 : "a causal word needs a token of a hypothesis graded Low or higher, such as its .ref, or an axis token in the same sentence.")

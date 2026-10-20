@@ -58,7 +58,7 @@ function timeOf(value: string | null | undefined): number {
 }
 
 /**
- * The Multi-Suite sub-tab: the battery definitions as a card list, with New Battery, Edit,
+ * The Batteries sub-tab: the battery definitions as a card list, with New Battery, Edit,
  * Archive / Restore, Delete and each definition's leaderboard.
  *
  * It loads its own data. The host hears of every change to the battery list (`batteriesChanged`,
@@ -269,13 +269,13 @@ export class BenchmarkBatteriesComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** After a delete: the card now at the deleted one's index, else the previous one, else the heading. */
+  /** After a delete: the card now at the deleted one's index, else the previous one, else the section. */
   private focusAfterDelete(index: number): void {
     this.cdr.detectChanges();
     const cards = this.cards;
     const battery = index >= 0 ? cards[index] ?? cards[index - 1] : undefined;
     const target = battery ? this.element('#bb-card-title-' + battery.id) : null;
-    (target ?? this.element('#bb-batteries-title'))?.focus();
+    (target ?? this.element('#bb-section'))?.focus();
   }
 
   private element(selector: string): HTMLElement | null {

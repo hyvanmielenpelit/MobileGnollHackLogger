@@ -22,7 +22,8 @@ import {
   BenchmarkBatteryRunDto,
   BenchmarkBatteryRunSuiteDto,
   BenchmarkPairComparisonDto,
-  BenchmarkRunDetailDto
+  BenchmarkRunDetailDto,
+  BenchmarkRunReportDocumentsStatus
 } from '../../../services/admin-benchmark.service';
 import { SystemService } from '../../../services/system.service';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
@@ -179,6 +180,14 @@ export function batterySuiteFingerprint(suite: BenchmarkBatteryRunSuiteDto, colu
 }
 
 const STORAGE_VERSION = 1;
+
+/** The report statuses after which a battery run's stored report fields no longer change. */
+const TERMINAL_REPORT_STATUSES: ReadonlySet<BenchmarkRunReportDocumentsStatus> = new Set([
+  BenchmarkRunReportDocumentsStatus.Completed,
+  BenchmarkRunReportDocumentsStatus.CompletedWithWarnings,
+  BenchmarkRunReportDocumentsStatus.Failed,
+  BenchmarkRunReportDocumentsStatus.Canceled
+]);
 
 /** The remembered tab; Summary when none is stored, it is unknown, or storage is unavailable. */
 export function readStoredBatteryRunReportTab(): BatteryRunReportTabKey {
@@ -833,7 +842,11 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
     return this.isOpen;
   }
 
-  /** The AI Reports tab read new report fields: the battery run the dialog shows follows them. */
+  /**
+   * The AI Reports tab read new report fields: the battery run the dialog shows follows them. A
+   * terminal status also reads the battery run again, for the writer and document fields the change
+   * does not carry.
+   */
   onReportStatusChange(change: BatteryReportStatusChange): void {
     const detail = this.detail;
     if (!detail) {
@@ -842,7 +855,43 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
     detail.reportDocumentsStatus = change.status;
     detail.reportDocumentsMessage = change.message;
     detail.reportWriterModelConfigurationId = change.writerId;
+    if (TERMINAL_REPORT_STATUSES.has(change.status)) {
+      this.refreshReportFields(detail.id);
+    }
     this.cdr.markForCheck();
+  }
+
+  /**
+   * Replaces the shown battery run's report writer and report document fields, and its report-writer
+   * cost, with the server's. A failed read, or a dialog that has moved on, keeps what is shown.
+   */
+  private refreshReportFields(id: number): void {
+    const token = this.loadToken;
+    this.benchmarkService.getBatteryRun(id).subscribe({
+      next: fresh => {
+        const detail = this.detail;
+        if (token !== this.loadToken || !fresh || !detail || detail.id !== id) {
+          return;
+        }
+        detail.reportWriterModelConfigurationId = fresh.reportWriterModelConfigurationId;
+        detail.reportWriterDisplayName = fresh.reportWriterDisplayName;
+        detail.reportWriterProvider = fresh.reportWriterProvider;
+        detail.reportWriterModelId = fresh.reportWriterModelId;
+        detail.reportWriterThinkingLevel = fresh.reportWriterThinkingLevel;
+        detail.reportWriterReasoningMode = fresh.reportWriterReasoningMode;
+        detail.reportWriterServiceTier = fresh.reportWriterServiceTier;
+        detail.reportDocumentsStatus = fresh.reportDocumentsStatus;
+        detail.reportDocumentsMessage = fresh.reportDocumentsMessage;
+        detail.reportDocumentsWrittenCount = fresh.reportDocumentsWrittenCount;
+        if (detail.liveCost && fresh.liveCost) {
+          detail.liveCost = { ...detail.liveCost, reportWriterCostUsd: fresh.liveCost.reportWriterCostUsd };
+        }
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        // The patch from the status change stays.
+      }
+    });
   }
 
   // --- Actions popover ---

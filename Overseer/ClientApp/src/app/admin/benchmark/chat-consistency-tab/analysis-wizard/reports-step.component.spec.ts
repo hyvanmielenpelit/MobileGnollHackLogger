@@ -648,7 +648,7 @@ describe('CcReportsStepComponent', () => {
     expect(cards.map(card => textOf(card.querySelector('.rjd-title')))).toEqual([
       'Executive Summary', 'Provider Issue Report'
     ]);
-    expect(cards.map(card => textOf(card.querySelector('.job-status-chip')))).toEqual(['Completed', 'Writing']);
+    expect(cards.map(card => textOf(card.querySelector('.job-status-chip')))).toEqual(['Completed', 'Writing draft']);
     // No charts are attached while the job runs: no card has a charts line.
     expect(cards.map(card => card.querySelector('.rjd-charts'))).toEqual([null, null]);
     expect(el.querySelectorAll('.rp-job-log .rp-log-list li').length).toBe(2);

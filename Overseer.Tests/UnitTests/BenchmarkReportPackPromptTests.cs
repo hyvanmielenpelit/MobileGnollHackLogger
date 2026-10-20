@@ -1339,7 +1339,8 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("- A hypothesis's rca.hypothesis.<id>.<n>.ref token prints its id alone. Name what the hypothesis is about in your own words, once per paragraph, then cite its .ref token after it", system);
         Assert.Contains("Cite several hypotheses of one rule once, as a range of their first and last .ref tokens joined by an en dash", system);
         Assert.Contains("- Never put a parenthesis inside another, and never put a model token inside parentheses: model names carry their own.", system);
-        Assert.Contains("as its .share token followed by 'of the gap'", system);
+        Assert.Contains("as its .share token followed by its .shareOf token", system);
+        Assert.DoesNotContain("'of the gap'", system);
         Assert.Contains("Never join two fact tokens with 'to', or with 'from … to', unless both print a bare figure in the same unit", system);
         Assert.DoesNotContain("four related hypotheses", system);
     }
@@ -1620,7 +1621,7 @@ public class BenchmarkReportPackPromptTests
         var lines = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, built.Sheet!, built.Content!).UserMessage.Split('\n');
 
         string rule38 = Assert.Single(lines, l => l.StartsWith("- Rule 38, shares:", StringComparison.Ordinal));
-        Assert.Matches(@"'\{\{rca\.hypothesis\.(\S+)\.share\}\} of the gap \(\{\{rca\.hypothesis\.\1\.ref\}\}\)'", rule38);
+        Assert.Matches(@"'\{\{rca\.hypothesis\.(\S+)\.share\}\} \{\{rca\.hypothesis\.\1\.shareOf\}\} \(\{\{rca\.hypothesis\.\1\.ref\}\}\)'", rule38);
         Assert.Matches(@"'\{\{rca\.rule\.\S+\.shareSpan\}\} \(\{\{rca\.hypothesis\.\S+\.ref\}\}–\{\{rca\.hypothesis\.\S+\.ref\}\}\)'", rule38);
 
         string wide = Assert.Single(lines, l => l.StartsWith("- Every model at once:", StringComparison.Ordinal));

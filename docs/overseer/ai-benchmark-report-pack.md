@@ -1120,6 +1120,25 @@ lowest dimension under the dimensions table, and its CHECK block gains rules 4 a
 HQ5 statement names the 13-point margin it counts. A document stored earlier keeps its stored result and
 writer text; a hypotheses slot it left empty still reads *Not written.* unless its axis is quiet.
 
+**Root Cause Analysis run 122 round (2026-10-20)** moves comparison-wide documents to **format 28**
+(`ComparisonReportFormatVersion` 27 → 28) and per-model documents to **format 24** (`ReportFormatVersion`
+23 → 24), and `RootCauseEngine.Version` 11 → 12; chat consistency documents stay at 6, and the PDF layout,
+the Word layout and `BenchmarkReportChartLayout.CurrentVersion` do not move. The writer prompt of the Root
+Cause Analysis changes, and so its SHA-256. WS1 gains the *Decode measurable* robustness check, failed when
+the visible text arrived in one burst on more than half of the model's timed answers, with its reason also
+an *Against* line, so a hidden-reasoning model's WS1 is graded one condition lower; the summed time to first
+output is the *wait before output* wherever the document names it (the WS1 label, its short statement and
+its Appendix C title, the *Where the time goes* column and figure R2's key, and the known fact on the
+subject's time), with a table note that it is summed over the answer's calls and that the run report's
+time to first token is the first call's alone; each share has a `.shareOf` fact the prompt writes after it,
+*"of the gap"* only for a pair hypothesis, and rule 33's example reads *"Part of its …"* for a within-model
+one; WQ4 and HQ6 fire only on at least 3 incorrect or not-attempted outcomes (on each side for HQ6); and a
+time-of-day run is one pass launched three times (`RootCauseRecommendedRun.Launches`), its estimate and
+Appendix D's *Launches* row counting every launch (§ 17). A document stored earlier keeps its stored result:
+its runs read `Launches` 1, its time-of-day replicate stays a batch of three runs per model, and its shares
+have no `.shareOf` fact; a re-render prints the new *Where the time goes* column and table note, while its
+stored chart keys, labels and known facts keep their words.
+
 **Comparison format version 14** (2026-10-14) moves comparison-wide documents only
 (`ComparisonReportFormatVersion` 13 → 14); per-model documents stay at 12 and chat consistency documents
 at 3. It adds the reference model and the baseline model, the failure profile, the comparison with the
@@ -2445,9 +2464,14 @@ administrator does it:
   disabled while a job is Pending or Writing.
 - **The progress dialog** (`app-run-report-writing-dialog`) opens after a write, and on **Show
   Progress**: a status line that changes with the phase only, a stage rail (*Queued*, *Preparing*, one
-  stage per document, *Done*), an activity bar, a stat strip (elapsed time, writer, model calls, tokens,
-  cost so far or total, and the estimate), a documents table with **View** once the job has finished,
-  and a *Diagnostics* disclosure with **Copy** and **Download**
+  stage per document, *Done*), an activity bar, a stat strip (elapsed time, the writer with its provider
+  and thinking badges, model calls, one *Tokens* stat *"N in · M out"*, the cost so far or *Cost*, and
+  the estimate as one figure), the document cards Model Comparison step 3 shows, in its vocabulary —
+  the badge reads *Writing draft* or *Revising* (`documentProgressLabel`), the status line *"Writing the
+  draft of the Executive Summary"* or *"Revising the draft of …"*, a card carries the first-draft issues
+  tip and the *why it completed with warnings* tip, and its error line whenever the server sends one —
+  with **View** once a document is stored, and a *Log and diagnostics* disclosure with **Copy** and
+  **Download**
   (`run-<id>_ai-report-writing-diagnostics_<yyyyMMdd-HHmmss>.txt`). It polls the job every 2 s and backs
   off on failures (2, 4, 8, 16, then 30 s). **Run in Background** and the close button only stop
   following the job, never cancel it; **Cancel Writing** asks first. From the moment a write is accepted
@@ -4290,7 +4314,16 @@ within-model rule); **Panel agreement** (both panel members' per-member indices 
 or show the same within-model contrast); **Configuration** (no differing key other than the model axis;
 pair rules only); **Share interval** (engine version 9: a share whose 95 % interval is wider than one
 hundred percentage points fails, one grade lower, with the reason *"the share's 95% interval, 139–825%,
-is wider than one hundred percentage points"*). A *"mainly from"* statement whose share is above 100 %
+is wider than one hundred percentage points"*); **Decode measurable** (engine version 12, WS1 only: added,
+failed, when the visible text arrived in one burst — `CallTelemetryMeasures.IsStreamingRateUnmeasurable`,
+recorded per answer as `RootCauseAnswerRecord.StreamingRateUnmeasurable`, null without telemetry — on more
+than half of the model's Ok answers behind its speed items that say either way, with the reason *"On 8 of 8
+answers the visible text arrived in one burst after hidden thinking, so the wait before output cannot be
+told from deliberation, and the decode share cannot be measured."*, which is also an *Against* line; a
+measurable decode adds no check, so WS1 is unchanged there). On a model that streams no visible text until
+its hidden thinking ends, the wait before output is necessarily the largest share and WS1's own refutation
+cannot happen, so the failed check lowers its grade by one condition, as any robustness check does; run
+122's WS1.1 reads Low under it, and its speed axis leads with WS3.1. A *"mainly from"* statement whose share is above 100 %
 adds *", which alone exceeds the gap while other components pull the other way"* (engine version 9).
 
 Each axis then gets a status, the fact `rca.axis.<axis>.status` with `rca.axis.<axis>.best`:
@@ -4359,7 +4392,7 @@ differs; excluded and degraded entries take part only on the axes they are compa
 | HQ3 | Intelligence | Shared failures on specific questions point to the instrument, not the models | suite / corpus / chat | `sharedLow` questions; every model or nearly every model below 50 | One model answered well |
 | HQ4 | Intelligence | The order depends on the graders | harness | Judge-dependent pair; a scoring grader (member A, member B, or the assessor of a single-assessor run) whose provider matches exactly one side — the reference reader, second reader and claim verifier never count; panel disagreement rate at least twice the median. For a pair of the members' own two providers with an available interaction contrast it is **quantified**: share 0.5 × \|contrast\| ÷ the pair's gap, interval from the halved contrast bounds, established when the contrast's interval excludes zero | Both members and the reference reader order the two alike, and the pair is not judge-dependent (`PanelAgreementCheck` plus both reader indices); without a reader the rule is not refuted |
 | HQ5 | Intelligence | In comparison scope, **once for the document** (`RootCauseHypotheses.SharedStyleConflict`, engine version 10): *"Completeness was the lowest dimension, at least 13 points below Accuracy, for N of M models under the concise response style."* (from engine version 11; the margin is `BenchmarkChatTransfer.LevelStepThreshold`, the one `responseStyleConflict` counts, where engine version 10 said only *"the lowest dimension of N of M models"*), shaped as HQ3 is — kind `pair`, group `all`, every model with the conflict in `Models`, label *"the concise response style, N of M models"* — so it answers no research question and names no model's block (`RootCauseHypotheses.IsDocumentWide`); it fires when at least two models have the conflict, or the one model of a single-model document, with no worse-side gate, since it is about the instrument. In model scope, **once per model** (`StyleConflict`, engine version 6): Completeness was A's lowest dimension under the concise style, kind `within`, group `style:<token>`, for each model whose `responseStyleConflict` is true and that is the lower-scoring side of some analyzed pair. Both forms are capped Low, with fact keys each model's `style.responseStyleConflict` | chat | `responseStyleConflict` true | A run of the reference model with the detailed response style shows that Completeness is no longer its lowest dimension, which tests the style effect under this configuration and is indicative for the other models (never graded above *Low*: no comparison run covers style; it states a condition, not a cause, as `server_benchmark_to_chat_transfer` § 3 requires) |
-| HQ6 | Intelligence | A guessed where it should have abstained | model | `wrongInsteadOfAbstaining` higher, with Wilson intervals not overlapping (the measure is *Unavailable* under 3 incorrect or not-attempted outcomes) | Intervals overlap |
+| HQ6 | Intelligence | A guessed where it should have abstained | model | `wrongInsteadOfAbstaining` higher, with Wilson intervals not overlapping (the measure is *Unavailable* under 3 incorrect or not-attempted outcomes, and from engine version 12 the rule fires only with at least 3 on each side, `BenchmarkComparisonModelProfile.WrongInsteadOfAbstainingMinAnswers`) | Intervals overlap |
 | HQ7 | Intelligence | Budget, truncation or output defects cost A points | harness / provider | `toolLimitHits`, `truncated`, `outputDefects` at-risk points, at least 1 and above B's | Zero signals; points at risk under 1 |
 | HQ8 | Intelligence | A's lower thinking level explains the gap | model | Same model at two levels in the set; the dimension test at the lower level | Thinking-level inversion (the notable finding) |
 | HQ9 | Intelligence | The verifier would clear part of A's Accuracy shortfall | harness | Verification-cleared sensitivity above the index (by at least half a point) | Sensitivity equals the index |
@@ -4388,10 +4421,10 @@ models, and its wording says so.
 | WQ1 | Intelligence | A loses most of its points on answers without tool calls | model / chat | `score.withoutTools` below `.withTools`, `H0-W` rejected; their at-risk share is the largest | `H0-W` stands, or fewer than 3 answers without tools |
 | WQ2 | Intelligence | A's points are lost mostly in one difficulty band (or, on a battery, one suite) | model / suite | That group's at-risk share is the largest, exceeds the other models' median share there by at least 15 points (`WithinGroupExcessOverPeers`; a document with one model skips this) and its contrast rejects `H0-W`; on a battery, the leave-one-suite-out index moves by more than the interval half-width | Contrast within noise; shares even |
 | WQ3 | Intelligence | Confirmed critical errors cost A most of its points | model | Critical-error at-risk share largest | Caps unconfirmed |
-| WQ4 | Intelligence | A guesses where it should abstain | model | `wrongInsteadOfAbstaining` above 0.5 with a Wilson interval above 0.33 | Interval includes 0.33 |
+| WQ4 | Intelligence | A guesses where it should abstain | model | `wrongInsteadOfAbstaining` above 0.5 with a Wilson interval above 0.33, over at least 3 incorrect or not-attempted outcomes (`BenchmarkComparisonModelProfile.WrongInsteadOfAbstainingMinAnswers`, the figure's own minimum; engine version 12, before which 2 of 2 could fire it on a figure the document withholds) | Interval includes 0.33 |
 | WQ5 | Intelligence | Budget, truncation or output defects cost A points | harness / provider | At-risk points of those signals at least 1 | — |
 | WQ6 | Intelligence | Grader disagreement makes A's index uncertain | harness | Panel disagreement rate above 0.15, or a member-index gap above the interval half-width | Members agree |
-| WS1 | Speed | Most of A's time is model deliberation before output (TTFT) | provider / model | TTFT share of model time is the largest component, with an interval excluding the next one | Decode share larger |
+| WS1 | Speed | Most of A's time is model deliberation before output (the wait before output) | provider / model | The wait-before-output share of model time — the time to first visible output summed over every model call of the answer, hidden thinking included — is the largest component, with an interval excluding the next one | Decode share larger; from engine version 12 the *Decode measurable* check fails, and its reason is an *Against* line, when the visible text arrived in one burst on more than half of the timed answers |
 | WS2 | Speed | Most of A's time is output generation (decode), driven by reasoning tokens | model | Decode share largest and `reasoningShare` ≥ 0.5 | Reasoning share under 0.5 |
 | WS3 | Speed | Tool rounds multiply A's time | model / chat | Call-count term largest; model time rises with model calls per answer across questions (Spearman ρ ≥ 0.5, confidence interval excluding 0) | ρ interval includes 0 |
 | WS4 | Speed | Tool execution adds materially to A's wall time | chat / corpus | `toolTimeP50` ≥ 25 % of total time | Under 10 % |
@@ -4415,8 +4448,8 @@ by the share itself would put a negligible gap first; a negative share works aga
 explains none of it (HQ1 is *Not supported* when the worse model's answers without tools put no more of
 its points at risk than the better model's). The axis' best hypothesis is the first in this order. Each kept hypothesis becomes the
 facts `rca.hypothesis.<id>.<n>.statement`, `.label`, `.axis`, `.models`, `.locus`, `.grade`,
-`.gradeReasons`, `.for`, `.against`, `.refutedIf`, `.nextRun` or `.check`, and `.share` and `.interval`
-where it has a share; `<n>` numbers the hypotheses of one rule from 1. The **label**
+`.gradeReasons`, `.for`, `.against`, `.refutedIf`, `.nextRun` or `.check`, and `.share`, `.shareOf` (engine
+version 12) and `.interval` where it has a share; `<n>` numbers the hypotheses of one rule from 1. The **label**
 (`RootCauseLabels.Of`) is a noun phrase that reads inside a sentence, built from the rule and its
 models: a pair's is *"{first}'s {topic}, compared with {second}"* (*"Model F's critical errors, compared
 with Model E"*, *"Vega Pro's higher price per token, compared with Orion Max"*) and a within-model one
@@ -4433,7 +4466,14 @@ hypotheses of one rule are cited once, as a range (*HQ1.1–HQ1.3*).
 
 **Displays print the figure alone** (engine version 6), so that a token reads inside the writer's
 sentence without repeating it or nesting parentheses: a share is the bare percentage (*"72%"*, no longer
-*"… of the difference"*), which the writer gives as *"… of the gap"* after the cause; a pair total
+*"… of the difference"*), which the writer gives after the cause followed by the hypothesis' `.shareOf`
+token (engine version 12, `RootCauseFacts.ShareOf`): *"of the gap"* for a pair hypothesis, and for a
+within-model one by axis *"of its model time"*, *"of its cost"* or *"of its points at risk"* (WQ4's rate
+of answers *"of its wrong or not-attempted answers"*, WS4's share of the wall time *"of its wall time"*).
+The prompt never writes the literal *"of the gap"* in its share instructions; rule 33's example sentence
+reads *"Part of the gap …"* for a pair hypothesis and *"Part of its model time …"* (its cost, its points at
+risk) for a within-model one. Before, every share read *"of the gap"*, a within-model share of a model's
+own time included; rule 38 does not read the phrase and is unchanged. A pair total
 `rca.<axis>.<F>.<S>.total` is the amount alone (*"+46.1 s per question"*, *"+$0.012 per question"*,
 *"+3.2 index points"*), its direction (F minus S; speed is model time) stated once in a FACTS note of the
 prompt; a speed or cost difference that is not established has its own fact,
@@ -4797,17 +4837,21 @@ check inside its own sentence by the summary (it is not sentence-shaped, rule 31
 | `thinkingPair` | HQ8, HS3, HC3, WS2, only for a hypothesis about **one** model id (a hypothesis comparing two different models takes the replicate, or nothing) | Model batch of the same model at two thinking levels: an **analyzed** sibling first (same model id, another level, nearest rank), else the model's configuration and the nearest configured, enabled Benchmark-role configuration of the same model id at another level | M |
 | `stylePair` | HQ5 | **At most one per document**: one single run of the reference model at the other *Response Style* (*Detailed* after *Concise*, or the reverse), everything else unchanged, serving every HQ5 (in comparison scope the one HQ5.1); always **Optional** (an isolated pair showed no style effect, and the controlled verbose pair was declined on 2026-09-27) | C |
 | `panelSwap` | HQ4, HQ9, WQ6 | The same models graded by a panel from two other providers than the analyzed graders' (configured graders only) | B |
-| `timeStratum` | HS2, HS4, HS5, HS6, WS1, WS5 | The model's run repeated, *Number of Runs* 3, each started at a different time of day (the run's note says so) | C |
+| `timeStratum` | HS2, HS4, HS5, HS6, WS1, WS5 | One pass of the model's run (*Number of Runs* 1; a model batch at *Runs per model* 1 when the plan holds several models), **launched 3 times**, each at a different time of day (`Launches` 3, engine version 12): *Number of Runs* 3, *Runs per model* 3 or a model batch would run the passes back to back. Its `When` reads *"Launch it 3 times, each at a different time of day; Number of Runs 3, Runs per model 3 or a model batch would run them back to back"*, and a note *"Launch this setup 3 times, each at a different time of day."* (before engine version 12, *Number of Runs* 3 with a note to start each run at a different time of day) | C |
 | `control` | A run- or battery-completion document with fewer than 2 qualifying controls; a per-model pack whose subject has fewer than 2 comparable peers | Model batch, same target and graders, **without the subject** (its run already exists): the currently recommended model (`RecommendedModels` in `Overseer/appsettings.json`) of each other provider that has a configured, enabled Benchmark-role configuration, up to the controls needed. A finished run of it becomes a control automatically | B |
 
 **Folding.** After the plans are merged by key, a `timeStratum` or `thinkingPair` plan whose **analyzed**
 models all belong to a `replicate` of three or more runs per suite is folded into it
 (`RootCauseNextRuns.Fold`); a model the plan adds that has no analyzed runs is appended to the replicate.
-The replicate takes over its hypotheses, gains the instruction *"start each run at a different time of
-day"* (`When`) when a time-of-day repeat was folded, and takes the most urgent purpose among them (C
-before B before M). Three passes started at different times of day settle what the separate repeats
-would, for a fraction of the cost: in Comparison #4's analysis under engine version 1, the nine-model
-replicate covered the seven other proposed runs (eight in all, about $450).
+The replicate takes over its hypotheses, and takes the most urgent purpose among them (C before B before
+M). When a time-of-day repeat was folded it becomes a time-of-day run as the `timeStratum` row describes
+(engine version 12): one pass per model, *Single* for one model and *Batch* for several at *Runs per
+model* 1, `Launches` 3, the same `When` and note, and its estimate is one launch's. Before engine version 12
+it stayed a model batch at *Runs per model* 3 with the instruction *"Start each run at a different time of
+day"*, which a batch cannot follow: it runs its passes back to back. Three passes launched at different
+times of day settle what the separate repeats would, for a fraction of the cost: in Comparison #4's
+analysis under engine version 1, the nine-model replicate covered the seven other proposed runs (eight in
+all, about $450).
 
 A run is **Recommended** when it is a `control` run or settles an axis' best hypothesis, else
 **Optional**; a `stylePair` is always Optional. Runs are ordered **C, then B, then M** (the chat, then the benchmark, then model selection,
@@ -4831,7 +4875,12 @@ the fact `rca.run.<n>.summary` — a short line, *"Run 1, a replicate of all nin
   (a stored run without it prints the joined `Decides`);
 - `PredictedTier`, from the keys the run changes;
 - `EstimatedCostUsd` and `EstimatedMinutes`, from the analyzed runs' own costs and durations (a model
-  without analyzed runs takes their mean, and a note says so);
+  without analyzed runs takes their mean, and a note says so), for one launch;
+- `Launches` (engine version 12): how many times to launch the run as set up, 3 for a time-of-day run and
+  1 otherwise, and 1 for a run stored without it. The run's estimate text (`RootCauseNextRuns.EstimateText`,
+  so its `rca.run.<n>.summary`, the *What to run next* table and Appendix D) is one launch's estimate times
+  `Launches`, ending *"over 3 launches"* when there are several, and Appendix D's launcher table ends with a
+  *Launches* row (*"3, each at a different time of day"*) when `Launches` is above 1;
 - every launcher setting, named as `StartBenchmarkRunRequest` and `StartBenchmarkModelBatchRequest` name
   them so the prefill maps them one to one: `TargetKind` (*Suite* or *Battery*), `SuiteId` / `SuiteName`,
   `BatteryId` / `BatteryName`, `RunMode` (*Single* or *Batch*), `TestedModelConfigurationIds` and
@@ -4854,7 +4903,10 @@ and under the latest Root Cause Analysis in the launcher's **Comparison reports*
 document detail's `recommendedRuns` and `checks`. Each run is a card: *Run 2: Thinking-level pair*, tags
 for its purpose, its mark and the hypotheses it settles, its decision rule, *"Make this run after the
 system hypotheses are settled."* where that applies, its predicted tier, estimate and settings, its notes,
-and **Set up this run**; then the checks (*"No check by hand is needed."* with none).
+and **Set up this run**; then the checks (*"No check by hand is needed."* with none). A run of several
+launches (`launches` above 1, engine version 12; a run stored without it is launched once) shows a
+*Launches* setting, *"3, each at a different time of day"*, and its estimate is one launch's times their
+number, *"about $3.60 · about 105 min · over 3 launches"* (`recommendedRunEstimate`).
 
 **Set up this run** calls the shell bridge's `prefillSetup(setup, sourceLabel)`; the shell closes the
 comparison wizard, the run report dialog or the battery dialog first (as *Repeat this run's setup*
@@ -4869,7 +4921,9 @@ setup*:
   analyzed runs differ on a grader field, no grader is applied at all and the note stands;
 - a runs field set to 3 says so (*"Runs per Suite was set to 3 for this recommendation."*), and one held
   below the request by its limit says what it was set to; a time-stratum run adds that each run starts at
-  a different time of day;
+  a different time of day unless a server note already says so. A run of several launches pre-fills
+  **one** launch (its *Number of Runs* or *Runs per model* 1), and its server note *"Launch this setup 3
+  times, each at a different time of day."* says to repeat it;
 - the report writer is cleared, and the server's own notes follow;
 - the note heading reads *"Set up from Root Cause Analysis #<id>, run <k>"* (*"Control run for run
   #<id>"* from **Set up a control run**).
@@ -4923,7 +4977,11 @@ already printed (`Prose`, the RCA's `TracksTerms`). The profile flags are compac
 19% (others' median 6%)"*), with the no-tool median and the isolated-miss rule stated once in the note.
 The tied-rank notes describe the per-model span and add that interval bounds are rounded while ranks use
 the unrounded bounds. Paired tests list the reference second. *Where the time goes* heads its total
-*Wall time per question (median, tools included)* and says it differs from the median model time.
+*Wall time per question (median, tools included)* and says it differs from the median model time. From
+engine version 12 its first part is *Wait before output* (`RootCauseSegments.Label`, *time to first token*
+before), and the note says that it is *"summed over every model call of the answer, hidden thinking
+included; the run report's time to first token is the first call's alone"*; Appendix B's per-call column
+keeps its name.
 A column, or a decomposition row, that is zero or not recorded in every row is dropped
 (`DropConstantColumns`) with one sentence naming it; a share above 100 % says, on its first occurrence,
 that another component pulls the other way. The hypothesis tables print the id alone. Appendix A has no
@@ -5267,7 +5325,7 @@ drawing them in the browser, which cannot reach run- and battery-completion docu
 | Key | Title | Section | Rows | Segments and marks |
 |---|---|---|---|---|
 | `r1-points-at-risk` | Where the points were lost | 2 | Each model (stand-alone: the subject, then one row per difficulty band, or per suite on a battery) | A stacked horizontal bar of at-risk index points: answers without tools · budget, truncation or output defects · confirmed critical errors · other low-scoring answers. The bar's end is labeled with the total; the axis is points out of 100 |
-| `r2-speed-decomposition` | Where the time goes | 3 | Each model (stand-alone: the subject, then per band or suite) | A stacked bar of the median seconds per question, split among time to first token · output generation · tool execution · own waits and retries · other in proportion to each segment's mean, so the segments sum to the median exactly |
+| `r2-speed-decomposition` | Where the time goes | 3 | Each model (stand-alone: the subject, then per band or suite) | A stacked bar of the median seconds per question, split among wait before output (summed over the answer's calls) · output generation · tool execution · own waits and retries · other in proportion to each segment's mean, so the segments sum to the median exactly |
 | `r3-cost-decomposition` | Where the cost goes | 4 | Each model (stand-alone: the subject, then per band or suite) | A stacked bar of cost per question: uncached input · cache reads · cache writes · visible output · reasoning; a model whose provider counts thinking inside output has one *output, thinking included* segment, in the visible-output color slot |
 | `r4-hypothesis-confidence` | How sure each hypothesis is | 6 | One row per non-null hypothesis shown in the document's tables, grouped by axis (null hypotheses are not plotted, and from engine version 10 neither are price effects, the caption then adding *"; price-card differences are left out"*) | A filled dot at its grade on an ordinal axis (Not supported · Low · Moderate · High), the hypothesis id and its short statement as the row label; the named variant prints each model's name where the statement says *Model X*. Where the hypothesis has a share, a second column shows a bar with its 95 % interval whisker |
 

@@ -15,7 +15,7 @@ export interface ReportWriterAdviceEntry {
 
 /** The Report Pack dialog's opening paragraph: what the writer does. */
 export const REPORT_WRITER_ADVICE_LEAD = 'The report writer writes the documents’ words from the figures the server '
-  + 'computed; it never writes a figure. One call per document, and one repair turn when its output fails validation.';
+  + 'computed; it never writes a figure. One call per document, and one revision turn when its output fails validation.';
 
 export const REPORT_WRITER_ADVICE_BY_AUDIENCE: Readonly<Record<BenchmarkReportAudience, ReportWriterAdviceEntry>> = {
   [BenchmarkReportAudience.ExecutiveSummary]: {
@@ -31,7 +31,7 @@ export const REPORT_WRITER_ADVICE_BY_AUDIENCE: Readonly<Record<BenchmarkReportAu
     text: 'For the Overseer team. A long document (about 10,000 output tokens, 14,000 for a comparison) that weighs '
       + 'hypotheses graded by evidence, rubrics and grader notes included, and states only what that evidence supports. '
       + 'Use the strongest scoring-tier reasoning model you trust with numbers — Claude Opus or GPT Sol — at medium '
-      + 'effort, high if its documents often need repair.'
+      + 'effort, high if its documents often need revision.'
   },
   [BenchmarkReportAudience.ProviderIssueReport]: {
     term: 'Provider Issue Report',

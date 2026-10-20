@@ -11,7 +11,7 @@ MobileGnollHackLogger is an ASP.NET Core web application that logs, processes, a
 **"GnollBench"** is the name for the AI benchmarking functionality of the Overseer project:
 the **GnollBench** tab of the Overseer admin page (tab id `benchmark`, formerly labeled
 "AI Benchmark") and all its sub-tabs (Run Benchmark, Run History, Multi-Run Analysis,
-Multi-Suite, Manage Suites, Scoring Profiles, Model Comparison, Chat Consistency), the
+Batteries, Manage Suites, Scoring Profiles, Model Comparison, Chat Consistency), the
 services under `Overseer/Services/Benchmarking/` and `Overseer/Services/ChatConsistency/`, and
 their reports. When the user says "GnollBench", a "GnollBench run", "GnollBench report" or
 "GnollBench analysis", read it as the AI benchmark, a benchmark run, a benchmark report or a

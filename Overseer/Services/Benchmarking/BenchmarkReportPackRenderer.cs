@@ -134,8 +134,12 @@ public static partial class BenchmarkReportPackRenderer
     /// From version 23 a Root Cause Analysis' hypotheses section prints no writer paragraph on an axis where only nulls or
     /// price-card differences fired unless the writer wrote one, and says so in one line. The PDF layout, the Word layout and
     /// the chart layout did not change with version 23.
+    /// From version 24 a Root Cause Analysis' time table names its first part the wait before output, summed over every
+    /// model call of an answer, every hypothesis share carries what it is of (the gap, or the model's own time, cost or
+    /// points at risk), and a recommended run carries its number of launches. The PDF layout, the Word layout and the
+    /// chart layout did not change with version 24.
     /// </summary>
-    public const int ReportFormatVersion = 23;
+    public const int ReportFormatVersion = 24;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
@@ -182,8 +186,12 @@ public static partial class BenchmarkReportPackRenderer
     /// From version 27 a Root Cause Analysis' hypotheses section prints no writer paragraph on an axis where only nulls or
     /// price-card differences fired unless the writer wrote one, and says so in one line. The PDF layout, the Word layout and
     /// the chart layout did not change with version 27.
+    /// From version 28 a Root Cause Analysis' time table names its first part the wait before output, summed over every
+    /// model call of an answer, every hypothesis share carries what it is of (the gap, or the model's own time, cost or
+    /// points at risk), and a recommended run carries its number of launches. The PDF layout, the Word layout and the
+    /// chart layout did not change with version 28.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 27;
+    public const int ComparisonReportFormatVersion = 28;
 
     /// <summary>The comparison format version whose answer excerpts were first allotted in rounds across the questions.</summary>
     private const int RoundExcerptsFormatVersion = 20;

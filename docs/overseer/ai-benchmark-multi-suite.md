@@ -451,7 +451,7 @@ Admin → GnollBench → **Run Benchmark**, *Test Setup* fieldset:
   batteries — not archived, no deleted suite, no validation error — as *Name (K suites)*. Its info tip
   lists the suites in run order with their normalized weights under the battery's scheme. A warning
   names the suites whose questions are not all difficulty-assessed, since the start would refuse them.
-  *Manage batteries →* opens the Multi-Suite tab.
+  *Manage batteries →* opens the Batteries tab.
 - **Runs per Suite** — in *Battery* mode the *Number of Runs* field (*Execution* fieldset) is relabeled
   and bounded by `floor(maxMembersPerBattery / K)` instead of the series limit.
 - **Battery Options** — a caption in the *Execution* fieldset over the two per-start checkboxes below,
@@ -646,15 +646,19 @@ to own it. Opened from the batch's progress dialog, which it replaces, the dismi
 Batch** and returns there. The completion chime and notification of § *Completion signals* are the
 batch's while the page follows it: the battery run signals nothing of its own.
 
-### 4.4 The Multi-Suite tab
+### 4.4 The Batteries tab
 
 The fourth benchmark tab, after *Multi-Run Analysis*. It holds the battery **definitions** only:
 battery runs are listed in Run History (§ 4.6), and the analysis, the leaderboard and the paired test
 are dialogs (§§ 4.5 and 4.7).
 
-**Head.** *Batteries* with an info tip, the polite status line (*Showing 3 of 3 batteries*), **Show
-archived (n)** — a pressed-state toggle shown while an archived battery exists, a view setting that
-*Clear all* leaves alone — and **New Battery**.
+The tab was named *Multi-Suite* until 2026-10-20; its address keeps the slug `multi-suite`.
+
+**Toolbar.** The panel has no visible heading: a visually hidden *Batteries* heading labels the
+section and the list. The toolbar row holds **New Battery**, **Show archived (n)** — a pressed-state
+toggle shown while an archived battery exists, a view setting that *Clear all* leaves alone — the info
+tip, and the polite status line (*Showing 3 of 3 batteries*), which fills the rest of the row with its
+text aligned to the end. Deleting the last visible battery moves focus to the section itself.
 
 **Filter bar**, shown with more than three batteries or while a filter is active: a search over name,
 description and suite names; **Sort by** *Recently modified* (the default), *Name (A–Z)*, *Most runs* or
@@ -679,7 +683,10 @@ a tall card pushes only itself down.
   all K suites** / **Show fewer** reveals the rest, so a card is at most four suite rows tall unless
   asked.
 
-Below 60 rem of list width the metrics move under the head, and below 30 rem the card is one column.
+The card's head keeps at least 18 rem. From 80 rem of list width the card is one row (head, metrics,
+actions); from 44 rem the actions sit beside the head and the metrics and suites span the card below;
+below 44 rem the card is one column. Outside the one-row layout the four metrics share the row equally,
+and below 36 rem they form two rows of two. The kicker's chips wrap rather than overflow.
 
 ### 4.5 The leaderboard dialog
 

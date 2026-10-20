@@ -117,6 +117,9 @@ public static class RootCauseHypotheses
     public const string PanelAgreement = "Panel agreement";
     public const string Configuration = "Configuration";
 
+    /// <summary>The robustness check WS1 fails when the visible text of most of the model's answers arrived in one burst.</summary>
+    public const string DecodeMeasurable = "Decode measurable";
+
     /// <summary>The robustness check a share fails when its 95% interval is wider than <see cref="MaxShareIntervalWidth"/>.</summary>
     public const string ShareInterval = "Share interval";
 
@@ -868,10 +871,12 @@ public static class RootCauseHypotheses
             yield return d;
         }
 
-        // HQ6: guessing instead of abstaining.
+        // HQ6: guessing instead of abstaining, on each side over at least the answers the profile's figure needs.
         var (wrongA, deniedA) = WrongInsteadOfAbstaining(a);
         var (wrongB, deniedB) = WrongInsteadOfAbstaining(b);
-        if (deniedA > 0 && deniedB > 0 && wrongA / (double)deniedA > wrongB / (double)deniedB)
+        if (deniedA >= BenchmarkComparisonModelProfile.WrongInsteadOfAbstainingMinAnswers
+            && deniedB >= BenchmarkComparisonModelProfile.WrongInsteadOfAbstainingMinAnswers
+            && wrongA / (double)deniedA > wrongB / (double)deniedB)
         {
             var d = PairDraft(ctx, pair, "HQ6", RootCauseAxes.Intelligence, a, b,
                 A + " guessed where it should have abstained more often than " + B + ".",
@@ -1644,9 +1649,9 @@ public static class RootCauseHypotheses
             yield return d;
         }
 
-        // WQ4: guessing instead of abstaining.
+        // WQ4: guessing instead of abstaining, over at least the answers the profile's figure needs.
         var (wrong, denied) = WrongInsteadOfAbstaining(model);
-        if (denied > 0 && wrong / (double)denied > 0.5)
+        if (denied >= BenchmarkComparisonModelProfile.WrongInsteadOfAbstainingMinAnswers && wrong / (double)denied > 0.5)
         {
             var d = WithinDraft(ctx, model, "WQ4", RootCauseAxes.Intelligence,
                 M + " guesses where it should abstain.",
@@ -1726,7 +1731,7 @@ public static class RootCauseHypotheses
         if (items.Count < RootCauseDecomposition.MinSharedQuestions) yield break;
         var shares = RootCauseDecomposition.ModelTimeShares(items);
         if (shares is not { } s) yield break;
-        string[] names = { "time to first token", "output generation", "time outside the calls" };
+        string[] names = { "wait before output", "output generation", "time outside the calls" };
         int lead = Array.IndexOf(s.Shares, s.Shares.Max());
         var leadInterval = s.LeadOverNext[0];
 
@@ -1735,14 +1740,19 @@ public static class RootCauseHypotheses
         {
             var d = WithinDraft(ctx, model, "WS1", RootCauseAxes.Speed,
                 "Most of " + M + "'s time is model deliberation before output (where its time goes, not a comparison).",
-                "Time to first token: " + M,
+                "Wait before output: " + M,
                 "The decode share is larger.",
-                "the time-to-first-token share stays the largest at other times of day",
+                "the wait-before-output share stays the largest at other times of day",
                 RootCauseLoci.Provider, RootCauseLoci.Model);
             FillShare(d, s.Shares[0], s.Intervals[0], names[0], "model time");
             d.Established = leadInterval?.Lower > 0;
-            d.EstablishedText = "the wait before the first word may not clearly be the largest part of the time";
+            d.EstablishedText = "the wait before output may not clearly be the largest part of the time";
             d.Robustness.Add(ctx.WithinLeaveOneOutTime(model, 0));
+            if (DecodeMeasurableCheck(model.Evidence) is { } burst)
+            {
+                d.Robustness.Add(burst);
+                d.Against.Add(burst.Detail);
+            }
             d.FactKeys.Add(ctx.WithinKey(model.Token, "time.ttft.share"));
             d.NextRunKind = RootCauseRunKinds.TimeStratum;
             yield return d;
@@ -2167,6 +2177,27 @@ public static class RootCauseHypotheses
         d.ShareLower = interval?.Lower;
         d.ShareUpper = interval?.Upper;
         d.For.Add(Capitalize(component) + " is " + Pct(share) + IntervalText(interval) + " of " + of + " per question.");
+    }
+
+    /// <summary>
+    /// WS1's <see cref="DecodeMeasurable"/> check, failed: the visible text arrived in one burst
+    /// (<see cref="RootCauseAnswerRecord.StreamingRateUnmeasurable"/>) on more than half of the answers behind the
+    /// model's speed items that carry telemetry. Null when it did not, so a measurable decode adds no check.
+    /// </summary>
+    internal static RootCauseRobustnessCheck? DecodeMeasurableCheck(RootCauseModelEvidence evidence)
+    {
+        var timed = evidence.Answers
+            .Where(a => a.Ok && a.TtftSumMs.HasValue && a.DecodeSumMs.HasValue && a.StreamingRateUnmeasurable.HasValue)
+            .ToList();
+        int burst = timed.Count(a => a.StreamingRateUnmeasurable == true);
+        if (timed.Count == 0 || 2 * burst <= timed.Count) return null;
+        return new RootCauseRobustnessCheck
+        {
+            Name = DecodeMeasurable,
+            Status = RootCauseCheckStatuses.Failed,
+            Detail = "On " + Inv(burst) + " of " + Inv(timed.Count) + " answers the visible text arrived in one burst after hidden thinking, "
+                + "so the wait before output cannot be told from deliberation, and the decode share cannot be measured."
+        };
     }
 
     internal static (int Wrong, int Denominator) WrongInsteadOfAbstaining(RootCauseModelInput model)

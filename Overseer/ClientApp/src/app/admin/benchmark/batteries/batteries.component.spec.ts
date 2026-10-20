@@ -179,6 +179,95 @@ describe('BenchmarkBatteriesComponent', () => {
     create();
     expect(text('.bb-empty-batteries')).toContain('No batteries yet');
     expect(el().querySelector('.bb-cards')).toBeNull();
+    expect(el().querySelector('.bb-section-head .bb-new-battery')).not.toBeNull();
+  });
+
+  it('has no visible heading: New Battery, Show archived, the info button, then the status line', () => {
+    service.getBatteries.mockReturnValue(of([battery(), battery({ id: 5, name: 'Old Battery', isArchived: true })]));
+    create();
+
+    const heading = el().querySelector('#bb-batteries-title') as HTMLElement;
+    expect(heading.tagName).toBe('H4');
+    expect(heading.textContent!.trim()).toBe('Batteries');
+    expect(heading.classList.contains('visually-hidden')).toBe(true);
+    expect(heading.hasAttribute('tabindex')).toBe(false);
+
+    const section = el().querySelector('section.bb-section') as HTMLElement;
+    expect(section.id).toBe('bb-section');
+    expect(section.getAttribute('tabindex')).toBe('-1');
+    expect(section.getAttribute('aria-labelledby')).toBe('bb-batteries-title');
+    expect(el().querySelector('.bb-cards')?.getAttribute('aria-labelledby')).toBe('bb-batteries-title');
+
+    const head = el().querySelector('.bb-section-head') as HTMLElement;
+    const order = Array.from(head.children).map(child =>
+      child.classList.contains('bb-new-battery') ? 'new'
+        : child.classList.contains('bb-show-archived') ? 'archived'
+          : child.tagName === 'APP-INFO-TIP' ? 'tip'
+            : child.id === 'bb-list-status' ? 'status'
+              : child.tagName.toLowerCase());
+    expect(order).toEqual(['new', 'archived', 'tip', 'status']);
+    expect(head.querySelector('app-info-tip button')?.getAttribute('aria-label')).toBe('About Batteries');
+    expect(section.querySelectorAll('[role="status"]').length).toBe(1);
+  });
+
+  describe('the card layout', () => {
+    afterEach(() => {
+      el().style.removeProperty('width');
+    });
+
+    function rect(root: HTMLElement, selector: string): DOMRect {
+      const found = root.querySelector(selector) as HTMLElement | null;
+      expect(found, selector).not.toBeNull();
+      return found!.getBoundingClientRect();
+    }
+
+    // The host's width is the `bb-cards` container's width: nothing between them has padding.
+    it('keeps the header at least 18rem wide and the title under three lines at every list width', () => {
+      service.getBatteries.mockReturnValue(of([battery({ name: 'Two initial suites' })]));
+      create();
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      const cases: { width: number; layout: 'wide' | 'medium' | 'single'; metricRows: number }[] = [
+        { width: 82, layout: 'wide', metricRows: 1 },
+        { width: 79, layout: 'medium', metricRows: 1 },
+        { width: 70, layout: 'medium', metricRows: 1 },
+        { width: 61, layout: 'medium', metricRows: 1 },
+        { width: 50, layout: 'medium', metricRows: 1 },
+        { width: 40, layout: 'single', metricRows: 1 },
+        { width: 34, layout: 'single', metricRows: 2 }
+      ];
+
+      for (const { width, layout, metricRows } of cases) {
+        el().style.width = `${width}rem`;
+        const c = card(3);
+        const at = `at ${width}rem`;
+        expect(Math.round(rect(el(), '.bb-cards').width), at).toBe(Math.round(width * rem));
+
+        const head = rect(c, '.bb-card-head');
+        const metrics = rect(c, '.bb-metrics');
+        const actions = rect(c, '.bb-card-actions');
+        if (layout === 'single') {
+          expect(Math.abs(head.width - rect(c, '.bb-card-suites').width), at).toBeLessThan(1);
+          expect(actions.top, at).toBeGreaterThanOrEqual(head.bottom - 0.5);
+        } else {
+          expect(head.width, at).toBeGreaterThanOrEqual(18 * rem - 0.5);
+          expect(actions.left, at).toBeGreaterThanOrEqual(head.right - 0.5);
+          if (layout === 'wide') {
+            expect(metrics.left, at).toBeGreaterThanOrEqual(head.right - 0.5);
+          } else {
+            expect(metrics.top, at).toBeGreaterThanOrEqual(head.bottom - 0.5);
+          }
+        }
+
+        const title = c.querySelector('.bb-card-title') as HTMLElement;
+        const lineHeight = parseFloat(getComputedStyle(title).lineHeight);
+        expect(lineHeight, at).toBeGreaterThan(0);
+        expect(title.getBoundingClientRect().height, at).toBeLessThan(3 * lineHeight);
+
+        const metricTops = new Set(Array.from(c.querySelectorAll<HTMLElement>('.bb-metric'))
+          .map(m => Math.round(m.getBoundingClientRect().top)));
+        expect(metricTops.size, at).toBe(metricRows);
+      }
+    });
   });
 
   describe('a card', () => {
@@ -319,7 +408,7 @@ describe('BenchmarkBatteriesComponent', () => {
       expect(service.archiveBattery).toHaveBeenCalledWith(5, false);
     });
 
-    it('deletes a battery after confirmation and focuses the heading when no card is left', () => {
+    it('deletes a battery after confirmation and focuses the section when no card is left', () => {
       create();
       const changed = vi.fn().mockName('changed');
       component.batteriesChanged.subscribe(changed);
@@ -330,7 +419,7 @@ describe('BenchmarkBatteriesComponent', () => {
       expect(service.deleteBattery).toHaveBeenCalledWith(3);
       expect(changed).toHaveBeenCalled();
       expect(el().querySelector('.bb-card')).toBeNull();
-      expect(document.activeElement?.id).toBe('bb-batteries-title');
+      expect(document.activeElement?.id).toBe('bb-section');
     });
 
     it('keeps Delete aria-disabled and inert while a battery run is active', () => {

@@ -415,6 +415,54 @@ public class RootCauseReportGoldenTests
     }
 
     [Fact]
+    public void AWithinModelShare_IsFollowedByItsShareOfToken_NeverByTheGap()
+    {
+        var sheet = RootCauseReportFixture.RunSheet(controls: false);
+        var content = BenchmarkReportContent.Build(new[] { RootCauseReportFixture.Runs()[RootCauseReportFixture.SubjectRunId] }, 120);
+        var hypotheses = sheet.RootCause!.Hypotheses;
+        var within = hypotheses.Where(h => h.Kind == "within" && h.Share.HasValue).ToList();
+        Assert.NotEmpty(within);
+
+        // Each share says what it is of: one model's own total, never the gap between two models.
+        var facts = sheet.Facts.ToDictionary(f => f.Key, StringComparer.Ordinal);
+        foreach (var h in within)
+        {
+            string shareOf = facts["rca.hypothesis." + h.Key + ".shareOf"].Display;
+            Assert.Equal(RootCauseFacts.ShareOf(h.Kind, h.Axis, h.Id), shareOf);
+            Assert.StartsWith("of its ", shareOf, StringComparison.Ordinal);
+        }
+        Assert.Equal("of the gap", RootCauseFacts.ShareOf("pair", RootCauseAxes.Speed, "HS2"));
+        Assert.Equal("of its model time", RootCauseFacts.ShareOf("within", RootCauseAxes.Speed, "WS1"));
+        Assert.Equal("of its cost", RootCauseFacts.ShareOf("within", RootCauseAxes.Cost, "WC1"));
+        Assert.Equal("of its points at risk", RootCauseFacts.ShareOf("within", RootCauseAxes.Intelligence, "WQ3"));
+
+        var prompt = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, content);
+        Assert.DoesNotContain("'of the gap'", prompt.SystemPrompt, StringComparison.Ordinal);
+        var lines = prompt.UserMessage.Split('\n');
+
+        // Rules 31 and 38 write the share as its .share token followed by its .shareOf token.
+        string rule38 = Assert.Single(lines, l => l.StartsWith("- Rule 38, shares:", StringComparison.Ordinal));
+        var example = System.Text.RegularExpressions.Regex.Match(rule38,
+            @"'\{\{(rca\.hypothesis\.\S+?\.)share\}\} \{\{\1shareOf\}\} \(\{\{\1ref\}\}\)'");
+        Assert.True(example.Success, rule38);
+        Assert.Contains(within, h => "rca.hypothesis." + h.Key + "." == example.Groups[1].Value);
+        Assert.DoesNotContain("of the gap", rule38, StringComparison.Ordinal);
+        string rule31 = Assert.Single(lines, l => l.StartsWith("- Rule 31, sentence shapes:", StringComparison.Ordinal));
+        Assert.Contains("'{{" + example.Groups[1].Value + "share}} {{" + example.Groups[1].Value + "shareOf}}'", rule31, StringComparison.Ordinal);
+        Assert.DoesNotContain("of the gap", rule31, StringComparison.Ordinal);
+
+        // Rule 33's example names the gap only for a pair hypothesis, and a within-model one's own total otherwise.
+        string rule33 = Assert.Single(lines, l => l.StartsWith("- Rule 33, causes:", StringComparison.Ordinal));
+        var cited = System.Text.RegularExpressions.Regex.Match(rule33, @"\{\{(rca\.hypothesis\.\S+?\.)(?:ref|label)\}\}");
+        if (cited.Success)
+        {
+            var h = hypotheses.Single(x => "rca.hypothesis." + x.Key + "." == cited.Groups[1].Value);
+            Assert.Contains("'Part of " + RootCauseFacts.ShareTotal(h.Kind, h.Axis, h.Id) + " ", rule33, StringComparison.Ordinal);
+            if (h.Kind == "within") Assert.DoesNotContain("Part of the gap", rule33, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void TheExecutiveSummaryPrompt_SeesNoRootCauseFact()
     {
         var built = RootCauseReportFixture.ComparisonFacts();

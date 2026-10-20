@@ -13,7 +13,7 @@ that knows the scheme is `Overseer/ClientApp/src/app/admin/admin-url.ts`, pinned
 | `/admin/users` · `/admin/users/groups` · `/admin/users/deletions` · `/admin/users/log` | Users and its sub-tabs *Users*, *Groups*, *Deletion requests*, *Admin log* |
 | `/admin/configs` · `/admin/configs/api-keys` | System Configs; the second with the **API Keys** dialog (*Default API Keys*) open |
 | `/admin/database` · `/admin/telemetry` · `/admin/security` | Database, AI Telemetry, Security (no sub-tabs) |
-| `/admin/gnollbench` · `/admin/gnollbench/history` · `…/multi-run` · `…/multi-suite` · `…/suites` · `…/profiles` · `…/model-comparison` · `…/chat-consistency` | GnollBench: *Run Benchmark*, *Run History*, *Multi-Run Analysis*, *Multi-Suite*, *Manage Suites*, *Scoring Profiles*, *Model Comparison*, *Chat Consistency* |
+| `/admin/gnollbench` · `/admin/gnollbench/history` · `…/multi-run` · `…/multi-suite` · `…/suites` · `…/profiles` · `…/model-comparison` · `…/chat-consistency` | GnollBench: *Run Benchmark*, *Run History*, *Multi-Run Analysis*, *Batteries*, *Manage Suites*, *Scoring Profiles*, *Model Comparison*, *Chat Consistency* |
 | `/admin/services` · `/admin/services/gnollhack-wiki` · `…/nethack-wiki` · `…/knowledge-base` · `…/config-health` · `…/developer-tools` | Services: *GnollHack Source*, *GnollHack Wiki*, *NetHack Wiki*, *Knowledge Base*, *Configuration Health*, *Developer Tools* |
 
 - **The first sub-tab is the default and has no segment.** `/admin/users/users` and
@@ -29,7 +29,9 @@ that knows the scheme is `Overseer/ClientApp/src/app/admin/admin-url.ts`, pinned
 - **Slugs are not code ids.** The code keeps its ids — `benchmark`, `multirun`, `modelcomparison`,
   `deletions` and the rest, in every `localStorage` key — and `ADMIN_TAB_SLUGS` and
   `ADMIN_SUBTAB_SLUGS` translate. The address shows the visible name, so the GnollBench tab is
-  `gnollbench`, and the Services tab, whose code id is `devtools`, is `services`.
+  `gnollbench`, and the Services tab, whose code id is `devtools`, is `services`. The one exception
+  is the *Batteries* sub-tab, which keeps the slug `multi-suite` from its earlier name *Multi-Suite*:
+  sub-tabs have no retired-slug list, so a new slug would break its bookmarks.
 - **A renamed slug is kept as a retired slug.** A slug is part of every bookmark and alert that holds
   it, so renaming one would break them. A tab's old slug therefore stays in `RETIRED_ADMIN_TAB_SLUGS`,
   mapped to the tab it named, and **a retired slug is never reused** for another tab. A sub-tab's old

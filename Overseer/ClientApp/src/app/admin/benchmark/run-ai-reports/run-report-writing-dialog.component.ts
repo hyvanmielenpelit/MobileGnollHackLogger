@@ -33,10 +33,10 @@ import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-
 import {
   audienceLabel,
   documentChipClass,
+  documentProgressLabel,
   documentRowPhaseLine,
   formatCostUsd,
-  formatElapsed,
-  statusLabel
+  formatElapsed
 } from '../report-pack/report-document-format';
 import {
   REPORT_JOB_DOCUMENT_CARD_DEFAULTS,
@@ -47,6 +47,7 @@ import {
   reportJobDocumentTone,
   reuseReportJobDocumentCards
 } from '../report-pack/report-job-documents.component';
+import { documentStatusQuestion, documentStatusSubject } from '../report-pack/report-validation-explanation';
 import {
   ClientPollError,
   ClientPollState,
@@ -137,6 +138,8 @@ export const runReportWritingIo = {
 
 const WRITTEN_STATUSES = new Set(['Completed', 'CompletedWithWarnings']);
 const ACTIVE_STATUSES = new Set(['Writing', 'Repairing']);
+/** The document statuses whose card offers the *why* explanation beside its chip. */
+const EXPLAINED_STATUSES = new Set(['CompletedWithWarnings', 'Failed']);
 const numberFormat = new Intl.NumberFormat('en-US');
 
 /** A document name inside a sentence: *the Executive Summary*. */
@@ -592,7 +595,7 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
         if (!active) {
           return 'Writing the reports';
         }
-        return `${active.status === 'Repairing' ? 'Repairing' : 'Writing'} ${documentPhrase(active.audience)}`;
+        return `${active.status === 'Repairing' ? 'Revising' : 'Writing'} the draft of ${documentPhrase(active.audience)}`;
       }
       default:
         return this.finishedLine(view);
@@ -700,7 +703,7 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
   }
 
   get costLabel(): string {
-    return this.isFinished ? 'Total cost' : 'Cost so far';
+    return this.isFinished ? 'Cost' : 'Cost so far';
   }
 
   get costValue(): string {
@@ -716,6 +719,12 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     return value === null || value === undefined ? '—' : numberFormat.format(value);
   }
 
+  /** `42,000 in · 9,000 out`, or `—` before the first view. */
+  get tokensValue(): string {
+    const job = this.view?.job;
+    return job ? reportJobDocumentTokens(job.inputTokens, job.outputTokens) : '—';
+  }
+
   /** One progress card per requested document, then any other the job writes; kept while nothing on them changes. */
   get documentRows(): readonly RunReportWritingDocumentRow[] {
     this.documentCards = reuseReportJobDocumentCards(this.documentCards, this.buildDocumentCards());
@@ -729,39 +738,51 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     }
     const documents = view.job?.documents ?? [];
     const audiences = this.requestedAudiences;
-    const rows: BenchmarkReportPackDocumentProgressDto[] = audiences.map(audience =>
-      documents.find(doc => doc.audience === audience)
-        ?? { audience, status: 'Pending', documentId: null, errorMessage: null, modelCalls: 0 });
+    // A requested document the job has not listed yet is a placeholder, which no info tip explains.
+    const rows: { doc: BenchmarkReportPackDocumentProgressDto; listed: boolean }[] = audiences.map(audience => {
+      const listed = documents.find(doc => doc.audience === audience);
+      return listed
+        ? { doc: listed, listed: true }
+        : { doc: { audience, status: 'Pending', documentId: null, errorMessage: null, modelCalls: 0 }, listed: false };
+    });
     for (const doc of documents) {
       if (!audiences.includes(doc.audience)) {
-        rows.push(doc);
+        rows.push({ doc, listed: true });
       }
     }
     const finished = view.phase === 'Finished';
-    return rows.map((doc): RunReportWritingDocumentRow => {
+    return rows.map(({ doc, listed }): RunReportWritingDocumentRow => {
       const duration = doc.startedAtUtc
         ? this.spanToNow(doc.startedAtUtc, doc.completedAtUtc ?? (finished ? view.finishedAtUtc : null))
         : null;
       const title = audienceLabel(doc.audience);
+      const phrase = documentPhrase(doc.audience);
       return {
         ...REPORT_JOB_DOCUMENT_CARD_DEFAULTS,
         key: `doc-${doc.audience}`,
         audience: doc.audience,
         title,
-        phrase: documentPhrase(doc.audience),
+        phrase,
         status: doc.status,
-        statusWord: statusLabel(doc.status),
+        statusWord: documentProgressLabel(doc.status),
         chipClass: documentChipClass(doc.status),
         tone: reportJobDocumentTone(doc.status),
         phaseLine: documentRowPhaseLine(doc),
-        errorMessage: doc.status === 'Failed' ? (doc.errorMessage || 'No reason was recorded.') : null,
+        errorMessage: doc.errorMessage || (doc.status === 'Failed' ? 'No reason was recorded.' : null),
         duration: duration === null ? '—' : formatElapsed(duration),
         modelCalls: this.formatCount(doc.modelCalls),
         tokens: reportJobDocumentTokens(doc.inputTokens, doc.outputTokens),
         cost: reportJobDocumentCost(doc.costUsd),
         documentId: doc.documentId,
         viewable: finished && doc.documentId !== null && WRITTEN_STATUSES.has(doc.status),
-        tipStem: `${this.idPrefix}-card-${doc.audience}`
+        doc: listed ? doc : null,
+        tipStem: `${this.idPrefix}-card-${doc.audience}`,
+        why: listed && EXPLAINED_STATUSES.has(doc.status)
+          ? { subject: documentStatusSubject(phrase, doc.status), title: documentStatusQuestion(phrase, doc.status) }
+          : null,
+        draftIssueCount: listed ? doc.firstTurnIssues?.length ?? 0 : 0,
+        draftTipBesideChip: ACTIVE_STATUSES.has(doc.status),
+        phaseDetail: listed ? doc.phaseDetail ?? null : null
       };
     });
   }

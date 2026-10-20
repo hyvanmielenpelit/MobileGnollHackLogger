@@ -101,7 +101,7 @@ PLAIN LANGUAGE (the headline and the conclusions are read by people without stat
 - Cite at most two hypotheses in one sentence. Cite several hypotheses of one rule once, as a range of their first and last .ref tokens joined by an en dash: '{{rca.hypothesis.<id>.1.ref}}–{{rca.hypothesis.<id>.3.ref}}'. When more hypotheses share a topic, name the topic and how many there are, and cite the strongest one or their range.
 - Never put a parenthesis inside another, and never put a model token inside parentheses: model names carry their own.
 - Write an axis's name before its status token (Speed: {{rca.axis.speed.status}}); never put two status or grade tokens side by side.
-- Give a hypothesis's share after the cause it measures, as its .share token followed by 'of the gap': 'longer waits per call, {{rca.hypothesis.<id>.<n>.share}} of the gap'. A share belongs to its own hypothesis: put it beside that hypothesis's .ref only, never beside a range or a list, and never write 'led by' a share.
+- Give a hypothesis's share after the cause it measures, as its .share token followed by its .shareOf token, which says what the share is of (the gap between two models, or one model's own time, cost or points at risk): 'longer waits per call, {{rca.hypothesis.<id>.<n>.share}} {{rca.hypothesis.<id>.<n>.shareOf}}'. Never write what a share is of in your own words. A share belongs to its own hypothesis: put it beside that hypothesis's .ref only, never beside a range or a list, and never write 'led by' a share.
 - Describe a group of hypotheses of one rule by the rule's span of shares, {{rca.rule.<id>.shareSpan}}, beside their ref range: 'longer waits per call, {{rca.rule.<id>.shareSpan}} ({{rca.hypothesis.<id>.1.ref}}–{{rca.hypothesis.<id>.3.ref}})'. A share span already says 'of each gap': never put 'across' or 'for' directly before it.
 - A control is only an earlier run of another model that answered the same questions under the same graders and settings, as CONTROLS lists it; never call a measurement, a count, a figure or a check a control, and in a comparison, which has none, never use the word.
 - A token whose value is a whole sentence (a statement, a known fact, a check, a profile flag) stands as a sentence of its own, or follows a colon. Never put it after 'at', 'with', 'as' or 'and' inside another sentence.
@@ -416,6 +416,7 @@ rca.hypothesis.WC1.1.models = Orion Max
 rca.hypothesis.WC1.1.ref = WC1.1
 rca.hypothesis.WC1.1.refutedIf = Another component is larger.
 rca.hypothesis.WC1.1.share = 69%
+rca.hypothesis.WC1.1.shareOf = of its cost
 rca.hypothesis.WC1.1.statement = Output (with reasoning) is Orion Max's largest cost component (where its cost goes, not a comparison).
 rca.hypothesis.WS2.1.against = Reasoning is 31% of Orion Max's output tokens.
 rca.hypothesis.WS2.1.axis = Speed
@@ -429,6 +430,7 @@ rca.hypothesis.WS2.1.models = Orion Max
 rca.hypothesis.WS2.1.ref = WS2.1
 rca.hypothesis.WS2.1.refutedIf = The reasoning share is under one half.
 rca.hypothesis.WS2.1.share = 70%
+rca.hypothesis.WS2.1.shareOf = of its model time
 rca.hypothesis.WS2.1.statement = Most of Orion Max's time is output generation, driven by reasoning tokens (where its time goes, not a comparison).
 rca.hypothesis.WS3.1.against = none recorded
 rca.hypothesis.WS3.1.axis = Speed
@@ -661,10 +663,10 @@ CHECK BEFORE YOU ANSWER (one check per claim rule, each with an example from thi
 - Rule 4, topics: every question you cite anywhere — the sections, the observations, and each writer hypothesis's for, against and evidence — that QUESTIONS NEEDING A TOPIC lists has its questionTopics entry.
 - Rule 9, your own words: no run of eight words may match a question, a rubric, an answer excerpt or a grader comment; describe them instead.
 - Rule 16, rankings, one per sentence: say in the ranking's own sentence that the intervals overlap and that the order is not established.
-- Rule 31, sentence shapes: {{rca.hypothesis.WS2.1.statement}} stands alone as a sentence of its own, as does every known fact and check; inside your own sentence, a check is cited by its rca.check.<n>.summary token; a label such as {{rca.hypothesis.WS2.1.label}} is a noun phrase, never a sentence of its own; the prose cites a hypothesis by its .ref token, after your own words for what it is about, and several of one rule once, as a range of their first and last .ref tokens; a share follows its cause as '{{rca.hypothesis.WS2.1.share}} of the gap'; never put a parenthesis inside another, or a model token inside parentheses; never join two worded facts with 'to'.
+- Rule 31, sentence shapes: {{rca.hypothesis.WS2.1.statement}} stands alone as a sentence of its own, as does every known fact and check; inside your own sentence, a check is cited by its rca.check.<n>.summary token; a label such as {{rca.hypothesis.WS2.1.label}} is a noun phrase, never a sentence of its own; the prose cites a hypothesis by its .ref token, after your own words for what it is about, and several of one rule once, as a range of their first and last .ref tokens; a share follows its cause as '{{rca.hypothesis.WS2.1.share}} {{rca.hypothesis.WS2.1.shareOf}}'; never put a parenthesis inside another, or a model token inside parentheses; never join two worded facts with 'to'.
 - Rule 39, counts: {{errors.critical}} already prints 'with a critical error', so write it as a noun phrase with none of those words beside it; never add 'with', 'without' or 'that' words after it that repeat it; to say that several models share a signal, name each model with its own token and nothing else about it, as '<model token> had <its count token> and <model token> <its count token>'; never name the signal beside them or open the sentence with it, as in 'On tool calls,', 'Across the panel,' or 'answers without tools, most notably'.
-- Rule 38, shares: a share stands beside its own hypothesis's .ref only, as '{{rca.hypothesis.WS2.1.share}} of the gap ({{rca.hypothesis.WS2.1.ref}})'; describe a group of hypotheses by the rule's rca.rule.<id>.shareSpan token beside their ref range; never put a share beside a range or a list, and never write 'led by' a share.
-- Rule 33, causes: 'Part of the gap is due to <what it is about, in your own words> ({{rca.hypothesis.WS3.1.ref}}).' In the next runs, the run's own rca.run token serves too.
+- Rule 38, shares: a share stands beside its own hypothesis's .ref only, as '{{rca.hypothesis.WS2.1.share}} {{rca.hypothesis.WS2.1.shareOf}} ({{rca.hypothesis.WS2.1.ref}})'; describe a group of hypotheses by the rule's rca.rule.<id>.shareSpan token beside their ref range; never put a share beside a range or a list, and never write 'led by' a share.
+- Rule 33, causes: 'Part of its model time is due to <what it is about, in your own words> ({{rca.hypothesis.WS3.1.ref}}).' In the next runs, the run's own rca.run token serves too.
 - Rule 34, certainty: no hypothesis is graded High and no axis is established, so use no certainty word; write probable or not established.
 - Rule 36, statuses: the conclusions cite {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}.
 - Rule 41, unavailable figures: {{band.advanced.difference}} has no value and prints 'not available', so never cite it; where leaving the figure out would mislead, say in plain words that it is unavailable and why.
