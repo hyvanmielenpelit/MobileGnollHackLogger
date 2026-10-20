@@ -299,6 +299,31 @@ describe('ComparisonDocumentsStatusComponent', () => {
     expect(technical.querySelector('.cds-view-btn')).toBeNull();
   });
 
+  it('says the write order of the checked documents, by scope', () => {
+    const hints = (): string[] => Array.from(host.querySelectorAll('.cds-order-hint')).map(text);
+    const both = 'Written in this order: the Root Cause Analysis first, then the Executive Summary, which is written from it.';
+
+    show({ checks: new Map([[`comparison|${ExecutiveSummary}`, true]]) });
+    expect(hints()).toEqual([both]);
+    expect(q('.cds-order-hint')!.classList).toContain('form-hint');
+
+    show({ checks: new Map([[`comparison|${ExecutiveSummary}`, true], [`comparison|${RootCauseAnalysis}`, false]]) });
+    expect(hints()).toEqual(['The Executive Summary is written from this comparison\'s stored Root Cause Analysis when that was '
+      + 'written from the same data; otherwise it is written without one and says so.']);
+
+    // The Root Cause Analysis alone: no line.
+    show();
+    expect(hints()).toEqual([]);
+
+    // Per model: run:1 has its Root Cause Analysis, so only its Executive Summary is checked; run:2 writes both.
+    show({ mode: 'model', chosenKeys: ['run:1', 'run:2'] });
+    expect(hints()).toEqual([
+      'The Executive Summary is written from each model\'s stored Root Cause Analysis when that was written from the same data; '
+        + 'otherwise it is written without one and says so.',
+      both
+    ]);
+  });
+
   it('reads Write for a document not written and Rewrite for a written one, and reports each change', () => {
     show();
     const changes: { key: string; checked: boolean }[] = [];

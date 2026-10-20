@@ -661,6 +661,26 @@ public class BenchmarkReportFactsTests
     }
 
     [Fact]
+    public void APanelRun_GivesEachQuestionBothMembersScores_AndASingleAssessorRunNone()
+    {
+        var run = PanelRun();
+        run.Answers.Single(a => a.OrderIndex == 1).CoAssessmentQualityScore = 95;
+
+        var sheet = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", run));
+
+        Assert.Equal("80 / 100", FactOf(sheet, "question.Q1.memberA").Display);
+        Assert.Equal("95 / 100", FactOf(sheet, "question.Q1.memberB").Display);
+        Assert.Equal("80 / 100", FactOf(sheet, "question.Q2.memberB").Display);
+        Assert.Equal("question.Q2.memberA", BenchmarkReportFacts.MemberScoreKey(2, memberA: true));
+        Assert.Equal("Q1: panel member B's score", BenchmarkReportFactLabels.Label("question.Q1.memberB"));
+        Assert.False(BenchmarkReportFacts.WriterHidden("question.Q1.memberA"));
+        Assert.False(BenchmarkComparisonReportFacts.IsModelFact("question.Q1.memberA"));
+
+        var single = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));
+        Assert.DoesNotContain(single.Facts, f => f.Key.StartsWith(BenchmarkReportFacts.QuestionFactPrefix, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void APanelRunsDimensionFacts_AreUnavailable_WhenMemberBRecordedNoLevels()
     {
         var run = PanelRun();

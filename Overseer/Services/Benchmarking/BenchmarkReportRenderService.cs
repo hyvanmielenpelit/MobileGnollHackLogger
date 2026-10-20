@@ -183,6 +183,7 @@ public class BenchmarkReportRenderService
         item.CoversAllEntries = scope == BenchmarkReportScope.Comparison && facts.CoversAllEntries;
         item.ComparisonModelCount = scope == BenchmarkReportScope.Comparison ? facts.ComparisonEntryCount : null;
         item.CoveredModels = CoveredModels(scope, item.SubjectKey, item.SubjectLabel, coveredEntryKeysJson, facts);
+        item.RootCauseSourceDocumentId = item.Audience == BenchmarkReportAudience.ExecutiveSummary ? facts.RootCauseDigestDocumentId : null;
     }
 
     /// <summary>
@@ -250,13 +251,17 @@ public class BenchmarkReportRenderService
     /// Entry key → label and provider, from the objects of the <c>models</c> array and then of the
     /// <c>peers</c> array that carry <c>entryKey</c> and <c>label</c>; the first object of a key wins.
     /// </param>
+    /// <param name="RootCauseDigestDocumentId">
+    /// An Executive Summary's root <c>rootCauseDigest.documentId</c>: the Root Cause Analysis it was written from; null when absent.
+    /// </param>
     public sealed record StoredFacts(
         int PeerCount,
         Dictionary<string, string> PeerLetters,
         string? SubjectProvider,
         bool CoversAllEntries,
         int? ComparisonEntryCount,
-        Dictionary<string, (string Label, string? Provider)> EntryLabels)
+        Dictionary<string, (string Label, string? Provider)> EntryLabels,
+        long? RootCauseDigestDocumentId = null)
     {
         public static StoredFacts Empty => new(
             0, new Dictionary<string, string>(StringComparer.Ordinal), null, false, null,
@@ -280,6 +285,7 @@ public class BenchmarkReportRenderService
             System.Text.Json.JsonElement? models = null;
             bool coversAll = false;
             int? entryCount = null;
+            long? rootCauseDocumentId = null;
 
             foreach (var property in root.EnumerateObject())
             {
@@ -287,6 +293,17 @@ public class BenchmarkReportRenderService
                 if (Named(property, "peers") && value.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
                     peers ??= value;
+                }
+                else if (Named(property, "rootCauseDigest") && value.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    foreach (var part in value.EnumerateObject())
+                    {
+                        if (Named(part, "documentId") && part.Value.ValueKind == System.Text.Json.JsonValueKind.Number
+                            && part.Value.TryGetInt64(out long documentId))
+                        {
+                            rootCauseDocumentId = documentId;
+                        }
+                    }
                 }
                 else if (Named(property, "models") && value.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
@@ -332,7 +349,7 @@ public class BenchmarkReportRenderService
                 }
             }
 
-            return new StoredFacts(peerCount, letters, StringProperty(root, "subjectProvider"), coversAll, entryCount, labels);
+            return new StoredFacts(peerCount, letters, StringProperty(root, "subjectProvider"), coversAll, entryCount, labels, rootCauseDocumentId);
         }
         catch (System.Text.Json.JsonException)
         {

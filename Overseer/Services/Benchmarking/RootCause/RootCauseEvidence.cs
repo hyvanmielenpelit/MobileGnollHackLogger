@@ -843,6 +843,21 @@ public static class RootCauseEvidence
         else facts.Text("config.maxOutputTokens", "not set");
     }
 
+    /// <summary>
+    /// The answers whose visible text arrived in one burst after hidden thinking
+    /// (<see cref="RootCauseAnswerRecord.StreamingRateUnmeasurable"/>), of the timed answers: those that succeeded and
+    /// recorded their summed wait before output, their decode time and whether the burst happened. WS1's
+    /// robustness check and the <c>rca.within.&lt;T&gt;.speed.burstAnswers</c> fact read it.
+    /// </summary>
+    public static (int Burst, int Timed) BurstAnswers(RootCauseModelEvidence evidence)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        var timed = evidence.Answers
+            .Where(a => a.Ok && a.TtftSumMs.HasValue && a.DecodeSumMs.HasValue && a.StreamingRateUnmeasurable.HasValue)
+            .ToList();
+        return (timed.Count(a => a.StreamingRateUnmeasurable == true), timed.Count);
+    }
+
     /// <summary>Own waits and retries ÷ model time over the answers with candidate telemetry; null without any.</summary>
     public static double? OwnWaitShare(RootCauseModelEvidence evidence)
     {

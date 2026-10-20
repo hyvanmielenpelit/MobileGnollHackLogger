@@ -835,7 +835,7 @@ public class RootCauseValidatorTests
             n => Assert.StartsWith("{{model.A.profile.noToolAnswers}} already prints '", n.Message, StringComparison.Ordinal),
             n => Assert.StartsWith("{{model.B.profile.noToolAnswers}} already prints '", n.Message, StringComparison.Ordinal));
         Assert.All(notes, n => Assert.Contains("'without', 'tools' say it again", n.Message, StringComparison.Ordinal));
-        Assert.Contains("'{{model:B}} had {{model.B.profile.noToolAnswers}}'", notes[1].Message, StringComparison.Ordinal);
+        Assert.Contains("Start a new sentence with the model and the token, as in '{{model:B}} had {{model.B.profile.noToolAnswers}}.'", notes[1].Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1174,7 +1174,7 @@ public class RootCauseValidatorTests
     }
 
     [Fact]
-    public void Rule44_ReadsEveryProseField_OfARootCauseAnalysisOnly()
+    public void Rule44_ReadsACountAllInWords_InEveryProseFieldOfARootCauseAnalysisOnly()
     {
         const string count = "eight of the nine models";
         Assert.Single(RuleNotes(QuestionSheet(), BenchmarkReportPackValidator.NumberWordCountRule, BenchmarkReportSlots.Conclusions,
@@ -1185,6 +1185,116 @@ public class RootCauseValidatorTests
         Assert.Contains(Validate(true, output), n => n.Rule == BenchmarkReportPackValidator.NumberWordCountRule && n.Location.StartsWith("observations", StringComparison.Ordinal));
 
         Assert.DoesNotContain(ValidateExecutive("The models agree for " + count + "."), n => n.Rule == BenchmarkReportPackValidator.NumberWordCountRule);
+    }
+
+    [Fact]
+    public void Rule44_ANumberWordBeforeATokenThatPrintsABareTotal_IsFlaggedInTheExecutiveSummaryToo()
+    {
+        // tools.notFound prints "2", a bare whole number; quality.index prints "80 ± 3 / 100".
+        var note = Assert.Single(ExecutiveMeaningNotes(BenchmarkReportPackValidator.NumberWordCountRule, "One of the {{tools.notFound}} lookups found nothing."));
+        Assert.Contains("\"One of the {{tools.notFound}}\"", note.Message, StringComparison.Ordinal);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+
+        Assert.Empty(ExecutiveMeaningNotes(BenchmarkReportPackValidator.NumberWordCountRule, "One of the {{quality.index}} readings stands out."));
+        Assert.Empty(ExecutiveMeaningNotes(BenchmarkReportPackValidator.NumberWordCountRule, "The model gave {{tools.notFound}} lookups that found nothing."));
+    }
+
+    // --- Rule 46: a score or figure written in words ------------------------------------------------
+
+    /// <summary>The rule's notes on the Executive Summary's meaning paragraph of the per-model writer test sheet.</summary>
+    private static List<BenchmarkReportValidationNote> ExecutiveMeaningNotes(int rule, string meaning)
+    {
+        var output = ReportPackWriterTestData.ValidOutput(BenchmarkReportAudience.ExecutiveSummary);
+        output.Sections[BenchmarkReportSlots.Meaning] = meaning;
+        return BenchmarkReportPackValidator.Validate(BenchmarkReportAudience.ExecutiveSummary, output, ReportPackWriterTestData.Sheet(), ReportPackWriterTestData.Content())
+            .Where(n => n.Rule == rule)
+            .ToList();
+    }
+
+    [Theory]
+    [InlineData("Panel member A gave it ninety-five.", "ninety-five")]
+    [InlineData("About seventy percent of the answers used a tool.", "seventy")]
+    [InlineData("The answers ran to two hundred words.", "two hundred")]
+    public void Rule46_ANumberOfTwentyOrMoreInWords_IsAWarning(string meaning, string written)
+    {
+        var note = Assert.Single(ExecutiveMeaningNotes(BenchmarkReportPackValidator.LargeNumberWordRule, meaning));
+
+        Assert.Equal("Writes \"" + written + "\" in words: cite the figure's token instead of writing it in words.", note.Message);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+        Assert.False(note.Dropped);
+    }
+
+    [Theory]
+    [InlineData("It struggled on the twenty-first question.")]
+    [InlineData("It gave seven answers without a tool.")]
+    [InlineData("Its score is out of a hundred.")]
+    [InlineData("Two questions scored below seventy.")]
+    [InlineData("Every control scored seventy-five or more on it.")]
+    [InlineData("No answer scored at least ninety.")]
+    public void Rule46_LeavesAnOrdinalAndASmallCountAlone(string meaning)
+    {
+        Assert.Empty(ExecutiveMeaningNotes(BenchmarkReportPackValidator.LargeNumberWordRule, meaning));
+    }
+
+    [Fact]
+    public void Rule46_ReadsARootCauseAnalysis_AndIsInTheCatalogAsAWarning()
+    {
+        Assert.Single(RuleNotes(QuestionSheet(), BenchmarkReportPackValidator.LargeNumberWordRule, BenchmarkReportSlots.EvidenceIntelligence,
+            "Panel member B scored the answer at eighty."));
+
+        Assert.Equal(46, BenchmarkReportPackValidator.LargeNumberWordRule);
+        var info = BenchmarkReportRuleCatalog.Get(BenchmarkReportPackValidator.LargeNumberWordRule);
+        Assert.Contains(BenchmarkReportRuleCatalog.All, r => r.Rule == BenchmarkReportPackValidator.LargeNumberWordRule);
+        Assert.Equal("Score or figure written in words", info.Name);
+        Assert.Equal(BenchmarkReportRuleSeverity.Warning, info.Severity);
+        Assert.Equal("Cite the figure's token instead of writing it in words.", info.Fix);
+        Assert.Contains(BenchmarkReportPackPrompt.LargeNumberWordPromptRule, BenchmarkReportPackPrompt.BuildSystemPrompt(BenchmarkReportAudience.ExecutiveSummary), StringComparison.Ordinal);
+        Assert.Contains(BenchmarkReportPackPrompt.LargeNumberWordPromptRule, BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(comparisonScope: true), StringComparison.Ordinal);
+    }
+
+    // --- Rules 31 and 39: the subject at a sentence start, the grader role phrases ------------------
+
+    /// <summary>The per-model writer test sheet with a panel-disagreement count and a known fact whose value is a sentence.</summary>
+    private static BenchmarkReportFactSheet ModelSheet()
+    {
+        var sheet = ReportPackWriterTestData.Sheet();
+        sheet.Facts.Add(new BenchmarkReportFact
+        {
+            Key = "panel.disagreements", Value = System.Text.Json.Nodes.JsonValue.Create(1), Display = "1 of 4 answers on which the panel members disagreed"
+        });
+        sheet.Facts.Add(TextFact("rca.known.1", "Every model ran once."));
+        return sheet;
+    }
+
+    /// <summary>The rule's notes on a model-scope Root Cause Analysis' limitations paragraph.</summary>
+    private static List<BenchmarkReportValidationNote> ModelScopeNotes(int rule, string paragraph)
+    {
+        var output = new BenchmarkReportWriterOutput { Headline = "The model differs on every axis." };
+        output.Sections[BenchmarkReportSlots.Limitations] = paragraph;
+        return BenchmarkReportPackValidator.Validate(Rca, output, ModelSheet(), ReportPackWriterTestData.Content())
+            .Where(n => n.Rule == rule)
+            .ToList();
+    }
+
+    [Fact]
+    public void Rule31_TheSubjectStartingASentence_ReadsInUpperCase_ButALowerCaseContinuationIsStillFlagged()
+    {
+        Assert.Empty(ModelScopeNotes(BenchmarkReportPackValidator.ComparisonTokenShapeRule,
+            "The graders weighed readability. {{subject}} had {{panel.disagreements}}."));
+
+        Assert.Contains(ModelScopeNotes(BenchmarkReportPackValidator.ComparisonTokenShapeRule,
+                "Known facts come first. {{rca.known.1}} the model had {{panel.disagreements}}."),
+            n => n.Message.StartsWith("Continues {{rca.known.1}} after its full stop", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Rule39_AGraderRolePhrase_NeverRepeatsACount_ButTheWritersOwnPanelWordsDo()
+    {
+        Assert.Empty(ModelScopeNotes(BenchmarkReportPackValidator.CountRepetitionRule, "Panel member A scored Q3 higher; {{subject}} had {{panel.disagreements}}."));
+        Assert.Empty(ModelScopeNotes(BenchmarkReportPackValidator.CountRepetitionRule, "{{subject}} had {{panel.disagreements}}, and panel member B wrote longer comments."));
+
+        var note = Assert.Single(ModelScopeNotes(BenchmarkReportPackValidator.CountRepetitionRule, "The panel disagreed on {{panel.disagreements}}."));
+        Assert.Contains("Start a new sentence with the model and the token, as in '{{subject}} had {{panel.disagreements}}.'", note.Message, StringComparison.Ordinal);
     }
 
     [Theory]

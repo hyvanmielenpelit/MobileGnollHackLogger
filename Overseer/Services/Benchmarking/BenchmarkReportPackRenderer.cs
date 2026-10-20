@@ -138,8 +138,13 @@ public static partial class BenchmarkReportPackRenderer
     /// model call of an answer, every hypothesis share carries what it is of (the gap, or the model's own time, cost or
     /// points at risk), and a recommended run carries its number of launches. The PDF layout, the Word layout and the
     /// chart layout did not change with version 24.
+    /// From version 25 the Executive Summary is written after the Root Cause Analysis, from a code-built digest of it: its
+    /// fact sheet holds the digest's facts and its source (the Root Cause Analysis document, or why there is none), its header
+    /// names that source, and a summary with a digest ends in What to look at next. A ruled-out hypothesis is never an axis's
+    /// best: the Root Cause Analysis' Conclusions print such an axis's best hypothesis as none. The PDF layout, the Word
+    /// layout and the chart layout did not change with version 25.
     /// </summary>
-    public const int ReportFormatVersion = 24;
+    public const int ReportFormatVersion = 25;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
@@ -190,8 +195,12 @@ public static partial class BenchmarkReportPackRenderer
     /// model call of an answer, every hypothesis share carries what it is of (the gap, or the model's own time, cost or
     /// points at risk), and a recommended run carries its number of launches. The PDF layout, the Word layout and the
     /// chart layout did not change with version 28.
+    /// From version 29 the Executive Summary is written after the Root Cause Analysis, from a code-built digest of it, as in
+    /// model-scope version 25: its header names the digest's source and a summary with a digest ends in What to look at next.
+    /// A ruled-out hypothesis is never an axis's best. The PDF layout, the Word layout and the chart layout did not change
+    /// with version 29.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 28;
+    public const int ComparisonReportFormatVersion = 29;
 
     /// <summary>The comparison format version whose answer excerpts were first allotted in rounds across the questions.</summary>
     private const int RoundExcerptsFormatVersion = 20;
@@ -200,8 +209,9 @@ public static partial class BenchmarkReportPackRenderer
     /// The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.
     /// From version 5 every sentence of the writer's prose, every table cell and the text after every run-in label start with a capital.
     /// From version 6 a count fact says what it counts.
+    /// From version 7 the writer is asked to cite a zero count at most once, and only to rule something out.
     /// </summary>
-    public const int ChatConsistencyReportFormatVersion = 6;
+    public const int ChatConsistencyReportFormatVersion = 7;
 
     /// <summary>The format version a document of <paramref name="scope"/> is written and rendered under now.</summary>
     public static int CurrentFormatVersion(BenchmarkReportScope scope) => scope switch
@@ -424,8 +434,45 @@ public static partial class BenchmarkReportPackRenderer
             NoSignificance(sb, ctx);
         }
 
+        NextSteps(sb, ctx);
         AboutBenchmark(sb, ctx);
     }
+
+    /// <summary>
+    /// An Executive Summary's What to look at next, written from its Root Cause Analysis digest (model-scope format version 25
+    /// and comparison format version 29); nothing for a summary without it.
+    /// </summary>
+    private static void NextSteps(StringBuilder sb, Context ctx)
+    {
+        if (!ctx.Writer.Sections.TryGetValue(BenchmarkReportSlots.NextSteps, out var text) || string.IsNullOrWhiteSpace(text)) return;
+
+        Heading(sb, "## " + BenchmarkReportSlots.NextStepsTitle);
+        OptionalSlot(sb, ctx, BenchmarkReportSlots.NextSteps);
+    }
+
+    /// <summary>
+    /// The Root Cause Analysis row of an Executive Summary's header: <c>Document 42, written first, from the same data</c>, or
+    /// <c>None: &lt;why&gt;</c>. Null for every other document, and for a summary stored before model-scope format version 25
+    /// or comparison format version 29, or without a recorded source.
+    /// </summary>
+    public static string? RootCauseSourceText(BenchmarkReportDocument document, BenchmarkReportFactSheet? sheet)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (document.Audience != BenchmarkReportAudience.ExecutiveSummary || sheet?.RootCauseDigest is not { } source) return null;
+        if (sheet.IsChatConsistency) return null;
+        int first = sheet.IsComparison ? RootCauseSourceComparisonFormatVersion : RootCauseSourceFormatVersion;
+        if (document.ReportFormatVersion < first) return null;
+
+        return source.DocumentId is long id
+            ? "Document " + Inv(id) + ", written first, from the same data"
+            : "None: " + (string.IsNullOrWhiteSpace(source.Note) ? BenchmarkRootCauseSources.NoMatchNote : source.Note.Trim());
+    }
+
+    /// <summary>The model-scope format version from which an Executive Summary records its Root Cause Analysis source.</summary>
+    private const int RootCauseSourceFormatVersion = 25;
+
+    /// <summary>The comparison format version from which an Executive Summary records its Root Cause Analysis source.</summary>
+    private const int RootCauseSourceComparisonFormatVersion = 29;
 
     // ---------------------------------------------------------------------------------------------
     // Shared sections
@@ -475,6 +522,10 @@ public static partial class BenchmarkReportPackRenderer
         {
             Line(sb, "- **Compared with:** " + PeersText(ctx));
             Line(sb, "- **" + Label("comparison.pricingBasis") + ":** " + PricingBasisText(sheet).Text);
+        }
+        if (RootCauseSourceText(ctx.Document, sheet) is string rootCause)
+        {
+            Line(sb, "- **Root Cause Analysis:** " + rootCause);
         }
         Line(sb);
     }

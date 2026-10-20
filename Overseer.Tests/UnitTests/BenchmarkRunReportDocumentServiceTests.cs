@@ -743,11 +743,12 @@ public class BenchmarkRunReportDocumentServiceTests
         Assert.Equal(BenchmarkRunReportDocumentService.CancelOutcome.Requested, h.Service.TryCancel(h.RunId));
         await job.WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
+        // The Root Cause Analysis is written first.
         var kept = Assert.Single(await h.DocumentsAsync());
-        Assert.Equal(BenchmarkReportAudience.ExecutiveSummary, kept.Audience);
+        Assert.Equal(BenchmarkReportAudience.RootCauseAnalysis, kept.Audience);
         var run = await h.RunAsync();
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Canceled, run.ReportDocumentsStatus);
-        Assert.Equal("Canceled while writing. The Executive Summary was written and is kept.", run.ReportDocumentsMessage);
+        Assert.Equal("Canceled while writing. The Root Cause Analysis was written and is kept.", run.ReportDocumentsMessage);
 
         var view = h.Service.TryGetJob(h.RunId)!;
         Assert.Equal("Finished", view.Phase);
@@ -806,7 +807,9 @@ public class BenchmarkRunReportDocumentServiceTests
         Assert.Null(queued.SlotAcquiredAtUtc);
         Assert.Null(queued.FinishedAtUtc);
         Assert.Null(queued.CancelRequestedAtUtc);
-        Assert.Equal(AllAudiences, queued.Audiences);
+        // A job in progress lists its documents in the write order: the Root Cause Analysis first.
+        Assert.Equal(BenchmarkReportSlots.WriteOrder, queued.Audiences);
+        Assert.Equal(BenchmarkReportSlots.WriteOrder, queued.Job.Documents.Select(d => d.Audience));
         Assert.Equal(h.WriterConfig.Id, queued.WriterConfigId);
         Assert.Equal("Claude Opus 5.5", queued.WriterDisplayName);
         Assert.Equal("Anthropic", queued.WriterProvider);
@@ -881,6 +884,31 @@ public class BenchmarkRunReportDocumentServiceTests
         // The persisted status and the documents remain.
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
         Assert.Equal(2, (await h.DocumentsAsync()).Count);
+    }
+
+    [Fact]
+    public async Task WriterReplies_ServeTheHeldJobsReplies_AndAreNotFoundWithoutOne_OrPastTheRetention()
+    {
+        await using var h = await Harness.CreateAsync();
+        Assert.Null(h.Service.TryGetHeldJob(h.RunId));
+        Assert.IsType<NotFoundResult>(await h.Controller().GetRunReportWriterReplies(h.RunId, Ct));
+
+        await h.Service.ScheduleIfDue(h.RunId);
+
+        Assert.NotNull(h.Service.TryGetHeldJob(h.RunId));
+        var content = Assert.IsType<ContentResult>(await h.Controller().GetRunReportWriterReplies(h.RunId, Ct));
+        Assert.Equal("text/markdown; charset=utf-8", content.ContentType);
+        Assert.StartsWith("# Writer replies: ", content.Content, StringComparison.Ordinal);
+        Assert.Contains(FakeWriter.ReplyOf(BenchmarkReportAudience.RootCauseAnalysis), content.Content, StringComparison.Ordinal);
+        Assert.Contains(FakeWriter.ReplyOf(BenchmarkReportAudience.ExecutiveSummary), content.Content, StringComparison.Ordinal);
+        Assert.IsType<NotFoundResult>(await h.Controller().GetRunReportWriterReplies(999999, Ct));
+
+        // A finished job is held for the retention, and no longer.
+        h.Clock.Advance(BenchmarkRunReportDocumentService.FinishedJobRetention - TimeSpan.FromMinutes(1));
+        Assert.IsType<ContentResult>(await h.Controller().GetRunReportWriterReplies(h.RunId, Ct));
+        h.Clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.Null(h.Service.TryGetHeldJob(h.RunId));
+        Assert.IsType<NotFoundResult>(await h.Controller().GetRunReportWriterReplies(h.RunId, Ct));
     }
 
     [Fact]
@@ -1027,7 +1055,8 @@ public class BenchmarkRunReportDocumentServiceTests
             foreach (var e in estimate.Estimates)
             {
                 var prompt = BenchmarkReportPackPrompt.Build(e.Audience, prep!.Sheet, prep.Content);
-                int chars = prompt.SystemPrompt.Length + prompt.UserMessage.Length;
+                int chars = prompt.SystemPrompt.Length + prompt.UserMessage.Length
+                    + (e.Audience == BenchmarkReportAudience.ExecutiveSummary ? BenchmarkReportPackPrompt.RootCauseDigestPromptChars(prep.Sheet) : 0);
                 Assert.Equal(chars, e.PromptChars);
                 Assert.Equal((chars + 3) / 4, e.EstimatedInputTokens);
             }
@@ -1184,7 +1213,7 @@ public class BenchmarkRunReportDocumentServiceTests
     /// <summary>
     /// Stores a fixture run-completion document for each audience on the job, except
     /// <see cref="FailAudience"/>, which it fails as a writer's reply that could not be parsed. Each
-    /// document records one call's usage. <see cref="Gate"/> holds the job before its first document;
+    /// document records one call's usage and its reply (<see cref="ReplyOf"/>). <see cref="Gate"/> holds the job before its first document;
     /// <see cref="BlockAfterFirst"/> holds it after the first document is stored until it is canceled.
     /// A cancellation settles the job as the real writer does.
     /// </summary>
@@ -1193,6 +1222,9 @@ public class BenchmarkRunReportDocumentServiceTests
         public const long InputTokensPerDocument = 100;
         public const long OutputTokensPerDocument = 20;
         public const decimal CostPerDocument = 0.01m;
+
+        /// <summary>The raw reply the fake records for a document's one call.</summary>
+        public static string ReplyOf(BenchmarkReportAudience audience) => "{\"headline\":\"The fake " + audience + " reply.\"}";
 
         private readonly DbContextOptions<ApplicationDbContext> _options;
         private int _calls;
@@ -1229,6 +1261,8 @@ public class BenchmarkRunReportDocumentServiceTests
                     Interlocked.Increment(ref _calls);
                     job.SetDocumentStatus(progress.Audience, BenchmarkReportPackDocumentStatus.Writing);
                     job.AddUsage(progress.Audience, InputTokensPerDocument, OutputTokensPerDocument, CostPerDocument);
+                    job.RecordCall(progress, new BenchmarkReportPackCallDto { Kind = BenchmarkReportPackCallKinds.Draft, StartedAtUtc = DateTime.UtcNow },
+                        reply: ReplyOf(progress.Audience));
                     if (progress.Audience == FailAudience)
                     {
                         job.SetDocumentStatus(progress.Audience, BenchmarkReportPackDocumentStatus.Failed, "The writer's reply could not be parsed.");

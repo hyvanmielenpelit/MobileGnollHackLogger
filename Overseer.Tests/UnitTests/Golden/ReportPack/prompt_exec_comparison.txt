@@ -15,7 +15,7 @@ SLOTS (the keys of "sections"; each one holds Markdown paragraphs and is require
 - whichModel: At most 150 words: which model to use for the best answers, for speed and for cost, each conditional on what the paired tests and the intervals establish. Where the order of the leading models is not established, say so and name what would decide between them. When the reference is the baseline model, say whether any model is established as better than it, and on which measure. End with one sentence naming a default choice for a typical Overseer player — who asks during play and waits for each answer — and the case in which another model is the better choice. Base it only on established results and the frontier facts; where nothing separates the models on any measure, say that the choice is open.
 - againstReference: At most 100 words, printed under the code-rendered table that sets every other model against the reference named under COMPARISON: what a player would notice using each model instead of the reference — answer quality, misleading answers, waiting and cost — each conditional on what the paired tests and the intervals establish. Cite the model.X.vsReference.* and model.X.profile.mayMisleadPer20 facts and the pair facts.
 - tradeOffs: At most 100 words: the trade-offs between intelligence, speed and cost, drawing on the frontier facts. Do not restate the table's figures one by one.
-- reliability: At most 80 words: how reliable this comparison is, in plain words: how far the graders agreed, whether the intervals overlap, what the paired tests established, and, when a grader shares a model's provider, that it may read that model more favorably. Do not call an interval narrow, wide, tight or broad.
+- reliability: At most 80 words: how reliable this comparison is, in plain words: how far the graders agreed, whether the intervals overlap, what the paired tests established, and, when a grader shares a model's provider, that it may read that model more favorably; where that model's model.X.panel.sameProviderDelta fact exists, cite it instead, since it states how that grader's reading differed from the other's. Do not call an interval narrow, wide, tight or broad.
 
 FIELDS AND LISTS:
 - headline: the comparison's result in one sentence, at most 35 words. Name only the models it ranks against each other; give the other leaders' figures in the sections.
@@ -29,7 +29,10 @@ NUMBERS AND NAMES:
 - Never write a model's letter on its own, as in Model H or Models H and I: in every slot and list, a model is named only through its {{model:X}} token. Only the "model" field of a "models" entry takes a bare letter.
 - Any other {{...}} token is an error.
 - Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as "1st". Number words such as "three" or "twice" are allowed for a plain count, but prefer a fact token for any figure.
+- Write no number of twenty or more in words, such as a score of ninety-five or seventy percent: cite the figure's token instead of writing it in words.
+- Never put a number word before 'of' and a token that prints a bare total, as in 'seven of the' and that token: cite a count token that reads 'N of M' instead, or leave the total out.
 - A count token, whose value reads 'N of M …', is a noun phrase. Never put it after 'no' or make it the object of 'made'.
+- A count whose value is zero, such as '0 of 8 answers', is cited at most once, and only to rule something out; never present it as a finding, a strength or a weakness. The Key figures already print every count.
 - A fact whose value is a whole sentence — every notable.N.summary, and any value that begins with a capital letter and ends with a full stop — is written as a sentence of its own, at most once, never inside parentheses, and never continued after its full stop.
 - A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took one and a half times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.
 - A count token already says what it counts, as in 'N of M answers without a tool call': write it as a noun phrase and never repeat its words beside it, before or after, and never move them into an opening phrase before the model, such as 'On tool calls,'.
@@ -228,6 +231,10 @@ model.A.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes 
 model.A.profile.outputDefects = 0 of 6 answers with output defects
 model.A.profile.sharedMisses = 1 of 6 questions missed by this model and at least half the others
 model.A.profile.toolLimitHits = 0 of 6 answers that hit the tool limit
+model.A.profile.top.accuracy = 0 of 6 answers at level 6 on accuracy
+model.A.profile.top.completeness = 0 of 6 answers at level 6 on completeness
+model.A.profile.top.conciseness = 0 of 6 answers at level 6 on conciseness
+model.A.profile.top.readability = 0 of 6 answers at level 6 on readability
 model.A.profile.truncated = 0 of 6 answers that were truncated
 model.A.quality.index = 85 / 100
 model.A.quality.interval = 82–88
@@ -328,6 +335,10 @@ model.B.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes 
 model.B.profile.outputDefects = 0 of 6 answers with output defects
 model.B.profile.sharedMisses = 0 of 6 questions missed by this model and at least half the others
 model.B.profile.toolLimitHits = 0 of 6 answers that hit the tool limit
+model.B.profile.top.accuracy = 0 of 6 answers at level 6 on accuracy
+model.B.profile.top.completeness = 0 of 6 answers at level 6 on completeness
+model.B.profile.top.conciseness = 0 of 6 answers at level 6 on conciseness
+model.B.profile.top.readability = 0 of 6 answers at level 6 on readability
 model.B.profile.truncated = 0 of 6 answers that were truncated
 model.B.quality.index = 80 / 100
 model.B.quality.interval = 77–83
@@ -432,6 +443,10 @@ model.C.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes 
 model.C.profile.outputDefects = 0 of 6 answers with output defects
 model.C.profile.sharedMisses = 1 of 6 questions missed by this model and at least half the others
 model.C.profile.toolLimitHits = 0 of 6 answers that hit the tool limit
+model.C.profile.top.accuracy = 0 of 6 answers at level 6 on accuracy
+model.C.profile.top.completeness = 0 of 6 answers at level 6 on completeness
+model.C.profile.top.conciseness = 0 of 6 answers at level 6 on conciseness
+model.C.profile.top.readability = 0 of 6 answers at level 6 on readability
 model.C.profile.truncated = 0 of 6 answers that were truncated
 model.C.quality.index = 70 / 100
 model.C.quality.interval = 66–74
@@ -536,6 +551,10 @@ model.D.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes 
 model.D.profile.outputDefects = 0 of 6 answers with output defects
 model.D.profile.sharedMisses = 1 of 6 questions missed by this model and at least half the others
 model.D.profile.toolLimitHits = 0 of 6 answers that hit the tool limit
+model.D.profile.top.accuracy = 0 of 6 answers at level 6 on accuracy
+model.D.profile.top.completeness = 0 of 6 answers at level 6 on completeness
+model.D.profile.top.conciseness = 0 of 6 answers at level 6 on conciseness
+model.D.profile.top.readability = 0 of 6 answers at level 6 on readability
 model.D.profile.truncated = 0 of 6 answers that were truncated
 model.D.quality.index = 70 / 100
 model.D.quality.interval = 64–76
@@ -640,6 +659,10 @@ model.E.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes 
 model.E.profile.outputDefects = 0 of 6 answers with output defects
 model.E.profile.sharedMisses = 1 of 6 questions missed by this model and at least half the others
 model.E.profile.toolLimitHits = 0 of 6 answers that hit the tool limit
+model.E.profile.top.accuracy = 0 of 6 answers at level 6 on accuracy
+model.E.profile.top.completeness = 0 of 6 answers at level 6 on completeness
+model.E.profile.top.conciseness = 0 of 6 answers at level 6 on conciseness
+model.E.profile.top.readability = 0 of 6 answers at level 6 on readability
 model.E.profile.truncated = 0 of 6 answers that were truncated
 model.E.quality.index = 55 / 100
 model.E.quality.interval = 50–60

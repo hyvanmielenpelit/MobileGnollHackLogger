@@ -184,6 +184,10 @@ If a tool result ends with `... (truncated: batch output budget reached)`, is re
 - This is a rule about **accuracy, not verbosity**. Do not narrate batching mechanics
   and do not add a summary of your tool usage — the Response Style section still governs
   response length.
+- A C helper or macro named for a kind of thing — `is_quest_artifact` is an example — may
+  test only the current hero's role, race or alignment rather than every object of that kind.
+  Before saying which objects, roles or monsters it covers, read its definition with
+  `get_function_definition` or `search_definitions`.
 
 ## Spoiler-Free Mode
 - When spoiler-free mode is active, explaining HOW mechanics work is always safe.

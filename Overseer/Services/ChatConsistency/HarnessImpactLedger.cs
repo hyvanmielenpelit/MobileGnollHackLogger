@@ -314,6 +314,8 @@ public static class HarnessImpactLedger
                 "Source-location grading rule names files and paths; claim verifier retries a provider error once; 'inverts' counts as a stated defect and a charge."),
             new("56", PA,
                 "Provider attempt ledger and failure attribution; answers ended by our time budget, governor or network are Failed, which the synthesis lists as excluded like ProviderError and which never carry text to grade."),
+            new("57", CI,
+                "Wiki title equality ignores one leading 'The' in wiki_view, item_lookup and monster_lookup; _policy.md asks for a role-relative helper's definition."),
         };
 
         return table.OrderBy(e => e.Number).ToList();

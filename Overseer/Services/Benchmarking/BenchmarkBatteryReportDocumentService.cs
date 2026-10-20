@@ -46,7 +46,10 @@ public sealed class BenchmarkBatteryReportDocumentService
     /// <summary>How long <see cref="SettleAfterDeleteAsync"/> waits for a canceled job to stop before deleting.</summary>
     public static readonly TimeSpan DeleteWaitTimeout = TimeSpan.FromSeconds(30);
 
-    /// <summary>The battery-completion documents of every battery run, in the order they are written.</summary>
+    /// <summary>
+    /// The battery-completion documents of every battery run, in display order. A job writes them, and its view lists them,
+    /// in <see cref="BenchmarkReportSlots.WriteOrder"/>.
+    /// </summary>
     public static IReadOnlyList<BenchmarkReportAudience> Audiences => BenchmarkRunReportDocumentService.Audiences;
 
     private enum JobPhase { Queued, Preparing, Writing, Finished }
@@ -182,7 +185,7 @@ public sealed class BenchmarkBatteryReportDocumentService
 
     /// <summary>
     /// Starts a job with the writer already recorded on the battery run, for the requested audiences
-    /// the battery run is missing, in <see cref="Audiences"/> order; null or empty requests every
+    /// the battery run is missing, in <see cref="BenchmarkReportSlots.WriteOrder"/>; null or empty requests every
     /// missing one. A writer of the candidate's provider needs <paramref name="sameProviderAcknowledged"/>,
     /// or the job settles the battery run as Failed with the warning. The documents of
     /// <paramref name="replaceDocumentIds"/> (see <see cref="BenchmarkRunReportDocumentService.ReplaceableAudiencesAsync"/>)
@@ -245,6 +248,19 @@ public sealed class BenchmarkBatteryReportDocumentService
     public BenchmarkRunReportJobDto? TryGetJob(long batteryRunId) => TryGetJob(batteryRunId, UtcNow);
 
     /// <summary>
+    /// The battery run's held job itself, for its writer replies: the current one, or the last one finished within
+    /// <see cref="BenchmarkRunReportDocumentService.FinishedJobRetention"/>; null when this process holds none for it.
+    /// </summary>
+    public BenchmarkReportPackJob? TryGetHeldJob(long batteryRunId)
+    {
+        lock (_lock)
+        {
+            Prune(UtcNow);
+            return _jobs.TryGetValue(batteryRunId, out var state) ? state.Job : null;
+        }
+    }
+
+    /// <summary>
     /// The battery run's current or last job, with the battery run id in
     /// <see cref="BenchmarkRunReportJobDto.RunId"/>, or null when this process knows none, or its
     /// finished job is older than <see cref="BenchmarkRunReportDocumentService.FinishedJobRetention"/>.
@@ -304,7 +320,7 @@ public sealed class BenchmarkBatteryReportDocumentService
         RunId = batteryRunId,
         Phase = nameof(JobPhase.Queued),
         QueuedAtUtc = claim.ClaimedAtUtc,
-        Audiences = claim.Audiences.ToList(),
+        Audiences = BenchmarkReportSlots.InWriteOrder(claim.Audiences),
         WriterConfigId = 0,
         WriterDisplayName = string.Empty,
         WriterProvider = string.Empty,
@@ -607,10 +623,10 @@ public sealed class BenchmarkBatteryReportDocumentService
         }
 
         var missing = await MissingAudiencesAsync(db, batteryRunId, CancellationToken.None);
-        var toWrite = Audiences
+        // The job writes, and its view lists, the documents in the write order: the Root Cause Analysis first.
+        var toWrite = BenchmarkReportSlots.InWriteOrder(Audiences
             .Where(a => missing.Contains(a) || replaceable.Contains(a))
-            .Where(a => audiences == null || audiences.Count == 0 || audiences.Contains(a))
-            .ToList();
+            .Where(a => audiences == null || audiences.Count == 0 || audiences.Contains(a)));
         if (toWrite.Count == 0)
         {
             await SetStatusAsync(batteryRunId,

@@ -85,6 +85,8 @@ using Overseer.Services.Benchmarking.RootCause;
 //   panel.meanAbsDelta, panel.icc, panel.disagreements, panel.memberAAlone, panel.memberBAlone
 //   panel.referenceReaderIndex, panel.referenceReaderOffset   the reference reader's index and signed offset from the panel
 //   panel.judgeDependentPairs                           peers, by letter, whose order against the subject depends on the member
+//   panel.sameProviderDelta                             only with exactly one member of the subject's provider: that member's
+//                                                       index minus the other's, in words
 //
 // Style
 //   style.responseStyleConflict                         BenchmarkChatTransfer.HasResponseStyleConflict over the pooled answers,
@@ -231,6 +233,18 @@ public static class BenchmarkReportFacts
     /// <summary>Why <c>tools.zeroKnowledgeBaseAnswers</c> is unavailable when no question is a knowledge-base topic.</summary>
     public const string NoKnowledgeBaseTopicReason =
         "No question of this suite is a knowledge-base topic; the prompt routes game mechanics past the knowledge base.";
+
+    /// <summary>The prefix of a question's own facts: <c>question.Q7.memberA</c>.</summary>
+    public const string QuestionFactPrefix = "question.";
+
+    /// <summary>The suffix of a question's score under panel member A alone.</summary>
+    public const string MemberAScoreSuffix = ".memberA";
+
+    /// <summary>The suffix of a question's score under panel member B alone.</summary>
+    public const string MemberBScoreSuffix = ".memberB";
+
+    /// <summary>The suffix of a dimension's top-level count, the Executive Summary's copy of <c>profile.top.&lt;d&gt;</c>.</summary>
+    public const string TopLevelSuffix = ".topLevel";
 
     public const string PanelMemberARole = "Panel member A";
     public const string PanelMemberBRole = "Panel member B";
@@ -409,6 +423,7 @@ public static class BenchmarkReportFacts
         AddAvailabilityFacts(facts, input.Availability);
 
         sheet.Questions = BuildQuestions(slots, subjectStats, peers.Select(p => p.Stats).ToList());
+        AddMemberScoreFacts(facts, slots, subjectStats);
         sheet.PairedDifferences = AddPairedDifferences(
             facts, sheet.Questions, peers, PairedSeed(comparison.Entries.Select(e => e.Key)));
 
@@ -1262,6 +1277,7 @@ public static class BenchmarkReportFacts
             AddMean(facts, "panel.memberBAlone", memberAlone.Select(m => (double?)m.MemberB).ToList(),
                 v => BenchmarkReportFormat.Whole(v) + " / 100");
             AddReferenceReaderFacts(facts, subjectRuns);
+            AddSameProviderDelta(facts, subject.Provider, subjectRuns, memberAlone);
         }
 
         var diagnostics = comparison.PanelDiagnostics;
@@ -1294,6 +1310,42 @@ public static class BenchmarkReportFacts
             _ => "with Models " + BenchmarkReportFormat.LetterList(partners)
         };
         facts.Add("panel.judgeDependentPairs", partners.Count, display);
+    }
+
+    /// <summary>
+    /// <c>panel.sameProviderDelta</c>, where exactly one panel member shares the subject's provider in every run and the
+    /// other in none: that member's own index minus the other member's, the mean over the runs with both, as
+    /// <see cref="SameProviderDeltaDisplay"/> words it. No fact otherwise.
+    /// </summary>
+    internal static void AddSameProviderDelta(
+        FactList facts, string? subjectProvider, IReadOnlyList<BenchmarkRun> subjectRuns, IReadOnlyList<(int? MemberA, int? MemberB)> memberAlone)
+    {
+        if (subjectRuns.Count == 0) return;
+        bool aSame = subjectRuns.All(r => SameProvider(r.AssessorModelSnapshot?.Provider, subjectProvider));
+        bool bSame = subjectRuns.All(r => SameProvider(r.CoAssessorModelSnapshot?.Provider, subjectProvider));
+        bool aOther = subjectRuns.All(r => !SameProvider(r.AssessorModelSnapshot?.Provider, subjectProvider));
+        bool bOther = subjectRuns.All(r => !SameProvider(r.CoAssessorModelSnapshot?.Provider, subjectProvider));
+        if (!(aSame && bOther) && !(bSame && aOther)) return;
+
+        var both = memberAlone.Where(m => m.MemberA.HasValue && m.MemberB.HasValue).ToList();
+        if (both.Count == 0) return;
+
+        double a = both.Average(m => (double)m.MemberA!.Value);
+        double b = both.Average(m => (double)m.MemberB!.Value);
+        double delta = aSame ? a - b : b - a;
+        facts.Add("panel.sameProviderDelta", delta, SameProviderDeltaDisplay(aSame ? "A" : "B", aSame ? "B" : "A", delta));
+    }
+
+    /// <summary>
+    /// <c>member B, from the model's own provider, scored it 2 points below member A</c>: the same-provider member, the
+    /// difference in whole points with its direction, and the other member; within a point when it rounds to none.
+    /// </summary>
+    internal static string SameProviderDeltaDisplay(string sameMember, string otherMember, double delta)
+    {
+        string size = BenchmarkReportFormat.Whole(Math.Abs(delta));
+        string head = "member " + sameMember + ", from the model's own provider, scored it ";
+        if (size == "0") return head + "within a point of member " + otherMember;
+        return head + size + (size == "1" ? " point " : " points ") + (delta < 0 ? "below" : "above") + " member " + otherMember;
     }
 
     /// <summary>
@@ -1651,6 +1703,32 @@ public static class BenchmarkReportFacts
     // ---------------------------------------------------------------------------------------------
     // Questions, rows, entries, graders
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>The key of a question's score under one panel member: <c>question.Q7.memberA</c>.</summary>
+    public static string MemberScoreKey(int number, bool memberA)
+        => QuestionFactPrefix + "Q" + Inv(number) + (memberA ? MemberAScoreSuffix : MemberBScoreSuffix);
+
+    /// <summary>
+    /// In a panel entry, each question's quality under panel member A alone and under panel member B alone
+    /// (<see cref="MemberScoreKey"/>), the mean over the runs whose both members scored its answer, printed as a whole number
+    /// out of a hundred; a question no run's both members scored has none. A single-assessor entry adds nothing.
+    /// </summary>
+    internal static void AddMemberScoreFacts(FactList facts, IReadOnlyList<BenchmarkReportQuestionSlot> slots, EntryStats subject)
+    {
+        if (!subject.Panel) return;
+
+        var graded = BenchmarkRunFinalizer.PanelGradedAnswers(subject.All);
+        foreach (var slot in slots)
+        {
+            var answers = graded.Where(a => string.Equals(ItemKeyOf(a), slot.ItemKey, StringComparison.Ordinal)).ToList();
+            if (answers.Count == 0) continue;
+
+            double memberA = answers.Average(a => (double)a.QualityScore!.Value);
+            double memberB = answers.Average(a => (double)a.CoAssessmentQualityScore!.Value);
+            facts.Add(MemberScoreKey(slot.Number, memberA: true), memberA, BenchmarkReportFormat.Whole(memberA) + " / 100");
+            facts.Add(MemberScoreKey(slot.Number, memberA: false), memberB, BenchmarkReportFormat.Whole(memberB) + " / 100");
+        }
+    }
 
     private static List<BenchmarkReportQuestion> BuildQuestions(
         IReadOnlyList<BenchmarkReportQuestionSlot> slots, EntryStats subject, IReadOnlyList<EntryStats> peers)

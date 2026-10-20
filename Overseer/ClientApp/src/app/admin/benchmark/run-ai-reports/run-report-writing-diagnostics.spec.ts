@@ -1,8 +1,11 @@
 import {
   BenchmarkReportAudience,
+  BenchmarkReportPackCallDto,
+  BenchmarkReportPackValidationIssueDto,
   BenchmarkRunReportDocumentsStatus,
   BenchmarkRunReportJobDto
 } from '../../../services/admin-benchmark.service';
+import { documentStatusQuestion, explainDocumentStatus, explanationLines } from '../report-pack/report-validation-explanation';
 import {
   ClientPollState,
   NOT_RECORDED,
@@ -129,6 +132,14 @@ const EXPECTED_FULL = [
   'Thinking level: high',
   'Config id: 7',
   '',
+  '== Versions ==',
+  'Writer output limit: not recorded',
+  'Report format version: not recorded',
+  'Engine version: not recorded',
+  'PDF layout version: not recorded',
+  'Word layout version: not recorded',
+  'Writer prompt SHA-256: not recorded',
+  '',
   '== Timing ==',
   'Queued: 2026-09-29 12:00:00 UTC',
   'Slot acquired: 2026-09-29 12:00:12 UTC',
@@ -146,6 +157,7 @@ const EXPECTED_FULL = [
   '== Documents ==',
   'Document 1: Executive Summary',
   '  Status: Completed',
+  '  First draft clean: not checked',
   '  Started: 2026-09-29 12:00:15 UTC',
   '  Completed: 2026-09-29 12:01:00 UTC',
   '  Duration: 45 s',
@@ -157,6 +169,7 @@ const EXPECTED_FULL = [
   '  Error: not recorded',
   'Document 2: Root Cause Analysis',
   '  Status: CompletedWithWarnings',
+  '  First draft clean: not checked',
   '  Started: 2026-09-29 12:01:00 UTC',
   '  Completed: 2026-09-29 12:03:17 UTC',
   '  Duration: 2 min 17 s',
@@ -166,6 +179,9 @@ const EXPECTED_FULL = [
   '  Cost: $0.30',
   '  Document id: 18',
   '  Error: Repaired a missing section.',
+  '',
+  `== ${documentStatusQuestion('document 2 (Root Cause Analysis)', 'CompletedWithWarnings')} ==`,
+  ...explanationLines(explainDocumentStatus(fullView().job.documents[1], 'job'), ''),
   '',
   '== Totals ==',
   'Model calls: 3',
@@ -280,6 +296,88 @@ describe('buildRunReportWritingDiagnostics', () => {
     const text = buildRunReportWritingDiagnostics(null, run, CLIENT, NOW);
     expect(text).toContain('Status: Failed\nMessage: The writer refused.\n');
     expect(text).toContain('Source: the stored run (no job known to this server process)');
+  });
+
+  it('carries the Report Pack diagnostics\' sections: versions, preparation, calls, word counts, validation, failed replies, why', () => {
+    const issue = (rule: number, location: string, extra: Partial<BenchmarkReportPackValidationIssueDto> = {}): BenchmarkReportPackValidationIssueDto => ({
+      rule, location, locationLabel: location, message: `Rule ${rule} message.`, dropped: false, ...extra
+    });
+    const call = (kind: string, replyChars: number | null): BenchmarkReportPackCallDto => ({
+      kind, startedAtUtc: '2026-09-29T12:01:00Z', durationMs: 32000, inputTokens: 12000, cachedInputTokens: 1000,
+      outputTokens: 30000, reasoningTokens: 900, costUsd: 0.2, finishReason: 'stop', requestMessages: 2,
+      requestCharacters: 40000, replyChars
+    });
+    const view = fullView();
+    Object.assign(view.job, {
+      writerMaxOutputTokens: 32000, reportFormatVersion: 25, engineVersion: 9, pdfLayoutVersion: 4, wordLayoutVersion: 3,
+      writerPromptSha256: 'abc123',
+      preparationNotes: [issue(40, 'Fact sheet', { severity: 'warning', ruleName: 'Few controls' })]
+    });
+    Object.assign(view.job.documents[0], {
+      status: 'Failed', errorMessage: 'The writer gave up.', failedReply: 'first line\nsecond line'
+    });
+    Object.assign(view.job.documents[1], {
+      phase: 'Done',
+      phaseDetail: 'Stored with warnings.',
+      firstDraftClean: false,
+      calls: [call('Draft', 22113), call('Revision', null)],
+      firstTurnIssues: [
+        issue(3, 'Conclusions, paragraph 1', { dropped: true, text: 'The model scored 72.', ruleName: 'Digit in prose', severity: 'removesItem' }),
+        issue(16, 'Key finding')
+      ],
+      revisionIssues: [issue(16, 'Key finding'), issue(7, 'Hypotheses: cost')],
+      finalIssues: [issue(7, 'Hypotheses: cost'), issue(31, 'Summary', { addedByOverseer: true, text: 'Overseer wrote this.' })],
+      wordCounts: [{ location: 'sections.abstract', locationLabel: 'Abstract', cap: 120, draft: 140, revision: 118, shortened: null, final: 118, finalParagraphs: [60, 58] }]
+    });
+
+    const text = buildRunReportWritingDiagnostics(view, RUN, CLIENT, NOW, 0.5);
+    const lines = text.split('\n');
+    const headers = [
+      '== Run ==', '== Report status ==', '== Job ==', '== Writer ==', '== Versions ==', '== Timing ==', '== Queue ==',
+      '== Preparation notes ==', '== Documents ==', '== Word counts ==', '== Validation ==', '== Failed writer replies ==',
+      `== ${documentStatusQuestion('document 1 (Executive Summary)', 'Failed')} ==`,
+      `== ${documentStatusQuestion('document 2 (Root Cause Analysis)', 'CompletedWithWarnings')} ==`,
+      '== Totals ==', '== Client polling ==', '== Job log =='
+    ];
+    const positions = headers.map(header => lines.indexOf(header));
+    expect(positions.every(position => position >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    expect(text).not.toContain('== Charts ==');
+
+    expect(lines).toContain('Writer output limit: 32,000 tokens (reasoning included)');
+    expect(lines).toContain('Report format version: 25');
+    expect(lines).toContain('Engine version: 9');
+    expect(lines).toContain('PDF layout version: 4');
+    expect(lines).toContain('Word layout version: 3');
+    expect(lines).toContain('Writer prompt SHA-256: abc123');
+    expect(text).toMatch(/^rule 40 \(Few controls, .+\) at Fact sheet: Rule 40 message\.$/m);
+
+    expect(text).toMatch(/^ {2}Phase: .+ \(Done\)$/m);
+    expect(lines).toContain('  Phase detail: Stored with warnings.');
+    expect(lines).toContain('  First draft clean: no');
+    const calls = lines.filter(line => line.startsWith('    Call '));
+    expect(calls.length).toBe(2);
+    expect(calls[0]).toContain('12,000 in / 1,000 cached / 30,000 out tokens (900 reasoning), output 94% of the limit (near the limit)');
+    expect(calls[0]).toContain('finish stop, 2 messages, 40,000 characters, reply 22,113 characters');
+    expect(calls[1]).toContain(', no reply');
+    expect(lines).toContain('  Writer replies: 1 (22,113 characters), downloadable separately as Markdown '
+      + '(Log and diagnostics → Download the writer\'s replies) while Overseer still holds this job.');
+
+    expect(lines).toContain('  Abstract — cap 120 — draft 140, revision 118, final 118 (raw words; a token counts as one) — paragraphs 60, 58');
+
+    expect(lines).toContain('  First turn: 2 issues (rule 3: 1, rule 16: 1)');
+    expect(text).toMatch(/^ {4}rule 3 \(Digit in prose, .+\) at Conclusions, paragraph 1: Rule 3 message\. \(dropped\)$/m);
+    expect(lines).toContain('      Removed text: The model scored 72.');
+    expect(lines).toContain('  Revision: 2 issues (rule 7: 1, rule 16: 1)');
+    expect(lines).toContain('  Fixed by the revision: 1 (rule 3: 1)');
+    expect(lines).toContain('  Still there: 1 (rule 16 at Key finding)');
+    expect(lines).toContain('  New in the revision: 1 (rule 7 at Hypotheses: cost)');
+    expect(lines).toContain('  Final: 2 issues (rule 7: 1, rule 31: 1)');
+    expect(lines).toContain('  Added by Overseer: Summary — Overseer wrote this.');
+
+    const reply = lines.indexOf('--- reply ---');
+    expect(lines.slice(reply - 1, reply + 4)).toEqual(['Document 1: Executive Summary', '--- reply ---', 'first line', 'second line', '--- end of reply ---']);
+    expect(text).not.toContain('\r');
   });
 
   it('describes a network failure without an HTTP status', () => {

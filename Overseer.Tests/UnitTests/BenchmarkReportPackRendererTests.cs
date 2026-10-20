@@ -1531,12 +1531,12 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion28()
+    public void AComparisonDocument_IsCurrentAtFormatVersion29()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(28, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 28 · ", text);
+        Assert.Equal(29, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 29 · ", text);
         Assert.Contains(" · models named*", text);
     }
 
@@ -3283,7 +3283,7 @@ public class BenchmarkReportPackRendererTests
 
         string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
 
-        Assert.Contains(" · generated under format version 19 · rendered with format version 28 · ", text);
+        Assert.Contains(" · generated under format version 19 · rendered with format version 29 · ", text);
         Assert.DoesNotContain("Grader family:", text);
         foreach (string resolution in new[] { "agreed by both members", "upheld by the claim verifier", "overturned by the claim verifier", "unresolved (averaged)", "single assessor" })
         {
@@ -3491,22 +3491,22 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AChatConsistencyDocument_IsCurrentAtFormatVersion6_AndTheOtherScopesKeepTheirs()
+    public void AChatConsistencyDocument_IsCurrentAtFormatVersion7_AndTheOtherScopesKeepTheirs()
     {
-        Assert.Equal(6, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
-        Assert.Equal(6, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
-        Assert.Equal(24, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(28, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
-        Assert.Equal(24, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(28, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(7, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
+        Assert.Equal(7, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
+        Assert.Equal(25, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
+        Assert.Equal(29, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(25, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(29, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-        Assert.Contains(" · format version 6 · ", text);
+        Assert.Contains(" · format version 7 · ", text);
         Assert.Contains(" · controls named*", text);
 
         string provider = RenderChatConsistency(BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized);
-        Assert.Contains(" · format version 6 · ", provider);
-        Assert.Contains("- **Report format version:** 6\n", provider);
+        Assert.Contains(" · format version 7 · ", provider);
+        Assert.Contains("- **Report format version:** 7\n", provider);
     }
 
     [Theory]

@@ -635,7 +635,9 @@ normalizes the request first — trims it, converts `\` to `/`, and strips one t
    collects those whose `title` equals the normalized request case-insensitively. **Two or more**
    such hits return a disambiguation payload (the miss-payload table below) naming the candidate
    paths — `Success = true`, an ordinary result carrying a next action, not a miss. **Exactly one**
-   returns that article.
+   returns that article. **From harness 57** the comparison (`WikiService.TitleEquals`) ignores one
+   leading `"The "` on either side when more follows it, so `Holy Grail` resolves to *The Holy
+   Grail* here instead of reaching branch 3; *The X* and *X* both existing is a disambiguation.
 3. **None** falls through to the old behaviour, unchanged: the top-scoring Lucene hit,
    unconditionally, with **no relevance floor**. This last branch, and only this branch, is where a
    garbled or invented `article` string still silently returns the best-scoring article rather than
@@ -901,6 +903,17 @@ was `GetRelevantContext` itself and an exact hit came back with its neighbours: 
 *Master lich* (4,001). In a run stamped **27 or later**, an exact-title request whose result carries a
 second `--- <file> ---` header is a regression of this contract; in one stamped 26 it is the
 case-sensitive category filter above, which is what run 42 found.
+
+**The exact-title comparison ignores a leading "The", from harness 57 (the run-123 round,
+2026-10-20).** `WikiService.TitleEquals`, which both `GetArticle` branch 2 and this contract use,
+removes one leading `"The "` (any case, only when more follows) from the title and from the request
+before comparing, so `item_lookup {"name":"Orb of Fate"}` returns *The Orb of Fate* alone. `"The"`
+alone and `"Theater"` are never stripped, and *The X* beside *X* returns the disambiguation. In a run
+stamped **56 or earlier**, a request that omitted a title's leading "The" fell through to the top-5
+join: run 123 Q3's `Orb of Fate` lookup joined 63,220 characters and was cut at 10,000 with a
+`[Truncated:` suffix — that shape is this gap, not a regression, before 57; from 57 it is one.
+41 indexed titles start with "The " (32 artifacts, 9 novels) at wiki `e82a48c1`, none colliding with
+its stripped form.
 
 **The lookup result header names the repository path, from the runs 66 and 67 round (harness 39).**
 Every `--- … ---` header `monster_lookup` and `item_lookup` print — the exact-title article and each

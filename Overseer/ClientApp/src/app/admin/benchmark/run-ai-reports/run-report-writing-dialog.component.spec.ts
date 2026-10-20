@@ -6,6 +6,7 @@ import { of, throwError } from 'rxjs';
 import {
   AdminBenchmarkService,
   BenchmarkReportAudience,
+  BenchmarkReportPackCallDto,
   BenchmarkReportPackDocumentProgressDto,
   BenchmarkReportPackJobDto,
   BenchmarkRunDetailDto,
@@ -16,6 +17,7 @@ import { BenchmarkPollTickerHandle, BenchmarkPollTickerService } from '../../../
 import {
   RUN_REPORT_JOB_START_GRACE_MS,
   RUN_REPORT_JOB_UNKNOWN_NOTE,
+  RUN_REPORT_REPLIES_GONE_TEXT,
   ReportJobSource,
   RunReportWritingContext,
   RunReportWritingDialogComponent,
@@ -133,6 +135,35 @@ function finishedView(status = BenchmarkRunReportDocumentsStatus.Completed, mess
     });
 }
 
+function call(replyChars: number | null): BenchmarkReportPackCallDto {
+  return {
+    kind: 'Draft', startedAtUtc: '2026-09-29T12:00:06Z', durationMs: 30000, inputTokens: 9000, cachedInputTokens: 0,
+    outputTokens: 1500, costUsd: 0.12, finishReason: 'stop', requestMessages: 2, requestCharacters: 40000, replyChars
+  };
+}
+
+/** A finished job of both documents in write order, the Root Cause Analysis first; `replyChars` on each call. */
+function finishedWithCalls(replyChars: number | null): BenchmarkRunReportJobDto {
+  return jobView(
+    {
+      phase: 'Finished', status: BenchmarkRunReportDocumentsStatus.Completed, audiences: [RootCauseAnalysis, ExecutiveSummary],
+      finishedAtUtc: '2026-09-29T12:03:05Z', serverTimeUtc: '2026-09-29T12:03:06Z'
+    },
+    {
+      status: 'Completed',
+      completedAtUtc: '2026-09-29T12:03:05Z',
+      reportFormatVersion: 25,
+      engineVersion: 9,
+      writerMaxOutputTokens: 32000,
+      documents: [
+        doc(RootCauseAnalysis, 'Completed', { documentId: 18, modelCalls: 1, calls: [call(replyChars)] }),
+        doc(ExecutiveSummary, 'Completed', {
+          documentId: 17, modelCalls: 1, calls: [call(replyChars)], rootCauseSource: 'thisJob', rootCauseSourceDocumentId: 18
+        })
+      ]
+    });
+}
+
 const CONTEXT: RunReportWritingContext = {
   runId: 42,
   runLabel: 'Core Mechanics · GPT-6 Sol',
@@ -151,6 +182,7 @@ describe('RunReportWritingDialogComponent', () => {
     service = {
       getRunReportJob: vi.fn().mockName("AdminBenchmarkService.getRunReportJob"),
       cancelRunReportJob: vi.fn().mockName("AdminBenchmarkService.cancelRunReportJob"),
+      getRunReportWriterReplies: vi.fn().mockName("AdminBenchmarkService.getRunReportWriterReplies"),
       getRun: vi.fn().mockName("AdminBenchmarkService.getRun")
     } as unknown as MockedObject<AdminBenchmarkService>;
     ticker = new FakePollTicker();
@@ -767,6 +799,126 @@ describe('RunReportWritingDialogComponent', () => {
     stop();
   }));
 
+  it('shows the writer\'s badges in the documented order: thinking level, then provider', fakeAsync(() => {
+    service.getRunReportJob.mockReturnValue(of(jobView()));
+    open();
+    const badges = Array.from(host.querySelectorAll('.rw-stat-writer dd .thinking-badge, .rw-stat-writer dd app-provider-badge'))
+      .map(badge => badge.tagName.toLowerCase() === 'app-provider-badge' ? 'provider' : 'thinking');
+    expect(badges).toEqual(['thinking', 'provider']);
+    expect(text('.rw-stat-writer .thinking-badge')).toContain('High');
+    stop();
+  }));
+
+  it('rails, cards and words the write order: the Root Cause Analysis first, the Executive Summary from it', fakeAsync(() => {
+    service.getRunReportJob.mockReturnValue(of(jobView(
+      { audiences: [RootCauseAnalysis, ExecutiveSummary] },
+      { documents: [doc(RootCauseAnalysis, 'Writing'), doc(ExecutiveSummary, 'Pending')] })));
+    open();
+
+    expect(Array.from(host.querySelectorAll('.run-stage-name')).map(n => n.textContent?.trim()))
+      .toEqual(['Queued', 'Preparing', 'Root Cause Analysis', 'Executive Summary', 'Done']);
+    expect(el('.run-stage.is-current')?.getAttribute('data-stage')).toBe(`doc-${RootCauseAnalysis}`);
+    expect(text('.rw-status'))
+      .toBe('Writing the draft of the Root Cause Analysis — the Executive Summary follows, written from it');
+
+    const note = el('.rw-order-note')!;
+    expect(note.textContent?.trim()).toBe('The Root Cause Analysis is written first; the Executive Summary is then written from it.');
+    expect(note.closest('[role="status"], [aria-live]')).toBeNull();
+
+    const cards = Array.from(host.querySelectorAll('.rjd-card')).map(card => card.getAttribute('data-audience'));
+    expect(cards).toEqual([String(RootCauseAnalysis), String(ExecutiveSummary)]);
+    expect(text(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-source`)).toBe('Waits for the Root Cause Analysis');
+    expect(el(`.rjd-card[data-audience="${RootCauseAnalysis}"] .rjd-source`)).toBeNull();
+    stop();
+  }));
+
+  it('drops the order note and the status suffix for one document, and the note once the job is finished', fakeAsync(() => {
+    service.getRunReportJob.mockReturnValue(of(jobView(
+      { audiences: [RootCauseAnalysis] }, { documents: [doc(RootCauseAnalysis, 'Writing')] })));
+    open();
+    expect(el('.rw-order-note')).toBeNull();
+    expect(text('.rw-status')).toBe('Writing the draft of the Root Cause Analysis');
+    stop();
+
+    service.getRunReportJob.mockReturnValue(of(finishedWithCalls(null)));
+    open();
+    expect(el('.rw-order-note')).toBeNull();
+    expect(text(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-source`)).toBe('Written from the Root Cause Analysis above');
+    stop();
+  }));
+
+  it('lists the report format, the engine version and the writer output limit among the diagnostic facts', fakeAsync(() => {
+    service.getRunReportJob.mockReturnValue(of(finishedWithCalls(null)));
+    open();
+    const facts = new Map(component.diagnosticFacts.map(fact => [fact.term, fact.value]));
+    expect(facts.get('Report format')).toBe('25');
+    expect(facts.get('Engine version')).toBe('9');
+    expect(facts.get('Writer output limit')).toBe('32,000 tokens (reasoning included)');
+    stop();
+  }));
+
+  describe('Download the writer\'s replies', () => {
+    it('is offered once the job is finished and a writer call has a reply', fakeAsync(() => {
+      service.getRunReportJob.mockReturnValue(of(finishedWithCalls(1200)));
+      open();
+      const button = el<HTMLButtonElement>('.rw-download-replies')!;
+      expect(button).not.toBeNull();
+      expect(button.getAttribute('aria-label')).toBe('Download the writer\'s replies of this report writing job, as Markdown');
+      expect(button.hasAttribute('title')).toBe(false);
+      expect(text(`#rw-download-replies-tip`)).toBe('Download the writer\'s replies (Markdown)');
+      // After Download diagnostics in the toolbar.
+      const toolbar = Array.from(host.querySelectorAll('.rw-diagnostics-toolbar button')).map(b => b.className);
+      expect(toolbar.findIndex(name => name.includes('rw-download-replies')))
+        .toBeGreaterThan(toolbar.findIndex(name => name.includes('rw-download-diagnostics')));
+      stop();
+    }));
+
+    it('is not offered without a reply, or while the job runs', fakeAsync(() => {
+      service.getRunReportJob.mockReturnValue(of(finishedWithCalls(null)));
+      open();
+      expect(el('.rw-download-replies')).toBeNull();
+      stop();
+
+      service.getRunReportJob.mockReturnValue(of(jobView({}, {
+        documents: [doc(RootCauseAnalysis, 'Completed', { calls: [call(1200)] }), doc(ExecutiveSummary, 'Writing')]
+      })));
+      open();
+      expect(el('.rw-download-replies')).toBeNull();
+      stop();
+    }));
+
+    it('downloads the replies as Markdown under a UTC-stamped name', fakeAsync(() => {
+      const download = vi.spyOn(runReportWritingIo, 'downloadMarkdown').mockReturnValue(undefined);
+      service.getRunReportJob.mockReturnValue(of(finishedWithCalls(1200)));
+      service.getRunReportWriterReplies.mockReturnValue(of('# Writer replies\n'));
+      open();
+      el<HTMLButtonElement>('.rw-download-replies')!.click();
+      fixture.detectChanges();
+      expect(service.getRunReportWriterReplies).toHaveBeenCalledWith(42);
+      expect(download).toHaveBeenCalledTimes(1);
+      const [fileName, content] = vi.mocked(download).mock.lastCall!;
+      expect(fileName).toMatch(/^run-42_ai-report-writer-replies_\d{8}-\d{6}\.md$/);
+      expect(content).toBe('# Writer replies\n');
+      expect(el('.rw-copy-error')).toBeNull();
+      stop();
+    }));
+
+    it('says why when Overseer no longer holds the replies', fakeAsync(() => {
+      const download = vi.spyOn(runReportWritingIo, 'downloadMarkdown').mockReturnValue(undefined);
+      service.getRunReportJob.mockReturnValue(of(finishedWithCalls(1200)));
+      service.getRunReportWriterReplies.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      open();
+      el<HTMLButtonElement>('.rw-download-replies')!.click();
+      fixture.detectChanges();
+      expect(download).not.toHaveBeenCalled();
+      expect(text('.rw-copy-error')).toBe(RUN_REPORT_REPLIES_GONE_TEXT);
+      expect(RUN_REPORT_REPLIES_GONE_TEXT).toBe('Overseer no longer holds this job\'s replies (they are kept 6 hours, '
+        + 'and until the next writing job of this run).');
+      expect(el('.rw-download-replies')?.getAttribute('aria-disabled')).toBeNull();
+      stop();
+    }));
+  });
+
   describe('with a custom job source', () => {
     let getJob: Mock;
     let cancel: Mock;
@@ -831,6 +983,30 @@ describe('RunReportWritingDialogComponent', () => {
       el<HTMLButtonElement>('.rw-download-diagnostics')!.click();
       const [fileName] = vi.mocked(download).mock.lastCall!;
       expect(fileName).toMatch(/^battery-run-7_ai-report-writing-diagnostics_\d{8}-\d{6}\.txt$/);
+      stop();
+    }));
+
+    it('fetches the writer\'s replies through the source and names their file by its stem', fakeAsync(() => {
+      const download = vi.spyOn(runReportWritingIo, 'downloadMarkdown').mockReturnValue(undefined);
+      const context = batteryContext();
+      const getWriterReplies = vi.fn().mockName('source.getWriterReplies').mockReturnValue(of('# Replies\n'));
+      context.source!.getWriterReplies = () => getWriterReplies();
+      getJob.mockReturnValue(of({ ...finishedWithCalls(1200), runId: 7 }));
+      open(context);
+
+      el<HTMLButtonElement>('.rw-download-replies')!.click();
+      expect(getWriterReplies).toHaveBeenCalledTimes(1);
+      expect(service.getRunReportWriterReplies).not.toHaveBeenCalled();
+      const [fileName] = vi.mocked(download).mock.lastCall!;
+      expect(fileName).toMatch(/^battery-run-7_ai-report-writer-replies_\d{8}-\d{6}\.md$/);
+      stop();
+    }));
+
+    it('offers no replies when the source fetches none', fakeAsync(() => {
+      const context = batteryContext();
+      getJob.mockReturnValue(of({ ...finishedWithCalls(1200), runId: 7 }));
+      open(context);
+      expect(el('.rw-download-replies')).toBeNull();
       stop();
     }));
 

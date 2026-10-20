@@ -25,8 +25,10 @@ import {
   reportJobInProgress,
   reportJobStatusKind,
   reportJobStatusText,
+  reportRootCauseSourceLine,
   reportServerErrorText,
   reportStatusSnapshotOfJob,
+  reportWriteOrderHint,
   writtenReportLabels
 } from './report-documents-list';
 
@@ -50,6 +52,34 @@ describe('report-documents-list', () => {
   it('lists the Executive Summary, then the Root Cause Analysis', () => {
     expect(REPORT_DOCUMENT_AUDIENCES).toEqual([ExecutiveSummary, RootCauseAnalysis]);
     expect(BATTERY_COMPLETION_ORIGIN).toBe(3);
+  });
+
+  it('says the write order of the checked documents', () => {
+    expect(reportWriteOrderHint([ExecutiveSummary, RootCauseAnalysis], 'this run\'s'))
+      .toBe('Written in this order: the Root Cause Analysis first, then the Executive Summary, which is written from it.');
+    expect(reportWriteOrderHint([ExecutiveSummary], 'this battery run\'s'))
+      .toBe('The Executive Summary is written from this battery run\'s stored Root Cause Analysis when that was written from '
+        + 'the same data; otherwise it is written without one and says so.');
+    expect(reportWriteOrderHint([RootCauseAnalysis], 'this run\'s')).toBe('');
+    expect(reportWriteOrderHint([], 'this run\'s')).toBe('');
+  });
+
+  it('names the Root Cause Analysis a stored Executive Summary was written from, and says when a later one exists', () => {
+    const summary = doc(71, ExecutiveSummary, { rootCauseSourceDocumentId: 72 });
+    expect(reportRootCauseSourceLine(summary, [summary, doc(72, RootCauseAnalysis)])).toBe('Written from Root Cause Analysis #72');
+    // The source deleted, with no later one listed.
+    expect(reportRootCauseSourceLine(summary, [summary])).toBe('Written from Root Cause Analysis #72');
+
+    const stale = doc(71, ExecutiveSummary, { rootCauseSourceDocumentId: 70 });
+    expect(reportRootCauseSourceLine(stale, [stale, doc(72, RootCauseAnalysis)]))
+      .toBe('Written from an earlier Root Cause Analysis (#70); rewrite it to include the newest');
+    // Another subject's Root Cause Analysis is not this one's newer analysis.
+    expect(reportRootCauseSourceLine(stale, [stale, doc(72, RootCauseAnalysis, { subjectKey: 'battery:8' })]))
+      .toBe('Written from Root Cause Analysis #70');
+
+    expect(reportRootCauseSourceLine(doc(71, ExecutiveSummary, { rootCauseSourceDocumentId: null }), [doc(72, RootCauseAnalysis)])).toBe('');
+    expect(reportRootCauseSourceLine(doc(71, ExecutiveSummary), [doc(72, RootCauseAnalysis)])).toBe('');
+    expect(reportRootCauseSourceLine(doc(72, RootCauseAnalysis, { rootCauseSourceDocumentId: 70 }), [])).toBe('');
   });
 
   it('reads a status from its number or its name, and anything else as NotRequested', () => {

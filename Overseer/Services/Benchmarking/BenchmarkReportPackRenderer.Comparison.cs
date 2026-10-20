@@ -127,6 +127,7 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb);
         }
 
+        NextSteps(sb, ctx);
         ComparisonAboutBenchmark(sb, ctx);
     }
 
@@ -176,6 +177,10 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "- **Coverage:** " + coverage);
         }
         Line(sb, "- **" + Label("comparison.pricingBasis") + ":** " + PricingBasisText(sheet).Text);
+        if (RootCauseSourceText(ctx.Document, sheet) is string rootCause)
+        {
+            Line(sb, "- **Root Cause Analysis:** " + rootCause);
+        }
         Line(sb);
     }
 
@@ -1396,7 +1401,7 @@ public static partial class BenchmarkReportPackRenderer
             string mislead = profile.Value("mayMislead") is double count
                 ? Inv((int)count) + (profile.Value("mayMisleadPer20") is double per ? " (" + BenchmarkReportFormat.CompactDecimal(per) + " per 20)" : string.Empty)
                 : NoValue;
-            string wrong = profile.Value("outcome.wrongInsteadOfAbstaining") is double rate ? BenchmarkReportFormat.Percent(rate * 100) : NoValue;
+            string wrong = profile.WrongInsteadOfAbstaining(compact: true);
 
             var cells = ModelCells(ctx, peer);
             cells.AddRange(new[]
@@ -1458,6 +1463,24 @@ public static partial class BenchmarkReportPackRenderer
         {
             var values = keys.Select(Value).ToList();
             return values.All(v => v.HasValue) ? string.Join(" / ", values.Select(v => Inv((int)v!.Value))) : NoValue;
+        }
+
+        /// <summary>
+        /// The rate of wrong answers instead of abstaining; where one or two answers were incorrect or not attempted, too few
+        /// for a rate, <c>too few to rate (1 incorrect or not attempted)</c>, or with <paramref name="compact"/> <c>too few (1)</c>.
+        /// </summary>
+        public string WrongInsteadOfAbstaining(bool compact)
+        {
+            if (Value("outcome.wrongInsteadOfAbstaining") is double rate) return BenchmarkReportFormat.Percent(rate * 100);
+            if (Value("outcome.incorrect") is double incorrect && Value("outcome.notAttempted") is double notAttempted)
+            {
+                int count = (int)(incorrect + notAttempted);
+                if (count is > 0 and < BenchmarkComparisonModelProfile.WrongInsteadOfAbstainingMinAnswers)
+                {
+                    return compact ? "too few (" + Inv(count) + ")" : "too few to rate (" + Inv(count) + " incorrect or not attempted)";
+                }
+            }
+            return NoValue;
         }
     }
 

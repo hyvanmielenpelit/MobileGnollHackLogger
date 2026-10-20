@@ -40,9 +40,12 @@ NUMBERS AND NAMES:
 - Refer to a control model only as {{peer:X}}, where X is its letter from PEERS, for example {{peer:A}}. A control model's chat was run on the same suites in both periods; its own change tells a change it shares with {{subject}} from a change of {{subject}} alone.
 - Any other {{...}} token is an error.
 - Write no numbers as digits anywhere in the prose: no digits, percentages, dates, hours, run ids, numbered lists or ordinals such as "1st". Every figure, date, hour and run id is a fact token; number words such as "three" are allowed for a plain count.
+- Write no number of twenty or more in words, such as a score of ninety-five or seventy percent: cite the figure's token instead of writing it in words.
+- Never put a number word before 'of' and a token that prints a bare total, as in 'seven of the' and that token: cite a count token that reads 'N of M' instead, or leave the total out.
 - This document has no questions: never refer to a question such as Q7.
 - A count token, whose value reads 'N of M …', is a noun phrase. Never put it after 'no' or make it the object of 'made'.
 - A count token already says what it counts, as in 'N of M answers without a tool call': write it as a noun phrase and never repeat its words beside it, before or after.
+- A count whose value is zero is cited at most once, and only to rule something out; never present it as a finding.
 - Never name another model, provider or product, and never name a grader. The provider of {{subject}} is {{subject.provider}}.
 - Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.
 - In the prose, never write a fact key outside its {{key}} token, and never describe the facts list, the fact sheet or how the data was given to you.

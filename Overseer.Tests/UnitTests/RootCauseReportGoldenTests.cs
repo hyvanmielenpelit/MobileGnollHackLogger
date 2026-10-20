@@ -316,6 +316,52 @@ public class RootCauseReportGoldenTests
         return count;
     }
 
+    /// <summary><paramref name="document"/> with its fact sheet changed by <paramref name="change"/>.</summary>
+    private static BenchmarkReportDocument WithSheet(BenchmarkReportDocument document, Action<BenchmarkReportFactSheet> change)
+    {
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        change(sheet);
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+        return document;
+    }
+
+    /// <summary>The profile under <paramref name="prefix"/> with one incorrect answer and none not attempted, too few for the rate.</summary>
+    private static void OneIncorrectAnswer(BenchmarkReportFactSheet sheet, string prefix)
+    {
+        void Count(string key, int value)
+        {
+            var fact = sheet.Facts.Single(f => f.Key == prefix + key);
+            fact.Available = true;
+            fact.UnavailableReason = null;
+            fact.Value = System.Text.Json.Nodes.JsonValue.Create(value);
+            fact.Display = value + " answers";
+        }
+        Count("outcome.incorrect", 1);
+        Count("outcome.notAttempted", 0);
+
+        var rate = sheet.Facts.Single(f => f.Key == prefix + "outcome.wrongInsteadOfAbstaining");
+        rate.Available = false;
+        rate.Value = null;
+        rate.Display = BenchmarkReportFacts.NotAvailable;
+        rate.UnavailableReason = "Fewer than 3 answers were incorrect or not attempted (1), too few for a rate.";
+    }
+
+    [Fact]
+    public void TheModelFailureProfile_SaysARateWithheldForTooFewAnswers_WithTheirCount()
+    {
+        string text = BenchmarkReportPackRenderer.Render(WithSheet(Document("pack"), s => OneIncorrectAnswer(s, "profile.")), FullNamed);
+
+        Assert.Contains("| Wrong instead of abstaining | Too few to rate (1 incorrect or not attempted) |\n", text);
+    }
+
+    [Fact]
+    public void TheComparisonFailureProfile_SaysARateWithheldForTooFewAnswers_InShort()
+    {
+        string text = BenchmarkReportPackRenderer.Render(WithSheet(Document("comparison"), s => OneIncorrectAnswer(s, "model.A.profile.")), FullNamed);
+
+        Assert.Contains(" | Too few (1) | ", text);
+    }
+
     [Fact]
     public void TheComparisonFailureProfile_IsTwoTables_OfAtMostNineColumnsEach()
     {

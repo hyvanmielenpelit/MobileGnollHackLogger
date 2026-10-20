@@ -139,6 +139,49 @@ export function writtenReportLabels(documents: readonly BenchmarkReportDocumentL
   return REPORT_DOCUMENT_AUDIENCES.filter(audience => documents.some(doc => doc.audience === audience)).map(audienceLabel);
 }
 
+/** Under the document checkboxes when both are checked. */
+export const REPORT_WRITE_ORDER_BOTH_HINT =
+  'Written in this order: the Root Cause Analysis first, then the Executive Summary, which is written from it.';
+
+/**
+ * The write order of the checked documents, under their checkboxes: both checked, the Root Cause Analysis
+ * first and the Executive Summary from it; the Executive Summary alone, from `owner`'s stored Root Cause
+ * Analysis (*this run's*, *each model's*) when that was written from the same data; '' otherwise.
+ */
+export function reportWriteOrderHint(audiences: readonly BenchmarkReportAudience[], owner: string): string {
+  const summary = audiences.includes(BenchmarkReportAudience.ExecutiveSummary);
+  const rootCause = audiences.includes(BenchmarkReportAudience.RootCauseAnalysis);
+  if (summary && rootCause) {
+    return REPORT_WRITE_ORDER_BOTH_HINT;
+  }
+  if (summary) {
+    return `The Executive Summary is written from ${owner} stored Root Cause Analysis when that was written from the same data; `
+      + 'otherwise it is written without one and says so.';
+  }
+  return '';
+}
+
+/**
+ * A stored Executive Summary's Root Cause Analysis: *Written from Root Cause Analysis #12*, or, when
+ * `documents` (the subject's list) holds a later Root Cause Analysis of the same subject, that it was
+ * written from an earlier one. '' for another audience and for an Executive Summary that records none.
+ */
+export function reportRootCauseSourceLine(
+  doc: BenchmarkReportDocumentListItemDto,
+  documents: readonly BenchmarkReportDocumentListItemDto[]
+): string {
+  const sourceId = doc.rootCauseSourceDocumentId;
+  if (doc.audience !== BenchmarkReportAudience.ExecutiveSummary || sourceId === null || sourceId === undefined) {
+    return '';
+  }
+  // Document ids grow with every document stored, so a larger one is a later Root Cause Analysis.
+  const newer = documents.some(other => other.audience === BenchmarkReportAudience.RootCauseAnalysis
+    && other.subjectKey === doc.subjectKey && other.id > sourceId);
+  return newer
+    ? `Written from an earlier Root Cause Analysis (#${sourceId}); rewrite it to include the newest`
+    : `Written from Root Cause Analysis #${sourceId}`;
+}
+
 /** The job state as the status line words it, or '' when the document rows already say everything. */
 export function reportJobStatusText(status: BenchmarkRunReportDocumentsStatus, message: string | null | undefined): string {
   const trimmed = message?.trim();

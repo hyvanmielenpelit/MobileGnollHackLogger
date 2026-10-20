@@ -32,7 +32,7 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("\"confidence\"", system);
         Assert.Contains("\"strengths\"", system);
         Assert.Contains("\"weaknesses\"", system);
-        Assert.Contains("\"questionTopics\"", system);
+        Assert.DoesNotContain("questionTopics", system);
         Assert.Contains("at most three items", system);
         Assert.Contains("non-specialist", system);
 
@@ -808,7 +808,7 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("- Never recommend training, fine-tuning or using outputs as training targets; recommend a lever the facts name — "
             + "a tool, a tool guide, the knowledge base, a wiki page, a rubric, the grading, or the model and its settings.\n", system);
         Assert.Contains("- Write 'disagreed' or 'disagreement' only for an answer the facts mark as a panel disagreement; "
-            + "for any other gap, give both members' scores.\n", system);
+            + "for any other gap, cite both members' scores with their question.<Qn>.memberA and .memberB tokens.\n", system);
         Assert.Equal(2, BenchmarkReportPackPrompt.SharedWritingRules.Count);
         Assert.All(BenchmarkReportPackPrompt.SharedWritingRules, rule => Assert.Contains("- " + rule + "\n", system));
         Assert.DoesNotContain("A recommendation for model developers names a general capability", system);
@@ -867,7 +867,7 @@ public class BenchmarkReportPackPromptTests
         string message = BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote> { note }, comparisonScope: comparisonScope);
 
         Assert.Contains($"(1): {BenchmarkReportRuleCatalog.Get(BenchmarkReportPackValidator.CountRepetitionRule).Fix}\n", message);
-        Assert.Contains("Write it as '{{model:A}} had {{model.A.profile.noToolAnswers}}'", message);
+        Assert.Contains("Start a new sentence with the model and the token, as in '{{model:A}} had {{model.A.profile.noToolAnswers}}.'", message);
         Assert.Contains("not in an opening phrase such as 'On tool calls,'", message);
         Assert.Contains("never move them into an opening phrase before the model, such as 'On tool calls,'", message);
     }
@@ -1126,13 +1126,13 @@ public class BenchmarkReportPackPromptTests
         int start = message.IndexOf("CHECK BEFORE YOU ANSWER (", StringComparison.Ordinal);
         Assert.True(start > 0);
         var lines = message[start..].Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal(15, lines.Length);
+        Assert.Equal(17, lines.Length);
         Assert.DoesNotContain(lines, l => l.StartsWith("- Rule 40", StringComparison.Ordinal));
         Assert.DoesNotContain(lines, l => l.Contains("priceNote", StringComparison.Ordinal));
-        Assert.StartsWith("- Rule 41, unavailable figures:", lines[12]);
-        Assert.StartsWith("- Rule 42, next runs in code's order:", lines[13]);
-        Assert.StartsWith("- Rule 43, one model's figure:", lines[14]);
-        Assert.Contains("{{rca.run.1.summary}} comes first", lines[13]);
+        Assert.StartsWith("- Rule 41, unavailable figures:", lines[14]);
+        Assert.StartsWith("- Rule 42, next runs in code's order:", lines[15]);
+        Assert.StartsWith("- Rule 43, one model's figure:", lines[16]);
+        Assert.Contains("{{rca.run.1.summary}} comes first", lines[15]);
         Assert.StartsWith("- Rule 3, digits:", lines[1]);
         Assert.StartsWith("- Rule 4, topics:", lines[2]);
         Assert.StartsWith("- Rule 9, your own words:", lines[3]);
@@ -1140,11 +1140,14 @@ public class BenchmarkReportPackPromptTests
         Assert.StartsWith("- Every model at once:", lines[5]);
         Assert.StartsWith("- Rule 31, sentence shapes:", lines[6]);
         Assert.StartsWith("- Rule 39, counts:", lines[7]);
-        Assert.StartsWith("- Rule 38, shares:", lines[8]);
-        Assert.StartsWith("- Rule 33, causes:", lines[9]);
-        Assert.StartsWith("- Rule 34, certainty:", lines[10]);
-        Assert.StartsWith("- Rule 36, statuses:", lines[11]);
-        Assert.Contains("{{rca.axis.intelligence.status}}", lines[11]);
+        Assert.StartsWith("- Rule 44, counts across a total:", lines[8]);
+        Assert.Contains("never write it in words, as in 'seven of the eight models'", lines[8]);
+        Assert.StartsWith("- Rule 46, figures in words:", lines[9]);
+        Assert.StartsWith("- Rule 38, shares:", lines[10]);
+        Assert.StartsWith("- Rule 33, causes:", lines[11]);
+        Assert.StartsWith("- Rule 34, certainty:", lines[12]);
+        Assert.StartsWith("- Rule 36, statuses:", lines[13]);
+        Assert.Contains("{{rca.axis.intelligence.status}}", lines[13]);
         Assert.Contains(".profile.noToolAnswers}} already prints 'without a tool call'", lines[7]);
         Assert.Contains("to say that several models share a signal, name each model with its own token and nothing else about it, "
             + "as '{{model:A}} had {{model.A.profile.noToolAnswers}} and {{model:B}} {{model.B.profile.noToolAnswers}}'; "
@@ -1152,6 +1155,41 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("{{model:", lines[4]);
         Assert.Contains("noun phrase", lines[6]);
         Assert.Contains("'95% interval'", lines[1]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ARootCauseRepairMessage_AsksForEveryCountAcrossATotalAsAToken_WhereTheExecutiveSummaryKeepsNumberWords(bool comparison)
+    {
+        var none = new List<BenchmarkReportValidationNote>();
+        string rootCause = BenchmarkReportPackPrompt.BuildRepairMessage(none, comparison, rootCause: true);
+        string executive = BenchmarkReportPackPrompt.BuildRepairMessage(none, comparison, rootCause: false);
+
+        Assert.DoesNotContain("Write counts as number words", rootCause);
+        Assert.Contains(BenchmarkReportPackPrompt.RootCauseCountReminder, rootCause);
+        Assert.Equal("Write every count across models, questions or answers as a fact token; a plain count with no total may be a number word up to ten.",
+            BenchmarkReportPackPrompt.RootCauseCountReminder);
+        Assert.Contains("Write counts as number words", executive);
+        Assert.DoesNotContain(BenchmarkReportPackPrompt.RootCauseCountReminder, executive);
+    }
+
+    [Fact]
+    public void TheRootCauseUserMessage_SaysTheWaitBeforeOutputIsSummedOverAQuestionsModelCalls()
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var sheet = built.Sheet!;
+        sheet.Facts.RemoveAll(f => f.Key.StartsWith("rca.within.", StringComparison.Ordinal));
+        string without = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, built.Content!).UserMessage;
+        sheet.Facts.Add(new BenchmarkReportFact
+        {
+            Key = "rca.within.A.time.ttft.seconds", Value = System.Text.Json.Nodes.JsonValue.Create(9.5), Display = "a mean of 9.5 s per question, summed over its model calls"
+        });
+        string with = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, built.Content!).UserMessage;
+
+        const string note = "rca.within.*.time.ttft.* is the wait before output summed over every model call of a question. The time to first token of the run is model.X.speed.ttftP50.";
+        Assert.DoesNotContain(note, without);
+        Assert.Contains(note, with);
     }
 
     [Fact]

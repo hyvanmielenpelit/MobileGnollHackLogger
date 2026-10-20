@@ -567,6 +567,50 @@ describe('RunAiReportsComponent', () => {
     expect(service.writeRunReportDocuments).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [5] });
   });
 
+  it('should say the write order under the document checkboxes', () => {
+    setUp();
+    load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+    const hint = (): string | undefined => rowText(section(), '.rr-ai-audiences .rr-ai-order-hint');
+
+    // Both checked: the Root Cause Analysis first, the Executive Summary from it.
+    expect(section().querySelector('.rr-ai-audiences .rr-ai-order-hint')?.classList).toContain('form-hint');
+    expect(hint()).toBe('Written in this order: the Root Cause Analysis first, then the Executive Summary, which is written from it.');
+
+    // The Executive Summary alone: from the run's stored Root Cause Analysis.
+    checkbox(5).click();
+    fixture.detectChanges();
+    expect(hint()).toBe('The Executive Summary is written from this run\'s stored Root Cause Analysis when that was written '
+      + 'from the same data; otherwise it is written without one and says so.');
+
+    // The Root Cause Analysis alone: no line.
+    checkbox(5).click();
+    checkbox(1).click();
+    fixture.detectChanges();
+    expect(section().querySelector('.rr-ai-order-hint')).toBeNull();
+  });
+
+  it('should say which Root Cause Analysis a stored Executive Summary was written from', () => {
+    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1, { rootCauseSourceDocumentId: 72 }), aiDoc(72, 5)]));
+    setUp();
+    load(reportRun({ assessmentJson: '{}' }));
+    expect(rows().map(row => rowText(row, '.rr-ai-doc-source'))).toEqual(['Written from Root Cause Analysis #72', undefined]);
+  });
+
+  it('should say when a stored Executive Summary was written from an earlier Root Cause Analysis', () => {
+    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1, { rootCauseSourceDocumentId: 70 }), aiDoc(72, 5)]));
+    setUp();
+    load(reportRun({ assessmentJson: '{}' }));
+    expect(rowText(rows()[0], '.rr-ai-doc-source'))
+      .toBe('Written from an earlier Root Cause Analysis (#70); rewrite it to include the newest');
+  });
+
+  it('should add nothing for a stored Executive Summary that records no Root Cause Analysis', () => {
+    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1, { rootCauseSourceDocumentId: null }), aiDoc(72, 5)]));
+    setUp();
+    load(reportRun({ assessmentJson: '{}' }));
+    expect(section().querySelector('.rr-ai-doc-source')).toBeNull();
+  });
+
   it('should keep the document choice across a poll', fakeAsync(() => {
     setUp();
     load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1, reportDocumentsStatus: 2 }));
@@ -1178,7 +1222,8 @@ describe('RunAiReportsComponent', () => {
       const confirm = dialog('.rr-ai-rewrite-dialog');
       expect(confirm.open).toBe(true);
       expect(confirm.querySelector('h3')?.textContent?.trim()).toBe('Rewrite the Root Cause Analysis?');
-      expect(confirm.querySelector('.rr-ai-rewrite-text')?.textContent).toContain('The Executive Summary is not changed.');
+      expect(confirm.querySelector('.rr-ai-rewrite-text')?.textContent?.replace(/\s+/g, ' ')).toContain(
+        'The Executive Summary is not rewritten: it stays written from the earlier Root Cause Analysis until you rewrite it too.');
       expect(service.estimateRunReports).toHaveBeenLastCalledWith(55, { writerModelConfigurationId: 1, audiences: [5] });
       expect(confirm.querySelector('.rr-ai-rewrite-estimate')?.textContent).toContain('Estimated cost');
       expect(service.writeRunReportDocuments).not.toHaveBeenCalled();

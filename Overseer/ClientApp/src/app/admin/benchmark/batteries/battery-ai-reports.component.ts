@@ -298,6 +298,7 @@ export class BatteryAiReportsComponent extends ReportDocumentsTabBase<BenchmarkB
       cancel: () => this.benchmarkService.cancelBatteryReportJob(batteryRunId),
       subjectLabel: this.subjectName(batteryRunId),
       getStoredStatus: () => this.benchmarkService.getBatteryRun(batteryRunId),
+      getWriterReplies: () => this.benchmarkService.getBatteryReportWriterReplies(batteryRunId),
       fileStem: this.fileStem(batteryRunId)
     };
   }

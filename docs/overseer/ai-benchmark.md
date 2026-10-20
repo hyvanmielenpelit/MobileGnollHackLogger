@@ -7962,6 +7962,29 @@ per-model documents to format 15; chat consistency documents keep format 4. The 
 A document stored earlier keeps its stored facts and renders with its old wording where a new fact is
 absent; its tied-rank text changes, because ranks are recomputed at render time.
 
+### Harness Version 57 Updates
+
+GnollBench run 123 round (2026-10-20). `HarnessVersion` moves to **"57"**; `ScoringMethodVersion` stays
+**14**. Two changes reach what the candidate is sent, so `HarnessImpactLedger` classifies 57 as
+`CandidateInput` alone. `CandidateSystemPromptSha256` does not move; `ToolGuidesSha256` does
+(`639ba74661d9` recorded by run 123; `e8144c599e63` computed over the build output after the change, unverified
+until a harness-57 run records its own).
+
+- **A leading "The" in wiki titles (T2).** `WikiService.TitleEquals` compares a title and a request
+  case-insensitively after removing one leading `"The "` from each, when more follows it. `wiki_view`'s
+  exact-title branch and the exact-title step of `item_lookup` and `monster_lookup` both go through it, so
+  `item_lookup {"name":"Orb of Fate"}` returns the article *The Orb of Fate* alone, with an
+  `[Other matches: …]` line. When both *The X* and *X* exist, both match and the
+  `Several wiki articles are titled '…'` disambiguation lists them. A stored result of a run stamped 56 or
+  earlier on such a request is the top-five join of the lookup's search hits, usually cut at the result
+  limit with a `[Truncated:` suffix.
+- **Role-relative helpers (T1).** `_policy.md`, section *Accuracy About Tool Use*, gains a sentence: a C
+  helper or macro named for a kind of thing (`is_quest_artifact`) may test only the current hero's role,
+  race or alignment, so its definition is read with `get_function_definition` or `search_definitions`
+  before saying what it covers.
+
+No answer flag is added, and the grading and synthesis prompts are unchanged.
+
 ---
 
 ## 3. Assessor Strategy

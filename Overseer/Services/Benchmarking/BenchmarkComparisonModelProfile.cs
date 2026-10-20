@@ -31,6 +31,9 @@ public sealed record BenchmarkComparisonModelItem(
 ///   outcome.correct, .partial, .incorrect, .notAttempted, .noAnswer, .wrongInsteadOfAbstaining
 ///                                                  <see cref="BenchmarkOutcomeSummary.Classify"/>; from scoring method 13
 ///   deficit.accuracy, .completeness, .conciseness, .readability   level 2 or below on the dimension
+///   top.accuracy, .completeness, .conciseness, .readability       at level 6 on the dimension; in a panel run the
+///                                                  mean of both members' levels at 5.5 or above. A per-model sheet
+///                                                  also carries each as dimension.&lt;d&gt;.topLevel, for the Executive Summary
 ///   truncated, outputDefects, noToolAnswers, toolLimitHits
 ///   answerChars.median                             the median answer length in characters
 ///   isolatedMisses, sharedMisses, lowestScorer     from the question matrix; three covered models or more
@@ -46,6 +49,9 @@ public sealed class BenchmarkComparisonModelProfile
 
     /// <summary>A dimension at this level or below is a deficit.</summary>
     public const double DeficitLevelAtMost = 2.0;
+
+    /// <summary>A dimension at this level or above is at the top level, 6; a panel run's mean of the two members' levels counts from here.</summary>
+    public const double TopLevelAtLeast = 5.5;
 
     /// <summary>An isolated miss: the model scored at most this…</summary>
     public const double IsolatedMissAtMost = 50.0;
@@ -101,6 +107,9 @@ public sealed class BenchmarkComparisonModelProfile
     /// <summary>Scored answers at level 2 or below, by dimension key.</summary>
     public IReadOnlyDictionary<string, int> Deficits { get; init; } = new Dictionary<string, int>(StringComparer.Ordinal);
 
+    /// <summary>Scored answers at the top level (<see cref="TopLevelAtLeast"/>), by dimension key.</summary>
+    public IReadOnlyDictionary<string, int> TopLevels { get; init; } = new Dictionary<string, int>(StringComparer.Ordinal);
+
     /// <summary>Scored answers flagged <c>Truncated</c>.</summary>
     public int Truncated { get; init; }
 
@@ -144,6 +153,7 @@ public sealed class BenchmarkComparisonModelProfile
         bool outcomes = ordered.Count > 0 && ordered.All(BenchmarkCriticalErrorResolver.Applies);
         var classes = new Dictionary<BenchmarkOutcomeClass, int>();
         var deficits = Dimensions.ToDictionary(d => d, _ => 0, StringComparer.Ordinal);
+        var tops = Dimensions.ToDictionary(d => d, _ => 0, StringComparer.Ordinal);
         int mayMislead = 0, truncated = 0, defects = 0, noTool = 0, limitHits = 0, panelAnswers = 0, disagreements = 0;
         var lengths = new List<double>();
 
@@ -159,6 +169,7 @@ public sealed class BenchmarkComparisonModelProfile
             foreach (var (dimension, level) in levels)
             {
                 if (level <= DeficitLevelAtMost) deficits[dimension]++;
+                if (level >= TopLevelAtLeast) tops[dimension]++;
             }
 
             if (outcomes && BenchmarkOutcomeSummary.Classify(run, answer, panel) is { } outcome)
@@ -196,6 +207,7 @@ public sealed class BenchmarkComparisonModelProfile
             NotAttempted = classes.GetValueOrDefault(BenchmarkOutcomeClass.NotAttempted),
             NoAnswer = classes.GetValueOrDefault(BenchmarkOutcomeClass.NoAnswer),
             Deficits = deficits,
+            TopLevels = tops,
             Truncated = truncated,
             OutputDefects = defects,
             NoToolAnswers = noTool,
@@ -402,6 +414,11 @@ public sealed class BenchmarkComparisonModelProfile
             int count = Deficits.GetValueOrDefault(dimension);
             facts.Add(p + "deficit." + dimension, count, OfAnswers(count, "at level " + Inv((int)DeficitLevelAtMost) + " or below on " + dimension));
         }
+        foreach (string dimension in Dimensions)
+        {
+            int count = TopLevels.GetValueOrDefault(dimension);
+            facts.Add(p + "top." + dimension, count, TopLevelDisplay(count, dimension));
+        }
 
         facts.Add(p + "truncated", Truncated, OfAnswers(Truncated, "that were truncated"));
         facts.Add(p + "outputDefects", OutputDefects, OfAnswers(OutputDefects, "with output defects"));
@@ -435,10 +452,15 @@ public sealed class BenchmarkComparisonModelProfile
     /// <summary>Why the matrix counts are unavailable on a per-model sheet.</summary>
     public const string ModelScopeMatrixReason = "A per-model report sets no miss against a question matrix of other models.";
 
+    /// <summary>The display of a dimension's top-level count: <c>12 of 36 answers at level 6 on accuracy</c>.</summary>
+    private string TopLevelDisplay(int count, string dimension)
+        => BenchmarkReportFormat.CountOf(count, Answers, "answers", "at level 6 on " + dimension);
+
     /// <summary>
     /// The profile's facts on a per-model sheet, unprefixed (<c>profile.*</c>): every fact of
     /// <see cref="AddFacts"/>, with the matrix counts unavailable, because they need the question matrix
-    /// of at least <see cref="MatrixMinModels"/> covered models.
+    /// of at least <see cref="MatrixMinModels"/> covered models; and each dimension's top-level count again as
+    /// <c>dimension.&lt;d&gt;.topLevel</c>, which the Executive Summary's writer sees where it does not see the profile.
     /// </summary>
     internal void AddModelScopeFacts(BenchmarkReportFacts.FactList facts)
     {
@@ -447,6 +469,11 @@ public sealed class BenchmarkComparisonModelProfile
         facts.Unavailable(KeyPrefix + "isolatedMisses", ModelScopeMatrixReason);
         facts.Unavailable(KeyPrefix + "sharedMisses", ModelScopeMatrixReason);
         facts.Unavailable(KeyPrefix + "lowestScorer", ModelScopeMatrixReason);
+        foreach (string dimension in Dimensions)
+        {
+            int count = TopLevels.GetValueOrDefault(dimension);
+            facts.Add("dimension." + dimension + BenchmarkReportFacts.TopLevelSuffix, count, TopLevelDisplay(count, dimension));
+        }
     }
 
     /// <summary>

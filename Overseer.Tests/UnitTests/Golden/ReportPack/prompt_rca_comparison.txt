@@ -63,7 +63,7 @@ WORD BUDGET (every {{token}} is one word, however long its value; count each sec
 - limitations, 120 words
 
 FIELDS AND LISTS:
-- headline: in one plain sentence of at most 35 words, say what most explains the differences between the models, naming at most two causes, the most consequential first. Take the axes in the order intelligence, speed, cost, and lead with the first whose status is Root cause established or Probable cause; cost may lead only when neither other axis has one. A price-per-token difference (a hypothesis graded Known from the price cards) is what the price cards show, never the cause the runs found: never lead with it, and never call it the root cause. Never restate a ranking the At a glance table shows (which model scored highest or lowest, was fastest, slowest or cheapest). Never mention price per token or the price cards in the headline. Under the headline, code prints its own findings — answers without tools, a weakness every model shares, the grader family, value for money, thinking levels, the unexpected results and the notable findings: do not repeat them. A reader with no statistics should understand it. A certainty word in it needs its status or High hypothesis token in the sentence. Name a cause for 'the gaps' only when the best hypotheses cover more than one pair; when you name a cause, give its share, or for several hypotheses of one rule its rca.rule.<id>.shareSpan beside their ref range.
+- headline: in one plain sentence of at most 35 words, say what most explains the differences between the models, naming at most two causes, the most consequential first. When the data has a HEADLINE OBSERVATION, open the headline with it in one clause, giving its question reference and its dimension and no causal word, then go on as follows. Take the axes in the order intelligence, speed, cost, and lead with the first whose status is Root cause established or Probable cause; cost may lead only when neither other axis has one. A speed or cost axis whose best hypothesis is about tool rounds (WS3 or WC3) comes after any intelligence observation. A price-per-token difference (a hypothesis graded Known from the price cards) is what the price cards show, never the cause the runs found: never lead with it, and never call it the root cause. Never restate a ranking the At a glance table shows (which model scored highest or lowest, was fastest, slowest or cheapest). Never mention price per token or the price cards in the headline. Under the headline, code prints its own findings — answers without tools, a weakness every model shares, the grader family, value for money, thinking levels, the unexpected results and the notable findings: do not repeat them. A reader with no statistics should understand it. A certainty word in it needs its status or High hypothesis token in the sentence. Name a cause for 'the gaps' only when the best hypotheses cover more than one pair; when you name a cause, give its share, or for several hypotheses of one rule its rca.rule.<id>.shareSpan beside their ref range.
 - observations: at most eight items, each at most 35 words: a fact the graders recorded in the excerpts and comments the data gives, stated with no causal word. Each item gives the question in "questions" and cites at least one evidence id in "evidence": a question reference or a fact key.
 - writerHypotheses: at most four items: hypotheses of your own that the code's rule table does not cover, drawn from the grader comments and excerpts. Each has "axis" (intelligence, speed or cost), "models" (the letters of the models it names), "locus" (one or more of model, chat, harness, suite, corpus and provider), "statement", "for" (one or more pieces of evidence), "against" (what speaks against it), "refutedIf" (the result that would refute it), "confidence" (always "Low": code has not tested it) and "evidence" (the fact keys and question references it rests on). "against" is a measured fact that cuts against the statement; never restate the statement's own evidence or counts; leave it empty when there is none. Each text is at most 40 words. Leave the list empty when you have none.
 - questionTopics: one entry for every question you cite anywhere in the document that is listed under QUESTIONS NEEDING A TOPIC. Each topic names what the question is about in at most twelve words, without quoting it.
@@ -75,6 +75,7 @@ NUMBERS AND NAMES:
 - Never write a model's letter on its own, as in Model H or Models H and I: in every slot and list, your own hypotheses included, a model is named only through its {{model:X}} token. Only the "models" field of a writer hypothesis takes bare letters.
 - Any other {{...}} token is an error.
 - Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as "1st". A count across models, questions, answers or pairs, written as 'N of M' or 'N of the M', comes only from a fact token; never write it in words. A plain count with no total, such as 'three pairs', may be a number word, but prefer a fact token for any figure.
+- Write no number of twenty or more in words, such as a score of ninety-five or seventy percent: cite the figure's token instead of writing it in words.
 - Never write a hypothesis id, a run number or a check number in the prose: cite the hypothesis by its rca.hypothesis.<id>.<n>.ref token, a run by its rca.run.<n>.summary token and a check by its rca.check.<n>.summary token. A hypothesis's label (rca.hypothesis.<id>.<n>.label) appears only in the tables; never cite it in the prose.
 - {{rca.check.<n>}} is a whole sentence the document prints in its Checks list; inside your own sentence cite a check by {{rca.check.<n>.summary}}, and never repeat {{rca.check.<n>}} under What to run next.
 - A model's figure token describes that model only, and a pair's token that pair only. A statement about every compared model cites a comparison.* fact, never one model's or one pair's: the runs and suites as {{comparison.runsPerSuite}} and {{comparison.suiteCount}}, the configuration as {{comparison.configDifferences}}.
@@ -135,6 +136,7 @@ TERMS (the document glosses each of these terms; use them without a gloss of you
 - Isolated miss
 - Median and mean
 - Time to first token
+- Wait before output
 - Output generation and decode rate
 - Tool round
 - Tokens
@@ -180,7 +182,7 @@ WEIGHING THE EVIDENCE:
 - Mention a degraded state wherever a comparison depends on it.
 - Report provider errors only as provider errors observed in GnollBench runs, with their denominator, and never with a cause or an intent.
 - Never recommend training, fine-tuning or using outputs as training targets; recommend a lever the facts name — a tool, a tool guide, the knowledge base, a wiki page, a rubric, the grading, or the model and its settings.
-- Write 'disagreed' or 'disagreement' only for an answer the facts mark as a panel disagreement; for any other gap, give both members' scores.
+- Write 'disagreed' or 'disagreement' only for an answer the facts mark as a panel disagreement; for any other gap, cite both members' scores with their question.<Qn>.memberA and .memberB tokens.
 
 NO DISCLOSURE:
 - Never quote or closely paraphrase a question, a rubric, an answer, a grader comment, grader evidence or a claim. Any run of eight consecutive words shared with that material is rejected.
@@ -289,6 +291,7 @@ rca.cost.<F>.<S>.grouped says how that pair's cost is split: by token kind, or, 
 rca.atRisk.* are index points at risk: an upper bound on what a failure signal could have cost, never points lost. Each .total is counted against the model's median answer.
 model.X.price.<component>.perMillion are prices per million tokens on the pricing basis {{rca.pricingBasis}}, which the document states once: never repeat the basis beside a price.
 model.X.tokens.cacheReadShare is the share of the model's input tokens read from the cache, printed as a bare percentage.
+rca.within.*.time.ttft.* is the wait before output summed over every model call of a question. The time to first token of the run is model.X.speed.ttftP50.
 rca.anomaly.<n>.* describe the unexpected results, each a result that goes against what the models' price tiers or release dates predict: .ref prints its id and is a noun phrase, .summary is a whole sentence, .prior names the prediction, .confounds the settings that differ, .graders each grader's scores, .settledBy the run or check that settles it and .tested whether the pair had a paired test. rca.anomaly.count counts them, rca.anomaly.priorsChecked says which predictions could be checked, and rca.anomaly.untestedPairs counts the pairs without a paired test.
 comparison.configDifferences = no configuration key other than the model
 comparison.models = 5
@@ -378,6 +381,10 @@ model.A.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes 
 model.A.profile.outputDefects = 0 of 6 answers with output defects
 model.A.profile.sharedMisses = 1 of 6 questions missed by this model and at least half the others
 model.A.profile.toolLimitHits = 0 of 6 answers that hit the tool limit
+model.A.profile.top.accuracy = 0 of 6 answers at level 6 on accuracy
+model.A.profile.top.completeness = 0 of 6 answers at level 6 on completeness
+model.A.profile.top.conciseness = 0 of 6 answers at level 6 on conciseness
+model.A.profile.top.readability = 0 of 6 answers at level 6 on readability
 model.A.profile.truncated = 0 of 6 answers that were truncated
 model.A.quality.index = 85 / 100
 model.A.quality.interval = 82–88
@@ -507,6 +514,10 @@ model.B.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes 
 model.B.profile.outputDefects = 0 of 6 answers with output defects
 model.B.profile.sharedMisses = 0 of 6 questions missed by this model and at least half the others
 model.B.profile.toolLimitHits = 0 of 6 answers that hit the tool limit
+model.B.profile.top.accuracy = 0 of 6 answers at level 6 on accuracy
+model.B.profile.top.completeness = 0 of 6 answers at level 6 on completeness
+model.B.profile.top.conciseness = 0 of 6 answers at level 6 on conciseness
+model.B.profile.top.readability = 0 of 6 answers at level 6 on readability
 model.B.profile.truncated = 0 of 6 answers that were truncated
 model.B.quality.index = 80 / 100
 model.B.quality.interval = 77–83
@@ -640,6 +651,10 @@ model.C.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes 
 model.C.profile.outputDefects = 0 of 6 answers with output defects
 model.C.profile.sharedMisses = 1 of 6 questions missed by this model and at least half the others
 model.C.profile.toolLimitHits = 0 of 6 answers that hit the tool limit
+model.C.profile.top.accuracy = 0 of 6 answers at level 6 on accuracy
+model.C.profile.top.completeness = 0 of 6 answers at level 6 on completeness
+model.C.profile.top.conciseness = 0 of 6 answers at level 6 on conciseness
+model.C.profile.top.readability = 0 of 6 answers at level 6 on readability
 model.C.profile.truncated = 0 of 6 answers that were truncated
 model.C.quality.index = 70 / 100
 model.C.quality.interval = 66–74
@@ -773,6 +788,10 @@ model.D.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes 
 model.D.profile.outputDefects = 0 of 6 answers with output defects
 model.D.profile.sharedMisses = 1 of 6 questions missed by this model and at least half the others
 model.D.profile.toolLimitHits = 0 of 6 answers that hit the tool limit
+model.D.profile.top.accuracy = 0 of 6 answers at level 6 on accuracy
+model.D.profile.top.completeness = 0 of 6 answers at level 6 on completeness
+model.D.profile.top.conciseness = 0 of 6 answers at level 6 on conciseness
+model.D.profile.top.readability = 0 of 6 answers at level 6 on readability
 model.D.profile.truncated = 0 of 6 answers that were truncated
 model.D.quality.index = 70 / 100
 model.D.quality.interval = 64–76
@@ -906,6 +925,10 @@ model.E.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes 
 model.E.profile.outputDefects = 0 of 6 answers with output defects
 model.E.profile.sharedMisses = 1 of 6 questions missed by this model and at least half the others
 model.E.profile.toolLimitHits = 0 of 6 answers that hit the tool limit
+model.E.profile.top.accuracy = 0 of 6 answers at level 6 on accuracy
+model.E.profile.top.completeness = 0 of 6 answers at level 6 on completeness
+model.E.profile.top.conciseness = 0 of 6 answers at level 6 on conciseness
+model.E.profile.top.readability = 0 of 6 answers at level 6 on readability
 model.E.profile.truncated = 0 of 6 answers that were truncated
 model.E.quality.index = 55 / 100
 model.E.quality.interval = 50–60
@@ -1821,6 +1844,7 @@ rca.within.A.cost.output.share = 48%
 rca.within.A.cost.reasoning.share = 21%
 rca.within.A.cost.total = a mean of $0.014 per question
 rca.within.A.cost.uncachedInput.share = 30%
+rca.within.A.speed.burstAnswers = 0 of 6 answers whose visible text arrived in one burst
 rca.within.A.time.other.seconds = a mean of 0.3 s per question
 rca.within.A.time.other.share = 3%
 rca.within.A.time.outputGeneration.seconds = a mean of 5.3 s per question
@@ -1830,7 +1854,7 @@ rca.within.A.time.ownWaits.share = 0%
 rca.within.A.time.toolExecution.seconds = a mean of 1.5 s per question
 rca.within.A.time.toolExecution.share = 17%
 rca.within.A.time.total = a mean of 9.0 s per question
-rca.within.A.time.ttft.seconds = a mean of 1.9 s per question
+rca.within.A.time.ttft.seconds = a mean of 1.9 s per question, summed over its model calls
 rca.within.A.time.ttft.share = 21%
 rca.within.B.cost.cacheRead.share = 1%
 rca.within.B.cost.cacheWrite.share = 0%
@@ -1838,6 +1862,7 @@ rca.within.B.cost.output.share = 41%
 rca.within.B.cost.reasoning.share = 21%
 rca.within.B.cost.total = a mean of $0.022 per question
 rca.within.B.cost.uncachedInput.share = 38%
+rca.within.B.speed.burstAnswers = 0 of 6 answers whose visible text arrived in one burst
 rca.within.B.time.other.seconds = a mean of 0.3 s per question
 rca.within.B.time.other.share = 3%
 rca.within.B.time.outputGeneration.seconds = a mean of 6.2 s per question
@@ -1847,7 +1872,7 @@ rca.within.B.time.ownWaits.share = 0%
 rca.within.B.time.toolExecution.seconds = a mean of 1.5 s per question
 rca.within.B.time.toolExecution.share = 14%
 rca.within.B.time.total = a mean of 10.5 s per question
-rca.within.B.time.ttft.seconds = a mean of 2.5 s per question
+rca.within.B.time.ttft.seconds = a mean of 2.5 s per question, summed over its model calls
 rca.within.B.time.ttft.share = 24%
 rca.within.C.cost.cacheRead.share = 1%
 rca.within.C.cost.cacheWrite.share = 0%
@@ -1855,6 +1880,7 @@ rca.within.C.cost.output.share = 37%
 rca.within.C.cost.reasoning.share = 21%
 rca.within.C.cost.total = a mean of $0.031 per question
 rca.within.C.cost.uncachedInput.share = 42%
+rca.within.C.speed.burstAnswers = 0 of 6 answers whose visible text arrived in one burst
 rca.within.C.time.other.seconds = a mean of 0.3 s per question
 rca.within.C.time.other.share = 3%
 rca.within.C.time.outputGeneration.seconds = a mean of 7.0 s per question
@@ -1864,7 +1890,7 @@ rca.within.C.time.ownWaits.share = 0%
 rca.within.C.time.toolExecution.seconds = a mean of 1.5 s per question
 rca.within.C.time.toolExecution.share = 13%
 rca.within.C.time.total = a mean of 12.0 s per question
-rca.within.C.time.ttft.seconds = a mean of 3.2 s per question
+rca.within.C.time.ttft.seconds = a mean of 3.2 s per question, summed over its model calls
 rca.within.C.time.ttft.share = 26%
 rca.within.D.cost.cacheRead.share = 0%
 rca.within.D.cost.cacheWrite.share = 0%
@@ -1872,6 +1898,7 @@ rca.within.D.cost.output.share = 34%
 rca.within.D.cost.reasoning.share = 21%
 rca.within.D.cost.total = a mean of $0.041 per question
 rca.within.D.cost.uncachedInput.share = 44%
+rca.within.D.speed.burstAnswers = 0 of 6 answers whose visible text arrived in one burst
 rca.within.D.time.other.seconds = a mean of 0.3 s per question
 rca.within.D.time.other.share = 2%
 rca.within.D.time.outputGeneration.seconds = a mean of 7.9 s per question
@@ -1881,7 +1908,7 @@ rca.within.D.time.ownWaits.share = 0%
 rca.within.D.time.toolExecution.seconds = a mean of 1.5 s per question
 rca.within.D.time.toolExecution.share = 11%
 rca.within.D.time.total = a mean of 13.5 s per question
-rca.within.D.time.ttft.seconds = a mean of 3.8 s per question
+rca.within.D.time.ttft.seconds = a mean of 3.8 s per question, summed over its model calls
 rca.within.D.time.ttft.share = 28%
 rca.within.E.cost.cacheRead.share = 0%
 rca.within.E.cost.cacheWrite.share = 0%
@@ -1889,6 +1916,7 @@ rca.within.E.cost.output.share = 33%
 rca.within.E.cost.reasoning.share = 21%
 rca.within.E.cost.total = a mean of $0.052 per question
 rca.within.E.cost.uncachedInput.share = 46%
+rca.within.E.speed.burstAnswers = 0 of 6 answers whose visible text arrived in one burst
 rca.within.E.time.other.seconds = a mean of 0.3 s per question
 rca.within.E.time.other.share = 2%
 rca.within.E.time.outputGeneration.seconds = a mean of 8.8 s per question
@@ -1898,7 +1926,7 @@ rca.within.E.time.ownWaits.share = 0%
 rca.within.E.time.toolExecution.seconds = a mean of 1.5 s per question
 rca.within.E.time.toolExecution.share = 10%
 rca.within.E.time.total = a mean of 15.0 s per question
-rca.within.E.time.ttft.seconds = a mean of 4.4 s per question
+rca.within.E.time.ttft.seconds = a mean of 4.4 s per question, summed over its model calls
 rca.within.E.time.ttft.share = 29%
 spread.cost = from Model E at $0.010 to Model D at $0.060
 spread.dimension.accuracy = from Model E at 50 to Model A at 80, 30 points apart
@@ -2291,6 +2319,8 @@ CHECK BEFORE YOU ANSWER (one check per claim rule, each with an example from thi
 - Every model at once: a statement about all the compared models cites a comparison.* fact, as in 'Each model rests on {{comparison.runsPerSuite}} across {{comparison.suiteCount}}.' Never stretch one model's token, such as {{model.A.runs}}, or one pair's token over every model.
 - Rule 31, sentence shapes: {{rca.hypothesis.HQ3.1.statement}} stands alone as a sentence of its own, as does every known fact and check; inside your own sentence, a check is cited by its rca.check.<n>.summary token; a label such as {{rca.hypothesis.HQ3.1.label}} is a noun phrase, never a sentence of its own; the prose cites a hypothesis by its .ref token, after your own words for what it is about, and several of one rule once, as a range such as {{rca.hypothesis.WS2.1.ref}}–{{rca.hypothesis.WS2.3.ref}}; a share follows its cause as '{{rca.hypothesis.WS2.1.share}} {{rca.hypothesis.WS2.1.shareOf}}'; never put a parenthesis inside another, or a model token inside parentheses; never join two worded facts with 'to'.
 - Rule 39, counts: {{model.A.profile.noToolAnswers}} already prints 'without a tool call', so write it as a noun phrase with none of those words beside it; never add 'with', 'without' or 'that' words after it that repeat it; to say that several models share a signal, name each model with its own token and nothing else about it, as '{{model:A}} had {{model.A.profile.noToolAnswers}} and {{model:B}} {{model.B.profile.noToolAnswers}}'; never name the signal beside them or open the sentence with it, as in 'On tool calls,', 'Across the panel,' or 'answers without tools, most notably'.
+- Rule 44, counts across a total: a count across models, questions or answers is its fact token, such as {{model.A.profile.noToolAnswers}}; never write it in words, as in 'seven of the eight models', and never put a number word before a token that prints the total; a plain count with no total may be a number word up to ten.
+- Rule 46, figures in words: never write a number of twenty or more in words, such as a score of ninety-five or seventy percent; cite the figure's token instead.
 - Rule 38, shares: a share stands beside its own hypothesis's .ref only, as '{{rca.hypothesis.WS2.1.share}} {{rca.hypothesis.WS2.1.shareOf}} ({{rca.hypothesis.WS2.1.ref}})'; describe a group of hypotheses by '{{rca.rule.HC4.shareSpan}} ({{rca.hypothesis.HC4.1.ref}}–{{rca.hypothesis.HC4.4.ref}})'; never put a share beside a range or a list, and never write 'led by' a share.
 - Rule 33, causes: 'Part of the gap may be due to <what it is about, in your own words> ({{rca.hypothesis.HQ3.1.ref}}).' In the next runs, the run's own rca.run token serves too.
 - Rule 34, certainty: no hypothesis is graded High and no axis is established, so use no certainty word; write probable or not established.

@@ -225,10 +225,73 @@ public class AdminBenchmarkBatteryReportsControllerTests
         Assert.Equal(h.BatteryRunId, view.RunId);
         Assert.Equal("Finished", view.Phase);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, view.Status);
-        Assert.Equal(AllAudiences, view.Audiences);
+        // A battery job lists its documents in the write order: the Root Cause Analysis first.
+        Assert.Equal(BenchmarkReportSlots.WriteOrder, view.Audiences);
+        Assert.Equal(BenchmarkReportSlots.WriteOrder, view.Job.Documents.Select(d => d.Audience));
         Assert.Equal(h.WriterConfig.Id, view.WriterConfigId);
         Assert.Equal("Anthropic", view.WriterProvider);
         Assert.Equal(BenchmarkReportPackPreparation.BatteryJobLabel(h.BatteryRunId), view.Job.SubjectLabel);
+    }
+
+    [Fact]
+    public async Task WriterReplies_ServeTheHeldJobsReplies_AndAreNotFoundWithoutOne_OrPastTheRetention()
+    {
+        var clock = new MovableClock();
+        await using var h = await BatteryReportHarness.CreateAsync(clock: clock);
+        Assert.Null(h.Service.TryGetHeldJob(h.BatteryRunId));
+        Assert.IsType<NotFoundResult>(await h.Controller().GetWriterReplies(h.BatteryRunId, Ct));
+
+        await h.Service.ScheduleIfDue(h.BatteryRunId);
+
+        Assert.NotNull(h.Service.TryGetHeldJob(h.BatteryRunId));
+        var content = Assert.IsType<ContentResult>(await h.Controller().GetWriterReplies(h.BatteryRunId, Ct));
+        Assert.Equal("text/markdown; charset=utf-8", content.ContentType);
+        Assert.StartsWith("# Writer replies: ", content.Content, StringComparison.Ordinal);
+        Assert.Contains(BatteryReportFakeWriter.ReplyOf(BenchmarkReportAudience.RootCauseAnalysis), content.Content, StringComparison.Ordinal);
+        Assert.Contains(BatteryReportFakeWriter.ReplyOf(BenchmarkReportAudience.ExecutiveSummary), content.Content, StringComparison.Ordinal);
+        Assert.IsType<NotFoundResult>(await h.Controller().GetWriterReplies(999999, Ct));
+
+        // A finished job is held for the retention, and no longer.
+        clock.Advance(BenchmarkRunReportDocumentService.FinishedJobRetention - TimeSpan.FromMinutes(1));
+        Assert.IsType<ContentResult>(await h.Controller().GetWriterReplies(h.BatteryRunId, Ct));
+        clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.Null(h.Service.TryGetHeldJob(h.BatteryRunId));
+        Assert.IsType<NotFoundResult>(await h.Controller().GetWriterReplies(h.BatteryRunId, Ct));
+    }
+
+    [Fact]
+    public void TheWriterRepliesEndpoint_IsAGetUnderTheJobRoute()
+    {
+        var method = typeof(AdminBenchmarkBatteryReportsController).GetMethod(nameof(AdminBenchmarkBatteryReportsController.GetWriterReplies))!;
+        var get = Assert.Single(method.GetCustomAttributes(typeof(HttpGetAttribute), false).Cast<HttpGetAttribute>());
+        Assert.Equal("job/writer-replies", get.Template);
+
+        var run = typeof(AdminBenchmarkReportPacksController).GetMethod(nameof(AdminBenchmarkReportPacksController.GetRunReportWriterReplies))!;
+        var runGet = Assert.Single(run.GetCustomAttributes(typeof(HttpGetAttribute), false).Cast<HttpGetAttribute>());
+        Assert.Equal("runs/{runId:long}/report-documents/job/writer-replies", runGet.Template);
+    }
+
+    /// <summary>A clock the tests move by hand, from a fixed start.</summary>
+    private sealed class MovableClock : TimeProvider
+    {
+        private readonly object _lock = new();
+        private DateTimeOffset _now = new(2026, 10, 20, 12, 0, 0, TimeSpan.Zero);
+
+        public void Advance(TimeSpan by)
+        {
+            lock (_lock)
+            {
+                _now += by;
+            }
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            lock (_lock)
+            {
+                return _now;
+            }
+        }
     }
 
     [Fact]

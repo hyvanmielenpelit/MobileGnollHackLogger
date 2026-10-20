@@ -145,6 +145,7 @@ describe('BatteryAiReportsComponent', () => {
       reportDocumentPdfUrl: vi.fn().mockName("AdminBenchmarkService.reportDocumentPdfUrl"),
       getBatteryReportJob: vi.fn().mockName("AdminBenchmarkService.getBatteryReportJob"),
       cancelBatteryReportJob: vi.fn().mockName("AdminBenchmarkService.cancelBatteryReportJob"),
+      getBatteryReportWriterReplies: vi.fn().mockName("AdminBenchmarkService.getBatteryReportWriterReplies"),
       getBatteryRun: vi.fn().mockName("AdminBenchmarkService.getBatteryRun"),
       estimateBatteryReports: vi.fn().mockName("AdminBenchmarkService.estimateBatteryReports"),
       deleteBatteryReportDocument: vi.fn().mockName("AdminBenchmarkService.deleteBatteryReportDocument"),
@@ -361,6 +362,15 @@ describe('BatteryAiReportsComponent', () => {
     });
   });
 
+  it('says an Executive Summary written alone is written from the battery run\'s stored Root Cause Analysis', () => {
+    service.listReportDocuments.mockReturnValue(of([aiDoc(72, 5)]));
+    setUp();
+    load(batteryRun({ reportWriterModelConfigurationId: 1 }));
+    expect(checkbox(1).checked).toBe(true);
+    expect(rowText(section(), '.rr-ai-audiences .rr-ai-order-hint')).toBe('The Executive Summary is written from this battery '
+      + 'run\'s stored Root Cause Analysis when that was written from the same data; otherwise it is written without one and says so.');
+  });
+
   // --- The report writer ---
 
   it('preselects the battery run\'s own writer', () => {
@@ -433,9 +443,12 @@ describe('BatteryAiReportsComponent', () => {
     context.source!.getJob().subscribe();
     context.source!.cancel().subscribe();
     context.source!.getStoredStatus!().subscribe();
+    service.getBatteryReportWriterReplies.mockReturnValue(of('# Replies\n'));
+    context.source!.getWriterReplies!().subscribe();
     expect(service.getBatteryReportJob).toHaveBeenCalledWith(7);
     expect(service.cancelBatteryReportJob).toHaveBeenCalledWith(7);
     expect(service.getBatteryRun).toHaveBeenCalledWith(7);
+    expect(service.getBatteryReportWriterReplies).toHaveBeenCalledWith(7);
 
     // The status poll sees the job finish and lists the documents again.
     service.getBatteryReportJob.mockReturnValue(of(jobView(3)));

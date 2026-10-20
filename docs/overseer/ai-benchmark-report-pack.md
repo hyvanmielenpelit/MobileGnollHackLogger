@@ -5429,3 +5429,147 @@ second start deletes nothing. No EF migration and no schema change were needed, 
 18, which checked parts of the retired documents, keep their numbers unused, and rule 14 keeps only its
 headline half. The Download Center and chart settings stored in browsers drop the two document types when
 read (§§ 8, 13).
+
+---
+
+## 18. The Executive Summary Written From the Root Cause Analysis (2026-10-20)
+
+From **report format 25** (per-model and run documents), **29** (comparison-wide) and **7** (chat
+consistency), and **engine version 13**, the Executive Summary is written **after** the Root Cause Analysis
+and from a code-built digest of it. Before, it was written first from the same fact sheet with every
+`rca.*` fact hidden (`RootCauseFacts.WriterHidden`), so it could carry nothing the analysis found. A stored
+document keeps its own format version and renders as before.
+
+### Write order and display order
+
+`BenchmarkReportSlots.WriteOrder` is *Root Cause Analysis, Executive Summary* (`InWriteOrder`,
+`WriteRank`). A job creates its documents in that order: run and battery `CreateJobAsync`, `SubjectsOf`
+and the comparison-scope rows of `AdminBenchmarkReportPacksController`. The run and battery job views list
+`audiences` in the write order, and a report-pack job's `documents` follow it. **Display order is
+unchanged**: stored-document lists and the Download Center still show the Executive Summary first.
+Chat consistency jobs keep their order (Executive Summary, Provider Issue Report). A job's total time does
+not change, since documents were already written one after the other; the Executive Summary finishes about
+one document later than before.
+
+### The digest
+
+`BenchmarkRootCauseDigest` builds the digest from the stored analysis's `FactsJson.RootCause`, its `rca.*`
+facts and its `WriterOutputJson`, never from rendered prose. Its facts are visible to the Executive
+Summary only:
+
+| Item | Fact key | Cap |
+|---|---|---|
+| Key finding (the headline, tokens resolved) | `rcaDigest.keyFinding` | 1 |
+| Axis status | `rcaDigest.axis.<intelligence\|speed\|cost>` | 3 |
+| Hypotheses, by grade; a Not supported one only as *"ruled out: …"*; price effects and nulls left out | `rcaDigest.hypothesis.<n>` | 3 per axis (run), 2 (comparison) |
+| The writer's leads, *"an untested lead (Low), from the graders' comments"* | `rcaDigest.lead.<n>` | 2 |
+| Next runs | `rcaDigest.nextRun.<n>` | 2 |
+| Checks | `rcaDigest.check.<n>` | 2 |
+| Control and replicate limits | `rcaDigest.limits` | 1 |
+
+The user message carries a **ROOT CAUSE ANALYSIS** block (before GRADERS, or MODELS in comparison scope)
+and the digest keys leave FACTS. The rules sit in the system prompt, so `WriterPromptSha256` differs
+between a prompt with and without a digest (`PromptSha256(audience, sheet)` stores the variant used): no
+cause, mechanism or next step the digest does not hold; a cause beside its `rcaDigest.*` token and its grade
+word; a lead called a lead; *Where it fell short* names the item that explains a weakness.
+
+The Executive Summary's `FactsJson` records `rootCauseDigest: { documentId, sha256, source, note }`, so no
+migration was needed. The cost estimates and the battery prompt budget count the digest's characters.
+
+### When there is no analysis to read
+
+| Situation | Behavior |
+|---|---|
+| Both documents; the analysis is written | The summary reads its digest (`source` `thisJob`) |
+| Both documents; the analysis fails or is canceled | The summary is written without a digest, *Completed with warnings*, with rule 49's note *"Written without the Root Cause Analysis, which failed"* on the headline |
+| The summary alone; a stored analysis of the same subject, origin and scope with an equal facts hash (`FactsSha256`, the facts list only) | That analysis's digest, the newest of up to five checked (`stored`) |
+| The summary alone; no match | Written as before, an info line in the job log (`none`) |
+| The analysis alone is rewritten | The stored summary is not rewritten |
+
+### What to look at next
+
+A new Executive Summary slot, `nextSteps`, titled *What to look at next*: one to three items, 60 words,
+each citing an `rcaDigest.nextRun.*` or `rcaDigest.check.*` token, the first first. It is prompted only
+with a digest and required only when the digest lists a run or a check. The renderer prints it after *How
+reliable this result is*, in Markdown, PDF and Word; no layout version moved.
+
+### Other Executive Summary changes
+
+- **Same-provider reading.** `panel.sameProviderDelta` (a panel run with exactly one member from the
+  model's provider) reads *"member B, from the model's own provider, scored it 2 points below member A"*;
+  the reliability paragraph cites it in place of the generic *may read its answers more favorably*.
+- **Zero counts** are cited at most once, to rule something out, never as a finding (also in the chat
+  consistency prompts, hence format 7).
+- **Question topics** are neither asked for nor kept: `ClearUnprintedTopics` empties them before
+  validation in every audience but the Root Cause Analysis, which renders them, and rule 9 no longer reads
+  a Root Cause Analysis topic (the 12-word cap stays).
+- **Header.** A format-25 or -29 summary's header (Markdown title block, PDF and Word) has a **Root Cause
+  Analysis** row: *"Document N, written first, from the same data"* or *"None: <note>"*.
+
+### Validation rules
+
+| Rule | Name | Severity | Reads |
+|---|---|---|---|
+| 44 | *A count written in words* | as before | also, in every audience, a number word before *of* / *of the* and a token whose display is a bare total (*"seven of the {{answers.scored}}"*) |
+| 46 | *Score or figure written in words* | Warning | a number word of twenty or more (*ninety-five*, *seventy percent*), not an ordinal, and not a threshold (*below seventy*, *seventy-five or more*, *at least fifty*) |
+| 47 | *Cause without a Root Cause Analysis item* | RemovesItem | a summary with a digest: a causal word needs an `rcaDigest.axis.*`, `.hypothesis.*` or `.lead.*` token in its sentence, hedged beside a lead or a Low grade |
+| 48 | *Next step without a run or check* | RemovesItem | each *What to look at next* item cites `rcaDigest.nextRun.*` or `.check.*`; a fourth is removed |
+| 49 | *Written without the Root Cause Analysis* | WarningTextKept | recorded by the job, never raised by the validator |
+
+Also: `{{subject}}` reads *The subject* at a sentence start when the validator resolves tokens, so rule
+31a no longer fires on *"… readability. {{subject}} had …"*; rule 39 masks the grader role phrases
+(*panel member A*, *panel members*, *reference reader*, *claim verifier* …) before comparing words; and the
+Root Cause Analysis repair reminders and rule 3's message ask for every count across a total as a fact token
+(*"a plain count with no total may be a number word up to ten"*) instead of *write counts as number words*.
+The Root Cause Analysis CHECK block lists rules 44 and 46. New facts serve these rules:
+`rca.within.<T>.speed.burstAnswers` (*"7 of 8 answers whose visible text arrived in one burst"*),
+`profile.top.<d>` and its summary twin `dimension.<d>.topLevel` (answers at level 6; in a panel run a mean
+of 5.5 or more), and in a panel run `question.Q<n>.memberA` / `.memberB` (*"95 / 100"*).
+
+### Root Cause Analysis changes (engine 13)
+
+- **A ruled-out hypothesis is never an axis's best.** `RootCauseHypotheses.StatusOf` picks among grades Low
+  and above; when every candidate is Not supported the axis is *Not established*, the reason *"Every
+  hypothesis on this axis was ruled out by its own test."*, and the conclusions table reads *None (all ruled
+  out)*.
+- **The headline leads with the chat.** When an answer was graded incorrect by both panel members (both
+  quality scores at most 33), or a critical error was confirmed, the user message carries a HEADLINE
+  OBSERVATION and the headline opens with it — question reference and dimension, no causal word — before
+  the first established or probable axis. A tool-rounds speed or cost cause (WS3, WC3) comes after it.
+- **The wait before output.** `rca.within.<T>.time.ttft.*` is labeled *"Wait before output, summed over
+  the model calls of a question"* (key unchanged), the prompt says the run's time to first token is
+  `speed.ttftP50`, and the glossary defines *Wait before output* beside *Time to first token*.
+- **The withheld rate.** With one or two incorrect or not-attempted answers the failure profile's *Wrong
+  instead of abstaining* reads *Too few to rate (1 incorrect or not attempted)*, or *Too few (1)* in the
+  comparison table.
+
+### The write order in the UI
+
+- **AI Reports tab** (run and battery), *Write missing reports* → Documents: with both checked, *"Written in
+  this order: the Root Cause Analysis first, then the Executive Summary, which is written from it."*; with
+  the summary alone, *"The Executive Summary is written from this run's stored Root Cause Analysis when that
+  was written from the same data; otherwise it is written without one and says so."* (*battery run's* in
+  the battery tab). The *Rewrite the Root Cause Analysis?* dialog says the summary stays written from the
+  earlier analysis until it is rewritten too.
+- **Model Comparison, step 3**: the same hints, with *this comparison's* or *each model's*.
+- **Writing dialog**: the stage rail in write order (*Queued, Preparing, Root Cause Analysis, Executive
+  Summary, Done*); an order note under it while both are written; the status line adds *"— the Executive
+  Summary follows, written from it"* while the analysis is written.
+- **Document cards** (dialog and step 3): a pending summary reads *Waits for the Root Cause Analysis*; then,
+  from `rootCauseSource`, *Written from the Root Cause Analysis above*, *Written from Root Cause Analysis
+  #N* or, in the warning style, *Written without a Root Cause Analysis: <note>*. The progress DTO carries
+  `rootCauseSource`, `rootCauseSourceDocumentId` and `rootCauseSourceNote`.
+- **Documents list**: a summary row shows *Written from Root Cause Analysis #N*, or *Written from an earlier
+  Root Cause Analysis (#N); rewrite it to include the newest* when a newer analysis of the subject exists
+  (`rootCauseSourceDocumentId` on the list DTO).
+
+### The writing dialog's diagnostics
+
+The run and battery writing dialog's writer cell shows its badges in the shared order (thinking level, then
+provider). *Log and diagnostics* gains **Download the writer's replies (Markdown)**, served by
+`GET api/admin/benchmark/runs/{runId}/report-documents/job/writer-replies` and
+`GET api/admin/benchmark/batteries/runs/{batteryRunId}/report-documents/job/writer-replies` (404 once the
+held job is gone: it is kept 6 hours, and until the run's next writing job), and the downloaded
+diagnostics carry the wizard's sections — versions, preparation notes, every writer call, word counts,
+validation by turn, failed replies and why each document ended as it did — from the shared
+`report-job-diagnostics-sections.ts`.

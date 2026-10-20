@@ -544,7 +544,8 @@ public static class BenchmarkBatteryReportFacts
 
     /// <summary>
     /// The larger writer prompt of the Executive Summary and the Root Cause Analysis for this sheet and
-    /// content, system prompt and user message together, in characters.
+    /// content, system prompt and user message together, in characters; the Executive Summary's with the
+    /// Root Cause Analysis digest it is written from (<see cref="BenchmarkReportPackPrompt.RootCauseDigestPromptChars"/>).
     /// </summary>
     public static int PromptChars(BenchmarkReportFactSheet sheet, BenchmarkReportContentSnapshot content)
     {
@@ -552,8 +553,9 @@ public static class BenchmarkBatteryReportFacts
         ArgumentNullException.ThrowIfNull(content);
 
         return new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis }
-            .Select(a => BenchmarkReportPackPrompt.Build(a, sheet, content))
-            .Max(p => p.SystemPrompt.Length + p.UserMessage.Length);
+            .Select(a => (Audience: a, Prompt: BenchmarkReportPackPrompt.Build(a, sheet, content)))
+            .Max(p => p.Prompt.SystemPrompt.Length + p.Prompt.UserMessage.Length
+                      + (p.Audience == BenchmarkReportAudience.ExecutiveSummary ? BenchmarkReportPackPrompt.RootCauseDigestPromptChars(sheet) : 0));
     }
 
     // ---------------------------------------------------------------------------------------------

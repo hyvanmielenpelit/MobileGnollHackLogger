@@ -38,6 +38,9 @@
             @if (row.doc; as doc) {
               <span class="gh-tag rr-ai-doc-status" [class.is-warning]="doc.status === 'CompletedWithWarnings'">{{ documentStatusLabel(doc) }}</span>
               <span class="rr-ai-doc-meta">{{ documentMeta(doc) }}</span>
+              @if (documentSourceLine(doc); as source) {
+                <span class="rr-ai-doc-meta rr-ai-doc-source">{{ source }}</span>
+              }
               @if (doc.runChangedSinceGeneration) {
                 <span class="gh-tag gh-tag-changed">{{ changedSinceText }}</span>
               }
@@ -141,6 +144,9 @@
                    [checked]="isChecked(audience)" (change)="toggleAudience(audience, $event)">
             {{ audienceLabel(audience) }}
           </label>
+        }
+        @if (writeOrderHint) {
+          <p class="form-hint rr-ai-order-hint">{{ writeOrderHint }}</p>
         }
         @for (label of writtenLabels; track label) {
           <p class="form-hint rr-ai-written-hint">{{ label }} is already written. Delete it to write it again.</p>
@@ -324,7 +330,8 @@
       <p class="rr-ai-rewrite-text">
         A new Root Cause Analysis is written with the {{ target.controls.length }}
         {{ target.controls.length === 1 ? 'control' : 'controls' }} available now. It replaces the current one
-        once it is stored. The Executive Summary is not changed.
+        once it is stored. The Executive Summary is not rewritten: it stays written from the earlier Root Cause
+        Analysis until you rewrite it too.
       </p>
       <div class="rr-ai-writer">
         <label [id]="rewriteLabelId">Report writer</label>

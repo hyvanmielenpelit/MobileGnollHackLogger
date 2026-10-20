@@ -34,6 +34,7 @@ import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { rememberedPdfPaper, reportDocumentFileStem } from '../download-center/download-center-panel.component';
 import { reportDisclosureInfo } from '../report-disclosure-guide';
+import { reportWriteOrderHint } from '../run-ai-reports/report-documents-list';
 import {
   MAX_COMPARISON_DOCUMENT_ENTRIES,
   MIN_COMPARISON_DOCUMENT_ENTRIES
@@ -352,6 +353,22 @@ export class ComparisonDocumentsStatusComponent implements OnInit, OnDestroy {
 
   get otherSetCount(): number {
     return this.view?.otherSets.length ?? 0;
+  }
+
+  /**
+   * The write order of the checked rows, under the lists: one line for a group with both documents
+   * checked and one for a group with the Executive Summary alone, each at most once.
+   */
+  get writeOrderHints(): string[] {
+    const view = this.view;
+    if (!view || view.state !== 'ready') {
+      return [];
+    }
+    const owner = view.mode === 'comparison' ? 'this comparison\'s' : 'each model\'s';
+    const hints = view.groups
+      .map(group => reportWriteOrderHint(group.rows.filter(row => row.checked).map(row => row.audience), owner))
+      .filter(hint => hint !== '');
+    return [...new Set(hints)];
   }
 
   ngOnInit(): void {

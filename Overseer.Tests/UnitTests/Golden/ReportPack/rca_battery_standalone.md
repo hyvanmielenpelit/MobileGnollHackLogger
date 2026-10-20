@@ -119,7 +119,7 @@ The first known fact: No earlier run of another model answered these questions u
 | Suite 1: Item lore | 20.5 s | 2.6 s | 13.0 s | 2.0 s | 0.1 s | 2.9 s |
 | Suite 2: Hazards | 24.5 s | 2.6 s | 16.2 s | 2.0 s | 0.1 s | 3.6 s |
 
-*Wall time per question: the median time per question, tool execution included, split into its parts in proportion to their mean times. The parts are the wait before output, output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. The wait before output is summed over every model call of the answer, hidden thinking included; the run report's time to first token (the wait before the model starts writing, mostly its thinking) is the first call's alone. It differs from the median model time the other tables of this document give, which leaves tool execution out.*
+*Wall time per question: the median time per question, tool execution included, split into its parts in proportion to their mean times. The parts are the wait before output (every model call's wait for its first token on one question, summed), output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. The wait before output is summed over every model call of the answer, hidden thinking included; the run report's time to first token (the wait before the model starts writing, mostly its thinking) is the first call's alone. It differs from the median model time the other tables of this document give, which leaves tool execution out.*
 
 The speed tables split the time per question into its components.
 
@@ -588,6 +588,7 @@ The counts and the configuration facts the analysis states, each numbered as the
 - **Time to first token:** The seconds from sending a request to the first word of the reply. For reasoning models it is mostly the time the model spends thinking before it answers.
 - **Tokens:** The pieces of text, roughly three quarters of a word each, that a model reads and writes; providers price by them. Uncached input is text read at the full price. Cache reads are input stored from an earlier call and charged less; cache writes store it. Visible output is the answer, and reasoning is the model's hidden thinking, billed as output; a provider that does not report it separately counts it inside output.
 - **Tool round:** One cycle in which the model calls a tool, such as the wiki search, reads its result and continues. Each round adds a model call, with its own wait for the first token.
+- **Wait before output:** The time to first token of every model call of one question, added up: each tool round adds one more wait. It is the first part of the time per question, not the run's time to first token, which is the first call's alone.
 - **Weighted geometric mean:** The way an answer's four dimension scores are combined. Unlike a plain average, it falls sharply when any one dimension is very low, so strong dimensions cannot hide a weak one.
 
 ## Fact sheet
@@ -1576,6 +1577,12 @@ The counts and the configuration facts the analysis states, each numbered as the
       "value": 0.2617801047120419
     },
     {
+      "available": false,
+      "display": "not available",
+      "key": "rca.within.subject.speed.burstAnswers",
+      "unavailableReason": "No answer recorded whether its visible text arrived in one burst."
+    },
+    {
       "available": true,
       "display": "a mean of 3.2 s per question",
       "key": "rca.within.subject.time.other.seconds",
@@ -1631,7 +1638,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "a mean of 2.6 s per question",
+      "display": "a mean of 2.6 s per question, summed over its model calls",
       "key": "rca.within.subject.time.ttft.seconds",
       "value": 2.575
     },
@@ -2187,7 +2194,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 12,
+    "engineVersion": 13,
     "evidence": [
       {
         "atRisk": [
@@ -2213,6 +2220,7 @@ The counts and the configuration facts the analysis states, each numbered as the
           }
         ],
         "budgetOrDefectAnswers": 0,
+        "burstAnswers": 0,
         "callsPerAnswer": 2,
         "cost": [
           {
@@ -2276,6 +2284,7 @@ The counts and the configuration facts the analysis states, each numbered as the
             "value": 3.225
           }
         ],
+        "timedAnswers": 0,
         "token": "subject",
         "tokens": [
           {
@@ -2945,6 +2954,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 202 · format version 24 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 202 · format version 25 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

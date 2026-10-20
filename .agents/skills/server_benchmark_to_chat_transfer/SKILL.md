@@ -224,7 +224,7 @@ A benchmark run executes the **production tool registry**, so a tool defect seen
 - **Whether arguments and results were stored is a version boundary — check the run's harness version before anything else.** For a run **before harness 17** they were not stored: `BenchmarkRunAnswer.ToolCallSummary` is a `name×count` string over *successful* calls only, `AgentRunRequest.ShowDebugLog` is hardcoded `false` at every benchmark call site, and a run creates no `ChatMessage` rows, so nothing equivalent to `ChatMessageToolCall.ArgsText` / `.Result` exists. For such a run, *"compare the parameters and results"* is **reconstruction and replay**, never transcript reading. **From harness 17** a run's `BenchmarkRunAnswer.ToolCalls` rows carry the real `ArgsText`, `Result`, `Error`, `Status`, emission order (`SortOrder`), tool round (`IterationIndex`), timings and the result size as `ToolExecutor` handed it over (`ResultLengthChars`) for **every attempted call**, read through `GET /api/admin/benchmark/runs/{id}/answers/{answerId}/tool-calls` (admin-authenticated). Reading those rows is **rung zero** — attempted before any reconstruction or replay (`server_benchmark_tool_diagnostics` § 2, § 7). A row whose payload the retention sweep pruned shows `ArgsText`/`Result` null beside a non-zero `ResultLengthChars`; that is the sweep, not an absent record.
 - **The count of failed tool calls is derived for a run before harness 17.** `ToolCallCount − Σ(ToolCallSummary counts) − ToolCallsBlocked` is the number of calls that errored technically. No report section surfaces it, and a non-zero value is direct evidence of a tool problem. Compute it first. A null `ToolCallsBlocked` means *not recorded*, never zero. **From harness 17 the figure is reported** as the answer's three-way outcome split, so read it rather than deriving what the record already states.
 - **From harness 16 a run fingerprints three of the five corpora** — knowledge base, GnollHack wiki, GnollHack source — by their Git HEAD, which says nothing about an uncommitted working tree. **From harness 48 it also records what each of the five indexes held** (`CorpusIndexFingerprintsJson`: a SHA-256 over the indexed text of every file, with a file count), the NetHack wiki and NetHack source included. All of these are **provenance, not comparability keys**: a difference is a fact to investigate, not an automatic tier drop.
-- **Version currency.** The bullets above were last checked against harness **56**, on 2026-10-19. `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
+- **Version currency.** The bullets above were last checked against harness **57**, on 2026-10-20. `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
 
 > 🛑 **Stop here.** Read the three tool-layer skills **now**, before dispatching any research about a tool, a corpus, or a tool count, and before writing the first finding. All three are read at this point; none is reached through the others.
 >
@@ -418,7 +418,9 @@ independent readers carry them:
   Comparison's judge-family diagnostics list a pair of entries as judge-dependent — member A and member
   B rank them in opposite order — the panel's order for that pair rests on the balance between the
   members, not on their agreement. It is a tie for rung 6 until another comparable run or a replicate
-  set separates them.
+  set separates them. The same holds for a provider order as a whole: on Comparison #4 (2026-10-11)
+  the B − A gap was −1.2 for OpenAI candidates and −6.1 for Anthropic ones, so its
+  OpenAI-over-Anthropic order rested on the panel's balance, which no configured panel can test.
 - **The bias figures are estimates with stated assumptions.** The asymmetry estimate assumes the
   reference reader is neutral between the members' two families; the accusation audit assumes the
   verifier is. Quote them with their intervals and the diagnostics' caveats, never as a verdict on a
@@ -652,6 +654,9 @@ cautions, verifier instances into the verifier ledger. Their registry rows are a
 `git show 94018d76:.agents/skills/server_benchmark_to_chat_transfer/SKILL.md`, § 11; an entry
 folded earlier is in this file's Git history before its folding round. Battery run 12 (runs 98, 99)
 was retired on 2026-10-20: chat changes in the ledger, open items in the bones-round entry below.
+Comparison #4 (battery runs 100–119, `comparison_4_rca_review/`) was retired on 2026-10-20: its T1
+routing row is in the ledger, its grader-family gap in § 6 *Reading a panel run*; its R1 replicate
+of all nine models was never made.
 Each round's own record is in its task directory under `hyvanmielenpelit/MobileGnollHackLogger/` in
 the plans repository.
 
@@ -731,18 +736,6 @@ the plans repository.
   runs. Read [`references/registry_corrections.md`](references/registry_corrections.md) before using
   a figure from those runs or that period.
 
-### Comparison #4 (battery runs 100–119): 2026-10-11, nine models, battery *Two initial suites*
-- **Candidates**: GPT-6 Astra @ `medium`; GPT-6 Luna @ `max`, `high` (the reference); GPT-5.6 Luna @ `max`, `high`; Claude 5.5 Haiku @ `xhigh`; Claude 5.5 Sonnet @ `high`, `medium`; Claude 5.5 Opus @ `medium`. One run per suite each (18 member runs, 36 questions).
-- **Prompt options**: concise, tools on, web search and subagents off, source references **Disallowed**; identical on every run.
-- **Grading regime**: harness 55, scoring 14, profile 1; graders 19 (A, Anthropic) / 14 (B, OpenAI) / 16 (reference reader, claim verifier), blind. RCA document 63, format 18, engine 3, writer Gemini 4 Argon @ `medium`.
-- **Instrument SHAs**: prompt `ce36c4b442c3` / `9f25393be387`; `ToolGuidesSha256` `733b710f7524`. `ChatService.cs` commit, KB HEAD and corpus fingerprints **not read** (not printed).
-- **Quality**: GPT-6 Astra (medium) 87 (85–89), the only model established above the reference GPT-6 Luna (high) 83 (80–86); Claude 5.5 Sonnet (medium) last, 76 (72–80). Completeness lowest for every model. **Grader-family gap** (B − A): OpenAI candidates −1.2, Anthropic −6.1, so the OpenAI-over-Anthropic order rests on the panel's balance, which no configured panel can test today.
-- **Speed**: median model time 8.9 s (Sonnet `medium`) to 60.3 s (GPT-6 Luna `max`, 2.47× its `high`).
-- **Cost**: per question US$0.0029 (GPT-6 Luna `high`, cheapest) to US$0.194 (GPT-6 Astra, ≈ 66.5× the reference); Claude thinking printed as zero reasoning (E5).
-- **Transfer Action**: generator fixes, `comparison_4_rca_review/implementation_plan_v2.md` (RCA engine 4 → 5, comparison format 19 → 20, per-model 14 → 15); no change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides` or `RecommendedModels`. T1: Claude 5.5 Sonnet (medium) answered 9 of 36 without a tool call (routing, rung 6 then 3 after replication); logged, not acted on (one run per suite is motivating only).
-- **Verification Outcome**: pending the runbook's R1 (replicate of all nine).
-- **Rounds A and C** (2026-10-16, `comparison_4_rca_review/implementation_plan_A_v3.md`, `_C_v3.md`): A — battery panel diagnostics in the report path, price effects from the cards, Appendix G limited to cited and critical-error questions; C — sentence trimming and a shortening turn, honest added-by-Overseer notes, check summaries and the cost price note, sentence case, progress cards. No chat change.
-
 ### Bones quest-artifact trap (runs not identified): 2026-10-18, cheaper models (not identified)
 - **Candidates**: not read. The round started from the user's observation that every cheaper model answers "What quest artifacts can you find in bones files, if any?" wrongly. Nothing was exported (report, tool-call log, suite), so runs, models and thinking levels are unidentified, and the Stage 1 diagnosis (classes D1–D6) was not done.
 - **Prompt options, Grading regime, Quality, Speed, Cost**: not read or measured (no report).
@@ -777,6 +770,24 @@ the plans repository.
   - No change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides/` or `RecommendedModels`.
 - **Verification Outcome (bones round)**: R0 not made. W1 criterion 2 met (4 of 4), criterion 1 failed (1 of 4 correct, Completeness-limited); W1 partially closed.
 - **Still outstanding**: T1 (precondition pending R1); W2 validation; the items the bones-round entry carries from battery run 12.
+
+### Run 123 — 2026-10-20: GPT-6 Luna (high), GnollHack Trap Questions
+- **Candidate**: GPT-6 Luna (`gpt-6-luna`) @ `high`, default tier, parallel mode 2, max output 128,000. Made outside the run-122 runbook; by its keys a replicate of run 122 on the W2 wiki.
+- **Prompt options**: mode 0, concise, tools on, no web search, no subagents, source refs **Disallowed**, spoiler-free off, no snapshot, no history, no pre-injected wiki context.
+- **Grading regime**: harness 56, scoring 14, Standard profile (1). Panel A Claude 5 Opus @ `medium`, B GPT-5.6 Sol @ `medium` (the candidate's family); reference reader and claim verifier Gemini 3.8 Flash @ `medium`, every answer, blind. Writer Gemini 4 Argon @ `medium`, report format 24.
+- **Instrument SHAs**:
+  - `ChatService.cs` `53373897`, `Overseer/ToolGuides` `a3de3901`, `appsettings.json` `53373897` (unchanged since run 122 by the unchanged prompt and ToolGuides hashes; commits not re-read)
+  - Prompt `ce36c4b442c3`; ToolGuides `639ba74661d9`
+  - KB `d2af7241`; wiki `e82a48c1` (the W2 commit); source `1ba33370`
+  - WIKI-IDX `d57802310d34`, SRC-IDX `49a062d361aa`, KB-IDX `1fd04d3e2f09`, NHW-IDX `e5dc755ab200`, NHS-IDX `c3929071a8d9`
+  - Suite 9, item revisions all r1
+- **Quality**: Index 85 ± 9 (A 86, B 84, reference reader 94), ICC 0.85, 1 disagreement (Q6). 0 critical errors. Outcomes 6/1/1/0; Completeness 77.5 lowest. Claims 5 supported; accused sentences 1 supported, 3 refuted.
+- **Speed**: median model time 11.7 s, P90 32.9 s, TTFT P50 2.1 s; 3.2 model calls per answer; source-family share r = 0.90 with model time (n = 8).
+- **Cost**: US$1.14 per run; candidate US$0.0017 per question; claim verifier 41 %; candidate cache-read share 89 %. 25 tool calls, 0 failed, 0 refused, 1 cut (T2).
+- **Transfer Action**: `benchmark_run_123_analysis/implementation_plan_v2.md` — T1 (rung 3, `_policy.md`, with three held-out questions), T2 (`WikiService` leading-"The" title match), harness 57; report-writer fixes (the Executive Summary written from the Root Cause Analysis, validator gaps), UI tasks; Pets wiki article deferred until R1 is analyzed. No change to `ChatService.BuildSystemPrompt` or `RecommendedModels`.
+- **Verification Outcome**: W1 closed (criterion 1 met on the floor of 3, criterion 2 4 of 4); W2 closed (Q6 no critical error, states another role's quest artifact can be wished for; Q1, Q3 role correct). T1 precondition met on Q8 (runs 122, 123).
+- **Still outstanding**: T1 validation (R1); the deferred Pets article; T3, T4 logged; the items the bones-round entry carries from battery run 12.
+- **Analysis directory**: `hyvanmielenpelit/MobileGnollHackLogger/2026-10-20/benchmark_run_123_analysis/`
 ---
 
 ## 12. Cross-References

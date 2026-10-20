@@ -2414,6 +2414,178 @@ public class BenchmarkReportPackServiceTests
         Assert.Contains(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken), d => d.Id == es);
     }
 
+    // --- The Executive Summary written from the Root Cause Analysis' digest ---------------------------------
+
+    /// <summary>
+    /// A Root Cause Analysis reply over <paramref name="prep"/> whose conclusions lose one paragraph, so its document takes
+    /// exactly a draft and one repair turn, as <see cref="ADropThatUncitesAnAxis_AddsTheOverseerParagraphAtItsAxisPlace_AndRecordsItAsAddedByOverseer"/>
+    /// measures; the writer output it was built from.
+    /// </summary>
+    private static (string Reply, BenchmarkReportWriterOutput Writer) TwoTurnRootCauseReply(BenchmarkReportPackPreparation prep)
+    {
+        var writer = RootCauseReportFixture.Writer(prep.Sheet, comparison: false);
+        writer.Sections[BenchmarkReportSlots.Conclusions] = "Intelligence: {{rca.axis.intelligence.status}}.\n\n"
+            + "The speed gap is due to the price. Speed: {{rca.axis.speed.status}}.\n\nCost: {{rca.axis.cost.status}}.";
+        return (Reply(writer), writer);
+    }
+
+    /// <summary>An Executive Summary reply over <paramref name="prep"/>, with What to look at next citing the digest's first next run or check when it lists one.</summary>
+    private static string DigestExecutiveReply(BenchmarkReportPackPreparation prep, BenchmarkReportWriterOutput rootCauseWriter)
+    {
+        var digest = BenchmarkRootCauseDigest.From(0, prep.Sheet, rootCauseWriter);
+        Assert.NotNull(digest);
+        string? step = digest!.Facts.Select(f => f.Key).FirstOrDefault(BenchmarkRootCauseDigest.IsNextStepKey);
+        return ExecutiveReply(prep, nextSteps: step == null ? null : "Make this first, since it settles the open question: {{" + step + "}}");
+    }
+
+    [Fact]
+    public async Task BothDocuments_TheRootCauseAnalysisIsWrittenFirst_AndTheExecutiveSummaryFromItsDigest()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync(standalone: true);
+        var (rcaReply, rcaWriter) = TwoTurnRootCauseReply(prep);
+        h.Provider.Replies.Enqueue(rcaReply);
+        h.Provider.Replies.Enqueue(rcaReply);
+        h.Provider.Replies.Enqueue(DigestExecutiveReply(prep, rcaWriter));
+
+        // Created in the display order, the rows are written in the write order.
+        var job = await h.RunCompletionAsync(new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis });
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        Assert.Equal(3, h.Provider.Calls);
+        var documents = await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken);
+        var rca = Assert.Single(documents, d => d.Audience == BenchmarkReportAudience.RootCauseAnalysis);
+        var es = Assert.Single(documents, d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
+        Assert.True(rca.Id < es.Id, "The Root Cause Analysis is stored first.");
+
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(es.FactsJson);
+        var source = Assert.IsType<BenchmarkReportRootCauseDigestSource>(sheet.RootCauseDigest);
+        Assert.Equal(rca.Id, source.DocumentId);
+        Assert.Equal(BenchmarkRootCauseSources.ThisJob, source.Source);
+        Assert.Null(source.Note);
+        Assert.Equal(BenchmarkRootCauseDigest.From(rca)!.Sha256, source.Sha256);
+        Assert.Contains(sheet.Facts, f => f.Key == BenchmarkRootCauseDigest.KeyFindingKey);
+        Assert.Equal(BenchmarkReportPackPrompt.PromptSha256(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportScope.Model, rootCauseDigest: true),
+            es.WriterPromptSha256);
+        Assert.Null(BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(rca.FactsJson).RootCauseDigest);
+        Assert.DoesNotContain(BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(rca.FactsJson).Facts, f => BenchmarkRootCauseDigest.IsDigestKey(f.Key));
+
+        var dto = job.ToDto();
+        var progress = Assert.Single(dto.Documents, d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
+        Assert.Equal(BenchmarkRootCauseSources.ThisJob, progress.RootCauseSource);
+        Assert.Equal(rca.Id, progress.RootCauseSourceDocumentId);
+        Assert.Null(progress.RootCauseSourceNote);
+        Assert.Null(Assert.Single(dto.Documents, d => d.Audience == BenchmarkReportAudience.RootCauseAnalysis).RootCauseSource);
+        Assert.Contains(dto.Log, l => l.Message.Contains("written from the digest of the Root Cause Analysis, document #" + rca.Id, StringComparison.Ordinal));
+
+        // The stored list carries the summary's source.
+        var listed = await new BenchmarkReportRenderService(h.Db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance)
+            .ListAsync(new BenchmarkReportDocumentListFilter(), TestContext.Current.CancellationToken);
+        Assert.Equal(rca.Id, Assert.Single(listed, d => d.Id == es.Id).RootCauseSourceDocumentId);
+        Assert.Null(Assert.Single(listed, d => d.Id == rca.Id).RootCauseSourceDocumentId);
+    }
+
+    [Fact]
+    public async Task BothDocuments_ARootCauseAnalysisThatFails_LeavesTheExecutiveSummaryWithoutADigest_CompletedWithWarnings()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync(standalone: true);
+        h.Provider.Replies.Enqueue(WriterProvider.ProviderError);
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        var job = await h.RunCompletionAsync(BenchmarkReportSlots.WriteOrder);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.CompletedWithErrors, job.Status);
+        var es = Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BenchmarkReportAudience.ExecutiveSummary, es.Audience);
+        Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, es.Status);
+
+        var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(es.ValidationNotesJson);
+        var note = Assert.Single(notes, n => n.Rule == BenchmarkReportPackValidator.WrittenWithoutRootCauseRule);
+        Assert.Equal("headline", note.Location);
+        Assert.Equal("Written without the Root Cause Analysis, which failed.", note.Message);
+        Assert.False(note.Dropped);
+        Assert.Equal(BenchmarkReportRuleCatalog.WarningTextKeptSeverity, BenchmarkReportRuleCatalog.ToIssueDto(note).Severity);
+
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(es.FactsJson);
+        Assert.Equal(BenchmarkRootCauseSources.None, sheet.RootCauseDigest!.Source);
+        Assert.Null(sheet.RootCauseDigest.DocumentId);
+        Assert.Equal(BenchmarkRootCauseSources.FailedNote, sheet.RootCauseDigest.Note);
+        Assert.False(sheet.HasRootCauseDigest);
+        Assert.Equal(BenchmarkReportPackPrompt.PromptSha256(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportScope.Model), es.WriterPromptSha256);
+
+        var progress = Assert.Single(job.ToDto().Documents, d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
+        Assert.Equal(BenchmarkRootCauseSources.None, progress.RootCauseSource);
+        Assert.Null(progress.RootCauseSourceDocumentId);
+        Assert.Equal("the Root Cause Analysis of this job failed", progress.RootCauseSourceNote);
+    }
+
+    [Fact]
+    public async Task TheExecutiveSummaryAlone_IsWrittenFromAStoredRootCauseAnalysisOfTheSameData()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync(standalone: true);
+        var (rcaReply, rcaWriter) = TwoTurnRootCauseReply(prep);
+        h.Provider.Replies.Enqueue(rcaReply);
+        h.Provider.Replies.Enqueue(rcaReply);
+        await h.RunCompletionAsync(BenchmarkReportAudience.RootCauseAnalysis);
+        var rca = Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken));
+
+        h.Provider.Replies.Enqueue(DigestExecutiveReply(prep, rcaWriter));
+        var job = await h.RunCompletionAsync(BenchmarkReportAudience.ExecutiveSummary);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        var es = Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken),
+            d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
+        var source = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(es.FactsJson).RootCauseDigest!;
+        Assert.Equal(BenchmarkRootCauseSources.Stored, source.Source);
+        Assert.Equal(rca.Id, source.DocumentId);
+
+        var progress = Assert.Single(job.ToDto().Documents);
+        Assert.Equal(BenchmarkRootCauseSources.Stored, progress.RootCauseSource);
+        Assert.Equal(rca.Id, progress.RootCauseSourceDocumentId);
+        Assert.Contains(job.ToDto().Log, l => l.Message.Contains("stored Root Cause Analysis, document #" + rca.Id, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TheExecutiveSummaryAlone_WithoutAMatchingRootCauseAnalysis_IsWrittenAsBefore_AndARewrittenAnalysisLeavesIt()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync(standalone: true);
+        // A stored fixture analysis of the same run was written from other facts: it does not match.
+        await h.StoreDocumentAsync(BenchmarkReportAudience.RootCauseAnalysis, h.StandaloneRequest(),
+            subjectKey: h.StandaloneRequest().SubjectKey, origin: BenchmarkReportDocumentOrigin.RunCompletion);
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        var job = await h.RunCompletionAsync(BenchmarkReportAudience.ExecutiveSummary);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        Assert.Equal(1, h.Provider.Calls);
+        var es = Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken),
+            d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
+        Assert.Equal(BenchmarkReportDocumentStatus.Completed, es.Status);
+        var source = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(es.FactsJson).RootCauseDigest!;
+        Assert.Equal(BenchmarkRootCauseSources.None, source.Source);
+        Assert.Equal(BenchmarkRootCauseSources.NoMatchNote, source.Note);
+        var progress = Assert.Single(job.ToDto().Documents);
+        Assert.Equal(BenchmarkRootCauseSources.None, progress.RootCauseSource);
+        Assert.Equal("no Root Cause Analysis of this run was written from the same data", progress.RootCauseSourceNote);
+        var line = Assert.Single(job.ToDto().Log, l => l.Message.Contains("no Root Cause Analysis of this subject was written from the same data", StringComparison.Ordinal));
+        Assert.Equal("info", line.Severity);
+
+        // Writing the Root Cause Analysis alone afterwards does not write the summary again.
+        var (rcaReply, _) = TwoTurnRootCauseReply(prep);
+        h.Provider.Replies.Enqueue(rcaReply);
+        h.Provider.Replies.Enqueue(rcaReply);
+        await h.RunCompletionAsync(BenchmarkReportAudience.RootCauseAnalysis);
+
+        var after = Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken),
+            d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
+        Assert.Equal(es.Id, after.Id);
+        Assert.Equal(es.FactsJson, after.FactsJson);
+        Assert.Equal(es.WriterOutputJson, after.WriterOutputJson);
+    }
+
     // --- Phases, calls and the repair loop's records ------------------------------------------------------
 
     [Fact]
@@ -2756,7 +2928,8 @@ public class BenchmarkReportPackServiceTests
 
     /// <summary>An Executive Summary reply citing a fact the sheet really has; each argument overrides one part.</summary>
     private static string ExecutiveReply(
-        BenchmarkReportPackPreparation prep, string? headline = null, string? extraStrength = null, string? confidence = null, string? meaning = null)
+        BenchmarkReportPackPreparation prep, string? headline = null, string? extraStrength = null, string? confidence = null, string? meaning = null,
+        string? nextSteps = null)
     {
         string factKey = prep.Sheet.Facts.First(f => f.Available).Key;
         var strengths = new List<object>
@@ -2776,6 +2949,10 @@ public class BenchmarkReportPackServiceTests
         if (prep.Sheet.Peers.Count > 0)
         {
             sections[BenchmarkReportSlots.Comparison] = "{{subject}} sits among its peers on quality, and the order between them is not established.";
+        }
+        if (nextSteps != null)
+        {
+            sections[BenchmarkReportSlots.NextSteps] = nextSteps;
         }
 
         return JsonSerializer.Serialize(new
@@ -2957,6 +3134,33 @@ public class BenchmarkReportPackServiceTests
             Audiences = (audiences ?? new[] { BenchmarkReportAudience.ExecutiveSummary }).ToList(),
             WriterModelConfigurationId = Writer.Id
         };
+
+        /// <summary>
+        /// Runs one run-completion job for the first seeded run through the service, over the fake writer, with a document row for
+        /// each of <paramref name="audiences"/> created in the order given.
+        /// </summary>
+        public async Task<BenchmarkReportPackJob> RunCompletionAsync(IReadOnlyList<BenchmarkReportAudience> audiences)
+        {
+            var snapshot = await SystemAiConfigurationSnapshotStore.CaptureAndSaveAsync(Db, Writer, CancellationToken.None);
+            var request = StandaloneRequest(audiences);
+            var job = new BenchmarkReportPackJob
+            {
+                SubjectKey = request.SubjectKey,
+                SubjectLabel = "gpt-5.6-luna",
+                SuiteName = "Isolation Suite",
+                WriterConfigId = Writer.Id,
+                WriterDisplayName = Writer.DisplayName,
+                WriterSnapshotId = snapshot.Id,
+                Request = request,
+                StartedByUserId = UserId,
+                Cts = new CancellationTokenSource(),
+                Documents = audiences.Select(a => new BenchmarkReportPackDocumentProgress { Audience = a }).ToList()
+            };
+            await Jobs.WaitForSlotAsync(job, CancellationToken.None);
+
+            await Service().WriteRunCompletionDocumentsAsync(job, CancellationToken.None);
+            return job;
+        }
 
         /// <summary>Runs one run-completion job for the first seeded run through the service, over the fake writer.</summary>
         public async Task<BenchmarkReportPackJob> RunCompletionAsync(BenchmarkReportAudience audience, IEnumerable<long>? replace = null)

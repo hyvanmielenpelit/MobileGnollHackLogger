@@ -836,11 +836,15 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     private static IReadOnlyList<BenchmarkReportAudience> OfferedAudiences(BenchmarkReportScope scope)
         => ScopeAudiences.TryGetValue(scope, out var list) ? list : Array.Empty<BenchmarkReportAudience>();
 
-    /// <summary>The length of a document's writer prompt, system prompt plus user message, in characters.</summary>
+    /// <summary>
+    /// The length of a document's writer prompt, system prompt plus user message, in characters; an Executive Summary's with
+    /// the Root Cause Analysis digest it is written from (<see cref="BenchmarkReportPackPrompt.RootCauseDigestPromptChars"/>).
+    /// </summary>
     private static int PromptCharsOf(BenchmarkReportPackPreparation prep, BenchmarkReportAudience audience)
     {
         var prompt = BenchmarkReportPackPrompt.Build(audience, prep.Sheet, prep.Content);
-        return prompt.SystemPrompt.Length + prompt.UserMessage.Length;
+        int digest = audience == BenchmarkReportAudience.ExecutiveSummary ? BenchmarkReportPackPrompt.RootCauseDigestPromptChars(prep.Sheet) : 0;
+        return prompt.SystemPrompt.Length + prompt.UserMessage.Length + digest;
     }
 
     /// <summary>The preview's totals over the estimates of <paramref name="requested"/>, the documents the request would write.</summary>
@@ -968,8 +972,10 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             job.Request.SubjectKey = subjects[0].Key;
             job.Request.SubjectKeys = subjects.Select(s => s.Key).ToList();
             job.Request.Audiences = audiences;
+            // Each subject's documents are created, and so listed and written, in the write order: the Root Cause Analysis first.
             job.Documents = subjects
-                .SelectMany(s => audiences.Select(a => new BenchmarkReportPackDocumentProgress { Audience = a, SubjectKey = s.Key, SubjectLabel = s.Label }))
+                .SelectMany(s => BenchmarkReportSlots.InWriteOrder(audiences)
+                    .Select(a => new BenchmarkReportPackDocumentProgress { Audience = a, SubjectKey = s.Key, SubjectLabel = s.Label }))
                 .ToList();
 
             return Launch(job);
@@ -1080,7 +1086,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         job.Request.Scope = BenchmarkReportScope.Comparison;
         job.Request.CoveredEntryKeys = prep.CoveredEntryKeys.ToList();
         job.Request.Audiences = audiences;
-        job.Documents = audiences
+        job.Documents = BenchmarkReportSlots.InWriteOrder(audiences)
             .Select(a => new BenchmarkReportPackDocumentProgress { Audience = a, SubjectKey = subjectKey, SubjectLabel = subjectLabel })
             .ToList();
 
@@ -1468,11 +1474,47 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         if (job == null) return NotFound();
         try
         {
-            var ids = job.WriterReplies().Select(d => d.Document.DocumentId).OfType<long>().Distinct().ToList();
-            var stored = ids.Count == 0
-                ? new Dictionary<long, BenchmarkReportDocument>()
-                : await _db.BenchmarkReportDocuments.AsNoTracking().Where(d => ids.Contains(d.Id)).ToDictionaryAsync(d => d.Id, ct);
-            return Content(BenchmarkReportPackWriterReplies.BuildMarkdown(job, DateTime.UtcNow, stored), "text/markdown; charset=utf-8");
+            return Content(await WriterRepliesMarkdownAsync(_db, job, ct), WriterRepliesContentType);
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>The content type of a writer-replies download.</summary>
+    internal const string WriterRepliesContentType = "text/markdown; charset=utf-8";
+
+    /// <summary>
+    /// A job's writer replies as one Markdown file (<see cref="BenchmarkReportPackWriterReplies.BuildMarkdown"/>), with the
+    /// stored documents its replies cite loaded for their tokens.
+    /// </summary>
+    internal static async Task<string> WriterRepliesMarkdownAsync(ApplicationDbContext db, BenchmarkReportPackJob job, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(job);
+        var ids = job.WriterReplies().Select(d => d.Document.DocumentId).OfType<long>().Distinct().ToList();
+        var stored = ids.Count == 0
+            ? new Dictionary<long, BenchmarkReportDocument>()
+            : await db.BenchmarkReportDocuments.AsNoTracking().Where(d => ids.Contains(d.Id)).ToDictionaryAsync(d => d.Id, ct);
+        return BenchmarkReportPackWriterReplies.BuildMarkdown(job, DateTime.UtcNow, stored);
+    }
+
+    /// <summary>
+    /// The writer's raw replies of the run's held run-completion job (the current one, or one finished within
+    /// <see cref="BenchmarkRunReportDocumentService.FinishedJobRetention"/>) as one Markdown file: 404 when this process holds
+    /// none for the run; 499 when the client aborts.
+    /// </summary>
+    [HttpGet("runs/{runId:long}/report-documents/job/writer-replies")]
+    public async Task<IActionResult> GetRunReportWriterReplies(long runId, CancellationToken ct)
+    {
+        if (_runReportDocuments == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
+
+        var job = _runReportDocuments.TryGetHeldJob(runId);
+        if (job == null) return NotFound();
+        try
+        {
+            return Content(await WriterRepliesMarkdownAsync(_db, job, ct), WriterRepliesContentType);
         }
         catch (Exception ex) when (ex.IsCanceledBy(ct))
         {

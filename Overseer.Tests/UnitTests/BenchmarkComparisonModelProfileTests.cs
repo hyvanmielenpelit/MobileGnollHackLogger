@@ -153,6 +153,50 @@ public class BenchmarkComparisonModelProfileTests
     }
 
     [Fact]
+    public void TopLevels_CountAnswersAtLevelSix_AndInAPanelRunAMeanOfFiveAndAHalfOrMore()
+    {
+        var run = FourAnswerRun();
+        AnswerAt(run, 1).AccuracyLevel = 6;
+        AnswerAt(run, 2).AccuracyLevel = 6;
+
+        var profile = BenchmarkComparisonModelProfile.FromRuns(new[] { run });
+
+        Assert.Equal(2, profile.TopLevels["accuracy"]);
+        Assert.Equal(0, profile.TopLevels["completeness"]);
+        Assert.Equal("2 of 4 answers at level 6 on accuracy", Fact(FactsOf(profile), "model.A.profile.top.accuracy").Display);
+        Assert.Equal("Answers at level 6 on accuracy", BenchmarkReportFactLabels.Label("profile.top.accuracy"));
+
+        // Member A at level 6 with member B at 5 reaches 5.5; with member B at 4 it does not.
+        var panel = AsPanelRun(FourAnswerRun(43), accuracyLevel: 5, completenessLevel: 4, concisenessLevel: 5, readabilityLevel: 5);
+        foreach (var answer in panel.Answers)
+        {
+            answer.AccuracyLevel = 6;
+            answer.CompletenessLevel = 6;
+        }
+        var panelProfile = BenchmarkComparisonModelProfile.FromRuns(new[] { panel });
+        Assert.Equal(4, panelProfile.TopLevels["accuracy"]);
+        Assert.Equal(0, panelProfile.TopLevels["completeness"]);
+    }
+
+    [Fact]
+    public void APerModelSheet_CarriesEachTopLevelCount_AsADimensionFactTheExecutiveSummarySees()
+    {
+        var run = FourAnswerRun();
+        AnswerAt(run, 3).ReadabilityLevel = 6;
+        var facts = new BenchmarkReportFacts.FactList();
+
+        BenchmarkComparisonModelProfile.FromRuns(new[] { run }).AddModelScopeFacts(facts);
+
+        var sorted = facts.Sorted();
+        Assert.Equal("1 of 4 answers at level 6 on readability", Fact(sorted, "dimension.readability.topLevel").Display);
+        Assert.Equal(Fact(sorted, "profile.top.readability").Display, Fact(sorted, "dimension.readability.topLevel").Display);
+        Assert.False(BenchmarkReportFacts.WriterHidden("dimension.readability.topLevel"));
+        Assert.True(BenchmarkReportFacts.WriterHidden("profile.top.readability"));
+        Assert.False(BenchmarkComparisonReportFacts.IsModelFact("dimension.readability.topLevel"));
+        Assert.Equal("Readability: answers at level 6", BenchmarkReportFactLabels.Label("dimension.readability.topLevel"));
+    }
+
+    [Fact]
     public void APanelRun_AveragesBothMembersLevels()
     {
         // Member A graded every dimension at level 5; member B accuracy 2, completeness 1.

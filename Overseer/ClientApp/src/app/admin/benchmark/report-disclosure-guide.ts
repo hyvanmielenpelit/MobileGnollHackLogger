@@ -54,7 +54,8 @@ export const REPORT_DISCLOSURE_GUIDES: readonly ReportDisclosureGuide[] = [
         text: 'Everything else is identical.',
         points: [
           'The result in one sentence, key figures, what it did well, where it fell short, what it means for use as a '
-            + 'game assistant, how reliable the result is, about this benchmark, and evaluation terms.',
+            + 'game assistant, how reliable the result is, what to look at next (when it is written from a Root '
+            + 'Cause Analysis), about this benchmark, and evaluation terms.',
           'Neither level quotes a question, rubric, answer or grader note, or lists the questions.'
         ]
       }

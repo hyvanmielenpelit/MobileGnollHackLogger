@@ -1,6 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { BenchmarkReportAudience, BenchmarkReportPackValidationIssueDto } from '../../../services/admin-benchmark.service';
+import {
+  BenchmarkReportAudience,
+  BenchmarkReportPackDocumentProgressDto,
+  BenchmarkReportPackValidationIssueDto
+} from '../../../services/admin-benchmark.service';
 import {
   REPORT_JOB_DOCUMENT_CARD_DEFAULTS,
   ReportJobDocumentCard,
@@ -185,6 +189,79 @@ describe('ReportJobDocumentsComponent', () => {
     // Without the progress to explain, no tip at all.
     show([card({ doc: null, draftIssueCount: 1, draftTipBesideChip: true })]);
     expect(q('.rjd-draft')).toBeNull();
+  });
+
+  describe('an Executive Summary\'s Root Cause Analysis', () => {
+    function summary(
+      status: string,
+      extra: Partial<BenchmarkReportPackDocumentProgressDto> = {},
+      overrides: Partial<ReportJobDocumentCard> = {}
+    ): ReportJobDocumentCard {
+      return card({
+        key: `comparison:4|${ExecutiveSummary}`, audience: ExecutiveSummary, title: 'Executive Summary', phrase: 'the Executive Summary',
+        statusWord: status, tone: reportJobDocumentTone(status), tipStem: `rjd-test-${ExecutiveSummary}`,
+        doc: { status, ...extra }, ...overrides
+      });
+    }
+
+    function rootCause(status: string, overrides: Partial<ReportJobDocumentCard> = {}): ReportJobDocumentCard {
+      return card({ statusWord: status, tone: reportJobDocumentTone(status), doc: { status }, ...overrides });
+    }
+
+    const source = (): string => text(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-source`);
+
+    it('keeps the cards in the order the job lists them', () => {
+      show([rootCause('Writing'), summary('Pending')]);
+      expect(Array.from(host.querySelectorAll('.rjd-card')).map(article => article.getAttribute('data-audience')))
+        .toEqual([String(RootCauseAnalysis), String(ExecutiveSummary)]);
+    });
+
+    it('waits for an unfinished Root Cause Analysis of the same subject', () => {
+      show([rootCause('Writing'), summary('Pending')]);
+      expect(source()).toBe('Waits for the Root Cause Analysis');
+      expect(q(`.rjd-card[data-audience="${RootCauseAnalysis}"] .rjd-source`)).toBeNull();
+
+      // A placeholder card, which carries no progress yet, waits too.
+      show([rootCause('Pending', { doc: null }), summary('Pending', {}, { doc: null })]);
+      expect(source()).toBe('Waits for the Root Cause Analysis');
+
+      // Nothing to wait for: no Root Cause Analysis in the job, or another subject's.
+      show([summary('Pending')]);
+      expect(q('.rjd-source')).toBeNull();
+      show([rootCause('Writing', { subject: 'run:2' }), summary('Pending', {}, { subject: 'run:1' })]);
+      expect(q('.rjd-source')).toBeNull();
+    });
+
+    it('says it was written from the Root Cause Analysis above, before the phase line', () => {
+      show([rootCause('Completed'), summary('Writing', { rootCauseSource: 'thisJob', rootCauseSourceDocumentId: null }, {
+        phaseLine: 'Revised once — 2 issues in the first draft'
+      })]);
+      expect(source()).toBe('Written from the Root Cause Analysis above');
+      const line = q(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-source`)!;
+      expect(line.classList).not.toContain('gh-field-warning');
+      const phase = q(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-phase-row`)!;
+      expect(line.compareDocumentPosition(phase) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('names a stored Root Cause Analysis by its id', () => {
+      show([summary('Completed', { rootCauseSource: 'stored', rootCauseSourceDocumentId: 72 })]);
+      expect(source()).toBe('Written from Root Cause Analysis #72');
+    });
+
+    it('says why it was written without one, in the warning style', () => {
+      show([rootCause('Failed'), summary('CompletedWithWarnings', {
+        rootCauseSource: 'none', rootCauseSourceNote: 'the Root Cause Analysis of this job failed'
+      })]);
+      expect(source()).toBe('Written without a Root Cause Analysis: the Root Cause Analysis of this job failed');
+      const line = q(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-source`)!;
+      expect(line.classList).toContain('gh-field-warning');
+      expect(line.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('says nothing once started when the server names no source', () => {
+      show([rootCause('Completed'), summary('Writing')]);
+      expect(q('.rjd-source')).toBeNull();
+    });
   });
 
   it('shows the charts line and its retry only when the document has charts, and emits retry and View', () => {

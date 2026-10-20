@@ -823,11 +823,31 @@ public class WikiService : IDisposable
     /// <summary>
     /// True when an indexed title equals a normalized request under the case-insensitive
     /// comparison <see cref="GetArticle(string, string?, out bool)"/> and
-    /// <see cref="GetLookupContext(string, string)"/> both use to detect an exact-title hit.
+    /// <see cref="GetLookupContext(string, string)"/> both use to detect an exact-title hit. One
+    /// leading <c>"The "</c> is ignored on either side, so "Orb of Fate" equals the title
+    /// "The Orb of Fate"; when both <i>The X</i> and <i>X</i> are indexed, both equal the request.
     /// </summary>
-    private static bool TitleEquals(string? title, string normalizedRequest)
+    internal static bool TitleEquals(string? title, string normalizedRequest)
     {
-        return string.Equals(title, normalizedRequest, StringComparison.OrdinalIgnoreCase);
+        if (title == null) return false;
+
+        return string.Equals(
+            StripLeadingArticle(title),
+            StripLeadingArticle(normalizedRequest),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// <paramref name="name"/> without one leading <c>"The "</c> (case-insensitive), when at least
+    /// one character follows it; otherwise <paramref name="name"/> unchanged, so "The" and
+    /// "Theater" are kept whole.
+    /// </summary>
+    private static string StripLeadingArticle(string name)
+    {
+        const string Article = "The ";
+        return name.Length > Article.Length && name.StartsWith(Article, StringComparison.OrdinalIgnoreCase)
+            ? name.Substring(Article.Length)
+            : name;
     }
 
     /// <summary>

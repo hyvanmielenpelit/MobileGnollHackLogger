@@ -228,7 +228,7 @@ public static class BenchmarkReportRuleCatalog
             "A count token already says what it counts, so the words beside it do not say it again.",
             BenchmarkReportRuleSeverity.Warning,
             "The text was kept, but it says twice what the count counts.",
-            "Lead with the model and let each count token name what it counts, as in \"the model had\" and the token; leave the counted words out of the whole sentence, an opening phrase included."),
+            "Start a new sentence with the model and the token, as in '{{subject}} had {{key}}.', where a comparison names the model by its own model token; leave the counted words out of the whole sentence, an opening phrase included."),
         R(BenchmarkReportPackValidator.RootCauseCodePrintedRule, "Repeats what code prints",
             "The unexpected results cite each result only by its reference, never the summary, configuration, graders or next run that Overseer prints in their section.",
             BenchmarkReportRuleSeverity.Warning,
@@ -250,7 +250,7 @@ public static class BenchmarkReportRuleCatalog
             Kept,
             "Cite each model's own token for its figure; give one token for several models only when they share its value."),
         R(BenchmarkReportPackValidator.NumberWordCountRule, "A count written in words",
-            "A count across models, questions, answers or pairs, such as eight of the nine models, comes from a fact token, never from the writer's own number words.",
+            "A count across models, questions, answers or pairs, such as eight of the nine models or seven of a token that prints the total, comes from a fact token, never from the writer's own number words.",
             BenchmarkReportRuleSeverity.Warning,
             "The text was kept, but the count it writes in words was not checked against the data.",
             "Write this count as a fact token, or leave the total out."),
@@ -259,6 +259,24 @@ public static class BenchmarkReportRuleCatalog
             BenchmarkReportRuleSeverity.Warning,
             "The text was kept, but it repeats the list of nulls printed beside it.",
             "Overseer prints the nulls beside this paragraph; remove the sentence."),
+        R(BenchmarkReportPackValidator.LargeNumberWordRule, "Score or figure written in words",
+            "Prose writes no number of twenty or more in words, such as a score of ninety-five or seventy percent; such a figure comes from a fact token.",
+            BenchmarkReportRuleSeverity.Warning,
+            "The text was kept, but the figure it writes in words was not checked against the data.",
+            "Cite the figure's token instead of writing it in words."),
+        R(BenchmarkReportPackValidator.ExecutiveCausalClaimRule, "Cause without a Root Cause Analysis item",
+            "In an Executive Summary written from the Root Cause Analysis, a causal word cites an axis, hypothesis or lead of its digest in the same sentence, hedged beside a lead or a Low grade, so every cause stated was found by the analysis.",
+            BenchmarkReportRuleSeverity.RemovesItem, Removed,
+            "Use a causal word only in a sentence that says what the cause is and cites its rcaDigest axis, hypothesis or lead token after a colon, with may, possibly or consistent with beside a lead or a Low grade; otherwise leave the cause out."),
+        R(BenchmarkReportPackValidator.ExecutiveNextStepRule, "Next step without a run or check",
+            "Each item of What to look at next cites a next run or a check of the Root Cause Analysis's digest, and the section keeps to its item limit.",
+            BenchmarkReportRuleSeverity.RemovesItem, Removed,
+            "Write each item of What to look at next as its own paragraph citing one rcaDigest next run or check token, the first one first, and keep to the item limit."),
+        R(BenchmarkReportPackValidator.WrittenWithoutRootCauseRule, "Written without the Root Cause Analysis",
+            "The Executive Summary was written without the Root Cause Analysis its job wrote first, because that analysis failed or was canceled.",
+            BenchmarkReportRuleSeverity.WarningTextKept,
+            "The summary states no finding of a Root Cause Analysis; read its causes as the graders' and the figures' alone.",
+            "No action: this note records that the Root Cause Analysis was not available."),
     }.ToDictionary(r => r.Rule);
 
     private static readonly IReadOnlyDictionary<string, string> ListLabels = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -290,6 +308,7 @@ public static class BenchmarkReportRuleCatalog
         [BenchmarkReportSlots.TradeOffs] = "Trade-offs",
         [BenchmarkReportSlots.Reliability] = "How reliable this is",
         [BenchmarkReportSlots.AgainstReference] = "Compared with the reference model",
+        [BenchmarkReportSlots.NextSteps] = BenchmarkReportSlots.NextStepsTitle,
     };
 
     private static readonly Regex ParagraphLocationRegex = new(@"^sections\.(?<slot>[A-Za-z]+)(?:\[p(?<p>\d+)\])?$", RegexOptions.CultureInvariant);
@@ -327,6 +346,10 @@ public static class BenchmarkReportRuleCatalog
         if (addedByOverseer)
         {
             return BenchmarkReportRuleSeverity.AddedByOverseer;
+        }
+        if (rule == BenchmarkReportPackValidator.WrittenWithoutRootCauseRule)
+        {
+            return BenchmarkReportRuleSeverity.WarningTextKept;
         }
         if (BenchmarkReportPackValidator.IsWarningRule(rule) || rule == BenchmarkBatteryReportFacts.PromptBudgetRule)
         {

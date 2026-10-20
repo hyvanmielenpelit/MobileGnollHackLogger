@@ -826,9 +826,9 @@ public class RootCauseEngineTests
     }
 
     [Fact]
-    public void TheEngineVersion_IsTwelve()
+    public void TheEngineVersion_IsThirteen()
     {
-        Assert.Equal(12, RootCauseEngine.Version);
+        Assert.Equal(13, RootCauseEngine.Version);
     }
 
     [Fact]

@@ -50,8 +50,10 @@ import {
   reportJobInProgress,
   reportJobStatusKind,
   reportJobStatusText,
+  reportRootCauseSourceLine,
   reportServerErrorText,
   reportStatusSnapshotOfJob,
+  reportWriteOrderHint,
   writtenReportLabels
 } from './report-documents-list';
 import { ReportWriterAdviceEntry } from './report-writer-advice';
@@ -455,6 +457,11 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
     return this.missingAudiences.filter(audience => !this.deselected.has(audience));
   }
 
+  /** The write order of the checked documents, under the checkboxes; '' when only the Root Cause Analysis is checked. */
+  get writeOrderHint(): string {
+    return reportWriteOrderHint(this.checkedAudiences, `this ${this.subjectNoun}'s`);
+  }
+
   get writeLabel(): string {
     if (this.writeSubmitting) return 'Requesting…';
     return this.checkedAudiences.length === 1 ? 'Write Report' : 'Write Reports';
@@ -529,6 +536,11 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
   /** The writer and date, then the stored duration and cost where known. */
   documentMeta(doc: BenchmarkReportDocumentListItemDto): string {
     return reportDocumentMeta(doc, this.subjectWriterName);
+  }
+
+  /** An Executive Summary's Root Cause Analysis, or ''. */
+  documentSourceLine(doc: BenchmarkReportDocumentListItemDto): string {
+    return reportRootCauseSourceLine(doc, this.documents);
   }
 
   // --- Choices ---

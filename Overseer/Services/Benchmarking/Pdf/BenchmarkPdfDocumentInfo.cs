@@ -231,8 +231,13 @@ public sealed record BenchmarkPdfDocumentInfo
             new("Created (UTC)", Stamp(document.CreatedAtUtc)),
             new("Generated format", "version " + Inv(document.ReportFormatVersion)),
             new("Writer", WriterText(document)),
-            new("Provenance", ProvenanceText),
         });
+        // An Executive Summary of model-scope format 25 or comparison format 29 names the Root Cause Analysis it was written from.
+        if (BenchmarkReportPackRenderer.RootCauseSourceText(document, sheet) is string rootCause)
+        {
+            facts.Add(new("Root Cause Analysis", rootCause));
+        }
+        facts.Add(new("Provenance", ProvenanceText));
 
         string subjectLine = comparisonScope
             ? string.Join(" · ", new[] { sheet!.SubjectLabel, document.SuiteName }.Where(p => !string.IsNullOrWhiteSpace(p)))

@@ -821,8 +821,12 @@ public static class BenchmarkAssessmentPrompt
     ///     are Failed rather than ProviderError; the synthesis prompt lists Failed answers as excluded
     ///     exactly as ProviderError answers; re-run passes and replacement lineage are recorded.
     ///     ScoringMethodVersion stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
+    /// v57: wiki title equality in wiki_view, item_lookup and monster_lookup ignores one leading
+    ///     "The" on either side (T2); _policy.md asks for a role-relative helper's definition before
+    ///     stating what it covers (T1). ScoringMethodVersion stays 14; ToolGuidesSha256 moves,
+    ///     CandidateSystemPromptSha256 does not.
     /// </summary>
-    public const string HarnessVersion = "56";
+    public const string HarnessVersion = "57";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

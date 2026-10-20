@@ -47,7 +47,10 @@ public sealed class BenchmarkRunReportDocumentService
     /// <summary>How long a finished job stays visible, unless the run's next job replaces it first.</summary>
     public static readonly TimeSpan FinishedJobRetention = TimeSpan.FromHours(6);
 
-    /// <summary>The run-completion documents of every run, in the order they are written.</summary>
+    /// <summary>
+    /// The run-completion documents of every run, in display order. A job writes them, and its view lists them, in
+    /// <see cref="BenchmarkReportSlots.WriteOrder"/>.
+    /// </summary>
     public static readonly IReadOnlyList<BenchmarkReportAudience> Audiences = new[]
     {
         BenchmarkReportAudience.ExecutiveSummary,
@@ -313,7 +316,7 @@ public sealed class BenchmarkRunReportDocumentService
 
     /// <summary>
     /// Starts a job with the writer already recorded on the run, for the requested audiences the run
-    /// is missing, in <see cref="Audiences"/> order; null or empty requests every missing one. A writer
+    /// is missing, in <see cref="BenchmarkReportSlots.WriteOrder"/>; null or empty requests every missing one. A writer
     /// of the candidate's provider needs <paramref name="sameProviderAcknowledged"/>, or the job
     /// settles the run as Failed with the warning. The documents of <paramref name="replaceDocumentIds"/>
     /// (see <see cref="ReplaceableAudiencesAsync"/>) are written again and replaced once their successors
@@ -374,6 +377,19 @@ public sealed class BenchmarkRunReportDocumentService
     public BenchmarkRunReportJobDto? TryGetJob(long runId) => TryGetJob(runId, UtcNow);
 
     /// <summary>
+    /// The run's held job itself, for its writer replies: the current one, or the last one finished within
+    /// <see cref="FinishedJobRetention"/>; null when this process holds none for the run.
+    /// </summary>
+    public BenchmarkReportPackJob? TryGetHeldJob(long runId)
+    {
+        lock (_lock)
+        {
+            Prune(UtcNow);
+            return _jobs.TryGetValue(runId, out var state) ? state.Job : null;
+        }
+    }
+
+    /// <summary>
     /// The run's current or last job, or null when this process knows none, or its finished job is
     /// older than <see cref="FinishedJobRetention"/>. A claimed run whose job is still being created
     /// shows as Queued since the claim, with the requested audiences and no writer yet. The persisted
@@ -432,7 +448,7 @@ public sealed class BenchmarkRunReportDocumentService
         RunId = runId,
         Phase = nameof(JobPhase.Queued),
         QueuedAtUtc = claim.ClaimedAtUtc,
-        Audiences = claim.Audiences.ToList(),
+        Audiences = BenchmarkReportSlots.InWriteOrder(claim.Audiences),
         WriterConfigId = 0,
         WriterDisplayName = string.Empty,
         WriterProvider = string.Empty,
@@ -696,10 +712,10 @@ public sealed class BenchmarkRunReportDocumentService
         }
 
         var missing = await MissingAudiencesAsync(db, runId, CancellationToken.None);
-        var toWrite = Audiences
+        // The job writes, and its view lists, the documents in the write order: the Root Cause Analysis first.
+        var toWrite = BenchmarkReportSlots.InWriteOrder(Audiences
             .Where(a => missing.Contains(a) || replaceable.Contains(a))
-            .Where(a => audiences == null || audiences.Count == 0 || audiences.Contains(a))
-            .ToList();
+            .Where(a => audiences == null || audiences.Count == 0 || audiences.Contains(a)));
         if (toWrite.Count == 0)
         {
             await SetStatusAsync(runId,

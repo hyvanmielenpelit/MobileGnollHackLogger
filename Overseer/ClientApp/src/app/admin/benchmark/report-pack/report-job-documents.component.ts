@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 
-import { BenchmarkReportAudience } from '../../../services/admin-benchmark.service';
+import { BenchmarkReportAudience, BenchmarkReportPackDocumentProgressDto } from '../../../services/admin-benchmark.service';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { formatCostUsd } from './report-document-format';
 import { ReportValidationDetailsComponent } from './report-validation-details.component';
@@ -127,6 +127,62 @@ export function reuseReportJobDocumentCards<T extends ReportJobDocumentCard>(pre
   return previous.length === next.length && next.every((card, i) => sameCard(previous[i], card)) ? previous : next;
 }
 
+/** An Executive Summary card's line on its Root Cause Analysis; `warning` when it was written without one. */
+export interface ReportJobRootCauseLine {
+  readonly text: string;
+  readonly warning: boolean;
+}
+
+/** The Root Cause Analysis fields a card's document carries when the server sends them. */
+type RootCauseSourceFields = Partial<Pick<BenchmarkReportPackDocumentProgressDto,
+  'rootCauseSource' | 'rootCauseSourceDocumentId' | 'rootCauseSourceNote'>>;
+
+/** The statuses of a document that is not finished yet. */
+const UNFINISHED_STATUSES = new Set(['Pending', 'Writing', 'Repairing']);
+
+function cardStatus(row: ReportJobDocumentCard): string {
+  return row.doc?.status ?? 'Pending';
+}
+
+/**
+ * An Executive Summary card's line on the Root Cause Analysis it is written from: while it waits for an
+ * unfinished Root Cause Analysis of the same subject in the job, *Waits for the Root Cause Analysis*;
+ * once started, which analysis it was written from, or why none. Null for every other card, and for an
+ * Executive Summary of which the server says neither.
+ */
+export function reportJobRootCauseLine(
+  row: ReportJobDocumentCard,
+  rows: readonly ReportJobDocumentCard[]
+): ReportJobRootCauseLine | null {
+  if (row.audience !== BenchmarkReportAudience.ExecutiveSummary) {
+    return null;
+  }
+  const status = cardStatus(row);
+  if (status === 'Pending') {
+    const waits = rows.some(other => other.audience === BenchmarkReportAudience.RootCauseAnalysis
+      && other.subject === row.subject && UNFINISHED_STATUSES.has(cardStatus(other)));
+    return waits ? { text: 'Waits for the Root Cause Analysis', warning: false } : null;
+  }
+  const source = row.doc as (DocumentStatusInput & RootCauseSourceFields) | null;
+  switch (source?.rootCauseSource) {
+    case 'thisJob':
+      return { text: 'Written from the Root Cause Analysis above', warning: false };
+    case 'stored': {
+      const id = source.rootCauseSourceDocumentId;
+      return {
+        text: id === null || id === undefined ? 'Written from a stored Root Cause Analysis' : `Written from Root Cause Analysis #${id}`,
+        warning: false
+      };
+    }
+    case 'none': {
+      const note = source.rootCauseSourceNote?.trim();
+      return { text: note ? `Written without a Root Cause Analysis: ${note}` : 'Written without a Root Cause Analysis', warning: true };
+    }
+    default:
+      return null;
+  }
+}
+
 /** The edge a card's status adds beside the chip's words. */
 export function reportJobDocumentTone(status: string): 'warning' | 'failed' | null {
   switch (status) {
@@ -139,7 +195,8 @@ export function reportJobDocumentTone(status: string): 'warning' | 'failed' | nu
 /**
  * The progress of each document of a report-writing job, as a read-only card list: the title and its
  * status chip (with the explanation of a warning or a failure, and the first draft's issues while it is
- * revised), an optional meta line, the phase line in full, the error, the duration, model calls, tokens
+ * revised), an optional meta line, an Executive Summary's line on its Root Cause Analysis, the phase line
+ * in full, the error, the duration, model calls, tokens
  * and cost, and a footer with the charts (a retry after a failure) and View. Laid out by the list's own
  * width. The Model Comparison wizard's Write step, the Chat Consistency reports step and the run report
  * writing dialog all show their documents with it.
@@ -153,7 +210,7 @@ export function reportJobDocumentTone(status: string): 'warning' | 'failed' | nu
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ReportJobDocumentsComponent {
-  /** One card per document, in order. */
+  /** One card per document, in the order the job writes them. */
   @Input() rows: readonly ReportJobDocumentCard[] = [];
 
   /** The prefix of every id in the list, unique in the document. */
@@ -171,5 +228,10 @@ export class ReportJobDocumentsComponent {
   /** The card's id: the prefix and its key, with any character an id cannot hold replaced. */
   cardId(row: ReportJobDocumentCard): string {
     return `${this.idPrefix}-${row.key.replace(/[^A-Za-z0-9_-]/g, '-')}`;
+  }
+
+  /** An Executive Summary card's line on its Root Cause Analysis, or null. */
+  rootCauseLine(row: ReportJobDocumentCard): ReportJobRootCauseLine | null {
+    return reportJobRootCauseLine(row, this.rows);
   }
 }

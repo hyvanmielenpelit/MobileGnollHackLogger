@@ -27,9 +27,9 @@ import { BenchmarkPollTickerHandle, BenchmarkPollTickerService } from '../../../
 import { copyToClipboard } from '../../../utils/clipboard.util';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { downloadTextFile } from '../../../utils/download.util';
-import { formatThinkingLevel } from '../../../utils/model-badge-format.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
+import { RunFactBadge, runFactBadges } from '../run-report-frame/run-facts';
 import {
   audienceLabel,
   documentChipClass,
@@ -55,6 +55,7 @@ import {
   buildRunReportWritingDiagnostics,
   formatUtcSeconds,
   runReportStatusWord,
+  runReportWriterRepliesFileName,
   runReportWritingDiagnosticsFileName
 } from './run-report-writing-diagnostics';
 import { reportDocumentsStatusOf } from './report-documents-list';
@@ -79,6 +80,8 @@ export interface ReportJobSource {
    * settles the dialog at once, on no stored status.
    */
   getStoredStatus?(): Observable<ReportJobStoredStatus | null>;
+  /** The writer's raw replies of the job as Markdown; 404 once the server no longer holds the job. Without it none are offered. */
+  getWriterReplies?(): Observable<string>;
   /** The diagnostics file name's stem in place of `run-<runId>`, such as `battery-run-7`. */
   fileStem?: string;
 }
@@ -133,8 +136,25 @@ export const RUN_REPORT_JOB_START_GRACE_MS = 30000;
 /** The clipboard and file side effects, held in an object so a spec can observe them. */
 export const runReportWritingIo = {
   copy: (text: string): Promise<boolean> => copyToClipboard(text),
-  download: (fileName: string, text: string): void => downloadTextFile(fileName, text, 'text/plain;charset=utf-8')
+  download: (fileName: string, text: string): void => downloadTextFile(fileName, text, 'text/plain;charset=utf-8'),
+  downloadMarkdown: (fileName: string, text: string): void => downloadTextFile(fileName, text, 'text/markdown;charset=utf-8')
 };
+
+/** The status line while the writer's replies are fetched. */
+export const RUN_REPORT_REPLIES_PREPARING_TEXT = 'Preparing the writer\'s replies…';
+
+/** The server no longer holds the job's replies (404). */
+export const RUN_REPORT_REPLIES_GONE_TEXT =
+  'Overseer no longer holds this job\'s replies (they are kept 6 hours, and until the next writing job of this run).';
+
+/** Any other failure to fetch the replies, followed by its HTTP status. */
+export const RUN_REPORT_REPLIES_FAILED_TEXT = 'The writer\'s replies could not be downloaded';
+
+/** Under the stage rail while both documents are written. */
+export const RUN_REPORT_ORDER_NOTE = 'The Root Cause Analysis is written first; the Executive Summary is then written from it.';
+
+/** Appended to the status line while the Root Cause Analysis is written and the Executive Summary follows. */
+export const RUN_REPORT_ORDER_STATUS_SUFFIX = ' — the Executive Summary follows, written from it';
 
 const WRITTEN_STATUSES = new Set(['Completed', 'CompletedWithWarnings']);
 const ACTIVE_STATUSES = new Set(['Writing', 'Repairing']);
@@ -230,7 +250,7 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
   @Output() readonly closed = new EventEmitter<void>();
 
   readonly formatCostUsd = formatCostUsd;
-  readonly formatThinkingLevel = formatThinkingLevel;
+  readonly orderNote = RUN_REPORT_ORDER_NOTE;
 
   context: RunReportWritingContext | null = null;
 
@@ -258,6 +278,8 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
 
   copyStatus = '';
   copyError: string | null = null;
+  /** The writer's replies are being fetched. */
+  repliesLoading = false;
 
   /** The progress cards last shown. */
   private documentCards: readonly RunReportWritingDocumentRow[] = [];
@@ -272,6 +294,7 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
   private elapsedSub: Subscription | null = null;
   private cancelSub: Subscription | null = null;
   private fallbackSub: Subscription | null = null;
+  private repliesSub: Subscription | null = null;
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
@@ -304,6 +327,7 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     this.cancelError = null;
     this.copyStatus = '';
     this.copyError = null;
+    this.repliesLoading = false;
     this.finishedEmitted = false;
     this.openedAtMs = Date.now();
 
@@ -366,6 +390,7 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     return {
       getJob: () => this.benchmarkService.getRunReportJob(runId),
       cancel: () => this.benchmarkService.cancelRunReportJob(runId),
+      getWriterReplies: () => this.benchmarkService.getRunReportWriterReplies(runId),
       subjectLabel: `Run #${runId}`
     };
   }
@@ -559,6 +584,9 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     this.cancelSub = null;
     this.fallbackSub?.unsubscribe();
     this.fallbackSub = null;
+    this.repliesSub?.unsubscribe();
+    this.repliesSub = null;
+    this.repliesLoading = false;
   }
 
   // -------------------------------------------------------------------------------------------
@@ -595,7 +623,10 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
         if (!active) {
           return 'Writing the reports';
         }
-        return `${active.status === 'Repairing' ? 'Revising' : 'Writing'} the draft of ${documentPhrase(active.audience)}`;
+        const line = `${active.status === 'Repairing' ? 'Revising' : 'Writing'} the draft of ${documentPhrase(active.audience)}`;
+        return active.audience === BenchmarkReportAudience.RootCauseAnalysis && this.writesBoth
+          ? `${line}${RUN_REPORT_ORDER_STATUS_SUFFIX}`
+          : line;
       }
       default:
         return this.finishedLine(view);
@@ -619,7 +650,19 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** The requested documents, in the order the server lists them. */
+  /** The job writes both the Root Cause Analysis and the Executive Summary, the second from the first. */
+  get writesBoth(): boolean {
+    const audiences = this.requestedAudiences;
+    return audiences.includes(BenchmarkReportAudience.RootCauseAnalysis)
+      && audiences.includes(BenchmarkReportAudience.ExecutiveSummary);
+  }
+
+  /** The write order under the rail, while both documents are being written. */
+  get showOrderNote(): boolean {
+    return this.writesBoth && !this.isFinished;
+  }
+
+  /** The requested documents, in the order the server lists them, which is the order it writes them. */
   private get requestedAudiences(): BenchmarkReportAudience[] {
     const view = this.view;
     if (!view) {
@@ -700,6 +743,22 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
   get writerName(): string {
     const view = this.view;
     return (view?.writerDisplayName || view?.writerModelId || '').trim();
+  }
+
+  /** The writer's badges in the documented order: thinking level, reasoning mode, provider. */
+  get writerBadges(): RunFactBadge[] {
+    const view = this.view;
+    if (!view) {
+      return [];
+    }
+    return runFactBadges({
+      name: this.writerName,
+      provider: view.writerProvider || null,
+      thinkingLevel: view.writerThinkingLevel,
+      reasoningMode: null,
+      serviceTier: null,
+      customEndpoint: false
+    });
   }
 
   get costLabel(): string {
@@ -916,11 +975,25 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     const notRecorded = 'not recorded';
     const time = (value: string | Date | null | undefined): string => formatUtcSeconds(value) ?? notRecorded;
     const status = view ? view.status : this.fallbackStatusValue;
+    const job = view?.job;
+    const versionOf = (value: number | null | undefined): string =>
+      value === null || value === undefined ? notRecorded : String(value);
     return [
       { term: 'Job id', value: view?.job?.id || notRecorded },
       { term: 'Pack id', value: view?.job?.packId || notRecorded },
       { term: 'Phase', value: view?.phase ?? notRecorded },
       { term: 'Report status', value: runReportStatusWord(status) },
+      { term: 'Report format', value: versionOf(job?.reportFormatVersion) },
+      {
+        term: 'Engine version',
+        value: job?.engineVersion === null ? 'none (no Root Cause Analysis)' : versionOf(job?.engineVersion)
+      },
+      {
+        term: 'Writer output limit',
+        value: typeof job?.writerMaxOutputTokens === 'number'
+          ? `${numberFormat.format(job.writerMaxOutputTokens)} tokens (reasoning included)`
+          : notRecorded
+      },
       { term: 'Queued', value: time(view?.queuedAtUtc) },
       { term: 'Slot acquired', value: time(view?.slotAcquiredAtUtc) },
       { term: 'Finished', value: time(view?.finishedAtUtc) },
@@ -958,6 +1031,60 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
   downloadDiagnostics(): void {
     const now = new Date();
     runReportWritingIo.download(this.diagnosticsFileName(now), this.diagnosticsText(now));
+  }
+
+  /** The source fetches replies and the finished job has a writer call with one: *Download the writer's replies* is offered. */
+  get showWriterReplies(): boolean {
+    return !!this.jobSource.getWriterReplies && this.isFinished
+      && (this.view?.job?.documents ?? []).some(doc => (doc.calls ?? []).some(call => (call.replyChars ?? 0) > 0));
+  }
+
+  /** The writer-replies file's name: `run-<id>_…`, or the custom source's stem in place of `run-<id>`. */
+  private writerRepliesFileName(nowUtc: Date): string {
+    const runId = this.runId ?? 0;
+    const name = runReportWriterRepliesFileName(runId, nowUtc);
+    const stem = this.context?.source?.fileStem;
+    return stem ? `${stem}${name.slice(`run-${runId}`.length)}` : name;
+  }
+
+  /**
+   * Fetches the writer's raw replies of the job as Markdown and saves them; the status line says what
+   * happens, and the error line why when the server no longer holds them.
+   */
+  downloadWriterReplies(): void {
+    const source = this.jobSource;
+    if (!source.getWriterReplies || this.repliesLoading) {
+      return;
+    }
+    const generation = this.generation;
+    this.repliesLoading = true;
+    this.copyError = null;
+    this.copyStatus = RUN_REPORT_REPLIES_PREPARING_TEXT;
+    this.cdr.markForCheck();
+    this.repliesSub?.unsubscribe();
+    this.repliesSub = source.getWriterReplies().subscribe({
+      next: markdown => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.repliesLoading = false;
+        this.copyStatus = '';
+        runReportWritingIo.downloadMarkdown(this.writerRepliesFileName(new Date()), markdown);
+        this.cdr.markForCheck();
+      },
+      error: (error: unknown) => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.repliesLoading = false;
+        this.copyStatus = '';
+        const status = error instanceof HttpErrorResponse ? error.status : 0;
+        this.copyError = status === 404
+          ? RUN_REPORT_REPLIES_GONE_TEXT
+          : `${RUN_REPORT_REPLIES_FAILED_TEXT} (${status > 0 ? `HTTP ${status}` : 'no answer from the server'}).`;
+        this.cdr.markForCheck();
+      }
+    });
   }
 
   // -------------------------------------------------------------------------------------------

@@ -291,10 +291,11 @@ public class BenchmarkBatteryReportDocumentServiceTests
         Assert.Equal(BenchmarkRunReportDocumentService.CancelOutcome.Requested, h.Service.TryCancel(h.BatteryRunId));
         await job.WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
-        Assert.Equal(BenchmarkReportAudience.ExecutiveSummary, Assert.Single(await h.DocumentsAsync()).Audience);
+        // The Root Cause Analysis is written first.
+        Assert.Equal(BenchmarkReportAudience.RootCauseAnalysis, Assert.Single(await h.DocumentsAsync()).Audience);
         var batteryRun = await h.BatteryRunAsync();
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Canceled, batteryRun.ReportDocumentsStatus);
-        Assert.Equal("Canceled while writing. The Executive Summary was written and is kept.", batteryRun.ReportDocumentsMessage);
+        Assert.Equal("Canceled while writing. The Root Cause Analysis was written and is kept.", batteryRun.ReportDocumentsMessage);
     }
 
     [Fact]
@@ -422,7 +423,8 @@ public class BenchmarkBatteryReportDocumentServiceTests
 
 /// <summary>
 /// Stores a fixture battery-completion document for each audience on the job, except
-/// <see cref="FailAudience"/>, which it fails as a writer's reply that could not be parsed. Like the
+/// <see cref="FailAudience"/>, which it fails as a writer's reply that could not be parsed; each document
+/// records one call with its reply (<see cref="ReplyOf"/>). Like the
 /// real writer, it replaces the job's request with the battery run's. <see cref="Entered"/> is set when
 /// the job reaches the writer; <see cref="Gate"/> holds the job before its first document;
 /// <see cref="BlockAfterFirst"/> holds it after the first document is stored until it is canceled. A
@@ -434,6 +436,9 @@ internal sealed class BatteryReportFakeWriter : IBenchmarkRunReportWriter
     private int _jobCalls;
 
     public BatteryReportFakeWriter(DbContextOptions<ApplicationDbContext> options) => _options = options;
+
+    /// <summary>The raw reply the fake records for a document's one call.</summary>
+    public static string ReplyOf(BenchmarkReportAudience audience) => "{\"headline\":\"The fake battery " + audience + " reply.\"}";
 
     public BenchmarkReportAudience? FailAudience { get; set; }
     public BenchmarkReportAudience? WarnAudience { get; set; }
@@ -469,6 +474,8 @@ internal sealed class BatteryReportFakeWriter : IBenchmarkRunReportWriter
             {
                 ct.ThrowIfCancellationRequested();
                 job.SetDocumentStatus(progress.Audience, BenchmarkReportPackDocumentStatus.Writing);
+                job.RecordCall(progress, new BenchmarkReportPackCallDto { Kind = BenchmarkReportPackCallKinds.Draft, StartedAtUtc = DateTime.UtcNow },
+                    reply: ReplyOf(progress.Audience));
                 if (progress.Audience == FailAudience)
                 {
                     job.SetDocumentStatus(progress.Audience, BenchmarkReportPackDocumentStatus.Failed, "The writer's reply could not be parsed.");
@@ -546,10 +553,11 @@ internal sealed class BatteryReportHarness : IAsyncDisposable
 
     /// <summary>
     /// The battery run, analysed unless <paramref name="analyse"/> is false; with
-    /// <paramref name="complete"/> false it holds suite A only, so its analysis is incomplete.
+    /// <paramref name="complete"/> false it holds suite A only, so its analysis is incomplete. The service
+    /// reads <paramref name="clock"/>, the system clock when null.
     /// </summary>
     public static async Task<BatteryReportHarness> CreateAsync(
-        int maxRunsPerHour = 100, bool withWriter = true, bool analyse = true, bool complete = true)
+        int maxRunsPerHour = 100, bool withWriter = true, bool analyse = true, bool complete = true, TimeProvider? clock = null)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -579,7 +587,8 @@ internal sealed class BatteryReportHarness : IAsyncDisposable
         harness.Service = new BenchmarkBatteryReportDocumentService(
             harness._provider.GetRequiredService<IServiceScopeFactory>(),
             harness.Jobs,
-            NullLogger<BenchmarkBatteryReportDocumentService>.Instance);
+            NullLogger<BenchmarkBatteryReportDocumentService>.Instance,
+            clock);
 
         await using var db = new ApplicationDbContext(options);
         harness.WriterConfig = Config("Anthropic", "claude-opus-5-5", "Claude Opus 5.5");

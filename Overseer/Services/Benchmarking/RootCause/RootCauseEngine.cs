@@ -217,9 +217,10 @@ public static class RootCauseEngine
     /// version 11 the comparison's HQ5 statement names the response-style margin it counts. From version 12 WS1 fails a
     /// robustness check when most of the model's visible text arrived in one burst, the summed time to first output is
     /// the wait before output, each share has a <c>.shareOf</c> fact, WQ4 and HQ6 need the profile's minimum of answers,
-    /// and a time-of-day run is one pass launched once per time of day.
+    /// and a time-of-day run is one pass launched once per time of day. From version 13 a ruled-out hypothesis is never
+    /// an axis's best: an axis whose every hypothesis was ruled out has none.
     /// </summary>
-    public const int Version = 12;
+    public const int Version = 13;
 
     /// <summary>The list output price ratio from which two models of one provider are in different price tiers.</summary>
     public const double TierPriceRatio = 1.5;
@@ -1473,6 +1474,7 @@ internal sealed class RootCauseContext
         var evidence = model.Evidence;
         var at = AtRisk(model.Token);
         var scored = evidence.Scored.ToList();
+        var bursts = RootCauseEvidence.BurstAnswers(evidence);
         var summary = new RootCauseModelEvidenceSummary
         {
             Token = model.Token,
@@ -1484,6 +1486,8 @@ internal sealed class RootCauseContext
             MedianQuality = at.Median,
             AtRisk = Enumerable.Range(0, 4).Select(k => new RootCauseSegment { Key = RootCauseSegments.AtRisk[k], Label = RootCauseSegments.Label(RootCauseSegments.AtRisk[k]), Value = at.Points[k] }).ToList(),
             TelemetryAnswers = evidence.Answers.Count(a => a.Ok && a.Telemetry),
+            BurstAnswers = bursts.Burst,
+            TimedAnswers = bursts.Timed,
             CallsPerAnswer = CallsPerAnswer(model),
             TtftPerCallP50Ms = RootCauseStatistics.Median(evidence.Answers.Where(a => a.Ok).SelectMany(a => a.CallTtftMs).ToList()),
             DecodeTokensPerSecond = RootCauseStatistics.Median(evidence.Answers.Where(a => a.Ok && a.DecodeRate.HasValue).Select(a => a.DecodeRate!.Value).ToList()),
@@ -1543,7 +1547,8 @@ internal sealed class RootCauseContext
 ///     components are input and output, and input and all also carry .caching.share when both list prices are known
 ///   rca.quality.&lt;T&gt;.&lt;T&gt;.total; rca.quality.&lt;T&gt;.&lt;T&gt;.dimension.&lt;d&gt;.points, .other.points
 ///   rca.atRisk.&lt;T&gt;.&lt;segment&gt;, rca.atRisk.&lt;T&gt;.total
-///   rca.within.&lt;T&gt;.time.&lt;segment&gt;.seconds, .time.&lt;segment&gt;.share; rca.within.&lt;T&gt;.cost.&lt;component&gt;.share
+///   rca.within.&lt;T&gt;.time.&lt;segment&gt;.seconds, .time.&lt;segment&gt;.share (the ttft segment summed over a question's model
+///     calls); rca.within.&lt;T&gt;.cost.&lt;component&gt;.share; rca.within.&lt;T&gt;.speed.burstAnswers, of the timed answers
 ///   rca.controls.count, .providers, .limit; rca.controls.&lt;n&gt;.model, .runId or .batteryRunId, .date, .provider, .sharedQuestions
 ///   rca.control.deficit.mean, .interval; rca.control.instrumentSuspect, rca.control.modelSpecific
 ///   rca.run.&lt;n&gt;.summary, .purpose, rca.check.&lt;n&gt;, rca.check.&lt;n&gt;.summary, rca.systemFirst, rca.pricingBasis
@@ -1819,8 +1824,21 @@ public static class RootCauseFacts
                 facts.Add(within + "time.total", total, "a mean of " + BenchmarkReportFormat.OneDecimal(total) + " s per question");
                 foreach (var s in summary.Time)
                 {
-                    facts.Add(within + "time." + s.Key + ".seconds", s.Value, "a mean of " + BenchmarkReportFormat.OneDecimal(s.Value) + " s per question");
+                    facts.Add(within + "time." + s.Key + ".seconds", s.Value, "a mean of " + BenchmarkReportFormat.OneDecimal(s.Value) + " s per question"
+                        + (s.Key == RootCauseSegments.Ttft ? ", summed over its model calls" : string.Empty));
                     if (total > 0) facts.Add(within + "time." + s.Key + ".share", s.Value / total, RootCauseHypotheses.Pct(s.Value / total));
+                }
+            }
+
+            if (summary.TimedAnswers is int timed && summary.BurstAnswers is int burst)
+            {
+                if (timed > 0)
+                {
+                    facts.Add(within + "speed.burstAnswers", burst, BenchmarkReportFormat.CountOf(burst, timed, "answers", "whose visible text arrived in one burst"));
+                }
+                else
+                {
+                    facts.Unavailable(within + "speed.burstAnswers", "No answer recorded whether its visible text arrived in one burst.");
                 }
             }
 

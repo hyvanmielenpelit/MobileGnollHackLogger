@@ -72,8 +72,74 @@ public static partial class BenchmarkReportPackPrompt
     private const string GapsCauseRule = "Name a cause for 'the gaps' only when the best hypotheses cover more than one pair; when you name a cause, give its share, or for several hypotheses of one rule its rca.rule.<id>.shareSpan beside their ref range.";
 
     /// <summary>The headline's order of the axes, which keeps a price-per-token difference from leading.</summary>
-    private const string AxisOrderRule = "Take the axes in the order intelligence, speed, cost, and lead with the first whose status is Root cause established or Probable cause; cost may lead only when neither other axis has one. "
+    private const string AxisOrderRule = "When the data has a HEADLINE OBSERVATION, open the headline with it in one clause, giving its question reference and its dimension and no causal word, then go on as follows. "
+        + "Take the axes in the order intelligence, speed, cost, and lead with the first whose status is Root cause established or Probable cause; cost may lead only when neither other axis has one. "
+        + "A speed or cost axis whose best hypothesis is about tool rounds (WS3 or WC3) comes after any intelligence observation. "
         + "A price-per-token difference (a hypothesis graded Known from the price cards) is what the price cards show, never the cause the runs found: never lead with it, and never call it the root cause.";
+
+    /// <summary>Both panel members' quality scores at or below this read as an answer both graded incorrect, for <see cref="RootCauseHeadlineObservation"/>.</summary>
+    public const int HeadlineIncorrectScoreMax = 33;
+
+    /// <summary>
+    /// The observation a model-scope Root Cause Analysis' headline opens with: the first question, in question order, whose
+    /// answer has a critical error both panel members flagged (resolved <c>Agreed</c>) or, in a single-assessor run, one the
+    /// claim verifier upheld; failing that, the first whose answer both panel members scored at or below
+    /// <see cref="HeadlineIncorrectScoreMax"/>. <c>Q8, accuracy: both panel members flagged a critical error</c>: the question
+    /// reference and the dimension, and who recorded it, with no cause. Null in comparison scope and when no answer qualifies.
+    /// </summary>
+    public static string? RootCauseHeadlineObservation(BenchmarkReportFactSheet sheet, BenchmarkReportContentSnapshot content)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        ArgumentNullException.ThrowIfNull(content);
+        if (sheet.IsComparison || sheet.IsChatConsistency) return null;
+
+        var items = content.Runs
+            .OrderBy(r => r.RunId)
+            .SelectMany(r => r.Questions)
+            .Where(q => sheet.Questions.Any(s => s.Number == q.Number))
+            .OrderBy(q => q.Number)
+            .ToList();
+        string Ref(int number) => sheet.Questions.FirstOrDefault(q => q.Number == number)?.Reference ?? Q(number);
+
+        foreach (var item in items)
+        {
+            bool panel = item.Graders.Any(g => g.Role == BenchmarkReportFacts.PanelMemberBRole);
+            string? resolution = item.CriticalErrorResolution?.Trim();
+            if (panel && resolution == nameof(BenchmarkCriticalErrorResolution.Agreed))
+            {
+                return Ref(item.Number) + ", accuracy: both panel members flagged a critical error";
+            }
+            bool verifierUpheld = resolution == nameof(BenchmarkCriticalErrorResolution.UpheldByVerifier)
+                || (resolution == nameof(BenchmarkCriticalErrorResolution.SingleAssessor)
+                    && item.ClaimRulings.Any(c => c.Role == BenchmarkReportContent.CriticalErrorQuoteRole
+                                                  && string.Equals(c.Verdict, "refuted", StringComparison.OrdinalIgnoreCase)));
+            if (!panel && verifierUpheld)
+            {
+                return Ref(item.Number) + ", accuracy: the assessor flagged a critical error and the claim verifier upheld it";
+            }
+        }
+
+        foreach (var item in items)
+        {
+            var a = item.Graders.FirstOrDefault(g => g.Role == BenchmarkReportFacts.PanelMemberARole);
+            var b = item.Graders.FirstOrDefault(g => g.Role == BenchmarkReportFacts.PanelMemberBRole);
+            if (a?.Score is int scoreA && b?.Score is int scoreB && scoreA <= HeadlineIncorrectScoreMax && scoreB <= HeadlineIncorrectScoreMax)
+            {
+                return Ref(item.Number) + ", accuracy: both panel members graded the answer incorrect";
+            }
+        }
+        return null;
+    }
+
+    /// <summary>The HEADLINE OBSERVATION block of a model-scope Root Cause Analysis' data; nothing when no answer qualifies.</summary>
+    private static void AppendHeadlineObservation(StringBuilder sb, BenchmarkReportFactSheet sheet, BenchmarkReportContentSnapshot content)
+    {
+        if (RootCauseHeadlineObservation(sheet, content) is not string observation) return;
+
+        Line(sb, "HEADLINE OBSERVATION (open the headline with it in one clause: its question reference and dimension, no causal word; then the axes)");
+        Line(sb, observation + ".");
+        Line(sb);
+    }
 
     /// <summary>The fixed instruction text of a Root Cause Analysis in comparison or model scope.</summary>
     public static string BuildRootCauseSystemPrompt(bool comparisonScope)
@@ -299,6 +365,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". "
             + "A count across models, questions, answers or pairs, written as 'N of M' or 'N of the M', comes only from a fact token; never write it in words. "
             + "A plain count with no total, such as 'three pairs', may be a number word, but prefer a fact token for any figure.");
+        Line(sb, "- " + LargeNumberWordPromptRule);
         Line(sb, "- Never write a hypothesis id, a run number or a check number in the prose: cite the hypothesis by its rca.hypothesis.<id>.<n>.ref token, a run by its rca.run.<n>.summary token and a check by its rca.check.<n>.summary token. A hypothesis's label (rca.hypothesis.<id>.<n>.label) appears only in the tables; never cite it in the prose.");
         Line(sb, "- {{rca.check.<n>}} is a whole sentence the document prints in its Checks list; inside your own sentence cite a check by {{rca.check.<n>.summary}}, and never repeat {{rca.check.<n>}} under What to run next.");
         Line(sb, comparisonScope
@@ -455,6 +522,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
 
         AppendRootCauseScope(sb, sheet, result, completion, peers.Count);
+        AppendHeadlineObservation(sb, sheet, content);
 
         if (comparison)
         {
@@ -620,7 +688,8 @@ public static partial class BenchmarkReportPackPrompt
     /// <summary>
     /// How to read the facts whose displays print a bare amount, one line for each kind the sheet holds: the pair
     /// totals and what their <c>.decomposed</c> fact means, a cost pair's volume ratio and split, the points at risk,
-    /// the prices, a model's differing price cards, the cache-read share and the unexpected results.
+    /// the prices, a model's differing price cards, the cache-read share, the summed wait before output and the
+    /// unexpected results.
     /// </summary>
     private static void AppendRootCauseFactNotes(StringBuilder sb, BenchmarkReportFactSheet sheet, bool comparison)
     {
@@ -671,6 +740,10 @@ public static partial class BenchmarkReportPackPrompt
         {
             Line(sb, $"{own}tokens.cacheReadShare is the share of the model's input tokens read from the cache, printed as a bare percentage.");
         }
+        if (Has(k => k.StartsWith("rca.within.", StringComparison.Ordinal) && k.Contains(".time." + RootCauseSegments.Ttft + ".", StringComparison.Ordinal)))
+        {
+            Line(sb, $"rca.within.*.time.ttft.* is the wait before output summed over every model call of a question. The time to first token of the run is {own}speed.ttftP50.");
+        }
         if (Has(k => k.StartsWith(AnomalyPrefix, StringComparison.Ordinal)))
         {
             Line(sb, "rca.anomaly.<n>.* describe the unexpected results, each a result that goes against what the models' price tiers or release dates predict: .ref prints its id and is a noun phrase, .summary is a whole sentence, "
@@ -680,7 +753,7 @@ public static partial class BenchmarkReportPackPrompt
     }
 
     /// <summary>
-    /// The CHECK BEFORE YOU ANSWER block: one line each for rules 3, 4, 9, 16, 31, 39, 38, 33, 34, 36, 41 and 42, and in
+    /// The CHECK BEFORE YOU ANSWER block: one line each for rules 3, 4, 9, 16, 31, 39, 44, 46, 38, 33, 34, 36, 41 and 42, and in
     /// comparison scope one for statements about every model and one for rule 43, each with an example built from the sheet's
     /// own tokens that are not <paramref name="hidden"/>, or generic wording where the sheet has none to show.
     /// </summary>
@@ -826,6 +899,18 @@ public static partial class BenchmarkReportPackPrompt
             + "; never add 'with', 'without' or 'that' words after it that repeat it"
             + "; to say that several models share a signal, name each model with its own token and nothing else about it, as " + several
             + "; never name the signal beside them or open the sentence with it, as in 'On tool calls,', 'Across the panel,' or 'answers without tools, most notably'.");
+
+        Line(sb, "- Rule 44, counts across a total: a count across models, questions or answers is its fact token"
+            + (count != null ? ", such as " + T(count.Key) : string.Empty)
+            + "; never write it in words, as in 'seven of the eight models', and never put a number word before a token that prints the total; a plain count with no total may be a number word up to ten.");
+
+        // A figure example is a panel member's score on a question, which a member gap cites.
+        string? memberScore = facts.Keys
+            .Where(k => k.StartsWith(BenchmarkReportFacts.QuestionFactPrefix, StringComparison.Ordinal) && k.EndsWith(BenchmarkReportFacts.MemberAScoreSuffix, StringComparison.Ordinal))
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .FirstOrDefault();
+        Line(sb, "- Rule 46, figures in words: never write a number of twenty or more in words, such as a score of ninety-five or seventy percent; cite the figure's token instead"
+            + (memberScore != null ? ", such as " + T(memberScore) + " for panel member A's score on that question" : string.Empty) + ".");
 
         Line(sb, "- Rule 38, shares: " + (share != null
                 ? $"a share stands beside its own hypothesis's .ref only, as '{T(share + "share")} {T(share + "shareOf")} ({T(share + "ref")})'"

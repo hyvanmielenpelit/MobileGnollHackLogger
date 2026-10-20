@@ -1,13 +1,22 @@
 import {
-  BenchmarkReportPackDocumentProgressDto,
   BenchmarkRunReportDocumentsStatus,
   BenchmarkRunReportJobDto
 } from '../../../services/admin-benchmark.service';
-import { parseServerUtcDate } from '../../../utils/date.util';
 import { audienceLabel, formatCostUsd, formatElapsed } from '../report-pack/report-document-format';
+import {
+  NOT_RECORDED,
+  documentLines,
+  failedReplyLines,
+  formatUtcSeconds,
+  preparationLines,
+  spanMs,
+  validationLines,
+  versionLines,
+  whyLines,
+  wordCountLines
+} from '../report-pack/report-job-diagnostics-sections';
 
-/** The value every absent or null fact reads as. */
-export const NOT_RECORDED = 'not recorded';
+export { NOT_RECORDED, formatUtcSeconds, spanMs };
 
 /** The run a report writing job belongs to, as far as the client knows it. */
 export interface RunIdentity {
@@ -53,36 +62,20 @@ export function runReportStatusWord(status: BenchmarkRunReportDocumentsStatus | 
   }
 }
 
-/** `2026-09-29 12:00:05 UTC`, or null when the value is absent or unreadable. */
-export function formatUtcSeconds(value: string | Date | null | undefined): string | null {
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
-  const date = parseServerUtcDate(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return `${date.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
-}
-
-/** Milliseconds between two server timestamps, or null when either is absent or the span is negative. */
-export function spanMs(start: string | null | undefined, end: string | null | undefined): number | null {
-  if (!start || !end) {
-    return null;
-  }
-  const from = parseServerUtcDate(start).getTime();
-  const to = parseServerUtcDate(end).getTime();
-  if (Number.isNaN(from) || Number.isNaN(to) || to < from) {
-    return null;
-  }
-  return to - from;
+/** `20260929-120005`: the time in UTC, as file names carry it. */
+function fileStamp(nowUtc: Date): string {
+  const iso = nowUtc.toISOString();
+  return `${iso.slice(0, 4)}${iso.slice(5, 7)}${iso.slice(8, 10)}-${iso.slice(11, 13)}${iso.slice(14, 16)}${iso.slice(17, 19)}`;
 }
 
 /** `run-42_ai-report-writing-diagnostics_20260929-120005.txt`, the time in UTC. */
 export function runReportWritingDiagnosticsFileName(runId: number, nowUtc: Date): string {
-  const iso = nowUtc.toISOString();
-  const stamp = `${iso.slice(0, 4)}${iso.slice(5, 7)}${iso.slice(8, 10)}-${iso.slice(11, 13)}${iso.slice(14, 16)}${iso.slice(17, 19)}`;
-  return `run-${runId}_ai-report-writing-diagnostics_${stamp}.txt`;
+  return `run-${runId}_ai-report-writing-diagnostics_${fileStamp(nowUtc)}.txt`;
+}
+
+/** `run-42_ai-report-writer-replies_20260929-120005.md`, the time in UTC. */
+export function runReportWriterRepliesFileName(runId: number, nowUtc: Date): string {
+  return `run-${runId}_ai-report-writer-replies_${fileStamp(nowUtc)}.md`;
 }
 
 function orNotRecorded(value: string | number | null | undefined): string {
@@ -128,25 +121,16 @@ function providerAndModel(provider: string | null | undefined, modelId: string |
   return `${orNotRecorded(provider)} / ${orNotRecorded(modelId)}`;
 }
 
-function documentLines(doc: BenchmarkReportPackDocumentProgressDto, index: number, serverNow: string | null | undefined): string[] {
-  return [
-    `Document ${index + 1}: ${audienceLabel(doc.audience)}`,
-    `  Status: ${orNotRecorded(doc.status)}`,
-    `  Started: ${time(doc.startedAtUtc)}`,
-    `  Completed: ${time(doc.completedAtUtc)}`,
-    `  Duration: ${openSpan(doc.startedAtUtc, doc.completedAtUtc, serverNow)}`,
-    `  Model calls: ${count(doc.modelCalls)}`,
-    `  Input tokens: ${count(doc.inputTokens)}`,
-    `  Output tokens: ${count(doc.outputTokens)}`,
-    `  Cost: ${doc.costUsd === undefined || doc.costUsd === null ? NOT_RECORDED : formatCostUsd(doc.costUsd)}`,
-    `  Document id: ${orNotRecorded(doc.documentId)}`,
-    `  Error: ${orNotRecorded(doc.errorMessage)}`
-  ];
-}
-
 /**
- * The plain-text diagnostics of a run's AI report writing job: one fact per line, LF line endings,
- * absent facts reading "not recorded". The user who started the job is never included.
+ * The plain-text diagnostics of a run's AI report writing job: the run, the report status, the job, its
+ * writer and versions, the timing and queue, the preparation notes, one block per document with its
+ * phase and writer calls (and a pointer to the writer's replies, which are a separate download), the
+ * word counts of the capped sections, the validation issues and failed writer replies when there are
+ * any, why each document completed with warnings, failed or was canceled, the totals, the client's
+ * polling and the job log, in the Report Pack diagnostics' order. It has no chart section: the run flow
+ * draws Overseer's own figures on the server with no chart selection in the browser, and the job log
+ * records how many it drew. One fact per line except a raw failed reply, LF line endings, absent facts
+ * reading "not recorded". The user who started the job is never included.
  */
 export function buildRunReportWritingDiagnostics(
   view: BenchmarkRunReportJobDto | null,
@@ -189,6 +173,9 @@ export function buildRunReportWritingDiagnostics(
   lines.push(`Thinking level: ${orNotRecorded(view?.writerThinkingLevel)}`);
   lines.push(`Config id: ${orNotRecorded(view?.writerConfigId)}`);
 
+  lines.push('', '== Versions ==');
+  lines.push(...versionLines(job));
+
   lines.push('', '== Timing ==');
   lines.push(`Queued: ${time(view?.queuedAtUtc)}`);
   lines.push(`Slot acquired: ${time(view?.slotAcquiredAtUtc)}`);
@@ -204,13 +191,16 @@ export function buildRunReportWritingDiagnostics(
   lines.push(`Jobs ahead: ${count(view?.jobsAhead)}`);
   lines.push(`Blocking job: ${orNotRecorded(view?.blockingJobLabel)}`);
 
+  lines.push(...preparationLines(job));
+
   lines.push('', '== Documents ==');
   const documents = job?.documents ?? [];
   if (documents.length === 0) {
     lines.push(`Documents: ${NOT_RECORDED}`);
   } else {
-    documents.forEach((doc, index) => lines.push(...documentLines(doc, index, serverNow)));
+    documents.forEach((doc, index) => lines.push(...documentLines(doc, index, serverNow, job?.writerMaxOutputTokens)));
   }
+  lines.push(...wordCountLines(documents), ...validationLines(documents), ...failedReplyLines(documents), ...whyLines(documents));
 
   lines.push('', '== Totals ==');
   lines.push(`Model calls: ${count(job?.totalModelCalls)}`);

@@ -120,7 +120,7 @@ The first known fact: Orion Max's mean score differs by +15.0 points (95% interv
 | Orion Max | 8.9 s | 1.9 s | 5.2 s | 1.5 s | 0.3 s |
 | Intermediate questions | 8.9 s | 1.9 s | 5.2 s | 1.5 s | 0.3 s |
 
-*Wall time per question: the median time per question, tool execution included, split into its parts in proportion to their mean times. The parts are the wait before output, output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. The wait before output is summed over every model call of the answer, hidden thinking included; the run report's time to first token (the wait before the model starts writing, mostly its thinking) is the first call's alone. It differs from the median model time the other tables of this document give, which leaves tool execution out. Left out because it is zero or not recorded in every row: own waits and retries.*
+*Wall time per question: the median time per question, tool execution included, split into its parts in proportion to their mean times. The parts are the wait before output (every model call's wait for its first token on one question, summed), output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. The wait before output is summed over every model call of the answer, hidden thinking included; the run report's time to first token (the wait before the model starts writing, mostly its thinking) is the first call's alone. It differs from the median model time the other tables of this document give, which leaves tool execution out. Left out because it is zero or not recorded in every row: own waits and retries.*
 
 The speed tables split the time per question into its components.
 
@@ -499,6 +499,7 @@ The counts and the configuration facts the analysis states, each numbered as the
 - **Time to first token:** The seconds from sending a request to the first word of the reply. For reasoning models it is mostly the time the model spends thinking before it answers.
 - **Tokens:** The pieces of text, roughly three quarters of a word each, that a model reads and writes; providers price by them. Uncached input is text read at the full price. Cache reads are input stored from an earlier call and charged less; cache writes store it. Visible output is the answer, and reasoning is the model's hidden thinking, billed as output; a provider that does not report it separately counts it inside output.
 - **Tool round:** One cycle in which the model calls a tool, such as the wiki search, reads its result and continues. Each round adds a model call, with its own wait for the first token.
+- **Wait before output:** The time to first token of every model call of one question, added up: each tool round adds one more wait. It is the first part of the time per question, not the run's time to first token, which is the first call's alone.
 - **Weighted geometric mean:** The way an answer's four dimension scores are combined. Unlike a plain average, it falls sharply when any one dimension is very low, so strong dimensions cannot hide a weak one.
 
 ## Fact sheet
@@ -827,6 +828,12 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "0 of 6 answers at level 6 on accuracy",
+      "key": "dimension.accuracy.topLevel",
+      "value": 0
+    },
+    {
+      "available": true,
       "display": "80",
       "key": "dimension.completeness",
       "value": 80
@@ -842,6 +849,12 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "not available",
       "key": "dimension.completeness.peerMean",
       "unavailableReason": "A stand-alone run report has no peers."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers at level 6 on completeness",
+      "key": "dimension.completeness.topLevel",
+      "value": 0
     },
     {
       "available": true,
@@ -863,6 +876,12 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "0 of 6 answers at level 6 on conciseness",
+      "key": "dimension.conciseness.topLevel",
+      "value": 0
+    },
+    {
+      "available": true,
       "display": "80",
       "key": "dimension.readability",
       "value": 80
@@ -878,6 +897,12 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "not available",
       "key": "dimension.readability.peerMean",
       "unavailableReason": "A stand-alone run report has no peers."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers at level 6 on readability",
+      "key": "dimension.readability.topLevel",
+      "value": 0
     },
     {
       "available": true,
@@ -1135,6 +1160,30 @@ The counts and the configuration facts the analysis states, each numbered as the
       "available": true,
       "display": "0 of 6 answers that hit the tool limit",
       "key": "profile.toolLimitHits",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers at level 6 on accuracy",
+      "key": "profile.top.accuracy",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers at level 6 on completeness",
+      "key": "profile.top.completeness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers at level 6 on conciseness",
+      "key": "profile.top.conciseness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers at level 6 on readability",
+      "key": "profile.top.readability",
       "value": 0
     },
     {
@@ -1727,6 +1776,12 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "0 of 6 answers whose visible text arrived in one burst",
+      "key": "rca.within.subject.speed.burstAnswers",
+      "value": 0
+    },
+    {
+      "available": true,
       "display": "a mean of 0.3 s per question",
       "key": "rca.within.subject.time.other.seconds",
       "value": 0.3
@@ -1781,7 +1836,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "a mean of 1.9 s per question",
+      "display": "a mean of 1.9 s per question, summed over its model calls",
       "key": "rca.within.subject.time.ttft.seconds",
       "value": 1.915
     },
@@ -2415,7 +2470,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 12,
+    "engineVersion": 13,
     "evidence": [
       {
         "atRisk": [
@@ -2441,6 +2496,7 @@ The counts and the configuration facts the analysis states, each numbered as the
           }
         ],
         "budgetOrDefectAnswers": 0,
+        "burstAnswers": 0,
         "cacheReadShare": 0.22988505747126436,
         "callsPerAnswer": 2.5,
         "cost": [
@@ -2507,6 +2563,7 @@ The counts and the configuration facts the analysis states, each numbered as the
             "value": 0.3
           }
         ],
+        "timedAnswers": 6,
         "token": "subject",
         "tokens": [
           {
@@ -2989,6 +3046,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 131 · format version 24 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 131 · format version 25 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

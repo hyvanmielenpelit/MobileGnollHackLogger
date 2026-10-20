@@ -1013,6 +1013,42 @@ public class BenchmarkReportPackValidatorTests
         Assert.Equal("strengths[0]", itemNote.Location);
     }
 
+    [Fact]
+    public void ClearUnprintedTopics_AnExecutiveSummaryReplyWithTopics_ValidatesClean()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        output.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = 3, Topic = "Should the player pray right now given the board state" });
+
+        Assert.Equal(2, BenchmarkReportPackValidator.ClearUnprintedTopics(Es, output));
+
+        Assert.Empty(output.QuestionTopics);
+        Assert.Empty(Validate(Es, output));
+    }
+
+    [Fact]
+    public void ClearUnprintedTopics_KeepsTheTopicsOfARootCauseAnalysis()
+    {
+        var output = new BenchmarkReportWriterOutput();
+        output.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = 1, Topic = "dipping a sword into a fountain" });
+
+        Assert.Equal(0, BenchmarkReportPackValidator.ClearUnprintedTopics(BenchmarkReportAudience.RootCauseAnalysis, output));
+        Assert.Single(output.QuestionTopics);
+    }
+
+    [Fact]
+    public void Rule9_ARootCauseTopicSharingEightWordsWithItsQuestion_IsNotFlagged_ButAParagraphIs()
+    {
+        const string quoted = "Should the player pray right now given the board state";
+        var output = new BenchmarkReportWriterOutput { Headline = "The model missed one prayer question." };
+        output.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = 3, Topic = quoted });
+        output.Sections[BenchmarkReportSlots.Limitations] = "The graders asked: " + quoted + ".";
+
+        var notes = Validate(BenchmarkReportAudience.RootCauseAnalysis, output);
+
+        Assert.DoesNotContain(notes, n => n.Rule == 9 && n.Location.StartsWith("questionTopics", StringComparison.Ordinal));
+        Assert.Contains(notes, n => n.Rule == 9 && n.Location.StartsWith("sections." + BenchmarkReportSlots.Limitations, StringComparison.Ordinal));
+    }
+
     // Rule 10 -----------------------------------------------------------------------------------
 
     [Theory]

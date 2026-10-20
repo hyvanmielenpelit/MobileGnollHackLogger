@@ -150,6 +150,9 @@ public static class BenchmarkReportFactLabels
         ["panel.referenceReaderIndex"] = "Reference reader (advisory, third provider)",
         ["panel.referenceReaderOffset"] = "Reference reader's mean offset from the panel",
         ["panel.judgeDependentPairs"] = "Judge-dependent pairs",
+        ["panel.sameProviderDelta"] = "Same-provider panel member's reading",
+        ["rcaDigest.keyFinding"] = "Root Cause Analysis: key finding",
+        ["rcaDigest.limits"] = "Root Cause Analysis: limits of the analysis",
 
         // Style
         ["style.responseStyleConflict"] = "Response-style conflict",
@@ -560,10 +563,10 @@ public static class BenchmarkReportFactLabels
 
         string[] parts = key.Split('.');
 
-        // dimension.<d>, dimension.<d>.peerMean, dimension.<d>.difference
+        // dimension.<d>, dimension.<d>.peerMean, dimension.<d>.difference, dimension.<d>.topLevel
         if (parts[0] == "dimension" && parts.Length is 2 or 3 && DimensionNames.TryGetValue(parts[1], out var dimension))
         {
-            string? suffix = parts.Length == 2 ? " score" : Comparison(parts[2]);
+            string? suffix = parts.Length == 2 ? " score" : parts[2] == "topLevel" ? ": answers at level 6" : Comparison(parts[2]);
             if (suffix == null) return false;
             label = dimension + suffix;
             return true;
@@ -593,6 +596,14 @@ public static class BenchmarkReportFactLabels
         // profile.*: a per-model sheet's failure profile
         if (parts[0] == "profile" && TryProfileLabel(key, out label)) return true;
 
+        // question.Q<n>.memberA, question.Q<n>.memberB: a question's score under one panel member alone
+        if (parts[0] == "question" && parts.Length == 3 && parts[1].Length > 1 && parts[1][0] == 'Q' && IsIndex(parts[1][1..])
+            && parts[2] is "memberA" or "memberB")
+        {
+            label = parts[1] + ": panel member " + parts[2][^1] + "'s score";
+            return true;
+        }
+
         // cost.component.<c>.perQuestion, price.<c>.perMillion
         if (parts.Length == 4 && parts[0] == "cost" && parts[1] == "component" && parts[3] == "perQuestion" && CostComponentNames.TryGetValue(parts[2], out var costComponent))
         {
@@ -606,6 +617,32 @@ public static class BenchmarkReportFactLabels
         }
 
         if (parts[0] == "rca" && TryRootCauseLabel(parts, out label)) return true;
+
+        // rcaDigest.axis.<axis>, rcaDigest.hypothesis.<n>, rcaDigest.lead.<n>, rcaDigest.nextRun.<n>, rcaDigest.check.<n>
+        if (parts[0] == "rcaDigest" && parts.Length == 3)
+        {
+            if (parts[1] == "axis" && RootCauseAxisNames.TryGetValue(parts[2], out var digestAxis))
+            {
+                label = "Root Cause Analysis, " + digestAxis + ": status";
+                return true;
+            }
+            if (IsIndex(parts[2]))
+            {
+                string? item = parts[1] switch
+                {
+                    "hypothesis" => "hypothesis",
+                    "lead" => "writer's lead",
+                    "nextRun" => "next run",
+                    "check" => "check",
+                    _ => null
+                };
+                if (item != null)
+                {
+                    label = "Root Cause Analysis: " + item + " " + parts[2];
+                    return true;
+                }
+            }
+        }
 
         // peer.<letter>.<key>: another model's own figure
         if (parts[0] == "peer" && parts.Length >= 3 && parts[1].Length > 0 && parts[1].All(char.IsAsciiLetterUpper))
@@ -658,6 +695,13 @@ public static class BenchmarkReportFactLabels
         if (parts.Length == 3 && parts[0] == "profile" && parts[1] == "deficit" && DimensionNames.TryGetValue(parts[2], out var dimension))
         {
             label = "Answers at level 2 or below on " + dimension.ToLowerInvariant();
+            return true;
+        }
+
+        // profile.top.<d>
+        if (parts.Length == 3 && parts[0] == "profile" && parts[1] == "top" && DimensionNames.TryGetValue(parts[2], out var topDimension))
+        {
+            label = "Answers at level 6 on " + topDimension.ToLowerInvariant();
             return true;
         }
 
@@ -957,11 +1001,22 @@ public static class BenchmarkReportFactLabels
                 }
                 return false;
 
-            // rca.within.<T>.time.total, .time.<segment>.seconds or .share, .cost.total, .cost.<component>.share
+            // rca.within.<T>.time.total, .time.<segment>.seconds or .share, .cost.total, .cost.<component>.share,
+            // .speed.burstAnswers; the time to first token segment is the wait before output summed over a question's calls
             case "within" when parts.Length >= 5 && TokenName(parts[2]) is string own:
                 if (parts.Length == 5 && parts[4] == "total" && parts[3] is "time" or "cost")
                 {
                     label = (parts[3] == "time" ? "Time per question, " : "Cost per question, ") + own;
+                    return true;
+                }
+                if (parts.Length == 5 && parts[3] == "speed" && parts[4] == "burstAnswers")
+                {
+                    label = "Answers whose visible text arrived in one burst, " + own;
+                    return true;
+                }
+                if (parts.Length == 6 && parts[3] == "time" && parts[4] == "ttft" && parts[5] is "seconds" or "share")
+                {
+                    label = "Wait before output, summed over the model calls of a question, " + own + (parts[5] == "share" ? ": share of the time per question" : string.Empty);
                     return true;
                 }
                 if (parts.Length == 6 && parts[3] == "time" && SegmentNames.TryGetValue(parts[4], out var timeSegment) && parts[5] is "seconds" or "share")

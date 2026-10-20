@@ -780,10 +780,13 @@ public sealed class RootCauseAxisStatus
     /// <summary>One of <see cref="RootCauseStatuses"/>.</summary>
     public string Status { get; set; } = RootCauseStatuses.NotEstablished;
 
-    /// <summary>The key of the best non-null hypothesis; null when none fired.</summary>
+    /// <summary>The key of the best non-null hypothesis graded Low or higher; null when none fired or every one was ruled out.</summary>
     public string? BestHypothesis { get; set; }
 
     public string Reason { get; set; } = string.Empty;
+
+    /// <summary>The reason of an axis whose every candidate hypothesis was graded Not supported.</summary>
+    public const string AllRuledOutReason = "Every hypothesis on this axis was ruled out by its own test.";
 }
 
 /// <summary>A check a run cannot settle: a rubric, a corpus or a configuration to look at.</summary>
@@ -1228,6 +1231,15 @@ public sealed class RootCauseModelEvidenceSummary
 
     /// <summary>Answers with candidate call telemetry.</summary>
     public int TelemetryAnswers { get; set; }
+
+    /// <summary>
+    /// Of <see cref="TimedAnswers"/>, those whose visible text arrived in one burst (<see cref="RootCauseEvidence.BurstAnswers"/>);
+    /// null on a result stored before it was recorded.
+    /// </summary>
+    public int? BurstAnswers { get; set; }
+
+    /// <summary>The answers that recorded whether their visible text arrived in one burst; null as for <see cref="BurstAnswers"/>.</summary>
+    public int? TimedAnswers { get; set; }
 
     /// <summary>Mean seconds per question by segment (<see cref="RootCauseSegments.Time"/>).</summary>
     public List<RootCauseSegment> Time { get; set; } = new();

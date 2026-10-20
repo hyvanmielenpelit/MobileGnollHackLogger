@@ -206,9 +206,12 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Refer to a control model only as {{peer:X}}, where X is its letter from PEERS, for example {{peer:A}}. A control model's chat was run on the same suites in both periods; its own change tells a change it shares with {{subject}} from a change of {{subject}} alone.");
         Line(sb, "- Any other {{...}} token is an error.");
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, hours, run ids, numbered lists or ordinals such as \"1st\". Every figure, date, hour and run id is a fact token; number words such as \"three\" are allowed for a plain count.");
+        Line(sb, "- " + LargeNumberWordPromptRule);
+        Line(sb, "- " + MixedCountPromptRule);
         Line(sb, "- This document has no questions: never refer to a question such as Q7.");
         Line(sb, "- A count token, whose value reads 'N of M …', is a noun phrase. Never put it after 'no' or make it the object of 'made'.");
         Line(sb, "- A count token already says what it counts, as in 'N of M answers without a tool call': write it as a noun phrase and never repeat its words beside it, before or after.");
+        Line(sb, "- A count whose value is zero is cited at most once, and only to rule something out; never present it as a finding.");
         Line(sb, "- Never name another model, provider or product, and never name a grader. The provider of {{subject}} is {{subject.provider}}.");
         Line(sb, "- Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.");
         Line(sb, "- In the prose, never write a fact key outside its {{key}} token, and never describe the facts list, the fact sheet or how the data was given to you.");

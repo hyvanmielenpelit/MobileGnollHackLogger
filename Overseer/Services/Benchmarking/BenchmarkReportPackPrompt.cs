@@ -31,6 +31,18 @@ public static partial class BenchmarkReportPackPrompt
     /// <summary>A fact whose key contains this, ignoring case, states the response-style conflict.</summary>
     public const string ResponseStyleConflictKeyFragment = "responseStyleConflict";
 
+    /// <summary>The count rule of a Root Cause Analysis' repair reminders, which rule 44 enforces.</summary>
+    public const string RootCauseCountReminder =
+        "Write every count across models, questions or answers as a fact token; a plain count with no total may be a number word up to ten.";
+
+    /// <summary>The rule against a number of twenty or more in words, which rule 46 enforces, as every first-turn prompt states it.</summary>
+    public const string LargeNumberWordPromptRule =
+        "Write no number of twenty or more in words, such as a score of ninety-five or seventy percent: cite the figure's token instead of writing it in words.";
+
+    /// <summary>The rule against a number word before a token that prints a total, which rule 44 enforces in every document.</summary>
+    public const string MixedCountPromptRule =
+        "Never put a number word before 'of' and a token that prints a bare total, as in 'seven of the' and that token: cite a count token that reads 'N of M' instead, or leave the total out.";
+
     /// <summary>The prompt for the sheet's scope.</summary>
     public static BenchmarkReportWriterPrompt Build(
         BenchmarkReportAudience audience,
@@ -40,29 +52,54 @@ public static partial class BenchmarkReportPackPrompt
         ArgumentNullException.ThrowIfNull(sheet);
         ArgumentNullException.ThrowIfNull(content);
 
+        bool digest = sheet.HasRootCauseDigest && audience == BenchmarkReportAudience.ExecutiveSummary;
         return sheet.IsChatConsistency
             ? new BenchmarkReportWriterPrompt(BuildChatConsistencySystemPrompt(audience), BuildChatConsistencyUserMessage(audience, sheet))
             : audience == BenchmarkReportAudience.RootCauseAnalysis
             ? new BenchmarkReportWriterPrompt(BuildRootCauseSystemPrompt(sheet.IsComparison), BuildRootCauseUserMessage(sheet, content))
             : sheet.IsComparison
-            ? new BenchmarkReportWriterPrompt(BuildComparisonSystemPrompt(audience), BuildComparisonUserMessage(audience, sheet, content))
-            : new BenchmarkReportWriterPrompt(BuildSystemPrompt(audience), BuildUserMessage(audience, sheet, content));
+            ? new BenchmarkReportWriterPrompt(BuildComparisonSystemPrompt(audience, digest), BuildComparisonUserMessage(audience, sheet, content))
+            : new BenchmarkReportWriterPrompt(BuildSystemPrompt(audience, digest), BuildUserMessage(audience, sheet, content));
     }
 
-    /// <summary>Lower-case hex SHA-256 of the audience's system prompt.</summary>
+    /// <summary>Lower-case hex SHA-256 of the audience's system prompt, written without a Root Cause Analysis digest.</summary>
     public static string PromptSha256(BenchmarkReportAudience audience)
         => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(BuildSystemPrompt(audience))));
 
-    /// <summary>Lower-case hex SHA-256 of the audience's system prompt for <paramref name="scope"/>.</summary>
+    /// <summary>Lower-case hex SHA-256 of the audience's system prompt for <paramref name="scope"/>, written without a Root Cause Analysis digest.</summary>
     public static string PromptSha256(BenchmarkReportAudience audience, BenchmarkReportScope scope)
+        => PromptSha256(audience, scope, rootCauseDigest: false);
+
+    /// <summary>
+    /// Lower-case hex SHA-256 of the audience's system prompt for <paramref name="scope"/>; an Executive Summary's with
+    /// <paramref name="rootCauseDigest"/> holds the rules of writing from a Root Cause Analysis digest.
+    /// </summary>
+    public static string PromptSha256(BenchmarkReportAudience audience, BenchmarkReportScope scope, bool rootCauseDigest)
         => scope == BenchmarkReportScope.ChatConsistency
             ? Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(BuildChatConsistencySystemPrompt(audience))))
             : scope == BenchmarkReportScope.Comparison
-            ? Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(BuildComparisonSystemPrompt(audience))))
-            : PromptSha256(audience);
+            ? Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(BuildComparisonSystemPrompt(audience, rootCauseDigest))))
+            : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(BuildSystemPrompt(audience, rootCauseDigest))));
+
+    /// <summary>Lower-case hex SHA-256 of the system prompt a document of <paramref name="audience"/> about <paramref name="sheet"/> is written under.</summary>
+    public static string PromptSha256(BenchmarkReportAudience audience, BenchmarkReportFactSheet sheet)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        var scope = sheet.IsChatConsistency ? BenchmarkReportScope.ChatConsistency
+            : sheet.IsComparison ? BenchmarkReportScope.Comparison
+            : BenchmarkReportScope.Model;
+        return PromptSha256(audience, scope, sheet.HasRootCauseDigest && audience == BenchmarkReportAudience.ExecutiveSummary);
+    }
 
     /// <summary>The user message of the one repair turn: every issue grouped by rule, then the output rules in brief.</summary>
     public static string BuildRepairMessage(IReadOnlyList<BenchmarkReportValidationNote> issues)
+        => BuildModelRepairMessage(issues, rootCause: false);
+
+    /// <summary>
+    /// The per-model repair message of <see cref="BuildRepairMessage(IReadOnlyList{BenchmarkReportValidationNote})"/>; a Root
+    /// Cause Analysis' (<paramref name="rootCause"/>) asks for every count across a total as a fact token.
+    /// </summary>
+    private static string BuildModelRepairMessage(IReadOnlyList<BenchmarkReportValidationNote> issues, bool rootCause)
     {
         ArgumentNullException.ThrowIfNull(issues);
 
@@ -73,7 +110,9 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
         Line(sb, "REMINDERS");
         Line(sb, "- Figures appear only as {{key}} with a key from FACTS exactly as written; the subject is {{subject}}; another model only {{peer:X}} with its letter from PEERS. No other {{...}} tokens.");
-        Line(sb, "- No digits in prose except question references such as Q7. Write counts as number words, and no numbered lists.");
+        Line(sb, rootCause
+            ? "- No digits in prose except question references such as Q7, and no numbered lists. " + RootCauseCountReminder
+            : "- No digits in prose except question references such as Q7. Write counts as number words, and no numbered lists.");
         Line(sb, "- Every question number, Q reference and evidence id must exist in the data. Every strength and weakness cites at least one evidence id.");
         Line(sb, "- A strength never cites a weakness row and a weakness never cites a strength row. A finding resting only on Conflicting rows says the graders disagree.");
         Line(sb, "- Never quote the questions, rubrics, answers or grader comments: no run of eight words may match them. Describe a question by its topic.");
@@ -153,8 +192,14 @@ public static partial class BenchmarkReportPackPrompt
     // System prompt
     // -----------------------------------------------------------------------------------------
 
-    /// <summary>The fixed instruction text for one audience of a per-model document.</summary>
-    public static string BuildSystemPrompt(BenchmarkReportAudience audience)
+    /// <summary>The fixed instruction text for one audience of a per-model document, written without a Root Cause Analysis digest.</summary>
+    public static string BuildSystemPrompt(BenchmarkReportAudience audience) => BuildSystemPrompt(audience, rootCauseDigest: false);
+
+    /// <summary>
+    /// The fixed instruction text for one audience of a per-model document; an Executive Summary's with
+    /// <paramref name="rootCauseDigest"/> adds the What to look at next slot and the ROOT CAUSE ANALYSIS rules.
+    /// </summary>
+    public static string BuildSystemPrompt(BenchmarkReportAudience audience, bool rootCauseDigest)
     {
         if (audience == BenchmarkReportAudience.RootCauseAnalysis) return BuildRootCauseSystemPrompt(comparisonScope: false);
 
@@ -170,16 +215,65 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
 
         AppendDocument(sb, spec);
-        AppendSlots(sb, spec);
+        AppendSlots(sb, spec, rootCauseDigest);
         AppendLists(sb, spec);
         AppendTokenRules(sb);
         AppendEvidenceRules(sb);
         AppendWeighingRules(sb);
+        if (rootCauseDigest) AppendRootCauseDigestRules(sb, comparisonScope: false);
         AppendDisclosureRules(sb);
         AppendFormatRules(sb);
-        AppendOutput(sb, spec);
+        AppendOutput(sb, spec, rootCauseDigest);
 
         return sb.ToString();
+    }
+
+    /// <summary>What an estimate adds for the Root Cause Analysis' headline and leads, which its digest holds once it is written.</summary>
+    public const int DigestWriterTextAllowanceChars = 1200;
+
+    /// <summary>
+    /// The characters an Executive Summary's prompt about <paramref name="sheet"/> grows by when it is written from a Root
+    /// Cause Analysis digest, for the cost and context-window estimates made before the analysis exists: the digest built
+    /// from the sheet's root-cause result (the ROOT CAUSE ANALYSIS block), <see cref="DigestWriterTextAllowanceChars"/> for its
+    /// headline and leads, and the system prompt's digest rules. 0 for a sheet without a root-cause result, a chat
+    /// consistency sheet, and a sheet that already holds a digest, whose prompt counts it.
+    /// </summary>
+    public static int RootCauseDigestPromptChars(BenchmarkReportFactSheet sheet)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        if (sheet.RootCause == null || sheet.IsChatConsistency || sheet.HasRootCauseDigest) return 0;
+
+        var digest = BenchmarkRootCauseDigest.From(0, sheet, new BenchmarkReportWriterOutput());
+        int block = digest == null ? 0 : digest.Text.Length;
+        const BenchmarkReportAudience es = BenchmarkReportAudience.ExecutiveSummary;
+        int rules = sheet.IsComparison
+            ? BuildComparisonSystemPrompt(es, rootCauseDigest: true).Length - BuildComparisonSystemPrompt(es, rootCauseDigest: false).Length
+            : BuildSystemPrompt(es, rootCauseDigest: true).Length - BuildSystemPrompt(es, rootCauseDigest: false).Length;
+        return block + DigestWriterTextAllowanceChars + Math.Max(0, rules);
+    }
+
+    /// <summary>The rule on zero counts, which every Executive Summary's prompt states.</summary>
+    public const string ZeroCountPromptRule =
+        "A count whose value is zero, such as '0 of 8 answers', is cited at most once, and only to rule something out; never present it as a finding, a strength or a weakness. The Key figures already print every count.";
+
+    /// <summary>
+    /// The ROOT CAUSE ANALYSIS rules of an Executive Summary written from a digest: it states no cause, mechanism or next
+    /// step the digest does not hold, a causal word cites a digest item (hedged beside a lead or a Low grade), a weakness
+    /// a digest item explains names it, and What to look at next cites the digest's next runs and checks in order.
+    /// </summary>
+    private static void AppendRootCauseDigestRules(StringBuilder sb, bool comparisonScope)
+    {
+        string causal = string.Join(", ", global::Overseer.Services.Benchmarking.RootCause.RootCauseClaimSupport.CausalWords);
+        Line(sb, "ROOT CAUSE ANALYSIS:");
+        Line(sb, "- The Root Cause Analysis of this result was written first, from the same data. Its digest is listed under ROOT CAUSE ANALYSIS in the data: the key finding, each axis's status, the top hypotheses with their grades and loci, the writer's untested leads, the next runs, the checks and the limits of the analysis. Each item is a fact whose key starts with rcaDigest, cited as {{key}} like any other fact and valid as evidence.");
+        Line(sb, "- State no cause, mechanism or next step that the digest does not contain.");
+        Line(sb, $"- A causal word ({causal}) stands only in a sentence that cites an rcaDigest.axis, rcaDigest.hypothesis or rcaDigest.lead token after your own words for the cause; the token prints the cause's grade word. Beside a lead, or a hypothesis graded Low, the same sentence says may, possibly or consistent with, and a lead is called a lead.");
+        Line(sb, "- Every rcaDigest value is a full sentence: give it a sentence of its own, or write it after a colon, never inside your own sentence or in parentheses.");
+        Line(sb, comparisonScope
+            ? "- Where a point about a model's weakness is one a digest item explains, the point names that item: cite its token in the point's text and in its evidence."
+            : "- In weaknesses (\"Where it fell short\"), each weakness that a digest item explains names that item: cite its token in the weakness's text and in its evidence.");
+        Line(sb, $"- {BenchmarkReportSlots.NextSteps}: one to {Words(BenchmarkReportSlots.NextStepsMaxItems)} items, each its own paragraph and each citing one rcaDigest.nextRun or rcaDigest.check token; the digest's first run or check comes first. {NextStepsOnlyWhenListed}");
+        Line(sb);
     }
 
     private static void AppendDocument(StringBuilder sb, BenchmarkReportAudienceSpec spec)
@@ -197,12 +291,12 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
     }
 
-    private static void AppendSlots(StringBuilder sb, BenchmarkReportAudienceSpec spec)
+    private static void AppendSlots(StringBuilder sb, BenchmarkReportAudienceSpec spec, bool rootCauseDigest)
     {
         Line(sb, spec.PeerOnlySlots.Count == 0
             ? "SLOTS (the keys of \"sections\"; each one is required and holds Markdown paragraphs):"
             : "SLOTS (the keys of \"sections\"; each holds Markdown paragraphs and is required, except that a slot marked as for peers only is left out of a stand-alone run report):");
-        foreach (string slot in spec.RequiredSlots)
+        foreach (string slot in spec.PromptedSlots(rootCauseDigest))
         {
             string peersOnly = spec.PeerOnlySlots.Contains(slot, StringComparer.Ordinal)
                 ? "For peers only: write it only when PEERS lists peers, and leave the key out otherwise. "
@@ -219,9 +313,21 @@ public static partial class BenchmarkReportPackPrompt
         BenchmarkReportSlots.Meaning =>
             $"At most {BenchmarkReportPackValidator.MeaningMaxWords.ToString(CultureInfo.InvariantCulture)} words: what this means for use as a game assistant, that is, what a player relying on {{{{subject}}}} could expect, drawn from the facts and findings.",
         BenchmarkReportSlots.Confidence =>
-            $"At most {BenchmarkReportPackValidator.ConfidenceMaxWords.ToString(CultureInfo.InvariantCulture)} words: how reliable this result is. Code appends one sentence right after this paragraph that states the quality interval, its span and how many questions the result rests on; do not restate any of them. Say how far the graders agreed (in plain words) and whether the subject's interval overlaps its peers' intervals when it has peers, without calling the interval narrow, wide, tight or broad; and, when a grader shares the subject's provider, say so in plain words and that it may read the subject more favorably.",
+            $"At most {BenchmarkReportPackValidator.ConfidenceMaxWords.ToString(CultureInfo.InvariantCulture)} words: how reliable this result is. Code appends one sentence right after this paragraph that states the quality interval, its span and how many questions the result rests on; do not restate any of them. Say how far the graders agreed (in plain words) and whether the subject's interval overlaps its peers' intervals when it has peers, without calling the interval narrow, wide, tight or broad; and, when a grader shares the subject's provider, say so in plain words and that it may read the subject more favorably. Where FACTS has {{{{panel.sameProviderDelta}}}}, cite it instead of saying that the grader may read the subject more favorably: it states how that grader's reading differed from the other's.",
+        BenchmarkReportSlots.NextSteps => NextStepsDescription,
         _ => "Markdown paragraphs."
     };
+
+    /// <summary>The What to look at next slot's description, in either scope.</summary>
+    private static string NextStepsDescription =>
+        $"At most {BenchmarkReportSlots.NextStepsMaxWords.ToString(CultureInfo.InvariantCulture)} words, printed under \"{BenchmarkReportSlots.NextStepsTitle}\": one to {Words(BenchmarkReportSlots.NextStepsMaxItems)} items, each its own paragraph, each citing one rcaDigest.nextRun or rcaDigest.check token and saying in plain words what it would settle; the digest's first run or check comes first. "
+        + NextStepsOnlyWhenListed;
+
+    /// <summary>When the What to look at next slot is written: only when the digest lists a next run or a check.</summary>
+    private const string NextStepsOnlyWhenListed = "Write it only when ROOT CAUSE ANALYSIS lists a next run or a check, and leave the key out otherwise.";
+
+    /// <summary>The OUTPUT shape's value of the What to look at next slot.</summary>
+    private const string NextStepsOutputValue = "Markdown paragraphs, only when ROOT CAUSE ANALYSIS lists a next run or a check";
 
     private static void AppendLists(StringBuilder sb, BenchmarkReportAudienceSpec spec)
     {
@@ -233,9 +339,10 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, $"- weaknesses: at most {Words(spec.MaxWeaknesses)} items{itemCap}, shown under \"Where it fell short\".");
         Line(sb, "- When PEERS lists peers, strengths and weaknesses prefer points where {{subject}} differs from its peers, such as a dimension, band or question well above or below the peer mean, over points that would read the same in a stand-alone report.");
 
-        Line(sb, spec.RequiresQuestionTopics
-            ? "- questionTopics: one entry for every question of the exam, listed in the data. Each topic names what the question is about in at most 12 words, without quoting it."
-            : "- questionTopics: optional; one entry per question you describe. Each topic names what the question is about in at most 12 words, without quoting it.");
+        if (spec.RequiresQuestionTopics)
+        {
+            Line(sb, "- questionTopics: one entry for every question of the exam, listed in the data. Each topic names what the question is about in at most 12 words, without quoting it.");
+        }
 
         Line(sb);
     }
@@ -247,7 +354,10 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Refer to the model under evaluation as {{subject}}. Refer to another model only as {{peer:X}}, where X is its letter from PEERS, for example {{peer:A}}.");
         Line(sb, "- Any other {{...}} token is an error.");
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". Number words such as \"three\" or \"twice\" are allowed for a plain count, but prefer a fact token for any figure.");
+        Line(sb, "- " + LargeNumberWordPromptRule);
+        Line(sb, "- " + MixedCountPromptRule);
         Line(sb, "- A token whose value reads 'N of M' is a noun phrase: 'the model gave {{errors.critical}}'. Never put it after 'no' or make it the object of 'made'; to say none occurred, write 'no critical errors across all {{answers.scored}} answers'.");
+        Line(sb, "- " + ZeroCountPromptRule);
         Line(sb, "- Refer to a question as Q followed by its number from the QUESTIONS block, for example Q7. This is the only form in which a digit may appear.");
         Line(sb, "- Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader). In the Executive Summary say 'one grader' or 'both graders' instead.");
         Line(sb, "- Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.");
@@ -311,7 +421,7 @@ public static partial class BenchmarkReportPackPrompt
     public static IReadOnlyList<string> SharedWritingRules => new[]
     {
         "Never recommend training, fine-tuning or using outputs as training targets; recommend a lever the facts name — a tool, a tool guide, the knowledge base, a wiki page, a rubric, the grading, or the model and its settings.",
-        "Write 'disagreed' or 'disagreement' only for an answer the facts mark as a panel disagreement; for any other gap, give both members' scores."
+        "Write 'disagreed' or 'disagreement' only for an answer the facts mark as a panel disagreement; for any other gap, cite both members' scores with their question.<Qn>.memberA and .memberB tokens."
     };
 
     private static void AppendDisclosureRules(StringBuilder sb)
@@ -343,20 +453,23 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
     }
 
-    private static void AppendOutput(StringBuilder sb, BenchmarkReportAudienceSpec spec)
+    private static void AppendOutput(StringBuilder sb, BenchmarkReportAudienceSpec spec, bool rootCauseDigest)
     {
         Line(sb, "OUTPUT:");
         Line(sb, "Answer with one JSON object in exactly this shape, and include no other keys:");
         Line(sb, "{");
         Line(sb, "  \"headline\": \"string\",");
         Line(sb, "  \"sections\": {");
-        for (int i = 0; i < spec.RequiredSlots.Count; i++)
+        var slots = spec.PromptedSlots(rootCauseDigest);
+        for (int i = 0; i < slots.Count; i++)
         {
-            string comma = i < spec.RequiredSlots.Count - 1 ? "," : string.Empty;
-            string value = spec.PeerOnlySlots.Contains(spec.RequiredSlots[i], StringComparer.Ordinal)
+            string comma = i < slots.Count - 1 ? "," : string.Empty;
+            string value = spec.PeerOnlySlots.Contains(slots[i], StringComparer.Ordinal)
                 ? "Markdown paragraph, only when PEERS lists peers"
+                : spec.DigestOnlySlots.Contains(slots[i], StringComparer.Ordinal)
+                ? NextStepsOutputValue
                 : "Markdown paragraphs";
-            Line(sb, $"    \"{spec.RequiredSlots[i]}\": \"{value}\"{comma}");
+            Line(sb, $"    \"{slots[i]}\": \"{value}\"{comma}");
         }
         Line(sb, "  },");
 
@@ -365,7 +478,10 @@ public static partial class BenchmarkReportPackPrompt
             "  \"strengths\": [ { \"text\": \"string\", \"questions\": [<question number>], \"evidence\": [\"<evidence id>\"] } ]",
             "  \"weaknesses\": [ { \"text\": \"string\", \"questions\": [<question number>], \"evidence\": [\"<evidence id>\"] } ]"
         };
-        arrays.Add("  \"questionTopics\": [ { \"question\": <question number>, \"topic\": \"string\" } ]");
+        if (spec.RequiresQuestionTopics)
+        {
+            arrays.Add("  \"questionTopics\": [ { \"question\": <question number>, \"topic\": \"string\" } ]");
+        }
 
         for (int i = 0; i < arrays.Count; i++)
         {
@@ -407,6 +523,8 @@ public static partial class BenchmarkReportPackPrompt
         {
             AppendBattery(sb, sheet.Battery);
         }
+
+        AppendRootCauseDigest(sb, audience, sheet);
 
         Line(sb, "GRADERS (by role; write each role name in lower case)");
         if (sheet.Graders.Count == 0)
@@ -466,6 +584,7 @@ public static partial class BenchmarkReportPackPrompt
         var rootCauseHidden = global::Overseer.Services.Benchmarking.RootCause.RootCauseFacts.RootCauseWriterHidden(sheet.RootCause);
         var facts = sheet.Facts
             .Where(f => audience == BenchmarkReportAudience.RootCauseAnalysis ? !rootCauseHidden(f.Key) : !BenchmarkReportFacts.WriterHidden(f.Key))
+            .Where(f => !BenchmarkRootCauseDigest.IsDigestKey(f.Key))
             .OrderBy(f => f.Key, StringComparer.Ordinal)
             .ToList();
         if (facts.Count == 0)
@@ -516,6 +635,24 @@ public static partial class BenchmarkReportPackPrompt
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// An Executive Summary's ROOT CAUSE ANALYSIS block: each digest fact (<see cref="BenchmarkRootCauseDigest"/>) as
+    /// <c>key = display</c>, in digest order; nothing for any other document or a summary written without a digest.
+    /// </summary>
+    private static void AppendRootCauseDigest(StringBuilder sb, BenchmarkReportAudience audience, BenchmarkReportFactSheet sheet)
+    {
+        if (audience != BenchmarkReportAudience.ExecutiveSummary || !sheet.HasRootCauseDigest) return;
+        var digest = BenchmarkRootCauseDigest.FactsOf(sheet);
+        if (digest.Count == 0) return;
+
+        Line(sb, "ROOT CAUSE ANALYSIS (written first, from the same data; cite an item as {{key}}; each value is a full sentence)");
+        foreach (var fact in digest)
+        {
+            Line(sb, $"{fact.Key} = {OneLine(fact.Display)}");
+        }
+        Line(sb);
     }
 
     /// <summary>

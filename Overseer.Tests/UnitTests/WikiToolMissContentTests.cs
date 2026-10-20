@@ -411,6 +411,24 @@ Wielding a lit torch increases visibility in dark areas.
         Assert.DoesNotContain("No wiki article matched", result.Content);
     }
 
+    [Fact]
+    public async Task WikiViewTool_ArtifactWithoutArticle_ResolvesToTheArtifactByTitle()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiViewTool(service);
+
+        var jsonParams = JsonDocument.Parse("{\"article\": \"Holy Grail\"}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Null(result.ErrorMessage);
+        var firstHeader = System.Text.RegularExpressions.Regex.Match(result.Content!, @"^--- (.+?) ---", System.Text.RegularExpressions.RegexOptions.Multiline);
+        Assert.True(firstHeader.Success);
+        Assert.Equal("Artifacts/The Holy Grail.md", firstHeader.Groups[1].Value);
+        Assert.DoesNotContain("Several wiki articles are titled", result.Content);
+    }
+
     /// <summary>
     /// Over the result cap, the section-miss marker line keeps its heading list, says how much of
     /// the article follows, and points back at a heading; the header, the line, one newline and the
@@ -582,8 +600,13 @@ Wielding a lit torch increases visibility in dark areas.
         Assert.Contains("[Other matches:", result.Content);
     }
 
+    /// <summary>
+    /// Benchmark run 123 asked item_lookup for "Orb of Fate" and got the top-five join instead of
+    /// the article titled "The Orb of Fate". A request without the leading "The" is an exact-title
+    /// hit: that article alone, followed by the other matches line.
+    /// </summary>
     [Fact]
-    public async Task ItemLookupTool_ArtifactWithoutArticle_IncludesTheArtifact()
+    public async Task ItemLookupTool_ArtifactWithoutArticle_ReturnsTheArtifactArticleAlone()
     {
         using var service = new WikiService(BuildConfig());
         await service.InitializationTask;
@@ -594,7 +617,12 @@ Wielding a lit torch increases visibility in dark areas.
 
         Assert.True(result.Success);
         Assert.Null(result.ErrorMessage);
-        Assert.Contains("--- Artifacts/The Holy Grail.md ---", result.Content);
+        var firstHeader = System.Text.RegularExpressions.Regex.Match(result.Content!, @"^--- (.+?) ---", System.Text.RegularExpressions.RegexOptions.Multiline);
+        Assert.True(firstHeader.Success);
+        Assert.Equal("Artifacts/The Holy Grail.md", firstHeader.Groups[1].Value);
+        var headerMatches = System.Text.RegularExpressions.Regex.Matches(result.Content, @"(?m)^--- .+ ---\r?$");
+        Assert.Single(headerMatches);
+        Assert.Contains("[Other matches:", result.Content);
     }
 
     [Fact]
@@ -750,6 +778,27 @@ Every sokobanboulderpuzzle has exactly one solution that does not waste a boulde
         Assert.DoesNotContain("\n", content);
         Assert.DoesNotContain("\r", content);
         Assert.True(content!.Length < PayloadMaxChars, $"Disambiguation payload was {content.Length} characters.");
+    }
+
+    /// <summary>
+    /// A leading "The" is ignored in title equality, so a request for "Foo" equals both
+    /// <i>The Foo</i> and <i>Foo</i>, and the caller gets the choice rather than either article.
+    /// The pair is written by this test alone, so the shared corpus stays collision-free.
+    /// </summary>
+    [Fact]
+    public async Task WikiViewTool_TitleWithAndWithoutLeadingThe_ReturnsBothPathsAsADisambiguation()
+    {
+        Write("Artifacts/The Foo.md", "The Foo is an artifact carrying zzthefooartifacttoken.\n");
+        Write("Items/Foo.md", "A foo is an item carrying zzplainfooitemtoken.\n");
+
+        string? content = await ViewAsync("Foo");
+
+        Assert.NotNull(content);
+        Assert.Contains("Several wiki articles are titled 'Foo'", content);
+        Assert.Contains("Artifacts/The Foo", content);
+        Assert.Contains("Items/Foo", content);
+        Assert.DoesNotContain("zzthefooartifacttoken", content);
+        Assert.DoesNotContain("zzplainfooitemtoken", content);
     }
 
     [Fact]
@@ -1095,5 +1144,30 @@ public class WikiSearchCoverageRankingTests : IDisposable
 
         Assert.Equal(new[] { "Guides/Beekeeping.md", "Items/Honey.md" }, Headers(results));
         Assert.Equal(2, totalHits);
+    }
+}
+
+/// <summary>
+/// Covers the title comparison wiki_view and the lookup tools use to detect an exact-title hit:
+/// case-insensitive, with one leading "The " ignored on either side.
+/// </summary>
+public class WikiTitleEqualsTests
+{
+    [Theory]
+    [InlineData("The Orb of Fate", "Orb of Fate", true)]
+    [InlineData("Orb of Fate", "The Orb of Fate", true)]
+    [InlineData("the orb of fate", "ORB OF FATE", true)]
+    [InlineData("The Orb of Fate", "The Orb of Fate", true)]
+    [InlineData("Dagger", "dagger", true)]
+    [InlineData("The Theater", "Theater", true)]
+    [InlineData("Theater", "Theater", true)]
+    [InlineData("Theater", "ater", false)]
+    [InlineData("The", "", false)]
+    [InlineData("The The Foo", "Foo", false)]
+    [InlineData("The Orb of Fate", "Orb", false)]
+    [InlineData(null, "Foo", false)]
+    public void TitleEquals_IgnoresOneLeadingTheOnly(string? title, string request, bool expected)
+    {
+        Assert.Equal(expected, WikiService.TitleEquals(title, request));
     }
 }

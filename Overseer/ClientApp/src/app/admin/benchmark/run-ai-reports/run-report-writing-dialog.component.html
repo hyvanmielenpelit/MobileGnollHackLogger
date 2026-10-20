@@ -70,6 +70,10 @@
           }
         </ol>
 
+        @if (showOrderNote) {
+          <p class="form-hint rw-order-note">{{ orderNote }}</p>
+        }
+
         @if (!isFinished) {
           <div class="job-progress-block rw-activity">
             <progress class="job-progress" aria-label="Writing progress"></progress>
@@ -86,11 +90,21 @@
             <dd>
               @if (view && writerName) {
                 <span class="model-name">{{ writerName }}</span>
-                @if (view.writerProvider) {
-                  <app-provider-badge [provider]="view.writerProvider"></app-provider-badge>
-                }
-                @if (view.writerThinkingLevel) {
-                  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(view.writerThinkingLevel) }}</span>
+                @for (badge of writerBadges; track badge.kind) {
+                  @switch (badge.kind) {
+                    @case ('provider') {
+                      <app-provider-badge [provider]="badge.provider" />
+                    }
+                    @case ('thinking') {
+                      <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                    }
+                    @case ('reasoning') {
+                      <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                    }
+                    @default {
+                      <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
+                    }
+                  }
                 }
               } @else {
                 —
@@ -156,6 +170,19 @@
             </button>
             <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-download-diagnostics-tip'"
                  [attr.style]="'position-anchor: --' + idPrefix + '-download-diagnostics-tip'">Download diagnostics</div>
+            <!-- The writer's raw replies, fetched on request while Overseer still holds the finished job. -->
+            @if (showWriterReplies) {
+              <button type="button" class="action-btn rw-download-replies"
+                      aria-label="Download the writer's replies of this report writing job, as Markdown"
+                      [attr.aria-disabled]="repliesLoading ? 'true' : null"
+                      [attr.interestfor]="idPrefix + '-download-replies-tip'"
+                      [attr.style]="'anchor-name: --' + idPrefix + '-download-replies-tip'"
+                      (click)="downloadWriterReplies()">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line><rect x="16" y="2" width="6" height="7" rx="1"></rect><line x1="18" y1="4.5" x2="20" y2="4.5"></line><line x1="18" y1="6.5" x2="20" y2="6.5"></line></svg>
+              </button>
+              <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-download-replies-tip'"
+                   [attr.style]="'position-anchor: --' + idPrefix + '-download-replies-tip'">Download the writer's replies (Markdown)</div>
+            }
             <p class="rw-copy-status" role="status" aria-live="polite">{{ copyStatus }}</p>
           </div>
           @if (copyError) {

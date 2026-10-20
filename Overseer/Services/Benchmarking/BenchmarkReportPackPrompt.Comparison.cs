@@ -17,8 +17,14 @@ using Overseer.Models;
 /// </summary>
 public static partial class BenchmarkReportPackPrompt
 {
-    /// <summary>The fixed instruction text of a comparison-scope document for one audience.</summary>
-    public static string BuildComparisonSystemPrompt(BenchmarkReportAudience audience)
+    /// <summary>The fixed instruction text of a comparison-scope document for one audience, written without a Root Cause Analysis digest.</summary>
+    public static string BuildComparisonSystemPrompt(BenchmarkReportAudience audience) => BuildComparisonSystemPrompt(audience, rootCauseDigest: false);
+
+    /// <summary>
+    /// The fixed instruction text of a comparison-scope document for one audience; an Executive Summary's with
+    /// <paramref name="rootCauseDigest"/> adds the What to look at next slot and the ROOT CAUSE ANALYSIS rules.
+    /// </summary>
+    public static string BuildComparisonSystemPrompt(BenchmarkReportAudience audience, bool rootCauseDigest)
     {
         if (audience == BenchmarkReportAudience.RootCauseAnalysis) return BuildRootCauseSystemPrompt(comparisonScope: true);
 
@@ -34,15 +40,16 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
 
         AppendComparisonDocument(sb, spec);
-        AppendComparisonSlots(sb, spec);
+        AppendComparisonSlots(sb, spec, rootCauseDigest);
         AppendComparisonLists(sb, spec);
         AppendComparisonTokenRules(sb);
         AppendComparisonEvidenceRules(sb);
         AppendComparisonWeighingRules(sb);
         AppendComparisonProfileRules(sb);
+        if (rootCauseDigest) AppendRootCauseDigestRules(sb, comparisonScope: true);
         AppendDisclosureRules(sb);
         AppendFormatRules(sb);
-        AppendComparisonOutput(sb, spec);
+        AppendComparisonOutput(sb, spec, rootCauseDigest);
 
         return sb.ToString();
     }
@@ -62,7 +69,7 @@ public static partial class BenchmarkReportPackPrompt
         ArgumentNullException.ThrowIfNull(issues);
         if (!comparisonScope)
         {
-            var model = new StringBuilder(BuildRepairMessage(issues));
+            var model = new StringBuilder(BuildModelRepairMessage(issues, rootCause));
             AppendRootCauseRepairReminders(model, issues);
             AppendHeadlineCount(model, issues, headline);
             AppendWordBudget(model, issues, wordCounts, rootCause);
@@ -76,7 +83,9 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
         Line(sb, "REMINDERS");
         Line(sb, "- Figures appear only as {{key}} with a key from FACTS exactly as written; a model only as {{model:X}} with its letter from MODELS, never as Model X. No other {{...}} tokens.");
-        Line(sb, "- No digits in prose except question references as the QUESTION MATRIX shows them and the fixed phrase for the interval level. Write counts as number words, and no numbered lists.");
+        Line(sb, rootCause
+            ? "- No digits in prose except question references as the QUESTION MATRIX shows them and the fixed phrase for the interval level, and no numbered lists. " + RootCauseCountReminder
+            : "- No digits in prose except question references as the QUESTION MATRIX shows them and the fixed phrase for the interval level. Write counts as number words, and no numbered lists.");
         Line(sb, "- Every question number, question reference and evidence id must exist in the data. Every point about a model cites at least one evidence id.");
         Line(sb, "- Never quote the questions, rubrics, answers or grader comments: no run of eight words may match them. Describe a question by its topic.");
         Line(sb, "- Never name a model, provider or product. Never call a difference significant, statistically anything, reliably better or worse, or say a model clearly outperforms another; say whether the intervals overlap, or cite the pair's paired-result token.");
@@ -239,10 +248,10 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
     }
 
-    private static void AppendComparisonSlots(StringBuilder sb, BenchmarkReportAudienceSpec spec)
+    private static void AppendComparisonSlots(StringBuilder sb, BenchmarkReportAudienceSpec spec, bool rootCauseDigest)
     {
         Line(sb, "SLOTS (the keys of \"sections\"; each one holds Markdown paragraphs and is required unless its description says otherwise):");
-        foreach (string slot in spec.RequiredSlots)
+        foreach (string slot in spec.PromptedSlots(rootCauseDigest))
         {
             Line(sb, $"- {slot}: {ComparisonSlotDescription(spec.Audience, slot)}");
         }
@@ -263,7 +272,8 @@ public static partial class BenchmarkReportPackPrompt
         BenchmarkReportSlots.TradeOffs =>
             $"At most {Cap(audience, slot)} words: the trade-offs between intelligence, speed and cost, drawing on the frontier facts. Do not restate the table's figures one by one.",
         BenchmarkReportSlots.Reliability =>
-            $"At most {Cap(audience, slot)} words: how reliable this comparison is, in plain words: how far the graders agreed, whether the intervals overlap, what the paired tests established, and, when a grader shares a model's provider, that it may read that model more favorably. Do not call an interval narrow, wide, tight or broad.",
+            $"At most {Cap(audience, slot)} words: how reliable this comparison is, in plain words: how far the graders agreed, whether the intervals overlap, what the paired tests established, and, when a grader shares a model's provider, that it may read that model more favorably; where that model's model.X.panel.sameProviderDelta fact exists, cite it instead, since it states how that grader's reading differed from the other's. Do not call an interval narrow, wide, tight or broad.",
+        BenchmarkReportSlots.NextSteps => NextStepsDescription,
         _ => "Markdown paragraphs."
     };
 
@@ -299,7 +309,10 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Never write a model's letter on its own, as in Model H or Models H and I: in every slot and list, a model is named only through its {{model:X}} token. Only the \"model\" field of a \"models\" entry takes a bare letter.");
         Line(sb, "- Any other {{...}} token is an error.");
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". Number words such as \"three\" or \"twice\" are allowed for a plain count, but prefer a fact token for any figure.");
+        Line(sb, "- " + LargeNumberWordPromptRule);
+        Line(sb, "- " + MixedCountPromptRule);
         Line(sb, "- A count token, whose value reads 'N of M …', is a noun phrase. Never put it after 'no' or make it the object of 'made'.");
+        Line(sb, "- " + ZeroCountPromptRule);
         foreach (string rule in TokenShapeReminders)
         {
             Line(sb, "- " + rule);
@@ -356,17 +369,19 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
     }
 
-    private static void AppendComparisonOutput(StringBuilder sb, BenchmarkReportAudienceSpec spec)
+    private static void AppendComparisonOutput(StringBuilder sb, BenchmarkReportAudienceSpec spec, bool rootCauseDigest)
     {
         Line(sb, "OUTPUT:");
         Line(sb, "Answer with one JSON object in exactly this shape, and include no other keys:");
         Line(sb, "{");
         Line(sb, "  \"headline\": \"string\",");
         Line(sb, "  \"sections\": {");
-        for (int i = 0; i < spec.RequiredSlots.Count; i++)
+        var slots = spec.PromptedSlots(rootCauseDigest);
+        for (int i = 0; i < slots.Count; i++)
         {
-            string comma = i < spec.RequiredSlots.Count - 1 ? "," : string.Empty;
-            Line(sb, $"    \"{spec.RequiredSlots[i]}\": \"Markdown paragraphs\"{comma}");
+            string comma = i < slots.Count - 1 ? "," : string.Empty;
+            string value = spec.DigestOnlySlots.Contains(slots[i], StringComparer.Ordinal) ? NextStepsOutputValue : "Markdown paragraphs";
+            Line(sb, $"    \"{slots[i]}\": \"{value}\"{comma}");
         }
         Line(sb, "  },");
 
@@ -420,6 +435,8 @@ public static partial class BenchmarkReportPackPrompt
         }
         Line(sb);
 
+        AppendRootCauseDigest(sb, audience, sheet);
+
         Line(sb, "MODELS (write {{model:X}} to refer to one; its own facts are the model.X.* keys under FACTS)");
         foreach (var model in models)
         {
@@ -466,6 +483,7 @@ public static partial class BenchmarkReportPackPrompt
         var rootCauseHidden = global::Overseer.Services.Benchmarking.RootCause.RootCauseFacts.RootCauseWriterHidden(sheet.RootCause);
         foreach (var fact in sheet.Facts
                      .Where(f => audience == BenchmarkReportAudience.RootCauseAnalysis ? !rootCauseHidden(f.Key) : !BenchmarkComparisonReportFacts.WriterHidden(f.Key))
+                     .Where(f => !BenchmarkRootCauseDigest.IsDigestKey(f.Key))
                      .OrderBy(f => f.Key, StringComparer.Ordinal))
         {
             Line(sb, fact.Available

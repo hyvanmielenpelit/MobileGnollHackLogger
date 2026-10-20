@@ -92,6 +92,13 @@ public sealed record BenchmarkReportAudienceSpec(
     public IReadOnlyList<string> NotableOnlySlots { get; init; } = Array.Empty<string>();
 
     /// <summary>
+    /// Slots beyond <see cref="RequiredSlots"/>, after them, that an Executive Summary requires only when it is written from
+    /// a digest of a Root Cause Analysis (<see cref="BenchmarkReportFactSheet.HasRootCauseDigest"/>) that lists a next run or a
+    /// check, and never has otherwise.
+    /// </summary>
+    public IReadOnlyList<string> DigestOnlySlots { get; init; } = Array.Empty<string>();
+
+    /// <summary>
     /// A comparison-scope document: every covered model is described as an equal, by its letter, and
     /// there is no subject.
     /// </summary>
@@ -118,13 +125,29 @@ public sealed record BenchmarkReportAudienceSpec(
     /// <summary>A Root Cause Analysis, in comparison or model scope: rules 32 to 36 apply.</summary>
     public bool IsRootCauseAnalysis => Audience == BenchmarkReportAudience.RootCauseAnalysis;
 
-    /// <summary>The slots a document requires: every slot with peers, the slots outside <see cref="PeerOnlySlots"/> without.</summary>
-    public IReadOnlyList<string> SlotsFor(bool hasPeers)
-        => hasPeers ? RequiredSlots : RequiredSlots.Where(s => !PeerOnlySlots.Contains(s, StringComparer.Ordinal)).ToList();
+    /// <summary>
+    /// The slots a document requires: every slot with peers, the slots outside <see cref="PeerOnlySlots"/> without;
+    /// then, with <paramref name="hasDigest"/>, the slots of <see cref="DigestOnlySlots"/>.
+    /// </summary>
+    public IReadOnlyList<string> SlotsFor(bool hasPeers, bool hasDigest = false)
+        => RequiredSlots
+            .Where(s => hasPeers || !PeerOnlySlots.Contains(s, StringComparer.Ordinal))
+            .Concat(hasDigest ? DigestOnlySlots : Array.Empty<string>())
+            .ToList();
 
-    /// <summary>A comparison-scope document's slots: every slot with notable findings, the slots outside <see cref="NotableOnlySlots"/> without.</summary>
-    public IReadOnlyList<string> ComparisonSlotsFor(bool hasNotableFindings)
-        => hasNotableFindings ? RequiredSlots : RequiredSlots.Where(s => !NotableOnlySlots.Contains(s, StringComparer.Ordinal)).ToList();
+    /// <summary>
+    /// A comparison-scope document's slots: every slot with notable findings, the slots outside <see cref="NotableOnlySlots"/>
+    /// without; then, with <paramref name="hasDigest"/>, the slots of <see cref="DigestOnlySlots"/>.
+    /// </summary>
+    public IReadOnlyList<string> ComparisonSlotsFor(bool hasNotableFindings, bool hasDigest = false)
+        => RequiredSlots
+            .Where(s => hasNotableFindings || !NotableOnlySlots.Contains(s, StringComparer.Ordinal))
+            .Concat(hasDigest ? DigestOnlySlots : Array.Empty<string>())
+            .ToList();
+
+    /// <summary>The slots the writer is asked for: <see cref="RequiredSlots"/>, then, with <paramref name="hasDigest"/>, <see cref="DigestOnlySlots"/>.</summary>
+    public IReadOnlyList<string> PromptedSlots(bool hasDigest)
+        => hasDigest ? RequiredSlots.Concat(DigestOnlySlots).ToList() : RequiredSlots;
 }
 
 public static class BenchmarkReportSlots
@@ -133,6 +156,47 @@ public static class BenchmarkReportSlots
     public const string Comparison = "comparison";   // How it compares, ≤ 70 words, peer mode only
     public const string Meaning = "meaning";         // What this means for use as a game assistant
     public const string Confidence = "confidence";   // How reliable this result is
+
+    // Executive Summary, per-model and comparison scope, written from a Root Cause Analysis digest
+    public const string NextSteps = "nextSteps";     // What to look at next
+
+    /// <summary>The word cap of the Executive Summary's <see cref="NextSteps"/>.</summary>
+    public const int NextStepsMaxWords = 60;
+
+    /// <summary>The most items (paragraphs) of the Executive Summary's <see cref="NextSteps"/>.</summary>
+    public const int NextStepsMaxItems = 3;
+
+    /// <summary>The section title of <see cref="NextSteps"/>.</summary>
+    public const string NextStepsTitle = "What to look at next";
+
+    /// <summary>
+    /// The order a job writes a subject's run, battery and Report Pack documents in: the Root Cause Analysis first, so the
+    /// Executive Summary is written from its digest. Stored-document lists keep the display order of each job service's
+    /// audiences; a chat consistency job keeps <see cref="ChatConsistencyAudiences"/>.
+    /// </summary>
+    public static IReadOnlyList<BenchmarkReportAudience> WriteOrder { get; } = new[]
+    {
+        BenchmarkReportAudience.RootCauseAnalysis,
+        BenchmarkReportAudience.ExecutiveSummary
+    };
+
+    /// <summary>
+    /// <paramref name="audiences"/>, distinct, in <see cref="WriteOrder"/>, any audience it does not name after them in
+    /// the order given.
+    /// </summary>
+    public static List<BenchmarkReportAudience> InWriteOrder(IEnumerable<BenchmarkReportAudience> audiences)
+    {
+        ArgumentNullException.ThrowIfNull(audiences);
+        var given = audiences.Distinct().ToList();
+        return WriteOrder.Where(given.Contains).Concat(given.Where(a => !WriteOrder.Contains(a))).ToList();
+    }
+
+    /// <summary>The rank of <paramref name="audience"/> in <see cref="WriteOrder"/>; an audience it does not name ranks last.</summary>
+    public static int WriteRank(BenchmarkReportAudience audience)
+    {
+        int index = WriteOrder.ToList().IndexOf(audience);
+        return index < 0 ? WriteOrder.Count : index;
+    }
 
     // Comparison scope: Executive Summary
     public const string Overview = "overview";               // The comparison in one paragraph
@@ -224,7 +288,8 @@ public static class BenchmarkReportSlots
         MaxWeaknesses: 3,
         RequiresQuestionTopics: false)
     {
-        PeerOnlySlots = new[] { Comparison }
+        PeerOnlySlots = new[] { Comparison },
+        DigestOnlySlots = new[] { NextSteps }
     };
 
     public static readonly BenchmarkReportAudienceSpec ComparisonExecutiveSummary = new(
@@ -234,6 +299,7 @@ public static class BenchmarkReportSlots
         MaxWeaknesses: 0,
         RequiresQuestionTopics: false)
     {
+        DigestOnlySlots = new[] { NextSteps },
         ComparisonScope = true,
         UsesStrengthsAndWeaknesses = false,
         MaxModelPoints = 2
@@ -749,6 +815,55 @@ public sealed class BenchmarkReportFactSheet
     /// stored before comparison format version 15 or model-scope format version 13.
     /// </summary>
     public RootCauseResult? RootCause { get; set; }
+
+    /// <summary>
+    /// An Executive Summary's Root Cause Analysis: the stored document whose digest (the <c>rcaDigest.*</c> facts) it was
+    /// written from, with the digest's hash, or why it had none. Null on every other document, and on an Executive Summary
+    /// stored before model-scope format version 25 or comparison format version 29.
+    /// </summary>
+    public BenchmarkReportRootCauseDigestSource? RootCauseDigest { get; set; }
+
+    /// <summary>The sheet is an Executive Summary's written from a Root Cause Analysis digest.</summary>
+    [JsonIgnore]
+    public bool HasRootCauseDigest => RootCauseDigest?.DocumentId != null;
+}
+
+/// <summary>Where an Executive Summary's Root Cause Analysis digest came from (<see cref="BenchmarkReportRootCauseDigestSource.Source"/>).</summary>
+public static class BenchmarkRootCauseSources
+{
+    /// <summary>The Root Cause Analysis written earlier in the same job.</summary>
+    public const string ThisJob = "thisJob";
+
+    /// <summary>A stored Root Cause Analysis of the same subject, written from the same facts.</summary>
+    public const string Stored = "stored";
+
+    /// <summary>No digest: <see cref="BenchmarkReportRootCauseDigestSource.Note"/> says why.</summary>
+    public const string None = "none";
+
+    /// <summary>The note of an Executive Summary whose job's Root Cause Analysis failed or was canceled.</summary>
+    public const string FailedNote = "the Root Cause Analysis of this job failed";
+
+    /// <summary>The note of an Executive Summary with no stored Root Cause Analysis from the same data.</summary>
+    public const string NoMatchNote = "no Root Cause Analysis of this run was written from the same data";
+}
+
+/// <summary>
+/// An Executive Summary's Root Cause Analysis source, stored in its fact sheet (<c>rootCauseDigest</c>): the Root Cause
+/// Analysis document the digest was built from and the SHA-256 of the digest's text, or no document and the reason.
+/// </summary>
+public sealed class BenchmarkReportRootCauseDigestSource
+{
+    /// <summary>The Root Cause Analysis document; null when the summary was written without a digest.</summary>
+    public long? DocumentId { get; set; }
+
+    /// <summary>The lower-case hex SHA-256 of the digest's text; null without a digest.</summary>
+    public string? Sha256 { get; set; }
+
+    /// <summary>One of <see cref="BenchmarkRootCauseSources"/>: <c>thisJob</c>, <c>stored</c> or <c>none</c>.</summary>
+    public string Source { get; set; } = BenchmarkRootCauseSources.None;
+
+    /// <summary>Why there is no digest; null when there is one.</summary>
+    public string? Note { get; set; }
 }
 
 /// <summary>One notable finding of a comparison-scope sheet: what code detected, and the facts it rests on.</summary>
@@ -1667,6 +1782,18 @@ public class BenchmarkReportPackDocumentProgressDto
 
     /// <summary>Every writer call of the document, in order.</summary>
     public List<BenchmarkReportPackCallDto> Calls { get; set; } = new();
+
+    /// <summary>
+    /// An Executive Summary's Root Cause Analysis source once it has started (<see cref="BenchmarkRootCauseSources"/>):
+    /// <c>thisJob</c>, <c>stored</c> or <c>none</c>; null before, and on every other document.
+    /// </summary>
+    public string? RootCauseSource { get; set; }
+
+    /// <summary>The Root Cause Analysis document an Executive Summary's digest came from; null without one.</summary>
+    public long? RootCauseSourceDocumentId { get; set; }
+
+    /// <summary>Why an Executive Summary has no Root Cause Analysis source; null when it has one, and before it started.</summary>
+    public string? RootCauseSourceNote { get; set; }
 }
 
 /// <summary>The phases of a document's progress row (<see cref="BenchmarkReportPackDocumentProgressDto.Phase"/>).</summary>
@@ -1969,6 +2096,12 @@ public class BenchmarkReportDocumentListItemDto
 
     /// <summary>The models the document covers: the subject for model scope, every covered entry for comparison scope.</summary>
     public List<BenchmarkReportCoveredModelDto> CoveredModels { get; set; } = new();
+
+    /// <summary>
+    /// An Executive Summary's Root Cause Analysis document, from its fact sheet's <c>rootCauseDigest.documentId</c>; null
+    /// for one written without a digest, one written before model-scope format 25 or comparison format 29, and every other document.
+    /// </summary>
+    public long? RootCauseSourceDocumentId { get; set; }
 }
 
 /// <summary>One model (comparison entry) a document covers.</summary>

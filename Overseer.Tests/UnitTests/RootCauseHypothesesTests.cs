@@ -10,7 +10,7 @@ using Xunit;
 /// The grading of the root-cause hypotheses (§ A2): every grade boundary, the null cap, the control
 /// limit, the per-axis keep limits and the hypothesis a research question reserves (question 1 only one about the
 /// pair itself, the slowest model its preferred partner's), the amount a hypothesis explains, the axis status
-/// with and without pairs and beside a price effect, the noun phrase of a check a draft proposes, the cost rules of
+/// with and without pairs, beside a price effect and with every hypothesis ruled out, the noun phrase of a check a draft proposes, the cost rules of
 /// a pair split into input and output, WS1 on a model whose visible text arrives in one burst, and the answers WQ4 and
 /// HQ6 need.
 /// </summary>
@@ -568,6 +568,29 @@ public class RootCauseHypothesesTests
     }
 
     [Fact]
+    public void AnAxisWhoseOnlyHypothesisWasRuledOut_IsNotEstablished_WithNoBestHypothesis()
+    {
+        // Run 123: WQ2.1, the run's only intelligence hypothesis, was Not supported by its own test.
+        var wq2 = Draft(id: "WQ2", axis: RootCauseAxes.Intelligence, kind: "within", group: "subject",
+            notSupported: true, nullStands: null, checks: AllPassed());
+        var kept = RootCauseHypotheses.Keep(new[] { wq2 }.Select(d => (Grade(d), d)).ToList());
+        Assert.Equal(RootCauseGrades.NotSupported, kept.Single().Hypothesis.Grade);
+
+        var status = RootCauseHypotheses.AxisStatus(RootCauseAxes.Intelligence, kept);
+
+        Assert.Equal(RootCauseStatuses.NotEstablished, status.Status);
+        Assert.Null(status.BestHypothesis);
+        Assert.Equal("Every hypothesis on this axis was ruled out by its own test.", status.Reason);
+        Assert.Equal(RootCauseAxisStatus.AllRuledOutReason, status.Reason);
+
+        // Beside a Low one, the Low one is the best, whatever order the ruled-out one ranks in.
+        var weak = Draft(id: "WQ1", axis: RootCauseAxes.Intelligence, kind: "within", group: "subject",
+            quantified: false, nullStands: null, checks: AllPassed());
+        var both = RootCauseHypotheses.Keep(new[] { wq2, weak }.Select(d => (Grade(d), d)).ToList());
+        Assert.Equal("WQ1.1", RootCauseHypotheses.AxisStatus(RootCauseAxes.Intelligence, both).BestHypothesis);
+    }
+
+    [Fact]
     public void AHypothesisWithNoAmount_RanksAfterThoseWithOne_AndARejectedNullBeforeAStandingOne()
     {
         var unmeasured = Draft(id: "HS1", group: "A|B", share: null, checks: AllPassed());
@@ -879,6 +902,30 @@ public class RootCauseHypothesesTests
 
         var check = Assert.Single(ws1.Robustness, r => r.Name == RootCauseHypotheses.DecodeMeasurable);
         Assert.StartsWith("On 7 of 12 answers the visible text arrived in one burst", check.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheBurstAnswersFact_CountsWhatWS1Reads_OfTheTimedAnswers_AndTheWaitBeforeOutputSaysItIsSummed()
+    {
+        var model = Answering("A", 80, burst: 7);
+        Assert.Equal((7, 12), RootCauseEvidence.BurstAnswers(model.Evidence));
+        Assert.Equal((0, 0), RootCauseEvidence.BurstAnswers(Answering("A", 80, burst: 7, telemetry: false).Evidence));
+
+        var summary = new RootCauseContext(new RootCauseInput { Scope = RootCauseEngine.ModelScope, Models = new[] { model } }).EvidenceSummary(model);
+        var facts = new Overseer.Services.Benchmarking.BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(facts, new RootCauseResult { Evidence = { summary } }, t => "Model " + t);
+        var byKey = facts.Sorted().ToDictionary(f => f.Key, StringComparer.Ordinal);
+
+        Assert.Equal("7 of 12 answers whose visible text arrived in one burst", byKey["rca.within.A.speed.burstAnswers"].Display);
+        Assert.Equal("Answers whose visible text arrived in one burst, Model A",
+            Overseer.Services.Benchmarking.BenchmarkReportFactLabels.Label("rca.within.A.speed.burstAnswers"));
+
+        Assert.EndsWith(" s per question, summed over its model calls", byKey["rca.within.A.time.ttft.seconds"].Display, StringComparison.Ordinal);
+        Assert.DoesNotContain("summed", byKey["rca.within.A.time.outputGeneration.seconds"].Display, StringComparison.Ordinal);
+        Assert.Equal("Wait before output, summed over the model calls of a question, Model A",
+            Overseer.Services.Benchmarking.BenchmarkReportFactLabels.Label("rca.within.A.time.ttft.seconds"));
+        Assert.Equal("Wait before output, summed over the model calls of a question, Model A: share of the time per question",
+            Overseer.Services.Benchmarking.BenchmarkReportFactLabels.Label("rca.within.A.time.ttft.share"));
     }
 
     [Theory]

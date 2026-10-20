@@ -201,7 +201,8 @@ public sealed class RootCauseClaimSupport
     /// sentence: <c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.statement</c>, <c>.for</c>, <c>.against</c>,
     /// <c>.refutedIf</c> and <c>.gradeReasons</c>; <c>rca.known.&lt;n&gt;</c>; <c>rca.check.&lt;n&gt;</c>;
     /// <c>rca.question.&lt;n&gt;.text</c> and <c>.signals</c>;
-    /// <c>rca.profile.&lt;T&gt;.flags</c>; <c>rca.anomaly.&lt;n&gt;.summary</c>; and <c>notable.&lt;n&gt;.summary</c>. A hypothesis' label, a check's
+    /// <c>rca.profile.&lt;T&gt;.flags</c>; <c>rca.anomaly.&lt;n&gt;.summary</c>; <c>notable.&lt;n&gt;.summary</c>; and an Executive Summary's
+    /// <c>rcaDigest.keyFinding</c>, <c>.limits</c>, <c>.axis.&lt;axis&gt;</c>, <c>.hypothesis.&lt;n&gt;</c> and <c>.lead.&lt;n&gt;</c>. A hypothesis' label, a check's
     /// <c>rca.check.&lt;n&gt;.summary</c>, an unexpected result's <c>rca.anomaly.&lt;n&gt;.ref</c>, each single flag and
     /// <c>style.responseStyleConflict</c> are noun phrases and are never marked.
     /// </summary>
@@ -212,6 +213,12 @@ public sealed class RootCauseClaimSupport
         string[] parts = bare.Split('.');
 
         if (parts.Length == 3 && parts[0] == "notable" && parts[2] == "summary") return true;
+        if (parts[0] == "rcaDigest")
+        {
+            return parts.Length == 2
+                ? (parts[1] is "keyFinding" or "limits")
+                : (parts.Length == 3 && (parts[1] is "axis" or "hypothesis" or "lead"));
+        }
         if (parts.Length < 3 || parts[0] != "rca") return false;
 
         return parts[1] switch

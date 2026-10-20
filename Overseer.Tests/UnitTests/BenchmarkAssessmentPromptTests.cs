@@ -224,13 +224,11 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFiftySix()
+    public void HarnessVersion_IsFiftySeven()
     {
-        // Harness 56: every candidate and grader provider attempt is recorded with its outcome
-        // class; answers ended by our own time budget, governor or network are Failed rather than
-        // ProviderError; the synthesis prompt lists Failed answers as excluded exactly as
-        // ProviderError answers; and re-run passes and replacement lineage are recorded.
-        Assert.Equal("56", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 57: wiki title equality ignores one leading "The" on either side, and the tool
+        // policy asks for a role-relative helper's definition before stating what it covers.
+        Assert.Equal("57", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]

@@ -48,6 +48,7 @@ public static class RootCauseGlossary
     public const string IsolatedMiss = "isolatedMiss";
     public const string MedianAndMean = "medianAndMean";
     public const string TimeToFirstToken = "timeToFirstToken";
+    public const string WaitBeforeOutput = "waitBeforeOutput";
     public const string OutputGeneration = "outputGeneration";
     public const string ToolRound = "toolRound";
     public const string Tokens = "tokens";
@@ -160,6 +161,9 @@ public static class RootCauseGlossary
         new RootCauseTerm(TimeToFirstToken, "Time to first token",
             "The seconds from sending a request to the first word of the reply. For reasoning models it is mostly the time the model spends thinking before it answers.",
             "the wait before the model starts writing, mostly its thinking"),
+        new RootCauseTerm(WaitBeforeOutput, "Wait before output",
+            "The time to first token of every model call of one question, added up: each tool round adds one more wait. It is the first part of the time per question, not the run's time to first token, which is the first call's alone.",
+            "every model call's wait for its first token on one question, summed"),
         new RootCauseTerm(OutputGeneration, "Output generation and decode rate",
             "Output generation is the time the model spends writing its reply once it has started. The decode rate is how fast it writes, in tokens per second.",
             "the time spent writing the reply, and how fast it is written"),

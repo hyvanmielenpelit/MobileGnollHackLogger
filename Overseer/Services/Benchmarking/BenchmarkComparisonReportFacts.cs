@@ -688,13 +688,16 @@ public static class BenchmarkComparisonReportFacts
     /// <summary>
     /// Whether a per-model fact describes the subject alone and is copied under its letter. Of the
     /// provider availability facts only the headline keys are; the per-model sheet's failure profile and
-    /// root-cause facts are not, because the comparison-scope sheet states its own.
+    /// root-cause facts are not, because the comparison-scope sheet states its own, nor are the dimensions'
+    /// top-level counts, which repeat the profile's, or the per-question member scores.
     /// </summary>
     public static bool IsModelFact(string key)
         => !BenchmarkReportFacts.IsPeerFact(key)
            && !key.StartsWith("comparison.", StringComparison.Ordinal)
            && !key.StartsWith(BenchmarkComparisonModelProfile.KeyPrefix, StringComparison.Ordinal)
            && !key.StartsWith(RootCauseFacts.Prefix, StringComparison.Ordinal)
+           && !key.StartsWith(BenchmarkReportFacts.QuestionFactPrefix, StringComparison.Ordinal)
+           && !key.EndsWith(BenchmarkReportFacts.TopLevelSuffix, StringComparison.Ordinal)
            && key is not ("subject.label" or "subject.provider" or "subject.modelId" or "suite.name")
            && (!key.StartsWith(BenchmarkReportFacts.AvailabilityPrefix, StringComparison.Ordinal) || BenchmarkReportFacts.IsAvailabilityHeadlineKey(key));
 

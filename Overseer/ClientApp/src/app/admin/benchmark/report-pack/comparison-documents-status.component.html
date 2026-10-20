@@ -136,6 +136,10 @@
         }
       }
 
+      @for (hint of writeOrderHints; track hint) {
+        <p class="form-hint cds-order-hint">{{ hint }}</p>
+      }
+
       @if (otherSetCount > 0) {
         <details class="gh-disclosure cds-other-sets">
           <summary>Other model sets ({{ otherSetCount }})</summary>

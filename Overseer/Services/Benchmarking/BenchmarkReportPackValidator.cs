@@ -135,10 +135,24 @@ public sealed record BenchmarkReportSlotWordCount(
 /// Analysis' next runs written in another order than code's; and rule 43 (<see cref="BorrowedModelFigureRule"/>), in a
 /// comparison-scope Root Cause Analysis, one model's figure given for another model whose own figure differs.</para>
 ///
-/// <para>Rules 44 and 45 are Root Cause Analysis warnings too. Rule 44 (<see cref="NumberWordCountRule"/>) flags, in every
-/// prose string, a count across a total written in words (<c>eight of the nine models</c>); rule 45
+/// <para>Rules 44 to 46 are warnings. Rule 44 (<see cref="NumberWordCountRule"/>) flags, in every prose string of a Root Cause
+/// Analysis, a count across a total written in words (<c>eight of the nine models</c>), and in every document a number word
+/// before a token that prints a bare whole number (<c>seven of the {{answers.scored}}</c>); rule 45
 /// (<see cref="RootCauseNullRestatedRule"/>) a sentence of a hypotheses slot that restates the nulls Overseer prints beside
-/// it.</para>
+/// it; rule 46 (<see cref="LargeNumberWordRule"/>), in every document, a number word of twenty or more.</para>
+///
+/// <para>An Executive Summary written from a Root Cause Analysis digest (<see cref="BenchmarkReportFactSheet.HasRootCauseDigest"/>)
+/// requires What to look at next (<see cref="BenchmarkReportSlots.NextSteps"/>) when its digest lists a next run or a check,
+/// and adds rule 47
+/// (<see cref="ExecutiveCausalClaimRule"/>), a causal word in the headline, a paragraph or an item without a digest axis,
+/// hypothesis or lead token in its sentence, hedged beside a lead or a Low grade, and rule 48 (<see cref="ExecutiveNextStepRule"/>),
+/// an item of What to look at next that cites no digest next run or check, or one past the section's item limit; both
+/// remove their paragraph or item. Without a digest, an Executive Summary's rules are those of a document written before
+/// the digest existed. Rule 49 (<see cref="WrittenWithoutRootCauseRule"/>) is the job's note on a summary written without
+/// the Root Cause Analysis that failed before it.</para>
+///
+/// <para>Rule 9 does not read a Root Cause Analysis' question topics, which the document prints under each question's full
+/// text. A document that never prints topics has them cleared before validation (<see cref="ClearUnprintedTopics"/>).</para>
 ///
 /// <para>A Root Cause Analysis' optional slots, <see cref="BenchmarkReportSlots.UnexpectedResults"/> and the hypotheses slot of
 /// each axis where no hypothesis other than a null or a price effect fired (<see cref="BenchmarkReportPackPrompt.RootCauseQuietAxes"/>),
@@ -328,7 +342,7 @@ public static class BenchmarkReportPackValidator
     /// <summary>Words rule 39 never reads as a repetition, however long.</summary>
     public static readonly IReadOnlySet<string> CountRepetitionStopWords = new HashSet<string>(StringComparer.Ordinal)
     {
-        "with", "that", "this", "from", "each", "their", "were", "which"
+        "with", "that", "this", "from", "each", "their", "were", "which", "whose"
     };
 
     /// <summary>The nouns a count counts, which rule 39 never reads as a repetition.</summary>
@@ -367,8 +381,10 @@ public static class BenchmarkReportPackValidator
     public const int BorrowedModelFigureRule = 43;
 
     /// <summary>
-    /// Rule 44: in a Root Cause Analysis, a count across a total written in words: a number word, <c>all</c> or <c>every</c>,
-    /// then <c>of</c> or <c>of the</c> and a second number word (<see cref="NumberWordCountRegex"/>). A warning.
+    /// Rule 44: a count across a total written in words. In a Root Cause Analysis, a number word, <c>all</c> or
+    /// <c>every</c>, then <c>of</c> or <c>of the</c> and a second number word (<see cref="NumberWordCountRegex"/>); in every
+    /// document, a number word, then <c>of</c> or <c>of the</c> and a token whose display is a bare whole number
+    /// (<see cref="MixedNumberWordCountRegex"/>). A warning.
     /// </summary>
     public const int NumberWordCountRule = 44;
 
@@ -378,6 +394,34 @@ public static class BenchmarkReportPackValidator
     /// </summary>
     public const int RootCauseNullRestatedRule = 45;
 
+    /// <summary>
+    /// Rule 46, in every document: a number word of twenty or more (<see cref="LargeNumberWordRegex"/>), such as a score
+    /// written as <c>ninety-five</c> or a share as <c>seventy percent</c>; an ordinal such as <c>twenty-first</c> is none.
+    /// A warning.
+    /// </summary>
+    public const int LargeNumberWordRule = 46;
+
+    /// <summary>
+    /// Rule 47, in an Executive Summary written from a Root Cause Analysis digest: a causal word
+    /// (<see cref="RootCauseClaimSupport.CausalWords"/>) needs in its sentence a digest token of an axis, a hypothesis or a
+    /// lead (<see cref="BenchmarkRootCauseDigest.IsCauseKey"/>), with a hedge word when every such token is a lead or a
+    /// hypothesis graded Low. Removes the paragraph or item, as rule 33 does in a Root Cause Analysis.
+    /// </summary>
+    public const int ExecutiveCausalClaimRule = 47;
+
+    /// <summary>
+    /// Rule 48, in an Executive Summary written from a digest: each item (paragraph) of What to look at next cites a digest
+    /// next run or check (<see cref="BenchmarkRootCauseDigest.IsNextStepKey"/>), and the section holds at most
+    /// <see cref="BenchmarkReportSlots.NextStepsMaxItems"/> items. Removes the item.
+    /// </summary>
+    public const int ExecutiveNextStepRule = 48;
+
+    /// <summary>
+    /// Rule 49: an Executive Summary written without the Root Cause Analysis its job was to write first, which failed or
+    /// was canceled. Recorded by the job on the headline, against kept text; the validator never raises it.
+    /// </summary>
+    public const int WrittenWithoutRootCauseRule = 49;
+
     /// <summary>The number words rule 44 reads, the hyphenated tens such as <c>twenty-one</c> included.</summary>
     private const string NumberWordPattern =
         "(?:(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-(?:one|two|three|four|five|six|seven|eight|nine))?"
@@ -386,6 +430,49 @@ public static class BenchmarkReportPackValidator
     /// <summary>Rule 44: <c>eight of the nine</c>, <c>all of the nine</c>, <c>three of four</c>, as whole words, ignoring case.</summary>
     private static readonly Regex NumberWordCountRegex = new(
         @"(?<![\p{L}\p{N}-])(?:" + NumberWordPattern + @"|all|every)\s+of\s+(?:the\s+)?" + NumberWordPattern + @"(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>Rule 44's mixed form: <c>seven of the {{answers.scored}}</c>, with the token's key captured; whole words, ignoring case.</summary>
+    private static readonly Regex MixedNumberWordCountRegex = new(
+        @"(?<![\p{L}\p{N}-])" + NumberWordPattern + @"\s+of\s+(?:the\s+)?\{\{(?<key>[^{}]*)\}\}",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>A display that is a bare whole number, <c>8</c> or <c>1,480</c>, for rule 44's mixed form.</summary>
+    private static readonly Regex BareWholeNumberRegex = new(@"^\d[\d,]*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Rule 46: a ten from <c>twenty</c> to <c>ninety</c>, alone or hyphenated with a unit (<c>ninety-five</c>), or a unit
+    /// before <c>hundred</c> or <c>thousand</c>; whole words, ignoring case. An ordinal (<c>twenty-first</c>) never matches.
+    /// </summary>
+    private static readonly Regex LargeNumberWordRegex = new(
+        @"(?<![\p{L}\p{N}-])(?:(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-(?:one|two|three|four|five|six|seven|eight|nine))?"
+        + @"|(?:one|two|three|four|five|six|seven|eight|nine)[\s-]+(?:hundred|thousand))(?![\p{L}\p{N}-])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>Rule 46's threshold forms: <c>below seventy</c>, <c>at least fifty</c> before a match.</summary>
+    private static readonly Regex ThresholdBeforeRegex = new(
+        @"(?:\b(?:below|above|under|over)|\bat\s+(?:least|most))\s+$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>Rule 46's threshold forms: <c>seventy-five or more</c> after a match.</summary>
+    private static readonly Regex ThresholdAfterRegex = new(
+        @"^\s+or\s+(?:more|above|higher|less|below|lower)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>True when a rule-46 match is a threshold (<c>scored below seventy</c>, <c>seventy-five or more</c>), not a figure.</summary>
+    private static bool IsThresholdWord(string text, Match match)
+    {
+        var before = text[..match.Index];
+        var after = text[(match.Index + match.Length)..];
+        return ThresholdBeforeRegex.IsMatch(before) || ThresholdAfterRegex.IsMatch(after);
+    }
+
+    /// <summary>
+    /// The grader role phrases the prompts require, masked before rule 39 compares words, so a role name never counts as
+    /// repeating a count token; whole words, ignoring case, the member letter in upper case.
+    /// </summary>
+    private static readonly Regex GraderRolePhraseRegex = new(
+        @"(?<![\p{L}\p{N}])(?:panel\s+members?\s+(?-i:[AB])|panel\s+members|members?\s+(?-i:[AB])|reference\s+readers?|claim\s+verifiers?)(?![\p{L}\p{N}])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>The phrases rule 45 reads as restating a null, matched as whole words with their plurals, ignoring case.</summary>
@@ -440,7 +527,8 @@ public static class BenchmarkReportPackValidator
             or HypeWordRule or ZeroTokenNegationRule or ModelCoverageRule or ChatInconclusiveMdeRule
             or ChatRepetitionRule or ComparisonTokenShapeRule or RootCauseAxisStatusRule or BareModelLetterRule
             or RootCauseShareBesideRefRule or CountRepetitionRule or RootCauseCodePrintedRule or UnavailableTokenRule
-            or RootCauseNextRunsOrderRule or BorrowedModelFigureRule or NumberWordCountRule or RootCauseNullRestatedRule;
+            or RootCauseNextRunsOrderRule or BorrowedModelFigureRule or NumberWordCountRule or RootCauseNullRestatedRule
+            or LargeNumberWordRule;
 
     /// <summary>Words rule 19 reads as a negation, matched as whole words, ignoring case.</summary>
     public static readonly IReadOnlyList<string> NegationWords = new[] { "no", "none", "never", "without", "zero" };
@@ -807,6 +895,7 @@ public static class BenchmarkReportPackValidator
             BenchmarkReportSlots.TradeOffs => TradeOffsMaxWords,
             BenchmarkReportSlots.Reliability => ReliabilityMaxWords,
             BenchmarkReportSlots.AgainstReference => ExecutiveAgainstReferenceMaxWords,
+            BenchmarkReportSlots.NextSteps => BenchmarkReportSlots.NextStepsMaxWords,
             _ => (int?)null
         }
         : slot switch
@@ -814,6 +903,7 @@ public static class BenchmarkReportPackValidator
         BenchmarkReportSlots.Meaning when audience == BenchmarkReportAudience.ExecutiveSummary => MeaningMaxWords,
         BenchmarkReportSlots.Confidence when audience == BenchmarkReportAudience.ExecutiveSummary => ConfidenceMaxWords,
         BenchmarkReportSlots.Comparison when audience == BenchmarkReportAudience.ExecutiveSummary => ComparisonMaxWords,
+        BenchmarkReportSlots.NextSteps when audience == BenchmarkReportAudience.ExecutiveSummary => BenchmarkReportSlots.NextStepsMaxWords,
         _ => null
     };
 
@@ -852,6 +942,20 @@ public static class BenchmarkReportPackValidator
     // -----------------------------------------------------------------------------------------
     // Validate
     // -----------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Clears the question topics of a reply for a document that never prints them, every audience but the Root Cause
+    /// Analysis, so they ask for no repair; returns how many it held.
+    /// </summary>
+    public static int ClearUnprintedTopics(BenchmarkReportAudience audience, BenchmarkReportWriterOutput output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        if (audience == BenchmarkReportAudience.RootCauseAnalysis || output.QuestionTopics is not { Count: > 0 } topics) return 0;
+
+        int count = topics.Count;
+        topics.Clear();
+        return count;
+    }
 
     /// <summary>Every issue, none dropped. An empty list means the output is valid.</summary>
     public static IReadOnlyList<BenchmarkReportValidationNote> Validate(
@@ -1467,6 +1571,7 @@ public static class BenchmarkReportPackValidator
         CheckVerifierMention(headline, "headline", notes);
         CheckChatClaims(ctx, null, headline, "headline", notes);
         CheckRootCauseClaims(ctx, null, headline, "headline", notes);
+        CheckDigestClaims(ctx, headline, "headline", notes);
 
         int words = WordCount(headline);
         if (words > HeadlineMaxWords)
@@ -1483,9 +1588,82 @@ public static class BenchmarkReportPackValidator
         CheckIntervalWidth(ctx, slot, paragraph, location, issues);
         CheckChatClaims(ctx, slot, paragraph, location, issues);
         CheckRootCauseClaims(ctx, slot, paragraph, location, issues);
+        CheckDigestClaims(ctx, paragraph, location, issues);
+        CheckNextStep(ctx, slot, paragraph, location, issues);
         CheckCodePrinted(ctx, slot, paragraph, location, issues);
         CheckNullsRestated(ctx, slot, paragraph, location, issues);
         return issues;
+    }
+
+    /// <summary>
+    /// Rule 47 on one prose string of an Executive Summary written from a digest, sentence by sentence: a causal word that
+    /// states a cause needs a digest axis, hypothesis or lead token in its sentence, and a hedge word when every such token
+    /// is a lead or a hypothesis graded Low; one that rules a cause out (<c>not due to</c>) needs any of them. Every other
+    /// document is not checked.
+    /// </summary>
+    private static void CheckDigestClaims(Context ctx, string text, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        if (!ctx.Digest || string.IsNullOrWhiteSpace(text)) return;
+
+        var unsupported = new List<string>();
+        var unhedged = new List<string>();
+        foreach (var (plain, raw) in TokenSentences(text))
+        {
+            var causes = raw.Select(t => t.Trim()).Where(ctx.IsDigestCauseToken).ToList();
+            var stated = RootCauseClaimSupport.UnnegatedCausalPhrases(plain).ToList();
+            if (stated.Count > 0)
+            {
+                if (causes.Count == 0)
+                {
+                    unsupported.AddRange(stated);
+                }
+                else if (causes.All(ctx.DigestTokenNeedsHedge) && !RootCauseClaimSupport.HedgePhrases(plain).Any())
+                {
+                    unhedged.AddRange(stated);
+                }
+            }
+            if (causes.Count == 0)
+            {
+                unsupported.AddRange(RootCauseClaimSupport.NegatedCausalPhrases(plain));
+            }
+        }
+
+        string Quoted(List<string> phrases) => "\"" + string.Join("\", \"", phrases.Distinct(StringComparer.OrdinalIgnoreCase)) + "\"";
+        if (unsupported.Count > 0)
+        {
+            Issue(notes, ExecutiveCausalClaimRule, location, $"Uses the causal wording {Quoted(unsupported)} without a Root Cause Analysis item in the same sentence: "
+                + "say in your own words what the cause is and cite its rcaDigest.axis, rcaDigest.hypothesis or rcaDigest.lead token after a colon "
+                + "(ROOT CAUSE ANALYSIS lists them), or leave the cause out.");
+        }
+        if (unhedged.Count > 0)
+        {
+            Issue(notes, ExecutiveCausalClaimRule, location, $"Uses the causal wording {Quoted(unhedged)} on a lead or a hypothesis graded Low only: "
+                + "it is untested or weak, so say so (may, possibly, consistent with …) and call a lead a lead.");
+        }
+    }
+
+    /// <summary>Paragraph-number suffix of a paragraph location, <c>[p2]</c>.</summary>
+    private static readonly Regex ParagraphNumberRegex = new(@"\[p(?<n>\d+)\]$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Rule 48 on one paragraph of What to look at next in an Executive Summary written from a digest: it cites a digest next
+    /// run or check, and it is one of the first <see cref="BenchmarkReportSlots.NextStepsMaxItems"/>.
+    /// </summary>
+    private static void CheckNextStep(Context ctx, string slot, string paragraph, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        if (!ctx.Digest || !string.Equals(slot, BenchmarkReportSlots.NextSteps, StringComparison.Ordinal) || string.IsNullOrWhiteSpace(paragraph)) return;
+
+        if (!CitedTokens(paragraph).Any(ctx.IsDigestNextStepToken))
+        {
+            Issue(notes, ExecutiveNextStepRule, location,
+                "The item cites no next run or check of the Root Cause Analysis: cite one rcaDigest.nextRun or rcaDigest.check token (ROOT CAUSE ANALYSIS lists them) and say what it would settle.");
+        }
+        if (ParagraphNumberRegex.Match(location) is { Success: true } m
+            && int.Parse(m.Groups["n"].Value, NumberStyles.None, CultureInfo.InvariantCulture) > BenchmarkReportSlots.NextStepsMaxItems)
+        {
+            Issue(notes, ExecutiveNextStepRule, location,
+                $"{BenchmarkReportSlots.NextStepsTitle} holds at most {BenchmarkReportSlots.NextStepsMaxItems.ToString(CultureInfo.InvariantCulture)} items, each its own paragraph.");
+        }
     }
 
     /// <summary>
@@ -1547,7 +1725,9 @@ public static class BenchmarkReportPackValidator
         var digit = DigitWordRegex.Match(masked);
         if (digit.Success)
         {
-            Issue(notes, 3, location, ctx.Battery
+            Issue(notes, 3, location, ctx.RootCause
+                ? $"Contains the digit form \"{digit.Value}\": place figures only as {{{{key}}}} tokens, write every count across models, questions or answers as a fact token (a plain count with no total may be a number word up to ten), and refer to questions as {(ctx.Battery ? "S<suite>-Q<n>" : "Q<n>")}."
+                : ctx.Battery
                 ? $"Contains the digit form \"{digit.Value}\": place figures only as {{{{key}}}} tokens, write counts as number words, and refer to questions as S<suite>-Q<n>."
                 : ctx.ChatConsistency
                     ? $"Contains the digit form \"{digit.Value}\": place figures, dates, hours and run ids only as {{{{key}}}} tokens, and write counts as number words."
@@ -1721,18 +1901,30 @@ public static class BenchmarkReportPackValidator
             CheckBorrowedModelFigures(ctx, text, location, notes);
         }
 
-        // Rule 44: a count across a total written in words.
-        if (ctx.RootCause)
+        // Rule 44: a count across a total written in words; in every document, a number word before a token that prints a bare whole number.
+        var wordCounts = (ctx.RootCause ? NumberWordCountRegex.Matches(stripped).Select(m => m.Value) : Enumerable.Empty<string>())
+            .Concat(MixedNumberWordCountRegex.Matches(text)
+                .Where(m => ctx.FactDisplay(m.Groups["key"].Value.Trim()) is string display && BareWholeNumberRegex.IsMatch(display.Trim()))
+                .Select(m => m.Value))
+            .Select(c => Regex.Replace(c, @"\s+", " "))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (wordCounts.Count > 0)
         {
-            var counts = NumberWordCountRegex.Matches(stripped)
-                .Select(m => Regex.Replace(m.Value, @"\s+", " "))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            if (counts.Count > 0)
-            {
-                Issue(notes, NumberWordCountRule, location,
-                    $"Writes the count{Plural(counts.Count)} \"{string.Join("\", \"", counts)}\" in words: write this count as a fact token, or leave the total out.");
-            }
+            Issue(notes, NumberWordCountRule, location,
+                $"Writes the count{Plural(wordCounts.Count)} \"{string.Join("\", \"", wordCounts)}\" in words: write this count as a fact token, or leave the total out.");
+        }
+
+        // Rule 46: a number word of twenty or more, unless it states a threshold the prompts give in words.
+        var largeWords = LargeNumberWordRegex.Matches(stripped)
+            .Where(m => !IsThresholdWord(stripped, m))
+            .Select(m => Regex.Replace(m.Value, @"\s+", " "))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (largeWords.Count > 0)
+        {
+            Issue(notes, LargeNumberWordRule, location,
+                $"Writes \"{string.Join("\", \"", largeWords)}\" in words: cite the figure's token instead of writing it in words.");
         }
 
         // Rule 17: hype and filler words.
@@ -1762,7 +1954,7 @@ public static class BenchmarkReportPackValidator
                 : "an opening phrase before the model";
             Issue(notes, CountRepetitionRule, location,
                 $"{{{{{key}}}}} already prints '{BenchmarkReportFormat.CountQualifier(display)}', so '{string.Join("', '", repeated)}' {(repeated.Count == 1 ? "says" : "say")} it again. "
-                + $"Write it as '{model} had {{{{{key}}}}}', and leave those words out of the whole sentence: not before the model, not in {opening}, and not after the token.");
+                + $"Start a new sentence with the model and the token, as in '{model} had {{{{{key}}}}}.', and leave those words out of the whole sentence: not before the model, not in {opening}, and not after the token.");
         }
     }
 
@@ -1789,8 +1981,9 @@ public static class BenchmarkReportPackValidator
     /// <see cref="CountRepetitionWordsAfter"/> after it, in the same sentence; with the token's display and the writer's
     /// repeated words. A content word has four letters or more, is no word of <see cref="CountRepetitionStopWords"/> and no
     /// counted noun, and two words match when one's first five letters begin the other's (<c>tools</c>, <c>tool</c>).
-    /// The repetition belongs to the sentence, so every other count token of that sentence with the same qualifier is
-    /// returned too, with the same repeated words; tokens come in sentence order.
+    /// The grader role phrases (<see cref="GraderRolePhraseRegex"/>) are masked word for word first, so they keep their
+    /// place in the windows but never match. The repetition belongs to the sentence, so every other count token of that
+    /// sentence with the same qualifier is returned too, with the same repeated words; tokens come in sentence order.
     /// </summary>
     private static List<(string Key, string Display, List<string> Repeated)> RepeatedCountWords(Context ctx, string? text)
     {
@@ -1803,6 +1996,7 @@ public static class BenchmarkReportPackValidator
             tokens.Add(m.Groups[1].Value.Trim());
             return " \u0001" + (tokens.Count - 1).ToString(CultureInfo.InvariantCulture) + "\u0002 ";
         });
+        masked = GraderRolePhraseRegex.Replace(masked, m => Regex.Replace(m.Value, @"\p{L}+", "x"));
 
         static string Stem(string word) => word.ToLowerInvariant()[..Math.Min(5, word.Length)];
         static bool Content(string word)
@@ -2773,7 +2967,8 @@ public static class BenchmarkReportPackValidator
     /// <summary>
     /// The text with every token resolved to its display (a model token to <c>Model X</c>), and where each display
     /// stands in it, for rule 31. A fact's display that starts a sentence (<see cref="StartsSentence"/>) is read with
-    /// its first word capitalized (<see cref="BenchmarkReportSentenceCase.UpperFirst"/>), as the document prints it.
+    /// its first word capitalized (<see cref="BenchmarkReportSentenceCase.UpperFirst"/>), as the document prints it, and
+    /// <c>{{subject}}</c> there as <c>The subject</c>.
     /// </summary>
     private static (string All, List<(int Start, int End, string Key, string Display)> Spans) ResolveTokens(Context ctx, string text)
     {
@@ -2787,10 +2982,11 @@ public static class BenchmarkReportPackValidator
             string? fact = key.StartsWith("model:", StringComparison.Ordinal) || key.StartsWith("peer:", StringComparison.Ordinal) || key == "subject"
                 ? null
                 : ctx.FactDisplay(key);
-            if (fact != null && StartsSentence(resolved.ToString(), resolved.Length)) fact = BenchmarkReportSentenceCase.UpperFirst(fact);
+            bool startsSentence = StartsSentence(resolved.ToString(), resolved.Length);
+            if (fact != null && startsSentence) fact = BenchmarkReportSentenceCase.UpperFirst(fact);
             string display = key.StartsWith("model:", StringComparison.Ordinal) ? "Model " + key["model:".Length..]
                 : key.StartsWith("peer:", StringComparison.Ordinal) ? "Model " + key["peer:".Length..]
-                : key == "subject" ? "the subject"
+                : key == "subject" ? (startsSentence ? "The subject" : "the subject")
                 : fact ?? match.Value;
             int start = resolved.Length;
             resolved.Append(display);
@@ -3472,6 +3668,7 @@ public static class BenchmarkReportPackValidator
         else
         {
             CheckProse(ctx, text, location, notes);
+            CheckDigestClaims(ctx, text, location, notes);
 
             if (kind is ItemKind.Strength or ItemKind.Weakness
                 && ctx.Spec.Audience == BenchmarkReportAudience.ExecutiveSummary
@@ -3604,6 +3801,9 @@ public static class BenchmarkReportPackValidator
         else
         {
             CheckProse(ctx, topic.Topic, location, notes);
+
+            // A Root Cause Analysis prints each topic under its question's full text, so a topic quoting it discloses nothing.
+            if (ctx.RootCause) notes.RemoveAll(n => n.Rule == 9);
         }
 
         if (!ctx.Questions.Contains(topic.Question))
@@ -3784,9 +3984,26 @@ public static class BenchmarkReportPackValidator
                 : new HashSet<string>(StringComparer.Ordinal);
             _factDisplays = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var fact in sheet.Facts) _factDisplays.TryAdd(fact.Key, fact.Display ?? string.Empty);
+            Digest = Spec.Audience == BenchmarkReportAudience.ExecutiveSummary && !ChatConsistency && sheet.HasRootCauseDigest;
+            _digestCauseKeys = new HashSet<string>(StringComparer.Ordinal);
+            _digestHedgedKeys = new HashSet<string>(StringComparer.Ordinal);
+            _digestNextStepKeys = new HashSet<string>(StringComparer.Ordinal);
+            if (Digest)
+            {
+                foreach (var fact in sheet.Facts.Where(f => f.Available && BenchmarkRootCauseDigest.IsDigestKey(f.Key)))
+                {
+                    if (BenchmarkRootCauseDigest.IsNextStepKey(fact.Key)) _digestNextStepKeys.Add(fact.Key);
+                    if (!BenchmarkRootCauseDigest.IsCauseKey(fact.Key)) continue;
+                    _digestCauseKeys.Add(fact.Key);
+                    string? value = fact.Value is System.Text.Json.Nodes.JsonValue v && v.TryGetValue(out string? s) ? s : null;
+                    if (value is BenchmarkRootCauseDigest.LeadValue or RootCauseGrades.Low) _digestHedgedKeys.Add(fact.Key);
+                }
+            }
+            // What to look at next is required only when the digest lists a next run or a check to cite.
+            bool nextSteps = Digest && _digestNextStepKeys.Count > 0;
             var slots = Comparison
-                ? Spec.ComparisonSlotsFor(hasNotableFindings: BenchmarkNotableFindings.CountOf(sheet) > 0)
-                : Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
+                ? Spec.ComparisonSlotsFor(hasNotableFindings: BenchmarkNotableFindings.CountOf(sheet) > 0, hasDigest: nextSteps)
+                : Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0, hasDigest: nextSteps);
             var quiet = RootCause
                 ? BenchmarkReportPackPrompt.RootCauseQuietAxes(sheet.RootCause)
                     .Select(BenchmarkReportPackPrompt.RootCauseHypothesesSlot)
@@ -3922,6 +4139,25 @@ public static class BenchmarkReportPackValidator
         private readonly Func<string?, bool> _rootCauseHidden;
 
         public BenchmarkReportAudienceSpec Spec { get; }
+
+        private readonly HashSet<string> _digestCauseKeys;
+        private readonly HashSet<string> _digestHedgedKeys;
+        private readonly HashSet<string> _digestNextStepKeys;
+
+        /// <summary>
+        /// An Executive Summary written from a Root Cause Analysis digest: rules 47 and 48 apply, and What to look at next is
+        /// required when the digest lists a next run or a check.
+        /// </summary>
+        public bool Digest { get; }
+
+        /// <summary>A digest token of an axis, a hypothesis or a lead the sheet holds: what a causal word cites (rule 47).</summary>
+        public bool IsDigestCauseToken(string key) => _digestCauseKeys.Contains(key);
+
+        /// <summary>A digest token of a lead or of a hypothesis graded Low: a causal word beside it alone needs a hedge (rule 47).</summary>
+        public bool DigestTokenNeedsHedge(string key) => _digestHedgedKeys.Contains(key);
+
+        /// <summary>A digest token of a next run or a check the sheet holds: what an item of What to look at next cites (rule 48).</summary>
+        public bool IsDigestNextStepToken(string key) => _digestNextStepKeys.Contains(key);
 
         /// <summary>
         /// A Root Cause Analysis fact kept from its writer (<see cref="RootCauseFacts.RootCauseWriterHidden(RootCauseResult?)"/>):

@@ -61,6 +61,9 @@ public static partial class BenchmarkReportPackRenderer
 
     private const string RcaNoAnalysis = "No root-cause analysis was computed for this document.";
 
+    /// <summary>The Conclusions table's best-hypothesis cell of an axis whose every hypothesis was ruled out.</summary>
+    internal const string RcaAllRuledOut = "none (all ruled out)";
+
     private const string RcaNoProfiles = "No model profile was computed for this document; regenerate it to get them.";
 
     private const string RcaControlsNote = "Controls' mean: the mean score of the controls that scored the question. Instrument-suspect: the "
@@ -1648,13 +1651,13 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// The note under the time table: how the seconds are split, each part named, what the wait before output sums,
-    /// output generation and time to first token glossed at their first use.
+    /// the wait before output, output generation and time to first token glossed at their first use.
     /// </summary>
     private static string RcaTimeNote(Context ctx)
     {
         UseTerms(ctx, RootCauseGlossary.MedianAndMean);
         return "Wall time per question: the median time per question, tool execution included, split into its parts in proportion to their mean times. "
-            + "The parts are the wait before output, output generation" + Gloss(ctx, RootCauseGlossary.OutputGeneration)
+            + "The parts are the wait before output" + Gloss(ctx, RootCauseGlossary.WaitBeforeOutput) + ", output generation" + Gloss(ctx, RootCauseGlossary.OutputGeneration)
             + ", tool execution, the model's own waits and retries, and other time. "
             + "The wait before output is summed over every model call of the answer, hidden thinking included; the run report's time to first token"
             + Gloss(ctx, RootCauseGlossary.TimeToFirstToken) + " is the first call's alone. "
@@ -1995,7 +1998,10 @@ public static partial class BenchmarkReportPackRenderer
                 UseReasonTerms(ctx, axis.Reason);
                 var best = axis.BestHypothesis == null ? null : result.Hypotheses.FirstOrDefault(h => h.Key == axis.BestHypothesis);
                 // A price-card difference is no mechanism the runs found; the Why cell says so.
-                string name = best is { PriceEffect: true } ? NoValue : best != null ? RcaHypothesisName(ctx, best) : axis.BestHypothesis ?? NoValue;
+                string name = best is { PriceEffect: true } ? NoValue
+                    : best != null ? RcaHypothesisName(ctx, best)
+                    : axis.BestHypothesis == null && axis.Reason == RootCauseAxisStatus.AllRuledOutReason ? RcaAllRuledOut
+                    : axis.BestHypothesis ?? NoValue;
                 string why = once ? shared[..at] : axis.Reason;
                 Line(sb, RcaRow(RootCauseAxes.Name(axis.Axis), RootCauseStatuses.Display(axis.Status), Cell(name), Cell(SheetText(ctx, why))));
             }
@@ -2427,7 +2433,7 @@ public static partial class BenchmarkReportPackRenderer
         string mislead = profile.Value("mayMislead") is double count
             ? Inv((int)count) + (profile.Value("mayMisleadPer20") is double per ? " (" + BenchmarkReportFormat.CompactDecimal(per) + " per 20)" : string.Empty)
             : NoValue;
-        string wrong = profile.Value("outcome.wrongInsteadOfAbstaining") is double rate ? BenchmarkReportFormat.Percent(rate * 100) : NoValue;
+        string wrong = profile.WrongInsteadOfAbstaining(compact: false);
         string length = profile.Value("answerChars.median") is double chars ? BenchmarkReportFormat.Count(chars) : NoValue;
 
         Heading(sb, "### Failure profile");

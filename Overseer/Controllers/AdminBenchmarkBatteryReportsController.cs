@@ -201,6 +201,29 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
     }
 
     /// <summary>
+    /// The writer's raw replies of the battery run's held battery-completion job (the current one, or one finished within
+    /// <see cref="BenchmarkRunReportDocumentService.FinishedJobRetention"/>) as one Markdown file: 404 when this process holds
+    /// none for the battery run; 499 when the client aborts.
+    /// </summary>
+    [HttpGet("job/writer-replies")]
+    public async Task<IActionResult> GetWriterReplies(long batteryRunId, CancellationToken ct)
+    {
+        if (_batteryReportDocuments == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
+
+        var job = _batteryReportDocuments.TryGetHeldJob(batteryRunId);
+        if (job == null) return NotFound();
+        try
+        {
+            return Content(await AdminBenchmarkReportPacksController.WriterRepliesMarkdownAsync(_db, job, ct),
+                AdminBenchmarkReportPacksController.WriterRepliesContentType);
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>
     /// Cancels the battery run's battery-completion job: 202 with its view once asked; 409 when no job
     /// for it is in progress; 404 for an unknown battery run; 499 when the client aborts. Documents
     /// written before the cancellation are kept.
@@ -390,7 +413,8 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
 
     /// <summary>
     /// Each document's prompt size, estimated tokens, first-call cost and first call plus one repair turn
-    /// (<see cref="BenchmarkReportPackService.EstimateCostWithRepair"/>); makes no model call.
+    /// (<see cref="BenchmarkReportPackService.EstimateCostWithRepair"/>); an Executive Summary's prompt with the Root Cause
+    /// Analysis digest it is written from (<see cref="BenchmarkReportPackPrompt.RootCauseDigestPromptChars"/>). Makes no model call.
     /// </summary>
     private BenchmarkReportPackAudienceEstimateDto[] EstimateAudiences(
         BenchmarkReportPackPreparation prep, SystemAiApiConfiguration? writer, IEnumerable<BenchmarkReportAudience> audiences)
@@ -400,7 +424,8 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
         return audiences.Select(audience =>
         {
             var prompt = BenchmarkReportPackPrompt.Build(audience, prep.Sheet, prep.Content);
-            int chars = prompt.SystemPrompt.Length + prompt.UserMessage.Length;
+            int chars = prompt.SystemPrompt.Length + prompt.UserMessage.Length
+                + (audience == BenchmarkReportAudience.ExecutiveSummary ? BenchmarkReportPackPrompt.RootCauseDigestPromptChars(prep.Sheet) : 0);
             int input = (chars + 3) / 4;
             int output = Math.Min(maxOutputTokens, EstimatedOutputTokens[audience]);
             return new BenchmarkReportPackAudienceEstimateDto

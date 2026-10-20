@@ -412,7 +412,9 @@ public static class RootCauseHypotheses
     /// with within-model hypotheses alone is not established. A price effect never decides an axis: when no
     /// other candidate is graded Low or higher, the axis is not established and its best hypothesis is the
     /// highest-ranked price effect, with <see cref="PriceOnlyAxisReason"/> when it stands alone and
-    /// <see cref="PriceCardsAxisReason"/> when the others were ruled out. Otherwise the reason names the best
+    /// <see cref="PriceCardsAxisReason"/> when the others were ruled out. A ruled-out hypothesis is never the
+    /// best: when every candidate is Not supported, the axis has no best hypothesis and its reason is
+    /// <see cref="RootCauseAxisStatus.AllRuledOutReason"/>. Otherwise the reason names the best
     /// hypothesis' grade and the grade reasons that applied to it, each one clause.
     /// </summary>
     internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept, bool hasPairs)
@@ -464,14 +466,15 @@ public static class RootCauseHypotheses
             };
         }
 
-        var best = candidates.FirstOrDefault();
+        var best = candidates.FirstOrDefault(k => RootCauseGrades.Rank(k.Hypothesis.Grade) >= RootCauseGrades.Rank(RootCauseGrades.Low));
         if (best.Hypothesis == null)
         {
             return new RootCauseAxisStatus
             {
                 Axis = axis,
                 Status = RootCauseStatuses.NotEstablished,
-                Reason = nonNull.Count > 0 ? WithinOnlyAxisReason
+                Reason = candidates.Count > 0 ? RootCauseAxisStatus.AllRuledOutReason
+                    : nonNull.Count > 0 ? WithinOnlyAxisReason
                     : "No rule found a possible cause on this axis."
             };
         }
@@ -2186,16 +2189,13 @@ public static class RootCauseHypotheses
     /// </summary>
     internal static RootCauseRobustnessCheck? DecodeMeasurableCheck(RootCauseModelEvidence evidence)
     {
-        var timed = evidence.Answers
-            .Where(a => a.Ok && a.TtftSumMs.HasValue && a.DecodeSumMs.HasValue && a.StreamingRateUnmeasurable.HasValue)
-            .ToList();
-        int burst = timed.Count(a => a.StreamingRateUnmeasurable == true);
-        if (timed.Count == 0 || 2 * burst <= timed.Count) return null;
+        var (burst, timed) = RootCauseEvidence.BurstAnswers(evidence);
+        if (timed == 0 || 2 * burst <= timed) return null;
         return new RootCauseRobustnessCheck
         {
             Name = DecodeMeasurable,
             Status = RootCauseCheckStatuses.Failed,
-            Detail = "On " + Inv(burst) + " of " + Inv(timed.Count) + " answers the visible text arrived in one burst after hidden thinking, "
+            Detail = "On " + Inv(burst) + " of " + Inv(timed) + " answers the visible text arrived in one burst after hidden thinking, "
                 + "so the wait before output cannot be told from deliberation, and the decode share cannot be measured."
         };
     }

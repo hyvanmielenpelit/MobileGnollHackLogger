@@ -78,6 +78,15 @@ public class BenchmarkReportPackDocumentProgress
 
     /// <summary>Every writer call of the document, in order.</summary>
     public List<BenchmarkReportPackCallDto> Calls { get; } = new();
+
+    /// <summary>An Executive Summary's Root Cause Analysis source once it has started (<see cref="BenchmarkRootCauseSources"/>); null before.</summary>
+    public string? RootCauseSource { get; set; }
+
+    /// <summary>The Root Cause Analysis document an Executive Summary's digest came from; null without one.</summary>
+    public long? RootCauseSourceDocumentId { get; set; }
+
+    /// <summary>Why an Executive Summary has no Root Cause Analysis source; null when it has one.</summary>
+    public string? RootCauseSourceNote { get; set; }
 }
 
 /// <summary>One writer call's raw reply as the job holds it in memory.</summary>
@@ -325,6 +334,19 @@ public class BenchmarkReportPackJob
         }
     }
 
+    /// <summary>An Executive Summary's Root Cause Analysis source: <see cref="BenchmarkRootCauseSources"/>, its document or why it has none.</summary>
+    public void SetRootCauseSource(BenchmarkReportPackDocumentProgress document, string source, long? documentId, string? note)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(source);
+        lock (_lock)
+        {
+            document.RootCauseSource = source;
+            document.RootCauseSourceDocumentId = documentId;
+            document.RootCauseSourceNote = note;
+        }
+    }
+
     /// <summary>Whether a document's first draft passed every check.</summary>
     public void SetFirstDraftClean(BenchmarkReportPackDocumentProgress document, bool clean)
     {
@@ -520,7 +542,10 @@ public class BenchmarkReportPackJob
                     Phase = d.Phase,
                     PhaseDetail = d.PhaseDetail,
                     FirstDraftClean = d.FirstDraftClean,
-                    Calls = d.Calls.Select(CopyCall).ToList()
+                    Calls = d.Calls.Select(CopyCall).ToList(),
+                    RootCauseSource = d.Audience == BenchmarkReportAudience.ExecutiveSummary ? d.RootCauseSource : null,
+                    RootCauseSourceDocumentId = d.Audience == BenchmarkReportAudience.ExecutiveSummary ? d.RootCauseSourceDocumentId : null,
+                    RootCauseSourceNote = d.Audience == BenchmarkReportAudience.ExecutiveSummary ? d.RootCauseSourceNote : null
                 }).ToList(),
                 Log = Log.Select(l => new BenchmarkReportPackJobLogEntryDto
                 {

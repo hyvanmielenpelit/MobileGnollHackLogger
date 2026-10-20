@@ -3551,7 +3551,19 @@ export interface BenchmarkReportPackDocumentProgressDto {
   revisionIssues?: BenchmarkReportPackValidationIssueDto[] | null;
   /** The word count of each capped section at every turn; null while the job runs. */
   wordCounts?: BenchmarkReportPackWordCountDto[] | null;
+  /**
+   * An Executive Summary's Root Cause Analysis: written by this job, a stored one, or none. Null until the
+   * Executive Summary has started and for other audiences; absent from an older server.
+   */
+  rootCauseSource?: BenchmarkReportRootCauseSource | null;
+  /** The stored document id of that Root Cause Analysis; null when there is none. */
+  rootCauseSourceDocumentId?: number | null;
+  /** Why the Executive Summary was written without a Root Cause Analysis; null otherwise. */
+  rootCauseSourceNote?: string | null;
 }
+
+/** Where an Executive Summary's Root Cause Analysis came from. */
+export type BenchmarkReportRootCauseSource = 'thisJob' | 'stored' | 'none';
 
 /** One capped section's raw word count (a token counts as one) at each turn; null where the turn did not happen. */
 export interface BenchmarkReportPackWordCountDto {
@@ -3741,6 +3753,8 @@ export interface BenchmarkReportDocumentListItemDto {
   chatConsistencyAnalysisId?: number | null;
   /** Comparison scope: the reference model's entry key; null, or absent from an older document, is the highest Intelligence Index. */
   referenceEntryKey?: string | null;
+  /** An Executive Summary: the Root Cause Analysis it was written from; null without one, before format 25 and for other audiences. */
+  rootCauseSourceDocumentId?: number | null;
 }
 
 /** A per-model document (1), a comparison-scope document (2) or a chat consistency document (3), as the server sends it. */
@@ -5083,6 +5097,11 @@ export class AdminBenchmarkService {
     );
   }
 
+  /** The writer's raw replies of the run's report-writing job as Markdown; 404 once the server no longer holds the job. */
+  getRunReportWriterReplies(runId: number): Observable<string> {
+    return this.http.get(`/api/admin/benchmark/runs/${runId}/report-documents/job/writer-replies`, { responseType: 'text' });
+  }
+
   /** Asks the run's report-writing job to stop. 202 with the job view; 409 `{ error }` when none is in progress. */
   cancelRunReportJob(runId: number): Observable<BenchmarkRunReportJobDto> {
     return this.http.post<BenchmarkRunReportJobDto>(`/api/admin/benchmark/runs/${runId}/report-documents/cancel`, {});
@@ -5118,6 +5137,11 @@ export class AdminBenchmarkService {
       { observe: 'response' }).pipe(
       map(response => response.status === 204 ? null : response.body ?? null)
     );
+  }
+
+  /** The writer's raw replies of the battery run's report-writing job as Markdown; 404 once the server no longer holds the job. */
+  getBatteryReportWriterReplies(batteryRunId: number): Observable<string> {
+    return this.http.get(`${BATTERIES_ENDPOINT}/runs/${batteryRunId}/report-documents/job/writer-replies`, { responseType: 'text' });
   }
 
   /** Asks the battery run's report-writing job to stop. 202 with the job view; 409 `{ error }` when none is in progress. */
