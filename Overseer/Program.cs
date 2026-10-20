@@ -119,6 +119,7 @@ builder.Services.AddControllersWithViews(options =>
 {
     options.Filters.Add(new Microsoft.AspNetCore.Mvc.AutoValidateAntiforgeryTokenAttribute()); // CRITICAL: Enforce CSRF validation globally
 });
+builder.Services.AddProblemDetails();
 builder.Services.AddMemoryCache(options => options.SizeLimit = 10000); // Size limit to prevent DoS
 
 // Register Overseer services
@@ -599,7 +600,7 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    app.UseExceptionHandler("/error"); // Global exception handler
+    app.UseExceptionHandler(); // Global exception handler; writes a problem-details response
     app.UseHsts(); // Matches MobileGnollHackLogger; the default max-age is 30 days
 }
 
@@ -627,6 +628,9 @@ app.UseRateLimiter(); // CRITICAL: Must be after UseAuthorization
 
 app.MapControllers();
 app.MapHub<Overseer.Hubs.ChatHub>("/chathub");
+
+// Unmatched API paths answer 404 instead of the SPA page.
+app.MapFallback("/api/{**path}", () => Results.Problem(statusCode: StatusCodes.Status404NotFound));
 
 // SPA Fallback to Angular index.html
 app.MapFallbackToFile("index.html");

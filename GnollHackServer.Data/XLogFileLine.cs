@@ -93,6 +93,8 @@ namespace MobileGnollHackLogger.Data
                         return "Windows";
                     case "windows":
                         return "Windows";
+                    case "linux":
+                        return "Linux";
                     default:
                         return Platform;
                 }
@@ -116,6 +118,8 @@ namespace MobileGnollHackLogger.Data
                         return "w";
                     case "windows":
                         return "w";
+                    case "linux":
+                        return "l";
                     case null:
                         return null;
                     case "":
