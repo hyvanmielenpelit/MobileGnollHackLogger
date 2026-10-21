@@ -8500,6 +8500,36 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
+    public void SelfReports_AWithheldRun_SaysTheSwitchWithheldIt()
+    {
+        var run = HarnessSixtyRun(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        run.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions { FeedbackToolWithheld = true }.ToCanonicalJson();
+
+        string section = SelfReportsSection(BenchmarkReportBuilder.BuildMarkdownReport(run));
+
+        Assert.Contains("The feedback tool was not offered (withheld by the GnollBench feedback switch).", section);
+        Assert.DoesNotContain("No self-reports in this run.", section);
+        Assert.DoesNotContain("**Self-reports:**", section);
+    }
+
+    [Fact]
+    public void SelfReports_AWithheldClosedBookRun_StillSaysClosedBook()
+    {
+        var run = HarnessSixtyRun(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        run.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions
+        {
+            EnableToolUse = false,
+            InformationCondition = BenchmarkInformationConditions.ClosedBookWire,
+            FeedbackToolWithheld = true
+        }.ToCanonicalJson();
+
+        string section = SelfReportsSection(BenchmarkReportBuilder.BuildMarkdownReport(run));
+
+        Assert.Contains("The feedback tool was not offered (closed book: no tools).", section);
+        Assert.DoesNotContain("withheld by the GnollBench feedback switch", section);
+    }
+
+    [Fact]
     public void SelfReports_ARowWhoseArgumentsDidNotParse_ReadsArgumentsNotValid_WithItsError()
     {
         var answer = ScoredAnswer(3, BenchmarkDifficulty.Simple, 25, 80);

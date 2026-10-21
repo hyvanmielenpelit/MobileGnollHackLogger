@@ -24,17 +24,20 @@ describe('AdminFeedbackService', () => {
     expect(BASE).toBe('/api/admin/feedback');
   });
 
-  it('reads and sets the feedback switch', () => {
-    service.getSwitch().subscribe();
+  it('reads and sets the feedback switches', () => {
+    const seeded = { enabled: true, setAtUtc: null, setByUserName: null, seeded: true };
+    let read: unknown;
+    service.getSwitches().subscribe(value => read = value);
     const get = http.expectOne(`${BASE}/switch`);
     expect(get.request.method).toBe('GET');
-    get.flush({ enabled: true, setAtUtc: null, setByUserName: null, seeded: true });
+    get.flush({ chat: seeded, gnollBench: seeded });
+    expect(read).toEqual({ chat: seeded, gnollBench: seeded });
 
-    service.setSwitch(false).subscribe();
-    const post = http.expectOne(`${BASE}/switch`);
+    service.setSwitch('gnollbench', false).subscribe();
+    const post = http.expectOne(`${BASE}/switch/gnollbench`);
     expect(post.request.method).toBe('POST');
     expect(post.request.body).toEqual({ enabled: false });
-    post.flush({ enabled: false, setAtUtc: '2026-10-21T12:02:00Z', setByUserName: 'tommi', seeded: false });
+    post.flush({ chat: seeded, gnollBench: { enabled: false, setAtUtc: '2026-10-21T12:02:00Z', setByUserName: 'tommi', seeded: false } });
   });
 
   it('sends every issue criterion, the statuses comma-joined', () => {

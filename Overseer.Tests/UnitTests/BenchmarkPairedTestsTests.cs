@@ -577,11 +577,12 @@ public class BenchmarkPairedTestsTests
 
     /// <summary>A run of the fixture under <paramref name="condition"/>, its prompt hash moved when it is not Production.</summary>
     private static BenchmarkRun ConditionRun(
-        long id, BenchmarkInformationCondition condition, bool verboseMode = false, bool movePromptHash = true)
+        long id, BenchmarkInformationCondition condition, bool verboseMode = false, bool movePromptHash = true,
+        bool feedbackToolOffered = true)
     {
         var run = Run(id, SixScores);
         run.CandidatePromptOptionsJson = BenchmarkService
-            .CandidatePromptOptionsFor(verboseMode, allowSourceCodeReferences: true, hasGameSnapshot: false, condition)
+            .CandidatePromptOptionsFor(verboseMode, allowSourceCodeReferences: true, hasGameSnapshot: false, condition, feedbackToolOffered)
             .ToCanonicalJson();
         if (condition != BenchmarkInformationCondition.Production && movePromptHash)
         {
@@ -632,6 +633,27 @@ public class BenchmarkPairedTestsTests
 
         Assert.Equal(BenchmarkRunPairKind.NotComparable, classification.Kind);
         Assert.Empty(classification.ChangedKeys);
+    }
+
+    [Fact]
+    public void ConditionContrast_HoldsWhenBothRunsRecordTheWithheldSwitch_AndNotWhenOneDoes()
+    {
+        var baseline = ConditionRun(1, BenchmarkInformationCondition.Production, feedbackToolOffered: false);
+        var treatment = ConditionRun(2, BenchmarkInformationCondition.ClosedBook, feedbackToolOffered: false);
+        Assert.Contains("\"feedbackToolWithheld\":true", baseline.CandidatePromptOptionsJson);
+        Assert.Contains("\"feedbackToolWithheld\":true", treatment.CandidatePromptOptionsJson);
+
+        var both = BenchmarkPairedTests.ClassifyRunPair(baseline, treatment, repriced: false);
+
+        Assert.Equal(BenchmarkRunPairKind.ConditionContrast, both.Kind);
+
+        var offeredTreatment = ConditionRun(2, BenchmarkInformationCondition.ClosedBook);
+        Assert.DoesNotContain("feedbackToolWithheld", offeredTreatment.CandidatePromptOptionsJson);
+
+        var one = BenchmarkPairedTests.ClassifyRunPair(baseline, offeredTreatment, repriced: false);
+
+        Assert.NotEqual(BenchmarkRunPairKind.ConditionContrast, one.Kind);
+        Assert.Equal(BenchmarkRunPairKind.NotComparable, one.Kind);
     }
 
     [Fact]

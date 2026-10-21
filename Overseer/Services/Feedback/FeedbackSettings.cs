@@ -5,8 +5,8 @@ using Microsoft.Extensions.Configuration;
 
 /// <summary>The <c>Feedback</c> configuration section.</summary>
 /// <param name="Enabled">
-/// The feedback switch's state until an administrator first sets it; once a setting row exists it
-/// is not consulted again.
+/// The chat feedback switch's state until an administrator first sets it; once a chat setting row
+/// exists it is not consulted again. The GnollBench switch has no configuration seed.
 /// </param>
 /// <param name="MaxReportsPerUserPerDay">Recorded reports per user per UTC day in the production chat.</param>
 public sealed record FeedbackSettings(bool Enabled, int MaxReportsPerUserPerDay)

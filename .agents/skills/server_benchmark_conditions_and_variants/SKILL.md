@@ -40,7 +40,11 @@ the score moves toward "did the model open the page that says it". The condition
 
 The feedback tool `report_feedback` (harness 60) is neither an experimental tool nor part of any
 condition's candidate tool list: it is declared outside the allow-list, under every condition that has
-a tool loop, and a closed-book candidate, which has none, is not offered it.
+a tool loop, and a closed-book candidate, which has none, is not offered it. The one exception is a
+run that recorded `feedbackToolWithheld` in its candidate prompt options, because the GnollBench
+feedback switch was off when it launched: its candidates are not offered the tool. The field is
+recorded under every condition, closed book included, so two runs launched under the same switch state
+still form a condition contrast and two launched under different states do not.
 
 Read every contrast **paired per item**, per model, and compare, never pool. With 11 items only
 effects of roughly 15–25 points are detectable (the research report's power table); say so in any

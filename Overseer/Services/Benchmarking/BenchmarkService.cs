@@ -34,6 +34,8 @@ public class BenchmarkService
     private readonly EndpointPolicy _endpointPolicy;
     private readonly IConfiguration _configuration;
     private readonly ILogger<BenchmarkService> _logger;
+    // Null offers the feedback tool: a hand-built container without the registration.
+    private readonly Overseer.Services.Feedback.FeedbackSwitchService? _feedbackSwitch;
     private BenchmarkCitationLivenessCheck? _citationLivenessCheck;
 
     private readonly List<string> _defaultAllowedTools = new()
@@ -56,7 +58,8 @@ public class BenchmarkService
         BenchmarkScoringProfileService scoringProfileService,
         EndpointPolicy endpointPolicy,
         IConfiguration configuration,
-        ILogger<BenchmarkService> logger)
+        ILogger<BenchmarkService> logger,
+        Overseer.Services.Feedback.FeedbackSwitchService? feedbackSwitch = null)
     {
         _scopeFactory = scopeFactory;
         _chatService = chatService;
@@ -68,6 +71,7 @@ public class BenchmarkService
         _endpointPolicy = endpointPolicy;
         _configuration = configuration;
         _logger = logger;
+        _feedbackSwitch = feedbackSwitch;
     }
 
     public const string AbortedRunRefusal =
@@ -1005,7 +1009,9 @@ public class BenchmarkService
             run.InstructionVariant = variant?.Stamp;
 
             bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
-            var promptOptions = CandidatePromptOptionsFor(verboseMode, allowSourceCodeReferences, suiteHasBoard, informationCondition);
+            bool feedbackToolOffered = _feedbackSwitch?.IsEnabled(OverseerFeedbackSwitchTarget.GnollBench) ?? true;
+            var promptOptions = CandidatePromptOptionsFor(
+                verboseMode, allowSourceCodeReferences, suiteHasBoard, informationCondition, feedbackToolOffered);
             run.CandidatePromptOptionsJson = promptOptions.ToCanonicalJson();
             run.CandidatePromptSourceUsed = "ChatService.BuildSystemPrompt";
             var candidateTools = CandidateAllowedTools(promptOptions.Condition, allowedTools, variant);
@@ -2066,9 +2072,10 @@ public class BenchmarkService
             EnableSubAgents = false,
             AllowedTools = allowedTools,
 
-            // The feedback tool sits outside AllowedTools; the registry still withholds it when
-            // EnableToolUse is false, so a closed-book candidate is not offered it.
-            EnableFeedbackTool = true,
+            // The feedback tool sits outside AllowedTools. The run's recorded prompt options decide
+            // whether it is offered; the registry still withholds it when EnableToolUse is false,
+            // so a closed-book candidate is not offered it.
+            EnableFeedbackTool = !BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson).FeedbackToolWithheld,
             SystemModelId = testedConfig.Id,
             Budget = new AgentRunBudget { MaxTotalModelCalls = maxTotalModelCalls },
             /* A benchmark run is not a chat session, and SessionId is borrowed here for the
@@ -2417,7 +2424,7 @@ public class BenchmarkService
             AllowedTools = allowedTools,
 
             // See ExecuteSingleQuestionAsync.
-            EnableFeedbackTool = true,
+            EnableFeedbackTool = !BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson).FeedbackToolWithheld,
             SystemModelId = testedConfig.Id,
             Budget = new AgentRunBudget { MaxTotalModelCalls = maxTotalModelCalls },
             ToolExecutionContext = new Tools.ToolExecutionContext
@@ -9640,21 +9647,23 @@ public class BenchmarkService
 
     /// <summary>
     /// The candidate prompt options a newly launched run records: the requested response style and
-    /// source-code-reference setting, and whether the suite carries a board; every other option at
-    /// its default.
+    /// source-code-reference setting, whether the suite carries a board, and whether the GnollBench
+    /// feedback switch was off, recorded under every condition; every other option at its default.
     /// </summary>
     internal static BenchmarkCandidatePromptOptions CandidatePromptOptionsFor(
         bool verboseMode,
         bool allowSourceCodeReferences,
         bool hasGameSnapshot,
-        BenchmarkInformationCondition informationCondition = BenchmarkInformationCondition.Production)
+        BenchmarkInformationCondition informationCondition = BenchmarkInformationCondition.Production,
+        bool feedbackToolOffered = true)
         => new()
         {
             VerboseMode = verboseMode,
             AllowSourceCodeReferences = allowSourceCodeReferences,
             HasGameSnapshot = hasGameSnapshot,
             EnableToolUse = informationCondition != BenchmarkInformationCondition.ClosedBook,
-            InformationCondition = informationCondition.ToStoredWire()
+            InformationCondition = informationCondition.ToStoredWire(),
+            FeedbackToolWithheld = !feedbackToolOffered
         };
 
     /// <summary>

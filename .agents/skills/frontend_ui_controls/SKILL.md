@@ -2877,17 +2877,20 @@ and the AI Telemetry *Manage limits*, *… for group {group}* from the Groups su
 36 rem, not full height, with the same switch-first cards (title only, no badges) and **Done**.
 
 **The Feedback switch card** (2026-10-21, first in the AI Telemetry Feedback panel) is the reference for
-**one switch that governs a whole feature**. A full-width `<section aria-labelledby="tl-fb-switch-title">`:
-on the left the `h3#tl-fb-switch-title` *Feedback tool*, a sentence of state from the server (*On. …*,
-*Off since {time} by {user}. …*, or *Off by configuration default*) and a quieter line on what it does not
-govern; on the right the switch. It is the global `gh-switch` with the size modifier **`gh-switch-lg`**
-(`styles.scss`, beside `.gh-switch`: about 64 × 34 pixels, the knob scaled to match), so it reads as the
-card's one big control. Like the access switches above it commits at once with no confirmation (the
-change is reversible and destroys nothing): its checkbox is named by the title through
-`aria-labelledby`, is disabled while the request runs and reverts on an error; the result goes to the
-card's `role="status"` line, an error to a `.gh-field-error` line, and after a success the state sentence
-is refetched so it is the server's, not the client's. Use `gh-switch-lg` only for such a feature-level
-switch; a switch in a list row stays the plain `gh-switch`.
+**the switches that govern one feature**, one row per surface. A full-width
+`<section aria-labelledby="tl-fb-switch-title">` whose `h3#tl-fb-switch-title` *Feedback tool* names the
+section, then one row per surface (*Enabled in Overseer chat*, *Enabled in GnollBench*). Each row has, on
+the left, its own label, a sentence of state from the server (*On since {time} by {user}. …*, *Off since
+{time} by {user}. …*, or the seeded forms *On by configuration default. …*, *Off by configuration
+default. …*, *On by default. …*) and any quieter note the surface needs; on the right its switch; and below,
+its own `role="status"` line and `.gh-field-error` line. The switch is the global `gh-switch` with the size
+modifier **`gh-switch-lg`** (`styles.scss`, beside `.gh-switch`: about 64 × 34 pixels, the knob scaled to
+match), so it reads as the row's one big control. Like the access switches above, each commits at once
+with no confirmation (the change is reversible and destroys nothing): its checkbox is named by **its row's
+label** through `aria-labelledby`, not by the section title, is disabled while its own request runs and
+reverts on an error, and after a success its state sentence is refetched so it is the server's, not the
+client's. **One row's request never disables another row.** Use `gh-switch-lg` only for such a
+feature-level switch; a switch in a list row stays the plain `gh-switch`.
 
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
 `.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with

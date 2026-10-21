@@ -56,6 +56,7 @@ public static class ChatConsistencyEventText
         ["hasMessageHistory"] = "message history",
         ["hasWikiContext"] = "wiki context",
         ["hasGameSnapshot"] = "game snapshot",
+        ["feedbackToolWithheld"] = "feedback tool withheld",
     };
 
     /// <summary>The kind's label: <c>Harness version</c>, <c>Wiki revision</c>; another kind in words.</summary>

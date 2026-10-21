@@ -74,7 +74,7 @@ public static class BenchmarkSelfReports
                 Error = Clip(error, ErrorColumnLength)
             };
 
-            if (parsed)
+            if (parsed && args is not null)
             {
                 row.Fingerprint = Clip(FeedbackFingerprint.Compute(args), FingerprintColumnLength);
                 row.Category = Clip(args.Category, CategoryColumnLength);

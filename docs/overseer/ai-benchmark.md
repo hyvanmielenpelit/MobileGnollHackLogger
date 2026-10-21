@@ -8111,10 +8111,12 @@ is [`ai-feedback-reports.md`](ai-feedback-reports.md).
   `ToolExecutionContext.IsBenchmarkCandidate`. The tool is `ToolCategory.Feedback`, which `ToolRegistry`
   declares in place of the allow-list check, so it is outside `Benchmark:AllowedTools`, outside the
   information condition's candidate tool list and outside the recorded `CandidateAllowedTools`; the
-  harness version is the record that it was offered. A closed-book candidate (`EnableToolUse = false`) is
-  not offered it. The graders, the claim verifier and the rubric-gap author never are, and
-  `AgentLoopRunner.IsDeclared` refuses the call from any of them. The runtime feedback switch and
-  `Feedback:Enabled` do not govern GnollBench, and no daily cap applies.
+  harness version, with no `feedbackToolWithheld` in the run's candidate prompt options, is the record that
+  it was offered. A closed-book candidate (`EnableToolUse = false`) is not offered it. The graders, the
+  claim verifier and the rubric-gap author never are, and `AgentLoopRunner.IsDeclared` refuses the call
+  from any of them. The chat feedback switch and `Feedback:Enabled` do not govern GnollBench; the
+  GnollBench feedback switch is read when a run launches and recorded in its candidate prompt options as
+  `feedbackToolWithheld` (see *The GnollBench feedback switch* below), and no daily cap applies.
 - **Outside the tool budget.** The tool does not count against the 45-call budget (§ 9), and its
   result carries no `[Tool budget: …]` notice. At most three self-reports per question are accepted
   (`ReportFeedbackTool.MaxReportsPerTurn`); the handler acknowledges without writing.
@@ -8131,11 +8133,46 @@ is [`ai-feedback-reports.md`](ai-feedback-reports.md).
   hypothesis, not a finding."*; a table by question and order; and *Repeated issues* when one
   fingerprint appears in more than one question. A run without any reads *"No self-reports in this
   run."*, a run before harness 60 *"The feedback tool was not offered (harness N)."* and a closed-book
-  run *"The feedback tool was not offered (closed book: no tools)."*. Each question in § 3 lists its
+  run *"The feedback tool was not offered (closed book: no tools)."*; a run with a tool loop that recorded
+  `feedbackToolWithheld` reads *"The feedback tool was not offered (withheld by the GnollBench feedback
+  switch)."*, and the closed-book sentence takes precedence over it. Each question in § 3 lists its
   self-reports under the call table. The PDF and Word renderings follow the Markdown; report packs and
   the AI-written report documents do not show self-reports.
 
 No answer flag is added, and the grading and synthesis prompts are unchanged.
+
+#### The GnollBench feedback switch (no harness change)
+
+The Feedback sub-tab of Admin → AI Telemetry holds a GnollBench switch beside the chat switch
+([`ai-feedback-reports.md`](ai-feedback-reports.md) § 3). It is on until an administrator turns it off,
+and has no configuration key.
+
+- **Recorded at launch.** The switch is read once, when a run launches, and recorded in the run's
+  `CandidatePromptOptionsJson` as `feedbackToolWithheld`, written only when the switch was off and under
+  every information condition (production, source only, closed book). Both candidate paths set
+  `EnableFeedbackTool = !FeedbackToolWithheld` of the recorded options, so a re-run of failed questions or
+  of a single answer keeps the run's value even when the switch has been flipped since. A run recorded
+  before the field existed has none and is offered the tool. A closed-book candidate has no tool loop and
+  is never offered it, but the field is still recorded.
+- **Where it shows.** The Self-Reports sentence above; a *feedback tool withheld* tag in Run History;
+  `, feedbackTool=withheld` on the diagnostics `options:` line; `, feedback tool: withheld` in
+  `BenchmarkCandidatePromptOptions.Describe()`; and in Chat Consistency a *Prompt options* Overseer event
+  reading *feedback tool withheld: not set → on*. The system prompt text does not change.
+- **Comparability.** A run made with the switch on serializes its prompt options byte for byte as a
+  harness-60 run did and stays fully comparable with one. A run made with it off differs on the
+  *CandidatePromptOptions* key (a Candidate key, battery-wide): Multi-Run grouping reports a mixed set below
+  Tier B, the battery comparability guard refuses a mixed composite, and the cross-model comparability
+  signature refuses a mixed comparison. Off runs are comparable with each other.
+- **Pairing.** A condition contrast compares `ComparabilitySignatureWithoutCondition`, which includes the
+  prompt options, so two runs launched under the same switch state pair across conditions and two launched
+  under different states do not.
+- **Between runs only.** The battery, series and model-batch orchestrators' instrument-fingerprint guard
+  compares the prompt and corpus hashes only, so a member launched after a flip records the new value; the
+  mix is refused or reported, but that member's cost is spent. Change the switch between runs.
+
+`HarnessVersion` stays **60**, `HarnessImpactLedger` has no entry for the switch, and
+`BenchmarkComparabilityKey.DefinitionVersion` does not move: flipping the switch is an instrument change the
+existing *CandidatePromptOptions* key records.
 
 ---
 

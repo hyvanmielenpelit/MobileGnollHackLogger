@@ -18,7 +18,7 @@ using Xunit;
 namespace Overseer.Tests.UnitTests;
 
 /// <summary>
-/// The admin Feedback API on the in-memory provider: the switch, the issue list with its filters, sorts, date
+/// The admin Feedback API on the in-memory provider: the two switches, the issue list with its filters, sorts, date
 /// overlap rule and per-issue aggregates, occurrences, counts, triage and deletion.
 /// </summary>
 public sealed class AdminFeedbackControllerTests : IDisposable
@@ -277,29 +277,76 @@ public sealed class AdminFeedbackControllerTests : IDisposable
         var ct = TestContext.Current.CancellationToken;
         await AddUserAsync(AdminId, AdminName);
 
-        var seeded = OkValue<AdminFeedbackSwitchDto>(await _controller.GetSwitch(ct));
-        Assert.True(seeded.Enabled);
-        Assert.True(seeded.Seeded);
-        Assert.Null(seeded.SetAtUtc);
-        Assert.Null(seeded.SetByUserName);
+        var seeded = OkValue<AdminFeedbackSwitchesDto>(await _controller.GetSwitch(ct));
+        Assert.True(seeded.Chat.Enabled);
+        Assert.True(seeded.Chat.Seeded);
+        Assert.Null(seeded.Chat.SetAtUtc);
+        Assert.Null(seeded.Chat.SetByUserName);
+        Assert.True(seeded.GnollBench.Enabled);
+        Assert.True(seeded.GnollBench.Seeded);
+        Assert.Null(seeded.GnollBench.SetAtUtc);
+        Assert.Null(seeded.GnollBench.SetByUserName);
 
-        var set = OkValue<AdminFeedbackSwitchDto>(await _controller.SetSwitch(new AdminFeedbackSwitchUpdateDto { Enabled = false }));
-        Assert.False(set.Enabled);
-        Assert.False(set.Seeded);
-        Assert.NotNull(set.SetAtUtc);
-        Assert.Equal(AdminName, set.SetByUserName);
+        var set = OkValue<AdminFeedbackSwitchesDto>(await _controller.SetSwitch("chat", new AdminFeedbackSwitchUpdateDto { Enabled = false }));
+        Assert.False(set.Chat.Enabled);
+        Assert.False(set.Chat.Seeded);
+        Assert.NotNull(set.Chat.SetAtUtc);
+        Assert.Equal(AdminName, set.Chat.SetByUserName);
+        Assert.True(set.GnollBench.Enabled);
+        Assert.True(set.GnollBench.Seeded);
 
-        var again = OkValue<AdminFeedbackSwitchDto>(await _controller.GetSwitch(ct));
-        Assert.False(again.Enabled);
-        Assert.False(again.Seeded);
-        Assert.Equal(set.SetAtUtc, again.SetAtUtc);
-        Assert.Equal(AdminName, again.SetByUserName);
+        var again = OkValue<AdminFeedbackSwitchesDto>(await _controller.GetSwitch(ct));
+        Assert.False(again.Chat.Enabled);
+        Assert.False(again.Chat.Seeded);
+        Assert.Equal(set.Chat.SetAtUtc, again.Chat.SetAtUtc);
+        Assert.Equal(AdminName, again.Chat.SetByUserName);
 
-        await _controller.SetSwitch(new AdminFeedbackSwitchUpdateDto { Enabled = false });
+        await _controller.SetSwitch("Chat", new AdminFeedbackSwitchUpdateDto { Enabled = false });
         Assert.Equal(2, await _db.OverseerFeedbackSettings.CountAsync(ct));
-        Assert.All(await _db.OverseerFeedbackSettings.ToListAsync(ct), s => Assert.Equal(AdminId, s.SetByUserId));
+        Assert.All(await _db.OverseerFeedbackSettings.ToListAsync(ct), s =>
+        {
+            Assert.Equal(AdminId, s.SetByUserId);
+            Assert.Equal(OverseerFeedbackSwitchTarget.Chat, s.Target);
+        });
 
-        AssertBadRequest(await _controller.SetSwitch(null));
+        AssertBadRequest(await _controller.SetSwitch("chat", null));
+    }
+
+    [Fact]
+    public async Task TheGnollBenchSwitch_IsSetOnItsOwnRoute_AndAttributed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await AddUserAsync(AdminId, AdminName);
+
+        var set = OkValue<AdminFeedbackSwitchesDto>(await _controller.SetSwitch("gnollbench", new AdminFeedbackSwitchUpdateDto { Enabled = false }));
+        Assert.False(set.GnollBench.Enabled);
+        Assert.False(set.GnollBench.Seeded);
+        Assert.NotNull(set.GnollBench.SetAtUtc);
+        Assert.Equal(AdminName, set.GnollBench.SetByUserName);
+        Assert.True(set.Chat.Enabled);
+        Assert.True(set.Chat.Seeded);
+
+        var again = OkValue<AdminFeedbackSwitchesDto>(await _controller.GetSwitch(ct));
+        Assert.False(again.GnollBench.Enabled);
+        Assert.Equal(AdminName, again.GnollBench.SetByUserName);
+        Assert.True(again.Chat.Seeded);
+
+        var row = Assert.Single(await _db.OverseerFeedbackSettings.ToListAsync(ct));
+        Assert.Equal(OverseerFeedbackSwitchTarget.GnollBench, row.Target);
+        Assert.Equal(AdminId, row.SetByUserId);
+    }
+
+    [Theory]
+    [InlineData("other")]
+    [InlineData("")]
+    [InlineData("1")]
+    public async Task AnUnknownSwitch_IsRejected(string target)
+    {
+        var result = await _controller.SetSwitch(target, new AdminFeedbackSwitchUpdateDto { Enabled = false });
+
+        var bad = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("Unknown switch.", System.Text.Json.JsonSerializer.Serialize(bad.Value));
+        Assert.Equal(0, await _db.OverseerFeedbackSettings.CountAsync(TestContext.Current.CancellationToken));
     }
 
     // --- Aggregates ---

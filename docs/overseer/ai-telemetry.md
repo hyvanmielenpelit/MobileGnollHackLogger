@@ -384,10 +384,11 @@ the charts dialog equal no filter.
 ## 12b. The Feedback view: the assistant's reports to the developers
 
 The **Feedback** sub-tab (`/admin/telemetry/feedback`, `feedback/telemetry-feedback.component.ts`) lists
-the issues the chat assistant reported with `report_feedback`, one card per issue, and holds the switch
-that turns the tool on and off. What the tool records, how reports group into issues and what each status
-means are in [`ai-feedback-reports.md`](ai-feedback-reports.md); this section is the panel's contract with
-the tab's header.
+the issues the chat assistant reported with `report_feedback`, one card per issue, and holds the two
+switches that turn the tool on and off for the Overseer chat and for GnollBench. What the tool records,
+how reports group into issues and what each status means are in
+[`ai-feedback-reports.md`](ai-feedback-reports.md); this section is the panel's contract with the tab's
+header.
 
 - **Date range.** The panel takes the header's start and end dates, like the Users and Groups panels, and
   refetches when they change. An issue is listed when its **active span** overlaps the range

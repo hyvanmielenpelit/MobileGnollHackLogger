@@ -2657,7 +2657,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           try {
             const opts = JSON.parse(run.candidatePromptOptionsJson);
             const condition = run.informationCondition ?? opts.informationCondition ?? 'production';
-            lines.push(`options: mode=${opts.overseerMode ?? 0}, verbose=${opts.verboseMode ?? false}, spoilerFree=${opts.spoilerFreeMode ?? false}, tools=${opts.enableToolUse ?? true}, webSearch=${opts.enableWebSearch ?? false}, subagents=${opts.enableSubAgents ?? false}, sourceCodeRefs=${opts.allowSourceCodeReferences ?? true}, snapshot=${opts.hasGameSnapshot ?? false}, condition=${condition}, variant=${run.instructionVariant || 'none'}, corpus=${run.corpusCondition || 'live'}`);
+            lines.push(`options: mode=${opts.overseerMode ?? 0}, verbose=${opts.verboseMode ?? false}, spoilerFree=${opts.spoilerFreeMode ?? false}, tools=${opts.enableToolUse ?? true}, webSearch=${opts.enableWebSearch ?? false}, subagents=${opts.enableSubAgents ?? false}, sourceCodeRefs=${opts.allowSourceCodeReferences ?? true}, snapshot=${opts.hasGameSnapshot ?? false}, condition=${condition}, variant=${run.instructionVariant || 'none'}, corpus=${run.corpusCondition || 'live'}${opts.feedbackToolWithheld === true ? ', feedbackTool=withheld' : ''}`);
           } catch {
             lines.push(`options: ${run.candidatePromptOptionsJson}`);
           }

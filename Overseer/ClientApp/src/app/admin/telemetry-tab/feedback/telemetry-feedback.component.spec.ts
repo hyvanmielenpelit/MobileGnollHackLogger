@@ -14,7 +14,7 @@ import {
   AdminFeedbackOccurrence,
   AdminFeedbackOccurrencePage,
   AdminFeedbackService,
-  AdminFeedbackSwitch
+  AdminFeedbackSwitches
 } from '../../../services/admin-feedback.service';
 import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
 import { adminTestRoutes } from '../../admin.component.testing';
@@ -86,7 +86,7 @@ describe('TelemetryFeedbackComponent', () => {
   /** What the next issues request returns; the empty-state count request (take 1) gets `rangePage`. */
   let nextPage: AdminFeedbackIssuePage;
   let rangePage: AdminFeedbackIssuePage;
-  let switchState: AdminFeedbackSwitch;
+  let switchState: AdminFeedbackSwitches;
 
   beforeEach(async () => {
     clearStorage();
@@ -99,10 +99,13 @@ describe('TelemetryFeedbackComponent', () => {
     router = TestBed.inject(Router);
     nextPage = page([issue(1)]);
     rangePage = page([], 0);
-    switchState = { enabled: true, setAtUtc: '2026-10-01T09:00:00Z', setByUserName: 'tommi', seeded: false };
+    switchState = {
+      chat: { enabled: true, setAtUtc: '2026-10-01T09:00:00Z', setByUserName: 'tommi', seeded: false },
+      gnollBench: { enabled: true, setAtUtc: null, setByUserName: null, seeded: true }
+    };
     issuesSpy = vi.spyOn(service, 'getIssues').mockImplementation(
       (query?: AdminFeedbackIssuesQuery) => of(query?.take === 1 ? rangePage : nextPage));
-    switchSpy = vi.spyOn(service, 'getSwitch').mockImplementation(() => of(switchState));
+    switchSpy = vi.spyOn(service, 'getSwitches').mockImplementation(() => of(switchState));
     vi.spyOn(service, 'getModels').mockReturnValue(of(['gpt-x', 'claude-x']));
     occurrencesSpy = vi.spyOn(service, 'getOccurrences').mockReturnValue(of({ totalCount: 0, rows: [] }));
   });
@@ -180,83 +183,169 @@ describe('TelemetryFeedbackComponent', () => {
   });
 
   describe('switch card', () => {
-    it('is a section named by its Feedback tool heading, with the large switch named by the heading', async () => {
+    const toggleOf = (target: string) => q<HTMLInputElement>(`#tl-fb-switch-${target}-toggle`)!;
+    const sentenceOf = (target: string) => textOf(q(`#tl-fb-switch-${target}-state`));
+    const statusOf = (target: string) => textOf(q(`#tl-fb-switch-${target}-status`));
+    const rowOf = (target: string) => toggleOf(target).closest('.tl-fb-switch-row') as HTMLElement;
+    const at = '2026-10-21T12:02:00Z';
+
+    function serve(chat: Partial<AdminFeedbackSwitches['chat']>, gnollBench: Partial<AdminFeedbackSwitches['gnollBench']>): void {
+      switchState = { chat: { ...switchState.chat, ...chat }, gnollBench: { ...switchState.gnollBench, ...gnollBench } };
+      component.loadSwitches();
+      fixture.detectChanges();
+    }
+
+    it('is a section named by Feedback tool, with two large switches named by their row labels', async () => {
       await create();
 
       const section = q('section.tl-fb-switch-card')!;
       expect(section.getAttribute('aria-labelledby')).toBe('tl-fb-switch-title');
       expect(textOf(q('h3#tl-fb-switch-title'))).toBe('Feedback tool');
-      const toggle = q<HTMLInputElement>('#tl-fb-switch-toggle')!;
-      expect(toggle.type).toBe('checkbox');
-      expect(toggle.getAttribute('aria-labelledby')).toBe('tl-fb-switch-title');
-      expect(toggle.closest('.gh-switch')?.classList.contains('gh-switch-lg')).toBe(true);
-      expect(toggle.checked).toBe(true);
-      expect(textOf(q('.tl-fb-switch-note'))).toBe('GnollBench runs are not affected; the harness version governs them.');
-      expect(q('#tl-fb-switch-status')?.getAttribute('role')).toBe('status');
+      expect(section.querySelectorAll('.tl-fb-switch-row').length).toBe(2);
+
+      const expected = [['chat', 'Enabled in Overseer chat'], ['gnollbench', 'Enabled in GnollBench']];
+      for (const [target, label] of expected) {
+        const toggle = toggleOf(target);
+        expect(toggle.type).toBe('checkbox');
+        expect(toggle.closest('.gh-switch')?.classList.contains('gh-switch-lg')).toBe(true);
+        expect(toggle.getAttribute('aria-labelledby')).toBe(`tl-fb-switch-${target}-label`);
+        expect(textOf(q(`#tl-fb-switch-${target}-label`))).toBe(label);
+        expect(toggle.getAttribute('aria-describedby')).toBe(`tl-fb-switch-${target}-state`);
+        expect(toggle.checked).toBe(true);
+        expect(toggle.disabled).toBe(false);
+        expect(q(`#tl-fb-switch-${target}-status`)?.getAttribute('role')).toBe('status');
+      }
+
+      expect(el.textContent).not.toContain('the harness version governs them');
+      const notes = Array.from(el.querySelectorAll('.tl-fb-switch-note'));
+      expect(notes.length).toBe(1);
+      expect(rowOf('gnollbench').contains(notes[0])).toBe(true);
+      expect(textOf(notes[0])).toBe('Recorded on each run when it starts; re-runs keep the run\'s value.');
     });
 
-    it('says On, Off since a date by a name, and the configuration default while seeded', async () => {
+    it('says how the Overseer chat switch was set, On as well as Off', async () => {
       await create();
-      const sentence = () => textOf(q('#tl-fb-switch-state'));
-      expect(sentence()).toBe('On. The assistant may file reports in ordinary chats.');
+      expect(sentenceOf('chat')).toBe(
+        `On since ${feedbackDateTimeText('2026-10-01T09:00:00Z')} by tommi. The assistant may file reports in ordinary chats.`);
 
-      switchState = { enabled: false, setAtUtc: '2026-10-21T12:02:00Z', setByUserName: 'tommi', seeded: false };
-      component.loadSwitch();
-      fixture.detectChanges();
-      expect(sentence()).toBe(`Off since ${feedbackDateTimeText('2026-10-21T12:02:00Z')} by tommi. The assistant is not offered the tool.`);
-      expect(q<HTMLInputElement>('#tl-fb-switch-toggle')!.checked).toBe(false);
+      serve({ enabled: false, setAtUtc: at, setByUserName: 'tommi', seeded: false }, {});
+      expect(sentenceOf('chat')).toBe(`Off since ${feedbackDateTimeText(at)} by tommi. The assistant is not offered the tool.`);
+      expect(toggleOf('chat').checked).toBe(false);
 
-      switchState = { enabled: false, setAtUtc: null, setByUserName: null, seeded: true };
-      component.loadSwitch();
-      fixture.detectChanges();
-      expect(sentence()).toBe('Off by configuration default. The assistant is not offered the tool.');
+      serve({ enabled: false, setAtUtc: at, setByUserName: null, seeded: false }, {});
+      expect(sentenceOf('chat')).toBe(`Off since ${feedbackDateTimeText(at)}. The assistant is not offered the tool.`);
 
-      switchState = { enabled: true, setAtUtc: null, setByUserName: null, seeded: true };
-      component.loadSwitch();
-      fixture.detectChanges();
-      expect(sentence()).toBe('On by configuration default. The assistant may file reports in ordinary chats.');
+      serve({ enabled: true, setAtUtc: at, setByUserName: null, seeded: false }, {});
+      expect(sentenceOf('chat')).toBe(`On since ${feedbackDateTimeText(at)}. The assistant may file reports in ordinary chats.`);
+
+      serve({ enabled: false, setAtUtc: null, setByUserName: null, seeded: true }, {});
+      expect(sentenceOf('chat')).toBe('Off by configuration default. The assistant is not offered the tool.');
+
+      serve({ enabled: true, setAtUtc: null, setByUserName: null, seeded: true }, {});
+      expect(sentenceOf('chat')).toBe('On by configuration default. The assistant may file reports in ordinary chats.');
     });
 
-    it('commits a click at once, is disabled while the request runs, announces the result and refetches the state', async () => {
+    it('says how the GnollBench switch was set, On as well as Off', async () => {
       await create();
-      const pending = new Subject<AdminFeedbackSwitch>();
+      expect(sentenceOf('gnollbench')).toBe('On by default. New runs offer the tool to candidates with tools.');
+
+      serve({}, { enabled: false, setAtUtc: at, setByUserName: 'tommi', seeded: false });
+      expect(sentenceOf('gnollbench')).toBe(`Off since ${feedbackDateTimeText(at)} by tommi. New runs do not offer the tool.`);
+      expect(toggleOf('gnollbench').checked).toBe(false);
+
+      serve({}, { enabled: false, setAtUtc: at, setByUserName: null, seeded: false });
+      expect(sentenceOf('gnollbench')).toBe(`Off since ${feedbackDateTimeText(at)}. New runs do not offer the tool.`);
+
+      serve({}, { enabled: true, setAtUtc: at, setByUserName: 'tommi', seeded: false });
+      expect(sentenceOf('gnollbench')).toBe(`On since ${feedbackDateTimeText(at)} by tommi. New runs offer the tool to candidates with tools.`);
+
+      serve({}, { enabled: true, setAtUtc: at, setByUserName: null, seeded: false });
+      expect(sentenceOf('gnollbench')).toBe(`On since ${feedbackDateTimeText(at)}. New runs offer the tool to candidates with tools.`);
+
+      serve({}, { enabled: false, setAtUtc: null, setByUserName: null, seeded: true });
+      expect(sentenceOf('gnollbench')).toBe('Off by default. New runs do not offer the tool.');
+    });
+
+    it('commits a GnollBench click at once, disables only that switch while it runs, announces it and refetches', async () => {
+      await create();
+      const pending = new Subject<AdminFeedbackSwitches>();
       const setSpy = vi.spyOn(service, 'setSwitch').mockReturnValue(pending.asObservable());
       switchSpy.mockClear();
-      const toggle = q<HTMLInputElement>('#tl-fb-switch-toggle')!;
+      const toggle = toggleOf('gnollbench');
+      const chat = toggleOf('chat');
 
       toggle.click();
       fixture.detectChanges();
 
-      expect(setSpy).toHaveBeenCalledWith(false);
+      expect(setSpy).toHaveBeenCalledTimes(1);
+      expect(setSpy).toHaveBeenCalledWith('gnollbench', false);
       expect(toggle.disabled).toBe(true);
+      expect(toggle.getAttribute('aria-busy')).toBe('true');
+      expect(chat.disabled).toBe(false);
+      expect(chat.getAttribute('aria-busy')).toBeNull();
 
-      switchState = { enabled: false, setAtUtc: '2026-10-21T12:02:00Z', setByUserName: 'tommi', seeded: false };
+      switchState = { ...switchState, gnollBench: { enabled: false, setAtUtc: at, setByUserName: 'tommi', seeded: false } };
       pending.next(switchState);
       pending.complete();
       fixture.detectChanges();
 
       expect(toggle.disabled).toBe(false);
       expect(toggle.checked).toBe(false);
-      expect(textOf(q('#tl-fb-switch-status'))).toBe('The feedback tool is off.');
+      expect(chat.disabled).toBe(false);
+      expect(chat.checked).toBe(true);
+      expect(statusOf('gnollbench')).toBe('GnollBench: the feedback tool is off.');
+      expect(statusOf('chat')).toBe('');
       expect(switchSpy).toHaveBeenCalledTimes(1);
-      expect(textOf(q('#tl-fb-switch-state'))).toContain('Off since');
+      expect(sentenceOf('gnollbench')).toBe(`Off since ${feedbackDateTimeText(at)} by tommi. New runs do not offer the tool.`);
       expect(q('.tl-fb-switch-error')).toBeNull();
     });
 
-    it('reverts the switch and shows the error under it when the request fails', async () => {
+    it('announces an Overseer chat click under the chat switch', async () => {
+      await create();
+      const setSpy = vi.spyOn(service, 'setSwitch').mockReturnValue(of(switchState));
+
+      toggleOf('chat').click();
+      fixture.detectChanges();
+
+      expect(setSpy).toHaveBeenCalledWith('chat', false);
+      expect(statusOf('chat')).toBe('Overseer chat: the feedback tool is off.');
+      expect(statusOf('gnollbench')).toBe('');
+    });
+
+    it('reverts only the Overseer chat switch and shows the error under it when the request fails', async () => {
       await create();
       vi.spyOn(service, 'setSwitch').mockReturnValue(throwError(() => ({ status: 500, error: { message: 'Database unavailable' } })));
-      const toggle = q<HTMLInputElement>('#tl-fb-switch-toggle')!;
+      const toggle = toggleOf('chat');
 
       toggle.click();
       fixture.detectChanges();
 
       expect(toggle.checked).toBe(true);
       expect(toggle.disabled).toBe(false);
-      const error = q('.tl-fb-switch-error.gh-field-error')!;
-      expect(textOf(error)).toBe('The feedback tool could not be turned off: Database unavailable');
-      expect(toggle.getAttribute('aria-describedby')).toContain('tl-fb-switch-error');
-      expect(textOf(q('#tl-fb-switch-status'))).toBe('');
+      const errors = el.querySelectorAll('.tl-fb-switch-error.gh-field-error');
+      expect(errors.length).toBe(1);
+      expect(errors[0].id).toBe('tl-fb-switch-chat-error');
+      expect(rowOf('chat').contains(errors[0])).toBe(true);
+      expect(textOf(errors[0])).toBe('The feedback tool could not be turned off for Overseer chat: Database unavailable');
+      expect(toggle.getAttribute('aria-describedby')).toContain('tl-fb-switch-chat-error');
+      expect(statusOf('chat')).toBe('');
+      expect(toggleOf('gnollbench').checked).toBe(true);
+      expect(toggleOf('gnollbench').getAttribute('aria-describedby')).toBe('tl-fb-switch-gnollbench-state');
+    });
+
+    it('shows a failed load once, under the title, and leaves both switches disabled', async () => {
+      switchSpy.mockReturnValue(throwError(() => ({ status: 500, error: { message: 'Database unavailable' } })));
+      await create();
+
+      const errors = el.querySelectorAll('.tl-fb-switch-load-error');
+      expect(errors.length).toBe(1);
+      expect(textOf(errors[0])).toBe('The state of the feedback tool could not be loaded: Database unavailable');
+      expect(errors[0].closest('.tl-fb-switch-row')).toBeNull();
+      expect(el.querySelectorAll('.tl-fb-switch-error').length).toBe(0);
+      for (const target of ['chat', 'gnollbench']) {
+        expect(toggleOf(target).disabled).toBe(true);
+        expect(sentenceOf(target)).toBe('');
+      }
     });
   });
 
@@ -765,7 +854,7 @@ describe('TelemetryFeedbackComponent', () => {
   });
 
   describe('reload', () => {
-    it('refetches the switch, the models and the first page', async () => {
+    it('refetches the switches, the models and the first page', async () => {
       await create();
       switchSpy.mockClear();
       issuesSpy.mockClear();

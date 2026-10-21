@@ -1,30 +1,45 @@
 <!-- The tab's Feedback sub-tab panel holds this view; the date range is the tab's, the Keys filter does not apply. -->
 
-<!-- The switch: the one control of this card, committed at once. -->
+<!-- The two switches of this card, each committed at once. -->
 <section class="tl-fb-switch-card" aria-labelledby="tl-fb-switch-title">
-  <div class="tl-fb-switch-text">
-    <h3 class="tl-fb-switch-title" id="tl-fb-switch-title">Feedback tool</h3>
-    <p class="tl-fb-switch-state" id="tl-fb-switch-state">{{ switchSentence }}</p>
-    <p class="tl-fb-switch-note">GnollBench runs are not affected; the harness version governs them.</p>
-  </div>
-  <label class="gh-switch-wrapper tl-fb-switch">
-    <span class="gh-switch gh-switch-lg">
-      <input type="checkbox" id="tl-fb-switch-toggle"
-             aria-labelledby="tl-fb-switch-title"
-             [attr.aria-describedby]="switchError() ? 'tl-fb-switch-state tl-fb-switch-error' : 'tl-fb-switch-state'"
-             [checked]="switchState()?.enabled ?? false"
-             [disabled]="switchPending() || !switchState()"
-             [attr.aria-busy]="switchPending() ? 'true' : null"
-             (change)="onSwitchChange($event)">
-      <span class="gh-slider"></span>
-    </span>
-  </label>
-  <p class="tl-fb-switch-status" id="tl-fb-switch-status" role="status">{{ switchMessage() }}</p>
-  @if (switchError() ?? switchLoadError(); as message) {
-    <p class="gh-field-error tl-fb-switch-error" id="tl-fb-switch-error">
+  <h3 class="tl-fb-switch-title" id="tl-fb-switch-title">Feedback tool</h3>
+  @if (switchLoadError(); as message) {
+    <p class="gh-field-error tl-fb-switch-load-error" id="tl-fb-switch-load-error">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
       <span>{{ message }}</span>
     </p>
+  }
+  @for (row of switchRows; track row.target) {
+    <div class="tl-fb-switch-row">
+      <div class="tl-fb-switch-text">
+        <span class="tl-fb-switch-label" [id]="'tl-fb-switch-' + row.target + '-label'">{{ row.label }}</span>
+        <p class="tl-fb-switch-state" [id]="'tl-fb-switch-' + row.target + '-state'">{{ switchSentence(row.target) }}</p>
+        @if (row.note) {
+          <p class="tl-fb-switch-note">{{ row.note }}</p>
+        }
+      </div>
+      <label class="gh-switch-wrapper tl-fb-switch">
+        <span class="gh-switch gh-switch-lg">
+          <input type="checkbox" [id]="'tl-fb-switch-' + row.target + '-toggle'"
+                 [attr.aria-labelledby]="'tl-fb-switch-' + row.target + '-label'"
+                 [attr.aria-describedby]="switchError[row.target]()
+                   ? 'tl-fb-switch-' + row.target + '-state tl-fb-switch-' + row.target + '-error'
+                   : 'tl-fb-switch-' + row.target + '-state'"
+                 [checked]="switchOf(row.target)?.enabled ?? false"
+                 [disabled]="switchPending[row.target]() || !switchOf(row.target)"
+                 [attr.aria-busy]="switchPending[row.target]() ? 'true' : null"
+                 (change)="onSwitchChange(row.target, $event)">
+          <span class="gh-slider"></span>
+        </span>
+      </label>
+      <p class="tl-fb-switch-status" [id]="'tl-fb-switch-' + row.target + '-status'" role="status">{{ switchMessage[row.target]() }}</p>
+      @if (switchError[row.target](); as message) {
+        <p class="gh-field-error tl-fb-switch-error" [id]="'tl-fb-switch-' + row.target + '-error'">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ message }}</span>
+        </p>
+      }
+    </div>
   }
 </section>
 

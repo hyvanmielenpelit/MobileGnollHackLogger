@@ -342,6 +342,20 @@ describe('run facts', () => {
       expect(runConditionTags(null)).toEqual([]);
     });
 
+    it('names a withheld feedback tool last, also when the run has its own condition', () => {
+      expect(runConditionTags({
+        informationCondition: 'sourceOnly', corpusCondition: 'scarce:2026-10',
+        candidatePromptOptionsJson: '{"enableToolUse":true,"feedbackToolWithheld":true}'
+      })).toEqual(['source code only', 'corpus: scarce:2026-10', 'feedback tool withheld']);
+      expect(runConditionTags({ candidatePromptOptionsJson: '{"feedbackToolWithheld":true}' })).toEqual(['feedback tool withheld']);
+    });
+
+    it('adds no feedback tag to a run that recorded no withheld tool', () => {
+      expect(runConditionTags({ candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}' })).toEqual([]);
+      expect(runConditionTags({ candidatePromptOptionsJson: '{"feedbackToolWithheld":false}' })).toEqual([]);
+      expect(runConditionTags({ candidatePromptOptionsJson: 'not json' })).toEqual([]);
+    });
+
     it('adds the conditions to the Prompt row\'s tags', () => {
       const prompt = row(buildRunFacts(run({ candidatePromptOptionsJson: PROMPT_JSON, informationCondition: 'sourceOnly' }), { gaps: [] }), 'prompt')!;
       expect(prompt.item).toEqual({

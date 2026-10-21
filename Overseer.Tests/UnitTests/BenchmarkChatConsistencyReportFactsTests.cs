@@ -697,6 +697,10 @@ public class BenchmarkChatConsistencyReportFactsTests
         Assert.Equal("Something new", ChatConsistencyEventText.Label("SomethingNewSha256"));
         Assert.Equal("tool calls per question: 12 → 16", ChatConsistencyEventText.Describe(OverseerEventKinds.MaxToolCallsPerQuestion, "12", "16"));
         Assert.Equal("tool guides changed", ChatConsistencyEventText.Describe(OverseerEventKinds.ToolGuides, "a", "b"));
+        Assert.Equal("feedback tool withheld: not set → on", ChatConsistencyEventText.Describe(
+            OverseerEventKinds.CandidatePromptOptions,
+            "{\"hasGameSnapshot\":false,\"verboseMode\":false}",
+            "{\"hasGameSnapshot\":false,\"verboseMode\":false,\"feedbackToolWithheld\":true}"));
         Assert.All(OverseerEventKinds.All, kind => Assert.DoesNotContain(kind, ChatConsistencyEventText.Label(kind), StringComparison.Ordinal));
     }
 

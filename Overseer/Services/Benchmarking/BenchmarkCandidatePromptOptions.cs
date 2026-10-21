@@ -64,6 +64,16 @@ public sealed record BenchmarkCandidatePromptOptions
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? InformationCondition { get; init; }
 
+    /// <summary>
+    /// True when the GnollBench feedback switch was off when the run launched, so <c>report_feedback</c>
+    /// was not declared to a candidate with a tool loop. Recorded under every information condition, so
+    /// two runs launched under the same switch state pair across conditions. Omitted from the JSON when
+    /// false, so a run made with the switch on serializes as it did before the switch existed.
+    /// </summary>
+    [JsonPropertyName("feedbackToolWithheld")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool FeedbackToolWithheld { get; init; }
+
     [JsonIgnore]
     public BenchmarkInformationCondition Condition => BenchmarkInformationConditions.FromWire(InformationCondition);
 
@@ -218,6 +228,10 @@ public sealed record BenchmarkCandidatePromptOptions
         string style = VerboseMode ? "detailed (verboseMode: true)" : "concise (verboseMode: false)";
         string mode = OverseerMode == 0 ? "Gameplay Help" : $"Mode {OverseerMode}";
         string description = $"{mode}, {style}, tools: {(EnableToolUse ? "enabled" : "disabled")}, web search: {(EnableWebSearch ? "enabled" : "disabled")}, subagents: {(EnableSubAgents ? "enabled" : "disabled")}, source code references: {(AllowSourceCodeReferences ? "allowed" : "disallowed")}";
+        if (FeedbackToolWithheld)
+        {
+            description += ", feedback tool: withheld";
+        }
         return Condition == BenchmarkInformationCondition.Production
             ? description
             : $"{description}, information condition: {Condition.DisplayName()}";

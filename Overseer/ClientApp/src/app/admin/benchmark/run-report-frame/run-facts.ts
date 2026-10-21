@@ -103,21 +103,27 @@ export function informationConditionShortName(condition: string | null | undefin
 
 /**
  * The run's settings that differ from production, in the order information condition, instruction
- * variant, corpus condition: `closed book`, `variant: cite-first:ab12cd34ef56`, `corpus: scarce:2026-10`.
- * The condition is the run's own field, else the prompt options' `informationCondition`. Empty for a
- * production run.
+ * variant, corpus condition, withheld feedback tool: `closed book`, `variant: cite-first:ab12cd34ef56`,
+ * `corpus: scarce:2026-10`, `feedback tool withheld`. The condition is the run's own field, else the
+ * prompt options' `informationCondition`; the last tag is the prompt options' `feedbackToolWithheld`.
+ * Empty for a production run.
  */
 export function runConditionTags(run: RunConditionFields | null | undefined): string[] {
   if (!run) return [];
   const tags: string[] = [];
-  let condition = run.informationCondition ?? null;
-  if (condition == null && run.candidatePromptOptionsJson) {
+  let opts: { informationCondition?: unknown; feedbackToolWithheld?: unknown } | null = null;
+  if (run.candidatePromptOptionsJson) {
     try {
-      const opts = JSON.parse(run.candidatePromptOptionsJson);
-      condition = opts && typeof opts.informationCondition === 'string' ? opts.informationCondition : null;
+      const parsed = JSON.parse(run.candidatePromptOptionsJson);
+      opts = parsed && typeof parsed === 'object' ? parsed : null;
     } catch {
-      condition = null;
+      opts = null;
     }
+  }
+  let condition = run.informationCondition ?? null;
+  if (condition == null) {
+    const recorded = opts?.informationCondition;
+    condition = typeof recorded === 'string' ? recorded : null;
   }
   const conditionName = informationConditionShortName(condition);
   if (conditionName) tags.push(conditionName);
@@ -125,6 +131,7 @@ export function runConditionTags(run: RunConditionFields | null | undefined): st
   if (variant) tags.push(`variant: ${variant}`);
   const corpus = (run.corpusCondition ?? '').trim();
   if (corpus) tags.push(`corpus: ${corpus}`);
+  if (opts?.feedbackToolWithheld === true) tags.push('feedback tool withheld');
   return tags;
 }
 

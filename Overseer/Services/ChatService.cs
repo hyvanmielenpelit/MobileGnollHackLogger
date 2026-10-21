@@ -52,7 +52,7 @@ public class ChatService
     private readonly AiRequestGovernor? _governor;
     // Null counts nothing: a hand-built container without the registration.
     private readonly Overseer.Services.Telemetry.IActivityCounter? _activityCounter;
-    // Null offers no feedback tool: a hand-built container without the registration.
+    // Null offers no feedback tool in the chat: a hand-built container without the registration.
     private readonly Overseer.Services.Feedback.FeedbackSwitchService? _feedbackSwitch;
     private bool _showDebugLog = false;
 
@@ -1582,7 +1582,7 @@ public class ChatService
             EnableSubAgents = enableSubAgents,
             EnableClientTools = enableClientTools,
             EnableGameActions = enableGameActions,
-            EnableFeedbackTool = _feedbackSwitch?.IsEnabled == true && !isEphemeralSession && !isConfidentialSession,
+            EnableFeedbackTool = _feedbackSwitch?.IsEnabled(MobileGnollHackLogger.Data.OverseerFeedbackSwitchTarget.Chat) == true && !isEphemeralSession && !isConfidentialSession,
             ToolExecutionContext = execContext,
             DlpVault = dlpVault,
             SystemModelId = systemModelId,

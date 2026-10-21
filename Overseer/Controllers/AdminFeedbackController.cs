@@ -11,7 +11,7 @@ using Overseer.Services.Feedback;
 namespace Overseer.Controllers;
 
 /// <summary>
-/// The admin Feedback sub-tab: the feedback switch, the issues the chat model reported with their occurrences,
+/// The admin Feedback sub-tab: the two feedback switches, the issues the chat model reported with their occurrences,
 /// per-status counts, triage and deletion. Errors are <c>{ message }</c>: 400 for invalid input, 404 for an unknown
 /// issue. Reads answer 499 when the client aborts (<see cref="CancellationExceptionExtensions.IsCanceledBy"/>);
 /// actions that change state take no request token, so a dropped connection never stops one part-way.
@@ -50,7 +50,7 @@ public class AdminFeedbackController : ControllerBase
     {
         try
         {
-            return Ok(await ToSwitchDtoAsync(await _switch.GetStateAsync(ct), ct));
+            return Ok(await ToSwitchesDtoAsync(ct));
         }
         catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
@@ -58,13 +58,17 @@ public class AdminFeedbackController : ControllerBase
         }
     }
 
-    /// <summary>Appends a setting row, even when the value is unchanged, and returns the new state.</summary>
-    [HttpPost("switch")]
-    public async Task<IActionResult> SetSwitch([FromBody] AdminFeedbackSwitchUpdateDto? request)
+    /// <summary>
+    /// Appends a setting row for the <paramref name="target"/> switch (<c>chat</c> or <c>gnollbench</c>), even
+    /// when the value is unchanged, and returns both switches.
+    /// </summary>
+    [HttpPost("switch/{target}")]
+    public async Task<IActionResult> SetSwitch(string target, [FromBody] AdminFeedbackSwitchUpdateDto? request)
     {
+        if (!TryParseSwitchTarget(target, out var parsed)) return BadRequest(new { message = "Unknown switch." });
         if (request == null) return BadRequest(new { message = "The request body is required." });
-        var state = await _switch.SetAsync(request.Enabled, CurrentUserId, CancellationToken.None);
-        return Ok(await ToSwitchDtoAsync(state, CancellationToken.None));
+        await _switch.SetAsync(parsed, request.Enabled, CurrentUserId, CancellationToken.None);
+        return Ok(await ToSwitchesDtoAsync(CancellationToken.None));
     }
 
     // --- Issues ---
@@ -289,22 +293,34 @@ public class AdminFeedbackController : ControllerBase
 
     // --- Helpers ---
 
-    private async Task<AdminFeedbackSwitchDto> ToSwitchDtoAsync(FeedbackSwitchState state, CancellationToken ct)
+    private static bool TryParseSwitchTarget(string? target, out OverseerFeedbackSwitchTarget parsed)
     {
-        string? setBy = null;
-        if (!string.IsNullOrEmpty(state.SetByUserId))
+        if (string.Equals(target, "chat", StringComparison.OrdinalIgnoreCase)) { parsed = OverseerFeedbackSwitchTarget.Chat; return true; }
+        if (string.Equals(target, "gnollbench", StringComparison.OrdinalIgnoreCase)) { parsed = OverseerFeedbackSwitchTarget.GnollBench; return true; }
+        parsed = default;
+        return false;
+    }
+
+    private async Task<AdminFeedbackSwitchesDto> ToSwitchesDtoAsync(CancellationToken ct)
+    {
+        var chat = await _switch.GetStateAsync(OverseerFeedbackSwitchTarget.Chat, ct);
+        var gnollBench = await _switch.GetStateAsync(OverseerFeedbackSwitchTarget.GnollBench, ct);
+        var names = await UserNamesAsync(new[] { chat.SetByUserId, gnollBench.SetByUserId }, ct);
+        return new AdminFeedbackSwitchesDto
         {
-            var names = await UserNamesAsync(new[] { state.SetByUserId }, ct);
-            names.TryGetValue(state.SetByUserId, out setBy);
-        }
-        return new AdminFeedbackSwitchDto
+            Chat = ToSwitchDto(chat, names),
+            GnollBench = ToSwitchDto(gnollBench, names)
+        };
+    }
+
+    private static AdminFeedbackSwitchDto ToSwitchDto(FeedbackSwitchState state, Dictionary<string, string?> names)
+        => new()
         {
             Enabled = state.Enabled,
             SetAtUtc = state.SetAtUtc,
-            SetByUserName = setBy,
+            SetByUserName = state.SetByUserId != null && names.TryGetValue(state.SetByUserId, out var name) ? name : null,
             Seeded = state.Seeded
         };
-    }
 
     /// <summary>
     /// Builds the rows of <paramref name="issues"/>, in their order, with the aggregates over their retained

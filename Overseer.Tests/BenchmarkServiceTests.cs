@@ -2182,9 +2182,12 @@ public class BenchmarkServiceTests
         return new SelfReportHarness(service, handler, feedback, search);
     }
 
-    /// <summary>A suite with one question and a running run of it, saved on the relational database.</summary>
+    /// <summary>
+    /// A suite with one question and a running run of it, saved on the relational database. The run
+    /// records <paramref name="candidatePromptOptionsJson"/> as its prompt options; null records none.
+    /// </summary>
     private static async Task<(long RunId, BenchmarkQuestion Question)> SeedSelfReportRunAsync(
-        DbContextOptions<ApplicationDbContext> options, CancellationToken ct)
+        DbContextOptions<ApplicationDbContext> options, CancellationToken ct, string? candidatePromptOptionsJson = null)
     {
         await using var db = new ApplicationDbContext(options);
         var suite = new BenchmarkSuite { Name = "Self-Report Suite " + Guid.NewGuid().ToString("N") };
@@ -2208,7 +2211,8 @@ public class BenchmarkServiceTests
             SuiteName = suite.Name,
             BenchmarkSuite = suite,
             Status = BenchmarkRunStatus.Running,
-            StartedAtUtc = DateTime.UtcNow
+            StartedAtUtc = DateTime.UtcNow,
+            CandidatePromptOptionsJson = candidatePromptOptionsJson
         });
         db.BenchmarkRuns.Add(run);
         await db.SaveChangesAsync(ct);
@@ -2343,6 +2347,88 @@ public class BenchmarkServiceTests
         Assert.Empty(await verify.BenchmarkRunAnswerToolCalls.AsNoTracking()
             .Where(tc => tc.BenchmarkRunAnswerId == answer.Id)
             .ToListAsync(ct));
+    }
+
+    [Theory]
+    [InlineData(BenchmarkInformationCondition.Production)]
+    [InlineData(BenchmarkInformationCondition.SourceOnly)]
+    [InlineData(BenchmarkInformationCondition.ClosedBook)]
+    public void CandidatePromptOptionsFor_RecordsTheSwitchUnderEveryCondition(BenchmarkInformationCondition condition)
+    {
+        var withheld = BenchmarkService.CandidatePromptOptionsFor(false, true, false, condition, feedbackToolOffered: false);
+        var offered = BenchmarkService.CandidatePromptOptionsFor(false, true, false, condition, feedbackToolOffered: true);
+
+        Assert.True(withheld.FeedbackToolWithheld);
+        Assert.False(offered.FeedbackToolWithheld);
+        Assert.Equal(condition, withheld.Condition);
+
+        bool toolsEnabled = condition != BenchmarkInformationCondition.ClosedBook;
+        Assert.Equal(toolsEnabled, withheld.EnableToolUse);
+        Assert.Equal(toolsEnabled, offered.EnableToolUse);
+    }
+
+    [Fact]
+    public async Task CandidatePath_WithAWithheldRecord_DoesNotOfferTheFeedbackTool()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var connection = SqliteSchemaTemplate.OpenCopy();
+        await using var openConnection = connection;
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        var (runId, question) = await SeedSelfReportRunAsync(options, ct, "{\"feedbackToolWithheld\":true}");
+
+        var harness = CreateSelfReportHarness(connection, GoogleStream(Text("A dilithium crystal is worth 4500 zorkmids.")));
+
+        await using var db = new ApplicationDbContext(options);
+        var run = await db.BenchmarkRuns.FirstAsync(r => r.Id == runId, ct);
+        var segments = new ProvidersNs.SegmentedPrompt(SelfReportSystemPrompt[..160], SelfReportSystemPrompt[160..], string.Empty);
+
+        var answer = await harness.Service.ExecuteSingleQuestionAsync(
+            db, configService: null!, run, question, Overseer.Tests.UnitTests.BenchmarkTelemetryPersistenceTests.TestedConfig("Google"),
+            "self-report-test-key", SelfReportSystemPrompt, segments, new List<string> { "repo_search" },
+            maxResultLength: 10000, maxCallsPerSession: 45, ct);
+
+        Assert.Equal(BenchmarkAnswerStatus.Ok, answer.Status);
+        string firstRequest = harness.Handler.Bodies[0];
+        Assert.Contains("\"repo_search\"", firstRequest);
+        Assert.DoesNotContain("\"report_feedback\"", firstRequest);
+        Assert.Empty(harness.Feedback.BenchmarkCandidateFlags);
+    }
+
+    [Fact]
+    public async Task ReExecution_KeepsTheRunsRecordedFeedbackToolValue()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var connection = SqliteSchemaTemplate.OpenCopy();
+        await using var openConnection = connection;
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        var (runId, question) = await SeedSelfReportRunAsync(options, ct, "{\"feedbackToolWithheld\":true}");
+
+        var harness = CreateSelfReportHarness(
+            connection,
+            GoogleStream(Text("First attempt.")),
+            GoogleStream(Text("Second attempt.")));
+        var segments = new ProvidersNs.SegmentedPrompt(SelfReportSystemPrompt[..160], SelfReportSystemPrompt[160..], string.Empty);
+        var tested = Overseer.Tests.UnitTests.BenchmarkTelemetryPersistenceTests.TestedConfig("Google");
+
+        await using var db = new ApplicationDbContext(options);
+        var run = await db.BenchmarkRuns.FirstAsync(r => r.Id == runId, ct);
+        var answer = await harness.Service.ExecuteSingleQuestionAsync(
+            db, configService: null!, run, question, tested, "self-report-test-key",
+            SelfReportSystemPrompt, segments, new List<string> { "repo_search" },
+            maxResultLength: 10000, maxCallsPerSession: 45, ct);
+
+        BenchmarkService.BeginRepairPass(run, new[] { answer });
+        await db.SaveChangesAsync(ct);
+
+        await harness.Service.ReExecuteSingleAnswerAsync(
+            db, configService: null!, run, answer, tested, "self-report-test-key",
+            SelfReportSystemPrompt, segments, new List<string> { "repo_search" },
+            maxResultLength: 10000, maxCallsPerSession: 45, ct);
+
+        Assert.Equal(2, harness.Handler.Bodies.Count);
+        string reExecutionRequest = harness.Handler.Bodies[1];
+        Assert.Contains("\"repo_search\"", reExecutionRequest);
+        Assert.DoesNotContain("\"report_feedback\"", reExecutionRequest);
     }
 
     [Fact]

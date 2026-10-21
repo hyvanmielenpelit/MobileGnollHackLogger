@@ -27,9 +27,16 @@ time {
 
 /* --- The switch card ------------------------------------------------------------------------- */
 
+/* The title, then one row per switch, each under a hairline. */
 .tl-fb-switch-card {
   @include cards.card-surface;
 
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--tl-row-gap);
+}
+
+.tl-fb-switch-row {
+  display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
     "text   switch"
@@ -37,6 +44,8 @@ time {
     "error  error";
   align-items: center;
   gap: 0.5rem var(--tl-zone-gap);
+  padding-block-start: var(--tl-row-gap);
+  border-block-start: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .tl-fb-switch-text {
@@ -51,6 +60,11 @@ time {
   margin: 0;
   font-size: 1.125rem;
   font-weight: 700;
+  color: #f4f4f5;
+}
+
+.tl-fb-switch-label {
+  font-weight: 600;
   color: #f4f4f5;
 }
 
@@ -84,6 +98,10 @@ time {
 
 .tl-fb-switch-error {
   grid-area: error;
+  margin: 0;
+}
+
+.tl-fb-switch-load-error {
   margin: 0;
 }
 

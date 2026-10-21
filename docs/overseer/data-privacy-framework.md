@@ -1920,9 +1920,9 @@ A report's text is **content**: model-written text derived from the conversation
 - **Not sent to any AI provider** beyond the conversation the call was part of.
 - **No age prune.** Every occurrence is bounded by its conversation's or its account's lifetime, and every
   issue by an administrator's delete.
-- **The switch history** (`OverseerFeedbackSettings`, who turned the tool on or off and when) holds no
-  conversation data and a plain user id; it is kept like any other admin setting and is touched by
-  neither purge nor erasure.
+- **The switch history** (`OverseerFeedbackSettings`, who turned the tool on or off, for which surface,
+  and when) holds no conversation data and a plain user id; it is kept like any other admin setting and
+  is touched by neither purge nor erasure.
 - **Untrusted text.** Report fields are model output a user can steer. The admin view renders them as
   plain text only, and no model reads them back.
 

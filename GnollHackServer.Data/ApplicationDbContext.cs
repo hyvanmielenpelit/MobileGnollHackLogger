@@ -260,6 +260,13 @@ namespace MobileGnollHackLogger.Data
                 e.HasIndex(r => new { r.AspNetUserId, r.CreatedUtc });
             });
 
+            modelBuilder.Entity<OverseerFeedbackSetting>(e =>
+            {
+                // The column default is for rows written outside EF; EF itself always sets Target.
+                e.Property(s => s.Target).HasDefaultValue(OverseerFeedbackSwitchTarget.Chat);
+                e.HasIndex(s => new { s.Target, s.Id });
+            });
+
             modelBuilder.Entity<AdminBulkOperation>(e =>
             {
                 e.HasIndex(o => new { o.Status, o.CreatedUtc });

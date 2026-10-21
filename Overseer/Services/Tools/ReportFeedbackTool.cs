@@ -114,15 +114,16 @@ public sealed class ReportFeedbackTool : IToolHandler
             return new ToolResult { Success = false, ErrorMessage = error };
         }
 
-        // 3. A benchmark candidate's SessionId is a run id; the benchmark stores the call itself.
+        // 3. A benchmark candidate's SessionId is a run id; the benchmark stores the call itself. The run's
+        //    recorded prompt options decided whether the tool was declared, so no switch is read here.
         if (context.IsBenchmarkCandidate)
         {
             if (context.Budget != null && !context.Budget.TryIncrementFeedbackReport(MaxReportsPerTurn)) return TurnLimit();
             return Recorded();
         }
 
-        // 4. The switch is read again here, so a turn already running when it was turned off records nothing.
-        if (!context.SessionId.IsPersistent || ConfidentialExecutionScope.IsConfidential || !_feedbackSwitch.IsEnabled)
+        // 4. The chat switch is read again here, so a turn already running when it was turned off records nothing.
+        if (!context.SessionId.IsPersistent || ConfidentialExecutionScope.IsConfidential || !_feedbackSwitch.IsEnabled(OverseerFeedbackSwitchTarget.Chat))
         {
             return NotAvailable();
         }

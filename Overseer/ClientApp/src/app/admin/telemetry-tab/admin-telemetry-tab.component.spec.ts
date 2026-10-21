@@ -151,7 +151,10 @@ describe('AdminTelemetryTabComponent', () => {
     feedbackService = TestBed.inject(AdminFeedbackService);
     countsSpy = vi.spyOn(feedbackService, 'getCounts').mockReturnValue(of(feedbackCounts()));
     issuesSpy = vi.spyOn(feedbackService, 'getIssues').mockReturnValue(of(emptyIssuePage()));
-    vi.spyOn(feedbackService, 'getSwitch').mockReturnValue(of({ enabled: true, setAtUtc: null, setByUserName: null, seeded: true }));
+    vi.spyOn(feedbackService, 'getSwitches').mockReturnValue(of({
+      chat: { enabled: true, setAtUtc: null, setByUserName: null, seeded: true },
+      gnollBench: { enabled: true, setAtUtc: null, setByUserName: null, seeded: true }
+    }));
     vi.spyOn(feedbackService, 'getModels').mockReturnValue(of([]));
     store = TestBed.inject(AdminPageStore);
 

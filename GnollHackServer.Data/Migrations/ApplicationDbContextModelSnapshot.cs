@@ -4846,7 +4846,14 @@ namespace GnollHackServer.Data.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<int>("Target")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.HasKey("Id");
+
+                    b.HasIndex("Target", "Id");
 
                     b.ToTable("OverseerFeedbackSettings");
                 });

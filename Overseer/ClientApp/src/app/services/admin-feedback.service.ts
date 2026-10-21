@@ -96,12 +96,21 @@ export interface AdminFeedbackCounts {
   dismissed: number;
 }
 
-/** The feedback switch; `seeded` while no administrator has set it and the configuration default applies. */
+/** One feedback switch; `seeded` while no administrator has set it and the configuration default applies. */
 export interface AdminFeedbackSwitch {
   enabled: boolean;
   setAtUtc: string | null;
   setByUserName: string | null;
   seeded: boolean;
+}
+
+/** Which feedback switch; the route segment of `POST switch/{target}`. */
+export type AdminFeedbackSwitchTarget = 'chat' | 'gnollbench';
+
+/** Both feedback switches. */
+export interface AdminFeedbackSwitches {
+  chat: AdminFeedbackSwitch;
+  gnollBench: AdminFeedbackSwitch;
 }
 
 /** One page of issues. Every field is optional; a missing one means any, or the server's default. */
@@ -123,7 +132,7 @@ export interface AdminFeedbackIssuesQuery {
 }
 
 /**
- * The typed client of `AdminFeedbackController` (`api/admin/feedback`): the feedback switch, the issue
+ * The typed client of `AdminFeedbackController` (`api/admin/feedback`): the feedback switches, the issue
  * list with its Model facet values and the counts per status, one issue's occurrences, and an issue's
  * triage and deletion.
  */
@@ -139,13 +148,13 @@ export class AdminFeedbackService {
 
   // --- Switch ---
 
-  getSwitch(): Observable<AdminFeedbackSwitch> {
-    return this.http.get<AdminFeedbackSwitch>(`${ADMIN_FEEDBACK_ENDPOINT}/switch`);
+  getSwitches(): Observable<AdminFeedbackSwitches> {
+    return this.http.get<AdminFeedbackSwitches>(`${ADMIN_FEEDBACK_ENDPOINT}/switch`);
   }
 
-  /** Appends a setting row; the same value as now still records the click. Returns the new state. */
-  setSwitch(enabled: boolean): Observable<AdminFeedbackSwitch> {
-    return this.http.post<AdminFeedbackSwitch>(`${ADMIN_FEEDBACK_ENDPOINT}/switch`, { enabled });
+  /** Appends a setting row to one switch; the same value as now still records the click. Returns both switches. */
+  setSwitch(target: AdminFeedbackSwitchTarget, enabled: boolean): Observable<AdminFeedbackSwitches> {
+    return this.http.post<AdminFeedbackSwitches>(`${ADMIN_FEEDBACK_ENDPOINT}/switch/${target}`, { enabled });
   }
 
   // --- Issues ---

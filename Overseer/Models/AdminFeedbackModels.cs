@@ -82,13 +82,20 @@ public sealed class AdminFeedbackCountsDto
     public int Dismissed { get; set; }
 }
 
-/// <summary>The feedback switch. <see cref="Seeded"/> is true while no administrator has set it.</summary>
+/// <summary>One feedback switch. <see cref="Seeded"/> is true while no administrator has set it.</summary>
 public sealed class AdminFeedbackSwitchDto
 {
     public bool Enabled { get; set; }
     public DateTime? SetAtUtc { get; set; }
     public string? SetByUserName { get; set; }
     public bool Seeded { get; set; }
+}
+
+/// <summary>Both feedback switches, as the card shows them.</summary>
+public sealed class AdminFeedbackSwitchesDto
+{
+    public AdminFeedbackSwitchDto Chat { get; set; } = new();
+    public AdminFeedbackSwitchDto GnollBench { get; set; } = new();
 }
 
 public sealed class AdminFeedbackSwitchUpdateDto

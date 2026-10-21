@@ -178,6 +178,47 @@ public class BenchmarkCandidatePromptOptionsTests
         Assert.Contains("information condition: " + BenchmarkInformationCondition.ClosedBook.DisplayName(), closedBook);
     }
 
+    [Fact]
+    public void FeedbackToolWithheld_False_IsOmittedFromTheCanonicalJson()
+    {
+        var options = new BenchmarkCandidatePromptOptions();
+
+        Assert.False(options.FeedbackToolWithheld);
+        Assert.DoesNotContain("feedbackToolWithheld", options.ToCanonicalJson());
+        Assert.Equal(ProductionCanonicalJson, options.ToCanonicalJson());
+        Assert.Equal(ProductionCanonicalJson, BenchmarkService.CandidatePromptOptionsFor(false, true, false, feedbackToolOffered: true).ToCanonicalJson());
+    }
+
+    [Fact]
+    public void FeedbackToolWithheld_True_SerializesAndRoundTrips()
+    {
+        var options = new BenchmarkCandidatePromptOptions { FeedbackToolWithheld = true };
+
+        string json = options.ToCanonicalJson();
+
+        Assert.Contains("\"feedbackToolWithheld\":true", json);
+        var read = BenchmarkCandidatePromptOptions.FromJson(json);
+        Assert.True(read.FeedbackToolWithheld);
+        Assert.Equal(options, read);
+        Assert.False(BenchmarkCandidatePromptOptions.FromJson(ProductionCanonicalJson).FeedbackToolWithheld);
+    }
+
+    [Fact]
+    public void Describe_NamesAWithheldFeedbackTool()
+    {
+        Assert.DoesNotContain("feedback tool", new BenchmarkCandidatePromptOptions().Describe());
+
+        string production = BenchmarkService.CandidatePromptOptionsFor(false, true, false, feedbackToolOffered: false).Describe();
+        Assert.EndsWith("source code references: allowed, feedback tool: withheld", production);
+
+        string closedBook = BenchmarkService.CandidatePromptOptionsFor(
+            false, true, false, BenchmarkInformationCondition.ClosedBook, feedbackToolOffered: false).Describe();
+        Assert.EndsWith(
+            "source code references: allowed, feedback tool: withheld, information condition: "
+                + BenchmarkInformationCondition.ClosedBook.DisplayName(),
+            closedBook);
+    }
+
     private static string Sha256(string text)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
