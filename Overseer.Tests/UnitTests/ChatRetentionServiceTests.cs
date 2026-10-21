@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -600,5 +601,90 @@ public class ChatRetentionServiceTests
         var recorded = Assert.Single(await db.MaintenanceRunLogs.ToListAsync(ct));
         Assert.Equal(0, recorded.PrunedSecurityEventCount);
         Assert.Equal(0, recorded.PrunedChatProviderAttemptCount);
+    }
+
+    private sealed record FeedbackSeed(List<long> PurgedSessionIds, long KeptSessionId, long SharedIssueId, long PurgedOnlyIssueId);
+
+    /// <summary>
+    /// Three sessions, two of them to be purged, and two feedback issues: one with an occurrence in every session,
+    /// one with an occurrence only in a purged session. SQLite, because the purge runs set-based statements the
+    /// in-memory provider cannot translate.
+    /// </summary>
+    private static async Task<FeedbackSeed> SeedFeedbackAsync(ApplicationDbContext db)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const string userId = "feedback-user";
+        var now = DateTime.UtcNow;
+        db.Users.Add(new ApplicationUser { Id = userId, UserName = userId, Email = "feedback@example.com" });
+        var purged1 = new ChatSession { AspNetUserId = userId, Title = "Purged 1", CreatedUtc = now, LastMessageUtc = now, IsDeleted = true, DeletedUtc = now };
+        var purged2 = new ChatSession { AspNetUserId = userId, Title = "Purged 2", CreatedUtc = now, LastMessageUtc = now, IsDeleted = true, DeletedUtc = now };
+        var kept = new ChatSession { AspNetUserId = userId, Title = "Kept", CreatedUtc = now, LastMessageUtc = now };
+        db.ChatSession.AddRange(purged1, purged2, kept);
+
+        var shared = new OverseerFeedbackIssue
+        {
+            Fingerprint = new string('a', 64), Category = "missing_information", Subject = "Dilithium crystal",
+            Summary = "Price not found.", FirstSeenUtc = now, LastSeenUtc = now, OccurrenceCount = 3
+        };
+        var purgedOnly = new OverseerFeedbackIssue
+        {
+            Fingerprint = new string('b', 64), Category = "tool_problem", Subject = "wiki_search",
+            Summary = "Returned nothing.", FirstSeenUtc = now, LastSeenUtc = now, OccurrenceCount = 1
+        };
+        db.OverseerFeedbackIssues.AddRange(shared, purgedOnly);
+        await db.SaveChangesAsync(ct);
+
+        OverseerFeedbackReport Report(OverseerFeedbackIssue issue, ChatSession session) => new()
+        {
+            IssueId = issue.Id, Fingerprint = issue.Fingerprint, CreatedUtc = now, Category = issue.Category,
+            Subject = issue.Subject, Summary = issue.Summary, ChatSessionId = session.Id, AspNetUserId = userId
+        };
+        db.OverseerFeedbackReports.AddRange(
+            Report(shared, purged1), Report(shared, purged2), Report(shared, kept), Report(purgedOnly, purged1));
+        await db.SaveChangesAsync(ct);
+        db.ChangeTracker.Clear();
+
+        return new FeedbackSeed(new List<long> { purged1.Id, purged2.Id }, kept.Id, shared.Id, purgedOnly.Id);
+    }
+
+    [Fact]
+    public async Task PermanentlyPurgeSessionsAsync_DryRun_CountsFeedbackReportsWithoutDeleting()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var connection = SqliteSchemaTemplate.OpenCopy();
+        using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
+        var seed = await SeedFeedbackAsync(db);
+        var service = new ChatRetentionService(db, CreateTestConfiguration(), NullLogger<ChatRetentionService>.Instance);
+
+        var result = await service.PermanentlyPurgeSessionsAsync(seed.PurgedSessionIds, isDryRun: true, ct);
+
+        Assert.True(result.Success);
+        Assert.Equal(3, result.PurgedFeedbackReportCount);
+        Assert.Contains(result.Logs, l => l.Contains("3 feedback reports"));
+        Assert.Equal(4, await db.OverseerFeedbackReports.CountAsync(ct));
+    }
+
+    [Fact]
+    public async Task PermanentlyPurgeSessionsAsync_RemovesThePurgedSessionsFeedbackReportsAndKeepsEveryIssue()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var connection = SqliteSchemaTemplate.OpenCopy();
+        using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
+        var seed = await SeedFeedbackAsync(db);
+        var service = new ChatRetentionService(db, CreateTestConfiguration(), NullLogger<ChatRetentionService>.Instance);
+
+        var result = await service.PermanentlyPurgeSessionsAsync(seed.PurgedSessionIds, isDryRun: false, ct);
+
+        Assert.True(result.Success);
+        Assert.Equal(3, result.PurgedFeedbackReportCount);
+
+        var remaining = Assert.Single(await db.OverseerFeedbackReports.AsNoTracking().ToListAsync(ct));
+        Assert.Equal(seed.KeptSessionId, remaining.ChatSessionId);
+        Assert.Equal(seed.SharedIssueId, remaining.IssueId);
+
+        var issues = await db.OverseerFeedbackIssues.AsNoTracking().OrderBy(i => i.Id).ToListAsync(ct);
+        Assert.Equal(new[] { seed.SharedIssueId, seed.PurgedOnlyIssueId }, issues.Select(i => i.Id));
+        Assert.Equal(3, issues.Single(i => i.Id == seed.SharedIssueId).OccurrenceCount);
+        Assert.Equal(1, issues.Single(i => i.Id == seed.PurgedOnlyIssueId).OccurrenceCount);
     }
 }

@@ -34,7 +34,7 @@ When modifying limits or investigating latency bottlenecks, refer to the multi-t
 | **`ToolBatchRunner`** | Client Tools | `AiPerformanceSettings:MaxParallelClientToolCalls:Default` | `1` (Min 1, Max 4) | Serializes interactive client-bridge tools (`IsClientTool`). |
 | **`ToolExecutor`** | Process-Wide | `ToolExecutionLimits:MaxProcessParallelToolCalls` | `30` | Semaphore across all active user sessions on the server. |
 | **`ToolExecutor`** | External APIs | `ToolExecutionLimits:MaxProcessExternalLookupCalls` | `3` | Throttler for `ToolCategory.ExternalLookup` tools. |
-| **`ToolExecutor`** | Session Quota | `AiPerformanceSettings:MaxCallsPerSession:Default` | `150` (Min 5 / Max 500; `Benchmark:MaxCallsPerSession` is 50) | Atomic rate limiter per session. |
+| **`ToolExecutor`** | Session Quota | `AiPerformanceSettings:MaxCallsPerSession:Default` | `150` (Min 5 / Max 500; `Benchmark:MaxCallsPerSession` is 50) | Atomic rate limiter per session. Skipped for a handler whose `CountsTowardCallBudget` is `false` (§ 3). |
 | **`ToolExecutor`** | Per-Tool Timeout | `handler.TimeoutSeconds` | Configured per tool | Enforced via linked `CancellationTokenSource`. |
 | **`ToolExecutor`** | Per-Tool Size | `ToolExecutionContext.MaxResultLength` | `10,000` chars | Clamps a single plain-text tool result with `ToolExecutor.BuildTruncationSuffix`: `... [Truncated: showing {shown} of {total} characters. Narrow the query, or ask for a specific section, to see the rest.]`. |
 | **`ToolBatchResultBudget`** | Batch Budget | `ToolExecutionLimits:MaxBatchResultLength` | `40,000` chars | Dynamically scales to `Math.Max(budgetChars, MaxResultLength)`. |
@@ -48,6 +48,10 @@ Tools are defined via `IToolHandler` implementations registered in `ToolRegistry
 - **Standard Server Tools**: Execute directly within the ASP.NET Core backend (e.g. `WikiSearchTool`, `SourceCodeSearchTool`, `MonsterLookupTool`).
 - **Client Tools (`IsClientTool = true`)**: Execute on the player's client via the interactive SignalR / WebSockets client bridge (`ToolExecutionLocation.Client`). Throttled to 1 concurrent call by default to avoid race conditions in client UI.
 - **External Lookup Tools (`ToolCategory.ExternalLookup`)**: Outbound network requests to external APIs (e.g. GitHub API tools). Regulated by `_externalLookupThrottler` to prevent IP rate-limiting.
+- **Feedback Tools (`ToolCategory.Feedback`)**: `report_feedback` (`ReportFeedbackTool`), the assistant's report to the developers (`docs/overseer/ai-feedback-reports.md`). Three rules attach to the category or its handler:
+  - **Declaration.** `ToolRegistry.BuildToolsForRequest` declares a Feedback handler only when `enableFeedbackTool` (from `AgentRunRequest.EnableFeedbackTool`) and `enableToolUse` are both true, **in place of** the allow-list check, so `Benchmark:AllowedTools`, the condition tool lists and the sub-agent catalog never name it. Sub-agents, graders, the claim verifier and the rubric-gap author leave the flag false.
+  - **Budget exemption.** `IToolHandler.CountsTowardCallBudget` defaults to `true`; `ReportFeedbackTool` returns `false`. `ToolExecutor.ExecuteAsync` looks the handler up **before** the session-quota block and skips the block for an exempt handler (an unknown tool still fails as before, and the experimental guard still runs after the lookup). `RemainingBudget` stays **null** on that path, so `AgentLoopRunner` appends no `[Tool budget: …]` notice; never set it to `0`, which tells the model its budget is gone. The tool has its own per-run cap, `AgentRunBudget.TryIncrementFeedbackReport(ReportFeedbackTool.MaxReportsPerTurn)`.
+  - **Log rule.** `ToolExecutor`'s *Tool Execution Audit* line dumps `parameters.GetRawText()` for every other tool; for `ToolCategory.Feedback` the dump is skipped, because the arguments are conversation-derived text. The handler logs only the category, the issue id and the row id. A new tool whose arguments carry user or conversation text should join this rule rather than log its parameters.
 
 ---
 
@@ -92,7 +96,7 @@ When writing or modifying unit tests for tool execution, follow the existing tes
   ```
 
 ### 3. `ToolExecutorRateLimitTests.cs`
-- Test process throttles and session quotas using mocked `IConfiguration` and `IToolHandler` lists.
+- Test process throttles and session quotas using mocked `IConfiguration` and `IToolHandler` lists, including the `CountsTowardCallBudget` exemption (null `RemainingBudget`) and the skipped parameter dump for `ToolCategory.Feedback`.
 
 ### 4. `ToolResultHandlingTests.cs`
 - Test single-tool result clamping, JSON payload protection, and error payload creation.

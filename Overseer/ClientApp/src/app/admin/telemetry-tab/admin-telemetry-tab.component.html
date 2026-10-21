@@ -58,7 +58,7 @@
               [attr.aria-selected]="subTab === tab"
               [attr.tabindex]="subTab === tab ? 0 : -1"
               (keydown)="onSubTabKeydown($event, i)"
-              (click)="selectSubTab(tab)">{{ subTabLabels[tab] }}</button>
+              (click)="selectSubTab(tab)">{{ subTabLabel(tab) }}</button>
     }
   </div>
 </div>
@@ -91,6 +91,14 @@
   @if (isMounted('groups')) {
     <app-telemetry-groups [startDate]="telemetryStartDate" [endDate]="telemetryEndDate" [keys]="keys"
                           (usageCharts)="openGroupCharts($event)" (usageByModel)="openGroupModels($event)" />
+  }
+</div>
+
+<!-- Feedback: the assistant's feedback tool and the issues it reported in the range; the Keys filter does not apply. Mounted on first selection, then kept. -->
+<div role="tabpanel" class="tl-subpanel tl-feedback" id="tl-subpanel-feedback" aria-labelledby="tl-subtab-feedback" tabindex="0" [hidden]="subTab !== 'feedback'">
+  @if (isMounted('feedback')) {
+    <app-telemetry-feedback [startDate]="telemetryStartDate" [endDate]="telemetryEndDate" [counts]="feedbackCounts"
+                            (countsChange)="loadFeedbackCounts()" />
   }
 </div>
 

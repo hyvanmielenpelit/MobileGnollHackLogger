@@ -113,6 +113,8 @@ public class AgentLoopRunner
         var streamToolCalls = result.ToolCalls;
 
         var execContext = request.ToolExecutionContext ?? new ToolExecutionContext();
+        execContext.ActiveProvider ??= request.ProviderName;
+        execContext.ActiveModelId ??= request.ModelId;
         int maxToolIterations = request.MaxToolIterations;
         int maxParallelTools = request.MaxParallelTools;
         int maxParallelClientTools = request.MaxParallelClientTools;
@@ -205,7 +207,8 @@ public class AgentLoopRunner
                 enableClientTools,
                 enableGameActions,
                 request.ModelId,
-                request.AllowedToolNames);
+                request.AllowedToolNames,
+                request.EnableFeedbackTool);
 
             var currentIterationToolCalls = new List<JsonElement>();
             var currentIterationProviderItems = new List<JsonElement>();

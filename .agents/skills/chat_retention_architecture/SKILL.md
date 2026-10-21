@@ -166,8 +166,9 @@ its *selection* via `isDryRun: true` rather than its effect.
 To maintain referential integrity without foreign key violations, permanent deletion executes in strict sequence:
 1. `ChatMessageAttachment` (matching `ChatSessionId`)
 2. `ChatMessageToolCall` (matching `ChatSessionId`)
-3. `ChatMessage` (matching `ChatSessionId`)
-4. `ChatSession` (matching `Id`)
+3. `OverseerFeedbackReport` occurrences (matching their plain `ChatSessionId` column; there is no foreign key, so this delete is the only thing that removes them). Their `OverseerFeedbackIssue` rows **stay**: an issue holds no session or user reference, and its `OccurrenceCount` is historical. The count is taken first into `MaintenanceResultDto.PurgedFeedbackReportCount`, in dry runs too, and the purge log line names it.
+4. `ChatMessage` (matching `ChatSessionId`)
+5. `ChatSession` (matching `Id`)
 
 ---
 
@@ -194,7 +195,7 @@ sequenceDiagram
     Retention->>DB: Soft-delete unpinned sessions > 90d (Reason="Inactivity"), expire own-TTL sessions
     Retention->>DB: Query soft-deleted sessions > 30d (Trash Cutoff)
     Retention->>Disk: Recursively delete session folders on disk
-    Retention->>DB: Execute bulk delete (Attachments -> ToolCalls -> Messages -> Sessions)
+    Retention->>DB: Execute bulk delete (Attachments -> ToolCalls -> FeedbackReports -> Messages -> Sessions)
     Retention->>DB: Prune tool call Results/Args older than 30d to NULL
     Retention->>DB: Prune benchmark tool call Results/Args for runs older than 90d
     Retention->>Disk: Sweep orphaned disk directories
@@ -257,7 +258,8 @@ Every `POST` except `send-report-email` honours `DryRun`, returns a `Maintenance
 When modifying chat data models, retention services, or controllers, verify the following:
 
 - [ ] **Unit Tests**: Ensure all unit tests in `Overseer.Tests/UnitTests/ChatRetentionServiceTests.cs` pass (`dotnet test`).
-- [ ] **Dependency Order**: Verify deletions execute in `Attachment -> ToolCall -> Message -> Session` order to avoid FK constraint violations.
+- [ ] **Dependency Order**: Verify deletions execute in `Attachment -> ToolCall -> FeedbackReport -> Message -> Session` order to avoid FK constraint violations.
+- [ ] **Feedback Occurrences**: Ensure the purge deletes and counts the sessions' `OverseerFeedbackReports` rows (`PurgedFeedbackReportCount`, dry runs included) and leaves every `OverseerFeedbackIssues` row in place. A new table keyed by a plain `ChatSessionId` column needs its own explicit delete here.
 - [ ] **Pinned Protection**: Ensure pinned sessions are never soft-deleted by quota enforcement or inactivity sweeps.
 - [ ] **Dry-Run Safety**: When `DryRun = true`, ensure zero records are updated or deleted, and zero disk files are removed.
 - [ ] **Shared Dry-Run Switch**: Ensure the granular actions honour the shared dry-run switch in the Admin Database tab, and that a dry run of the full pass reports every phase's count, including the access journal.

@@ -5167,6 +5167,8 @@ public class AdminBenchmarkController : ControllerBase
             .Include(r => r.Answers)
                 .ThenInclude(a => a.ToolCalls)
             .Include(r => r.Answers)
+                .ThenInclude(a => a.SelfReports)
+            .Include(r => r.Answers)
                 .ThenInclude(a => a.ModelCalls)
             .Include(r => r.StartedByUser)
             .Include(r => r.ScoringProfile)
@@ -5268,6 +5270,8 @@ public class AdminBenchmarkController : ControllerBase
         var run = await _dbContext.BenchmarkRuns
             .Include(r => r.Answers)
                 .ThenInclude(a => a.ToolCalls)
+            .Include(r => r.Answers)
+                .ThenInclude(a => a.SelfReports)
             .Include(r => r.Answers)
                 .ThenInclude(a => a.ModelCalls)
             .AsSplitQuery()

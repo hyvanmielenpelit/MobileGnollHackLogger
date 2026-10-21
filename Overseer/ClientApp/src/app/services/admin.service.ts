@@ -1073,6 +1073,8 @@ export interface MaintenanceResult {
   purgedSessionCount: number;
   purgedMessageCount: number;
   purgedToolCallCount: number;
+  /** Assistant feedback reports removed with the purged sessions; absent from an older server. */
+  purgedFeedbackReportCount?: number;
   prunedToolResultCount: number;
   prunedBenchmarkToolResultCount: number;
   deletedDiskFolderCount: number;

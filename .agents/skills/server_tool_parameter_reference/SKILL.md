@@ -52,15 +52,19 @@ benchmark run or chat session actually recorded.
 ## 2. Every Tool at a Glance
 
 **Real counts, established by reading `Overseer/Services/Tools/` and `Program.cs`, not by
-trusting the file list in a prompt**: the directory holds 32 `.cs` files. Eleven are
-infrastructure (`ToolRegistry.cs`, `ToolDefinition.cs`, `ToolExecutor.cs`, `ToolBatchRunner.cs`,
-`ToolBatchResultBudget.cs`, `ToolGuardMessages.cs`, `IToolHandler.cs`, `IClientToolBridge.cs`,
-`NullClientToolBridge.cs`, `SignalRClientToolBridge.cs`, `ExternalToolHosts.cs`). The remaining
-21 files define tool handlers: 20 files each implement `IToolHandler` directly (one server tool
-per file), and one file — `ClientToolHandlers.cs` — defines 11 client tool classes deriving from
-the shared `ClientToolHandlerBase`. `Program.cs` registers exactly 31 `IToolHandler`
-implementations (29 consecutive `AddSingleton<IToolHandler, …>` lines plus 2 more for the GitHub
-tools), confirming 20 server + 11 client with none missing and none duplicated.
+trusting the file list in a prompt**: the directory holds 40 `.cs` files (its `Handlers/`
+subdirectory is empty). Seventeen are infrastructure (`ToolRegistry.cs`, `ToolDefinition.cs`,
+`ToolExecutor.cs`, `ToolBatchRunner.cs`, `ToolBatchResultBudget.cs`, `ToolGuardMessages.cs`,
+`ToolErrorText.cs`, `IToolHandler.cs`, `IClientToolBridge.cs`, `NullClientToolBridge.cs`,
+`SignalRClientToolBridge.cs`, `ExternalToolHosts.cs`, `ArticleOverCapNotice.cs`,
+`SourceCompiledOutNote.cs`, `SourceDefinitionHint.cs`, `SourceMissContentBuilder.cs`,
+`SourceReachabilityNote.cs`). The remaining 23 files define tool handlers: 22 files each implement
+`IToolHandler` directly (one server tool per file, `ReportFeedbackTool.cs` and the experimental
+`GetCharacterInfoTool.cs` among them), and one file — `ClientToolHandlers.cs` — defines 11 client
+tool classes deriving from the shared, abstract `ClientToolHandlerBase`. `Program.cs` registers
+exactly 33 `AddSingleton<IToolHandler, …>` implementations, confirming 22 server + 11 client with
+none missing and none duplicated. Recount both places whenever a tool is added; never increment
+these figures.
 
 | Tool | Location | Reads | In `Benchmark:AllowedTools`? | Purpose |
 |---|---|---|---|---|
@@ -84,6 +88,8 @@ tools), confirming 20 server + 11 client with none missing and none duplicated.
 | `get_github_repo_info` | Server | `GitHubApiService` (network) | **No** | Repo summary, commits, issues, PRs, releases, or one issue's detail |
 | `search_server_dumplogs` | Server | `ApplicationDbContext` + `DumpLogPath` | **No** | Search recent players' dumplog files for a term |
 | `delegate_to_subagent` | Server | `SubAgentCatalogService` / `AgentLoopRunner` | **No** | Run a specialized subagent turn and fold its findings back in |
+| `get_character_info` | Server | `SourceCodeService` (`CharacterTables`: `src/role.c`, `src/attrib.c`, `src/prop.c`) | **No** — experimental (`IsExperimental`), offered only to a benchmark request whose instruction variant names it | A player race or role: allowed combinations, intrinsics by level, racial attitudes |
+| `report_feedback` | Server | `ApplicationDbContext` (`OverseerFeedbackIssues` / `OverseerFeedbackReports`) | **No** — `ToolCategory.Feedback` is declared outside the allow-list (§ 7a) | A short report to the development team: missing information, a tool problem, or the model's own mistake |
 | `get_full_message_history` | Client | GnollHack client (SignalR bridge) | **No** | Full in-session message log |
 | `get_directory_listing` | Client | same | **No** | Directory listing on the client device |
 | `refresh_snapshot` | Client | same | **No** | Force a fresh game-state snapshot upload |
@@ -136,6 +142,20 @@ executes — **no benchmark finding may rest on one of these 15 tools' absence**
 `search_github`, `get_github_repo_info`, `search_server_dumplogs`, `delegate_to_subagent`, and
 all 11 client tools. If a report shows zero calls to any of those, that is expected behavior,
 not a routing defect.
+
+Two tools reach a candidate without being on the list:
+
+- **`get_character_info`** is experimental: `ToolRegistry` declares it only when the run's
+  instruction variant names it, and the variant is recorded on the run.
+- **`report_feedback`** (from harness 60) is `ToolCategory.Feedback`, which `ToolRegistry` gates on
+  `AgentRunRequest.EnableFeedbackTool` and `enableToolUse` **in place of** the allow-list check. Both
+  candidate paths set the flag, so every candidate with a tool loop is offered it, under every
+  information condition; a closed-book candidate (`EnableToolUse = false`) is not. It is kept off
+  `Benchmark:AllowedTools` on purpose: the same key feeds the grader's *Available tools* line, the
+  claim verifier's tool set and lead filter, and the rubric-gap author, and listing it there would
+  hand the tool to all three. It is also not in the run's recorded `CandidateAllowedTools`; the harness
+  version is the record that it was offered. Its calls are never tool-call rows (§ 7a), so
+  `ToolCallCount` and every tool metric exclude them.
 
 ---
 
@@ -1200,6 +1220,71 @@ capacity error rather than blocking indefinitely.
 
 ---
 
+## 7a. Feedback: `report_feedback`
+
+`ReportFeedbackTool` (`ToolExecutionLocation.Server`, `ToolCategory.Feedback`,
+`TimeoutSeconds = 10`, not experimental). The model's description is
+`Overseer/ToolGuides/report_feedback.md`; the design is `docs/overseer/ai-feedback-reports.md`.
+
+**Parameters.** `category` (required; `missing_information`, `tool_problem` or `own_mistake`),
+`subject` (required; the grouping key, two to six words), `summary` (required; one sentence);
+optional `details`, `searched_for`, `expected_location`, `related_tools` (string array),
+`noticed_via` (`user_correction`, `tool_result`, `self_review`), `suspected_cause`
+(`did_not_verify`, `misread_tool_result`, `training_knowledge_conflict`, `search_strategy`,
+`corpus_or_tool_limit`, `ambiguous_question`, `answered_too_quickly`, `other`) and
+`suspected_cause_note`. `ReportFeedbackArguments.TryParse` validates for both the handler and the
+benchmark:
+
+| Field | Cap / rule |
+|---|---|
+| `subject` | 120 characters (`SubjectMax`) |
+| `summary` | 300 (`SummaryMax`) |
+| `details` | 2000 (`DetailsMax`) |
+| `searched_for` | 500 (`SearchedForMax`) |
+| `expected_location` | 300 (`ExpectedLocationMax`) |
+| `suspected_cause_note` | 500 (`SuspectedCauseNoteMax`) |
+| `related_tools` | registered tool names only (case-insensitive), deduplicated, at most 8 (`RelatedToolsMax`), in the order given; unknown names dropped silently |
+| `noticed_via` | ignored unless `category` is `own_mistake` |
+| `suspected_cause` | an unknown value becomes `other` |
+
+Strings are trimmed and cut at the cap **without an error**; a cut sets `Truncated`, which the stored
+row records. A missing or unknown `category`, or a blank `subject` or `summary`, is a validation
+failure (`Success = false`, the message names the field).
+
+**Caps that are not settings.** Three recorded reports per agent run
+(`ReportFeedbackTool.MaxReportsPerTurn`, through `AgentRunBudget.TryIncrementFeedbackReport`; a
+refused, invalid or duplicate call does not use one), one occurrence of an issue per conversation, and
+— chat only — `Feedback:MaxReportsPerUserPerDay` (20, clamped 1–200) per user per UTC day. The call
+does **not** count against the session tool-call quota (`CountsTowardCallBudget => false`), so its
+result never carries a `[Tool budget: …]` notice.
+
+**Result texts** (`Success = true` unless stated):
+
+| Case | Text |
+|---|---|
+| Recorded (chat), or acknowledged (benchmark candidate) | `Feedback recorded for the development team. Nothing more is needed; continue with the user's request.` |
+| Same conversation, same fingerprint already recorded | `This feedback was already recorded in this conversation. Continue with the user's request.` |
+| Per-turn cap reached (`Success = false`) | `Feedback limit for this turn reached (3). Do not report again in this turn; continue with the user's request.` |
+| Daily cap reached (`Success = false`) | `Feedback limit for today reached. Continue with the user's request.` |
+| Not available (`Success = false`) | `Feedback reports are not available in this conversation.` |
+
+**Failure modes.** *Not available* covers a sub-agent (`AgentDepth > 0`), an ephemeral or
+confidential session, a default `SessionRef` (the Developer Tools handler probe, which sets only
+`UserId` and `MaxResultLength`), the runtime switch turned off while the turn ran, and **any storage
+exception**: storage never fails the turn, and the exception is logged at Warning with the category
+only. A benchmark candidate (`IsBenchmarkCandidate`) is acknowledged without a write, after the parse
+and the per-turn cap, because the benchmark stores the call itself as a `BenchmarkRunAnswerSelfReport`
+row (`server_benchmark_tool_diagnostics`); in the benchmark, `SessionId` holds the run id, which is why
+the handler branches before it reads it.
+
+**Where it is declared.** Production chat, when the feedback switch is on and the session is neither
+ephemeral nor confidential; every GnollBench candidate with a tool loop (§ 3); never a sub-agent,
+grader, claim verifier or rubric-gap author, and `AgentLoopRunner.IsDeclared` refuses the call from
+any of them even if a model names it. The application log never holds report text:
+`ToolExecutor` skips its parameter dump for `ToolCategory.Feedback`.
+
+---
+
 ## 8. Cross-Cutting Limits
 
 These apply above and across individual tool contracts. The batching/throttle **mechanism** —
@@ -1228,7 +1313,7 @@ declare one:
 | `nethack_wiki_search` | **16140**, from the run-36 round (2026-09-11) | `MaxResultLengthOverride` = `Tools:nethack_wiki_search:MaxResults` × (`PerResultChars` + 128) + 500 = 5 × (3000 + 128) + 500 = **16140** at current settings. The 128 is a per-article reserve for `CapArticle`'s own truncation note (`... [Article truncated: showing {shown} of {total} characters. Use nethack_wiki_view for the full article.]`, ≈ 105 characters), which is appended *after* the 3000-character cut — so a full five-article yield of capped articles plus their notes, the separators and the spoiler-free suffix runs to about 15,523 characters, not 15,000, and a floor set at `MaxResults × PerResultChars + 500` (15500) would still have been cut by the generic 10,000→override cap. See `server_benchmark_to_chat_transfer` run-36 entry (T2) for the arithmetic error this corrects |
 
 **Neither was fixed by raising the generic cap, deliberately.** `MaxResultLength` is the cap for
-all 31 tools *and* the live chat default (user-adjustable 1000–100000) *and* `Benchmark:MaxResultLength`,
+all 33 tools *and* the live chat default (user-adjustable 1000–100000) *and* `Benchmark:MaxResultLength`,
 so raising it enlarges every truncated result on every live turn; it would not fix a tool with no
 per-result cap of its own; and every tool result is re-sent to the model on each subsequent round of
 the same question (§ 4), so the extra characters are paid once per remaining round. Lowering

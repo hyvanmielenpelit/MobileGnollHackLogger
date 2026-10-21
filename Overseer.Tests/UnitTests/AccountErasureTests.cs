@@ -328,6 +328,52 @@ public sealed class AccountErasureTests : IDisposable
     }
 
     [Fact]
+    public async Task FeedbackReportsGoWithTheUserAndTheIssuesStay()
+    {
+        var seed = await SeedAsync();
+        var ct = TestContext.Current.CancellationToken;
+
+        var triaged = new OverseerFeedbackIssue
+        {
+            Fingerprint = new string('a', 64), Category = "missing_information", Subject = "Dilithium crystal", Summary = "Price not found.",
+            FirstSeenUtc = Seeded, LastSeenUtc = Seeded, OccurrenceCount = 2, Status = OverseerFeedbackStatus.Acknowledged,
+            TriagedByUserId = UserId, TriagedUtc = Seeded
+        };
+        var onlyErased = new OverseerFeedbackIssue
+        {
+            Fingerprint = new string('b', 64), Category = "tool_problem", Subject = "wiki_search", Summary = "Returned nothing.",
+            FirstSeenUtc = Seeded, LastSeenUtc = Seeded, OccurrenceCount = 1
+        };
+        _db.OverseerFeedbackIssues.AddRange(triaged, onlyErased);
+        await _db.SaveChangesAsync(ct);
+
+        OverseerFeedbackReport Report(OverseerFeedbackIssue issue, long sessionId, string userId) => new()
+        {
+            IssueId = issue.Id, Fingerprint = issue.Fingerprint, CreatedUtc = Seeded, Category = issue.Category,
+            Subject = issue.Subject, Summary = issue.Summary, ChatSessionId = sessionId, AspNetUserId = userId
+        };
+        _db.OverseerFeedbackReports.AddRange(
+            Report(triaged, seed.SessionIds[0], UserId),
+            Report(triaged, seed.SessionIds[2], OtherUserId),
+            Report(onlyErased, seed.SessionIds[1], UserId));
+        await _db.SaveChangesAsync(ct);
+        _db.ChangeTracker.Clear();
+
+        await EraseAsync(new AccountErasurePaths(DumpLogRoot, ConversationsRoot));
+
+        var remaining = Assert.Single(await _db.OverseerFeedbackReports.AsNoTracking().ToListAsync(ct));
+        Assert.Equal(OtherUserId, remaining.AspNetUserId);
+        Assert.Equal(seed.SessionIds[2], remaining.ChatSessionId);
+
+        var issues = await _db.OverseerFeedbackIssues.AsNoTracking().ToListAsync(ct);
+        Assert.Equal(2, issues.Count);
+        var keptTriaged = issues.Single(i => i.Id == triaged.Id);
+        Assert.Equal(2, keptTriaged.OccurrenceCount);
+        Assert.Equal(UserId, keptTriaged.TriagedByUserId);
+        Assert.Equal(1, issues.Single(i => i.Id == onlyErased.Id).OccurrenceCount);
+    }
+
+    [Fact]
     public async Task MissingBaseFoldersAreCounted()
     {
         await SeedAsync(createFiles: false);

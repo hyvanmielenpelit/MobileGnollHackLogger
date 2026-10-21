@@ -31,7 +31,7 @@ export type AdminUsersSubTab = 'users' | 'groups' | 'deletions' | 'log';
 export type AdminDevtoolsSubTab = 'source' | 'gnollhack-wiki' | 'nethack-wiki' | 'knowledge-base' | 'config-health' | 'sentry';
 
 /** The AI Telemetry tab's sub-tabs. */
-export type AdminTelemetrySubTab = 'summary' | 'models' | 'users' | 'groups';
+export type AdminTelemetrySubTab = 'summary' | 'models' | 'users' | 'groups' | 'feedback';
 
 /** How a store navigation treats the browser history: a new entry, or the current one replaced. */
 export type AdminHistoryMode = 'push' | 'replace';

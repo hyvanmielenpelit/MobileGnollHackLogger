@@ -14,6 +14,7 @@ public class AgentRunBudget
     private int _reasoningTokens;
     private int _subAgentRunsStarted;
     private int _activeSubAgentRuns;
+    private int _feedbackReports;
 
     public int MaxTotalModelCalls { get; set; } = 48;
     public int MaxSubAgentRuns { get; set; } = 6;
@@ -86,4 +87,23 @@ public class AgentRunBudget
     }
 
     public void FinishSubAgentRun() => EndSubAgent();
+
+    /// <summary>Claims one of the run's feedback reports; false once <paramref name="maxPerRun"/> are claimed.</summary>
+    public bool TryIncrementFeedbackReport(int maxPerRun)
+    {
+        int current = Interlocked.Increment(ref _feedbackReports);
+        if (current > maxPerRun)
+        {
+            Interlocked.Decrement(ref _feedbackReports);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>Returns a claim from <see cref="TryIncrementFeedbackReport"/> whose report was not recorded.</summary>
+    public void ReleaseFeedbackReport()
+    {
+        Interlocked.Decrement(ref _feedbackReports);
+    }
 }

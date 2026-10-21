@@ -189,6 +189,7 @@ builder.Services.AddSingleton<Overseer.Services.Privacy.EphemeralSessionStore>()
    singleton. The per-turn state lives in DlpTokenVault, which ChatService creates and discards
    with the turn. */
 builder.Services.AddSingleton<Overseer.Services.Privacy.Dlp.DlpScannerService>();
+builder.Services.AddSingleton<Overseer.Services.Feedback.FeedbackSwitchService>();
 builder.Services.AddSingleton<Overseer.Services.Privacy.IAntiMalwareScanner>(sp =>
 {
     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
@@ -457,6 +458,7 @@ builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Ser
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetCharacterInfoTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.WikiViewTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SearchDefinitionsTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.ReportFeedbackTool>();
 
 // GitHub API service
 builder.Services.AddSingleton<Overseer.Services.GitHubApiService>();

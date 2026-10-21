@@ -40,7 +40,7 @@ const BENCHMARK_SUBTAB_SLUGS: Readonly<Record<BenchmarkSubTab, string>> = {
 export const ADMIN_SUBTAB_SLUGS: Readonly<Partial<Record<AdminTabId, readonly AdminSubTabSlug[]>>> = {
   users: [['users', ''], ['groups', 'groups'], ['deletions', 'deletions'], ['log', 'log']],
   configs: [['', ''], ['api-keys', 'api-keys']],
-  telemetry: [['summary', ''], ['models', 'models'], ['users', 'users'], ['groups', 'groups']],
+  telemetry: [['summary', ''], ['models', 'models'], ['users', 'users'], ['groups', 'groups'], ['feedback', 'feedback']],
   benchmark: Object.entries(BENCHMARK_SUBTAB_SLUGS) as [BenchmarkSubTab, string][],
   devtools: [['source', ''], ['gnollhack-wiki', 'gnollhack-wiki'], ['nethack-wiki', 'nethack-wiki'],
              ['knowledge-base', 'knowledge-base'], ['config-health', 'config-health'], ['sentry', 'developer-tools']]
@@ -98,6 +98,21 @@ export function parseAdminPath(tabSlug: string | null, subSlug: string | null):
   const actual = ['/admin', ...(tabSlug != null ? [tabSlug] : []), ...(subSlug != null ? [subSlug] : [])];
   const isCanonical = actual.length === canonical.length && actual.every((part, i) => part === canonical[i]);
   return { tab, subTab, canonical, isCanonical };
+}
+
+/**
+ * A list kept in one query parameter as comma-separated values (`status=new,regressed`), blanks
+ * dropped; null when the parameter is absent.
+ */
+export function readAdminQueryList(query: ParamMap, name: string): string[] | null {
+  const raw = query.get(name);
+  if (raw == null) return null;
+  return raw.split(',').map(value => value.trim()).filter(value => value !== '');
+}
+
+/** A list as one comma-separated query value; null, which removes the parameter, for an empty list. */
+export function adminQueryList(values: readonly string[]): string | null {
+  return values.length > 0 ? values.join(',') : null;
 }
 
 /**

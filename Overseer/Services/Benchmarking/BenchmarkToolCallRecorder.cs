@@ -161,6 +161,9 @@ public static class BenchmarkToolCallRecorder
     /// not sorted on — nested sub-agent calls are appended to the list after their parent completes
     /// and carry no meaningful value in that field, so sorting by it would scramble the turn.
     ///
+    /// Self-reports (<see cref="BenchmarkSelfReports.IsSelfReport"/>) are skipped and the order stays
+    /// dense over the calls recorded; <see cref="BenchmarkSelfReports.Extract"/> stores them apart.
+    ///
     /// The returned list is a plain <see cref="List{T}"/> ready to assign to
     /// <see cref="BenchmarkRunAnswer.ToolCalls"/>; no foreign key is set, because the answer may not
     /// have one yet.
@@ -179,7 +182,7 @@ public static class BenchmarkToolCallRecorder
         int sortOrder = 0;
         foreach (var call in calls)
         {
-            if (call == null) continue;
+            if (call == null || BenchmarkSelfReports.IsSelfReport(call.Name)) continue;
 
             string? args = Cap(call.ArgsText, maxArgs, ArgsTruncationMarker, out bool argsTruncated);
             string? result = CapResult(call.Result, maxResult, out bool resultTruncated);

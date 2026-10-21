@@ -320,6 +320,8 @@ public static class HarnessImpactLedger
                 "The harness-57 _policy.md sentence on role-relative helpers is removed; the tool guides and the candidate system prompt hash as under harness 56."),
             new("59", R,
                 "Run report prints critical-error-quote verifications; report-pack status word, digest wording, single-model rank and PDF heading fixes; information condition, candidate tool list and corpus condition recorded on runs; evidence reach from tool-call rows; benchmark-only instruction variants and experimental tools, never loaded by production."),
+            new("60", CI,
+                "report_feedback is offered to the candidate outside the tool budget and the allow-list; self-reports are stored apart from tool calls; the tool guides hash moves."),
         };
 
         return table.OrderBy(e => e.Number).ToList();

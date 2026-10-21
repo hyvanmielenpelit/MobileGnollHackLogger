@@ -195,6 +195,12 @@ export class PrivacyComponent {
       sharedWith: 'Nobody outside Overseer.'
     },
     {
+      what: 'Assistant feedback reports: short notes the assistant writes for the developers when it cannot find information, a tool misbehaves, or it corrects a mistake. Credentials, card and account numbers, e-mail addresses and phone numbers are removed before storage. The same text is also kept, unredacted, with the conversation’s tool calls.',
+      storedWhere: 'Overseer database: one row per report, linked to the conversation and to you, and one row per issue (the problem itself, with a count of how often it was reported) that holds no reference to any conversation or user.',
+      howLong: 'The report row: until the conversation is permanently deleted or the account is erased. The issue row: until an administrator deletes it.',
+      sharedWith: 'Overseer administrators. Nothing is sent to an AI provider beyond the conversation itself.'
+    },
+    {
       what: 'Provider safety identifier',
       storedWhere: 'Not kept as a record of its own. It is a pseudonym derived from your user id, not your name, e-mail address or the id itself.',
       howLong: 'How long a provider keeps it is the provider’s own term, as with the rest of the call.',

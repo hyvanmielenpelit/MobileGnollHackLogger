@@ -140,7 +140,8 @@ namespace Overseer.Services.Tools
             bool enableClientTools,
             bool enableGameActions,
             string? modelId = null,
-            IEnumerable<string>? allowedToolNames = null)
+            IEnumerable<string>? allowedToolNames = null,
+            bool enableFeedbackTool = false)
         {
             var result = new ToolsForRequest();
             var declaredToolNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -177,10 +178,11 @@ namespace Overseer.Services.Tools
             {
                 if (handler.IsExperimental && !IsEnabledByVariant(handler.ToolName, context)) continue;
 
-                if (allowedSet != null && !allowedSet.Contains(handler.ToolName))
-                {
-                    continue;
-                }
+                /* The feedback tool is gated by its own flag, never by the allow-list: the
+                   allow-list also feeds the grader's and claim verifier's inputs, which must not
+                   name it. */
+                if (handler.Category == ToolCategory.Feedback) { if (!enableFeedbackTool || !enableToolUse) continue; }
+                else if (allowedSet != null && !allowedSet.Contains(handler.ToolName)) continue;
 
                 if (blockExternalEgress && handler.Category == ToolCategory.ExternalLookup) continue;
 

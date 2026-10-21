@@ -2337,6 +2337,20 @@ mixins, with *No group* as a card of its own. It has the Users view's recorded e
 `CardListState`, and runs its search, sort and batches of 20 **in the browser**, because the server
 returns every group unpaged (groups are administrator-made and few).
 
+The **AI Telemetry Feedback issues** (`app-telemetry-feedback`, `admin/telemetry-tab/feedback/`,
+2026-10-21) are the twenty-second: one full-width `article[aria-labelledby="tl-fb-{id}-title"]` per
+feedback issue, in Run History's layout — a kicker (category badge, status badge with *Regressed N×*,
+the models), the subject as `h4` title and the summary, a metrics row of four **fixed-width** columns
+with visible qualifier lines (*Occurrences* with *N retained*, *Users*, *First seen*, *Last seen*;
+two per row below about 40 rem), a `dl` of the latest facts, a `details.gh-disclosure` of occurrences
+loaded on first open with *Show 10 more*, and, under a hairline, the triage form (a labeled *Status*
+select whose help text states the recurrence rule, a `gh-textarea-autosize` *Note*, a *Save* `.btn-gh`,
+an icon-only *Delete issue* with a confirm). It is **server-paged** like the Security tab's events
+(`TableState.setRemoteTotal`, *Show N more* in batches of 25), with the full §8h filter bar: a debounced
+search, *Sort by* (remembered in `localStorage`), *Status*, *Category* and *Model* facets, and chips. The
+facet values and the search live in the address (`status`, `category`, `model`, `q`). Model-written text
+is plain text only. See `docs/overseer/ai-feedback-reports.md` § 10.
+
 The **charts dialog's Models, Users and Groups tabs** (`app-telemetry-chart-{models,users,groups}`,
 `admin/telemetry-tab/charts/selection/`, 2026-10-21) are a recorded exception too: checkbox lists under a
 §8i selection band, not cards, because each row is one choice with one meta line. They take no
@@ -2861,6 +2875,19 @@ and the AI Telemetry *Manage limits*, *… for group {group}* from the Groups su
 
 *Manage Groups for {user}* (`users-tab/user-list/`, `#manageGroupsDialog`) uses the same frame at
 36 rem, not full height, with the same switch-first cards (title only, no badges) and **Done**.
+
+**The Feedback switch card** (2026-10-21, first in the AI Telemetry Feedback panel) is the reference for
+**one switch that governs a whole feature**. A full-width `<section aria-labelledby="tl-fb-switch-title">`:
+on the left the `h3#tl-fb-switch-title` *Feedback tool*, a sentence of state from the server (*On. …*,
+*Off since {time} by {user}. …*, or *Off by configuration default*) and a quieter line on what it does not
+govern; on the right the switch. It is the global `gh-switch` with the size modifier **`gh-switch-lg`**
+(`styles.scss`, beside `.gh-switch`: about 64 × 34 pixels, the knob scaled to match), so it reads as the
+card's one big control. Like the access switches above it commits at once with no confirmation (the
+change is reversible and destroys nothing): its checkbox is named by the title through
+`aria-labelledby`, is disabled while the request runs and reverts on an error; the result goes to the
+card's `role="status"` line, an error to a `.gh-field-error` line, and after a success the state sentence
+is refetched so it is the server's, not the client's. Use `gh-switch-lg` only for such a feature-level
+switch; a switch in a list row stays the plain `gh-switch`.
 
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
 `.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with

@@ -224,11 +224,11 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFiftyNine()
+    public void HarnessVersion_IsSixty()
     {
-        // Harness 59: critical-error-quote verifications in the run report, information and corpus
-        // conditions and instruction variants recorded on runs; production prompts unchanged.
-        Assert.Equal("59", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 60: the candidate is offered report_feedback outside the tool budget and the
+        // allow-list, and its calls are stored as self-reports apart from the tool-call rows.
+        Assert.Equal("60", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     private static readonly IReadOnlyList<string> ConfiguredCandidateTools = new[]

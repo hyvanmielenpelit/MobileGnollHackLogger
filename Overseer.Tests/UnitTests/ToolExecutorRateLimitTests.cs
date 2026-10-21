@@ -296,5 +296,114 @@ public class ToolExecutorRateLimitTests
         }
         Assert.All(q2Results, r => Assert.True(r.Success));
     }
+
+    /// <summary>A handler outside the session quota, like <c>report_feedback</c>.</summary>
+    private sealed class ExemptFeedbackHandler : IToolHandler
+    {
+        private int _executions;
+
+        public string ToolName => "exempt_feedback_tool";
+        public string Description { get; set; } = "Exempt feedback tool";
+        public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
+        public ToolCategory Category => ToolCategory.Feedback;
+        public JsonElement ParameterSchema => JsonDocument.Parse("{}").RootElement;
+        public bool CountsTowardCallBudget => false;
+
+        public int Executions => Volatile.Read(ref _executions);
+
+        public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _executions);
+            return Task.FromResult(new ToolResult { Success = true, Content = "Recorded" });
+        }
+    }
+
+    private sealed class RecordingLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
+    {
+        private readonly List<string> _messages = new();
+
+        public IReadOnlyList<string> Messages
+        {
+            get { lock (_messages) return _messages.ToList(); }
+        }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            lock (_messages) _messages.Add(formatter(state, exception));
+        }
+    }
+
+    private static ToolExecutor CreateExecutor(MemoryCache cache, IToolHandler[] handlers, Microsoft.Extensions.Logging.ILogger<ToolExecutor>? logger = null)
+        => new(handlers, new NullClientBridge(), logger ?? NullLogger<ToolExecutor>.Instance, cache, CreateConfiguration());
+
+    [Fact]
+    public async Task ExecuteAsync_ExemptHandler_RunsAtFullQuota_AndDoesNotMoveIt()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 10000 });
+        var counted = new TestServerToolHandler();
+        var exempt = new ExemptFeedbackHandler();
+        var executor = CreateExecutor(cache, new IToolHandler[] { counted, exempt });
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(77), MaxCallsPerSession = 2 };
+        var args = JsonDocument.Parse("{}").RootElement;
+
+        Assert.True((await executor.ExecuteAsync("test_tool", args, context, CancellationToken.None)).Success);
+
+        // The exempt calls between the counted ones leave the quota where it was.
+        for (int i = 0; i < 5; i++)
+        {
+            Assert.True((await executor.ExecuteAsync("exempt_feedback_tool", args, context, CancellationToken.None)).Success);
+        }
+
+        var second = await executor.ExecuteAsync("test_tool", args, context, CancellationToken.None);
+        Assert.True(second.Success);
+        Assert.Equal(0, second.RemainingBudget);
+
+        var refused = await executor.ExecuteAsync("test_tool", args, context, CancellationToken.None);
+        Assert.False(refused.Success);
+        Assert.True(refused.BudgetExhausted);
+
+        // At full quota the exempt handler still runs.
+        var atFullQuota = await executor.ExecuteAsync("exempt_feedback_tool", args, context, CancellationToken.None);
+        Assert.True(atFullQuota.Success);
+        Assert.False(atFullQuota.BudgetExhausted);
+        Assert.Equal(6, exempt.Executions);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ExemptHandler_LeavesRemainingBudgetNull()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 10000 });
+        var executor = CreateExecutor(cache, new IToolHandler[] { new ExemptFeedbackHandler() });
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(78), MaxCallsPerSession = 5 };
+
+        var result = await executor.ExecuteAsync("exempt_feedback_tool", JsonDocument.Parse("{}").RootElement, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Null(result.RemainingBudget);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_FeedbackHandler_WritesNoParametersAuditLine()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 10000 });
+        var logger = new RecordingLogger<ToolExecutor>();
+        var executor = CreateExecutor(cache, new IToolHandler[] { new ExemptFeedbackHandler(), new TestServerToolHandler() }, logger);
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(79), MaxCallsPerSession = 5 };
+
+        await executor.ExecuteAsync("exempt_feedback_tool", JsonDocument.Parse("{\"summary\":\"private feedback text\"}").RootElement, context, CancellationToken.None);
+
+        Assert.Contains(logger.Messages, m => m.Contains("Executing tool exempt_feedback_tool"));
+        Assert.DoesNotContain(logger.Messages, m => m.Contains("Parameters:"));
+        Assert.DoesNotContain(logger.Messages, m => m.Contains("private feedback text"));
+
+        // Any other tool still writes it.
+        await executor.ExecuteAsync("test_tool", JsonDocument.Parse("{\"q\":\"x\"}").RootElement, context, CancellationToken.None);
+        Assert.Contains(logger.Messages, m => m.Contains("Parameters:"));
+    }
 }
 

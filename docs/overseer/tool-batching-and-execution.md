@@ -49,6 +49,17 @@ To balance fast response times against resource starvation and API throttling, t
 - **`_processThrottler`**: Limits total concurrent tool executions across the entire server process (default: 30).
 - **`_externalLookupThrottler`**: Protects outbound rate limits for tools categorized as `ToolCategory.ExternalLookup` (default: 3 concurrent requests).
 
+### Tier 3: Session Quotas and the Budget Exemption
+
+`ToolExecutor.ExecuteAsync` looks the handler up **before** the session-quota block, then:
+- **Exempt handlers skip the quota.** `IToolHandler.CountsTowardCallBudget` defaults to `true`; `report_feedback` (`ReportFeedbackTool`, `ToolCategory.Feedback`) returns `false`, so it counts against neither the chat session's call quota nor the benchmark's per-question budget. Its own cap is three accepted reports per agent run (`AgentRunBudget.TryIncrementFeedbackReport`). See `ai-feedback-reports.md`.
+- **`RemainingBudget` stays null** on the exempt path, so `AgentLoopRunner` appends no `[Tool budget: …]` notice to the result; a `0` there would tell the model its budget is gone.
+- **An unknown tool** still fails as before, and the experimental-tool guard still runs after the lookup and before execution.
+
+### The Audit Log Line
+
+`ToolExecutor` logs `Tool Execution Audit - Session: …, Tool: …, Parameters: …` at Information level with the call's raw arguments. **The parameter dump is skipped for `ToolCategory.Feedback`**, because a feedback report's arguments are conversation-derived text; the `Executing tool …` line before it carries no parameters and stays. `ReportFeedbackTool` itself logs only the category, the issue id and the new row id, so report text reaches the application log nowhere.
+
 ---
 
 ## 3. Tool Result Budgets & Truncation
@@ -129,6 +140,6 @@ The tool batching and execution architecture is verified by 6 dedicated test fix
 - **`ParallelToolExecutionTests.cs`**: Verifies concurrent execution ordering, global and client semaphore throttles, cancellation propagation, and channel streaming in `ToolBatchRunner`.
 - **`ParallelExecutionModeTests.cs`**: Verifies per-key mode resolution (`ParallelExecutionResolver`), prompt override injection, tool execution context cloning, and subagent concurrency limits.
 - **`ToolBatchResultBudgetTests.cs`**: Verifies exact character budget consumption, truncation markers, and skip states in `ToolBatchResultBudget`.
-- **`ToolExecutorRateLimitTests.cs`**: Verifies session-level call quotas and process-level semaphore throttles in `ToolExecutor`.
+- **`ToolExecutorRateLimitTests.cs`**: Verifies session-level call quotas and process-level semaphore throttles in `ToolExecutor`, the `CountsTowardCallBudget` exemption with its null `RemainingBudget`, and the skipped parameter dump for `ToolCategory.Feedback`.
 - **`ToolResultHandlingTests.cs`**: Verifies individual tool result clamping, JSON payload protection, and error handling.
 - **`SystemPromptPolicyTests.cs`**: Verifies filesystem loading, content integrity, and mandatory parallelization policy strings in the system prompt.

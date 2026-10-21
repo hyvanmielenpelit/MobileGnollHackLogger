@@ -8097,6 +8097,46 @@ prompt hash beside it); both are compared, never pooled. A pair that differs onl
 condition is a *Verification of a change* pair, Tier C cross-condition in Multi-Run Analysis. Chat
 consistency excludes runs with a non-production condition, a non-live corpus or a variant.
 
+### Harness Version 60 Updates
+
+Overseer feedback tool round (2026-10-21). `HarnessVersion` moves to **"60"**; `ScoringMethodVersion`
+stays **14**. Migration `AddOverseerFeedback` adds the chat feedback tables and
+`BenchmarkRunAnswerSelfReport`. `HarnessImpactLedger` classifies 60 as `CandidateInput`: the candidate is
+offered one more tool, so `ToolGuidesSha256` moves (new guide `report_feedback.md`);
+`CandidateSystemPromptSha256` does not, because `_policy.md` is unchanged. The production side of the tool
+is [`ai-feedback-reports.md`](ai-feedback-reports.md).
+
+- **The candidate is offered `report_feedback`.** Both candidate paths (`ExecuteSingleQuestionAsync` and
+  `ReExecuteSingleAnswerAsync`) set `AgentRunRequest.EnableFeedbackTool` and
+  `ToolExecutionContext.IsBenchmarkCandidate`. The tool is `ToolCategory.Feedback`, which `ToolRegistry`
+  declares in place of the allow-list check, so it is outside `Benchmark:AllowedTools`, outside the
+  information condition's candidate tool list and outside the recorded `CandidateAllowedTools`; the
+  harness version is the record that it was offered. A closed-book candidate (`EnableToolUse = false`) is
+  not offered it. The graders, the claim verifier and the rubric-gap author never are, and
+  `AgentLoopRunner.IsDeclared` refuses the call from any of them. The runtime feedback switch and
+  `Feedback:Enabled` do not govern GnollBench, and no daily cap applies.
+- **Outside the tool budget.** The tool does not count against the 45-call budget (§ 9), and its
+  result carries no `[Tool budget: …]` notice. At most three self-reports per question are accepted
+  (`ReportFeedbackTool.MaxReportsPerTurn`); the handler acknowledges without writing.
+- **Stored apart from tool calls.** `BenchmarkToolCallRecorder.Build` skips the self-report calls, so
+  `SortOrder` stays dense over the recorded calls, and `BenchmarkSelfReports.Extract` writes them as
+  `BenchmarkRunAnswerSelfReport` rows (§ 5), parsed and fingerprinted like a chat report and not scrubbed.
+  `ToolCallCount` and `ToolCallSummary` exclude them in both paths, so *Budget Pressure*, *Budget
+  Saturation*, tool routing, Chat Transfer, Chat Consistency's tool mix, evidence reach and the
+  graders' *Completed tool calls* are unchanged by construction. `ToolTimeMs` and `ModelCallCount`
+  absorb the handler's few milliseconds and any extra model round a self-report costs.
+- **Self-Reports in the run report.** `### Self-Reports` follows *Tool Routing* and closes the *Tool
+  Usage Profile* subsection: totals by category, the count not accepted and the number of distinct
+  issues; the sentence *"Self-reports are the candidate's own account. The suspected cause is its
+  hypothesis, not a finding."*; a table by question and order; and *Repeated issues* when one
+  fingerprint appears in more than one question. A run without any reads *"No self-reports in this
+  run."*, a run before harness 60 *"The feedback tool was not offered (harness N)."* and a closed-book
+  run *"The feedback tool was not offered (closed book: no tools)."*. Each question in § 3 lists its
+  self-reports under the call table. The PDF and Word renderings follow the Markdown; report packs and
+  the AI-written report documents do not show self-reports.
+
+No answer flag is added, and the grading and synthesis prompts are unchanged.
+
 ---
 
 ## 3. Assessor Strategy
@@ -8943,6 +8983,7 @@ BenchmarkSuite (1) ────┴───< (N) BenchmarkQuestion
 - **`BenchmarkRunBoardSnapshot`**: `Sha256` (`char(64)`, unique), `SanitizedText`, `DigestText`, `CharCount`, `CreatedAtUtc`. Append-only and content-addressed: the key is the lower-case hex SHA-256 of the UTF-16LE `SanitizedText + "\0" + (DigestText ?? "")`, so a digest change is a new row. No suite operation edits or deletes a row; written through `BenchmarkRunBoardSnapshotStore.GetOrCreateAsync` at launch.
 - **`BenchmarkAssessorCalibration`**: One non-destructive re-grading of a run by an alternative assessor — the assessor's settings snapshot (`AssessorModelSnapshotId`), `AnswerCount`, `SkippedAnswerCount`, `MeanAbsDelta`, `DisagreementCount`, token and duration cost, `VerdictsJson`, and `ComparedAgainst` (`Assessor`, `CoAssessor` or `Panel`, max length 16; the last two exist only on panel runs, and null means `Assessor`). Admin-UI only: it never appears in the Markdown report, because a calibration is an experiment about graders rather than a property of the run.
 - **`BenchmarkRunAnswerToolCall`** (from harness 17): One row per tool call **attempted** during an answer's turn — `SortOrder`, `IterationIndex`, `Name`, `ToolCallId`, `Status`, `ArgsText`, `Result`, `Error`, `QueueWaitMs`, `ExecutionMs`, `Depth`, `AgentName`, `ArgsTruncated`, `ResultTruncated`, `ResultLengthChars` — cascade-deleted with `BenchmarkRunAnswer` and indexed on `(BenchmarkRunAnswerId, SortOrder)`. `ArgsText` and `Result` are pruned by age; every other field survives the prune. See **Harness Version 17 Updates**.
+- **`BenchmarkRunAnswerSelfReport`** (from harness 60): One row per `report_feedback` call of the candidate, which is never a `BenchmarkRunAnswerToolCall` row — `SortOrder` (dense from 0 over the answer's self-reports, in emission order), `IterationIndex`, `Accepted` (the call completed), `Error` (the refusal or validation message, at most 500), `Fingerprint` and `Category` (null when the arguments did not parse), `Subject`, `Summary`, `Details`, `SearchedFor`, `ExpectedLocation`, `RelatedToolsJson`, `NoticedVia`, `SuspectedCause`, `SuspectedCauseNote`, `Truncated` — reached through `BenchmarkRunAnswer.SelfReports`, cascade-deleted with `BenchmarkRunAnswer` and indexed on `(BenchmarkRunAnswerId, SortOrder)` and on `Fingerprint`. The age prune does not touch them, no user id is stored, and the text is not scrubbed. A re-run replaces an answer's rows. See **Harness Version 60 Updates** and [`ai-feedback-reports.md`](ai-feedback-reports.md).
 - **`BenchmarkRun` call telemetry**: `CallTelemetryVersion` (int, null) — the version of the per-call telemetry the run recorded, stamped at launch with `BenchmarkService.CurrentCallTelemetryVersion` (currently 1); null means the run recorded none. It is **not a harness version**: nothing any model is sent depends on it, so a run with and a run without it can share one `HarnessVersion`. `ServedModelIdsJson` (nvarchar(1024), null) — the model ids the provider reported serving the candidate's calls, as a JSON object of id to call count, recomputed from the saved candidate rows when the run finishes or is aborted and after failed or single questions are re-run (a rescore leaves it as it is); null without telemetry or when no call reported a model. `IsConsistencyAnchor` (bit) — the run is a chat consistency grader anchor (see [`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md)).
 - **`BenchmarkRunAnswer` turn timing** (null on a run without call telemetry, meaning "not recorded"): `StartedAtUtc` and `CompletedAtUtc`, the wall-clock bounds of the candidate's turn; `PermitWaitMs` and `BackoffWaitMs`, the time inside `DurationMs` spent waiting for Overseer's own request-governor permit (its cooldown included) and sleeping between retries — Overseer's waits, never the provider's; `RetryAttemptCount`, failed attempts retried across the turn's model calls; `ServedModelId`, the model id the provider reported serving, null when the calls disagree or none reported one; and `ModelCalls`, the answer's `ModelCallTelemetry` rows.
 - **`ModelCallTelemetry`**: One row per model call of an answer, candidate (`Source = BenchmarkCandidate`) or grader (`BenchmarkGrader`, with `GraderRole` `Assessor`, `CoAssessor`, `SecondOpinion`, `ClaimVerifier` or `Synthesis`), cascade-deleted with its answer; a synthesis call has no answer and carries only `BenchmarkRunId`. It records what was requested (`Provider`, `RequestedModelId`, `ThinkingLevelSent`, `ReasoningSummarySent`, `ServiceTierRequested`, `MaxOutputTokensSent`, `EndpointKind`), what the provider reported serving (`ServedModelId`, `ResponseId`, `RequestId`, `ServedServiceTier`, `ServedSpeed`, `FinishReason`, `IsRefusal`, `FallbackModelId`, `HttpVersion`), the waits and attempts before the successful send (`PermitWaitMs`, `BackoffWaitMs`, `FailedAttemptMs`, `AttemptCount`, `Http429Count`, `Http5xxCount`, `StreamErrorRetryCount`, `FinalHttpStatus`), the stream marks relative to that send (`HeadersMs`, `ServerProcessingMs`, `FirstEventMs`, `FirstReasoningMs`, `FirstOutputMs`, `FirstToolCallMs`, `LastDeltaMs`, `CompletedMs`, `StreamEndMs`), the visible output (`OutputDeltaCount`, `VisibleOutputChars`, `Last80DecodeSpanMs`, `Last80VisibleChars`), the call's usage (`InputTokens`, `CachedInputTokens`, `CacheWriteTokens`, `OutputTokens`, `ReasoningTokens`), the successful attempt's rate-limit headers (`RateLimitJson`) and, for a call that failed for good, `ErrorKind`. Indexed on `BenchmarkRunAnswerId` and on `(Source, Provider, RequestedModelId, StartedAtUtc)`. See **Per-Call Telemetry and the Timing Decomposition** below.
@@ -9614,6 +9655,8 @@ The cap keys are **flat values** since harness 13 (`Benchmark:ToolCallBudget`, `
 The 3x factor is empirical, not arbitrary: on the 2026-09-03 run a single Advanced question executed up to **39** tool calls (Q13 and Q18, each 39 of 45), so a session budget has to cover several such questions rather than one. At the old default of 50, the second hard question in a session was refused mid-investigation with "Maximum tool calls per session exceeded."
 
 Both chat values remain user-adjustable in `/settings`; these are the defaults for a user who has never changed them. `MaxResultLength` already agreed at 10,000 on both sides, and chat's `ChatRequestTimeout` (1,800 s) already exceeds the Advanced band's per-question timeout (720 s).
+
+**`report_feedback` is outside both budgets** (from harness 60). Its handler sets `IToolHandler.CountsTowardCallBudget` to `false`, so `ToolExecutor` skips the quota block for it: it counts against neither the 45-call question budget nor the 150-call chat session budget, its result carries no `[Tool budget: …]` notice, and the benchmark's `ToolCallCount` excludes it, so *Budget Pressure* and *Budget Saturation* do not move. Its own cap is three accepted reports per turn (`ReportFeedbackTool.MaxReportsPerTurn`). See [`ai-feedback-reports.md`](ai-feedback-reports.md).
 
 ### Comparability Across Runs: The Budget Key Widened, the Scoring-Profile Key Narrowed
 

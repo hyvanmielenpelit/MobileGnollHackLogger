@@ -52,6 +52,8 @@ public class ChatService
     private readonly AiRequestGovernor? _governor;
     // Null counts nothing: a hand-built container without the registration.
     private readonly Overseer.Services.Telemetry.IActivityCounter? _activityCounter;
+    // Null offers no feedback tool: a hand-built container without the registration.
+    private readonly Overseer.Services.Feedback.FeedbackSwitchService? _feedbackSwitch;
     private bool _showDebugLog = false;
 
     public ChatService(
@@ -83,9 +85,11 @@ public class ChatService
         SubAgentCatalogService? subAgentCatalogService = null,
         ILogger<ChatService>? logger = null,
         AiRequestGovernor? governor = null,
-        Overseer.Services.Telemetry.IActivityCounter? activityCounter = null)
+        Overseer.Services.Telemetry.IActivityCounter? activityCounter = null,
+        Overseer.Services.Feedback.FeedbackSwitchService? feedbackSwitch = null)
     {
         _activityCounter = activityCounter;
+        _feedbackSwitch = feedbackSwitch;
         _scopeFactory = scopeFactory;
         _wikiService = wikiService;
         _cryptoService = cryptoService;
@@ -524,6 +528,8 @@ public class ChatService
         int? contextWindowTokens = null;
         int? contextInputLimitTokens = null;
         string? userName = null;
+        // The id of this turn's user message, once it is stored; null in an ephemeral session.
+        long? turnUserMessageId = null;
 
         using (var scope = _scopeFactory.CreateScope())
         {
@@ -1096,6 +1102,7 @@ public class ChatService
             {
                 dbContext.ChatMessage.Add(userMsg);
                 await dbContext.SaveChangesAsync(CancellationToken.None);
+                turnUserMessageId = userMsg.Id;
             }
 
             // A visible message the user sent; an incognito one only on the anonymous daily row.
@@ -1499,6 +1506,7 @@ public class ChatService
             BlockExternalEgress = confidentialPolicy?.DisableToolEgress ?? false,
             DisableProviderPromptCache = confidentialPolicy?.DisablePromptCache == true,
             ApiKeyAlert = apiKeyAlertContext,
+            TurnUserMessageId = isEphemeralSession ? null : turnUserMessageId,
             EventSink = async (evt) => {
                 evt.SessionId = wireRef;
                 _ongoingChatManager.ProcessEvent(sessionRef, evt);
@@ -1574,6 +1582,7 @@ public class ChatService
             EnableSubAgents = enableSubAgents,
             EnableClientTools = enableClientTools,
             EnableGameActions = enableGameActions,
+            EnableFeedbackTool = _feedbackSwitch?.IsEnabled == true && !isEphemeralSession && !isConfidentialSession,
             ToolExecutionContext = execContext,
             DlpVault = dlpVault,
             SystemModelId = systemModelId,

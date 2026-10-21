@@ -1865,6 +1865,26 @@ public class BenchmarkService
     }
 
     /// <summary>
+    /// Whether a name is a registered tool, for the <c>related_tools</c> filter of
+    /// <see cref="BenchmarkSelfReports.Extract"/>. Reached through a scope like
+    /// <see cref="ResolveLargestResultLengthOverride"/>; without a registry no name is known.
+    /// </summary>
+    private Func<string, bool> ResolveKnownToolPredicate()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var toolRegistry = scope.ServiceProvider.GetService<Tools.ToolRegistry>();
+        return toolRegistry == null ? _ => false : toolRegistry.IsRegisteredTool;
+    }
+
+    /// <summary>
+    /// The answer's tool-call count without its self-reports. The loop's own count is kept as the
+    /// base, so a turn that ended before the loop set it still records zero.
+    /// </summary>
+    internal static int ToolCallCountWithoutSelfReports(AgentRunResult runResult)
+        => Math.Max(0, runResult.ToolCallCount
+            - runResult.ToolCalls.Count(c => BenchmarkSelfReports.IsSelfReport(c.Name)));
+
+    /// <summary>
     /// A single-shot grading request's system text as one frozen segment, and a seed history that
     /// carries the same text as its first system message, the board block as a second system
     /// message when there is one, then the user message. Providers that honour segments build
@@ -2045,6 +2065,10 @@ public class BenchmarkService
             EnableWebSearch = false,
             EnableSubAgents = false,
             AllowedTools = allowedTools,
+
+            // The feedback tool sits outside AllowedTools; the registry still withholds it when
+            // EnableToolUse is false, so a closed-book candidate is not offered it.
+            EnableFeedbackTool = true,
             SystemModelId = testedConfig.Id,
             Budget = new AgentRunBudget { MaxTotalModelCalls = maxTotalModelCalls },
             /* A benchmark run is not a chat session, and SessionId is borrowed here for the
@@ -2059,7 +2083,10 @@ public class BenchmarkService
                 MaxResultLength = maxResultLength,
                 MaxCallsPerSession = toolCallBudget,
                 ShowDebugLog = false,
-                Variant = variant
+                Variant = variant,
+
+                // The feedback handler acknowledges without writing; the call is stored as a self-report.
+                IsBenchmarkCandidate = true
             },
             SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, question.QuestionText),
 
@@ -2180,7 +2207,8 @@ public class BenchmarkService
             ResolveBucketingPricing(testedConfig), runResult.ModelCallUsages);
 
         var succeededCalls = runResult.ToolCalls
-            .Where(tc => tc.Status == "completed" && string.IsNullOrEmpty(tc.Error) && !string.IsNullOrEmpty(tc.Name))
+            .Where(tc => tc.Status == "completed" && string.IsNullOrEmpty(tc.Error) && !string.IsNullOrEmpty(tc.Name)
+                && !BenchmarkSelfReports.IsSelfReport(tc.Name))
             .GroupBy(tc => tc.Name!)
             .Select(g => $"{g.Key}×{g.Count()}")
             .ToList();
@@ -2268,7 +2296,7 @@ public class BenchmarkService
             LongContextCacheReadTokens = longContextBuckets.CacheReadTokens,
             LongContextCacheCreationTokens = longContextBuckets.CacheCreationTokens,
             ModelCallCount = runResult.ModelCallCount,
-            ToolCallCount = runResult.ToolCallCount,
+            ToolCallCount = ToolCallCountWithoutSelfReports(runResult),
             ToolCallsBlocked = runResult.ToolCallsBlocked,
             ToolBudgetExhausted = runResult.ToolBudgetExhausted,
             ToolCallBudgetUsed = toolCallBudget,
@@ -2283,7 +2311,10 @@ public class BenchmarkService
             // The per-call record in emission order. ToolCallSummary above lists only the calls
             // that succeeded; these rows also carry the ones that failed, returned too much, or
             // were refused for budget — the calls a tool-layer diagnosis is actually about.
-            ToolCalls = BenchmarkToolCallRecorder.Build(runResult.ToolCalls, toolCallRecordLimits)
+            ToolCalls = BenchmarkToolCallRecorder.Build(runResult.ToolCalls, toolCallRecordLimits),
+
+            // The candidate's report_feedback calls, which the rows above skip.
+            SelfReports = BenchmarkSelfReports.Extract(runResult.ToolCalls, ResolveKnownToolPredicate())
         };
 
         ApplyCandidateTelemetry(
@@ -2384,6 +2415,9 @@ public class BenchmarkService
             EnableWebSearch = false,
             EnableSubAgents = false,
             AllowedTools = allowedTools,
+
+            // See ExecuteSingleQuestionAsync.
+            EnableFeedbackTool = true,
             SystemModelId = testedConfig.Id,
             Budget = new AgentRunBudget { MaxTotalModelCalls = maxTotalModelCalls },
             ToolExecutionContext = new Tools.ToolExecutionContext
@@ -2394,7 +2428,8 @@ public class BenchmarkService
                 MaxResultLength = maxResultLength,
                 MaxCallsPerSession = toolCallBudget,
                 ShowDebugLog = false,
-                Variant = variant
+                Variant = variant,
+                IsBenchmarkCandidate = true
             },
             SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, answer.QuestionText),
 
@@ -2494,7 +2529,8 @@ public class BenchmarkService
             ResolveBucketingPricing(testedConfig), runResult.ModelCallUsages);
 
         var succeededCalls = runResult.ToolCalls
-            .Where(tc => tc.Status == "completed" && string.IsNullOrEmpty(tc.Error) && !string.IsNullOrEmpty(tc.Name))
+            .Where(tc => tc.Status == "completed" && string.IsNullOrEmpty(tc.Error) && !string.IsNullOrEmpty(tc.Name)
+                && !BenchmarkSelfReports.IsSelfReport(tc.Name))
             .GroupBy(tc => tc.Name!)
             .Select(g => $"{g.Key}×{g.Count()}")
             .ToList();
@@ -2562,7 +2598,7 @@ public class BenchmarkService
         answer.LongContextCacheReadTokens = longContextBuckets.CacheReadTokens;
         answer.LongContextCacheCreationTokens = longContextBuckets.CacheCreationTokens;
         answer.ModelCallCount = runResult.ModelCallCount;
-        answer.ToolCallCount = runResult.ToolCallCount;
+        answer.ToolCallCount = ToolCallCountWithoutSelfReports(runResult);
         answer.ToolCallsBlocked = runResult.ToolCallsBlocked;
         answer.ToolBudgetExhausted = runResult.ToolBudgetExhausted;
         answer.ToolCallBudgetUsed = toolCallBudget;
@@ -2594,6 +2630,20 @@ public class BenchmarkService
         }
 
         answer.ToolCalls = BenchmarkToolCallRecorder.Build(runResult.ToolCalls, toolCallRecordLimits);
+
+        // The replaced attempt's self-reports go the same way as its tool-call rows, for the same reasons.
+        await db.BenchmarkRunAnswerSelfReports
+            .Where(s => s.BenchmarkRunAnswerId == answer.Id)
+            .ExecuteDeleteAsync(CancellationToken.None);
+
+        foreach (var stale in db.ChangeTracker.Entries<BenchmarkRunAnswerSelfReport>()
+            .Where(e => e.Entity.BenchmarkRunAnswerId == answer.Id)
+            .ToList())
+        {
+            stale.State = EntityState.Detached;
+        }
+
+        answer.SelfReports = BenchmarkSelfReports.Extract(runResult.ToolCalls, ResolveKnownToolPredicate());
 
         // The replaced attempt's telemetry rows go the same way, through the DbSet for the same
         // reason: its candidate rows describe a turn the answer no longer holds, and its grader rows

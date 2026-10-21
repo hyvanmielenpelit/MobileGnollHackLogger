@@ -69,63 +69,71 @@ namespace Overseer.Services.Tools
                 _logger.LogInformation("Executing tool {ToolName} for Session {SessionId} (Agent: {AgentName}, Depth: {Depth})", 
                     toolName, callContext.SessionId, callContext.AgentName ?? "Coordinator", callContext.AgentDepth);
 
-                // 1. Session Rate Limiting (atomic — tools may run concurrently)
-                bool isSubAgentCall = callContext.AgentDepth > 0;
-                string baseScope = callContext.ToolBudgetScopeId ?? callContext.SessionId.ToString();
-                var rateLimitKey = isSubAgentCall
-                    ? $"tool_calls_session_{baseScope}_sub"
-                    : $"tool_calls_session_{baseScope}";
-                int sessionLimit = isSubAgentCall
-                    ? Math.Max(callContext.MaxCallsPerSession, _minCallsPerSessionWithSubAgents)
-                    : callContext.MaxCallsPerSession;
-                TimeSpan expiry = callContext.ToolBudgetScopeId != null
-                    ? TimeSpan.FromHours(1)
-                    : TimeSpan.FromHours(4);
-                bool allowed;
-                int? remainingBudget = null;
-                lock (_rateLimitLock)
-                {
-                    int count = _cache.GetOrCreate(rateLimitKey, entry =>
-                    {
-                        entry.Size = 1;
-                        entry.AbsoluteExpirationRelativeToNow = expiry;
-                        return 0;
-                    });
+                // 1. Find Handler
+                var handler = _handlers.FirstOrDefault(h => string.Equals(h.ToolName, toolName, StringComparison.OrdinalIgnoreCase));
 
-                    allowed = count < sessionLimit;
-                    if (allowed)
+                // 2. Session Rate Limiting (atomic — tools may run concurrently); an exempt handler
+                // neither consumes nor reports the quota, so its RemainingBudget stays null.
+                int? remainingBudget = null;
+                if (handler == null || handler.CountsTowardCallBudget)
+                {
+                    bool isSubAgentCall = callContext.AgentDepth > 0;
+                    string baseScope = callContext.ToolBudgetScopeId ?? callContext.SessionId.ToString();
+                    var rateLimitKey = isSubAgentCall
+                        ? $"tool_calls_session_{baseScope}_sub"
+                        : $"tool_calls_session_{baseScope}";
+                    int sessionLimit = isSubAgentCall
+                        ? Math.Max(callContext.MaxCallsPerSession, _minCallsPerSessionWithSubAgents)
+                        : callContext.MaxCallsPerSession;
+                    TimeSpan expiry = callContext.ToolBudgetScopeId != null
+                        ? TimeSpan.FromHours(1)
+                        : TimeSpan.FromHours(4);
+                    bool allowed;
+                    lock (_rateLimitLock)
                     {
-                        int newCount = count + 1;
-                        _cache.Set(rateLimitKey, newCount, new MemoryCacheEntryOptions
+                        int count = _cache.GetOrCreate(rateLimitKey, entry =>
                         {
-                            Size = 1,
-                            AbsoluteExpirationRelativeToNow = expiry
+                            entry.Size = 1;
+                            entry.AbsoluteExpirationRelativeToNow = expiry;
+                            return 0;
                         });
-                        remainingBudget = Math.Max(0, sessionLimit - newCount);
+
+                        allowed = count < sessionLimit;
+                        if (allowed)
+                        {
+                            int newCount = count + 1;
+                            _cache.Set(rateLimitKey, newCount, new MemoryCacheEntryOptions
+                            {
+                                Size = 1,
+                                AbsoluteExpirationRelativeToNow = expiry
+                            });
+                            remainingBudget = Math.Max(0, sessionLimit - newCount);
+                        }
+                    }
+
+                    if (!allowed)
+                    {
+                        _logger.LogWarning("Rate limit exceeded for Session {SessionId} (Scope: {Scope})", callContext.SessionId, baseScope);
+                        string refusalMessage = callContext.ToolBudgetScopeId != null
+                            ? $"Tool call budget for this question is exhausted ({sessionLimit} calls). No further tool calls will run — answer now with what you have."
+                            : "Maximum tool calls per session exceeded.";
+
+                        return new ToolResult
+                        {
+                            Success = false,
+                            ErrorMessage = refusalMessage,
+                            BudgetExhausted = true
+                        };
                     }
                 }
 
-                if (!allowed)
+                // Enhanced Audit Logging; a feedback report's text is never written to the log.
+                if (handler?.Category != ToolCategory.Feedback)
                 {
-                    _logger.LogWarning("Rate limit exceeded for Session {SessionId} (Scope: {Scope})", callContext.SessionId, baseScope);
-                    string refusalMessage = callContext.ToolBudgetScopeId != null
-                        ? $"Tool call budget for this question is exhausted ({sessionLimit} calls). No further tool calls will run — answer now with what you have."
-                        : "Maximum tool calls per session exceeded.";
-
-                    return new ToolResult
-                    {
-                        Success = false,
-                        ErrorMessage = refusalMessage,
-                        BudgetExhausted = true
-                    };
+                    _logger.LogInformation("Tool Execution Audit - Session: {SessionId}, Tool: {ToolName}, Parameters: {Parameters}",
+                        callContext.SessionId, toolName, parameters.GetRawText());
                 }
 
-                // Enhanced Audit Logging
-                _logger.LogInformation("Tool Execution Audit - Session: {SessionId}, Tool: {ToolName}, Parameters: {Parameters}", 
-                    callContext.SessionId, toolName, parameters.GetRawText());
-
-                // 2. Find Handler
-                var handler = _handlers.FirstOrDefault(h => string.Equals(h.ToolName, toolName, StringComparison.OrdinalIgnoreCase));
                 if (handler == null)
                 {
                     return new ToolResult { Success = false, ErrorMessage = $"Tool '{toolName}' is not registered or not available.", RemainingBudget = remainingBudget };

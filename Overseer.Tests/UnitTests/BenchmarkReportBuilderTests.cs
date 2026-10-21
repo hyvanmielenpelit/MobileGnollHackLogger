@@ -8344,4 +8344,213 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("- **Gold opened:** 1 of 1 · **Personal context opened:** 1 of 1 · **Zero-call answers:** 0" + Environment.NewLine, report);
         Assert.Contains("- Evidence: surfaced yes (Races/Human.md), opened yes (Races/Human.md); personal page opened; Retrieval of gold: not applicable" + Environment.NewLine, report);
     }
+
+    // -------------------------------------------------------------------------------------
+    // Self-Reports: the candidate's report_feedback calls, offered from harness 60, closing
+    // § 2 after the Tool Usage Profile and listed per question in § 3.
+    // -------------------------------------------------------------------------------------
+
+    private static BenchmarkRunAnswerSelfReport SelfReport(
+        int sortOrder,
+        string? category,
+        string? subject,
+        string? summary,
+        string? fingerprint,
+        bool accepted = true,
+        string? error = null,
+        string? expectedLocation = null,
+        string? suspectedCause = null,
+        string? suspectedCauseNote = null)
+        => new()
+        {
+            SortOrder = sortOrder,
+            Category = category,
+            Subject = subject,
+            Summary = summary,
+            Fingerprint = fingerprint,
+            Accepted = accepted,
+            Error = error,
+            ExpectedLocation = expectedLocation,
+            SuspectedCause = suspectedCause,
+            SuspectedCauseNote = suspectedCauseNote
+        };
+
+    private static BenchmarkRun HarnessSixtyRun(params BenchmarkRunAnswer[] answers)
+    {
+        var run = HarnessV6Run(answers);
+        run.HarnessVersion = "60";
+        return run;
+    }
+
+    /// <summary>The text of the Self-Reports section, from its heading to the next ## heading.</summary>
+    private static string SelfReportsSection(string report)
+    {
+        int start = report.IndexOf("### Self-Reports", StringComparison.Ordinal);
+        Assert.True(start >= 0, "The Self-Reports section must be present.");
+        int end = report.IndexOf("## 3. Questions and Replies", start, StringComparison.Ordinal);
+        Assert.True(end > start, "The Self-Reports section must come before section 3.");
+        return report.Substring(start, end - start);
+    }
+
+    private static BenchmarkRunAnswer[] TwoQuestionsWithSelfReports()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.SelfReports = new List<BenchmarkRunAnswerSelfReport>
+        {
+            SelfReport(1, "tool_problem", "monster_lookup", "The lookup returned an empty object.", "fp-b"),
+            SelfReport(0, "missing_information", "Dilithium crystal", "The wiki page has no price.", "fp-a",
+                expectedLocation: "wiki page Dilithium crystal", suspectedCause: "did_not_verify",
+                suspectedCauseNote: "I did not open the page.")
+        };
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 80);
+        q2.SelfReports = new List<BenchmarkRunAnswerSelfReport>
+        {
+            SelfReport(0, "missing_information", "Dilithium crystal", "Still no price on the page.", "fp-a"),
+            SelfReport(1, "own_mistake", "Elbereth", "I said it scares @ humans.", "fp-c",
+                accepted: false, error: "Feedback limit for this turn reached (3).")
+        };
+        return new[] { q1, q2 };
+    }
+
+    [Fact]
+    public void SelfReports_Section_CountsByCategory_NotAccepted_AndDistinctIssues_AfterTheToolUsageProfile()
+    {
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessSixtyRun(TwoQuestionsWithSelfReports()));
+        string section = SelfReportsSection(report);
+
+        Assert.True(report.IndexOf("### Tool Usage Profile", StringComparison.Ordinal)
+            < report.IndexOf("### Self-Reports", StringComparison.Ordinal));
+
+        // Distinct issues count accepted fingerprints only: fp-a and fp-b, not the refused fp-c.
+        Assert.Contains("- **Self-reports:** 4 (`missing_information` 2, `tool_problem` 1, `own_mistake` 1) · **Not accepted:** 1 · **Distinct issues:** 2", section);
+        Assert.Contains("*Self-reports are the candidate's own account. The suspected cause is its hypothesis, not a finding.*", section);
+        Assert.Contains("| Q | Category | Subject | Summary | Expected location | Suspected cause (hypothesis) |", section);
+        Assert.Contains("| Q1 | `missing_information` | Dilithium crystal | The wiki page has no price. | wiki page Dilithium crystal | `did_not_verify` — I did not open the page. |", section);
+        Assert.Contains("| Q2 | `own_mistake` *(not accepted)* | Elbereth | I said it scares @ humans. | — | — |", section);
+
+        // Ordered by question, then by SortOrder within it.
+        int dilithium = section.IndexOf("| Q1 | `missing_information`", StringComparison.Ordinal);
+        int lookup = section.IndexOf("| Q1 | `tool_problem`", StringComparison.Ordinal);
+        int q2 = section.IndexOf("| Q2 |", StringComparison.Ordinal);
+        Assert.True(dilithium >= 0 && dilithium < lookup && lookup < q2);
+        Assert.DoesNotContain("No self-reports in this run.", section);
+    }
+
+    [Fact]
+    public void SelfReports_RepeatedIssues_ListsAFingerprintReportedOnMoreThanOneQuestion()
+    {
+        string section = SelfReportsSection(
+            BenchmarkReportBuilder.BuildMarkdownReport(HarnessSixtyRun(TwoQuestionsWithSelfReports())));
+
+        Assert.Contains("**Repeated issues:**", section);
+        Assert.Contains("- `Dilithium crystal` (`missing_information`): Q1, Q2", section);
+        Assert.DoesNotContain("`monster_lookup` (`tool_problem`): Q", section);
+
+        // One issue on one question is not repeated.
+        var single = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        single.SelfReports = new List<BenchmarkRunAnswerSelfReport>
+        {
+            SelfReport(0, "missing_information", "Dilithium crystal", "No price.", "fp-a")
+        };
+        string alone = SelfReportsSection(BenchmarkReportBuilder.BuildMarkdownReport(HarnessSixtyRun(single)));
+        Assert.DoesNotContain("Repeated issues", alone);
+    }
+
+    [Fact]
+    public void SelfReports_NoneInAHarnessSixtyRun_SaysSo()
+    {
+        string section = SelfReportsSection(BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessSixtyRun(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80))));
+
+        Assert.Contains("No self-reports in this run.", section);
+        Assert.DoesNotContain("| Q | Category |", section);
+        Assert.DoesNotContain("not offered", section);
+    }
+
+    [Theory]
+    [InlineData("59", "The feedback tool was not offered (harness 59).")]
+    [InlineData("unknown", "The feedback tool was not offered (harness unknown).")]
+    [InlineData(null, "The feedback tool was not offered (harness not recorded).")]
+    public void SelfReports_BeforeHarnessSixty_OrUnparseable_SaysTheToolWasNotOffered(string? harness, string expected)
+    {
+        var run = HarnessV6Run(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        run.HarnessVersion = harness;
+
+        string section = SelfReportsSection(BenchmarkReportBuilder.BuildMarkdownReport(run));
+
+        Assert.Contains(expected, section);
+        Assert.DoesNotContain("No self-reports in this run.", section);
+    }
+
+    [Fact]
+    public void SelfReports_ClosedBookRun_SaysTheToolWasNotOffered_InPlaceOfTheCounts()
+    {
+        var run = HarnessSixtyRun(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        run.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions
+        {
+            EnableToolUse = false,
+            InformationCondition = BenchmarkInformationConditions.ClosedBookWire
+        }.ToCanonicalJson();
+
+        string section = SelfReportsSection(BenchmarkReportBuilder.BuildMarkdownReport(run));
+
+        Assert.Contains("The feedback tool was not offered (closed book: no tools).", section);
+        Assert.DoesNotContain("No self-reports in this run.", section);
+        Assert.DoesNotContain("**Self-reports:**", section);
+    }
+
+    [Fact]
+    public void SelfReports_ARowWhoseArgumentsDidNotParse_ReadsArgumentsNotValid_WithItsError()
+    {
+        var answer = ScoredAnswer(3, BenchmarkDifficulty.Simple, 25, 80);
+        answer.SelfReports = new List<BenchmarkRunAnswerSelfReport>
+        {
+            SelfReport(0, category: null, subject: null, summary: null, fingerprint: null,
+                accepted: false, error: "category must be one of missing_information, tool_problem, own_mistake.")
+        };
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessSixtyRun(answer));
+        string section = SelfReportsSection(report);
+
+        Assert.Contains("- **Self-reports:** 1 (arguments not valid 1) · **Not accepted:** 1 · **Distinct issues:** 0", section);
+        Assert.Contains("| Q3 | *(arguments not valid)* | — | category must be one of missing_information, tool_problem, own_mistake. | — | — |", section);
+        Assert.Contains("- *(arguments not valid)*: category must be one of missing_information, tool_problem, own_mistake.",
+            report.Substring(report.IndexOf("## 3. Questions and Replies", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void SelfReports_PerQuestion_ListsEachReportAfterTheCallTable_AndNeverInIt()
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        answer.ToolCalls = new List<BenchmarkRunAnswerToolCall>
+        {
+            new BenchmarkRunAnswerToolCall { SortOrder = 0, Name = "wiki_search", Status = "completed", ExecutionMs = 10 }
+        };
+        answer.SelfReports = new List<BenchmarkRunAnswerSelfReport>
+        {
+            SelfReport(1, "own_mistake", "Elbereth", "I said it scares @ humans.", "fp-c",
+                accepted: false, error: "Feedback limit for this turn reached (3)."),
+            SelfReport(0, "missing_information", "Dilithium | crystal", "The wiki page has no price.", "fp-a",
+                suspectedCause: "did_not_verify")
+        };
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessSixtyRun(answer));
+        string perQuestion = report.Substring(report.IndexOf("## 3. Questions and Replies", StringComparison.Ordinal));
+
+        int table = perQuestion.IndexOf("| Round | Tool | Args |", StringComparison.Ordinal);
+        int list = perQuestion.IndexOf("**Self-reports:**", StringComparison.Ordinal);
+        Assert.True(table >= 0 && list > table, "The self-report list follows the call table.");
+
+        string first = "- `missing_information`: Dilithium \\| crystal — The wiki page has no price. (suspected cause, a hypothesis: `did_not_verify`)";
+        string second = "- `own_mistake`: Elbereth — I said it scares @ humans. *(not accepted: Feedback limit for this turn reached (3).)*";
+        Assert.Contains(first, perQuestion);
+        Assert.Contains(second, perQuestion);
+        Assert.True(perQuestion.IndexOf(first, StringComparison.Ordinal) < perQuestion.IndexOf(second, StringComparison.Ordinal));
+
+        // The call table holds the recorded calls only.
+        Assert.DoesNotContain("`report_feedback`", perQuestion);
+
+        // The section's table escapes the pipe the same way.
+        Assert.Contains("| Q1 | `missing_information` | Dilithium \\| crystal |", SelfReportsSection(report));
+    }
 }

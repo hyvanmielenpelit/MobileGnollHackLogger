@@ -829,8 +829,14 @@ public static class BenchmarkAssessmentPrompt
     ///     ToolGuidesSha256 and CandidateSystemPromptSha256 return to their harness-56 values;
     ///     _policy.md is inlined into the candidate system prompt, so both hashes move with it.
     ///     ScoringMethodVersion stays 14.
+    /// v60: The candidate is offered report_feedback (ToolCategory.Feedback) outside the 45-call budget,
+    ///     outside Benchmark:AllowedTools and outside the condition's candidate tool list (a closed-book
+    ///     candidate is not offered it); its calls are stored as BenchmarkRunAnswerSelfReport rows with a
+    ///     fingerprint, never as tool-call rows, so ToolCallCount, ToolCallSummary and every tool metric
+    ///     exclude them; the run report gains a Self-Reports section. ScoringMethodVersion stays 14;
+    ///     ToolGuidesSha256 moves (new guide report_feedback.md); CandidateSystemPromptSha256 does not move.
     /// </summary>
-    public const string HarnessVersion = "59";
+    public const string HarnessVersion = "60";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

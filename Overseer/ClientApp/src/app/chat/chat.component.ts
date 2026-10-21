@@ -98,7 +98,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'get_artifact_stats': 'Reading artifact stats',
     'get_github_repo_info': 'Retrieving GitHub repository information',
     'search_github': 'Searching GitHub',
-    'delegate_to_subagent': 'Invoking subagent'
+    'delegate_to_subagent': 'Invoking subagent',
+    'report_feedback': 'Feedback to developers'
+  };
+
+  /** `report_feedback` categories in words, for the call's one-line summary. */
+  private static readonly FEEDBACK_CATEGORY_LABELS: Record<string, string> = {
+    'missing_information': 'Missing information',
+    'tool_problem': 'Tool problem',
+    'own_mistake': 'Own mistake'
   };
 
   private static readonly NETHACK_TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -193,7 +201,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         if (args.topic_title) return args.topic_title;
         if (args.topic) return args.topic;
       }
-      
+      if (name === 'report_feedback') {
+        const key = typeof args.category === 'string' ? args.category.trim().toLowerCase() : '';
+        const category = Object.hasOwn(ChatComponent.FEEDBACK_CATEGORY_LABELS, key) ? ChatComponent.FEEDBACK_CATEGORY_LABELS[key] : '';
+        const subject = typeof args.subject === 'string' ? args.subject.trim() : '';
+        return category && subject ? `${category}: ${subject}` : category || subject;
+      }
+
       const firstKey = Object.keys(args).find(k => k !== 'repository');
       if (firstKey) return String(args[firstKey]);
     } catch (e) {}

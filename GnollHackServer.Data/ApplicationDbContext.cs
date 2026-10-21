@@ -78,6 +78,10 @@ namespace MobileGnollHackLogger.Data
         public DbSet<AdminBulkOperation> AdminBulkOperations { get; set; } = null!;
         public DbSet<AdminBulkOperationItem> AdminBulkOperationItems { get; set; } = null!;
         public DbSet<UserTermsAcceptance> UserTermsAcceptances { get; set; } = null!;
+        public DbSet<OverseerFeedbackIssue> OverseerFeedbackIssues { get; set; } = null!;
+        public DbSet<OverseerFeedbackReport> OverseerFeedbackReports { get; set; } = null!;
+        public DbSet<OverseerFeedbackSetting> OverseerFeedbackSettings { get; set; } = null!;
+        public DbSet<BenchmarkRunAnswerSelfReport> BenchmarkRunAnswerSelfReports { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -228,6 +232,32 @@ namespace MobileGnollHackLogger.Data
                 e.HasOne(a => a.BulkOperation).WithMany().HasForeignKey(a => a.BulkOperationId).OnDelete(DeleteBehavior.SetNull);
                 e.HasIndex(a => new { a.SubjectUserId, a.OccurredUtc });
                 e.HasIndex(a => a.OccurredUtc);
+            });
+
+            // --- Overseer feedback ---
+
+            // TriagedByUserId is a plain column, like ChatAccessAuditLog.ActorUserId: the triage record outlives the account.
+            modelBuilder.Entity<OverseerFeedbackIssue>(e =>
+            {
+                e.Property(i => i.Status).HasConversion<string>().HasMaxLength(16);
+                e.HasIndex(i => i.Fingerprint).IsUnique();
+                e.HasIndex(i => new { i.Status, i.LastSeenUtc });
+                e.HasIndex(i => i.LastSeenUtc);
+            });
+
+            /* ChatSessionId is a plain column, like ChatAccessAuditLog.ChatSessionId: a cascade to the
+               session beside the user cascade would give SQL Server a second cascade path from
+               AspNetUsers. The permanent purge deletes these rows explicitly. */
+            modelBuilder.Entity<OverseerFeedbackReport>(e =>
+            {
+                e.HasOne<OverseerFeedbackIssue>().WithMany().HasForeignKey(r => r.IssueId).OnDelete(DeleteBehavior.Cascade);
+                // Explicit cascade: an optional foreign key would otherwise default to ClientSetNull.
+                e.HasOne<ApplicationUser>().WithMany().HasForeignKey(r => r.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
+                // One occurrence of an issue per conversation.
+                e.HasIndex(r => new { r.ChatSessionId, r.Fingerprint }).IsUnique();
+                e.HasIndex(r => new { r.IssueId, r.CreatedUtc });
+                e.HasIndex(r => r.CreatedUtc);
+                e.HasIndex(r => new { r.AspNetUserId, r.CreatedUtc });
             });
 
             modelBuilder.Entity<AdminBulkOperation>(e =>
@@ -447,6 +477,14 @@ namespace MobileGnollHackLogger.Data
 
             modelBuilder.Entity<BenchmarkRunAnswerToolCall>()
                 .HasIndex(tc => new { tc.BenchmarkRunAnswerId, tc.SortOrder });
+
+            // The same single chain as the tool calls: run -> answer -> self-report.
+            modelBuilder.Entity<BenchmarkRunAnswerSelfReport>(e =>
+            {
+                e.HasOne(s => s.BenchmarkRunAnswer).WithMany(a => a.SelfReports).HasForeignKey(s => s.BenchmarkRunAnswerId).OnDelete(DeleteBehavior.Cascade);
+                e.HasIndex(s => new { s.BenchmarkRunAnswerId, s.SortOrder });
+                e.HasIndex(s => s.Fingerprint);
+            });
 
             // SetNull, never Cascade: deleting a question from a suite is suite maintenance, and
             // it must not delete the answers of runs that already happened. A null FK renders as

@@ -1,0 +1,335 @@
+<!-- The tab's Feedback sub-tab panel holds this view; the date range is the tab's, the Keys filter does not apply. -->
+
+<!-- The switch: the one control of this card, committed at once. -->
+<section class="tl-fb-switch-card" aria-labelledby="tl-fb-switch-title">
+  <div class="tl-fb-switch-text">
+    <h3 class="tl-fb-switch-title" id="tl-fb-switch-title">Feedback tool</h3>
+    <p class="tl-fb-switch-state" id="tl-fb-switch-state">{{ switchSentence }}</p>
+    <p class="tl-fb-switch-note">GnollBench runs are not affected; the harness version governs them.</p>
+  </div>
+  <label class="gh-switch-wrapper tl-fb-switch">
+    <span class="gh-switch gh-switch-lg">
+      <input type="checkbox" id="tl-fb-switch-toggle"
+             aria-labelledby="tl-fb-switch-title"
+             [attr.aria-describedby]="switchError() ? 'tl-fb-switch-state tl-fb-switch-error' : 'tl-fb-switch-state'"
+             [checked]="switchState()?.enabled ?? false"
+             [disabled]="switchPending() || !switchState()"
+             [attr.aria-busy]="switchPending() ? 'true' : null"
+             (change)="onSwitchChange($event)">
+      <span class="gh-slider"></span>
+    </span>
+  </label>
+  <p class="tl-fb-switch-status" id="tl-fb-switch-status" role="status">{{ switchMessage() }}</p>
+  @if (switchError() ?? switchLoadError(); as message) {
+    <p class="gh-field-error tl-fb-switch-error" id="tl-fb-switch-error">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ message }}</span>
+    </p>
+  }
+</section>
+
+<p class="gh-dash-note tl-fb-note">Issues active in the selected date range. The Keys filter does not apply.</p>
+
+<section class="tl-fb-issues" aria-labelledby="tl-fb-issues-title">
+  <div class="tl-fb-issues-head">
+    <!-- Focused after the last card is deleted. -->
+    <h3 class="tl-fb-issues-title" id="tl-fb-issues-title" tabindex="-1">Reported issues</h3>
+  </div>
+
+  <!-- Search, Sort by, the Status, Category and Model facets, and the active filters; every change refetches. -->
+  <div class="gh-filter-bar tl-fb-filter-bar">
+    <div class="gh-filter-bar-row tl-fb-filters-row">
+      <div class="gh-search-field tl-fb-search">
+        <label class="visually-hidden" for="tl-fb-search">Search issues by subject or summary</label>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="search" class="gh-input" id="tl-fb-search" autocomplete="off"
+               autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"
+               placeholder="Search subject or summary" [value]="list.searchText"
+               (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+      </div>
+      <div class="tl-fb-sort">
+        <label for="tl-fb-sort">Sort by</label>
+        <select class="gh-input" id="tl-fb-sort" (change)="onSortChange($event)">
+          @for (sort of sorts; track sort.id) {
+            <option [value]="sort.id" [selected]="list.sortId === sort.id">{{ sort.label }}</option>
+          }
+        </select>
+      </div>
+      <div class="gh-facet-row tl-fb-facet-row">
+        <app-filter-facet facetId="tl-fb-facet-status" label="Status" noun="issues"
+                          [options]="statusOptions" [selected]="selectedStatuses"
+                          (selectedChange)="onStatusChange($event)"></app-filter-facet>
+        <app-filter-facet facetId="tl-fb-facet-category" label="Category" noun="issues" mode="single" anyLabel="Any category"
+                          [options]="categoryOptions" [selected]="selectedCategory"
+                          (selectedChange)="onCategoryChange($event)"></app-filter-facet>
+        @if (showModelFacet) {
+          <app-filter-facet facetId="tl-fb-facet-model" label="Model" noun="issues" mode="single" anyLabel="Any model"
+                            [options]="modelOptions" [selected]="selectedModel"
+                            (selectedChange)="onModelChange($event)"></app-filter-facet>
+        }
+      </div>
+    </div>
+
+    @if (chips.length > 0) {
+      <div class="gh-filter-bar-row tl-fb-chips-row">
+        <ul class="gh-filter-chips tl-fb-chips" role="list" aria-label="Active filters">
+          @for (chip of chips; track chip.key) {
+            <li>
+              <button type="button" class="gh-filter-chip"
+                      [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                      (click)="removeChip(chip)">
+                <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </li>
+          }
+        </ul>
+        <button type="button" class="gh-filter-clear tl-fb-clear" id="tl-fb-clear" (click)="clearFilters()">Clear filters</button>
+      </div>
+    }
+  </div>
+
+  <!-- The list's one polite live region. -->
+  <p class="gh-list-status tl-fb-status" id="tl-fb-status" role="status">{{ listStatus }}</p>
+
+  @if (error(); as message) {
+    <p class="gh-field-error tl-fb-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ message }}</span>
+    </p>
+  } @else if (loaded() && rows().length === 0) {
+    @if (emptyKind === 'range') {
+      <p class="tl-fb-empty tl-fb-empty-range">No feedback issues in this date range.</p>
+    } @else if (emptyKind === 'filters') {
+      <p class="tl-fb-empty tl-fb-empty-filters">No issues match these filters.
+        <button type="button" class="gh-filter-clear tl-fb-empty-clear" (click)="clearFilters()">Clear filters</button>
+      </p>
+    }
+  } @else if (rows().length > 0) {
+    <ul class="tl-fb-cards" role="list" aria-labelledby="tl-fb-issues-title">
+      @for (issue of rows(); track issue.id) {
+        @let form = draft(issue);
+        @let result = triageResult(issue.id);
+        @let occ = occurrenceState(issue.id);
+        <li class="tl-fb-item">
+          <article class="tl-fb-card" [attr.data-issue-id]="issue.id" [attr.data-status]="issue.status"
+                   [attr.aria-labelledby]="'tl-fb-' + issue.id + '-title'">
+            <div class="tl-fb-head">
+              <!-- Every state is a word; a dot on screen between the parts, a comma for assistive technology. -->
+              <div class="tl-fb-kicker">
+                <span class="gh-tag tl-fb-category" [attr.data-category]="issue.category">{{ categoryLabel(issue.category) }}</span>
+                <span [class]="statusBadgeClass(issue.status) + ' tl-fb-status-badge'">
+                  <span aria-hidden="true">{{ statusBadgeText(issue) }}</span><span class="visually-hidden">{{ statusBadgeSpoken(issue) }}</span>
+                </span>
+                @if (issue.modelIds.length > 0) {
+                  <span class="tl-fb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="tl-fb-models"><span class="visually-hidden">Models: </span>{{ issue.modelIds.join(', ') }}</span>
+                }
+              </div>
+              <!-- Focused after Show more and after a delete. -->
+              <h4 class="tl-fb-title" [id]="'tl-fb-' + issue.id + '-title'" tabindex="-1">{{ issue.subject }}</h4>
+              <p class="tl-fb-summary">{{ issue.summary }}</p>
+            </div>
+
+            <!-- Fixed-width columns that line up down the list. -->
+            <dl class="tl-fb-metrics">
+              <div class="tl-fb-metric tl-fb-metric-occurrences">
+                <dt>Occurrences</dt>
+                <dd>{{ formatInteger(issue.occurrenceCount) }}</dd>
+                @if (retainedText(issue); as retained) {
+                  <dd class="tl-fb-metric-note">{{ retained }}</dd>
+                }
+              </div>
+              <div class="tl-fb-metric tl-fb-metric-users">
+                <dt>Users</dt>
+                <dd>{{ formatInteger(issue.distinctUserCount) }}</dd>
+              </div>
+              <div class="tl-fb-metric tl-fb-metric-first">
+                <dt>First seen</dt>
+                <dd><time [attr.datetime]="issue.firstSeenUtc">{{ dateText(issue.firstSeenUtc) }}</time></dd>
+              </div>
+              <div class="tl-fb-metric tl-fb-metric-last">
+                <dt>Last seen</dt>
+                <dd><time [attr.datetime]="issue.lastSeenUtc">{{ dateTimeText(issue.lastSeenUtc) }}</time></dd>
+              </div>
+            </dl>
+
+            <dl class="tl-fb-facts">
+              <div class="tl-fb-fact tl-fb-fact-location">
+                <dt>Latest expected location</dt>
+                <dd>{{ issue.latestExpectedLocation || 'Not recorded' }}</dd>
+              </div>
+              <div class="tl-fb-fact tl-fb-fact-tools">
+                <dt>Latest related tools</dt>
+                <dd class="tl-fb-mono">{{ issue.latestRelatedTools.length > 0 ? issue.latestRelatedTools.join(', ') : 'Not recorded' }}</dd>
+              </div>
+              <div class="tl-fb-fact tl-fb-fact-cause">
+                <dt>Model's suspected cause (hypothesis)</dt>
+                <dd>{{ causeLabel(issue.latestSuspectedCause) || 'Not recorded' }}</dd>
+              </div>
+              <div class="tl-fb-fact tl-fb-fact-version">
+                <dt>Latest version</dt>
+                <dd class="tl-fb-mono">{{ issue.latestAppVersion || 'Not recorded' }}</dd>
+              </div>
+            </dl>
+
+            <details class="gh-disclosure tl-fb-occurrences" [attr.data-issue-id]="issue.id" (toggle)="onOccurrencesToggle(issue, $event)">
+              <summary>Occurrences ({{ formatInteger(issue.retainedCount) }})</summary>
+              <div class="gh-disclosure-body">
+                @if (occ?.error; as occError) {
+                  <p class="gh-field-error tl-fb-occ-error">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <span>{{ occError }}</span>
+                  </p>
+                }
+                @if (occ && occ.rows.length > 0) {
+                  <ol class="tl-fb-occ-list" role="list" [attr.aria-label]="'Occurrences of ' + issue.subject + ', newest first'">
+                    @for (o of occ.rows; track o.id) {
+                      <li class="tl-fb-occ" [attr.data-occurrence-id]="o.id">
+                        <h5 class="tl-fb-occ-time" [id]="'tl-fb-occ-' + o.id + '-time'" tabindex="-1">
+                          <time [attr.datetime]="o.createdUtc">{{ dateTimeText(o.createdUtc) }}</time>
+                        </h5>
+                        @if (o.truncated || o.redacted) {
+                          <ul class="tl-fb-occ-marks" role="list" aria-label="Marks">
+                            @if (o.truncated) {
+                              <li><span class="gh-tag tl-fb-mark-truncated">Truncated</span></li>
+                            }
+                            @if (o.redacted) {
+                              <li><span class="gh-tag tl-fb-mark-redacted">Redacted</span></li>
+                            }
+                          </ul>
+                        }
+                        <dl class="tl-fb-occ-facts">
+                          <div><dt>User</dt><dd>{{ o.userName || 'Account erased' }}</dd></div>
+                          @if (modelText(o); as model) {
+                            <div><dt>Provider and model</dt><dd>{{ model }}</dd></div>
+                          }
+                          @if (o.appVersion) {
+                            <div><dt>Version</dt><dd class="tl-fb-mono">{{ o.appVersion }}</dd></div>
+                          }
+                          <div><dt>Conversation</dt><dd class="tl-fb-mono">{{ idsText(o) }}</dd></div>
+                          <div class="tl-fb-occ-wide"><dt>Summary</dt><dd>{{ o.summary }}</dd></div>
+                          @if (o.searchedFor) {
+                            <div class="tl-fb-occ-wide"><dt>Searched for</dt><dd>{{ o.searchedFor }}</dd></div>
+                          }
+                          @if (o.expectedLocation) {
+                            <div class="tl-fb-occ-wide"><dt>Expected location</dt><dd>{{ o.expectedLocation }}</dd></div>
+                          }
+                          @if (o.relatedTools.length > 0) {
+                            <div><dt>Related tools</dt><dd class="tl-fb-mono">{{ o.relatedTools.join(', ') }}</dd></div>
+                          }
+                          @if (o.noticedVia) {
+                            <div><dt>Noticed via</dt><dd>{{ noticedViaText(o.noticedVia) }}</dd></div>
+                          }
+                          @if (o.suspectedCause || o.suspectedCauseNote) {
+                            <div class="tl-fb-occ-wide">
+                              <dt>Model's suspected cause (hypothesis)</dt>
+                              <dd>
+                                @if (o.suspectedCause) {
+                                  <span class="tl-fb-occ-cause">{{ causeLabel(o.suspectedCause) }}</span>
+                                }
+                                @if (o.suspectedCauseNote) {
+                                  <span class="tl-fb-occ-cause-note">{{ o.suspectedCauseNote }}</span>
+                                }
+                              </dd>
+                            </div>
+                          }
+                        </dl>
+                        @if (o.details) {
+                          <div class="tl-fb-occ-details-block">
+                            <p class="tl-fb-occ-details-label">Details</p>
+                            <p class="tl-fb-occ-details" [id]="'tl-fb-occ-' + o.id + '-details'"
+                               [class.is-collapsed]="isLongDetails(o.details) && !isExpanded(o.id)">{{ o.details }}</p>
+                            @if (isLongDetails(o.details)) {
+                              <button type="button" class="btn-link tl-fb-occ-expand"
+                                      [attr.aria-expanded]="isExpanded(o.id)"
+                                      [attr.aria-controls]="'tl-fb-occ-' + o.id + '-details'"
+                                      (click)="toggleDetails(o.id)">{{ isExpanded(o.id) ? 'Show less' : 'Show all details' }}</button>
+                            }
+                          </div>
+                        }
+                      </li>
+                    }
+                  </ol>
+                } @else if (occ?.loaded && !occ?.error) {
+                  <p class="tl-fb-occ-none">No occurrence of this issue is stored any more.</p>
+                }
+                @if (occ?.loading) {
+                  <p class="tl-fb-occ-loading" role="status">Loading occurrences…</p>
+                }
+                @if (remainingOccurrences(issue.id) > 0) {
+                  <div class="gh-load-more tl-fb-occ-load-more">
+                    <button type="button" class="btn-ghost tl-fb-occ-more" [attr.aria-busy]="occ?.loading ? 'true' : null"
+                            (click)="showMoreOccurrences(issue.id)">Show {{ nextOccurrenceBatch(issue.id) }} more</button>
+                  </div>
+                }
+              </div>
+            </details>
+
+            <!-- The triage form, under a hairline. -->
+            <div class="tl-fb-triage" role="group" [attr.aria-label]="'Triage of ' + issue.subject">
+              <div class="tl-fb-field tl-fb-field-status">
+                <label [for]="'tl-fb-' + issue.id + '-status'">Status</label>
+                <select class="gh-input tl-fb-status-select" [id]="'tl-fb-' + issue.id + '-status'"
+                        [attr.aria-describedby]="'tl-fb-' + issue.id + '-status-help'"
+                        (change)="onDraftStatus(issue, $event)">
+                  @if (form.status === '') {
+                    <option value="" disabled selected>Choose a status</option>
+                  }
+                  @for (status of triageStatuses; track status) {
+                    <option [value]="status" [selected]="form.status === status">{{ statusLabel(status) }}</option>
+                  }
+                </select>
+                <p class="form-hint tl-fb-status-help" [id]="'tl-fb-' + issue.id + '-status-help'">A resolved issue that recurs becomes Regressed; a dismissed one stays dismissed.</p>
+              </div>
+              <div class="tl-fb-field tl-fb-field-note">
+                <label [for]="'tl-fb-' + issue.id + '-note'">Note</label>
+                <textarea class="gh-input gh-textarea-autosize tl-fb-note-input" rows="2" [id]="'tl-fb-' + issue.id + '-note'"
+                          [attr.maxlength]="noteMax" [value]="form.note"
+                          (input)="onDraftNote(issue, $event)"></textarea>
+              </div>
+              <div class="tl-fb-triage-actions">
+                <button type="button" class="btn-gh tl-fb-save"
+                        [disabled]="savingId() === issue.id"
+                        [attr.aria-busy]="savingId() === issue.id ? 'true' : null"
+                        [attr.aria-describedby]="result?.error ? 'tl-fb-' + issue.id + '-error' : null"
+                        (click)="save(issue)">Save</button>
+                <button type="button" class="action-btn action-btn-danger tl-fb-delete"
+                        [attr.aria-label]="'Delete issue: ' + issue.subject"
+                        [attr.aria-busy]="deletingId() === issue.id ? 'true' : null"
+                        aria-haspopup="dialog"
+                        [attr.interestfor]="'tl-fb-' + issue.id + '-delete-tip'"
+                        [attr.style]="'anchor-name: --tl-fb-' + issue.id + '-delete-tip'"
+                        (click)="confirmDelete(issue)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'tl-fb-' + issue.id + '-delete-tip'"
+                     [attr.style]="'position-anchor: --tl-fb-' + issue.id + '-delete-tip'">Delete issue</div>
+              </div>
+              @if (triagedText(issue); as triaged) {
+                <p class="tl-fb-triaged">{{ triaged }}</p>
+              }
+              <p class="tl-fb-result" [id]="'tl-fb-' + issue.id + '-result'" role="status">{{ result?.message ?? '' }}</p>
+              @if (result?.error; as triageError) {
+                <p class="gh-field-error tl-fb-triage-error" [id]="'tl-fb-' + issue.id + '-error'">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                  <span>{{ triageError }}</span>
+                </p>
+              }
+            </div>
+          </article>
+        </li>
+      }
+    </ul>
+
+    @if (remainingCount > 0) {
+      <div class="gh-load-more tl-fb-load-more">
+        <button type="button" class="btn-ghost tl-fb-show-more" [attr.aria-busy]="loading() ? 'true' : null"
+                (click)="showMore()">Show {{ nextBatchCount }} more</button>
+      </div>
+    }
+  }
+</section>
+
+<app-admin-confirm-dialog />

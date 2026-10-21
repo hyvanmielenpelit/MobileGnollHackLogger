@@ -75,6 +75,23 @@ public class BenchmarkToolCallRecorderTests
         Assert.Equal(new[] { "first", "second", "third" }, rows.Select(r => r.ToolCallId));
     }
 
+    [Fact]
+    public void Build_SkipsASelfReport_AndKeepsSortOrderDenseOverTheRecordedCalls()
+    {
+        var calls = new[]
+        {
+            Call(batchIndex: 0, toolCallId: "first"),
+            Call(batchIndex: 0, name: "Report_Feedback", toolCallId: "feedback", argsText: "{}"),
+            Call(batchIndex: 1, name: "monster_lookup", toolCallId: "second")
+        };
+
+        var rows = BenchmarkToolCallRecorder.Build(calls, Limits());
+
+        Assert.Equal(new[] { 0, 1 }, rows.Select(r => r.SortOrder));
+        Assert.Equal(new[] { "first", "second" }, rows.Select(r => r.ToolCallId));
+        Assert.DoesNotContain(rows, r => BenchmarkSelfReports.IsSelfReport(r.Name));
+    }
+
     // --- Build: direct field mapping -------------------------------------------------------
 
     [Fact]

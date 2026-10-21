@@ -1721,6 +1721,13 @@ that turned out to be false, and it is encrypted with everything else.
 An **ephemeral** session has none of these columns, because it has no row. What it does leave in
 the clear is an access-journal entry (§8) naming its reference and nothing about its contents.
 
+**Assistant feedback reports are outside the rule because a confidential session never has one.**
+The assistant is not offered `report_feedback` in a confidential or an ephemeral session, and the
+handler refuses there as a second guard (`ConfidentialExecutionScope.IsConfidential`, the session
+reference), so no report row exists for either, readable or encrypted. Encrypting report text under
+the session key was rejected: administrators could not read it, and crypto-shredding would destroy
+it. §8.6 describes the reports that ordinary chats do write.
+
 **On the screen rather than in the database**, one more fact is visible: the sidebar and the
 trash list mark confidential chats with a lock glyph, so someone standing behind the user learns
 which of their chats are confidential. That is a deliberate trade for the reassurance of seeing
@@ -1884,3 +1891,41 @@ How versions are decided and where acceptance happens is in
 The record is append-only in the same sense as §8.1: the application never updates a row, and a
 unique index on user, document and version makes a repeat write nothing. Both personal-data exports
 include it (§8.2), and the notice's data map lists it (§8.3).
+
+### 8.6 Assistant feedback reports
+
+In an ordinary chat the assistant may file a short report for the developers with `report_feedback`:
+information it could not find, a tool that misbehaved, or a mistake it corrected. How reports work is in
+[`ai-feedback-reports.md`](ai-feedback-reports.md); what matters here is what is stored and for how long.
+A report's text is **content**: model-written text derived from the conversation.
+
+| Stored | Where | How long | Shared with |
+|---|---|---|---|
+| The occurrence: category, subject, summary and the optional fields, scrubbed; the session and user-message ids; the provider, model and application version; the user id | `OverseerFeedbackReports`, one row per report | Until the conversation is permanently purged (the purge deletes its occurrences explicitly) or the account is erased (the user foreign key cascades); an administrator's issue delete also removes them | Overseer administrators, on Admin → AI Telemetry → Feedback |
+| The issue: the category, the first occurrence's subject and summary, first and last seen, counts, status and triage note | `OverseerFeedbackIssues`, one row per distinct problem | Until an administrator deletes it. It **outlives its occurrences**: a purge or an erasure leaves it, with nothing that points at a conversation or a user, and its occurrence count stays historical | Overseer administrators |
+| The same text, unscrubbed, as the call's arguments and result | `ChatMessageToolCall.ArgsText` / `Result` of the turn | With the conversation, under the existing tool-call payload pruning | As every tool call |
+
+- **The text exists twice.** The occurrence row is one copy. The other is the tool call itself, which is
+  stored with the turn like any other tool call. The privacy notice says so.
+- **Scrubbed before storage.** `FeedbackRedaction` runs the outbound DLP scanner (§3.12) over the text
+  fields with its default classes plus e-mail addresses and phone numbers, and replaces every finding with
+  `[redacted]`; the row records that it did. Contact details are off by default for outbound masking
+  because masking them breaks a pasted address book; that reason does not apply to a developer-facing
+  record. The copy in `ChatMessageToolCall` is the model's original arguments and is not scrubbed.
+- **Not written for an ephemeral or a confidential session** (§7). The ephemeral promise of no rows in the
+  four chat tables is unchanged, and no feedback row exists either.
+- **Soft delete keeps the rows**, as it keeps the session's messages, until the permanent purge.
+- **Not a separate part of the personal-data export** (§8.2). The export carries the same text through
+  the conversation's tool calls, which it includes.
+- **Not sent to any AI provider** beyond the conversation the call was part of.
+- **No age prune.** Every occurrence is bounded by its conversation's or its account's lifetime, and every
+  issue by an administrator's delete.
+- **The switch history** (`OverseerFeedbackSettings`, who turned the tool on or off and when) holds no
+  conversation data and a plain user id; it is kept like any other admin setting and is touched by
+  neither purge nor erasure.
+- **Untrusted text.** Report fields are model output a user can steer. The admin view renders them as
+  plain text only, and no model reads them back.
+
+The notice's data map lists the reports (§8.3): what is stored, that credentials, card and account
+numbers, e-mail addresses and phone numbers are removed first, that the text is also kept unredacted with
+the conversation's tool calls, and both lifetimes.

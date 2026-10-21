@@ -13,7 +13,7 @@ that knows the scheme is `Overseer/ClientApp/src/app/admin/admin-url.ts`, pinned
 | `/admin/users` · `/admin/users/groups` · `/admin/users/deletions` · `/admin/users/log` | Users and its sub-tabs *Users*, *Groups*, *Deletion requests*, *Admin log* |
 | `/admin/configs` · `/admin/configs/api-keys` | System Configs; the second with the **API Keys** dialog (*Default API Keys*) open |
 | `/admin/database` · `/admin/security` | Database, Security (no sub-tabs) |
-| `/admin/telemetry` · `/admin/telemetry/models` · `/admin/telemetry/users` · `/admin/telemetry/groups` | AI Telemetry: *Summary*, *Models*, *Users*, *Groups* |
+| `/admin/telemetry` · `/admin/telemetry/models` · `/admin/telemetry/users` · `/admin/telemetry/groups` · `/admin/telemetry/feedback` | AI Telemetry: *Summary*, *Models*, *Users*, *Groups*, *Feedback* |
 | `/admin/gnollbench` · `/admin/gnollbench/history` · `…/multi-run` · `…/multi-suite` · `…/suites` · `…/profiles` · `…/model-comparison` · `…/chat-consistency` | GnollBench: *Run Benchmark*, *Run History*, *Multi-Run Analysis*, *Batteries*, *Manage Suites*, *Scoring Profiles*, *Model Comparison*, *Chat Consistency* |
 | `/admin/services` · `/admin/services/gnollhack-wiki` · `…/nethack-wiki` · `…/knowledge-base` · `…/config-health` · `…/developer-tools` | Services: *GnollHack Source*, *GnollHack Wiki*, *NetHack Wiki*, *Knowledge Base*, *Configuration Health*, *Developer Tools* |
 
@@ -50,6 +50,19 @@ that knows the scheme is `Overseer/ClientApp/src/app/admin/admin-url.ts`, pinned
 | `resolveConfig` | `/admin/configs` | Opens the model resolution dialog for one configuration (the chat composer's **Open System Configs**, the GnollBench launcher's resolve link) |
 
 A valid `resolveConfig` on any other path is moved to `/admin/configs`, keeping it.
+
+**Filter state on the Feedback sub-tab stays in the query.** `/admin/telemetry/feedback` keeps its facet
+values as query parameters, so a filtered view can be reloaded and shared among administrators:
+
+| Parameter | Holds |
+|---|---|
+| `status` | The *Status* facet's values (wire values such as `new`, `regressed`) |
+| `category` | The *Category* facet's values (`missing_information`, `tool_problem`, `own_mistake`) |
+| `model` | The *Model* facet's values (model ids) |
+| `q` | The search text |
+
+They are view state, not one-shot actions, so they are not removed. The sort is a `localStorage`
+preference and never in the address. See `ai-feedback-reports.md` and `ai-telemetry.md` § 12b.
 
 **Every other query parameter is kept.** The chat's *Admin* link carries the chat's `sessionId` into
 `/admin` with `queryParamsHandling="preserve"`, and the Admin page's *Back* link carries it back the

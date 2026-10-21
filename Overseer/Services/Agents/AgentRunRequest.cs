@@ -60,6 +60,12 @@ public class AgentRunRequest
     public bool EnableSubAgents { get; set; } = false;
     public bool EnableClientTools { get; set; }
     public bool EnableGameActions { get; set; }
+
+    /// <summary>
+    /// Whether the run declares the <c>report_feedback</c> tool. It is gated by this flag and
+    /// <see cref="EnableToolUse"/>, never by <see cref="AllowedTools"/>.
+    /// </summary>
+    public bool EnableFeedbackTool { get; set; }
     public ToolExecutionContext ToolExecutionContext { get; set; } = new();
     public long? SystemModelId { get; set; }
 

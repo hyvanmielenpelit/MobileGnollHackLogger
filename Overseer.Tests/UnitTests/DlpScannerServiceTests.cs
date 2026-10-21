@@ -20,7 +20,7 @@ public class DlpScannerServiceTests
        random-looking, because the entropy gate is deliberately hostile to anything that is not. */
     private const string SkKey = "sk-proj-9fK2mQx7ZtVb4NpLc8RwYs1AeHjD6TgUvXn0BiOoMzQrEyPkSl3W";
     private const string GoogleKey = "AIzaSyB7xQ2mVk9RtLpN4wZc1AeHjD6TgUvXn0";
-    private const string AwsKey = "AKIA3QK7Z9MTVB2XR6LD";
+    internal const string AwsKey ="AKIA3QK7Z9MTVB2XR6LD";
     private const string GitHubClassicToken = "ghp_9fK2mQx7ZtVb4NpLc8RwYs1AeHjD6TgUvXn0";
     private const string GitHubFineGrainedToken = "github_pat_11AbCd3EfGh4IjKl5MnOp_qRsTuVwXyZ7AbCd8EfGh9IjKl0MnOpQ";
     private const string GitHubOAuthToken = "gho_4NpLc8RwYs1AeHjD6TgUvXn0BiOoMzQrEyPk";

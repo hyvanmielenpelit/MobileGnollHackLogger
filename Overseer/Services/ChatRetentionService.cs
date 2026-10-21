@@ -316,6 +316,7 @@ public class ChatRetentionService
         result.PurgedSessionCount = sessionIds.Count;
         result.PurgedMessageCount = await _dbContext.ChatMessage.CountAsync(m => sessionIds.Contains(m.ChatSessionId), cancellationToken);
         result.PurgedToolCallCount = await _dbContext.ChatMessageToolCall.CountAsync(tc => tc.ChatMessage != null && sessionIds.Contains(tc.ChatMessage.ChatSessionId), cancellationToken);
+        result.PurgedFeedbackReportCount = await _dbContext.OverseerFeedbackReports.CountAsync(r => sessionIds.Contains(r.ChatSessionId), cancellationToken);
 
         if (!isDryRun)
         {
@@ -326,6 +327,11 @@ public class ChatRetentionService
 
             await _dbContext.ChatMessageToolCall
                 .Where(tc => tc.ChatMessage != null && sessionIds.Contains(tc.ChatMessage.ChatSessionId))
+                .ExecuteDeleteAsync(cancellationToken);
+
+            // Feedback occurrences have no relationship to the session; their issues stay.
+            await _dbContext.OverseerFeedbackReports
+                .Where(r => sessionIds.Contains(r.ChatSessionId))
                 .ExecuteDeleteAsync(cancellationToken);
 
             await _dbContext.ChatMessage
@@ -342,7 +348,7 @@ public class ChatRetentionService
         sw.Stop();
         result.ElapsedMilliseconds = sw.ElapsedMilliseconds;
         result.Success = true;
-        result.Logs.Add($"{(isDryRun ? "[DRY RUN] " : "")}Purged {result.PurgedSessionCount} sessions, {result.PurgedMessageCount} messages, {result.DeletedDiskFolderCount} disk folders.");
+        result.Logs.Add($"{(isDryRun ? "[DRY RUN] " : "")}Purged {result.PurgedSessionCount} sessions, {result.PurgedMessageCount} messages, {result.PurgedFeedbackReportCount} feedback reports, {result.DeletedDiskFolderCount} disk folders.");
 
         return result;
     }
@@ -694,6 +700,7 @@ public class ChatRetentionService
         target.PurgedSessionCount = purgeResult.PurgedSessionCount;
         target.PurgedMessageCount = purgeResult.PurgedMessageCount;
         target.PurgedToolCallCount = purgeResult.PurgedToolCallCount;
+        target.PurgedFeedbackReportCount = purgeResult.PurgedFeedbackReportCount;
         target.DeletedDiskFolderCount = purgeResult.DeletedDiskFolderCount;
         target.DeletedDiskFileCount = purgeResult.DeletedDiskFileCount;
         target.ReclaimedDiskBytes = purgeResult.ReclaimedDiskBytes;

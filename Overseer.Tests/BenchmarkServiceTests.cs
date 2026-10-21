@@ -19,6 +19,9 @@ using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Overseer.Tests.Helpers;
 using Xunit;
+using AgentsNs = Overseer.Services.Agents;
+using ProvidersNs = Overseer.Services.Providers;
+using ToolsNs = Overseer.Services.Tools;
 
 public class BenchmarkServiceTests
 {
@@ -2028,6 +2031,333 @@ public class BenchmarkServiceTests
     {
         Assert.True(BenchmarkService.RecordsProviderLedger(new BenchmarkRun { ProviderLedgerVersion = BenchmarkService.CurrentProviderLedgerVersion }));
         Assert.False(BenchmarkService.RecordsProviderLedger(new BenchmarkRun { ProviderLedgerVersion = null }));
+    }
+
+    // --- Self-reports: the candidate's report_feedback calls, offered from harness 60 ----------
+
+    private const string SelfReportSystemPrompt =
+        "You are Overseer, an assistant for the roguelike GnollHack. Answer from the game's own source "
+        + "code and wiki, name the file you read a fact from, and never invent an item the hero does not "
+        + "carry. Keep the answer to the question that was asked, and say so when a tool returned nothing.";
+
+    /// <summary>A server tool that records the context it ran under and returns a fixed result.</summary>
+    private sealed class RecordingTool : ToolsNs.IToolHandler
+    {
+        public RecordingTool(string name, ToolsNs.ToolCategory category)
+        {
+            ToolName = name;
+            Category = category;
+        }
+
+        public List<bool> BenchmarkCandidateFlags { get; } = new();
+        public string ToolName { get; }
+        public string Description { get; set; } = "A recording test tool.";
+        public ToolsNs.ToolExecutionLocation ExecutionLocation => ToolsNs.ToolExecutionLocation.Server;
+        public ToolsNs.ToolCategory Category { get; }
+        public System.Text.Json.JsonElement ParameterSchema => System.Text.Json.JsonSerializer.SerializeToElement(new { type = "object" });
+        public bool CountsTowardCallBudget => Category != ToolsNs.ToolCategory.Feedback;
+
+        public Task<ToolsNs.ToolResult> ExecuteAsync(System.Text.Json.JsonElement parameters, ToolsNs.ToolExecutionContext context, CancellationToken cancellationToken)
+        {
+            lock (BenchmarkCandidateFlags)
+            {
+                BenchmarkCandidateFlags.Add(context.IsBenchmarkCandidate);
+            }
+            return Task.FromResult(new ToolsNs.ToolResult { Success = true, Content = ToolName + " ran." });
+        }
+    }
+
+    /// <summary>Answers the n-th request with the n-th canned Google stream, the last one repeated, and keeps each body.</summary>
+    private sealed class SequencedGoogleHandler : System.Net.Http.HttpMessageHandler
+    {
+        private readonly string[] _streams;
+        private int _next;
+
+        public SequencedGoogleHandler(params string[] streams) => _streams = streams;
+
+        public List<string> Bodies { get; } = new();
+
+        protected override async Task<System.Net.Http.HttpResponseMessage> SendAsync(
+            System.Net.Http.HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            string body = request.Content == null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken);
+            int index;
+            lock (Bodies)
+            {
+                Bodies.Add(body);
+                index = Math.Min(_next++, _streams.Length - 1);
+            }
+            return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new System.Net.Http.StringContent(_streams[index], System.Text.Encoding.UTF8, "text/event-stream")
+            };
+        }
+    }
+
+    private sealed class FixedHttpClientFactory : System.Net.Http.IHttpClientFactory
+    {
+        private readonly System.Net.Http.HttpMessageHandler _handler;
+
+        public FixedHttpClientFactory(System.Net.Http.HttpMessageHandler handler) => _handler = handler;
+
+        public System.Net.Http.HttpClient CreateClient(string name) => new(_handler, disposeHandler: false);
+    }
+
+    private sealed class NoClientBridge : ToolsNs.IClientToolBridge
+    {
+        public bool IsClientConnected => false;
+
+        public Task<ToolsNs.ToolResult> SendToolRequestAsync(Overseer.Services.Privacy.SessionRef sessionRef, string toolName, System.Text.Json.JsonElement parameters, CancellationToken cancellationToken)
+            => Task.FromResult(new ToolsNs.ToolResult { Success = false, Content = "No client." });
+    }
+
+    /// <summary>One Google stream whose single candidate carries <paramref name="parts"/>.</summary>
+    private static string GoogleStream(params object[] parts)
+        => "data: " + System.Text.Json.JsonSerializer.Serialize(new
+        {
+            candidates = new[] { new { content = new { role = "model", parts }, finishReason = "STOP" } },
+            usageMetadata = new { promptTokenCount = 400, candidatesTokenCount = 20, totalTokenCount = 420 },
+            modelVersion = "gemini-3.8-flash",
+            responseId = "self-report-test"
+        }) + "\n\n";
+
+    private static object FunctionCall(string name, object args) => new { functionCall = new { name, args } };
+
+    private static object Text(string text) => new { text };
+
+    private sealed record SelfReportHarness(
+        BenchmarkService Service, SequencedGoogleHandler Handler, RecordingTool Feedback, RecordingTool Search);
+
+    /// <summary>
+    /// The production candidate path over the real runner, registry, executor and Google provider,
+    /// with three registered tools: <c>repo_search</c> (the run's allowed list), <c>other_tool</c>
+    /// (registered, not allowed) and a recording <c>report_feedback</c> in <c>ToolCategory.Feedback</c>.
+    /// </summary>
+    private static SelfReportHarness CreateSelfReportHarness(Microsoft.Data.Sqlite.SqliteConnection connection, params string[] streams)
+    {
+        var providerConfig = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var google = new ProvidersNs.GoogleProvider(providerConfig);
+
+        var feedback = new RecordingTool("report_feedback", ToolsNs.ToolCategory.Feedback);
+        var search = new RecordingTool("repo_search", ToolsNs.ToolCategory.InformationRetrieval);
+        var other = new RecordingTool("other_tool", ToolsNs.ToolCategory.InformationRetrieval);
+        var handlers = new List<ToolsNs.IToolHandler> { search, other, feedback };
+        var bridge = new NoClientBridge();
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var registry = new ToolsNs.ToolRegistry(handlers, bridge, NullLogger<ToolsNs.ToolRegistry>.Instance);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDbContext<ApplicationDbContext>(o => o.UseSqlite(connection));
+        services.AddSingleton<ProvidersNs.IAiProvider>(google);
+        services.AddSingleton(registry);
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
+        var handler = new SequencedGoogleHandler(streams);
+        var runner = new AgentsNs.AgentLoopRunner(
+            new ProvidersNs.IAiProvider[] { google },
+            registry,
+            new ToolsNs.ToolExecutor(handlers, bridge, NullLogger<ToolsNs.ToolExecutor>.Instance,
+                new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()), config),
+            new FixedHttpClientFactory(handler),
+            config,
+            scopeFactory,
+            TestKnowledgeBase.Empty,
+            new ModelMetadataService(),
+            NullLogger<AgentsNs.AgentLoopRunner>.Instance,
+            new AgentsNs.SubAgentCatalogService(config, NullLogger<AgentsNs.SubAgentCatalogService>.Instance));
+
+        var service = new BenchmarkService(
+            scopeFactory,
+            chatService: null!,
+            agentLoopRunner: runner,
+            cryptoService: null!,
+            new BenchmarkRunManager(),
+            new BenchmarkDifficultyJobManager(),
+            new BenchmarkScoringProfileService(scopeFactory, NullLogger<BenchmarkScoringProfileService>.Instance),
+            new Overseer.Services.Privacy.EndpointPolicy(config),
+            config,
+            NullLogger<BenchmarkService>.Instance);
+
+        return new SelfReportHarness(service, handler, feedback, search);
+    }
+
+    /// <summary>A suite with one question and a running run of it, saved on the relational database.</summary>
+    private static async Task<(long RunId, BenchmarkQuestion Question)> SeedSelfReportRunAsync(
+        DbContextOptions<ApplicationDbContext> options, CancellationToken ct)
+    {
+        await using var db = new ApplicationDbContext(options);
+        var suite = new BenchmarkSuite { Name = "Self-Report Suite " + Guid.NewGuid().ToString("N") };
+        var question = new BenchmarkQuestion
+        {
+            BenchmarkSuite = suite,
+            OrderIndex = 1,
+            ItemRevision = 1,
+            QuestionText = "How much is a dilithium crystal worth?",
+            ExpectedPoints = "- The base price.",
+            Difficulty = BenchmarkDifficulty.Intermediate
+        };
+        db.BenchmarkQuestions.Add(question);
+
+        string unique = Guid.NewGuid().ToString("N");
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "test-candidate-" + unique),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(
+                BenchmarkModelSnapshots.DefaultAssessorProvider, "test-assessor-" + unique),
+            SuiteName = suite.Name,
+            BenchmarkSuite = suite,
+            Status = BenchmarkRunStatus.Running,
+            StartedAtUtc = DateTime.UtcNow
+        });
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync(ct);
+
+        return (run.Id, question);
+    }
+
+    private static readonly string DilithiumReport = System.Text.Json.JsonSerializer.Serialize(new
+    {
+        category = "missing_information",
+        subject = "Dilithium crystal",
+        summary = "The wiki page gives no base price.",
+        related_tools = new[] { "repo_search", "not_a_tool" }
+    });
+
+    [Fact]
+    public async Task CandidatePath_OffersTheFeedbackToolOutsideTheAllowList_AndStoresItsCallAsASelfReport()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var connection = SqliteSchemaTemplate.OpenCopy();
+        await using var openConnection = connection;
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        var (runId, question) = await SeedSelfReportRunAsync(options, ct);
+
+        var harness = CreateSelfReportHarness(
+            connection,
+            GoogleStream(
+                FunctionCall("repo_search", new { query = "dilithium" }),
+                FunctionCall("report_feedback", System.Text.Json.JsonDocument.Parse(DilithiumReport).RootElement)),
+            GoogleStream(Text("A dilithium crystal is worth 4500 zorkmids.")));
+
+        await using var db = new ApplicationDbContext(options);
+        var run = await db.BenchmarkRuns.FirstAsync(r => r.Id == runId, ct);
+        var segments = new ProvidersNs.SegmentedPrompt(SelfReportSystemPrompt[..160], SelfReportSystemPrompt[160..], string.Empty);
+        var allowedTools = new List<string> { "repo_search" };
+
+        var answer = await harness.Service.ExecuteSingleQuestionAsync(
+            db, configService: null!, run, question, Overseer.Tests.UnitTests.BenchmarkTelemetryPersistenceTests.TestedConfig("Google"),
+            "self-report-test-key", SelfReportSystemPrompt, segments, allowedTools,
+            maxResultLength: 10000, maxCallsPerSession: 45, ct);
+
+        Assert.Equal(BenchmarkAnswerStatus.Ok, answer.Status);
+
+        // EnableFeedbackTool declared report_feedback beside the configured list, which itself is unchanged.
+        Assert.Equal(new[] { "repo_search" }, allowedTools);
+        string firstRequest = harness.Handler.Bodies[0];
+        Assert.Contains("\"repo_search\"", firstRequest);
+        Assert.Contains("\"report_feedback\"", firstRequest);
+        Assert.DoesNotContain("\"other_tool\"", firstRequest);
+
+        // The handler ran under IsBenchmarkCandidate; so did the ordinary tool's context.
+        Assert.Equal(new[] { true }, harness.Feedback.BenchmarkCandidateFlags);
+        Assert.Equal(new[] { true }, harness.Search.BenchmarkCandidateFlags);
+
+        // The self-report is no tool call: not counted, not summarized, not a tool-call row.
+        Assert.Equal(1, answer.ToolCallCount);
+        Assert.Equal("repo_search×1", answer.ToolCallSummary);
+        var toolCall = Assert.Single(answer.ToolCalls);
+        Assert.Equal("repo_search", toolCall.Name);
+        Assert.Equal(0, toolCall.SortOrder);
+
+        await using var verify = new ApplicationDbContext(options);
+        var stored = Assert.Single(await verify.BenchmarkRunAnswerSelfReports.AsNoTracking()
+            .Where(s => s.BenchmarkRunAnswerId == answer.Id)
+            .ToListAsync(ct));
+        Assert.True(stored.Accepted);
+        Assert.Null(stored.Error);
+        Assert.Equal(0, stored.SortOrder);
+        Assert.Equal("missing_information", stored.Category);
+        Assert.Equal("Dilithium crystal", stored.Subject);
+        Assert.Equal(64, stored.Fingerprint!.Length);
+
+        // related_tools is filtered against the registered handlers.
+        Assert.Equal("[\"repo_search\"]", stored.RelatedToolsJson);
+    }
+
+    [Fact]
+    public async Task ReExecution_ReplacesTheAnswersSelfReports_AndExcludesThemFromItsToolCallCount()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var connection = SqliteSchemaTemplate.OpenCopy();
+        await using var openConnection = connection;
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        var (runId, question) = await SeedSelfReportRunAsync(options, ct);
+
+        string elbereth = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            category = "own_mistake",
+            subject = "Elbereth",
+            summary = "I said Elbereth scares @ humans."
+        });
+        var harness = CreateSelfReportHarness(
+            connection,
+            GoogleStream(FunctionCall("report_feedback", System.Text.Json.JsonDocument.Parse(DilithiumReport).RootElement)),
+            GoogleStream(Text("First attempt.")),
+            GoogleStream(FunctionCall("report_feedback", System.Text.Json.JsonDocument.Parse(elbereth).RootElement)),
+            GoogleStream(Text("Second attempt.")));
+        var segments = new ProvidersNs.SegmentedPrompt(SelfReportSystemPrompt[..160], SelfReportSystemPrompt[160..], string.Empty);
+        var tested = Overseer.Tests.UnitTests.BenchmarkTelemetryPersistenceTests.TestedConfig("Google");
+
+        await using var db = new ApplicationDbContext(options);
+        var run = await db.BenchmarkRuns.FirstAsync(r => r.Id == runId, ct);
+        var answer = await harness.Service.ExecuteSingleQuestionAsync(
+            db, configService: null!, run, question, tested, "self-report-test-key",
+            SelfReportSystemPrompt, segments, new List<string> { "repo_search" },
+            maxResultLength: 10000, maxCallsPerSession: 45, ct);
+
+        // A turn whose only call was a self-report made no tool calls.
+        Assert.Equal(0, answer.ToolCallCount);
+        Assert.Null(answer.ToolCallSummary);
+        Assert.Empty(answer.ToolCalls);
+        Assert.Equal("Dilithium crystal", Assert.Single(answer.SelfReports).Subject);
+
+        BenchmarkService.BeginRepairPass(run, new[] { answer });
+        await db.SaveChangesAsync(ct);
+
+        await harness.Service.ReExecuteSingleAnswerAsync(
+            db, configService: null!, run, answer, tested, "self-report-test-key",
+            SelfReportSystemPrompt, segments, new List<string> { "repo_search" },
+            maxResultLength: 10000, maxCallsPerSession: 45, ct);
+
+        Assert.Equal(0, answer.ToolCallCount);
+
+        await using var verify = new ApplicationDbContext(options);
+        var rows = await verify.BenchmarkRunAnswerSelfReports.AsNoTracking()
+            .Where(s => s.BenchmarkRunAnswerId == answer.Id)
+            .ToListAsync(ct);
+        var row = Assert.Single(rows);
+        Assert.Equal("Elbereth", row.Subject);
+        Assert.Equal("own_mistake", row.Category);
+        Assert.Equal(0, row.SortOrder);
+        Assert.Empty(await verify.BenchmarkRunAnswerToolCalls.AsNoTracking()
+            .Where(tc => tc.BenchmarkRunAnswerId == answer.Id)
+            .ToListAsync(ct));
+    }
+
+    [Fact]
+    public void ToolCallCountWithoutSelfReports_SubtractsSelfReports_AndKeepsAnUnsetLoopCountAtZero()
+    {
+        var completed = new AgentsNs.AgentRunResult { ToolCallCount = 3 };
+        completed.ToolCalls.Add(new ChatMessageToolCall { Name = "wiki_search" });
+        completed.ToolCalls.Add(new ChatMessageToolCall { Name = "report_feedback" });
+        completed.ToolCalls.Add(new ChatMessageToolCall { Name = "monster_lookup" });
+        Assert.Equal(2, BenchmarkService.ToolCallCountWithoutSelfReports(completed));
+
+        // A turn cut before the loop set its count records zero, as it did before self-reports existed.
+        var cut = new AgentsNs.AgentRunResult();
+        cut.ToolCalls.Add(new ChatMessageToolCall { Name = "report_feedback" });
+        Assert.Equal(0, BenchmarkService.ToolCallCountWithoutSelfReports(cut));
     }
 }
 

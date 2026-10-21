@@ -880,6 +880,41 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(ChatComponent.getToolDisplayName('custom_unknown_tool')).toBe('custom_unknown_tool');
     });
 
+    it('should name the feedback tool Feedback to developers', () => {
+      expect(ChatComponent.getToolDisplayName('report_feedback')).toBe('Feedback to developers');
+      expect(ChatComponent.getToolDisplayName('report_feedback', { category: 'own_mistake', subject: 'Elbereth' })).toBe('Feedback to developers');
+    });
+
+    it('should summarize a feedback call as its category in words and its subject', () => {
+      const messages: any[] = [{
+        id: 1,
+        role: 'assistant',
+        content: 'Done',
+        toolCalls: [
+          { id: 'f1', name: 'report_feedback', displayName: null,
+            argsText: '{"category":"missing_information","subject":"Dilithium crystal","summary":"The wiki has no page."}' },
+          { id: 'f2', name: 'report_feedback', displayName: null,
+            argsText: '{"category":"tool_problem","subject":" monster_lookup ","summary":"It returned an error.","related_tools":["monster_lookup"]}' },
+          { id: 'f3', name: 'report_feedback', displayName: null,
+            argsText: '{"category":"own_mistake","subject":"cockatrice corpse weight","summary":"I gave the wrong weight."}' },
+          { id: 'f4', name: 'report_feedback', displayName: null,
+            argsText: '{"category":"constructor","subject":"Elbereth","summary":"Unknown category."}' },
+          { id: 'f5', name: 'report_feedback', displayName: null,
+            argsText: '{"category":"own_mistake","summary":"No subject."}' }
+        ]
+      }];
+
+      (component as any).formatMessageToolCalls(messages);
+
+      const calls = messages[0].toolCalls;
+      expect(calls[0].displayName).toBe('Feedback to developers');
+      expect(calls[0].argsText).toBe('Missing information: Dilithium crystal');
+      expect(calls[1].argsText).toBe('Tool problem: monster_lookup');
+      expect(calls[2].argsText).toBe('Own mistake: cockatrice corpse weight');
+      expect(calls[3].argsText).toBe('Elbereth');
+      expect(calls[4].argsText).toBe('Own mistake');
+    });
+
     it('should format subagent display names correctly', () => {
       expect(ChatComponent.getToolDisplayName('delegate_to_subagent')).toBe('Invoking subagent');
       expect(ChatComponent.getToolDisplayName('delegate_to_subagent', {})).toBe('Invoking subagent');

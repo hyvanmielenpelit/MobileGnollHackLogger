@@ -38,6 +38,10 @@ the score moves toward "did the model open the page that says it". The condition
 | Source code only | the launcher field | A cheap bound on Scarce; it also changes the action space, so read it as a sensitivity check |
 | Closed book | the launcher field | The parametric floor and the contamination probe |
 
+The feedback tool `report_feedback` (harness 60) is neither an experimental tool nor part of any
+condition's candidate tool list: it is declared outside the allow-list, under every condition that has
+a tool loop, and a closed-book candidate, which has none, is not offered it.
+
 Read every contrast **paired per item**, per model, and compare, never pool. With 11 items only
 effects of roughly 15–25 points are detectable (the research report's power table); say so in any
 conclusion drawn from one suite.

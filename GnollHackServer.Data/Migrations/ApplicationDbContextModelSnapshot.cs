@@ -2816,6 +2816,86 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("BenchmarkRunAnswers");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkRunAnswerSelfReport", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("Accepted")
+                        .HasColumnType("bit");
+
+                    b.Property<long>("BenchmarkRunAnswerId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Details")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ExpectedLocation")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Fingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int?>("IterationIndex")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NoticedVia")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("RelatedToolsJson")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("SearchedFor")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("Summary")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("SuspectedCause")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SuspectedCauseNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("Truncated")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Fingerprint");
+
+                    b.HasIndex("BenchmarkRunAnswerId", "SortOrder");
+
+                    b.ToTable("BenchmarkRunAnswerSelfReports");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkRunAnswerToolCall", b =>
                 {
                     b.Property<long>("Id")
@@ -4563,6 +4643,212 @@ namespace GnollHackServer.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("OverseerDailyActivities");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.OverseerFeedbackIssue", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("FirstSeenUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LastRegressionUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("LastSeenUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("OccurrenceCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RegressionCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("TriageNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("TriagedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("TriagedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Fingerprint")
+                        .IsUnique();
+
+                    b.HasIndex("LastSeenUtc");
+
+                    b.HasIndex("Status", "LastSeenUtc");
+
+                    b.ToTable("OverseerFeedbackIssues");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.OverseerFeedbackReport", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AgentName")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("AppVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("AspNetUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<long>("ChatSessionId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Details")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("ExpectedLocation")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long>("IssueId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ModelId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("NoticedVia")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<bool>("Redacted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("RelatedToolsJson")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("SearchedFor")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("SuspectedCause")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SuspectedCauseNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ToolCallId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("Truncated")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("TurnUserMessageId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedUtc");
+
+                    b.HasIndex("AspNetUserId", "CreatedUtc");
+
+                    b.HasIndex("ChatSessionId", "Fingerprint")
+                        .IsUnique();
+
+                    b.HasIndex("IssueId", "CreatedUtc");
+
+                    b.ToTable("OverseerFeedbackReports");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.OverseerFeedbackSetting", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("SetAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SetByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("OverseerFeedbackSettings");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.RequestInfo", b =>
@@ -6334,6 +6620,17 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("SecondOpinionByModelSnapshot");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkRunAnswerSelfReport", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkRunAnswer", "BenchmarkRunAnswer")
+                        .WithMany("SelfReports")
+                        .HasForeignKey("BenchmarkRunAnswerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BenchmarkRunAnswer");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkRunAnswerToolCall", b =>
                 {
                     b.HasOne("MobileGnollHackLogger.Data.BenchmarkRunAnswer", "BenchmarkRunAnswer")
@@ -6520,6 +6817,20 @@ namespace GnollHackServer.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("AspNetUser");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.OverseerFeedbackReport", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AspNetUserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("MobileGnollHackLogger.Data.OverseerFeedbackIssue", null)
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.RequestInfo", b =>
@@ -6726,6 +7037,8 @@ namespace GnollHackServer.Data.Migrations
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkRunAnswer", b =>
                 {
                     b.Navigation("ModelCalls");
+
+                    b.Navigation("SelfReports");
 
                     b.Navigation("ToolCalls");
                 });

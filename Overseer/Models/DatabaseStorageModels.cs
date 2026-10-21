@@ -277,6 +277,9 @@ public class MaintenanceResultDto
     public int PurgedSessionCount { get; set; }
     public int PurgedMessageCount { get; set; }
     public int PurgedToolCallCount { get; set; }
+
+    /// <summary>Feedback occurrence rows of the purged sessions; their issues are kept.</summary>
+    public int PurgedFeedbackReportCount { get; set; }
     public int PrunedToolResultCount { get; set; }
     public int PrunedBenchmarkToolResultCount { get; set; }
     public int DeletedDiskFolderCount { get; set; }

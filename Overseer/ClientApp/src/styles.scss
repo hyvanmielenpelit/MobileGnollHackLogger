@@ -2257,6 +2257,38 @@ input[type="number"] {
     }
 }
 
+/* The large switch: the one control of a card that is about it alone (the AI Telemetry Feedback
+   tool's switch). The knob keeps a 3 px inset all round, and the ring marks keyboard focus. */
+.gh-switch-wrapper .gh-switch.gh-switch-lg {
+    width: 64px;
+    height: 34px;
+
+    .gh-slider {
+        border-radius: 34px;
+
+        &:before {
+            height: 26px;
+            width: 26px;
+            left: 3px;
+            top: 3px;
+        }
+    }
+
+    input:checked + .gh-slider:before {
+        transform: translateX(30px);
+    }
+
+    input:focus-visible + .gh-slider {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 3px;
+    }
+
+    input:disabled + .gh-slider {
+        cursor: progress;
+        opacity: 0.6;
+    }
+}
+
 /* Shared component styles for Overseer ClientApp */
 
 /* --- Dialog Styles --- */

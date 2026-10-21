@@ -560,6 +560,9 @@ public class BenchmarkRunAnswer
     /// </summary>
     public List<BenchmarkRunAnswerToolCall> ToolCalls { get; set; } = new();
 
+    /// <summary>The candidate's <c>report_feedback</c> calls, kept out of <see cref="ToolCalls"/>; empty before harness version 60.</summary>
+    public List<BenchmarkRunAnswerSelfReport> SelfReports { get; set; } = new();
+
     public int? InputTokens { get; set; }
     public int? OutputTokens { get; set; }
 

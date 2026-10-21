@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
+using Overseer.Services.Feedback;
 using Overseer.Services.Telemetry;
 
 public static class BenchmarkReportBuilder
@@ -2039,6 +2040,150 @@ public static class BenchmarkReportBuilder
         string oneLine = WhitespaceRunRegex.Replace(text.Replace("\r\n", " ").Replace("\r", " ").Replace("\n", " "), " ").Trim();
         return oneLine.Replace("|", "\\|");
     }
+
+    /// <summary>The first harness version whose candidate is offered <c>report_feedback</c>.</summary>
+    internal const int SelfReportsHarnessVersion = 60;
+
+    /// <summary>
+    /// The Self-Reports section closing § 2: the candidate's <c>report_feedback</c> calls, counted,
+    /// listed by question and grouped by fingerprint. A run before harness 60, or with an
+    /// unparseable harness, and a run without tools were not offered the tool, and the section says
+    /// so instead.
+    /// </summary>
+    private static void AppendSelfReportsSection(StringBuilder sb, BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers)
+    {
+        sb.AppendLine("### Self-Reports");
+
+        if (!int.TryParse(run.HarnessVersion, out int harness) || harness < SelfReportsHarnessVersion)
+        {
+            string harnessText = string.IsNullOrWhiteSpace(run.HarnessVersion) ? "not recorded" : run.HarnessVersion.Trim();
+            sb.AppendLine($"The feedback tool was not offered (harness {harnessText}).");
+            sb.AppendLine();
+            return;
+        }
+
+        var options = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson);
+        if (options.Condition == BenchmarkInformationCondition.ClosedBook || !options.EnableToolUse)
+        {
+            sb.AppendLine("The feedback tool was not offered (closed book: no tools).");
+            sb.AppendLine();
+            return;
+        }
+
+        var rows = answers
+            .SelectMany(a => a.SelfReports.Select(r => (Answer: a, Report: r)))
+            .OrderBy(x => x.Answer.OrderIndex)
+            .ThenBy(x => x.Report.SortOrder)
+            .ToList();
+        if (rows.Count == 0)
+        {
+            sb.AppendLine("No self-reports in this run.");
+            sb.AppendLine();
+            return;
+        }
+
+        // By category in the tool's own order, then any other stored value, then the rows that did not parse.
+        var byCategory = rows
+            .Where(x => x.Report.Category != null)
+            .GroupBy(x => x.Report.Category!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        var categoryParts = FeedbackCategories.All
+            .Where(byCategory.ContainsKey)
+            .Concat(byCategory.Keys.Where(k => !FeedbackCategories.All.Contains(k)).OrderBy(k => k, StringComparer.Ordinal))
+            .Select(k => $"`{k}` {Inv(byCategory[k])}")
+            .ToList();
+        int unparsed = rows.Count(x => x.Report.Category == null);
+        if (unparsed > 0)
+        {
+            categoryParts.Add($"arguments not valid {Inv(unparsed)}");
+        }
+        int notAccepted = rows.Count(x => !x.Report.Accepted);
+        int distinctIssues = rows
+            .Where(x => x.Report.Accepted && !string.IsNullOrEmpty(x.Report.Fingerprint))
+            .Select(x => x.Report.Fingerprint!)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+
+        sb.AppendLine($"- **Self-reports:** {Inv(rows.Count)} ({string.Join(", ", categoryParts)}) · **Not accepted:** {Inv(notAccepted)} · **Distinct issues:** {Inv(distinctIssues)}");
+        sb.AppendLine();
+        sb.AppendLine("*Self-reports are the candidate's own account. The suspected cause is its hypothesis, not a finding.*");
+        sb.AppendLine();
+        sb.AppendLine("| Q | Category | Subject | Summary | Expected location | Suspected cause (hypothesis) |");
+        sb.AppendLine("|--:|----------|---------|---------|-------------------|------------------------------|");
+        foreach (var (answer, report) in rows)
+        {
+            string category;
+            string summary;
+            if (report.Category == null)
+            {
+                category = "*(arguments not valid)*";
+                summary = TableCell(report.Error);
+            }
+            else
+            {
+                category = $"`{report.Category}`" + (report.Accepted ? string.Empty : " *(not accepted)*");
+                summary = TableCell(report.Summary);
+            }
+            sb.AppendLine($"| Q{Inv(answer.OrderIndex)} | {category} | {TableCell(report.Subject)} | {summary} | {TableCell(report.ExpectedLocation)} | {SuspectedCauseCell(report)} |");
+        }
+
+        // The within-run view of grouping: one accepted issue, by fingerprint, reported on more than one question.
+        var repeated = rows
+            .Where(x => x.Report.Accepted && !string.IsNullOrEmpty(x.Report.Fingerprint))
+            .GroupBy(x => x.Report.Fingerprint!, StringComparer.Ordinal)
+            .Select(g => (First: g.First().Report, Questions: g.Select(x => x.Answer.OrderIndex).Distinct().OrderBy(i => i).ToList()))
+            .Where(g => g.Questions.Count > 1)
+            .OrderBy(g => g.Questions[0])
+            .ThenBy(g => g.First.Subject, StringComparer.Ordinal)
+            .ToList();
+        if (repeated.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("**Repeated issues:**");
+            foreach (var (first, questions) in repeated)
+            {
+                sb.AppendLine($"- {CodeSpan(first.Subject)} ({CodeSpan(first.Category)}): {string.Join(", ", questions.Select(q => "Q" + Inv(q)))}");
+            }
+        }
+        sb.AppendLine();
+    }
+
+    /// <summary>The suspected cause and its note as one table cell; "—" when the candidate gave neither.</summary>
+    private static string SuspectedCauseCell(BenchmarkRunAnswerSelfReport report)
+    {
+        bool hasNote = !string.IsNullOrWhiteSpace(report.SuspectedCauseNote);
+        if (string.IsNullOrWhiteSpace(report.SuspectedCause))
+        {
+            return hasNote ? TableCell(report.SuspectedCauseNote) : "—";
+        }
+        return $"`{report.SuspectedCause}`" + (hasNote ? " — " + TableCell(report.SuspectedCauseNote) : string.Empty);
+    }
+
+    /// <summary>One self-report as the text of a § 3 bullet: category, subject, summary and suspected cause.</summary>
+    private static string SelfReportBullet(BenchmarkRunAnswerSelfReport report)
+    {
+        if (report.Category == null)
+        {
+            return $"*(arguments not valid)*: {TableCell(report.Error)}";
+        }
+
+        var text = new StringBuilder($"`{report.Category}`: {TableCell(report.Subject)} — {TableCell(report.Summary)}");
+        if (!string.IsNullOrWhiteSpace(report.SuspectedCause))
+        {
+            text.Append($" (suspected cause, a hypothesis: `{report.SuspectedCause}`)");
+        }
+        if (!report.Accepted)
+        {
+            text.Append(string.IsNullOrWhiteSpace(report.Error)
+                ? " *(not accepted)*"
+                : $" *(not accepted: {TableCell(report.Error)})*");
+        }
+        return text.ToString();
+    }
+
+    /// <summary>Model text as a one-line code span; backticks become apostrophes so the span cannot break.</summary>
+    private static string CodeSpan(string? text)
+        => string.IsNullOrWhiteSpace(text) ? "—" : $"`{TableCell(text).Replace("\\|", "|").Replace('`', '\'')}`";
 
     /// <summary>A finding's category in report prose: <c>critical_error</c> reads "critical error".</summary>
     private static string FindingCategoryText(string? category)
@@ -5190,6 +5335,9 @@ public static class BenchmarkReportBuilder
         }
         sb.AppendLine();
 
+        // A ### of its own, closing the Tool Usage Profile: self-reports are not a tool metric.
+        AppendSelfReportsSection(sb, run, answers);
+
         // 4. Questions and Replies
         sb.AppendLine("## 3. Questions and Replies");
         sb.AppendLine();
@@ -5300,6 +5448,17 @@ public static class BenchmarkReportBuilder
                         : "—";
                     string callNote = BenchmarkToolResultClassifier.Note(call);
                     sb.AppendLine($"| {round} | {toolName} | {args} | {status} | {execMs} | {resultSize} | {callNote} |");
+                }
+            }
+
+            // The answer's report_feedback calls, which the call table above never holds.
+            if (a.SelfReports.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("**Self-reports:**");
+                foreach (var selfReport in a.SelfReports.OrderBy(r => r.SortOrder))
+                {
+                    sb.AppendLine("- " + SelfReportBullet(selfReport));
                 }
             }
 

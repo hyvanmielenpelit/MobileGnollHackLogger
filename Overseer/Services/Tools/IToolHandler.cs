@@ -31,6 +31,9 @@ namespace Overseer.Services.Tools
         /// </summary>
         bool IsExperimental => false;
 
+        /// <summary>Whether a call to this tool counts against the session's tool-call quota.</summary>
+        bool CountsTowardCallBudget => true;
+
         Task<ToolResult> ExecuteAsync(JsonElement parameters,
                                       ToolExecutionContext context,
                                       CancellationToken cancellationToken);
@@ -110,6 +113,24 @@ namespace Overseer.Services.Tools
         /// </summary>
         public Benchmarking.BenchmarkVariantContext? Variant { get; set; }
 
+        /// <summary>
+        /// The id of the user message that started this turn, in a persistent chat session; null
+        /// elsewhere.
+        /// </summary>
+        public long? TurnUserMessageId { get; set; }
+
+        /// <summary>
+        /// Whether this context belongs to a benchmark candidate's own run, whose
+        /// <see cref="SessionId"/> holds the benchmark run id rather than a chat session id.
+        /// </summary>
+        public bool IsBenchmarkCandidate { get; set; }
+
+        /// <summary>The provider of the model running this turn.</summary>
+        public string? ActiveProvider { get; set; }
+
+        /// <summary>The id of the model running this turn.</summary>
+        public string? ActiveModelId { get; set; }
+
         public ToolExecutionContext CloneFor(string toolCallId)
         {
             return new ToolExecutionContext
@@ -139,7 +160,11 @@ namespace Overseer.Services.Tools
                 BlockExternalEgress = this.BlockExternalEgress,
                 DisableProviderPromptCache = this.DisableProviderPromptCache,
                 ApiKeyAlert = this.ApiKeyAlert,
-                Variant = this.Variant
+                Variant = this.Variant,
+                TurnUserMessageId = this.TurnUserMessageId,
+                IsBenchmarkCandidate = this.IsBenchmarkCandidate,
+                ActiveProvider = this.ActiveProvider,
+                ActiveModelId = this.ActiveModelId
             };
         }
     }
