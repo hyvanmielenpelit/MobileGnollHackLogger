@@ -85,6 +85,14 @@
   }
 }
 
+/* An italic line in place of a list or table that has nothing to show. */
+@mixin empty-note {
+  .telemetry-empty {
+    font-style: italic;
+    padding: 10px 0;
+  }
+}
+
 /* The card's grid by the list's width, emitted at the top level:
  *   $card       the card selector ('.tl-card')
  *   $metrics    the metrics `dl` selector ('.tl-metrics'), which takes the "metrics" area

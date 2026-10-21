@@ -1,0 +1,240 @@
+/* The filter bar, the status line and Load more are the global card-list classes in styles.scss;
+   `.action-btn`, `.btn-ghost`, `.gh-tag` and `.gh-model-card-badges` are global too, and the Sort
+   popover styles itself. The card's grid, head and title are the breakdown cards', from
+   _telemetry-cards.scss. */
+@use '../telemetry-cards' as cards;
+
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.tl-groups-empty,
+.tl-groups-error {
+  margin: 0;
+}
+
+.tl-groups-scope {
+  margin: 0 0 0.75rem;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+}
+
+.tl-groups-empty {
+  color: var(--nav-color);
+}
+
+/* The search, then the Sort trigger at the row's end, then Clear filters. */
+.tl-groups-filters-row {
+  column-gap: 1.5rem;
+}
+
+.tl-groups-search {
+  flex: 1 1 16rem;
+}
+
+/* The Sort popover hangs from the trigger's end, so the trigger ends the row. */
+.tl-groups-sort {
+  margin-inline-start: auto;
+}
+
+.tl-groups-status:empty {
+  display: none;
+}
+
+/* --- Cards ----------------------------------------------------------------------------------- */
+
+.tl-group-cards {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: tl-group-cards / inline-size;
+}
+
+.tl-group-item {
+  min-inline-size: 0;
+}
+
+/* The breakdown cards' grid, with the configurations in a row of their own under head and metrics. */
+@include cards.card-layout('.tl-group-card', '.tl-metrics', tl-group-cards, $extra: true);
+
+.tl-group-head {
+  @include cards.card-head;
+}
+
+.tl-group-title-row {
+  @include cards.card-title-row('.tl-group-title');
+}
+
+.tl-group-title {
+  @include cards.card-title;
+}
+
+.tl-group-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.tl-group-meta {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+}
+
+/* The row wraps between badges; a badge never wraps inside itself (`.gh-tag` is nowrap). */
+.tl-group-badges {
+  margin: 0;
+
+  .gh-tag {
+    margin: 0;
+  }
+}
+
+@include cards.sticky-clearance;
+
+/* The words carry each state; the outlines reinforce them. */
+.tl-group-blocked {
+  border-color: rgba(239, 83, 80, 0.6);
+  color: #fca5a5;
+}
+
+.tl-group-none,
+.tl-group-refusals {
+  border-color: var(--border-glass);
+  color: #d4d4d8;
+}
+
+.tl-group-none {
+  border-style: dashed;
+}
+
+time {
+  font-variant-numeric: tabular-nums;
+}
+
+@include cards.metric;
+
+/* --- Configurations -------------------------------------------------------------------------- */
+
+.tl-group-configs {
+  grid-area: extra;
+  position: relative;
+  min-inline-size: 0;
+  overflow-x: auto;
+  container: tl-group-configs / inline-size;
+  border-radius: 4px;
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.tl-group-config-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+
+  th,
+  td {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border-glass);
+    text-align: start;
+    vertical-align: baseline;
+  }
+
+  thead th {
+    font-weight: 600;
+    color: var(--nav-color);
+    white-space: nowrap;
+  }
+
+  tbody th {
+    font-weight: 400;
+    color: #e4e4e7;
+  }
+
+  .num {
+    text-align: end;
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child > * {
+    border-bottom: none;
+  }
+}
+
+/* Narrow: each row a block, each value led by its column's name; the header row stays for assistive technology. */
+@container tl-group-configs (inline-size < 36rem) {
+  .tl-group-config-table {
+    thead {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    tbody,
+    tr,
+    th,
+    td {
+      display: block;
+    }
+
+    tr {
+      padding-block: 6px;
+      border-bottom: 1px solid var(--border-glass);
+    }
+
+    tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    th,
+    td {
+      padding: 2px 0;
+      border-bottom: none;
+    }
+
+    tbody th {
+      font-weight: 600;
+    }
+
+    .num {
+      text-align: start;
+    }
+
+    td::before {
+      content: attr(data-label) ": ";
+      color: var(--nav-color);
+    }
+  }
+}
+
+.tl-config-own-key,
+.tl-config-disabled,
+.tl-config-not-granted {
+  margin-inline-start: 6px;
+  border-color: var(--border-glass);
+  color: #a1a1aa;
+}
+
+.tl-config-own-key {
+  color: #d4d4d8;
+}
+
+.tl-config-disabled,
+.tl-config-not-granted {
+  border-style: dashed;
+}

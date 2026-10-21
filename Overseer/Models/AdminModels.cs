@@ -663,15 +663,206 @@ public class AiTelemetrySeriesDto
     public DateTime? CostRecordedSinceUtc { get; set; }
     public DateTime? AttemptsRecordedSinceUtc { get; set; }
 
-    /// <summary>The user filter applied, if any.</summary>
-    public string? UserId { get; set; }
-    public string? UserName { get; set; }
+    /// <summary>The user filter applied, in request order; empty when users are not filtered.</summary>
+    public List<AiTelemetrySeriesUserRefDto> Users { get; set; } = new();
+
+    /// <summary>The model filter applied, in request order; empty when models are not filtered.</summary>
+    public List<AiTelemetrySeriesModelRefDto> Models { get; set; } = new();
+
+    /// <summary>The group filter applied, in request order; empty when groups are not filtered.</summary>
+    public List<AiTelemetrySeriesGroupRefDto> Groups { get; set; } = new();
 
     /// <summary>Activity per bucket, aligned with BucketStartsUtc.</summary>
     public List<AiTelemetryActivityPointDto>? Activity { get; set; }
 
     /// <summary>Buckets before it have no activity data.</summary>
     public DateOnly? ActivityCountedSinceUtc { get; set; }
+}
+
+public class AiTelemetrySeriesUserRefDto
+{
+    public string UserId { get; set; } = string.Empty;
+
+    /// <summary>Null when the account is gone.</summary>
+    public string? UserName { get; set; }
+}
+
+public class AiTelemetrySeriesModelRefDto
+{
+    public string Provider { get; set; } = string.Empty;
+    public string ModelId { get; set; } = string.Empty;
+
+    /// <summary>The catalog name, else the retired entry's, else null.</summary>
+    public string? ModelName { get; set; }
+}
+
+public class AiTelemetrySeriesGroupRefDto
+{
+    /// <summary>Null is "No group": the users who belong to no group.</summary>
+    public long? GroupId { get; set; }
+    public string GroupName { get; set; } = string.Empty;
+}
+
+/// <summary>The models, users and groups the charts dialog offers for a date range, key sources and roles.</summary>
+public class AiTelemetrySeriesOptionsDto
+{
+    public List<AiTelemetrySeriesModelOptionDto> Models { get; set; } = new();
+
+    /// <summary>The users with the most requests, at most AiTelemetrySummaryService.MaxSeriesOptionUsers.</summary>
+    public List<AiTelemetrySeriesUserOptionDto> Users { get; set; } = new();
+
+    /// <summary>Users with usage in the scope, before the cap.</summary>
+    public int TotalUsers { get; set; }
+    public bool UsersTruncated { get; set; }
+    public List<AiTelemetrySeriesGroupOptionDto> Groups { get; set; } = new();
+}
+
+public class AiTelemetrySeriesModelOptionDto
+{
+    public string Provider { get; set; } = string.Empty;
+    public string ModelId { get; set; } = string.Empty;
+
+    /// <summary>The catalog name, else the retired entry's, else null.</summary>
+    public string? ModelName { get; set; }
+
+    /// <summary>"system" and/or "user": the key sources the model was used through.</summary>
+    public List<string> KeySources { get; set; } = new();
+
+    /// <summary>0 for a model seen only in the attempts ledger.</summary>
+    public long Requests { get; set; }
+    public decimal EstimatedCost { get; set; }
+    public long PricedRequests { get; set; }
+    public long Tokens { get; set; }
+    public DateTime? LastRequestUtc { get; set; }
+}
+
+public class AiTelemetrySeriesUserOptionDto
+{
+    public string UserId { get; set; } = string.Empty;
+
+    /// <summary>Null when the account is gone.</summary>
+    public string? UserName { get; set; }
+    public long Requests { get; set; }
+    public long SystemRequests { get; set; }
+    public long UserKeyRequests { get; set; }
+    public decimal EstimatedCost { get; set; }
+    public long PricedRequests { get; set; }
+    public DateTime? LastRequestUtc { get; set; }
+}
+
+public class AiTelemetrySeriesGroupOptionDto
+{
+    /// <summary>Null is "No group": the users who belong to no group.</summary>
+    public long? GroupId { get; set; }
+    public string GroupName { get; set; } = string.Empty;
+
+    /// <summary>Current members; for "No group", the accounts in no group.</summary>
+    public int MemberCount { get; set; }
+
+    /// <summary>Summed over the current members' usage in the scope.</summary>
+    public long Requests { get; set; }
+    public decimal EstimatedCost { get; set; }
+    public long PricedRequests { get; set; }
+    public DateTime? LastRequestUtc { get; set; }
+}
+
+/// <summary>Per-group usage of the selected key sources: the usage of each group's current members over the range.</summary>
+public class AiTelemetryGroupsDto
+{
+    /// <summary>system | user | both.</summary>
+    public string KeySource { get; set; } = "system";
+
+    /// <summary>Every group, then "No group"; a member of two groups counts in both.</summary>
+    public List<AiTelemetryGroupRowDto> Groups { get; set; } = new();
+
+    /// <summary>The security event log exists, so the refusal counts are meaningful.</summary>
+    public bool SecurityEventsAvailable { get; set; }
+}
+
+public class AiTelemetryGroupRowDto
+{
+    /// <summary>Null is "No group": the users who belong to no group.</summary>
+    public long? GroupId { get; set; }
+    public string GroupName { get; set; } = string.Empty;
+
+    /// <summary>Current members; for "No group", the accounts in no group.</summary>
+    public int MemberCount { get; set; }
+
+    /// <summary>Members with a request in the scope.</summary>
+    public int ActiveMembers { get; set; }
+
+    /// <summary>Members blocked from Overseer.</summary>
+    public int BlockedMembers { get; set; }
+
+    /// <summary>All rows of the selected key sources, summed over members.</summary>
+    public long Requests { get; set; }
+    public long SystemRequests { get; set; }
+    public long UserKeyRequests { get; set; }
+    public decimal SystemEstimatedCost { get; set; }
+    public decimal UserKeyEstimatedCost { get; set; }
+    public long ChatRequests { get; set; }
+    public long TitleRequests { get; set; }
+    public long BenchmarkRequests { get; set; }
+    public long PromptTokens { get; set; }
+    public long OutputTokens { get; set; }
+    public decimal EstimatedCost { get; set; }
+    public long PricedRequests { get; set; }
+
+    /// <summary>Most requests in one UTC clock hour, members' requests summed per hour.</summary>
+    public int PeakHourRequests { get; set; }
+    public DateTime? PeakHourStartUtc { get; set; }
+
+    /// <summary>Mean over hours with at least one request by any member.</summary>
+    public double RequestsPerActiveHour { get; set; }
+
+    /// <summary>Distinct days with any member's request of the selected key sources.</summary>
+    public int ActiveDays { get; set; }
+    public DateTime? LastRequestUtc { get; set; }
+    public int ChatsCreated { get; set; }
+    public int UserMessages { get; set; }
+    public int LimitRefusals { get; set; }
+    public int ProviderRefusals { get; set; }
+    public List<AiTelemetryGroupConfigDto> Configs { get; set; } = new();
+}
+
+/// <summary>One system configuration the group grants or its members used, or the members' own keys.</summary>
+public class AiTelemetryGroupConfigDto
+{
+    /// <summary>system | user.</summary>
+    public string KeySource { get; set; } = "system";
+
+    /// <summary>The SystemAiApiConfiguration id; null on the own-key line.</summary>
+    public long? ConfigId { get; set; }
+    public string ConfigName { get; set; } = string.Empty;
+    public long Requests { get; set; }
+    public decimal EstimatedCost { get; set; }
+
+    /// <summary>The GroupSystemAiApiConfiguration, if the group grants the configuration.</summary>
+    public long? AssignmentId { get; set; }
+    public bool? AssignmentEnabled { get; set; }
+    public bool GrantedByGroup { get; set; }
+
+    /// <summary>The group's pooled effective (lazily reset) counters; null when not granted and on the own-key line.</summary>
+    public int? DailyChatRequests { get; set; }
+    public int? MaxDailyChatRequests { get; set; }
+    public int? MonthlyChatRequests { get; set; }
+    public int? MaxMonthlyChatRequests { get; set; }
+    public long? DailyChatTokens { get; set; }
+    public long? MaxDailyChatTokens { get; set; }
+}
+
+/// <summary>The usage of one group's current members by model, role context and thinking level, over a date range.</summary>
+public class AiTelemetryGroupModelsDto
+{
+    /// <summary>system | user | both.</summary>
+    public string KeySource { get; set; } = "system";
+
+    /// <summary>Null is "No group".</summary>
+    public long? GroupId { get; set; }
+    public string GroupName { get; set; } = string.Empty;
+    public int MemberCount { get; set; }
+    public DateTime? CostRecordedSinceUtc { get; set; }
+    public List<AiTelemetryUserModelRowDto> Rows { get; set; } = new();
 }
 
 public class AiTelemetryActivityPointDto

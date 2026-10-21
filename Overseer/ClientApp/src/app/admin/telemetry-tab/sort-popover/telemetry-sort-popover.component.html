@@ -1,0 +1,44 @@
+<!-- The anchor names are set on both ends, since the ids derive from the host's prefix. -->
+<div class="tl-sort">
+  <button type="button" class="btn-ghost tl-sort-trigger" [id]="idPrefix() + '-sort-trigger'"
+          [attr.popovertarget]="idPrefix() + '-sort-panel'" [attr.aria-expanded]="sortOpen"
+          [attr.style]="'anchor-name: --' + idPrefix() + '-sort-trigger'">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 4 4 4-4"></path><path d="M7 20V4"></path><path d="m21 8-4-4-4 4"></path><path d="M17 4v16"></path></svg>
+    <span>Sort: {{ sortLabel }}</span>
+  </button>
+  <div popover="auto" class="gh-facet-popover model-picker-sort-panel tl-sort-panel" [id]="idPrefix() + '-sort-panel'"
+       [attr.style]="'position-anchor: --' + idPrefix() + '-sort-trigger'"
+       (toggle)="onSortToggle($event)" (keydown)="onSortPanelKeydown($event)">
+    <fieldset class="gh-facet-group">
+      <legend class="gh-facet-legend">Sort by</legend>
+      <div class="tl-sort-fields">
+        @for (option of fields(); track option.field) {
+          <label class="gh-radio gh-facet-option">
+            <input type="radio" [name]="idPrefix() + '-sort-field'" [id]="idPrefix() + '-sort-field-' + option.field" [value]="option.field"
+                   [checked]="sort().field === option.field" (change)="chooseSortField(option.field)">
+            <span class="gh-facet-option-label">{{ option.label }}</span>
+          </label>
+        }
+      </div>
+    </fieldset>
+    <div class="tl-sort-footer">
+      <div class="tl-sort-order" role="radiogroup" [attr.aria-labelledby]="idPrefix() + '-sort-order-label'">
+        <span class="gh-facet-legend" [id]="idPrefix() + '-sort-order-label'">Order</span>
+        <div class="tl-sort-segments">
+          @for (direction of sortDirections; track direction) {
+            <label class="tl-sort-segment">
+              <input type="radio" [name]="idPrefix() + '-sort-direction'" [id]="idPrefix() + '-sort-direction-' + direction" [value]="direction"
+                     [checked]="sort().direction === direction" (change)="chooseSortDirection(direction)">
+              <span>{{ directionLabel(direction) }}</span>
+            </label>
+          }
+        </div>
+      </div>
+      <div class="model-picker-sort-clear">
+        <button type="button" class="btn-link" [id]="idPrefix() + '-sort-reset'"
+                [attr.aria-disabled]="sortIsDefault ? 'true' : null"
+                (click)="resetSort()">Reset sorting</button>
+      </div>
+    </div>
+  </div>
+</div>

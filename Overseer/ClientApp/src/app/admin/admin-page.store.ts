@@ -31,7 +31,7 @@ export type AdminUsersSubTab = 'users' | 'groups' | 'deletions' | 'log';
 export type AdminDevtoolsSubTab = 'source' | 'gnollhack-wiki' | 'nethack-wiki' | 'knowledge-base' | 'config-health' | 'sentry';
 
 /** The AI Telemetry tab's sub-tabs. */
-export type AdminTelemetrySubTab = 'summary' | 'models' | 'users';
+export type AdminTelemetrySubTab = 'summary' | 'models' | 'users' | 'groups';
 
 /** How a store navigation treats the browser history: a new entry, or the current one replaced. */
 export type AdminHistoryMode = 'push' | 'replace';
@@ -151,6 +151,12 @@ export class AdminPageStore {
 
   /** Emits when `pendingManageUser` is set. */
   readonly manageUserRequested$ = new Subject<void>();
+
+  /** A group whose configuration limits a link asked the Groups sub-tab to manage; cleared once the sub-tab has read it. */
+  pendingManageGroup: { groupId: number; groupName: string } | null = null;
+
+  /** Emits when `pendingManageGroup` is set. */
+  readonly manageGroupRequested$ = new Subject<void>();
 
   showToast(message: string, type: AdminToastType = 'success', title?: string): void {
     this.toast$.next({ message, type, title });
@@ -277,6 +283,13 @@ export class AdminPageStore {
     this.pendingManageUser = { userId, userName };
     this.manageUserRequested$.next();
     this.requestTab('users');
+  }
+
+  /** Asks the Users tab's Groups sub-tab to open its AI configuration access dialog for one group, and selects it. */
+  requestManageGroup(groupId: number, groupName: string): void {
+    this.pendingManageGroup = { groupId, groupName };
+    this.manageGroupRequested$.next();
+    this.goTo('users', 'groups');
   }
 
   /** Shows the Users tab's Admin log with `filter`, and selects it. */

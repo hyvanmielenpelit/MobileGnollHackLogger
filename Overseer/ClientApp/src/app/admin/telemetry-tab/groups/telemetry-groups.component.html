@@ -1,0 +1,207 @@
+<!-- The tab's Groups sub-tab panel holds this view; the Keys filter and date range are the tab's. -->
+<p class="tl-groups-scope">{{ scopeText }}</p>
+
+<!-- Search and Sort run in the browser over every group the server returned. -->
+<div class="gh-filter-bar tl-groups-filter-bar">
+  <div class="gh-filter-bar-row tl-groups-filters-row">
+    <div class="gh-search-field tl-groups-search">
+      <label class="visually-hidden" for="tl-groups-search">Search groups by name</label>
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input type="search" class="gh-input" id="tl-groups-search" autocomplete="off"
+             autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"
+             placeholder="Search group name" [value]="searchInput"
+             (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+    </div>
+    <div class="tl-groups-sort">
+      <app-telemetry-sort-popover idPrefix="tl-groups" [fields]="sortFields" [sort]="view().sort"
+                                  [defaultSort]="defaultSort" (sortChange)="onSortChange($event)" />
+    </div>
+    @if (searchInput !== '') {
+      <button type="button" class="btn-link gh-filter-clear" id="tl-groups-clear" (click)="clearFilters()">Clear filters</button>
+    }
+  </div>
+</div>
+
+<!-- The list's one polite live region. -->
+<p class="gh-list-status tl-groups-status" id="tl-groups-status" role="status">{{ listStatus }}</p>
+
+@if (error(); as message) {
+  <p class="gh-field-error tl-groups-error" role="alert">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    <span>{{ message }}</span>
+  </p>
+} @else if (loaded() && matching().length === 0) {
+  <p class="tl-groups-empty">{{ emptyText }}</p>
+} @else if (visibleRows().length > 0) {
+  <ul class="tl-group-cards" role="list" aria-label="Groups">
+    @for (group of visibleRows(); track trackKey(group); let i = $index) {
+      @let name = displayName(group);
+      <li class="tl-group-item">
+        <article class="tl-group-card" [attr.data-group-id]="trackKey(group)" [attr.aria-labelledby]="'tl-groups-' + i + '-title'">
+          <div class="tl-group-head">
+            <div class="tl-group-title-row">
+              <!-- Focused after Show more. -->
+              <h5 class="tl-group-title" [id]="'tl-groups-' + i + '-title'" tabindex="-1">{{ name }}</h5>
+              <div class="tl-group-actions" role="group" [attr.aria-label]="'Actions for ' + name">
+                <button type="button" class="action-btn tl-group-models" aria-haspopup="dialog"
+                        [attr.aria-label]="'Usage by model: ' + name"
+                        [attr.interestfor]="'tl-groups-' + i + '-models-tip'"
+                        [attr.style]="'anchor-name: --tl-groups-' + i + '-models-tip'"
+                        (click)="openUsageByModel(group, $event)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'tl-groups-' + i + '-models-tip'"
+                     [attr.style]="'position-anchor: --tl-groups-' + i + '-models-tip'">Usage by model</div>
+
+                <button type="button" class="action-btn tl-group-charts"
+                        [attr.aria-label]="'Usage charts of ' + name"
+                        [attr.interestfor]="'tl-groups-' + i + '-charts-tip'"
+                        [attr.style]="'anchor-name: --tl-groups-' + i + '-charts-tip'"
+                        (click)="openUsageCharts(group)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'tl-groups-' + i + '-charts-tip'"
+                     [attr.style]="'position-anchor: --tl-groups-' + i + '-charts-tip'">Usage charts</div>
+
+                <!-- The users in no group have no group limits to manage. -->
+                @if (!isNoGroup(group)) {
+                  <button type="button" class="action-btn tl-group-limits"
+                          [attr.aria-label]="'Manage the limits of ' + name"
+                          [attr.interestfor]="'tl-groups-' + i + '-limits-tip'"
+                          [attr.style]="'anchor-name: --tl-groups-' + i + '-limits-tip'"
+                          (click)="manageLimits(group)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tl-groups-' + i + '-limits-tip'"
+                       [attr.style]="'position-anchor: --tl-groups-' + i + '-limits-tip'">Manage limits</div>
+                }
+              </div>
+            </div>
+            <p class="tl-group-meta">
+              @if (group.lastRequestUtc) {
+                {{ membersText(group) }} · {{ activeText(group) }} · Last active <time [attr.datetime]="group.lastRequestUtc">{{ dateText(group.lastRequestUtc) }}</time>
+              } @else {
+                {{ membersText(group) }} · No request in this range
+              }
+            </p>
+            <!-- Every state is a word in an outlined badge, never color alone. -->
+            @if (hasBadges(group)) {
+              <ul class="gh-model-card-badges tl-group-badges" role="list" aria-label="Group state">
+                @if (isNoGroup(group)) {
+                  <li><span class="gh-tag tl-group-none">Users in no group</span></li>
+                }
+                @if (group.blockedMembers > 0) {
+                  <li><span class="gh-tag tl-group-blocked">{{ blockedText(group) }}</span></li>
+                }
+                @if (securityEventsAvailable() && refusals(group) > 0) {
+                  <li><span class="gh-tag tl-group-refusals">{{ refusalsText(group) }}</span></li>
+                }
+              </ul>
+            }
+          </div>
+
+          <!-- Columns that line up down the list. Busiest hour is plain information. -->
+          <dl class="tl-metrics">
+            <div class="tl-metric tl-metric-requests">
+              <dt>Requests</dt>
+              <dd>{{ formatInteger(group.requests) }}</dd>
+              <dd class="tl-metric-note">{{ requestsNote(group) }}</dd>
+              @if (keySplitNote(group); as split) {
+                <dd class="tl-metric-note tl-metric-keys">{{ split }}</dd>
+              }
+            </div>
+            <div class="tl-metric">
+              <dt>Tokens</dt>
+              <dd>{{ formatInteger(group.promptTokens + group.outputTokens) }}</dd>
+            </div>
+            <div class="tl-metric tl-metric-cost">
+              <dt>Est. cost</dt>
+              <dd>{{ formatCost(group.estimatedCost) }}</dd>
+              @if (ownKeyCostNote(group); as ownKey) {
+                <dd class="tl-metric-note tl-metric-keys">{{ ownKey }}</dd>
+              }
+              @if (unpricedRequests(group) > 0) {
+                <dd class="tl-metric-note">{{ formatInteger(unpricedRequests(group)) }} unpriced</dd>
+              }
+            </div>
+            <div class="tl-metric tl-metric-peak">
+              <dt>Busiest hour</dt>
+              <dd>{{ requestsText(group.peakHourRequests) }}</dd>
+              <dd class="tl-metric-note">typical {{ perHourText(group.requestsPerActiveHour) }} per active hour</dd>
+            </div>
+            <div class="tl-metric">
+              <dt>Active days</dt>
+              <dd>{{ formatInteger(group.activeDays) }}</dd>
+            </div>
+            <div class="tl-metric">
+              <dt>Chats</dt>
+              <dd>{{ formatInteger(group.chatsCreated) }}</dd>
+            </div>
+            <div class="tl-metric">
+              <dt>Messages</dt>
+              <dd>{{ formatInteger(group.userMessages) }}</dd>
+            </div>
+            <div class="tl-metric">
+              <dt>Limit refusals</dt>
+              <dd [class.tl-metric-muted]="!securityEventsAvailable()">{{ securityEventsAvailable() ? formatInteger(group.limitRefusals) : '—' }}</dd>
+            </div>
+            <div class="tl-metric">
+              <dt>Provider refusals</dt>
+              <dd [class.tl-metric-muted]="!securityEventsAvailable()">{{ securityEventsAvailable() ? formatInteger(group.providerRefusals) : '—' }}</dd>
+            </div>
+          </dl>
+
+          @if (group.configs.length > 0) {
+            <!-- Keyboard-scrollable; under 36 rem of its own width each row is a block of labeled values.
+                 Today and This month are the group's pooled counters against the group's limits. -->
+            <div class="tl-group-configs" role="region" tabindex="0" [attr.aria-labelledby]="'tl-groups-' + i + '-configs-caption'">
+              <table class="tl-group-config-table">
+                <caption class="visually-hidden" [id]="'tl-groups-' + i + '-configs-caption'">Configurations of {{ name }}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Configuration</th>
+                    <th scope="col" class="num">Requests</th>
+                    <th scope="col" class="num">Est. cost</th>
+                    <th scope="col" class="num">Today</th>
+                    <th scope="col" class="num">This month</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (config of group.configs; track configKey(config)) {
+                    <tr [attr.data-key-source]="config.keySource">
+                      <th scope="row">
+                        {{ config.configName }}
+                        @if (config.keySource === 'user') {
+                          <span class="gh-tag tl-config-own-key">own key</span>
+                        }
+                        @if (config.assignmentEnabled === false) {
+                          <span class="gh-tag tl-config-disabled">disabled</span>
+                        }
+                        @if (notGranted(group, config)) {
+                          <span class="gh-tag tl-config-not-granted">not granted by this group</span>
+                        }
+                      </th>
+                      <td class="num" data-label="Requests">{{ formatInteger(config.requests) }}</td>
+                      <td class="num" data-label="Est. cost">{{ formatCost(config.estimatedCost) }}</td>
+                      <td class="num tl-config-today" data-label="Today">{{ configLimitText(config, config.dailyChatRequests, config.maxDailyChatRequests) }}</td>
+                      <td class="num tl-config-month" data-label="This month">{{ configLimitText(config, config.monthlyChatRequests, config.maxMonthlyChatRequests) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </article>
+      </li>
+    }
+  </ul>
+
+  @if (remainingCount > 0) {
+    <div class="gh-load-more tl-groups-load-more">
+      <button type="button" class="btn-ghost tl-groups-show-more" (click)="showMore()">Show {{ formatInteger(nextBatchCount) }} more</button>
+      @if (remainingCount > nextBatchCount) {
+        <button type="button" class="btn-link gh-filter-clear tl-groups-show-all" (click)="showMore(true)">Show all {{ formatInteger(matching().length) }}</button>
+      }
+    </div>
+  }
+}

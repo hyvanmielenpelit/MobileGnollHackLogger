@@ -4,6 +4,8 @@ import { Subject } from 'rxjs';
 
 import {
   AdminService,
+  AiTelemetryGroupModelsDto,
+  AiTelemetryGroupModelsQuery,
   AiTelemetryModelUsersDto,
   AiTelemetryModelUsersQuery,
   AiTelemetryUserModelRowDto,
@@ -40,7 +42,18 @@ function dto(rows: AiTelemetryUserModelRowDto[] = ROWS, overrides: Partial<AiTel
   return { keySource: 'system', userId: 'u1', userName: 'alice', costRecordedSinceUtc: '2026-09-01T00:00:00Z', rows, ...overrides };
 }
 
-const REQUEST: TelemetryUserModelsRequest = { start: '2026-10-01', end: '2026-10-03', keys: 'system', userId: 'u1', userName: 'alice' };
+const REQUEST: TelemetryUserModelsRequest = {
+  start: '2026-10-01', end: '2026-10-03', keys: 'system', subject: { kind: 'user', userId: 'u1', userName: 'alice' }
+};
+
+/** The same scope for one group's members. */
+const GROUP_REQUEST: TelemetryUserModelsRequest = {
+  start: '2026-10-01', end: '2026-10-03', keys: 'system', subject: { kind: 'group', groupId: 4, groupName: 'Testers' }
+};
+
+function groupDto(rows: AiTelemetryUserModelRowDto[] = ROWS, overrides: Partial<AiTelemetryGroupModelsDto> = {}): AiTelemetryGroupModelsDto {
+  return { keySource: 'system', groupId: 4, groupName: 'Testers', memberCount: 12, costRecordedSinceUtc: '2026-09-01T00:00:00Z', rows, ...overrides };
+}
 
 /** Both usage dialogs side by side, as the AI Telemetry tab renders them. */
 @Component({
@@ -60,6 +73,7 @@ describe('TelemetryUserModelsDialogComponent', () => {
   let el: HTMLElement;
   let requests: { query: AiTelemetryUserModelsQuery; subject: Subject<AiTelemetryUserModelsDto> }[];
   let modelUserRequests: { query: AiTelemetryModelUsersQuery; subject: Subject<AiTelemetryModelUsersDto> }[];
+  let groupRequests: { query: AiTelemetryGroupModelsQuery; subject: Subject<AiTelemetryGroupModelsDto> }[];
   let opener: HTMLButtonElement;
 
   beforeEach(async () => {
@@ -67,10 +81,16 @@ describe('TelemetryUserModelsDialogComponent', () => {
     localStorage.removeItem(TELEMETRY_MODEL_USERS_STORAGE_KEY);
     requests = [];
     modelUserRequests = [];
+    groupRequests = [];
     const admin = {
       getAiTelemetryUserModels: (query: AiTelemetryUserModelsQuery) => {
         const subject = new Subject<AiTelemetryUserModelsDto>();
         requests.push({ query, subject });
+        return subject.asObservable();
+      },
+      getAiTelemetryGroupModels: (query: AiTelemetryGroupModelsQuery) => {
+        const subject = new Subject<AiTelemetryGroupModelsDto>();
+        groupRequests.push({ query, subject });
         return subject.asObservable();
       },
       getAiTelemetryModelUsers: (query: AiTelemetryModelUsersQuery) => {
@@ -183,7 +203,7 @@ describe('TelemetryUserModelsDialogComponent', () => {
 
   it('titles a user whose account is gone as Unknown user', () => {
     create();
-    open({ ...REQUEST, userName: '' });
+    open({ ...REQUEST, subject: { kind: 'user', userId: 'u1', userName: '' } });
     respond(0, dto(ROWS, { userName: null }));
 
     expect(text(q('#tl-um-title'))).toBe('Usage by model: Unknown user');
@@ -192,7 +212,7 @@ describe('TelemetryUserModelsDialogComponent', () => {
   it('ignores the response for an earlier user once another is opened', () => {
     create();
     open();
-    open({ ...REQUEST, userId: 'u2', userName: 'bob' });
+    open({ ...REQUEST, subject: { kind: 'user', userId: 'u2', userName: 'bob' } });
     expect(requests.length).toBe(2);
 
     requests[0].subject.next(dto([modelRow({ modelName: 'Stale' })]));
@@ -555,6 +575,95 @@ describe('TelemetryUserModelsDialogComponent', () => {
     expect(cancel.defaultPrevented).toBe(true);
     expect(dialog().open).toBe(false);
     await vi.waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  // --- A group's members ---
+
+  function respondGroup(index: number, body: AiTelemetryGroupModelsDto = groupDto()): void {
+    groupRequests[index].subject.next(body);
+    groupRequests[index].subject.complete();
+    fixture.detectChanges();
+  }
+
+  it('fetches a group\'s models with its id and titles the dialog with its name', () => {
+    create();
+    open({ ...GROUP_REQUEST, keys: 'both' });
+
+    expect(requests).toEqual([]);
+    expect(groupRequests.map(r => r.query)).toEqual([{ startDate: '2026-10-01', endDate: '2026-10-03', keys: 'both', groupId: 4 }]);
+    expect(text(q('#tl-um-title'))).toBe('Usage by model: Testers');
+    expect(document.activeElement?.id).toBe('tl-um-title');
+    expect(text(q('.tl-mu-subtitle'))).toBe('All keys · 2026-10-01 to 2026-10-03');
+  });
+
+  it('leads the group subtitle with the member count from the response', () => {
+    create();
+    open(GROUP_REQUEST);
+    respondGroup(0, groupDto(ROWS, { memberCount: 1 }));
+    expect(text(q('.tl-mu-subtitle'))).toBe('1 member · System AI configurations · 2026-10-01 to 2026-10-03');
+
+    open(GROUP_REQUEST);
+    respondGroup(1);
+    expect(text(q('.tl-mu-subtitle'))).toBe('12 members · System AI configurations · 2026-10-01 to 2026-10-03');
+  });
+
+  it('lists the group\'s models as it lists a user\'s, with the group provider-error note', () => {
+    create();
+    open(GROUP_REQUEST);
+    respondGroup(0);
+
+    expect(titles()).toEqual(['Claude X', 'gpt-x', 'Gemini Y']);
+    expect(status()).toBe('Showing 3 entries · 5 requests');
+    expect(text(q('.tl-mu-scope-errors'))).toBe('Provider errors are not recorded per user or group for system AI configurations.');
+  });
+
+  it('sends none for the users in no group and calls them users, not members', () => {
+    create();
+    open({ ...GROUP_REQUEST, subject: { kind: 'group', groupId: 'none', groupName: 'No group' } });
+
+    expect(groupRequests[0].query).toEqual({ startDate: '2026-10-01', endDate: '2026-10-03', keys: 'system', groupId: 'none' });
+    respondGroup(0, groupDto(ROWS, { groupId: null, groupName: 'No group', memberCount: 3 }));
+
+    expect(text(q('#tl-um-title'))).toBe('Usage by model: No group');
+    expect(text(q('.tl-mu-subtitle'))).toBe('3 users · System AI configurations · 2026-10-01 to 2026-10-03');
+  });
+
+  it('falls back to the response\'s group name, then to the group id or No group', () => {
+    create();
+    open({ ...GROUP_REQUEST, subject: { kind: 'group', groupId: 4, groupName: '' } });
+    expect(text(q('#tl-um-title'))).toBe('Usage by model: Group 4');
+
+    respondGroup(0);
+    expect(text(q('#tl-um-title'))).toBe('Usage by model: Testers');
+
+    open({ ...GROUP_REQUEST, subject: { kind: 'group', groupId: 'none', groupName: '' } });
+    expect(text(q('#tl-um-title'))).toBe('Usage by model: No group');
+  });
+
+  it('says so when the group\'s members used no model in the range', () => {
+    create();
+    open(GROUP_REQUEST);
+    respondGroup(0, groupDto([]));
+
+    expect(text(q('.tl-mu-empty'))).toBe("This group's members used no model in this range.");
+    expect(q('.tl-mu-summary')).toBeNull();
+  });
+
+  it('switches from a group back to a user, dropping the group response', () => {
+    create();
+    open(GROUP_REQUEST);
+    open();
+    expect(groupRequests.length).toBe(1);
+    expect(requests.length).toBe(1);
+
+    groupRequests[0].subject.next(groupDto([modelRow({ modelName: 'Stale' })]));
+    fixture.detectChanges();
+    expect(cards().length).toBe(0);
+
+    respond(0);
+    expect(text(q('#tl-um-title'))).toBe('Usage by model: alice');
+    expect(text(q('.tl-mu-subtitle'))).toBe('System AI configurations · 2026-10-01 to 2026-10-03');
+    expect(text(q('.tl-mu-scope-errors'))).toBe('Provider errors are not recorded per user for system AI configurations.');
   });
 
   // --- Beside the Usage by user dialog ---

@@ -664,6 +664,14 @@ new. The AI Telemetry header's **Charts** and **Refresh Telemetry** became icon-
 header with visually hidden labels, and the **Date range and keys** chevron is gone with the collapse.
 The GnollBench sub-tabs lost their glyphs (§5).*
 
+*Changed 2026-10-21 (AI Telemetry Groups and chart filters): no glyph or class is new.* pie-chart*,*
+bar-chart-2 *and* sliders *now also appear on the AI Telemetry Groups view's cards, as **Usage by
+model**, **Usage charts** and **Manage limits** (the last on real groups only, not on *No group*), each
+an icon-only `.action-btn` named for its group with an `interestfor` tooltip, in a `role="group"`
+*Actions for {group}*. The charts dialog's Models, Users and Groups tabs use the selection band's
+`.btn-ghost` **Clear selection** with* x *and the chips' `.action-btn`* x *(§8i), a `.btn-ghost`
+**Retry** with* rotate*, and the shared `app-telemetry-sort-popover` trigger with* arrow-down-up*.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -2320,7 +2328,26 @@ rank, share bar and metric columns, a model-or-provider search (`#tl-um-search`)
 *Keys: Both* only) and thinking-level selects, the *Thinking levels* grouping select and the same Sort
 popover, in batches of 50. It shares the Usage by user dialog's stylesheet partial
 (`_telemetry-usage-dialog.scss`, the `tl-mu-*` classes; its own ids are `tl-um-*`) and its recorded
-exception: no `CardListState`, for the same reasons.
+exception: no `CardListState`, for the same reasons. Since 2026-10-21 it also opens for a group (§ 7c of
+`docs/overseer/ai-telemetry.md`): the request names a user or a group subject, and nothing else changes.
+
+The **AI Telemetry Groups view** (`app-telemetry-groups`, `admin/telemetry-tab/groups/`, 2026-10-21) is
+the twenty-first: one card per group, built like the Users view's cards on the `_telemetry-cards.scss`
+mixins, with *No group* as a card of its own. It has the Users view's recorded exception, no
+`CardListState`, and runs its search, sort and batches of 20 **in the browser**, because the server
+returns every group unpaged (groups are administrator-made and few).
+
+The **charts dialog's Models, Users and Groups tabs** (`app-telemetry-chart-{models,users,groups}`,
+`admin/telemetry-tab/charts/selection/`, 2026-10-21) are a recorded exception too: checkbox lists under a
+§8i selection band, not cards, because each row is one choice with one meta line. They take no
+`CardListState`: the lists, search, sort and batches of 50 run in the browser over the series options,
+and the selection is a filter whose full choice equals no filter (`effectiveFilter`), with a cap of 50 on
+a partial choice.
+
+**A new telemetry list's Sort popover is `app-telemetry-sort-popover`**
+(`admin/telemetry-tab/sort-popover/`), never another inline copy: inputs `idPrefix`, `fields`, `sort` and
+`defaultSort`, output `sortChange`. The Groups view and the three chart tabs use it; the four older
+inline copies (the breakdown, the Users view and the two usage dialogs) are left for a follow-up.
 
 **A metrics grid gets a definite track count.** `repeat(auto-fill, …)` inside a grid item that sits
 in an `auto` (content-sized) track repeats only once, because the item has no definite width, so

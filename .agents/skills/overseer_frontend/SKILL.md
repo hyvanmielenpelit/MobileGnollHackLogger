@@ -263,8 +263,11 @@ Harness-neutral, and the floor for any Overseer frontend work.
     third full consumer: nine tiles and the single view, in a single-step `gh-wizard` frame without
     step tabs — `.gh-wizard-body` → one `.gh-wizard-step.gh-fig-host` — inside a
     `.gh-dialog-fullscreen`, so the wizard's flex and `min-height: 0` chain and the
-    `@container gh-fig` stacking rule still apply; storage `overseer.admin.telemetry.charts` and its
-    `.chartSize`, `.figureStyle`, `.figureStylePanel.open` and `.download` keys; its Charts tab passes
+    `@container gh-fig` stacking rule still apply; its sidebar tabs are *Data · Models · Users ·
+    Groups · Theme · Charts · Download*, the three filter tabs being `app-telemetry-chart-{models,users,groups}`
+    (`charts/selection/`), whose choices are never stored; storage `overseer.admin.telemetry.charts` and its
+    `.chartSize`, `.figureStyle`, `.figureStylePanel.open` and `.download` keys, and the filter lists'
+    `.charts.models.view`, `.charts.users.view` and `.charts.groups.view`; its Charts tab passes
     `hiddenKeys` to `app-figure-style-panel`, which accepts style keys and `badge:<kind>` entries to
     hide Chat-Consistency-only controls; its Download tab uses two id prefixes, `tl-export` and
     `tl-image-format`, because each export section emits `-section`, `-reset` and `-reset-tip` ids);
@@ -430,7 +433,9 @@ The Angular application's routes are defined in `app.routes.ts`. The primary pag
 - `/admin`, `/admin/:tab` and `/admin/:tab/:subtab` (`admin.component`): System administration
   (groups, configs, rate limits). Tabs, in order: Users, System Configs, Database, AI Telemetry,
   Security, GnollBench, Services. *Groups* is a sub-tab of Users (*Users · Groups · Deletion
-  requests · Admin log*); **API Keys** (`app-admin-api-keys`, the per-provider default keys) is a
+  requests · Admin log*); AI Telemetry's sub-tabs are *Summary · Models · Users · Groups*, one
+  component each (`summary/`, `models/`, `users/`, `groups/` under `admin/telemetry-tab/`) under a
+  parent that keeps the header, the fetch and the dialogs; **API Keys** (`app-admin-api-keys`, the per-provider default keys) is a
   dialog of System Configs at `/admin/configs/api-keys`. One route with `matcher: adminUrlMatcher`
   serves all three shapes, so a tab change reuses the page; the slugs, the legacy `?tab=` redirect
   and the history rules are in `admin/admin-url.ts` and `docs/overseer/admin-page-urls.md`.

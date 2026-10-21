@@ -1,0 +1,19 @@
+/* The trigger is the global `.btn-ghost`; the panel's frame, radios and placement are the global
+   `.gh-facet-popover.model-picker-sort-panel`, laid out by the shared sort-panel mixin. */
+@use '../telemetry-sort' as sort;
+
+:host {
+  display: inline-block;
+}
+
+@include sort.sort-panel('.tl-sort-panel');
+
+.tl-sort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  svg {
+    flex: none;
+  }
+}

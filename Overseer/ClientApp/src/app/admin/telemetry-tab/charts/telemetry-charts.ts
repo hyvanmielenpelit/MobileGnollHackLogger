@@ -88,14 +88,17 @@ export function telemetryFigureTitle(key: TelemetryFigureKey): string {
 /** The note every activity chart carries. */
 export const ACTIVITY_SCOPE_NOTE = 'Split by and Keys do not apply to this chart.';
 
+/** The activity charts' note while models are chosen. */
+export const ACTIVITY_SCOPE_MODELS_NOTE = 'Split by, Keys and Models do not apply to this chart.';
+
 /** The provider error rate chart's note when it leaves out the Benchmark role's lines. */
 export const BENCHMARK_AVAILABILITY_NOTE = 'GnollBench provider availability is reported in GnollBench.';
 
 /** The Chats created chart's note: the two kinds are counted within Chats. */
 export const CHATS_SUBSET_NOTE = 'Confidential and GnollHack chats are also counted in Chats.';
 
-/** Why the incognito lines are left out for one user. */
-export const INCOGNITO_USER_NOTE = 'Incognito chats and messages are counted only anonymously, so one user\'s charts leave them out.';
+/** Why the incognito lines are left out under a user or group filter. */
+export const INCOGNITO_USER_NOTE = 'Incognito chats and messages are counted only anonymously, so a user or group filter leaves them out.';
 
 // --- Series ---
 
@@ -171,7 +174,7 @@ interface ActivityLine {
   readonly key: string;
   readonly label: string;
   readonly value: (point: AiTelemetryActivityPointDto) => number;
-  /** Counted only anonymously, so left out under a user filter. */
+  /** Counted only anonymously, so left out under a user or group filter. */
   readonly incognito?: boolean;
 }
 
@@ -199,15 +202,16 @@ function isBenchmarkRoleLine(dto: AiTelemetrySeriesDto, key: string): boolean {
 }
 
 /**
- * The activity chart's lines: ignoring *Split by* and *Keys*, a gap in every bucket that starts before
- * the counting began, and no incognito lines for one user.
+ * The activity chart's lines: ignoring *Split by*, *Keys* and *Models*, a gap in every bucket that
+ * starts before the counting began, and no incognito lines under a user or group filter.
  */
 function activitySeries(dto: AiTelemetrySeriesDto, key: 'activeUsers' | 'chats' | 'messages'): TelemetrySeries {
   const starts = telemetryBucketStarts(dto);
   const counted = utcMillis(dto.activityCountedSinceUtc);
   const activity = dto.activity ?? [];
-  const userFiltered = !!dto.userId;
-  const notes: FigureNote[] = [{ text: ACTIVITY_SCOPE_NOTE, tone: 'info' }];
+  const userFiltered = (dto.users?.length ?? 0) > 0 || (dto.groups?.length ?? 0) > 0;
+  const modelsFiltered = (dto.models?.length ?? 0) > 0;
+  const notes: FigureNote[] = [{ text: modelsFiltered ? ACTIVITY_SCOPE_MODELS_NOTE : ACTIVITY_SCOPE_NOTE, tone: 'info' }];
   if (key === 'chats') notes.push({ text: CHATS_SUBSET_NOTE, tone: 'info' });
   if (!Number.isFinite(counted)) {
     notes.push({ text: 'Users, chats and messages are not counted yet.', tone: 'info' });
@@ -415,8 +419,10 @@ export interface TelemetryComposeContext {
   readonly rangeLabel: string;
   readonly keys: AiTelemetryKeySource;
   readonly cumulative: boolean;
-  /** The filtered user's name; null for every user. */
-  readonly userName: string | null;
+  /** The names of the users, models and groups the series is filtered to; empty when not filtered. */
+  readonly userNames: readonly string[];
+  readonly modelNames: readonly string[];
+  readonly groupNames: readonly string[];
   /** When the series arrived, an ISO timestamp. */
   readonly loadedAt: string;
 }
@@ -683,13 +689,25 @@ export function telemetryRangeLabel(start: string | null | undefined, end: strin
   return 'All dates';
 }
 
+/** Names shown in a detail line before the rest are counted. */
+const DETAIL_NAMES = 3;
+
+/** `User: Ann`; `Users: Ann, Bob, Cid +2 more`; nothing for no names. */
+export function filterDetail(singular: string, plural: string, names: readonly string[]): string[] {
+  if (names.length === 0) return [];
+  if (names.length === 1) return [`${singular}: ${names[0]}`];
+  const shown = names.slice(0, DETAIL_NAMES).join(', ');
+  const rest = names.length - DETAIL_NAMES;
+  return [`${plural}: ${shown}${rest > 0 ? ` +${rest} more` : ''}`];
+}
+
 /** The cost charts' pricing badge, which no style toggle hides. */
 export const TELEMETRY_PRICING_BADGE: FigureBadge = Object.freeze({ text: 'Estimated, USD', tone: 'pricing' as const });
 
 /**
  * The heading and notes around one chart: its title; the dates badge (the range and the bucket),
  * unless hidden, and on the cost chart the pricing badge; the detail line naming a cumulative cost
- * and the filtered user; the chart's notes.
+ * and the filtered users, models and groups; the chart's notes.
  */
 export function telemetryFigureChrome(figure: TelemetryFigure, context: TelemetryComposeContext): FigureChrome {
   const badges = visibleBadges([
@@ -698,7 +716,9 @@ export function telemetryFigureChrome(figure: TelemetryFigure, context: Telemetr
   ], context.style.timeline.hiddenBadges);
   const detail = [
     ...(figure.key === 'cost' && context.cumulative ? ['Cumulative'] : []),
-    ...(context.userName ? [`User: ${context.userName}`] : [])
+    ...filterDetail('User', 'Users', context.userNames),
+    ...filterDetail('Model', 'Models', context.modelNames),
+    ...filterDetail('Group', 'Groups', context.groupNames)
   ].join(' · ');
   return { title: figure.title, badges, detail, key: [], highlight: '', notes: figure.notes };
 }

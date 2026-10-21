@@ -643,13 +643,43 @@ export interface AiTelemetrySeriesDto {
   series: AiTelemetrySeriesLineDto[];
   costRecordedSinceUtc?: string | null;
   attemptsRecordedSinceUtc?: string | null;
-  userId?: string | null;
-  userName?: string | null;
+  /** The filters applied, in request order; empty when that category is not filtered. */
+  users: AiTelemetrySeriesUserRefDto[];
+  models: AiTelemetrySeriesModelRefDto[];
+  groups: AiTelemetrySeriesGroupRefDto[];
   /** Aligned with bucketStartsUtc. */
   activity?: AiTelemetryActivityPointDto[] | null;
   /** Buckets before it have no activity data ("YYYY-MM-DD"). */
   activityCountedSinceUtc?: string | null;
 }
+
+export interface AiTelemetrySeriesUserRefDto {
+  userId: string;
+  /** Null when the account is gone. */
+  userName?: string | null;
+}
+
+export interface AiTelemetrySeriesModelRefDto {
+  provider: string;
+  modelId: string;
+  /** Catalog name, else the retired entry's, else null. */
+  modelName?: string | null;
+}
+
+export interface AiTelemetrySeriesGroupRefDto {
+  /** Null is "No group". */
+  groupId?: number | null;
+  groupName: string;
+}
+
+/** A model as the series filter names it; sent as `provider|modelId`. */
+export interface AiTelemetryModelRef {
+  provider: string;
+  modelId: string;
+}
+
+/** A group id, or 'none' for the users who belong to no group. */
+export type AiTelemetryGroupKey = number | 'none';
 
 export interface AiTelemetrySeriesQuery {
   startDate?: string;
@@ -659,7 +689,147 @@ export interface AiTelemetrySeriesQuery {
   roles?: AiUsageRoleGroup[];
   bucket?: AiTelemetryBucket;
   splitBy?: AiTelemetrySplitBy;
-  userId?: string;
+  /** Empty or absent: not filtered. At most 50 of each. */
+  userIds?: string[];
+  models?: AiTelemetryModelRef[];
+  groupIds?: AiTelemetryGroupKey[];
+}
+
+export interface AiTelemetrySeriesModelOptionDto {
+  provider: string;
+  modelId: string;
+  modelName?: string | null;
+  keySources: ('system' | 'user')[];
+  /** 0 for a model seen only in the attempts ledger. */
+  requests: number;
+  estimatedCost: number;
+  pricedRequests: number;
+  tokens: number;
+  lastRequestUtc?: string | null;
+}
+
+export interface AiTelemetrySeriesUserOptionDto {
+  userId: string;
+  /** Null when the account is gone. */
+  userName?: string | null;
+  requests: number;
+  systemRequests: number;
+  userKeyRequests: number;
+  estimatedCost: number;
+  pricedRequests: number;
+  lastRequestUtc?: string | null;
+}
+
+export interface AiTelemetrySeriesGroupOptionDto {
+  /** Null is "No group". */
+  groupId?: number | null;
+  groupName: string;
+  memberCount: number;
+  requests: number;
+  estimatedCost: number;
+  pricedRequests: number;
+  lastRequestUtc?: string | null;
+}
+
+/** What the charts dialog's Models, Users and Groups tabs offer for a date range, key sources and roles. */
+export interface AiTelemetrySeriesOptionsDto {
+  models: AiTelemetrySeriesModelOptionDto[];
+  /** The users with the most requests, at most 1,000. */
+  users: AiTelemetrySeriesUserOptionDto[];
+  /** Users with usage in the scope, before the cap. */
+  totalUsers: number;
+  usersTruncated: boolean;
+  groups: AiTelemetrySeriesGroupOptionDto[];
+}
+
+export interface AiTelemetrySeriesOptionsQuery {
+  startDate?: string;
+  endDate?: string;
+  keys?: AiTelemetryKeySource;
+  /** Role groups; empty: the three named groups. */
+  roles?: AiUsageRoleGroup[];
+}
+
+/** One system configuration the group grants or its members used, or the members' own keys. */
+export interface AiTelemetryGroupConfigDto {
+  keySource: 'system' | 'user';
+  /** Null on the own-key line. */
+  configId?: number | null;
+  configName: string;
+  requests: number;
+  estimatedCost: number;
+  assignmentId?: number | null;
+  assignmentEnabled?: boolean | null;
+  grantedByGroup: boolean;
+  /** The group's pooled effective counters; null when not granted and on the own-key line. */
+  dailyChatRequests?: number | null;
+  maxDailyChatRequests?: number | null;
+  monthlyChatRequests?: number | null;
+  maxMonthlyChatRequests?: number | null;
+  dailyChatTokens?: number | null;
+  maxDailyChatTokens?: number | null;
+}
+
+/** One group's usage: its current members' usage over the whole range. A member of two groups counts in both. */
+export interface AiTelemetryGroupRowDto {
+  /** Null is "No group". */
+  groupId?: number | null;
+  groupName: string;
+  memberCount: number;
+  activeMembers: number;
+  blockedMembers: number;
+  requests: number;
+  systemRequests: number;
+  userKeyRequests: number;
+  systemEstimatedCost: number;
+  userKeyEstimatedCost: number;
+  chatRequests: number;
+  titleRequests: number;
+  benchmarkRequests: number;
+  promptTokens: number;
+  outputTokens: number;
+  estimatedCost: number;
+  pricedRequests: number;
+  peakHourRequests: number;
+  peakHourStartUtc?: string | null;
+  requestsPerActiveHour: number;
+  activeDays: number;
+  lastRequestUtc?: string | null;
+  chatsCreated: number;
+  userMessages: number;
+  limitRefusals: number;
+  providerRefusals: number;
+  configs: AiTelemetryGroupConfigDto[];
+}
+
+export interface AiTelemetryGroupsDto {
+  keySource: AiTelemetryKeySource;
+  groups: AiTelemetryGroupRowDto[];
+  securityEventsAvailable: boolean;
+}
+
+export interface AiTelemetryGroupsQuery {
+  startDate?: string;
+  endDate?: string;
+  keys?: AiTelemetryKeySource;
+}
+
+/** The models one group's current members used in the selected key sources over a date range. */
+export interface AiTelemetryGroupModelsDto {
+  keySource: AiTelemetryKeySource;
+  /** Null is "No group". */
+  groupId?: number | null;
+  groupName: string;
+  memberCount: number;
+  costRecordedSinceUtc?: string | null;
+  rows: AiTelemetryUserModelRowDto[];
+}
+
+export interface AiTelemetryGroupModelsQuery {
+  startDate?: string;
+  endDate?: string;
+  keys: AiTelemetryKeySource;
+  groupId: AiTelemetryGroupKey;
 }
 
 /** One user's usage of one model in one role context and thinking level; token figures normalized as the breakdown's. */
@@ -1269,7 +1439,7 @@ export class AdminService {
     return this.http.get<AiTelemetrySummaryDto>('/api/Admin/ai-telemetry/summary', { params });
   }
 
-  /** 400 with `{ message }` when the range has more than 1,100 buckets. */
+  /** 400 with `{ message }` when the range has more than 1,100 buckets, or a filter is over 50 or unparsable. */
   getAiTelemetrySeries(query: AiTelemetrySeriesQuery): Observable<AiTelemetrySeriesDto> {
     const params: any = {};
     if (query.startDate) params.startDate = query.startDate;
@@ -1278,8 +1448,39 @@ export class AdminService {
     if (query.roles?.length) params.roles = query.roles.join(',');
     if (query.bucket) params.bucket = query.bucket;
     if (query.splitBy) params.splitBy = query.splitBy;
-    if (query.userId) params.userId = query.userId;
+    if (query.userIds?.length) params.userIds = query.userIds;
+    if (query.models?.length) params.models = query.models.map(m => `${m.provider}|${m.modelId}`);
+    if (query.groupIds?.length) params.groupIds = query.groupIds.map(g => String(g));
     return this.http.get<AiTelemetrySeriesDto>('/api/Admin/ai-telemetry/series', { params });
+  }
+
+  /** The models, users and groups the charts dialog offers for a date range, key sources and roles. */
+  getAiTelemetrySeriesOptions(query: AiTelemetrySeriesOptionsQuery): Observable<AiTelemetrySeriesOptionsDto> {
+    const params: any = {};
+    if (query.startDate) params.startDate = query.startDate;
+    if (query.endDate) params.endDate = query.endDate;
+    if (query.keys) params.keys = query.keys;
+    if (query.roles?.length) params.roles = query.roles.join(',');
+    return this.http.get<AiTelemetrySeriesOptionsDto>('/api/Admin/ai-telemetry/series-options', { params });
+  }
+
+  /** Every group's usage in the selected key sources, plus "No group"; unpaged. */
+  getAiTelemetryGroups(query: AiTelemetryGroupsQuery): Observable<AiTelemetryGroupsDto> {
+    const params: any = {};
+    if (query.startDate) params.startDate = query.startDate;
+    if (query.endDate) params.endDate = query.endDate;
+    if (query.keys) params.keys = query.keys;
+    return this.http.get<AiTelemetryGroupsDto>('/api/Admin/ai-telemetry/groups', { params });
+  }
+
+  /** The models one group's members used; 400 without a group id, 404 for an unknown one. */
+  getAiTelemetryGroupModels(query: AiTelemetryGroupModelsQuery): Observable<AiTelemetryGroupModelsDto> {
+    const params: any = {};
+    if (query.startDate) params.startDate = query.startDate;
+    if (query.endDate) params.endDate = query.endDate;
+    params.keys = query.keys;
+    params.groupId = String(query.groupId);
+    return this.http.get<AiTelemetryGroupModelsDto>('/api/Admin/ai-telemetry/group-models', { params });
   }
 
   /** Per-user AI usage in the selected key sources, sorted and paged on the server. */

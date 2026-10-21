@@ -1,0 +1,235 @@
+<!-- Telemetry Summary Cards -->
+<div class="telemetry-grid">
+  <!-- Cache Efficiency Card -->
+  <div class="telemetry-card">
+    <div class="telemetry-card-title">Cache Hit Efficiency</div>
+    <div class="telemetry-stat-value highlight-gold">
+      {{ (summary()?.cacheHitRatio || 0) * 100 | number:'1.1-1' }}%
+    </div>
+    <progress class="telemetry-progress-bar mt-10" aria-label="Cache Hit Efficiency" [value]="(summary()?.cacheHitRatio || 0) * 100" max="100"></progress>
+    <div class="telemetry-details-list text-muted mt-10">
+      <div>Share of prompt tokens read from cache</div>
+      <div>Prompt Cache Read: {{ formatInteger(summary()?.totalCacheReadTokens || 0) }} tokens</div>
+    </div>
+  </div>
+
+  <!-- Total Tokens Card: the prompt is the whole input, of which uncached, cache read and cache created are parts. -->
+  <div class="telemetry-card telemetry-tokens-card">
+    <div class="telemetry-card-title">Token Accounting</div>
+    <div class="telemetry-stat-value">
+      {{ formatInteger(totalTokens) }}
+    </div>
+    <div class="telemetry-details-list mt-10">
+      <div>Prompt: <span class="telemetry-value">{{ formatInteger(summary()?.totalPromptTokens || 0) }}</span></div>
+      <div class="telemetry-sub-line">Uncached: <span class="telemetry-value">{{ formatInteger(summary()?.totalUncachedInputTokens || 0) }}</span></div>
+      <div class="telemetry-sub-line">Cache Read: <span class="telemetry-value">{{ formatInteger(summary()?.totalCacheReadTokens || 0) }}</span></div>
+      <div class="telemetry-sub-line">Cache Created: <span class="telemetry-value">{{ formatInteger(summary()?.totalCacheCreationTokens || 0) }}</span></div>
+      <div>Output: <span class="telemetry-value">{{ formatInteger(summary()?.totalOutputTokens || 0) }}</span></div>
+    </div>
+  </div>
+
+  <!-- Request Volume Card -->
+  <div class="telemetry-card">
+    <div class="telemetry-card-title">Request Volume</div>
+    <div class="telemetry-stat-value highlight-blue">
+      {{ (summary()?.totalRequests || 0) | number }}
+    </div>
+    <div class="telemetry-details-list mt-10">
+      <div>Chat: <span class="telemetry-value">{{ (summary()?.totalChatRequests || 0) | number }}</span></div>
+      <div>Title Generation: <span class="telemetry-value">{{ (summary()?.totalTitleRequests || 0) | number }}</span></div>
+      <div>Benchmark: <span class="telemetry-value">{{ (summary()?.totalBenchmarkRequests || 0) | number }}</span></div>
+      @if (telemetryOtherRequests > 0) {
+        <div class="telemetry-other-requests">Other: <span class="telemetry-value">{{ telemetryOtherRequests | number }}</span></div>
+      }
+      <div>Avg Duration: <span class="telemetry-value">{{ (summary()?.avgDurationMs || 0) | number }} ms</span></div>
+    </div>
+  </div>
+
+  <!-- Estimated Cost Card -->
+  <div class="telemetry-card telemetry-cost-card">
+    <div class="telemetry-card-title">Estimated Cost</div>
+    <div class="telemetry-stat-value highlight-gold telemetry-cost-total">
+      {{ formatCost(summary()?.totalEstimatedCost ?? 0) }}
+    </div>
+    <div class="telemetry-details-list mt-10">
+      @for (line of costLines; track line.label) {
+        <div>{{ line.label }}: <span class="telemetry-value">{{ line.value }}</span></div>
+      }
+      @if (unpricedRequests > 0) {
+        <div class="telemetry-unpriced">{{ unpricedText }}</div>
+      }
+      @if (startsBefore(summary()?.costRecordedSinceUtc)) {
+        <div class="text-muted telemetry-cost-since">Cost recorded since {{ utcDay(summary()?.costRecordedSinceUtc) }}</div>
+      }
+    </div>
+  </div>
+
+  <!-- Provider Availability Card -->
+  <div class="telemetry-card telemetry-availability-card">
+    <div class="telemetry-card-title">Provider Availability</div>
+    <div class="telemetry-stat-value telemetry-availability-rate">
+      {{ availabilityHeadline }}
+      @if (summary()?.chatAvailability?.recorded) {
+        <span class="telemetry-stat-unit">provider errors</span>
+      }
+    </div>
+    @if (summary()?.chatAvailability?.recorded) {
+      <div class="telemetry-availability-count">{{ availabilityCountText }}</div>
+      <dl class="telemetry-dl">
+        @for (line of availabilityRows; track line.label) {
+          <div>
+            <dt>{{ line.label }}</dt>
+            <dd>
+              {{ line.value }}
+              @if (line.note) {
+                <span class="telemetry-dd-note">{{ line.note }}</span>
+              }
+            </dd>
+          </div>
+        }
+      </dl>
+      @if (startsBefore(summary()?.chatAvailability?.recordedSinceUtc)) {
+        <div class="telemetry-card-foot">Recorded since {{ utcDay(summary()?.chatAvailability?.recordedSinceUtc) }}</div>
+      }
+    } @else {
+      <div class="telemetry-details-list text-muted mt-10">
+        <div>Provider attempts are not recorded yet.</div>
+      </div>
+    }
+  </div>
+
+  <!-- Provider Errors by Class Card: only once provider attempts are recorded. -->
+  @if (summary()?.chatAvailability?.recorded) {
+    <div class="telemetry-card telemetry-error-classes-card">
+      <div class="telemetry-card-title">Provider Errors by Class</div>
+      <div class="telemetry-stat-value telemetry-error-total">
+        {{ formatInteger(summary()?.chatAvailability?.providerErrors ?? 0) }}
+        <span class="telemetry-stat-unit">provider errors</span>
+      </div>
+      <dl class="telemetry-dl telemetry-dl-grid">
+        @for (line of errorClassRows; track line.label) {
+          <div>
+            <dt>{{ line.label }}</dt>
+            <dd>{{ line.value }}</dd>
+          </div>
+        }
+      </dl>
+      <dl class="telemetry-dl telemetry-dl-ruled">
+        @for (line of errorAttributionRows; track line.label) {
+          <div>
+            <dt>{{ line.label }}</dt>
+            <dd>
+              {{ line.value }}
+              @if (line.note) {
+                <span class="telemetry-dd-note">{{ line.note }}</span>
+              }
+            </dd>
+          </div>
+        }
+      </dl>
+    </div>
+  }
+
+  <!-- Overseer Activity Card: independent of the Keys filter. -->
+  <div class="telemetry-card telemetry-activity-card">
+    <div class="telemetry-card-title"><span>Overseer Activity</span> <span class="telemetry-card-scope">all keys</span></div>
+    <div class="telemetry-stat-value highlight-teal telemetry-active-users">
+      {{ formatInteger(summary()?.activity?.activeUsers ?? 0) }} <span class="telemetry-stat-unit">Active users</span>
+    </div>
+    @if (summary()?.activity; as activity) {
+      <div class="telemetry-details-list mt-10">
+        <div>New users: <span class="telemetry-value">{{ formatInteger(activity.newUsers) }}</span></div>
+        <div class="telemetry-activity-chats">Chats: <span class="telemetry-value">{{ formatInteger(activity.chatsCreated) }}</span>
+          <span class="text-muted"> (confidential {{ formatInteger(activity.confidentialChatsCreated) }} · GnollHack {{ formatInteger(activity.gnollHackChatsCreated) }})</span></div>
+        <div class="telemetry-activity-messages">Messages: <span class="telemetry-value">{{ formatInteger(activity.userMessages + activity.assistantMessages) }}</span>
+          <span class="text-muted"> (sent {{ formatInteger(activity.userMessages) }} · replies {{ formatInteger(activity.assistantMessages) }})</span></div>
+        <div class="telemetry-activity-incognito">Incognito chats {{ formatInteger(activity.incognitoChatsCreated) }} · messages {{ formatInteger(activity.incognitoUserMessages) }}
+          <span class="text-muted"> (not attributed to users)</span></div>
+        @if (startsBefore(activity.countedSinceUtc)) {
+          <div class="text-muted telemetry-activity-since">Counted since {{ utcDay(activity.countedSinceUtc) }}</div>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- Governor Health Card: the governor's current state, independent of the range and the Keys filter. -->
+  <div class="telemetry-card telemetry-governor-card">
+    <div class="telemetry-card-title"><span>Request Governor</span> <span class="telemetry-card-scope">live</span></div>
+    @let governor = governorStatus();
+    <div class="telemetry-stat-value highlight-teal">
+      {{ governor ? governor.maxConcurrentCalls : '—' }} <span class="telemetry-stat-unit">Max Concurrency</span>
+    </div>
+    <div class="telemetry-details-list mt-10">
+      <div>Rate Limited: <span class="telemetry-value">{{ governor ? rateLimitedKeyCount : '—' }}</span></div>
+      <div>Partitions seen: <span class="telemetry-value">{{ governor ? governor.activeKeys.length : '—' }}</span></div>
+      <div>Max Retry-After: <span class="telemetry-value">{{ governor ? governor.maxRetryAfterSeconds + 's' : '—' }}</span></div>
+      <div class="mt-5">
+        <button type="button" class="btn-gh btn-gh-small"
+                [attr.aria-disabled]="rateLimitedKeyCount === 0 ? 'true' : null"
+                (click)="clearAllCooldowns()">
+          Clear All Cooldowns
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Governor Partitions Table -->
+<div class="telemetry-section-card telemetry-partitions">
+  <h4 class="tl-title-row"><span>Rate Limit Partitions</span> <span class="telemetry-card-scope">live</span></h4>
+  @let partitions = governorStatus();
+  @if (!partitions) {
+    <div class="text-muted telemetry-empty">{{ governorLoading() ? 'Loading governor status…' : 'Governor status unavailable.' }}</div>
+  } @else if (partitions.activeKeys.length === 0) {
+    <div class="text-muted telemetry-empty">No partitions have been used since the last restart.</div>
+  } @else {
+    <div class="table-responsive mb-0">
+      <table class="modern-table">
+        <thead>
+          <tr>
+            <th>Credential Partition</th>
+            <th>Status</th>
+            <th class="text-center">In Flight</th>
+            <th>Remaining Cooldown</th>
+            <th class="text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (key of partitions.activeKeys; track key.credentialKey) {
+            <tr>
+              <td class="telemetry-key">{{ key.credentialKey }}</td>
+              <td>
+                @if (key.isRateLimited) {
+                  <span class="badge badge-rate-limited">Rate Limited (429)</span>
+                } @else {
+                  <span class="badge badge-active">Available</span>
+                }
+              </td>
+              <td class="text-center num-col">{{ key.inFlightCalls }}</td>
+              <td>
+                @if (key.isRateLimited) {
+                  <span class="telemetry-cooldown">{{ key.remainingCooldownSeconds | number:'1.1-1' }}s</span>
+                } @else {
+                  <span class="text-muted">—</span>
+                }
+              </td>
+              <td class="text-right">
+                @if (key.isRateLimited) {
+                  <button type="button" class="action-btn"
+                          [attr.aria-label]="'Clear cooldown for ' + key.credentialKey"
+                          [attr.interestfor]="'tip-gov-reset-' + $index"
+                          [attr.style]="'anchor-name: --tip-gov-reset-' + $index"
+                          (click)="clearCooldown(key.credentialKey)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-gov-reset-' + $index"
+                       [attr.style]="'position-anchor: --tip-gov-reset-' + $index">Clear cooldown</div>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>

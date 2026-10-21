@@ -1357,14 +1357,22 @@ public class AdminController : ControllerBase
         [FromQuery] string? keys, [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
         => Ok(await summaryService.GetSummaryAsync(startDate, endDate, keys));
 
-    /// <summary>Telemetry over time; refused with 400 when the range has more than 1,100 buckets.</summary>
+    /// <summary>
+    /// Telemetry over time; refused with 400 when the range has more than 1,100 buckets, a filter has more than 50
+    /// choices, or a model or group is malformed. Each filter is a repeated query key; an empty one filters nothing.
+    /// </summary>
     /// <param name="roles">Comma-separated role groups: chat, title, benchmark, other.</param>
     /// <param name="bucket">auto | day | week | month.</param>
     /// <param name="splitBy">none | role | provider | model | keySource | user.</param>
+    /// <param name="userId">One user, merged into <paramref name="userIds"/>.</param>
+    /// <param name="userIds">Users, <c>userIds=a&amp;userIds=b</c>.</param>
+    /// <param name="models">Models as <c>provider|modelId</c>.</param>
+    /// <param name="groupIds">Group ids, or <c>none</c> for the users in no group.</param>
     [HttpGet("ai-telemetry/series")]
     public async Task<IActionResult> GetAiTelemetrySeries([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
         [FromQuery] string? keys, [FromQuery] string? roles, [FromQuery] string? bucket, [FromQuery] string? splitBy,
-        [FromQuery] string? userId, [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
+        [FromQuery] string? userId, [FromQuery] string[]? userIds, [FromQuery] string[]? models, [FromQuery] string[]? groupIds,
+        [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
     {
         var (rangeStart, rangeEnd) = Overseer.Services.Telemetry.AiTelemetrySummaryService.SeriesRange(startDate, endDate);
         if (Overseer.Services.Telemetry.AiTelemetrySummaryService.BucketCount(rangeStart, rangeEnd, bucket)
@@ -1373,11 +1381,109 @@ public class AdminController : ControllerBase
             return BadRequest(new { message = "The range has too many buckets; choose a coarser bucket." });
         }
 
+        var userList = new[] { userId }.Concat(userIds ?? Array.Empty<string>())
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id!.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (userList.Count > Overseer.Services.Telemetry.AiTelemetrySummaryService.MaxSeriesFilterUsers)
+        {
+            return BadRequest(new { message = $"At most {Overseer.Services.Telemetry.AiTelemetrySummaryService.MaxSeriesFilterUsers} users can be charted at once." });
+        }
+
+        var modelList = new List<Overseer.Services.Telemetry.AiTelemetryModelRef>();
+        foreach (var value in models ?? Array.Empty<string>())
+        {
+            if (string.IsNullOrWhiteSpace(value)) continue;
+            if (!Overseer.Services.Telemetry.AiTelemetryModelRef.TryParse(value, out var model))
+            {
+                return BadRequest(new { message = "Each model is provider|modelId." });
+            }
+            if (!modelList.Contains(model)) modelList.Add(model);
+        }
+        if (modelList.Count > Overseer.Services.Telemetry.AiTelemetrySummaryService.MaxSeriesFilterModels)
+        {
+            return BadRequest(new { message = $"At most {Overseer.Services.Telemetry.AiTelemetrySummaryService.MaxSeriesFilterModels} models can be charted at once." });
+        }
+
+        var groupList = new List<long?>();
+        foreach (var value in groupIds ?? Array.Empty<string>())
+        {
+            if (string.IsNullOrWhiteSpace(value)) continue;
+            if (!TryParseTelemetryGroup(value, out long? group))
+            {
+                return BadRequest(new { message = "Each group is a group id or none." });
+            }
+            if (!groupList.Contains(group)) groupList.Add(group);
+        }
+        if (groupList.Count > Overseer.Services.Telemetry.AiTelemetrySummaryService.MaxSeriesFilterGroups)
+        {
+            return BadRequest(new { message = $"At most {Overseer.Services.Telemetry.AiTelemetrySummaryService.MaxSeriesFilterGroups} groups can be charted at once." });
+        }
+
         var roleList = (roles ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();
-        return Ok(await summaryService.GetSeriesAsync(startDate, endDate, keys, roleList, bucket, splitBy,
-            string.IsNullOrWhiteSpace(userId) ? null : userId));
+        return Ok(await summaryService.GetSeriesAsync(startDate, endDate, keys, roleList, bucket, splitBy, userList, modelList, groupList));
+    }
+
+    /// <summary>The models, users and groups the charts offer for the series' range, key sources and roles.</summary>
+    /// <param name="keys">system (default) | user | both.</param>
+    /// <param name="roles">Comma-separated role groups: chat, title, benchmark, other.</param>
+    [HttpGet("ai-telemetry/series-options")]
+    public async Task<IActionResult> GetAiTelemetrySeriesOptions([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromQuery] string? keys, [FromQuery] string? roles,
+        [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
+    {
+        var roleList = (roles ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+        return Ok(await summaryService.GetSeriesOptionsAsync(startDate, endDate, keys, roleList));
+    }
+
+    /// <summary>Per-group usage of the selected key sources: every group's current members, then the users in no group.</summary>
+    /// <param name="keys">system (default) | user | both.</param>
+    [HttpGet("ai-telemetry/groups")]
+    public async Task<IActionResult> GetAiTelemetryGroups([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromQuery] string? keys, [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
+        => Ok(await summaryService.GetGroupsAsync(startDate, endDate, keys));
+
+    /// <summary>Usage of one group's current members by model, role context and thinking level, in the selected key sources.</summary>
+    /// <param name="keys">system (default) | user | both.</param>
+    /// <param name="groupId">A group id, or <c>none</c> for the users in no group.</param>
+    [HttpGet("ai-telemetry/group-models")]
+    public async Task<IActionResult> GetAiTelemetryGroupModels([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromQuery] string? keys, [FromQuery] string? groupId,
+        [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
+    {
+        if (string.IsNullOrWhiteSpace(groupId))
+        {
+            return BadRequest(new { message = "groupId is required." });
+        }
+        if (!TryParseTelemetryGroup(groupId, out long? group))
+        {
+            return BadRequest(new { message = "groupId is a group id or none." });
+        }
+
+        var dto = await summaryService.GetGroupModelsAsync(startDate, endDate, keys, group);
+        return dto == null ? NotFound(new { message = "No group has this identifier." }) : Ok(dto);
+    }
+
+    /// <summary>A telemetry group filter value: a group id, or <c>none</c> (null) for the users in no group.</summary>
+    private static bool TryParseTelemetryGroup(string value, out long? groupId)
+    {
+        groupId = null;
+        string trimmed = value.Trim();
+        if (string.Equals(trimmed, Overseer.Services.Telemetry.AiTelemetrySummaryService.NoGroupKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        if (long.TryParse(trimmed, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out long id))
+        {
+            groupId = id;
+            return true;
+        }
+        return false;
     }
 
     /// <summary>Per-user usage of the selected key sources, sorted by aggregate or name and paged on the server.</summary>

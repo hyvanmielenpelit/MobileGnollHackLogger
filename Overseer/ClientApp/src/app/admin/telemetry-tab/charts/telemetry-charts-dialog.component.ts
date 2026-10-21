@@ -19,12 +19,36 @@ import { Subscription } from 'rxjs';
 import {
   AdminService,
   AiTelemetryBucket,
+  AiTelemetryGroupKey,
   AiTelemetryKeySource,
+  AiTelemetryModelRef,
   AiTelemetrySeriesDto,
+  AiTelemetrySeriesOptionsDto,
   AiTelemetrySeriesQuery,
   AiTelemetrySplitBy,
   AiUsageRoleGroup
 } from '../../../services/admin.service';
+import {
+  ChartGroupRow,
+  ChartModelRow,
+  ChartUserRow,
+  NO_GROUP_NAME,
+  TL_CHARTS_MAX_GROUPS,
+  TL_CHARTS_MAX_MODELS,
+  TL_CHARTS_MAX_USERS,
+  UNKNOWN_USER_NAME,
+  effectiveFilter,
+  groupKeyString,
+  groupRows,
+  modelKey,
+  modelRows,
+  parseGroupKey,
+  parseModelKey,
+  userRows
+} from './selection/telemetry-chart-filters';
+import { TelemetryChartGroupsComponent } from './selection/telemetry-chart-groups.component';
+import { TelemetryChartModelsComponent } from './selection/telemetry-chart-models.component';
+import { TelemetryChartUsersComponent } from './selection/telemetry-chart-users.component';
 import { PaneResizerComponent } from '../../../shared/pane-resizer/pane-resizer.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { rovingTabIndex } from '../../../utils/roving-tab.util';
@@ -97,12 +121,18 @@ export interface TelemetryChartsOpenRequest {
   readonly end: string;
   readonly keys: AiTelemetryKeySource;
   readonly roles: AiUsageRoleGroup[];
-  /** Opens filtered to one user; the filter is not stored. */
+  /** Opens with one user chosen; the choice is not stored. */
   readonly userId?: string;
   readonly userName?: string;
+  /** Opens with one group, or the users in no group, chosen; the choice is not stored. */
+  readonly groupId?: AiTelemetryGroupKey;
+  readonly groupName?: string;
 }
 
-export type TelemetryChartsSidebarTab = 'data' | 'theme' | 'charts' | 'download';
+export type TelemetryChartsSidebarTab = 'data' | 'models' | 'users' | 'groups' | 'theme' | 'charts' | 'download';
+
+/** The three tabs that choose what the charts count. */
+export type TelemetryChartsFilterTab = 'models' | 'users' | 'groups';
 export type TelemetryChartsView = 'all' | 'single';
 export type TelemetryChartsDataSection = 'scope' | 'lines' | 'cost';
 /** The Single chart zoom: as cc-chart-zoom.ts fits it. */
@@ -132,6 +162,9 @@ const COMPOSE_DEBOUNCE_MS = 150;
 
 export const TL_CHARTS_SIDEBAR_TABS: readonly { readonly id: TelemetryChartsSidebarTab; readonly label: string }[] = [
   { id: 'data', label: 'Data' },
+  { id: 'models', label: 'Models' },
+  { id: 'users', label: 'Users' },
+  { id: 'groups', label: 'Groups' },
   { id: 'theme', label: 'Theme' },
   { id: 'charts', label: 'Charts' },
   { id: 'download', label: 'Download' }
@@ -301,15 +334,36 @@ export function readStoredTelemetryChartsFigureStyle(): FigureStyle {
   return isRecord(stored) ? normalizeFigureStyle({ ...TL_CHARTS_DEFAULT_FIGURE_STYLE, ...stored }) : TL_CHARTS_DEFAULT_FIGURE_STYLE;
 }
 
-/** The reason a series request failed, as the screen shows it: the bucket guard's own message for a 400. */
+/**
+ * The reason a series request failed, as the screen shows it: the server's own message for a 400, which
+ * is the bucket guard's unless it names a filter.
+ */
 function seriesErrorText(error: unknown): { message: string; bucket: boolean } {
   const response = error as { status?: number; error?: { message?: unknown } } | null;
   const message = response?.error?.message;
   if (response?.status === 400 && typeof message === 'string' && message !== '') {
-    return { message, bucket: true };
+    return { message, bucket: !/\b(users?|models?|groups?)\b/i.test(message) };
   }
   return { message: 'The AI usage series could not be loaded.', bucket: false };
 }
+
+/** One filter chip on the Data tab: a category with a partial choice. */
+export interface TelemetryChartsFilterChip {
+  readonly tab: TelemetryChartsFilterTab;
+  /** `Model:` / `Models:`. */
+  readonly facet: string;
+  /** The one name, or `3 chosen`. */
+  readonly value: string;
+  readonly ariaLabel: string;
+}
+
+const FILTER_NOUNS: Readonly<Record<TelemetryChartsFilterTab, { one: string; many: string; facet: string; facets: string }>> = {
+  models: { one: 'model', many: 'models', facet: 'Model', facets: 'Models' },
+  users: { one: 'user', many: 'users', facet: 'User', facets: 'Users' },
+  groups: { one: 'group', many: 'groups', facet: 'Group', facets: 'Groups' }
+};
+
+const FILTER_TABS: readonly TelemetryChartsFilterTab[] = ['models', 'users', 'groups'];
 
 /** One chart's composition on screen, and the composition version it was made at. */
 export interface TelemetryChartsScreenImage {
@@ -340,14 +394,17 @@ const MEASURE_TOLERANCE = 0.5;
 
 /**
  * The AI Telemetry Charts dialog: a full-screen figure workspace over the series endpoint, with a
- * resizable, collapsible settings sidebar (Data, Theme, Charts, Download) beside the *All charts* and
+ * resizable, collapsible settings sidebar (Data, Models, Users, Groups, Theme, Charts, Download) beside the *All charts* and
  * *Single chart* views. Every chart is composed by `telemetry-charts.ts` at the chart size and
  * rasterized for the screen, so each view shows its download. Self-contained: the tab calls `open()`.
  */
 @Component({
   selector: 'app-telemetry-charts-dialog',
   standalone: true,
-  imports: [ExportFormatSectionComponent, ExportSizeSectionComponent, FigureStylePanelComponent, NgTemplateOutlet, PaneResizerComponent],
+  imports: [
+    ExportFormatSectionComponent, ExportSizeSectionComponent, FigureStylePanelComponent, NgTemplateOutlet, PaneResizerComponent,
+    TelemetryChartModelsComponent, TelemetryChartUsersComponent, TelemetryChartGroupsComponent
+  ],
   templateUrl: './telemetry-charts-dialog.component.html',
   styleUrls: ['./telemetry-charts-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -367,6 +424,9 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
   readonly figureStylePanelOpenKey = TL_CHARTS_FIGURE_STYLE_PANEL_OPEN_KEY;
   readonly SIDEBAR_WIDTH_MIN = TL_CHARTS_SIDEBAR_WIDTH_MIN;
   readonly SIDEBAR_WIDTH_DEFAULT = TL_CHARTS_SIDEBAR_WIDTH_DEFAULT;
+  readonly maxModels = TL_CHARTS_MAX_MODELS;
+  readonly maxUsers = TL_CHARTS_MAX_USERS;
+  readonly maxGroups = TL_CHARTS_MAX_GROUPS;
   readonly textSizeHint = 'Scales every text of the charts, on screen and in every image; the pixel size stays.';
   readonly formatNote = 'Every chart is downloaded in this format. Copy always writes a PNG.';
 
@@ -386,8 +446,21 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
   bucket: AiTelemetryBucket = this.storedLayout.bucket;
   splitBy: AiTelemetrySplitBy = this.storedLayout.splitBy;
   cumulative = this.storedLayout.cumulative;
-  /** The user filter the dialog was opened with, until its chip is removed; never stored. */
-  user: { readonly id: string; readonly name: string } | null = null;
+  /** The chosen keys of the Models, Users and Groups tabs, in choice order; never stored. */
+  chosenModels: string[] = [];
+  chosenUsers: string[] = [];
+  chosenGroups: string[] = [];
+  /** The names the dialog was opened with, for a preset choice the lists do not hold. */
+  private presetNames = new Map<string, string>();
+
+  /** What the Models, Users and Groups tabs list: fetched on open and on a keys or roles change. */
+  options: AiTelemetrySeriesOptionsDto | null = null;
+  optionsLoading = false;
+  optionsError: string | null = null;
+  private optionsGeneration = 0;
+  private optionsSubscription: Subscription | null = null;
+  private rowsFor: AiTelemetrySeriesOptionsDto | null | undefined = undefined;
+  private rowsCache: { models: ChartModelRow[]; users: ChartUserRow[]; groups: ChartGroupRow[] } = { models: [], users: [], groups: [] };
 
   dto: AiTelemetrySeriesDto | null = null;
   loading = false;
@@ -505,6 +578,7 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
     this.destroyed = true;
     this.isOpen = false;
     this.cancelFetch();
+    this.cancelOptions();
     this.cancelScheduledCompose();
     if (this.styleTimer !== null) clearTimeout(this.styleTimer);
     if (this.measureFrame !== null) cancelAnimationFrame(this.measureFrame);
@@ -520,14 +594,31 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
 
   // --- Dialog ---
 
-  /** Shows the dialog on the request's range, keys, roles and user, and fetches the series at once. */
+  /**
+   * Shows the dialog on the request's range, keys and roles, with the user or group it names chosen and
+   * every other choice cleared, and fetches the series and the lists at once.
+   */
   open(request: TelemetryChartsOpenRequest): void {
     this.request = request;
     this.keys = request.keys;
     const roles = TL_CHARTS_ROLE_OPTIONS.map(option => option.value).filter(role => request.roles.includes(role));
     this.roles = roles.length > 0 ? roles : [...DEFAULT_ROLES];
-    this.user = request.userId ? { id: request.userId, name: request.userName || 'Unknown user' } : null;
-    if (this.splitBy === 'user' && !this.userKeysIncluded) this.splitBy = 'none';
+    this.presetNames = new Map();
+    this.chosenModels = [];
+    this.chosenUsers = [];
+    this.chosenGroups = [];
+    if (request.userId) {
+      this.chosenUsers = [request.userId];
+      this.presetNames.set(`users:${request.userId}`, request.userName || UNKNOWN_USER_NAME);
+    }
+    if (request.groupId !== undefined) {
+      const key = groupKeyString(request.groupId === 'none' ? null : request.groupId);
+      this.chosenGroups = [key];
+      this.presetNames.set(`groups:${key}`, request.groupName || (key === 'none' ? NO_GROUP_NAME : `Group ${key}`));
+    }
+    this.options = null;
+    this.optionsError = null;
+    if (this.splitBy === 'user' && !this.userSplitOffered) this.splitBy = 'none';
     this.dto = null;
     this.figures = [];
     this.summaries.clear();
@@ -539,6 +630,7 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
     const dialog = this.dialogRef?.nativeElement;
     if (dialog && !dialog.open) dialog.showModal();
     this.fetchNow();
+    this.fetchOptions();
     this.cdr.detectChanges();
     this.titleRef?.nativeElement.focus();
     refreshAnchorPositioning();
@@ -551,6 +643,7 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
     if (this.exporting) return;
     this.isOpen = false;
     this.cancelFetch();
+    this.cancelOptions();
     this.cancelScheduledCompose();
     const dialog = this.dialogRef?.nativeElement;
     if (dialog?.open) dialog.close();
@@ -570,14 +663,19 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
     if (this.isOpen) {
       this.isOpen = false;
       this.cancelFetch();
+      this.cancelOptions();
       this.cancelScheduledCompose();
       this.cdr.markForCheck();
     }
   }
 
-  /** `AI Telemetry Charts`, with the user's name while filtered. */
+  /** `AI Telemetry Charts`, with the name while the effective filter is exactly one user, or exactly one group. */
   get dialogTitle(): string {
-    return this.user ? `AI Telemetry Charts — ${this.user.name}` : 'AI Telemetry Charts';
+    const users = this.effectiveUsers;
+    const groups = this.effectiveGroups;
+    if (users.length === 1 && groups.length === 0) return `AI Telemetry Charts — ${this.chosenName('users', users[0])}`;
+    if (groups.length === 1 && users.length === 0) return `AI Telemetry Charts — ${this.chosenName('groups', groups[0])}`;
+    return 'AI Telemetry Charts';
   }
 
   get rangeLabel(): string {
@@ -589,18 +687,137 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
     return this.keys !== 'system';
   }
 
+  /** *User* is offered with user keys, unless the effective user filter is one user. */
+  get userSplitOffered(): boolean {
+    return this.userKeysIncluded && this.effectiveUsers.length !== 1;
+  }
+
   get splitOptions(): readonly { readonly value: AiTelemetrySplitBy; readonly label: string }[] {
-    return this.userKeysIncluded ? TL_CHARTS_SPLIT_OPTIONS : SPLIT_OPTIONS_WITHOUT_USER;
+    return this.userSplitOffered ? TL_CHARTS_SPLIT_OPTIONS : SPLIT_OPTIONS_WITHOUT_USER;
   }
 
   get splitHint(): string {
     const base = 'The usage charts draw one line per value: at most eight, and an Other line. The activity charts are not split.';
-    return this.userKeysIncluded ? base : `${base} User is offered with user keys.`;
+    if (!this.userKeysIncluded) return `${base} User is offered with user keys.`;
+    return this.userSplitOffered ? base : `${base} User is not offered while one user is chosen.`;
+  }
+
+  // --- Choices ---
+
+  /** The Models, Users and Groups lists, rebuilt only when the options change. */
+  private get rows(): { models: ChartModelRow[]; users: ChartUserRow[]; groups: ChartGroupRow[] } {
+    if (this.rowsFor !== this.options) {
+      this.rowsFor = this.options;
+      this.rowsCache = { models: modelRows(this.options), users: userRows(this.options), groups: groupRows(this.options) };
+    }
+    return this.rowsCache;
+  }
+
+  get modelRows(): ChartModelRow[] { return this.rows.models; }
+  get userRows(): ChartUserRow[] { return this.rows.users; }
+  get groupRows(): ChartGroupRow[] { return this.rows.groups; }
+
+  get usersTruncated(): boolean { return this.options?.usersTruncated ?? false; }
+  get totalUsers(): number { return this.options?.totalUsers ?? 0; }
+
+  /** What each category sends: nothing while nothing, or everything, is chosen; the choice as made before the lists arrive. */
+  get effectiveModels(): string[] {
+    return this.options ? effectiveFilter(this.chosenModels, this.modelRows) : [...this.chosenModels];
+  }
+
+  get effectiveUsers(): string[] {
+    return this.options ? effectiveFilter(this.chosenUsers, this.userRows, this.usersTruncated) : [...this.chosenUsers];
+  }
+
+  get effectiveGroups(): string[] {
+    return this.options ? effectiveFilter(this.chosenGroups, this.groupRows) : [...this.chosenGroups];
+  }
+
+  private effective(tab: TelemetryChartsFilterTab): string[] {
+    return tab === 'models' ? this.effectiveModels : tab === 'users' ? this.effectiveUsers : this.effectiveGroups;
+  }
+
+  /** `Models (3)` while there is a partial choice. */
+  sidebarTabLabel(tab: { readonly id: TelemetryChartsSidebarTab; readonly label: string }): string {
+    if (tab.id !== 'models' && tab.id !== 'users' && tab.id !== 'groups') return tab.label;
+    const count = this.effective(tab.id).length;
+    return count > 0 ? `${tab.label} (${count})` : tab.label;
+  }
+
+  /** A chosen key's name: from the list, else the dialog's preset, else the last series' echo, else the key. */
+  chosenName(tab: TelemetryChartsFilterTab, key: string): string {
+    const row = (tab === 'models' ? this.modelRows : tab === 'users' ? this.userRows : this.groupRows)
+      .find(entry => entry.key === key);
+    if (row) return row.name;
+    const preset = this.presetNames.get(`${tab}:${key}`);
+    if (preset) return preset;
+    const dto = this.dto;
+    if (tab === 'models') {
+      const echo = dto?.models?.find(model => modelKey(model) === key);
+      return echo ? echo.modelName || echo.modelId : parseModelKey(key)?.modelId ?? key;
+    }
+    if (tab === 'users') {
+      const echo = dto?.users?.find(user => user.userId === key);
+      return echo ? echo.userName || UNKNOWN_USER_NAME : key;
+    }
+    const echo = dto?.groups?.find(group => groupKeyString(group.groupId) === key);
+    return echo ? echo.groupName : key === 'none' ? NO_GROUP_NAME : `Group ${key}`;
+  }
+
+  /** The Data tab's chips: one per category with a partial choice. */
+  get filterChips(): TelemetryChartsFilterChip[] {
+    return FILTER_TABS.flatMap(tab => {
+      const keys = this.effective(tab);
+      if (keys.length === 0) return [];
+      const noun = FILTER_NOUNS[tab];
+      const value = keys.length === 1 ? this.chosenName(tab, keys[0]) : `${keys.length} chosen`;
+      const facet = keys.length === 1 ? noun.facet : noun.facets;
+      return [{ tab, facet: `${facet}:`, value, ariaLabel: `Remove ${noun.one} filter: ${value}, and show every ${noun.one}` }];
+    });
+  }
+
+  setChosenModels(keys: readonly string[]): void {
+    this.chosenModels = [...keys];
+    this.afterChoiceChange();
+  }
+
+  setChosenUsers(keys: readonly string[]): void {
+    this.chosenUsers = [...keys];
+    this.afterChoiceChange();
+  }
+
+  setChosenGroups(keys: readonly string[]): void {
+    this.chosenGroups = [...keys];
+    this.afterChoiceChange();
+  }
+
+  /** A choice that leaves one user drops a *User* split. */
+  private afterChoiceChange(): void {
+    if (this.splitBy === 'user' && !this.userSplitOffered) this.splitBy = 'none';
+    this.afterDataChange();
+  }
+
+  /** Clears the chip's category; focus moves to the next chip, else to the Data panel. */
+  removeFilterChip(tab: TelemetryChartsFilterTab): void {
+    const chips = this.filterChips;
+    const index = chips.findIndex(chip => chip.tab === tab);
+    if (index < 0) return;
+    if (tab === 'models') this.chosenModels = [];
+    if (tab === 'users') this.chosenUsers = [];
+    if (tab === 'groups') this.chosenGroups = [];
+    this.afterChoiceChange();
+    this.cdr.detectChanges();
+    const next = chips[index + 1]?.tab;
+    const target = next ? document.getElementById(`tl-charts-filter-chip-${next}`) : null;
+    (target ?? document.getElementById('tl-charts-side-panel-data'))?.focus();
   }
 
   // --- Fetching ---
 
   private get query(): AiTelemetrySeriesQuery {
+    const models = this.effectiveModels.map(parseModelKey).filter((ref): ref is AiTelemetryModelRef => ref !== null);
+    const userIds = this.effectiveUsers;
+    const groupIds = this.effectiveGroups.map(parseGroupKey);
     return {
       ...(this.request?.start ? { startDate: this.request.start } : {}),
       ...(this.request?.end ? { endDate: this.request.end } : {}),
@@ -608,8 +825,49 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
       roles: [...this.roles],
       bucket: this.bucket,
       splitBy: this.splitBy,
-      ...(this.user ? { userId: this.user.id } : {})
+      ...(userIds.length > 0 ? { userIds } : {}),
+      ...(models.length > 0 ? { models } : {}),
+      ...(groupIds.length > 0 ? { groupIds } : {})
     };
+  }
+
+  /** Fetches the lists of the Models, Users and Groups tabs; an older response is dropped. */
+  private fetchOptions(): void {
+    this.optionsSubscription?.unsubscribe();
+    const generation = ++this.optionsGeneration;
+    this.optionsLoading = true;
+    this.optionsError = null;
+    this.cdr.markForCheck();
+    this.optionsSubscription = this.admin.getAiTelemetrySeriesOptions({
+      ...(this.request?.start ? { startDate: this.request.start } : {}),
+      ...(this.request?.end ? { endDate: this.request.end } : {}),
+      keys: this.keys,
+      roles: [...this.roles]
+    }).subscribe({
+      next: options => {
+        if (generation !== this.optionsGeneration || this.destroyed) return;
+        this.optionsLoading = false;
+        this.options = options;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        if (generation !== this.optionsGeneration || this.destroyed) return;
+        this.optionsLoading = false;
+        this.optionsError = 'The models, users and groups could not be loaded.';
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  retryOptions(): void {
+    this.fetchOptions();
+  }
+
+  private cancelOptions(): void {
+    this.optionsSubscription?.unsubscribe();
+    this.optionsSubscription = null;
+    this.optionsGeneration++;
+    this.optionsLoading = false;
   }
 
   /** Fetches once the Data settings have been quiet for the debounce; a newer change restarts it. */
@@ -671,8 +929,9 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
   setKeys(value: string): void {
     if (!TL_CHARTS_KEY_OPTIONS.some(option => option.value === value) || value === this.keys) return;
     this.keys = value as AiTelemetryKeySource;
-    if (this.splitBy === 'user' && !this.userKeysIncluded) this.splitBy = 'none';
+    if (this.splitBy === 'user' && !this.userSplitOffered) this.splitBy = 'none';
     this.afterDataChange();
+    this.fetchOptions();
   }
 
   isRoleSelected(role: AiUsageRoleGroup): boolean {
@@ -690,6 +949,7 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
     if (on) next.add(role); else next.delete(role);
     this.roles = TL_CHARTS_ROLE_OPTIONS.map(option => option.value).filter(value => next.has(value));
     this.afterDataChange();
+    this.fetchOptions();
   }
 
   setBucket(value: string): void {
@@ -711,15 +971,6 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
     this.persistLayout();
     this.rebuildFigures();
     this.cdr.markForCheck();
-  }
-
-  /** Back to every user; focus moves to the Data panel, since the chip leaves. */
-  removeUserFilter(): void {
-    if (!this.user) return;
-    this.user = null;
-    this.afterDataChange();
-    this.cdr.detectChanges();
-    document.getElementById('tl-charts-side-panel-data')?.focus();
   }
 
   private afterDataChange(): void {
@@ -880,7 +1131,9 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
       rangeLabel: this.rangeLabel,
       keys: this.keys,
       cumulative: this.cumulative,
-      userName: this.dto?.userId ? (this.dto.userName || this.user?.name || null) : null,
+      userNames: (this.dto?.users ?? []).map(user => user.userName || this.chosenName('users', user.userId)),
+      modelNames: (this.dto?.models ?? []).map(model => model.modelName || model.modelId),
+      groupNames: (this.dto?.groups ?? []).map(group => group.groupName || this.chosenName('groups', groupKeyString(group.groupId))),
       loadedAt: this.loadedAt
     };
   }

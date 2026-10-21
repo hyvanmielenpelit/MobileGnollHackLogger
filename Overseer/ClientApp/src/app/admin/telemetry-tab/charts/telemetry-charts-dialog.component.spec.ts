@@ -7,8 +7,15 @@ import {
   AiTelemetryPointDto,
   AiTelemetrySeriesDto,
   AiTelemetrySeriesLineDto,
+  AiTelemetrySeriesOptionsDto,
+  AiTelemetrySeriesOptionsQuery,
   AiTelemetrySeriesQuery
 } from '../../../services/admin.service';
+import {
+  TL_CHARTS_GROUPS_VIEW_STORAGE_KEY,
+  TL_CHARTS_MODELS_VIEW_STORAGE_KEY,
+  TL_CHARTS_USERS_VIEW_STORAGE_KEY
+} from './selection/telemetry-chart-filters';
 import { ZipWriterModule, zipWriterModule } from '../../benchmark/model-comparison/figure-export';
 import { FIGURE_STYLE_PANEL_OPEN_KEY } from '../../benchmark/model-comparison/figure-style-panel.component';
 import { TELEMETRY_FIGURE_KEYS } from './telemetry-charts';
@@ -26,7 +33,8 @@ import {
 /** Every storage key the dialog reads or writes, cleared around each test. */
 const STORAGE_KEYS = [
   TL_CHARTS_STORAGE_KEY, TL_CHARTS_SIZE_STORAGE_KEY, TL_CHARTS_FIGURE_STYLE_STORAGE_KEY,
-  TL_CHARTS_FIGURE_STYLE_PANEL_OPEN_KEY, TL_CHARTS_DOWNLOAD_STORAGE_KEY, FIGURE_STYLE_PANEL_OPEN_KEY
+  TL_CHARTS_FIGURE_STYLE_PANEL_OPEN_KEY, TL_CHARTS_DOWNLOAD_STORAGE_KEY, FIGURE_STYLE_PANEL_OPEN_KEY,
+  TL_CHARTS_MODELS_VIEW_STORAGE_KEY, TL_CHARTS_USERS_VIEW_STORAGE_KEY, TL_CHARTS_GROUPS_VIEW_STORAGE_KEY
 ];
 
 function clearStorage(): void {
@@ -71,10 +79,34 @@ function seriesDto(overrides: Partial<AiTelemetrySeriesDto> = {}): AiTelemetrySe
     series: [line('all', 'All')],
     costRecordedSinceUtc: '2026-09-01T00:00:00Z',
     attemptsRecordedSinceUtc: '2026-09-01T00:00:00Z',
-    userId: null,
-    userName: null,
+    users: [],
+    models: [],
+    groups: [],
     activity: [activity, activity, activity],
     activityCountedSinceUtc: '2026-10-02',
+    ...overrides
+  };
+}
+
+/** Two models, three users and two groups (one of them No group). */
+function optionsDto(overrides: Partial<AiTelemetrySeriesOptionsDto> = {}): AiTelemetrySeriesOptionsDto {
+  const usage = { estimatedCost: 1, pricedRequests: 2, lastRequestUtc: '2026-10-03T08:00:00Z' };
+  return {
+    models: [
+      { provider: 'OpenAI', modelId: 'gpt-x', modelName: 'GPT X', keySources: ['system'], requests: 5, tokens: 100, ...usage },
+      { provider: 'Anthropic', modelId: 'claude-y', modelName: 'Claude Y', keySources: ['system'], requests: 2, tokens: 50, ...usage }
+    ],
+    users: [
+      { userId: 'u-1', userName: 'ann', requests: 4, systemRequests: 4, userKeyRequests: 0, ...usage },
+      { userId: 'u-2', userName: 'bob', requests: 2, systemRequests: 2, userKeyRequests: 0, ...usage },
+      { userId: 'u-3', userName: 'cid', requests: 1, systemRequests: 1, userKeyRequests: 0, ...usage }
+    ],
+    totalUsers: 3,
+    usersTruncated: false,
+    groups: [
+      { groupId: 7, groupName: 'Testers', memberCount: 2, requests: 6, ...usage },
+      { groupId: null, groupName: 'No group', memberCount: 1, requests: 1, ...usage }
+    ],
     ...overrides
   };
 }
@@ -86,15 +118,22 @@ describe('TelemetryChartsDialogComponent', () => {
   let component: TelemetryChartsDialogComponent;
   let el: HTMLElement;
   let requests: { query: AiTelemetrySeriesQuery; subject: Subject<AiTelemetrySeriesDto> }[];
+  let optionRequests: { query: AiTelemetrySeriesOptionsQuery; subject: Subject<AiTelemetrySeriesOptionsDto> }[];
 
   beforeEach(async () => {
     clearStorage();
     storeSmallChartSize();
     requests = [];
+    optionRequests = [];
     const admin = {
       getAiTelemetrySeries: (query: AiTelemetrySeriesQuery) => {
         const subject = new Subject<AiTelemetrySeriesDto>();
         requests.push({ query, subject });
+        return subject.asObservable();
+      },
+      getAiTelemetrySeriesOptions: (query: AiTelemetrySeriesOptionsQuery) => {
+        const subject = new Subject<AiTelemetrySeriesOptionsDto>();
+        optionRequests.push({ query, subject });
         return subject.asObservable();
       }
     };
@@ -134,6 +173,17 @@ describe('TelemetryChartsDialogComponent', () => {
   function respond(index: number, dto: AiTelemetrySeriesDto = seriesDto()): void {
     requests[index].subject.next(dto);
     requests[index].subject.complete();
+    fixture.detectChanges();
+  }
+
+  function respondOptions(index: number, dto: AiTelemetrySeriesOptionsDto = optionsDto()): void {
+    optionRequests[index].subject.next(dto);
+    optionRequests[index].subject.complete();
+    fixture.detectChanges();
+  }
+
+  function selectTab(id: string): void {
+    q<HTMLButtonElement>(`#tl-charts-side-tab-${id}`)!.click();
     fixture.detectChanges();
   }
 
@@ -250,19 +300,28 @@ describe('TelemetryChartsDialogComponent', () => {
     open();
     respond(0);
     const tabs = qa<HTMLButtonElement>('[role="tablist"][aria-label="Settings sections"] [role="tab"]');
-    expect(tabs.map(tab => text(tab))).toEqual(['Data', 'Theme', 'Charts', 'Download']);
-    expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
-    expect(tabs.map(tab => tab.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1']);
-    expect(tabs.map(tab => tab.getAttribute('aria-controls')))
-      .toEqual(['tl-charts-side-panel-data', 'tl-charts-side-panel-theme', 'tl-charts-side-panel-charts', 'tl-charts-side-panel-download']);
+    expect(tabs.map(tab => text(tab))).toEqual(['Data', 'Models', 'Users', 'Groups', 'Theme', 'Charts', 'Download']);
+    expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false', 'false', 'false', 'false']);
+    expect(tabs.map(tab => tab.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1', '-1', '-1', '-1']);
+    expect(tabs.map(tab => tab.getAttribute('aria-controls'))).toEqual([
+      'tl-charts-side-panel-data', 'tl-charts-side-panel-models', 'tl-charts-side-panel-users', 'tl-charts-side-panel-groups',
+      'tl-charts-side-panel-theme', 'tl-charts-side-panel-charts', 'tl-charts-side-panel-download'
+    ]);
     expect(q('#tl-charts-side-panel-data')!.getAttribute('aria-labelledby')).toBe('tl-charts-side-tab-data');
     expect(q('#tl-charts-side-panel-data')!.getAttribute('role')).toBe('tabpanel');
 
     const right = press(q('#tl-charts-side-tab-data')!, 'ArrowRight');
     expect(right.defaultPrevented).toBe(true);
+    expect(document.activeElement?.id).toBe('tl-charts-side-tab-models');
+    expect(q('#tl-charts-side-panel-models app-telemetry-chart-models')).not.toBeNull();
+    expect(q('#tl-charts-side-panel-data')).toBeNull();
+    press(q('#tl-charts-side-tab-models')!, 'ArrowRight');
+    expect(q('#tl-charts-side-panel-users app-telemetry-chart-users')).not.toBeNull();
+    press(q('#tl-charts-side-tab-users')!, 'ArrowRight');
+    expect(q('#tl-charts-side-panel-groups app-telemetry-chart-groups')).not.toBeNull();
+    press(q('#tl-charts-side-tab-groups')!, 'ArrowRight');
     expect(document.activeElement?.id).toBe('tl-charts-side-tab-theme');
     expect(q('#tl-charts-side-panel-theme')).not.toBeNull();
-    expect(q('#tl-charts-side-panel-data')).toBeNull();
 
     press(q('#tl-charts-side-tab-theme')!, 'End');
     expect(document.activeElement?.id).toBe('tl-charts-side-tab-download');
@@ -361,25 +420,179 @@ describe('TelemetryChartsDialogComponent', () => {
     create();
     open({ ...REQUEST, userId: 'u-17', userName: 'alice' });
     expect(text(q('#tl-charts-title'))).toBe('AI Telemetry Charts — alice');
-    expect(requests[0].query.userId).toBe('u-17');
-    respond(0, seriesDto({ userId: 'u-17', userName: 'alice' }));
-    const chip = q<HTMLButtonElement>('.tl-charts-user-chip')!;
+    expect(requests[0].query.userIds).toEqual(['u-17']);
+    expect(requests[0].query.models).toBeUndefined();
+    expect(requests[0].query.groupIds).toBeUndefined();
+    respond(0, seriesDto({ users: [{ userId: 'u-17', userName: 'alice' }] }));
+    const chip = q<HTMLButtonElement>('#tl-charts-filter-chip-users')!;
     // Angular strips the whitespace between the chip's two spans; the gap is styling.
     expect(text(chip.querySelector('.gh-filter-chip-facet')!)).toBe('User:');
     expect(text(chip.querySelector('.gh-filter-chip-value')!)).toBe('alice');
     expect(chip.getAttribute('aria-label')).toBe('Remove user filter: alice, and show every user');
+    expect(text(q('#tl-charts-side-tab-users'))).toBe('Users (1)');
 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     chip.click();
     fixture.detectChanges();
-    expect(q('.tl-charts-user-chip')).toBeNull();
+    expect(q('#tl-charts-filter-chip-users')).toBeNull();
     expect(text(q('#tl-charts-title'))).toBe('AI Telemetry Charts');
+    expect(text(q('#tl-charts-side-tab-users'))).toBe('Users');
     expect(document.activeElement?.id).toBe('tl-charts-side-panel-data');
     vi.advanceTimersByTime(TL_CHARTS_FETCH_DEBOUNCE_MS);
     expect(requests.length).toBe(2);
-    expect(requests[1].query.userId).toBeUndefined();
-    // The user filter is not stored.
+    expect(requests[1].query.userIds).toBeUndefined();
+    // The choice is not stored.
     expect(JSON.stringify(stored(TL_CHARTS_STORAGE_KEY))).not.toContain('u-17');
+  });
+
+  it('opened for a group, chooses only that group, titles it, and sends it; No group is sent as none', () => {
+    create();
+    open({ ...REQUEST, userId: 'u-1', userName: 'ann' });
+    respond(0);
+    open({ ...REQUEST, groupId: 7, groupName: 'Testers' });
+    expect(component.chosenUsers).toEqual([]);
+    expect(component.chosenGroups).toEqual(['7']);
+    expect(text(q('#tl-charts-title'))).toBe('AI Telemetry Charts — Testers');
+    expect(requests[1].query.groupIds).toEqual([7]);
+    expect(requests[1].query.userIds).toBeUndefined();
+    respond(1, seriesDto({ groups: [{ groupId: 7, groupName: 'Testers' }] }));
+    expect(text(q('#tl-charts-filter-chip-groups .gh-filter-chip-value'))).toBe('Testers');
+    expect(text(q('#tl-charts-filter-chip-groups .gh-filter-chip-facet'))).toBe('Group:');
+
+    open({ ...REQUEST, groupId: 'none', groupName: 'No group' });
+    expect(requests[2].query.groupIds).toEqual(['none']);
+    expect(text(q('#tl-charts-title'))).toBe('AI Telemetry Charts — No group');
+  });
+
+  it('fetches the lists on open and on a keys or roles change only', () => {
+    create();
+    open();
+    expect(optionRequests.length).toBe(1);
+    expect(optionRequests[0].query).toEqual({ startDate: '2026-10-01', endDate: '2026-10-03', keys: 'system', roles: ['chat', 'title'] });
+    respond(0);
+    respondOptions(0);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    setSelect('#tl-charts-bucket', 'week');
+    setSelect('#tl-charts-split', 'role');
+    expect(optionRequests.length).toBe(1);
+    component.setChosenModels(['OpenAI|gpt-x']);
+    expect(optionRequests.length).toBe(1);
+
+    setSelect('#tl-charts-keys', 'both');
+    expect(optionRequests.length).toBe(2);
+    expect(optionRequests[1].query.keys).toBe('both');
+    q<HTMLInputElement>('#tl-charts-role-benchmark')!.click();
+    fixture.detectChanges();
+    expect(optionRequests.length).toBe(3);
+    expect(optionRequests[2].query.roles).toEqual(['chat', 'title', 'benchmark']);
+  });
+
+  it('sends only a partial choice: everything chosen is no filter', () => {
+    create();
+    open();
+    respond(0);
+    respondOptions(0);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    component.setChosenModels(['OpenAI|gpt-x']);
+    component.setChosenUsers(['u-1', 'u-2']);
+    component.setChosenGroups(['7', 'none']);
+    render();
+    vi.advanceTimersByTime(TL_CHARTS_FETCH_DEBOUNCE_MS);
+    // The three quick choices coalesce in one fetch.
+    expect(requests.length).toBe(2);
+    expect(requests[1].query.models).toEqual([{ provider: 'OpenAI', modelId: 'gpt-x' }]);
+    expect(requests[1].query.userIds).toEqual(['u-1', 'u-2']);
+    expect(requests[1].query.groupIds).toBeUndefined();
+    expect(text(q('#tl-charts-side-tab-models'))).toBe('Models (1)');
+    expect(text(q('#tl-charts-side-tab-users'))).toBe('Users (2)');
+    expect(text(q('#tl-charts-side-tab-groups'))).toBe('Groups');
+    expect(qa('.tl-charts-filter-chip').map(chip => text(chip))).toEqual(['Model:GPT X', 'Users:2 chosen']);
+
+    component.setChosenModels(['OpenAI|gpt-x', 'Anthropic|claude-y']);
+    render();
+    vi.advanceTimersByTime(TL_CHARTS_FETCH_DEBOUNCE_MS);
+    expect(requests[2].query.models).toBeUndefined();
+    expect(text(q('#tl-charts-side-tab-models'))).toBe('Models');
+  });
+
+  it('keeps a full choice of a truncated users list as a filter', () => {
+    create();
+    open();
+    respond(0);
+    respondOptions(0, optionsDto({ usersTruncated: true, totalUsers: 1_284 }));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    component.setChosenUsers(['u-1', 'u-2', 'u-3']);
+    vi.advanceTimersByTime(TL_CHARTS_FETCH_DEBOUNCE_MS);
+    expect(requests[1].query.userIds).toEqual(['u-1', 'u-2', 'u-3']);
+  });
+
+  it('chooses through the Models tab\'s own checkboxes', () => {
+    create();
+    open();
+    respond(0);
+    respondOptions(0);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    selectTab('models');
+    const boxes = qa<HTMLInputElement>('#tl-charts-side-panel-models ul[role="list"] input[type="checkbox"]');
+    expect(boxes.length).toBe(2);
+    boxes[0].click();
+    fixture.detectChanges();
+    expect(component.chosenModels).toEqual(['OpenAI|gpt-x']);
+    expect(text(q('#tl-charts-side-tab-models'))).toBe('Models (1)');
+    vi.advanceTimersByTime(TL_CHARTS_FETCH_DEBOUNCE_MS);
+    expect(requests[1].query.models).toEqual([{ provider: 'OpenAI', modelId: 'gpt-x' }]);
+  });
+
+  it('moves focus to the next chip when a chip is removed, else to the Data panel', () => {
+    create();
+    open();
+    respond(0);
+    respondOptions(0);
+    component.setChosenModels(['OpenAI|gpt-x']);
+    component.setChosenGroups(['7']);
+    render();
+    q<HTMLButtonElement>('#tl-charts-filter-chip-models')!.click();
+    fixture.detectChanges();
+    expect(component.chosenModels).toEqual([]);
+    expect(document.activeElement?.id).toBe('tl-charts-filter-chip-groups');
+    q<HTMLButtonElement>('#tl-charts-filter-chip-groups')!.click();
+    fixture.detectChanges();
+    expect(document.activeElement?.id).toBe('tl-charts-side-panel-data');
+  });
+
+  it('offers no User split while one user is chosen, and drops it when a choice leaves one user', () => {
+    create();
+    open({ ...REQUEST, keys: 'user' });
+    respond(0);
+    respondOptions(0);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    component.setChosenUsers(['u-1', 'u-2']);
+    render();
+    expect(optionValues('#tl-charts-split')).toContain('user');
+    setSelect('#tl-charts-split', 'user');
+    expect(component.splitBy).toBe('user');
+
+    component.setChosenUsers(['u-1']);
+    render();
+    expect(component.splitBy).toBe('none');
+    expect(optionValues('#tl-charts-split')).not.toContain('user');
+    expect(text(q('#tl-charts-title'))).toBe('AI Telemetry Charts — ann');
+  });
+
+  it('names the echoed choices on the charts\' detail line', () => {
+    create();
+    open();
+    respond(0, seriesDto({
+      users: [{ userId: 'u-1', userName: 'ann' }, { userId: 'u-2', userName: null }],
+      models: [{ provider: 'OpenAI', modelId: 'gpt-x', modelName: null }],
+      groups: [{ groupId: null, groupName: 'No group' }]
+    }));
+    const context = (component as unknown as { composeContext(): { userNames: string[]; modelNames: string[]; groupNames: string[] } }).composeContext();
+    expect(context.userNames).toEqual(['ann', 'Unknown user']);
+    expect(context.modelNames).toEqual(['gpt-x']);
+    expect(context.groupNames).toEqual(['No group']);
   });
 
   // --- Views ---

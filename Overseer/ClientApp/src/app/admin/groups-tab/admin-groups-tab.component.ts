@@ -1,5 +1,6 @@
-import { Component, ChangeDetectionStrategy, ElementRef, OnInit, ViewChild, inject } from '@angular/core';
+import { Component, ChangeDetectionStrategy, ElementRef, OnDestroy, OnInit, ViewChild, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import { AdminService, GroupDto } from '../../services/admin.service';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 import { isImeComposing } from '../../utils/ime.util';
@@ -15,7 +16,7 @@ import { ConfigAccessDialogComponent } from '../admin-dialogs/config-access-dial
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
   styleUrl: './admin-groups-tab.component.scss'
 })
-export class AdminGroupsTabComponent implements OnInit {
+export class AdminGroupsTabComponent implements OnInit, OnDestroy {
   private adminService = inject(AdminService);
   readonly store = inject(AdminPageStore);
 
@@ -26,8 +27,29 @@ export class AdminGroupsTabComponent implements OnInit {
   newGroupName: string = '';
   createGroupError: string = '';
 
+  private manageGroupSub: Subscription | null = null;
+
   ngOnInit(): void {
     ensureOverlayPolyfills();
+    this.takePendingManageGroup();
+    this.manageGroupSub = this.store.manageGroupRequested$.subscribe(() => this.takePendingManageGroup());
+  }
+
+  ngOnDestroy(): void {
+    this.manageGroupSub?.unsubscribe();
+  }
+
+  /**
+   * Reads and clears the page store's pending manage request and opens the AI configuration access
+   * dialog for that group, which needs only the id and the name.
+   */
+  private takePendingManageGroup(): void {
+    const pending = this.store.pendingManageGroup;
+    if (!pending) {
+      return;
+    }
+    this.store.pendingManageGroup = null;
+    this.configAccess.open({ kind: 'group', id: pending.groupId, name: pending.groupName });
   }
 
   openCreateGroup() {

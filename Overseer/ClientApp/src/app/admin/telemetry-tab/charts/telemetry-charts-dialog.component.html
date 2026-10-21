@@ -53,7 +53,7 @@
         <div #workspace class="gh-fig-workspace tl-charts-workspace" [class.is-collapsed]="sidebarCollapsed"
              [style.--gh-fig-sidebar-width]="sidebarWidth + 'px'">
 
-          <!-- THE SETTINGS SIDEBAR: Data · Theme · Charts · Download. Collapsed by its toggle in the view bar,
+          <!-- THE SETTINGS SIDEBAR: Data · Models · Users · Groups · Theme · Charts · Download. Collapsed by its toggle in the view bar,
                which stays rendered outside it; resized by the handle on its right edge. -->
           <aside id="tl-charts-sidebar" class="gh-fig-sidebar tl-charts-sidebar" aria-label="Chart settings" [hidden]="sidebarCollapsed">
             <div class="gh-tabs gh-tabs-secondary gh-tabs-wrap gh-fig-sidebar-tabs" role="tablist" aria-label="Settings sections">
@@ -64,7 +64,7 @@
                         [attr.aria-selected]="sidebarTab === tab.id"
                         [attr.tabindex]="sidebarTab === tab.id ? 0 : -1"
                         (keydown)="onSidebarTabKeydown($event, i)"
-                        (click)="selectSidebarTab(tab.id)">{{ tab.label }}</button>
+                        (click)="selectSidebarTab(tab.id)">{{ sidebarTabLabel(tab) }}</button>
               }
             </div>
 
@@ -72,17 +72,20 @@
               @case ('data') {
                 <div class="gh-fig-side-panel" role="tabpanel" id="tl-charts-side-panel-data"
                      aria-labelledby="tl-charts-side-tab-data" tabindex="0">
-                  @if (user; as filtered) {
-                    <ul class="gh-filter-chips tl-charts-user-chips" role="list" aria-label="User filter">
-                      <li>
-                        <button type="button" class="gh-filter-chip tl-charts-user-chip"
-                                [attr.aria-label]="'Remove user filter: ' + filtered.name + ', and show every user'"
-                                (click)="removeUserFilter()">
-                          <span class="gh-filter-chip-facet">User:</span>
-                          <span class="gh-filter-chip-value">{{ filtered.name }}</span>
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                        </button>
-                      </li>
+                  @let chips = filterChips;
+                  @if (chips.length > 0) {
+                    <ul class="gh-filter-chips tl-charts-filter-chips" role="list" aria-label="Model, user and group filters">
+                      @for (chip of chips; track chip.tab) {
+                        <li>
+                          <button type="button" class="gh-filter-chip tl-charts-filter-chip" [id]="'tl-charts-filter-chip-' + chip.tab"
+                                  [attr.aria-label]="chip.ariaLabel"
+                                  (click)="removeFilterChip(chip.tab)">
+                            <span class="gh-filter-chip-facet">{{ chip.facet }}</span>
+                            <span class="gh-filter-chip-value">{{ chip.value }}</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                          </button>
+                        </li>
+                      }
                     </ul>
                   }
 
@@ -160,6 +163,34 @@
                       </div>
                     </details>
                   }
+                </div>
+              }
+
+              @case ('models') {
+                <div class="gh-fig-side-panel" role="tabpanel" id="tl-charts-side-panel-models"
+                     aria-labelledby="tl-charts-side-tab-models" tabindex="0">
+                  <app-telemetry-chart-models [rows]="modelRows" [loading]="optionsLoading" [error]="optionsError"
+                                              [selectedKeys]="chosenModels" [max]="maxModels" [keys]="keys"
+                                              (selectionChange)="setChosenModels($event)" (retry)="retryOptions()" />
+                </div>
+              }
+
+              @case ('users') {
+                <div class="gh-fig-side-panel" role="tabpanel" id="tl-charts-side-panel-users"
+                     aria-labelledby="tl-charts-side-tab-users" tabindex="0">
+                  <app-telemetry-chart-users [rows]="userRows" [loading]="optionsLoading" [error]="optionsError"
+                                             [selectedKeys]="chosenUsers" [max]="maxUsers"
+                                             [truncated]="usersTruncated" [total]="totalUsers"
+                                             (selectionChange)="setChosenUsers($event)" (retry)="retryOptions()" />
+                </div>
+              }
+
+              @case ('groups') {
+                <div class="gh-fig-side-panel" role="tabpanel" id="tl-charts-side-panel-groups"
+                     aria-labelledby="tl-charts-side-tab-groups" tabindex="0">
+                  <app-telemetry-chart-groups [rows]="groupRows" [loading]="optionsLoading" [error]="optionsError"
+                                              [selectedKeys]="chosenGroups" [max]="maxGroups"
+                                              (selectionChange)="setChosenGroups($event)" (retry)="retryOptions()" />
                 </div>
               }
 

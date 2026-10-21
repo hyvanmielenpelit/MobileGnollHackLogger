@@ -41,7 +41,7 @@
           </button>
         </div>
       } @else if (dto && !hasRows) {
-        <p class="text-muted tl-mu-empty">This user used no model in this range.</p>
+        <p class="text-muted tl-mu-empty">{{ emptyText }}</p>
       } @else if (dto) {
         <!-- Scope totals: before the search, after the role, key and level filters. -->
         <dl class="tl-mu-summary">
@@ -62,7 +62,7 @@
         @if (systemScope || costRecordedLate) {
           <p class="tl-mu-scope-note">
             @if (systemScope) {
-              <span class="tl-mu-scope-errors">Provider errors are not recorded per user for system AI configurations.</span>
+              <span class="tl-mu-scope-errors">{{ providerErrorsNote }}</span>
             }
             @if (costRecordedLate) {
               <span class="tl-mu-scope-cost">Cost recorded since {{ utcDay(dto.costRecordedSinceUtc) }}.</span>

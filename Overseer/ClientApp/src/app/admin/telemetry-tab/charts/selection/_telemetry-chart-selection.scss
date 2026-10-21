@@ -1,0 +1,293 @@
+/* The charts dialog's Models, Users and Groups choosers. The filter bar, search, toggles, status
+ * line, Load more, warning and error lines, `.checkbox-label`, `.btn-ghost`, `.btn-link`,
+ * `.action-btn`, `.gh-tag`, `.config-badge` and `.gh-tooltip` are global; the Sort popover styles
+ * itself. The selection band follows the Model Comparison wizard's one-line selection bar.
+ */
+
+@mixin selection-panel {
+  :host {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-inline-size: 0;
+  }
+
+  /* --- The selection band ------------------------------------------------------------------ */
+
+  .tl-sel-band {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-block-end: 8px;
+    border-block-end: 1px solid var(--border-glass);
+  }
+
+  /* The summary, Clear selection, the chips and Show all on one line of 32 px controls; with the
+     chips expanded, the summary over Clear selection. On a phone the chips take a line of their own. */
+  .tl-sel-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    min-block-size: 32px;
+    min-inline-size: 0;
+  }
+
+  /* Items of the line itself, or a column while the chips are expanded. */
+  .tl-sel-lead {
+    display: contents;
+  }
+
+  .tl-sel-line--stacked .tl-sel-lead {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .tl-sel-label {
+    flex: 0 1 auto;
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #c3c2b7;
+
+    /* A programmatic focus target only (tabindex="-1"). */
+    &:focus {
+      outline: none;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+  }
+
+  .tl-sel-clear,
+  .tl-sel-more {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  /* Collapsed, one row that scrolls sideways, fading at its end while more are out of view;
+     expanded, a wrapping box of its own. */
+  .tl-sel-chips {
+    display: flex;
+    flex: 1 1 12rem;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    min-inline-size: 0;
+    margin-inline: 0;
+    /* Room for the remove buttons' focus rings inside the scroll box. */
+    padding: 3px;
+    margin-block: -3px;
+    list-style: none;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+    overscroll-behavior-x: contain;
+
+    > li {
+      flex: none;
+      scroll-snap-align: start;
+    }
+
+    &.is-overflowing {
+      mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+    }
+
+    &.is-expanded {
+      flex-wrap: wrap;
+      overflow-x: hidden;
+      overflow-y: auto;
+      max-block-size: 30dvh;
+    }
+  }
+
+  /* One line, the height of its remove button: a long name truncates. */
+  .tl-sel-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-inline-size: 100%;
+    padding: 2px 4px 2px 10px;
+    border: 1px solid var(--border-glass);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 12px;
+  }
+
+  .tl-sel-chip-name {
+    max-inline-size: 14rem;
+    overflow: hidden;
+    color: #e6e6e6;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .tl-charts-hint {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.45;
+    color: #898781;
+  }
+
+  /* --- Filter bar and status --------------------------------------------------------------- */
+
+  .tl-sel-filters-row {
+    column-gap: 1rem;
+  }
+
+  .tl-sel-search {
+    flex: 1 1 14rem;
+  }
+
+  /* The Sort popover hangs from the trigger's end, so the trigger ends the row. */
+  app-telemetry-sort-popover {
+    margin-inline-start: auto;
+  }
+
+  .tl-sel-toggles-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+  }
+
+  /* Rendered while empty, so the live region exists before its first message. */
+  .tl-sel-status {
+    margin: 0;
+  }
+
+  .tl-sel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 16px;
+  }
+
+  .tl-sel-empty {
+    margin: 0;
+    color: var(--nav-color);
+  }
+
+  .tl-sel-error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+
+    .gh-field-error {
+      margin: 0;
+    }
+  }
+
+  .tl-sel-retry {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* --- The list ---------------------------------------------------------------------------- */
+
+  .tl-sel-list {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .tl-sel-item {
+    min-inline-size: 0;
+  }
+
+  /* Rows past the first batch are laid out only when scrolled near. */
+  .tl-sel-item-deferred {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 3.5rem;
+  }
+
+  /* A chosen row: the tick, a gold border and a tint together, never color alone. */
+  .tl-sel-row {
+    padding: 8px 10px;
+    border: 1px solid var(--border-glass);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+
+    &:has(input:checked) {
+      border-color: var(--primary-color);
+      background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+    }
+
+    &:has(input[aria-disabled="true"]) {
+      cursor: not-allowed;
+
+      input[type="checkbox"] {
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+
+      .tl-sel-row-name {
+        color: var(--nav-color);
+      }
+    }
+
+    &.tl-sel-row-absent {
+      border-style: dashed;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .tl-sel-row:has(input:checked) {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+  }
+
+  .tl-sel-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-inline-size: 0;
+  }
+
+  .tl-sel-row-name {
+    color: #e6e6e6;
+    overflow-wrap: anywhere;
+  }
+
+  .tl-sel-row-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    font-size: var(--text-secondary);
+    color: var(--nav-color);
+    font-variant-numeric: tabular-nums;
+
+    .gh-tag {
+      border-color: var(--border-glass);
+      color: #d4d4d8;
+    }
+  }
+
+  .tl-sel-model-id {
+    font-size: 12px;
+    color: #a1a1aa;
+    overflow-wrap: anywhere;
+  }
+
+  .tl-sel-parts {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0 6px;
+  }
+
+  .tl-sel-dot {
+    color: #6b6b6b;
+  }
+}

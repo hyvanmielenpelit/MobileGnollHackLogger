@@ -1,0 +1,4 @@
+// The band, filter bar and list are the choosers' shared layout.
+@use 'telemetry-chart-selection' as selection;
+
+@include selection.selection-panel;

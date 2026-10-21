@@ -1,0 +1,158 @@
+<!-- The selection band: what is chosen, Clear selection and one chip per chosen group. -->
+<div class="tl-sel-band" role="region" [attr.aria-labelledby]="idPrefix + '-label'">
+  <div class="tl-sel-line" [class.tl-sel-line--stacked]="chipsExpanded">
+    <div class="tl-sel-lead">
+      <!-- Never empty; focused after Clear selection. -->
+      <p class="tl-sel-label" [id]="idPrefix + '-label'" role="status" tabindex="-1"><span class="visually-hidden">Your selection — </span>{{ bandText }}</p>
+      @if (selectedKeys().length > 0) {
+        <button type="button" class="btn-ghost tl-sel-clear" [id]="idPrefix + '-clear'" (click)="clearSelection()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          Clear selection<span class="visually-hidden"> ({{ formatInteger(selectedKeys().length) }})</span>
+        </button>
+      }
+    </div>
+    @if (selectedKeys().length > 0) {
+      <ul role="list" class="tl-sel-chips" [id]="idPrefix + '-chips'" aria-label="Chosen groups"
+          [class.is-expanded]="chipsExpanded" [class.is-overflowing]="chipsOverflow && !chipsExpanded">
+        @for (chip of chipRows(); track chip.key; let i = $index) {
+          <li class="tl-sel-chip">
+            <span class="tl-sel-chip-name">{{ chip.name }}</span>
+            <button type="button" class="action-btn tl-sel-chip-remove"
+                    [attr.aria-label]="'Remove ' + chip.name + ' from the selection'"
+                    [attr.interestfor]="idPrefix + '-chip-' + i + '-tip'"
+                    [attr.style]="'anchor-name: --' + idPrefix + '-chip-' + i + '-tip'"
+                    (focus)="revealChip($event)" (click)="removeChip(chip.key, i)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-chip-' + i + '-tip'"
+                 [attr.style]="'position-anchor: --' + idPrefix + '-chip-' + i + '-tip'">Remove from the selection</div>
+          </li>
+        }
+      </ul>
+      @if (chipsOverflow || chipsExpanded) {
+        <button type="button" class="btn-link tl-sel-more" [attr.aria-controls]="idPrefix + '-chips'"
+                [attr.aria-expanded]="chipsExpanded" (click)="toggleChipsExpanded()">{{ chipsExpanded ? 'Show fewer' : 'Show all ' + formatInteger(selectedKeys().length) }}</button>
+      }
+    }
+  </div>
+</div>
+
+<p class="tl-charts-hint">Choose the groups to chart. With none chosen — or all of them — every group counts. The figures cover the date range, keys and roles. A group counts its current members' usage over the whole range; a member of two groups counts in both.</p>
+
+@if (!loading() && !error() && (rows().length > 0 || absentRows().length > 0)) {
+  <!-- Search, Sort and Selected only; none of them changes the choice. -->
+  <div class="gh-filter-bar tl-sel-filter-bar">
+    <div class="gh-filter-bar-row tl-sel-filters-row">
+      <div class="gh-search-field tl-sel-search">
+        <label class="visually-hidden" [for]="idPrefix + '-search'">Search groups by name</label>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="search" class="gh-input" [id]="idPrefix + '-search'" autocomplete="off"
+               autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"
+               placeholder="Search group name" [value]="searchInput"
+               (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+      </div>
+      <app-telemetry-sort-popover [idPrefix]="idPrefix" [fields]="sortFields" [sort]="sort()" [defaultSort]="defaultSort"
+                                  (sortChange)="onSortChange($event)" />
+    </div>
+    @if (selectedKeys().length > 0 || clearFiltersShown) {
+      <div class="gh-filter-bar-row tl-sel-toggles-row">
+        @if (selectedKeys().length > 0) {
+          <button type="button" class="gh-filter-toggle tl-sel-selected-only" [id]="idPrefix + '-selected-only'"
+                  [attr.aria-pressed]="selectedOnly() ? 'true' : 'false'" (click)="toggleSelectedOnly()">Selected only</button>
+        }
+        @if (clearFiltersShown) {
+          <button type="button" class="btn-link gh-filter-clear" [id]="idPrefix + '-clear-filters'" (click)="clearFilters()">Clear filters</button>
+        }
+      </div>
+    }
+  </div>
+}
+
+<!-- The list's one polite live region. -->
+<p class="gh-list-status tl-sel-status" [id]="idPrefix + '-status'" role="status">{{ statusText }}</p>
+
+@if (loading()) {
+  <app-loading-indicator class="tl-sel-loading" text="Loading groups…"></app-loading-indicator>
+} @else if (error(); as message) {
+  <div class="tl-sel-error">
+    <p class="gh-field-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ message }}</span>
+    </p>
+    <button type="button" class="btn-ghost tl-sel-retry" [id]="idPrefix + '-retry'" (click)="onRetry()">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+      Retry
+    </button>
+  </div>
+} @else {
+  @if (rows().length === 0) {
+    <p class="tl-sel-empty">No group had AI usage in this date range with these keys and roles.</p>
+  } @else if (listItems().length === 0) {
+    <p class="tl-sel-empty">No groups match this search.</p>
+  }
+
+  @if (selectShownShown || selectAllShown) {
+    <div class="tl-sel-actions">
+      @if (selectShownShown) {
+        <button type="button" class="btn-link tl-sel-select-shown" [id]="idPrefix + '-select-shown'"
+                [attr.aria-disabled]="selectShownRefusal ? 'true' : null"
+                [attr.interestfor]="selectShownRefusal ? idPrefix + '-select-shown-tip' : null"
+                [attr.style]="'anchor-name: --' + idPrefix + '-select-shown-tip'"
+                (click)="selectShown()">Select all shown ({{ formatInteger(matching().length) }})</button>
+        @if (selectShownRefusal; as reason) {
+          <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-select-shown-tip'"
+               [attr.style]="'position-anchor: --' + idPrefix + '-select-shown-tip'">{{ reason }}</div>
+        }
+      }
+      @if (selectAllShown) {
+        <button type="button" class="btn-link tl-sel-select-all" [id]="idPrefix + '-select-all'" (click)="selectAll()">Select all</button>
+      }
+    </div>
+  }
+
+  @if (atCap()) {
+    <p class="gh-field-warning tl-sel-cap" [id]="idPrefix + '-cap'">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      <span>{{ capText }}</span>
+    </p>
+  }
+
+  @if (listItems().length > 0) {
+    <ul role="list" class="tl-sel-list" aria-label="Groups">
+      @for (row of listItems(); track row.key; let i = $index) {
+        <li class="tl-sel-item" [class.tl-sel-item-deferred]="isDeferred(i)">
+          <label class="checkbox-label align-start tl-sel-row" [class.tl-sel-row-absent]="row.absent" [attr.data-key]="row.key">
+            <input type="checkbox" [id]="rowId(i)" [checked]="isChosen(row.key)"
+                   [attr.aria-disabled]="isRefused(row) ? 'true' : null"
+                   [attr.aria-labelledby]="rowId(i) + '-name'"
+                   [attr.aria-describedby]="describedBy(row, i)"
+                   (click)="onRowClick(row, $event)">
+            <span class="tl-sel-row-body">
+              <span class="tl-sel-row-name" [id]="rowId(i) + '-name'">@for (part of nameParts(row); track $index) {@if (part.match) {<mark class="model-option-match">{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</span>
+              <span class="tl-sel-row-meta" [id]="rowId(i) + '-meta'">
+                @if (row.groupId === null && !row.absent) {
+                  <span class="gh-tag tl-sel-no-group">Users in no group</span>
+                }
+                <span class="tl-sel-parts">
+                  @for (part of metaParts(row); track $index) {
+                    @if (!$first) {<span class="tl-sel-dot" aria-hidden="true">·</span><span class="visually-hidden">, </span>}
+                    <span>{{ part }}</span>
+                  }
+                </span>
+              </span>
+            </span>
+          </label>
+        </li>
+      }
+    </ul>
+
+    @if (remaining() > 0) {
+      <div class="gh-load-more tl-sel-load-more">
+        <button type="button" class="btn-ghost tl-sel-show-more" (click)="showMore()">Show {{ formatInteger(nextBatch()) }} more</button>
+        @if (remaining() > nextBatch()) {
+          <button type="button" class="btn-link gh-filter-clear tl-sel-show-all" (click)="showMore(true)">Show all {{ formatInteger(matching().length) }}</button>
+        }
+      </div>
+    }
+  }
+}

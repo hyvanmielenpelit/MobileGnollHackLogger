@@ -184,6 +184,23 @@ full-width card each. The two dialogs share the stylesheet partial `_telemetry-u
 - **Storage**: `overseer.admin.telemetry.userModels` = `{ version: 1, separateThinkingLevels, sort }`; the
   search and the role, key and level filters are not stored.
 
+## 7c. Usage of a group by model
+
+Each card of the Groups view (§ 12a) has the same *Usage by model* button, which opens the dialog of § 7b
+for the group: the dialog's request names a subject, a user (`{ kind: 'user', userId, userName }`) or a
+group (`{ kind: 'group', groupId, groupName }`, where `groupId` is a number or `none`).
+
+- **Scope.** The usage of the group's **current** members over the tab's range and *Keys* filter, as § 12a
+  defines a group's usage. `GET api/admin/ai-telemetry/group-models` returns the same rows as
+  `user-models` (`AiTelemetryGroupModelsDto`, with `groupName` and `memberCount`); 400 `{ message:
+  "groupId is required." }` without a group id, 404 for an unknown one.
+- **Header.** *Usage by model: {groupName}*, with *{N} members · {Keys label} · {range}* under it (*{N}
+  users* for *No group*).
+- **Texts.** The empty state reads *This group's members used no model in this range.*; the scope note
+  says provider errors are not recorded per user or group.
+- Everything else (filters, sort, cards, Show more, focus) is § 7b's, and so is the storage key
+  `overseer.admin.telemetry.userModels`, shared by both kinds.
+
 ## 8. Estimated cost
 
 Cost is priced **per call at record time**, because long-context rates (Claude Haiku 5.5 above 100,000
@@ -324,6 +341,45 @@ limits* (selects the Users tab and opens its *AI configuration access for {user}
 Limits dialog edits each assignment; no limit editing is duplicated here), and *Block* / *Unblock*. The
 Security tab's *Usage* action lands here, on the Users sub-tab, with that one user selected.
 
+## 12a. The Groups view: AI usage by group
+
+The **Groups** sub-tab (`/admin/telemetry/groups`, `groups/telemetry-groups.component.ts`) works like the
+Users view, one card per group, over the tab's range and *Keys* filter.
+
+**A group's usage is the usage of its current members, over the whole date range.** The usage logs record
+no group: group *limits* are pooled per group and configuration (`GroupSystemAiApiConfiguration` counters,
+`SystemAiConfigService.RecordUsageAsync`), but a request is never stamped with one. So a user who joined
+yesterday brings their whole range into the group, and a user in two groups counts in both: the group cards
+do not add up to the total. The scope line says so: *A group counts its current members' usage over the
+whole range; a member of two groups counts in both.* (Adding a `GroupId` column to the usage logs was
+rejected: it would date group usage only from deployment and still has no single answer for a member of
+two groups.)
+
+**No group** (wire value `none`, `groupId` null) is the users who belong to no group. It is listed as a card
+of its own, tagged *Users in no group*, with no *Manage limits*; it is what makes choosing every group in
+the charts dialog equal no filter.
+
+- **Unpaged.** `GET api/admin/ai-telemetry/groups` returns every group with its figures, including groups
+  with no usage in the range (zeros: an idle group is an answer), then *No group*. Search, sort and *Show N
+  more* (batches of 20) run in the browser.
+- **Figures** are the Users row's, summed over the members: requests (with the *system N · own key M*
+  note), tokens, estimated cost, the busiest hour (members' requests summed per UTC hour before the
+  maximum), active days (distinct days across members), chats, messages, limit refusals and provider
+  refusals. The meta line reads *12 members · 9 active in this range · Last active …*; the *Group state*
+  badge row shows *N blocked members* and *N refusals*.
+- **Configurations table.** Every configuration the group grants (enabled or not), with the group's
+  **pooled** effective counters for today and this month against the group's limits; then the system
+  configurations members used that the group does not grant (tagged *not granted by this group*, no
+  counters); then one *Members' own keys* line under user keys. Highest requests first. The system lines
+  appear while the *Keys* filter includes system keys, the own-key line while it includes user keys.
+- **Actions:** *Usage by model* (§ 7c), *Usage charts* (the charts dialog with the group chosen in its
+  Groups tab), *Manage limits* (selects Users → Groups and opens that group's AI configuration access
+  dialog).
+- **Sort:** *Est. cost* (the default, highest first), *Requests*, *Tokens*, *Busiest hour*, *Refusals*,
+  *Members*, *Last active*, *Group name*; nulls sort last, ties go by name, then id, *No group* last.
+- **Storage:** `overseer.admin.telemetry.groups.view` = `{ version: 1, sort: { field, direction } }`; the
+  search is not stored.
+
 ## 13. The charts dialog
 
 **Charts** opens a full-screen dialog on the shared GnollBench figure layer (`overseer_frontend` skill):
@@ -332,29 +388,58 @@ nine composed bitmap figures — *Requests*, *Estimated cost (USD)* (optionally 
 own), *Active users*, *Chats created*, *Messages* — shown, copied and downloaded identically, singly or as
 a ZIP (`ai-telemetry_<figure>_<yyyyMMdd_HHmmss>.<ext>`, `ai-telemetry_charts_<stamp>.zip`).
 
-The settings sidebar has **Data** (keys, roles, bucket, split by, cumulative cost, the user filter chip),
-**Theme** and **Charts** (the figure style panel's appearance and timeline families; Chat-Consistency-only
-controls hidden through `hiddenKeys`), and **Download** (size and format).
+The settings sidebar has seven tabs: **Data** (keys, roles, bucket, split by, cumulative cost, and one chip
+per filtered category), **Models**, **Users** and **Groups** (which models, users and groups the charts
+count), **Theme** and **Charts** (the figure style panel's appearance and timeline families;
+Chat-Consistency-only controls hidden through `hiddenKeys`), and **Download** (size and format). A filter
+tab's label reads *Models (3)* while there is a partial choice.
 
-- `GET api/admin/ai-telemetry/series?startDate&endDate&keys&roles&bucket&splitBy&userId`.
+- **The three choices.** If nothing is chosen in a category, that category is not filtered — and choosing
+  every row of a list is the same, so it is sent as no filter. Choices within a category combine with OR;
+  the categories combine with AND. Each tab lists what `GET api/admin/ai-telemetry/series-options` returns
+  for the range, keys and roles, with a search, a Sort popover (`app-telemetry-sort-popover`), *Selected
+  only*, *Select all* and *Select all shown*. A list's figures do not follow another tab's choice.
+- **Caps.** A partial choice holds at most 50 models, 50 users or 50 groups; the server refuses more with
+  400. The Users list offers the 1,000 users with the most requests in the scope and says so when there
+  are more. *Select all* (every row: no filter) is never capped.
+- **A group** counts its current members (§ 12a); *No group* is a row of its own.
+- **Opening** from a user card or a group card presets that user or group and clears every other choice.
+  The title reads *AI Telemetry Charts — {name}* while the effective filter is exactly one user or exactly
+  one group.
+- `GET api/admin/ai-telemetry/series?startDate&endDate&keys&roles&bucket&splitBy&userIds&models&groupIds`,
+  each filter a repeated key: `userIds` user ids (the older single `userId` is merged in), `models`
+  `provider|modelId` (split at the first `|`, since a model id may hold `:`), `groupIds` a group id or
+  `none`. 400 `{ message }` for more than 50 in a category or an unparsable model or group. The response
+  echoes each filter as applied, with names (`users`, `models`, `groups`).
 - **Buckets:** `auto` = day up to 45 days, week (Monday 00:00 UTC) up to 180, else month (the 1st, UTC);
   empty buckets are included. A range with more than 1,100 buckets is refused with 400.
-- **Split by:** none, role, provider, model, key source, or user (only with user keys; system rows form
-  one *System AI configurations* line under *All keys*). The 8 lines with the most requests are kept; the
-  rest merge into one *Other* line.
-- **Activity figures** ignore *Split by* and *Keys*; buckets before the counting start are gaps, not zero;
-  under a user filter the incognito lines are omitted.
-- **User filter:** only that user's usage rows, user-key attempt rows (system attempt rows carry no user)
-  and activity rows.
+- **Split by:** none, role, provider, model, key source, or user (only with user keys, and not while the
+  user filter is exactly one user; system rows form one *System AI configurations* line under *All keys*).
+  The 8 lines with the most requests are kept; the rest merge into one *Other* line. There is no split by
+  group: overlapping membership would draw one request on several lines.
+- **Activity figures** ignore *Split by*, *Keys* and the Models choice (*Split by, Keys and Models do not
+  apply to this chart.* while models are chosen); buckets before the counting start are gaps, not zero; a
+  user or group choice does apply, and under one the incognito lines are omitted.
+- **User and group filters:** only the matching users' usage rows, user-key attempt rows (system attempt
+  rows carry no user) and activity rows. The model filter matches provider and model id on the usage rows
+  and the attempts.
+- **The detail line** names the choices: *User: Ann* / *Users: Ann, Bob, Cid +2 more*, *Model: …* /
+  *Models: …*, *Group: Testers* / *Groups: …*.
 - **Storage:** `overseer.admin.telemetry.charts` and its `.chartSize`, `.figureStyle`,
-  `.figureStylePanel.open` and `.download` keys, each `{ version: 1, … }`; the user filter is not stored.
+  `.figureStylePanel.open` and `.download` keys, each `{ version: 1, … }`; the lists' view settings as
+  `overseer.admin.telemetry.charts.models.view` (`{ version: 1, sort, providers }`), `.charts.users.view`
+  and `.charts.groups.view` (`{ version: 1, sort }`). The choices themselves and the searches are not
+  stored: they last while the dialog is open.
 
 ## 14. API
 
 | Method | Route | Returns |
 |---|---|---|
 | `GET` | `api/admin/ai-telemetry/summary?startDate&endDate&keys` | totals, breakdown rows, cost, availability, activity |
-| `GET` | `api/admin/ai-telemetry/series?startDate&endDate&keys&roles&bucket&splitBy&userId` | the series (400 past 1,100 buckets) |
+| `GET` | `api/admin/ai-telemetry/series?startDate&endDate&keys&roles&bucket&splitBy&userIds&models&groupIds` | the series, with the filters echoed (400 past 1,100 buckets, over 50 in a filter, or an unparsable model or group; `userId` is still read and merged into `userIds`) |
+| `GET` | `api/admin/ai-telemetry/series-options?startDate&endDate&keys&roles` | the models, the 1,000 users with the most requests, and every group with *No group*, for the charts dialog's lists |
+| `GET` | `api/admin/ai-telemetry/groups?startDate&endDate&keys` | every group's usage and configurations, plus *No group* (`AiTelemetryGroupsDto`; unpaged) |
+| `GET` | `api/admin/ai-telemetry/group-models?startDate&endDate&keys&groupId` | one group's members' usage by model (`AiTelemetryGroupModelsDto`; `groupId` a group id or `none`; 400 without it, 404 for an unknown one) |
 | `GET` | `api/admin/ai-telemetry/users?startDate&endDate&keys&search&userId&sort&direction&skip&take` | the Users view page (`take` 1–100; `direction` `asc` or `desc`, the default) |
 | `GET` | `api/admin/ai-telemetry/model-users?startDate&endDate&keys&provider&modelId&roles` | one model's usage by user, role context and thinking level (`keys` system or user; 400 without `provider` or `modelId`) |
 | `GET` | `api/admin/ai-telemetry/user-models?startDate&endDate&keys&userId` | one user's usage by key source, provider, model, role context and thinking level (`AiTelemetryUserModelsDto`; 400 `{ message: "userId is required." }` without `userId`) |
@@ -366,18 +451,26 @@ stored, so an old search never hides cards on a later visit. The Users view's se
 `overseer.admin.telemetry.users.view` (`{ version: 2, sort: { field, direction } }`; a version 1 record,
 `{ version: 1, sort: '<id>' }`, is read as that field, highest first), the Usage by user dialog's as
 `overseer.admin.telemetry.modelUsers` and the Usage by model dialog's as
-`overseer.admin.telemetry.userModels` (each `{ version: 1, separateThinkingLevels, sort }`).
+`overseer.admin.telemetry.userModels` (each `{ version: 1, separateThinkingLevels, sort }`). The Groups
+view's are stored as `overseer.admin.telemetry.groups.view` (§ 12a), the charts dialog's lists' as in § 13.
 
 ## 15. Tests
 
-`AdminTelemetrySummaryTests`, `AdminTelemetrySeriesTests`, `AdminTelemetryUsersTests` (key sources,
-order, the name sort, own-key lines, the controller's pass-through), `AdminTelemetryModelUsersTests`,
-`AdminTelemetryUserModelsTests`, `ActivityCounterTests`, `ActivityCountingCallSiteTests`, `SystemAiUsageRecordingTests`,
+`AdminTelemetrySummaryTests`, `AdminTelemetrySeriesTests` (also the model, user and group filters, the
+echoes and the controller's caps), `AdminTelemetrySeriesOptionsTests`, `AdminTelemetryUsersTests` (key
+sources, order, the name sort, own-key lines, the controller's pass-through), `AdminTelemetryGroupsTests`,
+`AdminTelemetryGroupModelsTests`, `AdminTelemetryModelUsersTests`, `AdminTelemetryUserModelsTests`,
+`ActivityCounterTests`, `ActivityCountingCallSiteTests`, `SystemAiUsageRecordingTests`,
 `ChatProviderAttemptLedgerTests`, `TitleAttemptClassificationTests`, `ProviderTitleUsageTests` and
 `ChatProviderAttemptMaintenanceTests` in `Overseer.Tests/UnitTests/`, and the spend alert's link in
-`ConfigHealthServiceTests`; the client specs beside the tab (sub-tabs, panels, the *live* tags, the badge
-layout), the Users view (`telemetry-users-view.spec.ts`, `telemetry-users.component.spec.ts`), the charts
-dialog, the Usage by user dialog (`telemetry-model-users.spec.ts`,
+`ConfigHealthServiceTests`; the client specs beside the tab (sub-tabs, mounting, Refresh and the dialog
+wiring), the Summary panel (`summary/telemetry-summary.component.spec.ts`), the Models panel
+(`models/telemetry-models.component.spec.ts`), the Users view (`telemetry-users-view.spec.ts`,
+`telemetry-users.component.spec.ts`), the Groups view (`groups/telemetry-groups-view.spec.ts`,
+`groups/telemetry-groups.component.spec.ts`), the shared Sort popover
+(`sort-popover/telemetry-sort-popover.component.spec.ts`), the charts dialog and its three lists
+(`charts/selection/telemetry-chart-filters.spec.ts`, `telemetry-chart-{models,users,groups}.component.spec.ts`),
+the Usage by user dialog (`telemetry-model-users.spec.ts`,
 `telemetry-model-users-dialog.component.spec.ts`) and the Usage by model dialog
 (`telemetry-user-models.spec.ts`, `telemetry-user-models-dialog.component.spec.ts`), and the sub-tab paths
 in `admin-url.spec.ts`.

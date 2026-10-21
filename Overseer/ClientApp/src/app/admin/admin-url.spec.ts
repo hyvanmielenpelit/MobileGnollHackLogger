@@ -124,10 +124,20 @@ describe('admin URL scheme', () => {
         { tab: 'telemetry', subTab: 'models', canonical: ['/admin', 'telemetry', 'models'], isCanonical: true });
       expect(parseAdminPath('telemetry', 'users')).toEqual(
         { tab: 'telemetry', subTab: 'users', canonical: ['/admin', 'telemetry', 'users'], isCanonical: true });
+      expect(parseAdminPath('telemetry', 'groups')).toEqual(
+        { tab: 'telemetry', subTab: 'groups', canonical: ['/admin', 'telemetry', 'groups'], isCanonical: true });
       expect(parseAdminPath('telemetry', 'bogus')).toEqual(
         { tab: 'telemetry', subTab: 'summary', canonical: ['/admin', 'telemetry'], isCanonical: false });
       expect(adminCommands('telemetry', 'summary')).toEqual(['/admin', 'telemetry']);
       expect(adminCommands('telemetry', 'users')).toEqual(['/admin', 'telemetry', 'users']);
+      expect(adminCommands('telemetry', 'groups')).toEqual(['/admin', 'telemetry', 'groups']);
+    });
+
+    it('round-trips the AI Telemetry Groups sub-tab through its path', () => {
+      const commands = adminCommands('telemetry', 'groups');
+      const parsed = parseAdminPath(commands[1], commands[2] ?? null);
+
+      expect(parsed).toEqual({ tab: 'telemetry', subTab: 'groups', canonical: commands, isCanonical: true });
     });
 
     it('reads the Services sub-tabs from their slugs', () => {
@@ -178,6 +188,7 @@ describe('admin URL scheme', () => {
     it('maps the AI Telemetry sub-tabs', () => {
       expect(legacy({ tab: 'telemetry', subtab: 'users' })).toEqual(['/admin', 'telemetry', 'users']);
       expect(legacy({ tab: 'telemetry', subtab: 'models' })).toEqual(['/admin', 'telemetry', 'models']);
+      expect(legacy({ tab: 'telemetry', subtab: 'groups' })).toEqual(['/admin', 'telemetry', 'groups']);
       expect(legacy({ tab: 'telemetry', subtab: 'bogus' })).toEqual(['/admin', 'telemetry']);
     });
 

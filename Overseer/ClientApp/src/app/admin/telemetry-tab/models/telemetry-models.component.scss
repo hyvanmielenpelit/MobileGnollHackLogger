@@ -1,0 +1,189 @@
+/* The filter bar, the status line, `.action-btn`, `.btn-ghost`, `.gh-model-card-badges` and the Sort
+   popover's frame are global. The card's grid, head and title are from _telemetry-cards.scss. */
+@use '../../admin-shared' as shared;
+@use '../telemetry-cards' as cards;
+@use '../telemetry-sort' as sort;
+
+:host {
+  display: block;
+}
+
+@include shared.text-muted;
+@include cards.sticky-clearance;
+@include cards.empty-note;
+@include sort.sort-panel('.tl-sort-panel');
+
+/* --- Breakdown ------------------------------------------------------------------------------- */
+
+.tl-breakdown-status {
+  margin: 0 0 0.75rem;
+
+  &:empty {
+    display: none;
+  }
+}
+
+/* Two rows: search, thinking levels and Sort; then roles, provider toggles and Clear filters. */
+.tl-breakdown-filters {
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+
+    label {
+      font-size: 0.85em;
+      font-weight: 600;
+      color: #aaa;
+    }
+  }
+}
+
+.tl-breakdown-filters-row {
+  column-gap: 1.5rem;
+
+  /* The search, the select and the trigger line up on their bottom edges, under the select's label. */
+  &:first-child {
+    align-items: flex-end;
+  }
+}
+
+.tl-breakdown-search {
+  flex: 1 1 16rem;
+}
+
+/* The Sort popover hangs from the trigger's end, so the trigger ends the row. */
+.tl-sort {
+  margin-inline-start: auto;
+}
+
+.tl-sort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  svg {
+    flex: none;
+  }
+}
+
+.tl-providers {
+  flex: 0 1 auto;
+}
+
+.tl-no-match {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.tl-roles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+
+  legend {
+    float: left;
+    margin-inline-end: 0.25rem;
+    padding: 0;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #aaa;
+  }
+}
+
+.tl-role-option {
+  gap: 6px !important;
+}
+
+.tl-role-count {
+  font-variant-numeric: tabular-nums;
+  color: #a1a1aa;
+}
+
+.tl-empty {
+  margin: 0;
+}
+
+/* --- Breakdown cards ------------------------------------------------------------------------- */
+
+.tl-cards {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: tl-cards / inline-size;
+}
+
+.tl-item {
+  min-inline-size: 0;
+}
+
+/* Nine metrics by the list's width: 9 beside the head from 100 rem, 5 + 4 beside it from 68 rem,
+   5 + 4 under it, 3 × 3 below 44 rem, 2 per row below 28 rem. */
+@include cards.card-layout('.tl-card', '.tl-metrics', tl-cards);
+
+/* Same 1 px border as the other cards, so the columns line up; the inset ring is outside layout. */
+.tl-card-total {
+  border-color: color-mix(in srgb, var(--primary-color) 60%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary-color) 35%, transparent);
+  background: color-mix(in srgb, var(--primary-color) 7%, rgba(14, 14, 16, 0.72));
+
+  .tl-card-title {
+    color: var(--primary-color);
+  }
+}
+
+.tl-card-head {
+  @include cards.card-head;
+}
+
+.tl-card-identity,
+.tl-card-badges {
+  margin: 0;
+}
+
+/* A user's name can be long: the key badge stays one line, capped at the card's width with an ellipsis. */
+.tl-key-item {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.tl-key-badge {
+  white-space: nowrap;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tl-card-title {
+  @include cards.card-title;
+}
+
+/* The title, and the card's icon buttons at its end. */
+.tl-card-title-row {
+  @include cards.card-title-row;
+}
+
+.tl-card-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.tl-card-meta {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+}
+
+@include cards.metric;
+@include cards.separator;

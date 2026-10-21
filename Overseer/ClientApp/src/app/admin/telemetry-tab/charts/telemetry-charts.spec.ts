@@ -3,6 +3,7 @@ import { FigureSizeSettings, defaultFigureSize } from '../../benchmark/model-com
 import { DEFAULT_FIGURE_STYLE, FigureStyle, TimelineFigureStyle } from '../../benchmark/model-comparison/figure-style';
 import { contrastRatio, providerHue, resolveFigureTheme } from '../../benchmark/model-comparison/figure-theme';
 import {
+  ACTIVITY_SCOPE_MODELS_NOTE,
   ACTIVITY_SCOPE_NOTE,
   BENCHMARK_AVAILABILITY_NOTE,
   INCOGNITO_USER_NOTE,
@@ -14,6 +15,7 @@ import {
   buildTelemetryFigure,
   buildTelemetryFigures,
   composeTelemetryFigure,
+  filterDetail,
   telemetryArchiveFilename,
   telemetryAxisRange,
   telemetryChartFilename,
@@ -67,8 +69,9 @@ function seriesDto(overrides: Partial<AiTelemetrySeriesDto> = {}): AiTelemetrySe
     ],
     costRecordedSinceUtc: '2026-09-01T00:00:00Z',
     attemptsRecordedSinceUtc: '2026-09-01T00:00:00Z',
-    userId: null,
-    userName: null,
+    users: [],
+    models: [],
+    groups: [],
     activity: [activity(), activity({ activeUsers: 4 }), activity({ activeUsers: 5 })],
     activityCountedSinceUtc: '2026-10-02',
     ...overrides
@@ -84,7 +87,9 @@ function context(overrides: Partial<TelemetryComposeContext> = {}, timeline: Par
     rangeLabel: '2026-10-01 to 2026-10-03',
     keys: 'system',
     cumulative: false,
-    userName: null,
+    userNames: [],
+    modelNames: [],
+    groupNames: [],
     loadedAt: '2026-10-13T08:00:00Z',
     ...overrides
   };
@@ -158,12 +163,30 @@ describe('telemetry-charts', () => {
     });
 
     it('leaves the incognito lines out for one user', () => {
-      const dto = seriesDto({ userId: 'u1', userName: 'alice', activityCountedSinceUtc: '2026-01-01' });
+      const dto = seriesDto({ users: [{ userId: 'u1', userName: 'alice' }], activityCountedSinceUtc: '2026-01-01' });
       expect(Object.keys(valuesOf(dto, 'chats'))).toEqual(['chats', 'confidential', 'gnollhack']);
       expect(Object.keys(valuesOf(dto, 'messages'))).toEqual(['sent', 'replies']);
       expect(Object.keys(valuesOf(dto, 'activeUsers'))).toEqual(['activeUsers', 'newUsers']);
       expect(buildFigureSeries(dto, 'messages').notes.map(note => note.text)).toContain(INCOGNITO_USER_NOTE);
       expect(buildFigureSeries(dto, 'activeUsers').notes.map(note => note.text)).not.toContain(INCOGNITO_USER_NOTE);
+    });
+
+    it('leaves the incognito lines out under a group filter, and keeps them under a model filter', () => {
+      const grouped = seriesDto({ groups: [{ groupId: 3, groupName: 'Testers' }], activityCountedSinceUtc: '2026-01-01' });
+      expect(Object.keys(valuesOf(grouped, 'chats'))).toEqual(['chats', 'confidential', 'gnollhack']);
+      expect(buildFigureSeries(grouped, 'chats').notes.map(note => note.text)).toContain(INCOGNITO_USER_NOTE);
+      const ungrouped = seriesDto({ groups: [{ groupId: null, groupName: 'No group' }], activityCountedSinceUtc: '2026-01-01' });
+      expect(Object.keys(valuesOf(ungrouped, 'messages'))).toEqual(['sent', 'replies']);
+      const modeled = seriesDto({ models: [{ provider: 'OpenAI', modelId: 'gpt-x', modelName: 'GPT X' }], activityCountedSinceUtc: '2026-01-01' });
+      expect(Object.keys(valuesOf(modeled, 'chats'))).toContain('incognito');
+      expect(buildFigureSeries(modeled, 'chats').notes.map(note => note.text)).not.toContain(INCOGNITO_USER_NOTE);
+    });
+
+    it('says the Models choice does not apply to the activity charts while models are chosen', () => {
+      const modeled = seriesDto({ models: [{ provider: 'OpenAI', modelId: 'gpt-x' }], activityCountedSinceUtc: '2026-01-01' });
+      expect(buildFigureSeries(modeled, 'activeUsers').notes.map(note => note.text)).toEqual([ACTIVITY_SCOPE_MODELS_NOTE]);
+      const users = seriesDto({ users: [{ userId: 'u1', userName: 'alice' }], activityCountedSinceUtc: '2026-01-01' });
+      expect(buildFigureSeries(users, 'activeUsers').notes.map(note => note.text)).toEqual([ACTIVITY_SCOPE_NOTE]);
     });
 
     it('tells an empty usage series from one with requests', () => {
@@ -276,9 +299,23 @@ describe('telemetry-charts', () => {
     });
 
     it('names a cumulative cost and the filtered user on the detail line', () => {
-      const ctx = context({ cumulative: true, userName: 'alice' });
+      const ctx = context({ cumulative: true, userNames: ['alice'] });
       expect(telemetryFigureChrome(buildTelemetryFigure(seriesDto(), 'cost', ctx), ctx).detail).toBe('Cumulative · User: alice');
       expect(telemetryFigureChrome(buildTelemetryFigure(seriesDto(), 'requests', ctx), ctx).detail).toBe('User: alice');
+    });
+
+    it('names the filtered users, models and groups: three names, then the rest counted', () => {
+      const ctx = context({
+        userNames: ['Ann', 'Bob', 'Cid', 'Dee', 'Eve'],
+        modelNames: ['GPT X'],
+        groupNames: ['Testers', 'No group']
+      });
+      expect(telemetryFigureChrome(buildTelemetryFigure(seriesDto(), 'requests', ctx), ctx).detail)
+        .toBe('Users: Ann, Bob, Cid +2 more · Model: GPT X · Groups: Testers, No group');
+      const three = context({ userNames: ['Ann', 'Bob', 'Cid'], groupNames: ['Testers'] });
+      expect(telemetryFigureChrome(buildTelemetryFigure(seriesDto(), 'requests', three), three).detail)
+        .toBe('Users: Ann, Bob, Cid · Group: Testers');
+      expect(filterDetail('Model', 'Models', [])).toEqual([]);
     });
 
     it('writes the source footer, or none while the footer is off', () => {

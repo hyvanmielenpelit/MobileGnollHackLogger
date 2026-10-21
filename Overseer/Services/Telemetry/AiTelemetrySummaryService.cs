@@ -1,22 +1,58 @@
 namespace Overseer.Services.Telemetry;
 
 using System.Globalization;
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
 
+/// <summary>A model as the charts' model filter names it, written <c>provider|modelId</c>.</summary>
+public readonly record struct AiTelemetryModelRef(string Provider, string ModelId)
+{
+    /// <summary>
+    /// Splits at the first <c>|</c>, so a model id may contain <c>:</c> (Ollama's <c>llama3:8b</c>) or <c>|</c>; both parts
+    /// must be non-blank.
+    /// </summary>
+    public static bool TryParse(string? value, out AiTelemetryModelRef result)
+    {
+        result = default;
+        if (string.IsNullOrEmpty(value)) return false;
+        int bar = value.IndexOf('|');
+        if (bar < 0) return false;
+        string provider = value[..bar].Trim();
+        string modelId = value[(bar + 1)..].Trim();
+        if (provider.Length == 0 || modelId.Length == 0) return false;
+        result = new AiTelemetryModelRef(provider, modelId);
+        return true;
+    }
+
+    public override string ToString() => Provider + "|" + ModelId;
+}
+
 /// <summary>
-/// The AI Telemetry tab's queries: the summary and breakdown, the series over time, per-user usage of the selected
-/// key sources, and the usage of one model by user and of one user by model. Reads <see cref="SystemAiUsageLog"/>, <see cref="UserKeyAiUsageLog"/>,
-/// <see cref="ChatProviderAttempt"/>, <see cref="OverseerDailyActivity"/> and, for refusal counts,
-/// <see cref="SecurityEvent"/>. Token figures are normalized per role context (<see cref="AiUsageRoles"/>).
+/// The AI Telemetry tab's queries: the summary and breakdown, the series over time and its filter options, per-user and
+/// per-group usage of the selected key sources, and the usage of one model by user and of one user or group by model.
+/// Reads <see cref="SystemAiUsageLog"/>, <see cref="UserKeyAiUsageLog"/>, <see cref="ChatProviderAttempt"/>,
+/// <see cref="OverseerDailyActivity"/>, group membership and, for refusal counts, <see cref="SecurityEvent"/>. Token
+/// figures are normalized per role context (<see cref="AiUsageRoles"/>). A group's usage is the usage of its current
+/// members over the whole range; usage logs record no group.
 /// </summary>
 public class AiTelemetrySummaryService
 {
     public const int MaxSeriesBuckets = 1100;
     public const int MaxSeriesLines = 8;
     public const string OtherLineKey = "other";
+    public const int MaxSeriesFilterUsers = 50;
+    public const int MaxSeriesFilterModels = 50;
+    public const int MaxSeriesFilterGroups = 50;
+    public const int MaxSeriesOptionUsers = 1000;
+
+    /// <summary>The wire value of "No group": the users who belong to no group.</summary>
+    public const string NoGroupKey = "none";
+    public const string NoGroupName = "No group";
+    public const string UnknownGroupName = "Unknown group";
+    public const string OwnKeysLineName = "Members' own keys";
 
     private readonly ApplicationDbContext _db;
     private readonly ModelMetadataService _metadata;
@@ -64,6 +100,75 @@ public class AiTelemetrySummaryService
         if (start.HasValue) { var from = DateOnly.FromDateTime(start.Value); q = q.Where(a => a.DateUtc >= from); }
         if (end.HasValue) { var to = DateOnly.FromDateTime(end.Value); q = q.Where(a => a.DateUtc <= to); }
         return q;
+    }
+
+    /// <summary>The user and group filters; an empty list filters nothing, and a null group id is "No group".</summary>
+    private sealed record Audience(IReadOnlyList<string> UserIds, IReadOnlyList<long?> GroupIds)
+    {
+        public static readonly Audience All = new(Array.Empty<string>(), Array.Empty<long?>());
+
+        public static Audience OfUser(string userId) => new(new[] { userId }, Array.Empty<long?>());
+
+        public static Audience OfGroup(long? groupId) => new(Array.Empty<string>(), new[] { groupId });
+    }
+
+    /// <summary>
+    /// Narrows a query to the audience by the user id <paramref name="userIdOf"/> selects: the chosen users, AND the
+    /// current members of the chosen groups (a subquery on <c>UserGroups</c>, OR-ed with "no membership at all" for
+    /// "No group"). Rows without a user never match a filter.
+    /// </summary>
+    private IQueryable<T> ApplyAudience<T>(IQueryable<T> q, Expression<Func<T, string?>> userIdOf, Audience audience)
+    {
+        if (audience.UserIds.Count == 1)
+        {
+            string only = audience.UserIds[0];
+            q = q.Where(Compose(userIdOf, id => id == only));
+        }
+        else if (audience.UserIds.Count > 1)
+        {
+            var ids = audience.UserIds.ToList();
+            q = q.Where(Compose(userIdOf, id => id != null && ids.Contains(id)));
+        }
+
+        if (audience.GroupIds.Count > 0)
+        {
+            var groupIds = audience.GroupIds.Where(g => g.HasValue).Select(g => g!.Value).ToList();
+            bool noGroup = audience.GroupIds.Any(g => g == null);
+            IQueryable<UserGroup> userGroups = _db.UserGroups;
+            IQueryable<string> members = userGroups.Where(ug => groupIds.Contains(ug.GroupId)).Select(ug => ug.AspNetUserId);
+
+            Expression<Func<string?, bool>> inGroups;
+            if (groupIds.Count == 0)
+            {
+                inGroups = id => id != null && !userGroups.Any(ug => ug.AspNetUserId == id);
+            }
+            else if (noGroup)
+            {
+                inGroups = id => id != null && (members.Contains(id) || !userGroups.Any(ug => ug.AspNetUserId == id));
+            }
+            else
+            {
+                inGroups = id => id != null && members.Contains(id);
+            }
+            q = q.Where(Compose(userIdOf, inGroups));
+        }
+        return q;
+    }
+
+    /// <summary><c>x =&gt; predicate(userIdOf(x))</c>, inlined so that it translates.</summary>
+    private static Expression<Func<T, bool>> Compose<T>(Expression<Func<T, string?>> userIdOf, Expression<Func<string?, bool>> predicate) =>
+        Expression.Lambda<Func<T, bool>>(new ParameterReplacer(predicate.Parameters[0], userIdOf.Body).Visit(predicate.Body), userIdOf.Parameters);
+
+    private sealed class ParameterReplacer(ParameterExpression from, Expression to) : ExpressionVisitor
+    {
+        protected override Expression VisitParameter(ParameterExpression node) => node == from ? to : base.VisitParameter(node);
+    }
+
+    /// <summary>Accounts that belong to no group.</summary>
+    private Task<int> CountUngroupedAccountsAsync(CancellationToken ct)
+    {
+        IQueryable<UserGroup> userGroups = _db.UserGroups;
+        return _db.Users.CountAsync(u => !userGroups.Any(ug => ug.AspNetUserId == u.Id), ct);
     }
 
     /// <summary>Sums of one group of usage rows.</summary>
@@ -159,7 +264,7 @@ public class AiTelemetrySummaryService
 
         var rows = aggregates.Select(ToRow).ToList();
 
-        var attempts = await LoadAttemptsAsync(start, end, keys, userId: null, ct);
+        var attempts = await LoadAttemptsAsync(start, end, keys, Audience.All, modelIds: null, ct);
         MergeAttempts(rows, attempts);
 
         await FillUserNamesAsync(rows, ct);
@@ -220,12 +325,15 @@ public class AiTelemetrySummaryService
         PricedRequests = a.Priced
     };
 
-    private async Task<List<AttemptRow>> LoadAttemptsAsync(DateTime? start, DateTime? end, string keys, string? userId, CancellationToken ct)
+    /// <param name="modelIds">A prefilter on the requested model id; the caller matches the provider too.</param>
+    private async Task<List<AttemptRow>> LoadAttemptsAsync(DateTime? start, DateTime? end, string keys, Audience audience,
+        List<string>? modelIds, CancellationToken ct)
     {
         var q = InRange(_db.ChatProviderAttempts.AsNoTracking(), start, end);
         if (!IncludesSystem(keys)) q = q.Where(a => a.KeySource == AiKeySource.UserKey);
         if (!IncludesUser(keys)) q = q.Where(a => a.KeySource == AiKeySource.System);
-        if (userId != null) q = q.Where(a => a.AspNetUserId == userId);
+        q = ApplyAudience(q, a => a.AspNetUserId, audience);
+        if (modelIds != null) q = q.Where(a => modelIds.Contains(a.RequestedModelId));
 
         return await q
             .Select(a => new AttemptRow(a.StartedAtUtc, a.AgentRunId, a.RoleContext, a.AgentDepth, a.KeySource, a.AspNetUserId,
@@ -461,12 +569,28 @@ public class AiTelemetrySummaryService
     private sealed record SeriesUsage(DateTime Day, string KeySource, string? UserId, string Provider, string ModelId, int RoleContext,
         long Requests, long Input, long Output, long CacheRead, decimal Cost, long Priced, long DurationSum, long DurationCount);
 
+    /// <summary>
+    /// The series. A category with nothing chosen is not filtered; choices within a category combine with OR, the
+    /// categories with AND. The activity figures take the user and group filters, never the model filter.
+    /// </summary>
     /// <param name="roles">Role groups to include; null or empty: the three named groups.</param>
-    /// <param name="splitBy">none | role | provider | model | keySource | user.</param>
+    /// <param name="splitBy">none | role | provider | model | keySource | user; user falls back to none without user keys or with exactly one user chosen.</param>
+    /// <param name="userIds">Users to include.</param>
+    /// <param name="models">Models to include, matched on provider and model id.</param>
+    /// <param name="groupIds">Groups whose current members to include; null is "No group".</param>
     public async Task<AiTelemetrySeriesDto> GetSeriesAsync(DateTime? start, DateTime? end, string? keySource, IReadOnlyCollection<string>? roles,
-        string? bucket, string? splitBy, string? userId, CancellationToken ct = default)
+        string? bucket, string? splitBy, IReadOnlyList<string>? userIds, IReadOnlyList<AiTelemetryModelRef>? models,
+        IReadOnlyList<long?>? groupIds, CancellationToken ct = default)
     {
         string keys = NormalizeKeySource(keySource);
+        var audience = new Audience(
+            userIds?.Distinct(StringComparer.Ordinal).ToList() ?? new List<string>(),
+            groupIds?.Distinct().ToList() ?? new List<long?>());
+        var modelList = models?.Distinct().ToList() ?? new List<AiTelemetryModelRef>();
+        var modelSet = modelList.Count > 0 ? modelList.ToHashSet() : null;
+        var modelIds = modelSet?.Select(m => m.ModelId).Distinct(StringComparer.Ordinal).ToList();
+        bool ModelChosen(string provider, string modelId) => modelSet == null || modelSet.Contains(new AiTelemetryModelRef(provider, modelId));
+
         var (rangeStart, rangeEnd) = SeriesRange(start, end);
         string resolvedBucket = ResolveBucket(rangeStart, rangeEnd, bucket);
         if (BucketCount(rangeStart, rangeEnd, resolvedBucket) > MaxSeriesBuckets)
@@ -479,7 +603,7 @@ public class AiTelemetrySummaryService
         {
             "role" => "role", "provider" => "provider", "model" => "model", "keySource" => "keySource", "user" => "user", _ => "none"
         };
-        if (split == "user" && (userId != null || !IncludesUser(keys))) split = "none";
+        if (split == "user" && (audience.UserIds.Count == 1 || !IncludesUser(keys))) split = "none";
 
         var buckets = BucketStarts(rangeStart, rangeEnd, resolvedBucket);
         var bucketIndex = buckets.Select((b, i) => (b, i)).ToDictionary(x => x.b.Date, x => x.i);
@@ -489,8 +613,8 @@ public class AiTelemetrySummaryService
         DateTime? costSince = null;
         if (IncludesSystem(keys))
         {
-            var q = InRange(_db.SystemAiUsageLogs.AsNoTracking(), rangeStart, rangeEnd);
-            if (userId != null) q = q.Where(l => l.AspNetUserId == userId);
+            var q = ApplyAudience(InRange(_db.SystemAiUsageLogs.AsNoTracking(), rangeStart, rangeEnd), l => l.AspNetUserId, audience);
+            if (modelIds != null) q = q.Where(l => modelIds.Contains(l.ModelId));
             usage.AddRange((await q
                 .GroupBy(l => new { Day = l.TimestampUtc.Date, l.Provider, l.ModelId, l.RoleContext })
                 .Select(g => new
@@ -512,8 +636,8 @@ public class AiTelemetrySummaryService
         }
         if (IncludesUser(keys))
         {
-            var q = InRange(_db.UserKeyAiUsageLogs.AsNoTracking(), rangeStart, rangeEnd);
-            if (userId != null) q = q.Where(l => l.AspNetUserId == userId);
+            var q = ApplyAudience(InRange(_db.UserKeyAiUsageLogs.AsNoTracking(), rangeStart, rangeEnd), l => l.AspNetUserId, audience);
+            if (modelIds != null) q = q.Where(l => modelIds.Contains(l.ModelId));
             usage.AddRange((await q
                 .GroupBy(l => new { Day = l.TimestampUtc.Date, l.AspNetUserId, l.Provider, l.ModelId, l.RoleContext })
                 .Select(g => new
@@ -533,11 +657,11 @@ public class AiTelemetrySummaryService
                     a.Output, a.CacheRead, a.Cost, a.Priced, a.DurationSum, a.DurationCount)));
             costSince = Earliest(costSince, await q.Where(l => l.EstimatedCost != null).MinAsync(l => (DateTime?)l.TimestampUtc, ct));
         }
-        usage = usage.Where(u => roleSet.Contains(AiUsageRoles.GroupOf(u.RoleContext))).ToList();
+        usage = usage.Where(u => roleSet.Contains(AiUsageRoles.GroupOf(u.RoleContext)) && ModelChosen(u.Provider, u.ModelId)).ToList();
 
-        // System ledger rows carry no user, so under a user filter only the user-key ones remain.
-        var attempts = (await LoadAttemptsAsync(rangeStart, rangeEnd, keys, userId, ct))
-            .Where(a => roleSet.Contains(AiUsageRoles.GroupOf(a.RoleContext)))
+        // System ledger rows carry no user, so under a user or group filter only the user-key ones remain.
+        var attempts = (await LoadAttemptsAsync(rangeStart, rangeEnd, keys, audience, modelIds, ct))
+            .Where(a => roleSet.Contains(AiUsageRoles.GroupOf(a.RoleContext)) && ModelChosen(a.Provider, a.ModelId))
             .ToList();
 
         var modelNames = new Dictionary<(string, string), string?>();
@@ -614,10 +738,7 @@ public class AiTelemetrySummaryService
             series.Add(other);
         }
 
-        string? userName = userId == null ? null
-            : await _db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.UserName).FirstOrDefaultAsync(ct);
-
-        var (activity, countedSince) = await BuildActivitySeriesAsync(buckets, resolvedBucket, rangeStart, rangeEnd, userId, ct);
+        var (activity, countedSince) = await BuildActivitySeriesAsync(buckets, resolvedBucket, rangeStart, rangeEnd, audience, ct);
 
         return new AiTelemetrySeriesDto
         {
@@ -627,11 +748,38 @@ public class AiTelemetrySummaryService
             Series = series,
             CostRecordedSinceUtc = Utc(costSince),
             AttemptsRecordedSinceUtc = Utc(await _db.ChatProviderAttempts.MinAsync(a => (DateTime?)a.StartedAtUtc, ct)),
-            UserId = userId,
-            UserName = userName,
+            Users = await UserRefsAsync(audience.UserIds, ct),
+            Models = modelList
+                .Select(m => new AiTelemetrySeriesModelRefDto { Provider = m.Provider, ModelId = m.ModelId, ModelName = ModelName(m.Provider, m.ModelId, modelNames) })
+                .ToList(),
+            Groups = await GroupRefsAsync(audience.GroupIds, ct),
             Activity = activity,
             ActivityCountedSinceUtc = countedSince
         };
+    }
+
+    /// <summary>The user filter with current names, in request order; null when the account is gone.</summary>
+    private async Task<List<AiTelemetrySeriesUserRefDto>> UserRefsAsync(IReadOnlyList<string> userIds, CancellationToken ct)
+    {
+        if (userIds.Count == 0) return new();
+        var ids = userIds.ToList();
+        var names = await _db.Users.AsNoTracking().Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.UserName, ct);
+        return userIds.Select(id => new AiTelemetrySeriesUserRefDto { UserId = id, UserName = names.TryGetValue(id, out var name) ? name : null }).ToList();
+    }
+
+    /// <summary>The group filter with current names, in request order: "No group" for null, "Unknown group" for an id no group has.</summary>
+    private async Task<List<AiTelemetrySeriesGroupRefDto>> GroupRefsAsync(IReadOnlyList<long?> groupIds, CancellationToken ct)
+    {
+        if (groupIds.Count == 0) return new();
+        var ids = groupIds.Where(g => g.HasValue).Select(g => g!.Value).ToList();
+        var names = ids.Count == 0
+            ? new Dictionary<long, string>()
+            : await _db.Groups.AsNoTracking().Where(g => ids.Contains(g.Id)).ToDictionaryAsync(g => g.Id, g => g.DisplayName, ct);
+        return groupIds.Select(id => new AiTelemetrySeriesGroupRefDto
+        {
+            GroupId = id,
+            GroupName = id is long known ? (names.TryGetValue(known, out var name) ? name : UnknownGroupName) : NoGroupName
+        }).ToList();
     }
 
     private async Task LabelLinesAsync(IEnumerable<AiTelemetrySeriesLineDto> lines, string split, CancellationToken ct)
@@ -688,12 +836,11 @@ public class AiTelemetrySummaryService
         return sum;
     }
 
-    /// <summary>Activity per bucket; under a user filter only that user's rows (no anonymous row).</summary>
+    /// <summary>Activity per bucket; under a user or group filter only the audience's rows (no anonymous row).</summary>
     private async Task<(List<AiTelemetryActivityPointDto> Points, DateOnly? CountedSince)> BuildActivitySeriesAsync(
-        List<DateTime> buckets, string bucket, DateTime rangeStart, DateTime rangeEnd, string? userId, CancellationToken ct)
+        List<DateTime> buckets, string bucket, DateTime rangeStart, DateTime rangeEnd, Audience audience, CancellationToken ct)
     {
-        var q = InRange(_db.OverseerDailyActivities.AsNoTracking(), rangeStart, rangeEnd);
-        if (userId != null) q = q.Where(a => a.AspNetUserId == userId);
+        var q = ApplyAudience(InRange(_db.OverseerDailyActivities.AsNoTracking(), rangeStart, rangeEnd), a => a.AspNetUserId, audience);
         var rows = await q.ToListAsync(ct);
 
         var points = buckets.Select(_ => new AiTelemetryActivityPointDto()).ToList();
@@ -727,6 +874,198 @@ public class AiTelemetrySummaryService
         return (points, countedSince);
     }
 
+    // --- Series options --------------------------------------------------------------------------
+
+    /// <summary>One user's sums of one model in one key source and role context, as the series options fold them.</summary>
+    private sealed record OptionUsage(string KeySource, string UserId, string Provider, string ModelId, int RoleContext, long Requests,
+        long Input, long CacheRead, long Output, decimal Cost, long Priced, DateTime Last);
+
+    /// <summary>
+    /// The models, users and groups the charts offer for the series' range (<see cref="SeriesRange"/>), key sources and
+    /// roles. Models include those seen only in the attempts ledger, with 0 requests; users are the
+    /// <see cref="MaxSeriesOptionUsers"/> with the most requests; groups are every group, plus "No group" when an
+    /// ungrouped user has usage in the scope.
+    /// </summary>
+    /// <param name="roles">Role groups to include; null or empty: the three named groups.</param>
+    public async Task<AiTelemetrySeriesOptionsDto> GetSeriesOptionsAsync(DateTime? start, DateTime? end, string? keySource,
+        IReadOnlyCollection<string>? roles, CancellationToken ct = default)
+    {
+        string keys = NormalizeKeySource(keySource);
+        var (rangeStart, rangeEnd) = SeriesRange(start, end);
+        var roleSet = new HashSet<string>(roles is { Count: > 0 } ? roles : AiUsageRoles.NamedGroups, StringComparer.OrdinalIgnoreCase);
+
+        var usage = new List<OptionUsage>();
+        if (IncludesSystem(keys))
+        {
+            usage.AddRange((await InRange(_db.SystemAiUsageLogs.AsNoTracking(), rangeStart, rangeEnd)
+                .GroupBy(l => new { l.AspNetUserId, l.Provider, l.ModelId, l.RoleContext })
+                .Select(g => new
+                {
+                    g.Key.AspNetUserId, g.Key.Provider, g.Key.ModelId, g.Key.RoleContext,
+                    Requests = g.LongCount(),
+                    Input = g.Sum(x => (long)(x.InputTokens ?? 0)),
+                    CacheRead = g.Sum(x => (long)(x.CacheReadInputTokens ?? 0)),
+                    Output = g.Sum(x => (long)(x.OutputTokens ?? 0)),
+                    Cost = g.Sum(x => x.EstimatedCost ?? 0m),
+                    Priced = g.LongCount(x => x.EstimatedCost != null),
+                    Last = g.Max(x => x.TimestampUtc)
+                })
+                .ToListAsync(ct))
+                .Select(a => new OptionUsage("system", a.AspNetUserId, a.Provider, a.ModelId, a.RoleContext, a.Requests, a.Input, a.CacheRead,
+                    a.Output, a.Cost, a.Priced, a.Last)));
+        }
+        if (IncludesUser(keys))
+        {
+            usage.AddRange((await InRange(_db.UserKeyAiUsageLogs.AsNoTracking(), rangeStart, rangeEnd)
+                .GroupBy(l => new { l.AspNetUserId, l.Provider, l.ModelId, l.RoleContext })
+                .Select(g => new
+                {
+                    g.Key.AspNetUserId, g.Key.Provider, g.Key.ModelId, g.Key.RoleContext,
+                    Requests = g.LongCount(),
+                    Input = g.Sum(x => (long)(x.InputTokens ?? 0)),
+                    CacheRead = g.Sum(x => (long)(x.CacheReadInputTokens ?? 0)),
+                    Output = g.Sum(x => (long)(x.OutputTokens ?? 0)),
+                    Cost = g.Sum(x => x.EstimatedCost ?? 0m),
+                    Priced = g.LongCount(x => x.EstimatedCost != null),
+                    Last = g.Max(x => x.TimestampUtc)
+                })
+                .ToListAsync(ct))
+                .Select(a => new OptionUsage("user", a.AspNetUserId, a.Provider, a.ModelId, a.RoleContext, a.Requests, a.Input, a.CacheRead,
+                    a.Output, a.Cost, a.Priced, a.Last)));
+        }
+        usage = usage.Where(u => roleSet.Contains(AiUsageRoles.GroupOf(u.RoleContext))).ToList();
+
+        var attemptQuery = InRange(_db.ChatProviderAttempts.AsNoTracking(), rangeStart, rangeEnd);
+        if (!IncludesSystem(keys)) attemptQuery = attemptQuery.Where(a => a.KeySource == AiKeySource.UserKey);
+        if (!IncludesUser(keys)) attemptQuery = attemptQuery.Where(a => a.KeySource == AiKeySource.System);
+        var attemptModels = (await attemptQuery
+                .Select(a => new { a.Provider, ModelId = a.RequestedModelId, a.KeySource, a.RoleContext })
+                .Distinct()
+                .ToListAsync(ct))
+            .Where(a => roleSet.Contains(AiUsageRoles.GroupOf(a.RoleContext)))
+            .ToList();
+
+        var models = ModelOptions(usage, attemptModels.Select(a => (a.Provider, a.ModelId, a.KeySource == AiKeySource.UserKey ? "user" : "system")));
+
+        var userIds = usage.Select(u => u.UserId).Distinct(StringComparer.Ordinal).ToList();
+        var names = userIds.Count == 0
+            ? new Dictionary<string, string?>()
+            : await _db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.UserName, ct);
+        var users = usage
+            .GroupBy(u => u.UserId, StringComparer.Ordinal)
+            .Select(g => new AiTelemetrySeriesUserOptionDto
+            {
+                UserId = g.Key,
+                UserName = names.TryGetValue(g.Key, out var name) ? name : null,
+                Requests = g.Sum(u => u.Requests),
+                SystemRequests = g.Where(u => u.KeySource == "system").Sum(u => u.Requests),
+                UserKeyRequests = g.Where(u => u.KeySource == "user").Sum(u => u.Requests),
+                EstimatedCost = g.Sum(u => u.Cost),
+                PricedRequests = g.Sum(u => u.Priced),
+                LastRequestUtc = DateTime.SpecifyKind(g.Max(u => u.Last), DateTimeKind.Utc)
+            })
+            .OrderByDescending(u => u.Requests)
+            .ThenBy(u => u.UserName == null)
+            .ThenBy(u => u.UserName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(u => u.UserId, StringComparer.Ordinal)
+            .ToList();
+
+        var groups = await _db.Groups.AsNoTracking().Select(g => new { g.Id, g.DisplayName }).ToListAsync(ct);
+        var memberships = await _db.UserGroups.AsNoTracking().Select(ug => new { ug.AspNetUserId, ug.GroupId }).ToListAsync(ct);
+        var membersByGroup = memberships.ToLookup(m => m.GroupId, m => m.AspNetUserId);
+        var grouped = memberships.Select(m => m.AspNetUserId).ToHashSet(StringComparer.Ordinal);
+        var byUser = users.ToDictionary(u => u.UserId, StringComparer.Ordinal);
+
+        AiTelemetrySeriesGroupOptionDto GroupOption(long? groupId, string groupName, int memberCount, List<AiTelemetrySeriesUserOptionDto> used) => new()
+        {
+            GroupId = groupId,
+            GroupName = groupName,
+            MemberCount = memberCount,
+            Requests = used.Sum(u => u.Requests),
+            EstimatedCost = used.Sum(u => u.EstimatedCost),
+            PricedRequests = used.Sum(u => u.PricedRequests),
+            LastRequestUtc = used.Count > 0 ? used.Max(u => u.LastRequestUtc) : null
+        };
+
+        var groupOptions = groups
+            .Select(g =>
+            {
+                var members = membersByGroup[g.Id].Distinct(StringComparer.Ordinal).ToList();
+                return GroupOption(g.Id, g.DisplayName, members.Count,
+                    members.Where(byUser.ContainsKey).Select(id => byUser[id]).ToList());
+            })
+            .ToList();
+
+        var ungrouped = users.Where(u => !grouped.Contains(u.UserId)).ToList();
+        if (ungrouped.Count > 0)
+        {
+            groupOptions.Add(GroupOption(null, NoGroupName, await CountUngroupedAccountsAsync(ct), ungrouped));
+        }
+
+        return new AiTelemetrySeriesOptionsDto
+        {
+            Models = models,
+            Users = users.Take(MaxSeriesOptionUsers).ToList(),
+            TotalUsers = users.Count,
+            UsersTruncated = users.Count > MaxSeriesOptionUsers,
+            Groups = groupOptions
+                .OrderByDescending(g => g.Requests)
+                .ThenBy(g => g.GroupId == null)
+                .ThenBy(g => g.GroupName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(g => g.GroupId)
+                .ToList()
+        };
+    }
+
+    private List<AiTelemetrySeriesModelOptionDto> ModelOptions(List<OptionUsage> usage,
+        IEnumerable<(string Provider, string ModelId, string KeySource)> attemptModels)
+    {
+        var modelNames = new Dictionary<(string, string), string?>();
+        var options = usage
+            .GroupBy(u => (u.Provider, u.ModelId))
+            .Select(g => new AiTelemetrySeriesModelOptionDto
+            {
+                Provider = g.Key.Provider,
+                ModelId = g.Key.ModelId,
+                ModelName = ModelName(g.Key.Provider, g.Key.ModelId, modelNames),
+                KeySources = g.Select(u => u.KeySource).ToList(),
+                Requests = g.Sum(u => u.Requests),
+                EstimatedCost = g.Sum(u => u.Cost),
+                PricedRequests = g.Sum(u => u.Priced),
+                Tokens = g.Sum(u => AiUsageRoles.PromptTokens(u.RoleContext, u.Input, u.CacheRead) + u.Output),
+                LastRequestUtc = DateTime.SpecifyKind(g.Max(u => u.Last), DateTimeKind.Utc)
+            })
+            .ToDictionary(o => (o.Provider, o.ModelId));
+
+        // A model whose every call failed has attempts and no usage rows.
+        foreach (var a in attemptModels)
+        {
+            if (!options.TryGetValue((a.Provider, a.ModelId), out var option))
+            {
+                option = new AiTelemetrySeriesModelOptionDto
+                {
+                    Provider = a.Provider,
+                    ModelId = a.ModelId,
+                    ModelName = ModelName(a.Provider, a.ModelId, modelNames)
+                };
+                options[(a.Provider, a.ModelId)] = option;
+            }
+            option.KeySources.Add(a.KeySource);
+        }
+
+        foreach (var option in options.Values)
+        {
+            option.KeySources = new[] { "system", "user" }.Where(option.KeySources.Contains).ToList();
+        }
+
+        return options.Values
+            .OrderByDescending(o => o.Requests)
+            .ThenBy(o => o.ModelName ?? o.ModelId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(o => o.Provider, StringComparer.Ordinal)
+            .ThenBy(o => o.ModelId, StringComparer.Ordinal)
+            .ToList();
+    }
+
     // --- Users -----------------------------------------------------------------------------------
 
     /// <summary>One user's sums in one key source and role context.</summary>
@@ -736,18 +1075,43 @@ public class AiTelemetrySummaryService
     /// <summary>One user's requests in one UTC clock hour.</summary>
     private sealed record UserHourUsage(string UserId, DateTime Day, int Hour, int Count);
 
-    /// <param name="keySource">system (default) | user | both.</param>
-    /// <param name="sort">cost (default) | requests | tokens | peakHour | refusals | lastActive | name.</param>
-    /// <param name="direction">asc | desc (default); ties by user name, then user id. No last request sorts last.</param>
-    public async Task<AiTelemetryUsersPageDto> GetUsersAsync(DateTime? start, DateTime? end, string? search, string? userId,
-        string? sort, int skip, int take, string? keySource = null, string? direction = null, CancellationToken ct = default)
+    /// <summary>One user's usage of one system configuration, with the usage rows' ModelDisplayName.</summary>
+    private sealed record UserConfigUsage(long ConfigId, long Requests, decimal Cost, string? DisplayName);
+
+    /// <summary>One user's usage of one own-key model; a null id when the log attributes none.</summary>
+    private sealed record UserKeyModelUsage(long? UserAiModelId, long Requests, decimal Cost, string? DisplayName, string? ModelId);
+
+    /// <summary>One user's usage of the selected key sources over a range, with activity, refusals and account state.</summary>
+    private sealed class UserAggregate
     {
-        string keys = NormalizeKeySource(keySource);
-        take = Math.Clamp(take <= 0 ? 20 : take, 1, 100);
-        skip = Math.Max(0, skip);
+        public string UserId { get; init; } = string.Empty;
+        public string? UserName { get; init; }
+        public bool Blocked { get; init; }
+        public bool Held { get; init; }
+        public List<UserRoleUsage> Roles { get; init; } = new();
+        public List<UserHourUsage> Hours { get; init; } = new();
+        public List<UserConfigUsage> Configs { get; init; } = new();
+        public List<UserKeyModelUsage> KeyModels { get; init; } = new();
+        public int Chats { get; init; }
+        public int Messages { get; init; }
+
+        /// <summary>Quota and per-minute refusals.</summary>
+        public int LimitRefusals { get; init; }
+
+        /// <summary>Provider refusals, safety blocks and policy rejections.</summary>
+        public int ProviderRefusals { get; init; }
+    }
+
+    /// <summary>
+    /// The aggregates of every user with usage of the selected key sources in the range who still has an account,
+    /// optionally narrowed to one user and to a user name or email search.
+    /// </summary>
+    private async Task<List<UserAggregate>> AggregateUsersAsync(DateTime? start, DateTime? end, string keys, string? userId,
+        string? search, CancellationToken ct)
+    {
         var systemUsage = InRange(_db.SystemAiUsageLogs.AsNoTracking(), start, end);
         var keyUsage = InRange(_db.UserKeyAiUsageLogs.AsNoTracking(), start, end);
-        if (!string.IsNullOrWhiteSpace(userId))
+        if (userId != null)
         {
             systemUsage = systemUsage.Where(l => l.AspNetUserId == userId);
             keyUsage = keyUsage.Where(l => l.AspNetUserId == userId);
@@ -808,7 +1172,7 @@ public class AiTelemetrySummaryService
         var selectedIds = users.Select(u => u.Id).ToList();
         if (selectedIds.Count == 0)
         {
-            return new AiTelemetryUsersPageDto { KeySource = keys, SecurityEventsAvailable = true };
+            return new List<UserAggregate>();
         }
 
         var byConfig = !IncludesSystem(keys)
@@ -878,10 +1242,56 @@ public class AiTelemetrySummaryService
             .Select(g => new { g.Key.AspNetUserId, g.Key.Kind, Count = g.Sum(e => e.Count) })
             .ToListAsync(ct);
 
-        var heldIds = await GnollHackServer.Data.Security.AccountHoldQueries.HeldUserIds(_db)
-            .Where(id => selectedIds.Contains(id)).Distinct().ToListAsync(ct);
+        var heldIds = (await GnollHackServer.Data.Security.AccountHoldQueries.HeldUserIds(_db)
+            .Where(id => selectedIds.Contains(id)).Distinct().ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
 
-        var configIds = byConfig.Select(c => c.SystemAiApiConfigurationId).Distinct().ToList();
+        var rolesOf = byRole.ToLookup(r => r.UserId, StringComparer.Ordinal);
+        var hoursOf = byHour.ToLookup(h => h.UserId, StringComparer.Ordinal);
+        var configsOf = byConfig.ToLookup(c => c.AspNetUserId, StringComparer.Ordinal);
+        var keyModelsOf = byKeyModel.ToLookup(m => m.AspNetUserId, StringComparer.Ordinal);
+        var eventsOf = eventCounts.ToLookup(e => e.AspNetUserId ?? string.Empty, StringComparer.Ordinal);
+
+        return users.Select(u =>
+        {
+            activity.TryGetValue(u.Id, out var act);
+            var counts = eventsOf[u.Id].ToList();
+            return new UserAggregate
+            {
+                UserId = u.Id,
+                UserName = u.UserName,
+                Blocked = u.Blocked,
+                Held = heldIds.Contains(u.Id),
+                Roles = rolesOf[u.Id].ToList(),
+                Hours = hoursOf[u.Id].ToList(),
+                Configs = configsOf[u.Id].Select(c => new UserConfigUsage(c.SystemAiApiConfigurationId, c.Requests, c.Cost, c.DisplayName)).ToList(),
+                KeyModels = keyModelsOf[u.Id].Select(m => new UserKeyModelUsage(m.UserAiModelId, m.Requests, m.Cost, m.DisplayName, m.ModelId)).ToList(),
+                Chats = act?.Chats ?? 0,
+                Messages = act?.Messages ?? 0,
+                LimitRefusals = counts.Where(c => c.Kind is SecurityEventKind.QuotaRefused or SecurityEventKind.RateLimitRejected).Sum(c => c.Count),
+                ProviderRefusals = counts.Where(c => c.Kind is SecurityEventKind.ProviderRefusal or SecurityEventKind.ProviderSafetyBlock
+                    or SecurityEventKind.ProviderPolicyRejection).Sum(c => c.Count)
+            };
+        }).ToList();
+    }
+
+    /// <param name="keySource">system (default) | user | both.</param>
+    /// <param name="sort">cost (default) | requests | tokens | peakHour | refusals | lastActive | name.</param>
+    /// <param name="direction">asc | desc (default); ties by user name, then user id. No last request sorts last.</param>
+    public async Task<AiTelemetryUsersPageDto> GetUsersAsync(DateTime? start, DateTime? end, string? search, string? userId,
+        string? sort, int skip, int take, string? keySource = null, string? direction = null, CancellationToken ct = default)
+    {
+        string keys = NormalizeKeySource(keySource);
+        take = Math.Clamp(take <= 0 ? 20 : take, 1, 100);
+        skip = Math.Max(0, skip);
+
+        var aggregates = await AggregateUsersAsync(start, end, keys, string.IsNullOrWhiteSpace(userId) ? null : userId, search, ct);
+        if (aggregates.Count == 0)
+        {
+            return new AiTelemetryUsersPageDto { KeySource = keys, SecurityEventsAvailable = true };
+        }
+        var selectedIds = aggregates.Select(a => a.UserId).ToList();
+
+        var configIds = aggregates.SelectMany(a => a.Configs).Select(c => c.ConfigId).Distinct().ToList();
         var configs = await _db.SystemAiApiConfigurations.AsNoTracking()
             .Where(c => configIds.Contains(c.Id))
             .ToDictionaryAsync(c => c.Id, ct);
@@ -897,7 +1307,8 @@ public class AiTelemetrySummaryService
             .Where(g => groupIds.Contains(g.GroupId) && configIds.Contains(g.SystemAiApiConfigurationId) && g.IsEnabled)
             .Select(g => new { g.GroupId, g.SystemAiApiConfigurationId })
             .ToListAsync(ct);
-        var keyModelIds = byKeyModel.Where(m => m.UserAiModelId != null).Select(m => m.UserAiModelId!.Value).Distinct().ToList();
+        var keyModelIds = aggregates.SelectMany(a => a.KeyModels).Where(m => m.UserAiModelId != null).Select(m => m.UserAiModelId!.Value)
+            .Distinct().ToList();
         var keyModelNames = keyModelIds.Count == 0
             ? new Dictionary<long, string?>()
             : await _db.UserAiModels.AsNoTracking()
@@ -906,18 +1317,16 @@ public class AiTelemetrySummaryService
 
         var now = DateTime.UtcNow;
         var rows = new List<AiTelemetryUserRowDto>();
-        foreach (var u in users)
+        foreach (var u in aggregates)
         {
-            var roles = byRole.Where(r => r.UserId == u.Id).ToList();
-            var hours = byHour.Where(h => h.UserId == u.Id).ToList();
+            var roles = u.Roles;
+            var hours = u.Hours;
             var peak = hours.OrderByDescending(h => h.Count).ThenBy(h => h.Day).ThenBy(h => h.Hour).FirstOrDefault();
-            var counts = eventCounts.Where(e => e.AspNetUserId == u.Id).ToList();
-            activity.TryGetValue(u.Id, out var act);
-            var groupsOfUser = userGroups.Where(g => g.AspNetUserId == u.Id).Select(g => g.GroupId).ToHashSet();
+            var groupsOfUser = userGroups.Where(g => g.AspNetUserId == u.UserId).Select(g => g.GroupId).ToHashSet();
 
             var row = new AiTelemetryUserRowDto
             {
-                UserId = u.Id,
+                UserId = u.UserId,
                 UserName = u.UserName ?? string.Empty,
                 Requests = roles.Sum(r => r.Requests),
                 SystemRequests = roles.Where(r => r.KeySource == "system").Sum(r => r.Requests),
@@ -936,27 +1345,26 @@ public class AiTelemetrySummaryService
                 RequestsPerActiveHour = hours.Count > 0 ? Math.Round((double)hours.Sum(h => h.Count) / hours.Count, 2) : 0,
                 ActiveDays = hours.Select(h => h.Day).Distinct().Count(),
                 LastRequestUtc = roles.Count > 0 ? DateTime.SpecifyKind(roles.Max(r => r.Last), DateTimeKind.Utc) : null,
-                ChatsCreated = act?.Chats ?? 0,
-                UserMessages = act?.Messages ?? 0,
-                LimitRefusals = counts.Where(c => c.Kind is SecurityEventKind.QuotaRefused or SecurityEventKind.RateLimitRejected).Sum(c => c.Count),
-                ProviderRefusals = counts.Where(c => c.Kind is SecurityEventKind.ProviderRefusal or SecurityEventKind.ProviderSafetyBlock
-                    or SecurityEventKind.ProviderPolicyRejection).Sum(c => c.Count),
+                ChatsCreated = u.Chats,
+                UserMessages = u.Messages,
+                LimitRefusals = u.LimitRefusals,
+                ProviderRefusals = u.ProviderRefusals,
                 IsOverseerBlocked = u.Blocked,
-                HasAccountHold = heldIds.Contains(u.Id)
+                HasAccountHold = u.Held
             };
 
             var lines = new List<AiTelemetryUserConfigDto>();
-            foreach (var c in byConfig.Where(c => c.AspNetUserId == u.Id))
+            foreach (var c in u.Configs)
             {
-                configs.TryGetValue(c.SystemAiApiConfigurationId, out var config);
-                var assignment = assignments.FirstOrDefault(a => a.AspNetUserId == u.Id && a.SystemAiApiConfigurationId == c.SystemAiApiConfigurationId);
-                bool groupGrants = groupAssignments.Any(g => g.SystemAiApiConfigurationId == c.SystemAiApiConfigurationId && groupsOfUser.Contains(g.GroupId));
+                configs.TryGetValue(c.ConfigId, out var config);
+                var assignment = assignments.FirstOrDefault(a => a.AspNetUserId == u.UserId && a.SystemAiApiConfigurationId == c.ConfigId);
+                bool groupGrants = groupAssignments.Any(g => g.SystemAiApiConfigurationId == c.ConfigId && groupsOfUser.Contains(g.GroupId));
 
                 lines.Add(new AiTelemetryUserConfigDto
                 {
                     KeySource = "system",
-                    ConfigId = c.SystemAiApiConfigurationId,
-                    ConfigName = !string.IsNullOrEmpty(config?.DisplayName) ? config!.DisplayName : c.DisplayName ?? config?.ModelId ?? c.SystemAiApiConfigurationId.ToString(CultureInfo.InvariantCulture),
+                    ConfigId = c.ConfigId,
+                    ConfigName = !string.IsNullOrEmpty(config?.DisplayName) ? config!.DisplayName : c.DisplayName ?? config?.ModelId ?? c.ConfigId.ToString(CultureInfo.InvariantCulture),
                     Requests = c.Requests,
                     EstimatedCost = c.Cost,
                     AssignmentId = assignment?.Id,
@@ -975,7 +1383,7 @@ public class AiTelemetrySummaryService
             }
 
             // One line per UserAiModel the log attributes; a ConfigId is unique only within its key source.
-            foreach (var m in byKeyModel.Where(m => m.AspNetUserId == u.Id))
+            foreach (var m in u.KeyModels)
             {
                 string? modelName = m.UserAiModelId is long modelId && keyModelNames.TryGetValue(modelId, out var name) ? name : null;
                 lines.Add(new AiTelemetryUserConfigDto
@@ -1018,6 +1426,177 @@ public class AiTelemetrySummaryService
                 .ThenBy(r => r.UserName, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(r => r.UserId, StringComparer.Ordinal)
                 .Skip(skip).Take(take).ToList()
+        };
+    }
+
+    // --- Groups ----------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Usage per group of the selected key sources: the Users view's figures of each group's current members summed over
+    /// the range, with the group's configuration lines, then "No group" (the users in no group). Every group is listed,
+    /// with zeros when its members have no usage, and a member of two groups counts in both. Ordered by estimated cost,
+    /// highest first, with "No group" last among equals, then by name.
+    /// </summary>
+    /// <param name="keySource">system (default) | user | both.</param>
+    public async Task<AiTelemetryGroupsDto> GetGroupsAsync(DateTime? start, DateTime? end, string? keySource, CancellationToken ct = default)
+    {
+        string keys = NormalizeKeySource(keySource);
+        var aggregates = (await AggregateUsersAsync(start, end, keys, userId: null, search: null, ct))
+            .ToDictionary(a => a.UserId, StringComparer.Ordinal);
+
+        var groups = await _db.Groups.AsNoTracking().Select(g => new { g.Id, g.DisplayName }).ToListAsync(ct);
+        var memberships = await _db.UserGroups.AsNoTracking().Select(ug => new { ug.AspNetUserId, ug.GroupId }).ToListAsync(ct);
+        var membersByGroup = memberships.ToLookup(m => m.GroupId, m => m.AspNetUserId);
+        var grouped = memberships.Select(m => m.AspNetUserId).ToHashSet(StringComparer.Ordinal);
+        var blocked = (await _db.Users.OfType<ApplicationUser>().AsNoTracking()
+            .Where(u => u.OverseerBlockedUtc != null)
+            .Select(u => u.Id)
+            .ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
+
+        // System configuration lines only when system usage is counted; the own-key line only when own keys are.
+        var grants = IncludesSystem(keys)
+            ? (await _db.GroupSystemAiApiConfigurations.AsNoTracking().ToListAsync(ct)).ToLookup(g => g.GroupId)
+            : Array.Empty<GroupSystemAiApiConfiguration>().ToLookup(g => g.GroupId);
+        var configIds = grants.SelectMany(g => g).Select(g => g.SystemAiApiConfigurationId)
+            .Concat(aggregates.Values.SelectMany(a => a.Configs).Select(c => c.ConfigId))
+            .Distinct().ToList();
+        var configs = await _db.SystemAiApiConfigurations.AsNoTracking()
+            .Where(c => configIds.Contains(c.Id))
+            .Select(c => new { c.Id, c.DisplayName, c.ModelId })
+            .ToDictionaryAsync(c => c.Id, ct);
+
+        string ConfigName(long configId, string? loggedName)
+        {
+            configs.TryGetValue(configId, out var config);
+            return !string.IsNullOrEmpty(config?.DisplayName) ? config!.DisplayName
+                : loggedName ?? config?.ModelId ?? configId.ToString(CultureInfo.InvariantCulture);
+        }
+
+        var now = DateTime.UtcNow;
+        AiTelemetryGroupRowDto Row(long? groupId, string groupName, int memberCount, int blockedMembers, List<UserAggregate> members,
+            IEnumerable<GroupSystemAiApiConfiguration> granted)
+        {
+            var roles = members.SelectMany(m => m.Roles).ToList();
+
+            // Members' requests summed per UTC clock hour before the busiest one is taken.
+            var hours = members.SelectMany(m => m.Hours)
+                .GroupBy(h => (h.Day, h.Hour))
+                .Select(g => new UserHourUsage(string.Empty, g.Key.Day, g.Key.Hour, g.Sum(h => h.Count)))
+                .ToList();
+            var peak = hours.OrderByDescending(h => h.Count).ThenBy(h => h.Day).ThenBy(h => h.Hour).FirstOrDefault();
+
+            var row = new AiTelemetryGroupRowDto
+            {
+                GroupId = groupId,
+                GroupName = groupName,
+                MemberCount = memberCount,
+                ActiveMembers = members.Count(m => m.Roles.Count > 0),
+                BlockedMembers = blockedMembers,
+                Requests = roles.Sum(r => r.Requests),
+                SystemRequests = roles.Where(r => r.KeySource == "system").Sum(r => r.Requests),
+                UserKeyRequests = roles.Where(r => r.KeySource == "user").Sum(r => r.Requests),
+                SystemEstimatedCost = roles.Where(r => r.KeySource == "system").Sum(r => r.Cost),
+                UserKeyEstimatedCost = roles.Where(r => r.KeySource == "user").Sum(r => r.Cost),
+                ChatRequests = roles.Where(r => AiUsageRoles.GroupOf(r.RoleContext) == AiUsageRoles.Chat).Sum(r => r.Requests),
+                TitleRequests = roles.Where(r => AiUsageRoles.GroupOf(r.RoleContext) == AiUsageRoles.TitleGeneration).Sum(r => r.Requests),
+                BenchmarkRequests = roles.Where(r => AiUsageRoles.GroupOf(r.RoleContext) == AiUsageRoles.Benchmark).Sum(r => r.Requests),
+                PromptTokens = roles.Sum(r => AiUsageRoles.PromptTokens(r.RoleContext, r.Input, r.CacheRead)),
+                OutputTokens = roles.Sum(r => r.Output),
+                EstimatedCost = roles.Sum(r => r.Cost),
+                PricedRequests = roles.Sum(r => r.Priced),
+                PeakHourRequests = peak?.Count ?? 0,
+                PeakHourStartUtc = peak == null ? null : DateTime.SpecifyKind(peak.Day.AddHours(peak.Hour), DateTimeKind.Utc),
+                RequestsPerActiveHour = hours.Count > 0 ? Math.Round((double)hours.Sum(h => h.Count) / hours.Count, 2) : 0,
+                ActiveDays = hours.Select(h => h.Day).Distinct().Count(),
+                LastRequestUtc = roles.Count > 0 ? DateTime.SpecifyKind(roles.Max(r => r.Last), DateTimeKind.Utc) : null,
+                ChatsCreated = members.Sum(m => m.Chats),
+                UserMessages = members.Sum(m => m.Messages),
+                LimitRefusals = members.Sum(m => m.LimitRefusals),
+                ProviderRefusals = members.Sum(m => m.ProviderRefusals)
+            };
+
+            var used = members.SelectMany(m => m.Configs)
+                .GroupBy(c => c.ConfigId)
+                .Select(g => new UserConfigUsage(g.Key, g.Sum(c => c.Requests), g.Sum(c => c.Cost),
+                    g.Select(c => c.DisplayName).FirstOrDefault(n => !string.IsNullOrEmpty(n))))
+                .ToList();
+            var usedById = used.ToDictionary(c => c.ConfigId);
+
+            // Every assignment of the group, enabled or not, with the counters it pools for its members.
+            var lines = new List<AiTelemetryGroupConfigDto>();
+            foreach (var grant in granted.OrderBy(a => a.OrderIndex).ThenBy(a => a.Id))
+            {
+                usedById.TryGetValue(grant.SystemAiApiConfigurationId, out var usage);
+                lines.Add(new AiTelemetryGroupConfigDto
+                {
+                    KeySource = "system",
+                    ConfigId = grant.SystemAiApiConfigurationId,
+                    ConfigName = ConfigName(grant.SystemAiApiConfigurationId, usage?.DisplayName),
+                    Requests = usage?.Requests ?? 0,
+                    EstimatedCost = usage?.Cost ?? 0m,
+                    AssignmentId = grant.Id,
+                    AssignmentEnabled = grant.IsEnabled,
+                    GrantedByGroup = true,
+                    DailyChatRequests = EffectiveDaily(grant, now, grant.DailyChatRequestsCount),
+                    MaxDailyChatRequests = grant.MaxDailyChatRequests,
+                    MonthlyChatRequests = EffectiveMonthly(grant, now, grant.MonthlyChatRequestsCount),
+                    MaxMonthlyChatRequests = grant.MaxMonthlyChatRequests,
+                    DailyChatTokens = EffectiveDaily(grant, now, grant.DailyChatTokensCount),
+                    MaxDailyChatTokens = grant.MaxDailyChatTokens
+                });
+            }
+
+            var grantedIds = lines.Select(l => l.ConfigId).ToHashSet();
+            foreach (var u in used.Where(c => !grantedIds.Contains(c.ConfigId)))
+            {
+                lines.Add(new AiTelemetryGroupConfigDto
+                {
+                    KeySource = "system",
+                    ConfigId = u.ConfigId,
+                    ConfigName = ConfigName(u.ConfigId, u.DisplayName),
+                    Requests = u.Requests,
+                    EstimatedCost = u.Cost
+                });
+            }
+
+            if (IncludesUser(keys))
+            {
+                var own = members.SelectMany(m => m.KeyModels).ToList();
+                lines.Add(new AiTelemetryGroupConfigDto
+                {
+                    KeySource = "user",
+                    ConfigName = OwnKeysLineName,
+                    Requests = own.Sum(m => m.Requests),
+                    EstimatedCost = own.Sum(m => m.Cost)
+                });
+            }
+
+            row.Configs.AddRange(lines.OrderByDescending(l => l.Requests));
+            return row;
+        }
+
+        var rows = groups
+            .Select(g =>
+            {
+                var memberIds = membersByGroup[g.Id].Distinct(StringComparer.Ordinal).ToList();
+                return Row(g.Id, g.DisplayName, memberIds.Count, memberIds.Count(blocked.Contains),
+                    memberIds.Where(aggregates.ContainsKey).Select(id => aggregates[id]).ToList(), grants[g.Id]);
+            })
+            .ToList();
+
+        rows.Add(Row(null, NoGroupName, await CountUngroupedAccountsAsync(ct), blocked.Count(id => !grouped.Contains(id)),
+            aggregates.Values.Where(a => !grouped.Contains(a.UserId)).ToList(), Array.Empty<GroupSystemAiApiConfiguration>()));
+
+        return new AiTelemetryGroupsDto
+        {
+            KeySource = keys,
+            SecurityEventsAvailable = true,
+            Groups = rows
+                .OrderByDescending(r => r.EstimatedCost)
+                .ThenBy(r => r.GroupId == null)
+                .ThenBy(r => r.GroupName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(r => r.GroupId)
+                .ToList()
         };
     }
 
@@ -1142,27 +1721,27 @@ public class AiTelemetrySummaryService
         };
     }
 
-    // --- User models -----------------------------------------------------------------------------
+    // --- User and group models -------------------------------------------------------------------
 
-    /// <summary>One user's sums of one model in one key source, role context and thinking level.</summary>
+    /// <summary>The audience's sums of one model in one key source, role context and thinking level.</summary>
     private sealed record UserModelUsage(string KeySource, string Provider, string ModelId, int RoleContext, string? ThinkingLevel,
         long Requests, long Input, long Output, long CacheRead, long CacheWrite, decimal Cost, long Priced, long DurationSum,
         long DurationCount, DateTime Last);
 
-    /// <summary>Usage of one user by model, role context and thinking level, in the selected key sources and every role group.</summary>
-    /// <param name="keySource">system (default) | user | both.</param>
-    public async Task<AiTelemetryUserModelsDto> GetUserModelsAsync(DateTime? start, DateTime? end, string? keySource, string userId,
-        CancellationToken ct = default)
+    /// <summary>
+    /// The audience's usage by key source, provider, model, role context and thinking level, in the selected key sources and
+    /// every role group, with the earliest priced row of the included logs in the range (of every user).
+    /// </summary>
+    private async Task<(List<AiTelemetryUserModelRowDto> Rows, DateTime? CostSince)> ModelRowsAsync(DateTime? start, DateTime? end,
+        string keys, Audience audience, CancellationToken ct)
     {
-        string keys = NormalizeKeySource(keySource);
         var usage = new List<UserModelUsage>();
         DateTime? costSince = null;
 
         if (IncludesSystem(keys))
         {
             var q = InRange(_db.SystemAiUsageLogs.AsNoTracking(), start, end);
-            usage.AddRange((await q
-                .Where(l => l.AspNetUserId == userId)
+            usage.AddRange((await ApplyAudience(q, l => l.AspNetUserId, audience)
                 .GroupBy(l => new { l.Provider, l.ModelId, l.RoleContext, l.ThinkingLevel })
                 .Select(g => new
                 {
@@ -1187,8 +1766,7 @@ public class AiTelemetrySummaryService
         if (IncludesUser(keys))
         {
             var q = InRange(_db.UserKeyAiUsageLogs.AsNoTracking(), start, end);
-            usage.AddRange((await q
-                .Where(l => l.AspNetUserId == userId)
+            usage.AddRange((await ApplyAudience(q, l => l.AspNetUserId, audience)
                 .GroupBy(l => new { l.Provider, l.ModelId, l.RoleContext, l.ThinkingLevel })
                 .Select(g => new
                 {
@@ -1241,6 +1819,16 @@ public class AiTelemetrySummaryService
             .ThenBy(r => r.Provider, StringComparer.Ordinal)
             .ToList();
 
+        return (rows, costSince);
+    }
+
+    /// <summary>Usage of one user by model, role context and thinking level, in the selected key sources and every role group.</summary>
+    /// <param name="keySource">system (default) | user | both.</param>
+    public async Task<AiTelemetryUserModelsDto> GetUserModelsAsync(DateTime? start, DateTime? end, string? keySource, string userId,
+        CancellationToken ct = default)
+    {
+        string keys = NormalizeKeySource(keySource);
+        var (rows, costSince) = await ModelRowsAsync(start, end, keys, Audience.OfUser(userId), ct);
         string? userName = await _db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.UserName).FirstOrDefaultAsync(ct);
 
         return new AiTelemetryUserModelsDto
@@ -1253,8 +1841,49 @@ public class AiTelemetrySummaryService
         };
     }
 
+    /// <summary>
+    /// Usage of one group's current members, or of the users in no group, by model, role context and thinking level, in
+    /// the selected key sources and every role group. Null when no group has the id.
+    /// </summary>
+    /// <param name="keySource">system (default) | user | both.</param>
+    /// <param name="groupId">The group; null is "No group".</param>
+    public async Task<AiTelemetryGroupModelsDto?> GetGroupModelsAsync(DateTime? start, DateTime? end, string? keySource, long? groupId,
+        CancellationToken ct = default)
+    {
+        string keys = NormalizeKeySource(keySource);
+        string groupName;
+        int memberCount;
+        if (groupId is long id)
+        {
+            var group = await _db.Groups.AsNoTracking().Where(g => g.Id == id).Select(g => new { g.DisplayName }).FirstOrDefaultAsync(ct);
+            if (group == null) return null;
+            groupName = group.DisplayName;
+            memberCount = await _db.UserGroups.CountAsync(ug => ug.GroupId == id, ct);
+        }
+        else
+        {
+            groupName = NoGroupName;
+            memberCount = await CountUngroupedAccountsAsync(ct);
+        }
+
+        var (rows, costSince) = await ModelRowsAsync(start, end, keys, Audience.OfGroup(groupId), ct);
+        return new AiTelemetryGroupModelsDto
+        {
+            KeySource = keys,
+            GroupId = groupId,
+            GroupName = groupName,
+            MemberCount = memberCount,
+            CostRecordedSinceUtc = Utc(costSince),
+            Rows = rows
+        };
+    }
+
     /// <summary>A daily counter as the next request would see it: 0 when its last reset was before today (UTC).</summary>
     private static int EffectiveDaily(IRateLimitedEntity entity, DateTime now, int count) =>
+        entity.LastDailyReset == null || entity.LastDailyReset.Value.Date < now.Date ? 0 : count;
+
+    /// <summary>A daily token counter as the next request would see it.</summary>
+    private static long EffectiveDaily(IRateLimitedEntity entity, DateTime now, long count) =>
         entity.LastDailyReset == null || entity.LastDailyReset.Value.Date < now.Date ? 0 : count;
 
     /// <summary>A monthly counter as the next request would see it: 0 when its last reset was in an earlier month.</summary>

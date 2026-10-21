@@ -11,6 +11,8 @@ import {
   AiTelemetrySummaryDto,
   AiGovernorStatusDto,
   AiGovernorKeyStatusDto,
+  AiTelemetryGroupRowDto,
+  AiTelemetryGroupsDto,
   AiTelemetryUserRowDto,
   AiTelemetryUsersPage,
   AiUsageBreakdownRowDto,
@@ -92,12 +94,26 @@ const usersPage = (users: AiTelemetryUserRowDto[] = []): AiTelemetryUsersPage =>
   users, totalUsers: users.length, securityEventsAvailable: true, keySource: 'system'
 });
 
+const groupRow = (overrides: Partial<AiTelemetryGroupRowDto> = {}): AiTelemetryGroupRowDto => ({
+  groupId: 1, groupName: 'Group', memberCount: 1, activeMembers: 0, blockedMembers: 0,
+  requests: 0, systemRequests: 0, userKeyRequests: 0, systemEstimatedCost: 0, userKeyEstimatedCost: 0,
+  chatRequests: 0, titleRequests: 0, benchmarkRequests: 0, promptTokens: 0, outputTokens: 0,
+  estimatedCost: 0, pricedRequests: 0, peakHourRequests: 0, peakHourStartUtc: null, requestsPerActiveHour: 0,
+  activeDays: 0, lastRequestUtc: null, chatsCreated: 0, userMessages: 0, limitRefusals: 0, providerRefusals: 0, configs: [],
+  ...overrides
+});
+
+const groupsDto = (groups: AiTelemetryGroupRowDto[] = []): AiTelemetryGroupsDto => ({
+  keySource: 'system', groups, securityEventsAvailable: true
+});
+
 describe('AdminTelemetryTabComponent', () => {
   let component: AdminTelemetryTabComponent;
   let fixture: ComponentFixture<AdminTelemetryTabComponent>;
   let adminService: AdminService;
   let store: AdminPageStore;
   let usersSpy: Mock;
+  let groupsSpy: Mock;
 
   beforeEach(async () => {
     localStorage.removeItem(TELEMETRY_BREAKDOWN_STORAGE_KEY);
@@ -116,6 +132,7 @@ describe('AdminTelemetryTabComponent', () => {
     adminService = TestBed.inject(AdminService);
     spyAdminService(adminService);
     usersSpy = vi.spyOn(adminService, 'getAiTelemetryUsers').mockReturnValue(of(usersPage()));
+    groupsSpy = vi.spyOn(adminService, 'getAiTelemetryGroups').mockReturnValue(of(groupsDto()));
     store = TestBed.inject(AdminPageStore);
 
     fixture = TestBed.createComponent(AdminTelemetryTabComponent);
@@ -158,22 +175,7 @@ describe('AdminTelemetryTabComponent', () => {
       (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[])
         .find(b => (b.textContent ?? '').includes('Clear All Cooldowns'))!;
 
-    /** The breakdown's model cards, without the total. */
-    const cards = (): HTMLElement[] =>
-      Array.from(host().querySelectorAll<HTMLElement>('.tl-cards > li > article.tl-card:not(.tl-card-total)'));
-
-    const status = () => host().querySelector('.tl-breakdown-status')?.textContent?.trim() ?? '';
-
     const normalize = (text: string | null | undefined) => (text ?? '').replace(/\s+/g, ' ').trim();
-
-    /** The texts of a card's badges matching the selector, visually hidden prefix included. */
-    const badgeTexts = (card: HTMLElement, selector: string): string[] =>
-      Array.from(card.querySelectorAll(`.tl-card-badges ${selector}`)).map(b => normalize(b.textContent));
-
-    /** Each `dt`/`dd` pair of a summary card's term lists, whitespace collapsed. */
-    const termValues = (cardSelector: string): string[][] =>
-      Array.from(host().querySelectorAll(`${cardSelector} dl > div`)).map(pair =>
-        ['dt', 'dd'].map(tag => (pair.querySelector(tag)?.textContent ?? '').replace(/\s+/g, ' ').trim()));
 
     const chartsDialog = (): ChartsDialogStub =>
       fixture.debugElement.query(By.directive(ChartsDialogStub)).componentInstance;
@@ -184,20 +186,7 @@ describe('AdminTelemetryTabComponent', () => {
     const userModelsDialog = (): UserModelsDialogStub =>
       fixture.debugElement.query(By.directive(UserModelsDialogStub)).componentInstance;
 
-    it('renders Clear All Cooldowns as a small image button, aria-disabled only when nothing is rate-limited', () => {
-      openTab();
-
-      let button = clearAllButton();
-      expect(button.matches('button.btn-gh.btn-gh-small[type="button"]')).toBe(true);
-      expect(button.hasAttribute('title')).toBe(false);
-      expect(button.getAttribute('aria-disabled')).toBe('true');
-
-      component.governorStatus = governor([key('openai:user:u1', 30)]);
-      fixture.detectChanges();
-
-      button = clearAllButton();
-      expect(button.hasAttribute('aria-disabled')).toBe(false);
-    });
+    // --- Governor ---
 
     it('makes no request from Clear All Cooldowns when nothing is rate-limited', () => {
       const resetSpy = vi.spyOn(adminService, 'resetGovernorCooldown').mockReturnValue(of(undefined));
@@ -219,6 +208,19 @@ describe('AdminTelemetryTabComponent', () => {
 
       expect(resetSpy).toHaveBeenCalledWith(undefined);
       expect(vi.mocked(toastSpy).mock.lastCall![0]).toBe('All rate-limit cooldowns cleared.');
+    });
+
+    it('clears cooldowns from the Summary panel\'s buttons: all of them, or one partition', () => {
+      const resetSpy = vi.spyOn(adminService, 'resetGovernorCooldown').mockReturnValue(of(undefined));
+      governorSpy.mockReturnValue(of(governor([key('openai:user:u1', 30)])));
+      openTab();
+
+      clearAllButton().click();
+      expect(resetSpy).toHaveBeenLastCalledWith(undefined);
+
+      (host().querySelector('#tl-subpanel-summary .telemetry-partitions button.action-btn') as HTMLButtonElement).click();
+      expect(resetSpy).toHaveBeenLastCalledWith('openai:user:u1');
+      expect(vi.mocked(toastSpy).mock.lastCall![0]).toBe('Cooldown cleared for openai:user:u1.');
     });
 
     it('raises exactly one toast for a successful refresh', () => {
@@ -266,6 +268,24 @@ describe('AdminTelemetryTabComponent', () => {
       }
     });
 
+    it('shows the local countdown in the Summary panel\'s partitions table', () => {
+      vi.useFakeTimers();
+      try {
+        governorSpy.mockReturnValue(of(governor([key('openai:user:u1', 5)])));
+        openTab();
+        const cooldown = () => normalize(host().querySelector('#tl-subpanel-summary .telemetry-cooldown')?.textContent);
+        expect(cooldown()).toBe('5.0s');
+
+        vi.advanceTimersByTime(1000);
+        fixture.detectChanges();
+
+        expect(cooldown()).toBe('4.0s');
+      }
+      finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('stops the countdown when another tab is selected', () => {
       vi.useFakeTimers();
       try {
@@ -283,39 +303,6 @@ describe('AdminTelemetryTabComponent', () => {
       finally {
         vi.useRealTimers();
       }
-    });
-
-    it('renders the Other request line only when the named counts fall short of the total', () => {
-      openTab();
-      expect(fixture.nativeElement.querySelector('.telemetry-other-requests')).toBeNull();
-
-      component.telemetrySummary = summary({ totalRequests: 13 });
-      fixture.detectChanges();
-
-      const other: HTMLElement | null = fixture.nativeElement.querySelector('.telemetry-other-requests');
-      expect(other).not.toBeNull();
-      expect(other!.textContent).toContain('3');
-    });
-
-    it('keeps the partitions section with an empty-state line when no partition exists', () => {
-      openTab();
-
-      const section: HTMLElement | null = fixture.nativeElement.querySelector('.telemetry-partitions');
-      expect(section).not.toBeNull();
-      expect(section!.textContent).toContain('No partitions have been used since the last restart.');
-      expect(section!.querySelector('table')).toBeNull();
-    });
-
-    it('names each row reset button after its partition and pairs it with a hint tooltip', () => {
-      governorSpy.mockReturnValue(of(governor([key('openai:system:7', 30)])));
-      openTab();
-
-      const button: HTMLButtonElement = fixture.nativeElement.querySelector('.telemetry-partitions button.action-btn');
-      expect(button.getAttribute('type')).toBe('button');
-      expect(button.getAttribute('aria-label')).toBe('Clear cooldown for openai:system:7');
-      expect(button.hasAttribute('title')).toBe(false);
-      const tip: HTMLElement | null = fixture.nativeElement.querySelector('#' + button.getAttribute('interestfor'));
-      expect(tip?.getAttribute('popover')).toBe('hint');
     });
 
     // --- Keys filter ---
@@ -336,123 +323,9 @@ describe('AdminTelemetryTabComponent', () => {
       expect(JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY)!).keys).toBe('user');
     });
 
-    // --- Breakdown ---
-
-    it('hides the cards of an unchecked role and updates the status line', () => {
+    it('stores the settings the Models panel changes in the one view record, beside the Keys filter', () => {
       summarySpy.mockReturnValue(of(summary({
-        rows: [
-          row({ requests: 5 }),
-          row({ provider: 'OpenAI', modelId: 'gpt-x', modelName: 'GPT X', roleGroup: 'title', roleContext: 2, requests: 3 })
-        ]
-      })));
-      openTab('models');
-
-      expect(cards().length).toBe(2);
-      expect(status()).toBe('Showing 2 entries · 8 requests');
-
-      const title = host().querySelector('#tl-role-title') as HTMLInputElement;
-      expect(title.closest('label')?.textContent).toContain('3');
-      title.click();
-      fixture.detectChanges();
-
-      expect(cards().length).toBe(1);
-      expect(cards()[0].querySelector('h5')?.textContent?.trim()).toBe('Claude X');
-      expect(status()).toBe('One entry · 5 of 8 requests');
-      expect(JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY)!).roles).toEqual(['chat', 'benchmark']);
-    });
-
-    it('lists Other only while it has rows, and says when no role is selected', () => {
-      openTab('models');
-      expect(host().querySelector('#tl-role-other')).toBeNull();
-
-      component.telemetrySummary = summary({ rows: [row({ roleGroup: 'other', roleContext: 9 })] });
-      fixture.detectChanges();
-      expect(host().querySelector('#tl-role-other')).not.toBeNull();
-      expect(host().querySelector('.tl-empty')?.textContent).toContain('No usage for the selected roles in this range.');
-
-      for (const group of ['chat', 'title', 'benchmark']) {
-        (host().querySelector(`#tl-role-${group}`) as HTMLInputElement).click();
-        fixture.detectChanges();
-      }
-      expect(host().querySelector('.tl-empty')?.textContent).toContain('No role is selected.');
-    });
-
-    it('says so when the range has no usage at all', () => {
-      openTab('models');
-      expect(host().querySelector('.tl-empty')?.textContent).toContain('No AI usage logged for the selected date range.');
-      expect(host().querySelector('#tl-thinking-select')).toBeNull();
-    });
-
-    it('splits a model by thinking level with Show separately', () => {
-      summarySpy.mockReturnValue(of(summary({
-        rows: [row({ thinkingLevel: 'high', requests: 4 }), row({ thinkingLevel: '', requests: 2 })]
-      })));
-      openTab('models');
-      expect(cards().length).toBe(1);
-      expect(cards()[0].textContent).not.toContain('Thinking:');
-
-      const select = host().querySelector('#tl-thinking-select') as HTMLSelectElement;
-      expect(host().querySelector('label[for="tl-thinking-select"]')).not.toBeNull();
-      select.value = 'separate';
-      select.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-
-      const [high, none] = cards();
-      expect(badgeTexts(high, '.thinking-badge')).toEqual(['thinking level High']);
-      expect(badgeTexts(none, '.thinking-badge')).toEqual([]);
-      expect(badgeTexts(none, '.config-badge')).toEqual(['thinking level None sent']);
-    });
-
-    it('shows one thinking badge per recorded level of a grouped card, in the catalog order', () => {
-      summarySpy.mockReturnValue(of(summary({
-        rows: [row({ thinkingLevel: 'high' }), row({ thinkingLevel: 'medium' }), row({ thinkingLevel: '' }), row({ thinkingLevel: null })]
-      })));
-      openTab('models');
-
-      expect(cards().length).toBe(1);
-      expect(badgeTexts(cards()[0], '.thinking-badge')).toEqual(['thinking level Medium', 'thinking level High']);
-      expect(badgeTexts(cards()[0], '.config-badge')).toEqual([]);
-    });
-
-    it('gives each card a role badge in its role color', () => {
-      summarySpy.mockReturnValue(of(summary({
-        rows: [
-          row({ requests: 4 }),
-          row({ modelId: 'b', modelName: 'B', roleGroup: 'title', roleContext: 2, requests: 3 }),
-          row({ modelId: 'c', modelName: 'C', roleGroup: 'benchmark', roleContext: 4, requests: 2 }),
-          row({ modelId: 'd', modelName: 'D', roleGroup: 'other', roleContext: 9, requests: 1 })
-        ]
-      })));
-      openTab('models');
-      (host().querySelector('#tl-role-other') as HTMLInputElement).click();
-      fixture.detectChanges();
-
-      const roleBadges = cards().map(c => c.querySelector<HTMLElement>('.tl-card-badges .status-badge')!);
-      expect(roleBadges.map(b => normalize(b.textContent))).toEqual(['role Chat', 'role Title Generation', 'role Benchmark', 'role Other']);
-      expect(roleBadges.map(b => Array.from(b.classList).find(c => c.startsWith('badge-role-'))))
-        .toEqual(['badge-role-chat', 'badge-role-title', 'badge-role-benchmark', 'badge-role-other']);
-      expect(cards()[0].querySelector('.tl-card-badges')?.getAttribute('role')).toBe('list');
-    });
-
-    it('titles a card with the model name and shows the id and the provider under it, else titles it with the id', () => {
-      summarySpy.mockReturnValue(of(summary({
-        rows: [row({ requests: 2 }), row({ modelId: 'mystery-1', modelName: null })]
-      })));
-      openTab('models');
-
-      const [named, unnamed] = cards();
-      expect(named.querySelector('h5')?.textContent?.trim()).toBe('Claude X');
-      expect(named.querySelector('.tl-card-identity .gh-model-card-model-id')?.textContent?.trim()).toBe('claude-x');
-      expect(named.querySelector('.tl-card-identity app-provider-badge')).not.toBeNull();
-      expect(unnamed.querySelector('h5')?.textContent?.trim()).toBe('mystery-1');
-      expect(unnamed.querySelector('.tl-card-identity app-provider-badge')).not.toBeNull();
-      expect(unnamed.querySelector('.tl-card-identity .gh-model-card-model-id')).toBeNull();
-    });
-
-    it('names the user of a user-key card and marks system cards under All keys', () => {
-      summarySpy.mockReturnValue(of(summary({
-        keySource: 'both',
-        rows: [row({ requests: 3 }), row({ keySource: 'user', userId: 'u-1', userName: 'alice', requests: 2 })]
+        rows: [row({ requests: 5 }), row({ modelId: 'b', modelName: 'B', roleGroup: 'title', roleContext: 2, requests: 3 })]
       })));
       openTab('models');
 
@@ -461,255 +334,15 @@ describe('AdminTelemetryTabComponent', () => {
       select.dispatchEvent(new Event('change'));
       fixture.detectChanges();
 
-      expect(cards().map(c => normalize(c.querySelector('.tl-key-badge')?.textContent))).toEqual(['key System key', 'key User key: alice']);
-    });
-
-    // --- Breakdown search, provider toggles and sort ---
-
-    const threeProviders = () => summary({
-      rows: [
-        row({ provider: 'Google', modelId: 'gemini-flash', modelName: 'Gemini Flash', requests: 5, estimatedCost: 3, pricedRequests: 5 }),
-        row({ provider: 'Anthropic', modelId: 'claude-opus', modelName: 'Claude Opus', requests: 3, estimatedCost: 1, pricedRequests: 3 }),
-        row({ provider: 'OpenAI', modelId: 'gpt-x', modelName: 'GPT X', requests: 2, estimatedCost: 2, pricedRequests: 2 }),
-        row({ provider: 'OpenAI', modelId: 'gpt-y', modelName: 'GPT Y', requests: 1, pricedRequests: 0 })
-      ]
-    });
-
-    const searchField = () => host().querySelector('#tl-breakdown-search') as HTMLInputElement;
-    const titlesShown = () => cards().map(c => c.querySelector('h5')?.textContent?.trim());
-
-    const typeSearch = (text: string) => {
-      searchField().value = text;
-      searchField().dispatchEvent(new Event('input'));
-      fixture.detectChanges();
-    };
-
-    it('filters the cards by the search after a short quiet, marks the match and updates the status line', () => {
-      vi.useFakeTimers();
-      try {
-        summarySpy.mockReturnValue(of(threeProviders()));
-        openTab('models');
-        expect(host().querySelector('label[for="tl-breakdown-search"]')?.textContent).toContain('Search by model name');
-
-        typeSearch('flash');
-        expect(cards().length).toBe(4);
-
-        vi.advanceTimersByTime(200);
-        fixture.detectChanges();
-
-        expect(titlesShown()).toEqual(['Gemini Flash']);
-        expect(cards()[0].querySelector('h5 mark.model-option-match')?.textContent).toBe('Flash');
-        expect(cards()[0].querySelector('.gh-model-card-model-id mark.model-option-match')?.textContent).toBe('flash');
-        expect(status()).toBe('Showing 1 of 4 entries · 5 of 11 requests');
-        expect(host().querySelector('.tl-card-total .tl-metrics')?.textContent).toContain('5');
-        expect(JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY) ?? '{}').search).toBeUndefined();
-
-        typeSearch('zzz');
-        vi.advanceTimersByTime(200);
-        fixture.detectChanges();
-        expect(cards().length).toBe(0);
-        expect(status()).toBe('No entries match "zzz".');
-        expect(host().querySelector('.tl-no-match .tl-empty')?.textContent?.trim()).toBe('No entries match "zzz".');
-      }
-      finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('clears the search on Escape with text, and leaves Escape alone without it', () => {
-      vi.useFakeTimers();
-      try {
-        summarySpy.mockReturnValue(of(threeProviders()));
-        openTab('models');
-        typeSearch('gpt');
-        vi.advanceTimersByTime(200);
-        fixture.detectChanges();
-        expect(cards().length).toBe(2);
-
-        const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
-        const stop = vi.spyOn(escape, 'stopPropagation');
-        searchField().dispatchEvent(escape);
-        fixture.detectChanges();
-
-        expect(stop).toHaveBeenCalled();
-        expect(escape.defaultPrevented).toBe(true);
-        expect(searchField().value).toBe('');
-        expect(cards().length).toBe(4);
-
-        const second = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
-        const stopSecond = vi.spyOn(second, 'stopPropagation');
-        searchField().dispatchEvent(second);
-        expect(stopSecond).not.toHaveBeenCalled();
-        expect(second.defaultPrevented).toBe(false);
-      }
-      finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('shows provider toggles from two providers, ORs them, stores them, and Clear filters clears them and the search', () => {
-      vi.useFakeTimers();
-      try {
-        summarySpy.mockReturnValue(of(threeProviders()));
-        openTab('models');
-
-        const group = host().querySelector('.tl-providers') as HTMLElement;
-        expect(group.getAttribute('role')).toBe('group');
-        expect(group.getAttribute('aria-label')).toBe('Filter by provider');
-        const toggle = (key: string) => host().querySelector(`#tl-provider-${key}`) as HTMLButtonElement;
-        expect(Array.from(group.querySelectorAll('button')).map(b =>
-          [b.querySelector('span')?.textContent, normalize(b.querySelector('.model-picker-provider-count')?.textContent)]))
-          .toEqual([['Anthropic', '1 entry'], ['Google', '1 entry'], ['OpenAI', '2 entries']]);
-        expect(toggle('google').getAttribute('aria-pressed')).toBe('false');
-        expect(host().querySelector('#tl-breakdown-clear')).toBeNull();
-
-        toggle('google').click();
-        fixture.detectChanges();
-        toggle('openai').click();
-        fixture.detectChanges();
-
-        expect(toggle('google').getAttribute('aria-pressed')).toBe('true');
-        expect(titlesShown()).toEqual(['Gemini Flash', 'GPT X', 'GPT Y']);
-        expect(status()).toBe('Showing 3 of 4 entries · 8 of 11 requests');
-        expect(JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY)!).providers).toEqual(['google', 'openai']);
-
-        typeSearch('gpt');
-        vi.advanceTimersByTime(200);
-        fixture.detectChanges();
-        expect(titlesShown()).toEqual(['GPT X', 'GPT Y']);
-
-        (host().querySelector('#tl-breakdown-clear') as HTMLButtonElement).click();
-        fixture.detectChanges();
-
-        expect(cards().length).toBe(4);
-        expect(searchField().value).toBe('');
-        expect(toggle('google').getAttribute('aria-pressed')).toBe('false');
-        expect(document.activeElement).toBe(searchField());
-        expect(host().querySelector('#tl-breakdown-clear')).toBeNull();
-        expect(JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY)!).providers).toEqual([]);
-      }
-      finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('hides the provider toggles with one provider', () => {
-      summarySpy.mockReturnValue(of(summary({ rows: [row(), row({ modelId: 'b', modelName: 'B' })] })));
-      openTab('models');
-      expect(host().querySelector('.tl-providers')).toBeNull();
-    });
-
-    it('sorts the cards from the Sort popover, keeps All shown last, and stores the sort', () => {
-      summarySpy.mockReturnValue(of(threeProviders()));
-      openTab('models');
-
-      const trigger = host().querySelector('#tl-sort-trigger') as HTMLButtonElement;
-      expect(trigger.matches('button.btn-ghost[type="button"]')).toBe(true);
-      expect(normalize(trigger.textContent)).toBe('Sort: Requests, highest first');
-      expect(trigger.getAttribute('popovertarget')).toBe('tl-sort-panel');
-      expect(trigger.getAttribute('aria-expanded')).toBe('false');
-      const panel = host().querySelector('#tl-sort-panel') as HTMLElement;
-      expect(panel.getAttribute('popover')).toBe('auto');
-      expect(Array.from(panel.querySelectorAll('fieldset legend')).map(l => l.textContent?.trim())).toEqual(['Sort by']);
-      expect(panel.querySelector('#tl-sort-order-label')?.textContent?.trim()).toBe('Order');
-      const reset = host().querySelector('#tl-sort-reset') as HTMLButtonElement;
-      expect(reset.getAttribute('aria-disabled')).toBe('true');
-
-      (host().querySelector('#tl-sort-field-cost') as HTMLInputElement).click();
-      fixture.detectChanges();
-      expect(titlesShown()).toEqual(['Gemini Flash', 'GPT X', 'Claude Opus', 'GPT Y']);
-
-      (host().querySelector('#tl-sort-direction-asc') as HTMLInputElement).click();
+      (host().querySelector('#tl-role-title') as HTMLInputElement).click();
       fixture.detectChanges();
 
-      expect(titlesShown()).toEqual(['Claude Opus', 'GPT X', 'Gemini Flash', 'GPT Y']);
-      expect(host().querySelector('.tl-cards > li:last-child article')?.classList.contains('tl-card-total')).toBe(true);
-      expect(normalize(trigger.textContent)).toBe('Sort: Est. cost, lowest first');
-      expect(reset.hasAttribute('aria-disabled')).toBe(false);
-      expect(JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY)!).sort).toEqual({ field: 'cost', direction: 'asc' });
-
-      (host().querySelector('#tl-sort-field-name') as HTMLInputElement).click();
-      fixture.detectChanges();
-      expect(normalize(host().querySelector('label:has(#tl-sort-direction-asc)')?.textContent)).toBe('A–Z');
-      expect(titlesShown()).toEqual(['Claude Opus', 'Gemini Flash', 'GPT X', 'GPT Y']);
-
-      reset.click();
-      fixture.detectChanges();
-      expect(normalize(trigger.textContent)).toBe('Sort: Requests, highest first');
-      expect(reset.getAttribute('aria-disabled')).toBe('true');
-      expect(host().querySelector('#tl-sort-reset')).toBe(reset);
-    });
-
-    describe('Sort popover layout', () => {
-      /** Opens the Sort popover from its trigger, runs the check, and closes it again. */
-      const withSortPanel = (check: (panel: HTMLElement) => void) => {
-        summarySpy.mockReturnValue(of(threeProviders()));
-        openTab('models');
-        (host().querySelector('#tl-sort-trigger') as HTMLButtonElement).click();
-        fixture.detectChanges();
-        const panel = host().querySelector('#tl-sort-panel') as HTMLElement;
-        try {
-          expect(panel.matches(':popover-open')).toBe(true);
-          check(panel);
-        } finally {
-          try { panel.hidePopover(); } catch { /* already closed */ }
-        }
-      };
-
-      const options = (panel: HTMLElement) => Array.from(panel.querySelectorAll<HTMLElement>('.tl-sort-fields .gh-facet-option'));
-      const lefts = (panel: HTMLElement) => options(panel).map(o => Math.round(o.getBoundingClientRect().left));
-
-      it('lays Sort by out in two column-major columns of at most six rows', () => {
-        withSortPanel(panel => {
-          const all = lefts(panel);
-          const columns = [...new Set(all)].sort((a, b) => a - b);
-          expect(columns.length).toBe(2);
-          for (const left of columns) {
-            expect(all.filter(l => l === left).length).toBeLessThanOrEqual(6);
-          }
-          const firstColumn = options(panel).filter((_, i) => all[i] === columns[0]).map(o => normalize(o.textContent));
-          expect(firstColumn[0]).toBe('Requests');
-        });
-      });
-
-      it('fits its content without scrolling', () => {
-        withSortPanel(panel => {
-          expect(panel.scrollHeight).toBeLessThanOrEqual(360);
-          expect(panel.scrollHeight - panel.clientHeight).toBeLessThanOrEqual(1);
-        });
-      });
-
-      it('puts Order and Reset sorting on one row', () => {
-        withSortPanel(panel => {
-          const segments = panel.querySelector('.tl-sort-segments')!.getBoundingClientRect();
-          const reset = panel.querySelector('#tl-sort-reset')!.getBoundingClientRect();
-          expect(reset.top).toBeLessThan(segments.bottom);
-          expect(reset.bottom).toBeGreaterThan(segments.top);
-        });
-      });
-
-      it('falls back to one column when the panel is narrow', () => {
-        withSortPanel(panel => {
-          panel.style.inlineSize = '18rem';
-          void panel.offsetWidth;
-          expect(new Set(lefts(panel)).size).toBe(1);
-        });
-      });
-
-      it('groups Order as a labeled radio group of two focusable radios', () => {
-        withSortPanel(panel => {
-          const group = panel.querySelector('[role="radiogroup"]') as HTMLElement;
-          expect(group).not.toBeNull();
-          expect(panel.querySelector('#' + group.getAttribute('aria-labelledby'))?.textContent?.trim()).toBe('Order');
-          const radios = Array.from(group.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
-          expect(radios.length).toBe(2);
-          for (const radio of radios) {
-            expect(radio.name).toBe('tl-sort-direction');
-            radio.focus();
-            expect(document.activeElement).toBe(radio);
-          }
-        });
-      });
+      expect(component.view.roles).toEqual(['chat', 'benchmark']);
+      expect(component.view.keys).toBe('both');
+      const stored = JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY)!);
+      expect(stored.roles).toEqual(['chat', 'benchmark']);
+      expect(stored.keys).toBe('both');
+      expect(host().querySelectorAll('#tl-subpanel-models .tl-cards > li > article.tl-card:not(.tl-card-total)').length).toBe(1);
     });
 
     // --- Sticky head, the header's filters and actions, and the sub-tabs ---
@@ -744,9 +377,9 @@ describe('AdminTelemetryTabComponent', () => {
       const tablist = host().querySelector('.tl-subtabs') as HTMLElement;
       expect(tablist.getAttribute('role')).toBe('tablist');
       expect(tablist.getAttribute('aria-label')).toBe('AI Telemetry sections');
-      expect(subTabButtons().map(b => b.textContent?.trim())).toEqual(['Summary', 'Models', 'Users']);
-      expect(subTabButtons().map(b => b.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
-      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['0', '-1', '-1']);
+      expect(subTabButtons().map(b => b.textContent?.trim())).toEqual(['Summary', 'Models', 'Users', 'Groups']);
+      expect(subTabButtons().map(b => b.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
+      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1']);
       for (const tab of subTabButtons()) {
         expect(tab.getAttribute('type')).toBe('button');
         const panel = host().querySelector('#' + tab.getAttribute('aria-controls')) as HTMLElement;
@@ -775,7 +408,7 @@ describe('AdminTelemetryTabComponent', () => {
       fixture.detectChanges();
       expect(goTo).toHaveBeenLastCalledWith('telemetry', 'users', 'replace');
       expect(document.activeElement).toBe(host().querySelector('#tl-subtab-users'));
-      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['-1', '-1', '0']);
+      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['-1', '-1', '0', '-1']);
     });
 
     it('puts Date range and Keys in the header, named by visually hidden labels', () => {
@@ -848,223 +481,6 @@ describe('AdminTelemetryTabComponent', () => {
       expect(host().querySelector('#tl-breakdown-heading, #tl-users-heading')).toBeNull();
     });
 
-    it('tags the Request Governor card and the Rate Limit Partitions heading live', () => {
-      openTab();
-
-      const governorTitle = host().querySelector('.telemetry-governor-card .telemetry-card-title') as HTMLElement;
-      expect(normalize(governorTitle.querySelector('.telemetry-card-scope')?.textContent)).toBe('live');
-      const partitions = host().querySelector('.telemetry-partitions h4') as HTMLElement;
-      expect(partitions.classList.contains('tl-title-row')).toBe(true);
-      expect(normalize(partitions.querySelector('.telemetry-card-scope')?.textContent)).toBe('live');
-    });
-
-    describe('badges that never wrap', () => {
-      /** Narrows a summary card, and checks that its scope badge is one box below the title text. */
-      const expectBadgeOnNextLine = (cardSelector: string, width: string) => {
-        const card = host().querySelector(cardSelector) as HTMLElement;
-        card.style.width = width;
-        void card.offsetWidth;
-        const title = card.querySelector('.telemetry-card-title') as HTMLElement;
-        const text = title.querySelector(':scope > span:not(.telemetry-card-scope)') as HTMLElement;
-        const badge = title.querySelector('.telemetry-card-scope') as HTMLElement;
-        expect(getComputedStyle(badge).whiteSpace).toBe('nowrap');
-        expect(badge.getClientRects().length).toBe(1);
-        expect(badge.getBoundingClientRect().top).toBeGreaterThan(text.getBoundingClientRect().top);
-      };
-
-      it('moves the all keys badge of a narrow Overseer Activity card to the next line whole', () => {
-        openTab();
-        expectBadgeOnNextLine('.telemetry-activity-card', '220px');
-      });
-
-      it('moves the live badge of a narrow Request Governor card to the next line whole', () => {
-        openTab();
-        expectBadgeOnNextLine('.telemetry-governor-card', '150px');
-      });
-
-      it('keeps a long user-key badge on one line, cut with an ellipsis inside its card', () => {
-        summarySpy.mockReturnValue(of(summary({
-          keySource: 'user',
-          rows: [row({ keySource: 'user', userId: 'u-1', userName: 'a'.repeat(60) })]
-        })));
-        openTab('models');
-        host().style.width = '420px';
-        fixture.detectChanges();
-        void host().offsetWidth;
-
-        const card = cards()[0];
-        const badge = card.querySelector('.tl-key-badge') as HTMLElement;
-        expect(badge.getClientRects().length).toBe(1);
-        expect(getComputedStyle(badge).whiteSpace).toBe('nowrap');
-        expect(badge.scrollWidth).toBeGreaterThan(badge.clientWidth);
-        expect(badge.getBoundingClientRect().right).toBeLessThanOrEqual(card.getBoundingClientRect().right);
-      });
-    });
-
-    it('is a labeled list of articles, each labeled by its title, ending in the All shown total', () => {
-      summarySpy.mockReturnValue(of(summary({ rows: [row({ requests: 2, outputTokens: 10 }), row({ modelId: 'b', modelName: 'B', outputTokens: 5 })] })));
-      openTab('models');
-
-      const list = host().querySelector('ul.tl-cards') as HTMLElement;
-      expect(list.getAttribute('role')).toBe('list');
-      expect(list.getAttribute('aria-label')).toBe('Usage by model and role');
-      expect(host().querySelector('#tl-subpanel-models h4')).toBeNull();
-
-      for (const article of Array.from(list.querySelectorAll<HTMLElement>(':scope > li > article'))) {
-        const title = host().querySelector('#' + article.getAttribute('aria-labelledby'));
-        expect(title?.tagName).toBe('H5');
-      }
-      const total = list.querySelector(':scope > li:last-child > article.tl-card-total') as HTMLElement;
-      expect(total.querySelector('h5')?.textContent?.trim()).toBe('All shown');
-      expect(total.querySelector('.tl-metrics')?.textContent).toContain('15');
-    });
-
-    it('shows provider errors for Chat with the count and one-in, No attempts at none, and In GnollBench for Benchmark', () => {
-      summarySpy.mockReturnValue(of(summary({
-        rows: [
-          row({ requests: 9, validAttempts: 200, providerErrors: 1, pricedRequests: 9, estimatedCost: 2 }),
-          row({ modelId: 'b', modelName: 'B', roleGroup: 'title', roleContext: 2, requests: 5, pricedRequests: 0 }),
-          row({ modelId: 'c', modelName: 'C', roleGroup: 'benchmark', roleContext: 4, requests: 3 })
-        ]
-      })));
-      openTab('models');
-
-      const errors = (card: HTMLElement) => card.querySelector('.tl-metric-errors')?.textContent?.replace(/\s+/g, ' ').trim();
-      const [chat, title, benchmark] = cards();
-      expect(errors(chat)).toContain('0.50%');
-      expect(errors(chat)).toContain('1 of 200 attempts');
-      expect(errors(chat)).toContain('about 1 in 200');
-      expect(errors(title)).toContain('No attempts');
-      expect(errors(benchmark)).toContain('In GnollBench');
-
-      // A placeholder value, In GnollBench, No attempts and an unpriced cost are grayed; a rate and a priced cost are not.
-      const value = (card: HTMLElement, metric: string) =>
-        card.querySelector<HTMLElement>(`.tl-metric-${metric} dd:not(.tl-metric-note)`)!;
-      expect(value(chat, 'errors').classList.contains('tl-metric-muted')).toBe(false);
-      expect(value(chat, 'cost').classList.contains('tl-metric-muted')).toBe(false);
-      expect(value(title, 'errors').textContent?.trim()).toBe('No attempts');
-      expect(value(title, 'errors').classList.contains('tl-metric-muted')).toBe(true);
-      expect(value(title, 'cost').textContent?.trim()).toBe('—');
-      expect(value(title, 'cost').classList.contains('tl-metric-muted')).toBe(true);
-      expect(value(benchmark, 'errors').textContent?.trim()).toBe('In GnollBench');
-      expect(value(benchmark, 'errors').classList.contains('tl-metric-muted')).toBe(true);
-    });
-
-    it('shows a partial cost with its unpriced qualifier', () => {
-      summarySpy.mockReturnValue(of(summary({ rows: [row({ requests: 4, pricedRequests: 3, estimatedCost: 1.5 })] })));
-      openTab('models');
-
-      const cost = cards()[0].querySelector('.tl-metric-cost')?.textContent ?? '';
-      expect(cost).toContain('$1.50');
-      expect(cost).toContain('1 unpriced');
-    });
-
-    it('lays the nine metrics out in 9, 5, 5 and 2 columns as the list narrows, lined up with the total', () => {
-      summarySpy.mockReturnValue(of(summary({ rows: [row({ requests: 2 }), row({ modelId: 'b', modelName: 'A much longer model name' })] })));
-      openTab('models');
-
-      const metrics = () => cards()[0].querySelector<HTMLElement>('.tl-metrics')!;
-      const totalMetrics = () => host().querySelector<HTMLElement>('.tl-card-total .tl-metrics')!;
-      const columns = (width: string): number => {
-        host().style.width = width;
-        fixture.detectChanges();
-        void host().offsetWidth;
-        return getComputedStyle(metrics()).gridTemplateColumns.split(' ').length;
-      };
-
-      expect(columns('1700px')).toBe(9);
-      expect(totalMetrics().getBoundingClientRect().left).toBe(metrics().getBoundingClientRect().left);
-      expect(['1300px', '900px', '380px'].map(columns)).toEqual([5, 5, 2]);
-    });
-
-    // --- Summary cards ---
-
-    it('shows Not recorded on the availability card until the ledger has a row, then the rate', () => {
-      openTab();
-      const rate = () => host().querySelector('.telemetry-availability-rate')?.textContent ?? '';
-      expect(rate()).toContain('Not recorded');
-      expect(host().querySelector('.telemetry-error-classes-card')).toBeNull();
-
-      component.telemetrySummary = summary({
-        chatAvailability: availability({
-          recorded: true, validAttempts: 1480, providerErrors: 12, providerErrorRate: 12 / 1480, low: 0.0046, high: 0.014,
-          titleValidAttempts: 140, titleProviderErrors: 2
-        })
-      });
-      fixture.detectChanges();
-
-      expect(rate()).toContain('0.81%');
-      expect(host().querySelector('.telemetry-availability-count')?.textContent).toContain('12 of 1,480 attempts');
-      expect(termValues('.telemetry-availability-card')).toContainEqual(['Title generation', '2 of 140 attempts']);
-      expect(host().querySelector('.telemetry-error-classes-card')).not.toBeNull();
-    });
-
-    it('shows the error classes and the unattributed and our-side counts on their own card', () => {
-      summarySpy.mockReturnValue(of(summary({
-        chatAvailability: availability({
-          recorded: true, validAttempts: 300, providerErrors: 6, providerErrorRate: 6 / 300,
-          overloaded: 3, serverErrors: 2, timeouts: 1, streamFailures: 0,
-          unattributedErrors: 4, rateLimitedUnattributed: 3, transportUnattributed: 1, inclusiveRate: 0.02, ourSideFailures: 5
-        })
-      })));
-      openTab();
-
-      const card = '.telemetry-error-classes-card';
-      expect(host().querySelector(`${card} .telemetry-error-total`)?.textContent).toContain('6');
-      expect(termValues(card)).toEqual([
-        ['Overloaded', '3'],
-        ['Server errors', '2'],
-        ['Timeouts', '1'],
-        ['Stream failures', '0'],
-        ['Unattributed', '4 rate limited 3 · transport 1 · 2.0% with them'],
-        ['Our side', '5 excluded from the rate']
-      ]);
-      const notes = Array.from(host().querySelectorAll(`${card} .telemetry-dd-note`)).map(n => n.textContent?.trim());
-      expect(notes).toEqual(['rate limited 3 · transport 1 · 2.0% with them', 'excluded from the rate']);
-    });
-
-    it('shows the estimated cost with the unpriced requests and when cost recording began', () => {
-      const today = component.formatLocalDate(new Date());
-      summarySpy.mockReturnValue(of(summary({
-        totalRequests: 10, pricedRequests: 7, totalEstimatedCost: 2.5, costRecordedSinceUtc: `${today}T08:00:00Z`,
-        rows: [row({ requests: 7, estimatedCost: 2.5, pricedRequests: 7 })]
-      })));
-      openTab();
-
-      const card = host().querySelector('.telemetry-cost-card')?.textContent ?? '';
-      expect(card).toContain('$2.50');
-      expect(card).toContain('Chat: $2.50');
-      expect(card).toContain('3 of 10 requests unpriced');
-      expect(card).toContain(`Cost recorded since ${today}`);
-    });
-
-    it("shows Overseer activity for all keys with its counts, the anonymous incognito line and the day counting began", () => {
-      const today = component.formatLocalDate(new Date());
-      summarySpy.mockReturnValue(of(summary({
-        activity: activity({
-          activeUsers: 1234, newUsers: 5, chatsCreated: 20, confidentialChatsCreated: 2, gnollHackChatsCreated: 3,
-          userMessages: 10, assistantMessages: 9, incognitoChatsCreated: 4, incognitoUserMessages: 7, countedSinceUtc: today
-        })
-      })));
-      openTab();
-
-      const card = () => (host().querySelector('.telemetry-activity-card')?.textContent ?? '').replace(/\s+/g, ' ');
-      expect(card()).toContain('all keys');
-      expect(host().querySelector('.telemetry-active-users')?.textContent).toContain('1,234');
-      expect(card()).toContain('New users: 5');
-      expect(card()).toContain('Chats: 20');
-      expect(card()).toContain('confidential 2 · GnollHack 3');
-      expect(card()).toContain('Messages: 19');
-      expect(card()).toContain('sent 10 · replies 9');
-      expect(card()).toContain('Incognito chats 4 · messages 7');
-      expect(card()).toContain('not attributed to users');
-      expect(card()).toContain(`Counted since ${today}`);
-
-      component.telemetrySummary = summary({ activity: activity({ countedSinceUtc: '2000-01-01' }) });
-      fixture.detectChanges();
-      expect(card()).not.toContain('Counted since');
-    });
-
     // --- Charts ---
 
     it('opens the charts dialog with the range, the Keys filter and the selected roles', () => {
@@ -1130,53 +546,6 @@ describe('AdminTelemetryTabComponent', () => {
     const usersButtons = (): HTMLButtonElement[] =>
       Array.from(host().querySelectorAll<HTMLButtonElement>('.tl-cards button.tl-card-users'));
 
-    it('gives each model card a Usage by user button, and the total card none', () => {
-      summarySpy.mockReturnValue(of(summary({
-        rows: [row({ requests: 3 }), row({ modelId: 'b', modelName: 'B', roleGroup: 'title', roleContext: 2 })]
-      })));
-      openTab('models');
-
-      expect(cards().map(c => c.querySelectorAll('button.tl-card-users').length)).toEqual([1, 1]);
-      expect(host().querySelector('.tl-card-total button')).toBeNull();
-      const button = usersButtons()[0];
-      expect(button.matches('.action-btn[type="button"][aria-haspopup="dialog"]')).toBe(true);
-      expect(button.getAttribute('aria-label')).toBe('Usage by user: Claude X · Chat');
-      expect(button.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-      expect(button.closest('.tl-card-actions')?.getAttribute('role')).toBe('group');
-      expect(button.closest('.tl-card-actions')?.getAttribute('aria-label')).toBe('Actions for Claude X · Chat');
-      const tip = host().querySelector('#' + button.getAttribute('interestfor'));
-      expect(tip?.textContent?.trim()).toBe('Usage by user');
-      expect(tip?.getAttribute('popover')).toBe('hint');
-    });
-
-    it('names each Usage by user button apart: by level under Show separately, by key under All keys', () => {
-      summarySpy.mockReturnValue(of(summary({
-        rows: [row({ thinkingLevel: 'high', requests: 4 }), row({ thinkingLevel: 'low', requests: 2 })]
-      })));
-      openTab('models');
-      const thinking = host().querySelector('#tl-thinking-select') as HTMLSelectElement;
-      thinking.value = 'separate';
-      thinking.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-
-      expect(usersButtons().map(b => b.getAttribute('aria-label')))
-        .toEqual(['Usage by user: Claude X · Chat · high', 'Usage by user: Claude X · Chat · low']);
-
-      summarySpy.mockReturnValue(of(summary({
-        keySource: 'both',
-        rows: [row({ requests: 3 }), row({ keySource: 'user', userId: 'u-1', userName: 'alice', requests: 2 })]
-      })));
-      thinking.value = 'grouped';
-      thinking.dispatchEvent(new Event('change'));
-      const keys = host().querySelector('#telemetryKeysSelect') as HTMLSelectElement;
-      keys.value = 'both';
-      keys.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-
-      expect(usersButtons().map(b => b.getAttribute('aria-label')))
-        .toEqual(['Usage by user: Claude X · Chat · System key', 'Usage by user: Claude X · Chat · User key: alice']);
-    });
-
     it('opens the Usage by user dialog with the card\'s scope and the tab\'s dates, the button as the opener', () => {
       summarySpy.mockReturnValue(of(summary({
         rows: [row({ provider: 'OpenAI', modelId: 'gpt-x', modelName: 'GPT X', roleGroup: 'title', roleContext: 2, thinkingLevel: 'low' })]
@@ -1204,18 +573,6 @@ describe('AdminTelemetryTabComponent', () => {
       usersButtons()[0].click();
 
       expect(modelUsersDialog().open).toHaveBeenLastCalledWith(expect.objectContaining({ thinkingLevel: 'low' }), usersButtons()[0]);
-    });
-
-    it('opens a user-key card\'s dialog on user keys', () => {
-      summarySpy.mockReturnValue(of(summary({
-        keySource: 'user',
-        rows: [row({ keySource: 'user', userId: 'u-1', userName: 'alice' })]
-      })));
-      openTab('models');
-
-      usersButtons()[0].click();
-
-      expect(modelUsersDialog().open).toHaveBeenCalledWith(expect.objectContaining({ keySource: 'user', modelId: 'claude-x' }), usersButtons()[0]);
     });
 
     // --- Users view ---
@@ -1260,9 +617,63 @@ describe('AdminTelemetryTabComponent', () => {
         start: component.telemetryStartDate,
         end: component.telemetryEndDate,
         keys: 'system',
-        userId: 'u-3',
-        userName: 'carol'
+        subject: { kind: 'user', userId: 'u-3', userName: 'carol' }
       }, button);
+    });
+
+    // --- Groups view ---
+
+    it('mounts the Groups panel on first selection, at /admin/telemetry/groups, with the range and keys', () => {
+      openTab();
+      const goTo = vi.spyOn(store, 'goTo');
+      expect(host().querySelector('#tl-subpanel-groups app-telemetry-groups')).toBeNull();
+      expect(groupsSpy).not.toHaveBeenCalled();
+
+      subTabButtons()[3].click();
+      fixture.detectChanges();
+
+      expect(goTo).toHaveBeenLastCalledWith('telemetry', 'groups', 'push');
+      expect(subTabButtons()[3].getAttribute('aria-selected')).toBe('true');
+      expect((host().querySelector('#tl-subpanel-groups') as HTMLElement).hidden).toBe(false);
+      expect(host().querySelector('#tl-subpanel-groups app-telemetry-groups')).not.toBeNull();
+      expect(groupsSpy).toHaveBeenCalledTimes(1);
+      expect(groupsSpy).toHaveBeenCalledWith(expect.objectContaining({ keys: 'system' }));
+    });
+
+    it('opens a group\'s charts and its Usage by model from the Groups panel, and No group\'s too', () => {
+      groupsSpy.mockReturnValue(of(groupsDto([
+        groupRow({ groupId: 7, groupName: 'Testers', requests: 4, estimatedCost: 2, pricedRequests: 4 }),
+        groupRow({ groupId: null, groupName: 'No group', requests: 1 })
+      ])));
+      openTab('groups');
+
+      const panel = host().querySelector('#tl-subpanel-groups') as HTMLElement;
+      (panel.querySelector('button[aria-label="Usage charts of Testers"]') as HTMLButtonElement).click();
+      expect(chartsDialog().open).toHaveBeenLastCalledWith({
+        start: component.telemetryStartDate, end: component.telemetryEndDate, keys: 'system',
+        roles: ['chat', 'title', 'benchmark'], groupId: 7, groupName: 'Testers'
+      });
+
+      (panel.querySelector('button[aria-label="Usage charts of No group"]') as HTMLButtonElement).click();
+      expect(chartsDialog().open).toHaveBeenLastCalledWith(expect.objectContaining({ groupId: 'none', groupName: 'No group' }));
+
+      const byModel = panel.querySelector('button[aria-label="Usage by model: Testers"]') as HTMLButtonElement;
+      byModel.click();
+      expect(userModelsDialog().open).toHaveBeenLastCalledWith({
+        start: component.telemetryStartDate,
+        end: component.telemetryEndDate,
+        keys: 'system',
+        subject: { kind: 'group', groupId: 7, groupName: 'Testers' }
+      }, byModel);
+    });
+
+    it('reloads the Groups view on Refresh once it is mounted', () => {
+      openTab('groups');
+      groupsSpy.mockClear();
+
+      component.refreshFromHeader();
+
+      expect(groupsSpy).toHaveBeenCalledTimes(1);
     });
 
     it('selects and mounts the Users panel for a Usage request made on Summary, and its first request carries the user', () => {

@@ -9,10 +9,12 @@ import {
   inject
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
-import { Subscription } from 'rxjs';
+import { Observable, Subscription } from 'rxjs';
 
 import {
   AdminService,
+  AiTelemetryGroupKey,
+  AiTelemetryGroupModelsDto,
   AiTelemetryKeySource,
   AiTelemetryUserModelRowDto,
   AiTelemetryUserModelsDto,
@@ -76,16 +78,32 @@ import {
   writeUserModelsView
 } from './telemetry-user-models';
 
-/** What the AI Telemetry tab opens the dialog with: one user card's scope. */
+/** Whose models the dialog shows: one user, or one group's current members (`'none'`: the users in no group). */
+export type TelemetryUserModelsSubject =
+  | {
+    readonly kind: 'user';
+    readonly userId: string;
+    /** The card's user name; empty when the account is gone. */
+    readonly userName: string;
+  }
+  | {
+    readonly kind: 'group';
+    readonly groupId: AiTelemetryGroupKey;
+    /** The card's title: the group's name, or *No group*. */
+    readonly groupName: string;
+  };
+
+/** What the AI Telemetry tab opens the dialog with: one user or group card's scope. */
 export interface TelemetryUserModelsRequest {
   /** The tab's range, "YYYY-MM-DD". */
   readonly start: string;
   readonly end: string;
   readonly keys: AiTelemetryKeySource;
-  readonly userId: string;
-  /** The card's user name; empty when the account is gone. */
-  readonly userName: string;
+  readonly subject: TelemetryUserModelsSubject;
 }
+
+/** The title of the card for the users in no group. */
+const NO_GROUP_TEXT = 'No group';
 
 /** Cards rendered at first, and added by *Show N more*. */
 export const USER_MODELS_BATCH = 50;
@@ -110,9 +128,10 @@ interface UserModelsModel {
 }
 
 /**
- * The *Usage by model* dialog of an AI Telemetry user card: every model the user used in the tab's
- * key sources over its range, one card per key source, model and role group, with their figures,
- * share of the total and rank. Self-contained: the tab calls `open()`.
+ * The *Usage by model* dialog of an AI Telemetry user or group card: every model the user, or the
+ * group's current members, used in the tab's key sources over its range, one card per key source,
+ * model and role group, with their figures, share of the total and rank. Self-contained: the tab
+ * calls `open()`.
  */
 @Component({
   selector: 'app-telemetry-user-models-dialog',
@@ -132,7 +151,7 @@ export class TelemetryUserModelsDialogComponent implements OnInit, OnDestroy {
   readonly formatInteger = formatInteger;
 
   request: TelemetryUserModelsRequest | null = null;
-  dto: AiTelemetryUserModelsDto | null = null;
+  dto: AiTelemetryUserModelsDto | AiTelemetryGroupModelsDto | null = null;
   loading = false;
   error: string | null = null;
 
@@ -184,7 +203,7 @@ export class TelemetryUserModelsDialogComponent implements OnInit, OnDestroy {
 
   // --- Dialog ---
 
-  /** Shows the dialog for the user card's scope, every filter cleared, and fetches the user's models. */
+  /** Shows the dialog for the card's scope, every filter cleared, and fetches the user's or the group's models. */
   open(request: TelemetryUserModelsRequest, opener?: HTMLElement): void {
     this.request = request;
     this.opener = opener ?? null;
@@ -250,12 +269,16 @@ export class TelemetryUserModelsDialogComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.error = null;
     this.cdr.markForCheck();
-    this.fetchSubscription = this.admin.getAiTelemetryUserModels({
+    const range = {
       ...(request.start ? { startDate: request.start } : {}),
       ...(request.end ? { endDate: request.end } : {}),
-      keys: request.keys,
-      userId: request.userId
-    }).subscribe({
+      keys: request.keys
+    };
+    const subject = request.subject;
+    const source: Observable<AiTelemetryUserModelsDto | AiTelemetryGroupModelsDto> = subject.kind === 'group'
+      ? this.admin.getAiTelemetryGroupModels({ ...range, groupId: subject.groupId })
+      : this.admin.getAiTelemetryUserModels({ ...range, userId: subject.userId });
+    this.fetchSubscription = source.subscribe({
       next: dto => {
         this.loading = false;
         this.dto = dto;
@@ -286,22 +309,68 @@ export class TelemetryUserModelsDialogComponent implements OnInit, OnDestroy {
 
   // --- Header ---
 
-  /** The user's name from the card, else from the response; *Unknown user* when the account is gone. */
-  get userName(): string {
-    return this.request?.userName?.trim() || this.dto?.userName?.trim() || UNKNOWN_USER_TEXT;
+  /** Whether the dialog shows a group's members rather than one user. */
+  get isGroup(): boolean {
+    return this.request?.subject.kind === 'group';
+  }
+
+  /**
+   * A user's name from the card, else from the response, *Unknown user* when the account is gone;
+   * a group's name from the card, else from the response, else *No group* for the users in no group
+   * and *Group {id}* for a group.
+   */
+  get subjectName(): string {
+    const subject = this.request?.subject;
+    const dto = this.dto;
+    if (subject?.kind === 'group') {
+      const fromDto = dto && 'groupName' in dto ? dto.groupName?.trim() : '';
+      return subject.groupName?.trim() || fromDto || (subject.groupId === 'none' ? NO_GROUP_TEXT : `Group ${subject.groupId}`);
+    }
+    const fromDto = dto && 'userName' in dto ? dto.userName?.trim() : '';
+    return subject?.userName?.trim() || fromDto || UNKNOWN_USER_TEXT;
   }
 
   get dialogTitle(): string {
-    return `Usage by model: ${this.userName}`;
+    return `Usage by model: ${this.subjectName}`;
   }
 
-  /** `All keys · 2026-09-20 to 2026-10-20`. */
+  /**
+   * `All keys · 2026-09-20 to 2026-10-20`; for a group, led by its member count once the response
+   * has it: `12 members · System AI configurations · …` (`12 users` for the users in no group).
+   */
   get subtitle(): string {
     const request = this.request;
     if (!request) {
       return '';
     }
-    return `${KEY_SOURCE_LABELS[request.keys]} · ${this.rangeLabel}`;
+    const scope = `${KEY_SOURCE_LABELS[request.keys]} · ${this.rangeLabel}`;
+    const dto = this.dto;
+    if (request.subject.kind !== 'group' || !dto || !('memberCount' in dto)) {
+      return scope;
+    }
+    const n = dto.memberCount;
+    const noun = request.subject.groupId === 'none'
+      ? (n === 1 ? 'user' : 'users')
+      : (n === 1 ? 'member' : 'members');
+    return `${formatInteger(n)} ${noun} · ${scope}`;
+  }
+
+  /** The empty state: the user or the group's members used no model. */
+  get emptyText(): string {
+    const subject = this.request?.subject;
+    if (subject?.kind !== 'group') {
+      return 'This user used no model in this range.';
+    }
+    return subject.groupId === 'none'
+      ? 'The users in no group used no model in this range.'
+      : "This group's members used no model in this range.";
+  }
+
+  /** Provider errors are not attributed to a user, so neither to a group. */
+  get providerErrorsNote(): string {
+    return this.isGroup
+      ? 'Provider errors are not recorded per user or group for system AI configurations.'
+      : 'Provider errors are not recorded per user for system AI configurations.';
   }
 
   get rangeLabel(): string {
