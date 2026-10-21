@@ -77,6 +77,19 @@ public static class BenchmarkEvidence
         }
     }
 
+    /// <summary>
+    /// The evidence JSON to store when <paramref name="incoming"/> is applied over
+    /// <paramref name="storedJson"/>: null keeps the stored value, an empty list clears it.
+    /// </summary>
+    public static (string? Json, bool Changed) Resolve(string? storedJson, IReadOnlyList<BenchmarkEvidenceUnit>? incoming)
+    {
+        if (incoming == null) return (storedJson, false);
+        string? newJson = ToJson(incoming);
+        bool changed = !string.Equals(ToJson(FromJson(storedJson)), newJson, StringComparison.Ordinal)
+            || (newJson == null && storedJson != null);
+        return (newJson, changed);
+    }
+
     /// <summary>The first problem with <paramref name="units"/>, or null when every unit is valid.</summary>
     public static string? Validate(IReadOnlyList<BenchmarkEvidenceUnit>? units)
     {

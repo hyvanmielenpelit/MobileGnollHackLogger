@@ -139,6 +139,9 @@ public class CreateBenchmarkQuestionRequest
     public string QuestionText { get; set; } = string.Empty;
     public BenchmarkDifficulty Difficulty { get; set; } = BenchmarkDifficulty.Simple;
     public string? ExpectedPoints { get; set; }
+
+    /// <summary>Null keeps the stored evidence (none on a create); an empty list clears it.</summary>
+    public List<BenchmarkEvidenceUnit>? Evidence { get; set; }
 }
 
 public class UpdateBenchmarkQuestionRequest
@@ -146,6 +149,9 @@ public class UpdateBenchmarkQuestionRequest
     public string QuestionText { get; set; } = string.Empty;
     public BenchmarkDifficulty Difficulty { get; set; }
     public string? ExpectedPoints { get; set; }
+
+    /// <summary>Null keeps the stored evidence (none on a create); an empty list clears it.</summary>
+    public List<BenchmarkEvidenceUnit>? Evidence { get; set; }
 }
 
 public class ImportBenchmarkQuestionItem

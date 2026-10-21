@@ -1539,6 +1539,12 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest("Question text is required.");
         }
 
+        string? evidenceError = BenchmarkEvidence.Validate(request.Evidence);
+        if (evidenceError != null)
+        {
+            return BadRequest(evidenceError);
+        }
+
         var suite = await _dbContext.BenchmarkSuites.FindAsync(suiteId);
         if (suite == null) return NotFound();
 
@@ -1560,6 +1566,7 @@ public class AdminBenchmarkController : ControllerBase
             QuestionText = request.QuestionText.Trim(),
             Difficulty = request.Difficulty,
             ExpectedPoints = request.ExpectedPoints?.Trim(),
+            EvidenceJson = BenchmarkEvidence.ToJson(request.Evidence),
             CreatedAtUtc = DateTime.UtcNow,
             ModifiedAtUtc = DateTime.UtcNow
         };
@@ -1579,6 +1586,12 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest("Question text is required.");
         }
 
+        string? evidenceError = BenchmarkEvidence.Validate(request.Evidence);
+        if (evidenceError != null)
+        {
+            return BadRequest(evidenceError);
+        }
+
         var question = await _dbContext.BenchmarkQuestions.FindAsync(id);
         if (question == null) return NotFound();
 
@@ -1596,6 +1609,17 @@ public class AdminBenchmarkController : ControllerBase
         if (contentChanged)
         {
             BenchmarkQuestionAssessment.Clear(question);
+        }
+
+        // Evidence is metadata: writing it bumps no item revision and clears no assessment.
+        var (evidenceJson, evidenceChanged) = BenchmarkEvidence.Resolve(question.EvidenceJson, request.Evidence);
+        if (evidenceChanged)
+        {
+            question.EvidenceJson = evidenceJson;
+        }
+
+        if (contentChanged || evidenceChanged)
+        {
             question.ModifiedAtUtc = DateTime.UtcNow;
             var suite = await _dbContext.BenchmarkSuites.FindAsync(question.BenchmarkSuiteId);
             if (suite != null) suite.ModifiedAtUtc = DateTime.UtcNow;
@@ -1742,11 +1766,7 @@ public class AdminBenchmarkController : ControllerBase
                     bool contentChanged = q.QuestionText != newText || q.Difficulty != newDifficulty || q.ExpectedPoints != newPoints;
 
                     // Evidence is metadata: writing it bumps no item revision and clears no assessment.
-                    string? newEvidence = item.Evidence == null
-                        ? q.EvidenceJson
-                        : BenchmarkEvidence.ToJson(item.Evidence);
-                    bool evidenceChanged = !string.Equals(
-                        BenchmarkEvidence.ToJson(BenchmarkEvidence.FromJson(q.EvidenceJson)), newEvidence, StringComparison.Ordinal);
+                    var (newEvidence, evidenceChanged) = BenchmarkEvidence.Resolve(q.EvidenceJson, item.Evidence);
 
                     if (contentChanged)
                     {

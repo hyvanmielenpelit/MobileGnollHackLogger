@@ -5,7 +5,7 @@
       <div class="dialog-header">
         <div class="dialog-title-group">
           <h3>Questions: {{ workspace.currentSuiteForQuestions.name }}</h3>
-          <p class="dialog-subtitle">{{ workspace.questions.length }} Questions Total</p>
+          <p class="dialog-subtitle">{{ workspace.questions.length }} Questions Total · {{ questionsWithEvidenceCount ? questionsWithEvidenceCount + ' with Gold Evidence' : 'No Gold Evidence' }}</p>
         </div>
         <button type="button" class="btn-icon-action" aria-label="Close questions list" (click)="questionsDialog.close()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
@@ -100,6 +100,9 @@
                       <span class="assessed-diff-badge" title="AI-Evaluated Difficulty (1-100)">
                         AI Diff: {{ q.assessedDifficulty }}
                       </span>
+                    }
+                    @if (q.evidence?.length) {
+                      <span class="badge-revision" title="Gold evidence units: the pages and source spans a grounded answer reads">Evidence: {{ q.evidence!.length }}</span>
                     }
                     @if (q.isGenerated) {
                       <button type="button" class="btn-review-toggle" [class.reviewed]="q.isReviewed" (click)="toggleQuestionReview(q)" [title]="q.isReviewed ? 'Human-verified. Click to unverify.' : 'Click to verify that you have reviewed this question and rubric.'">
@@ -208,6 +211,13 @@
                     <app-collapsible-markdown [text]="q.expectedPoints" label="expected answer criteria" />
                   </div>
                 }
+
+                @if (q.evidence?.length) {
+                  <div class="q-criteria-box q-evidence-box">
+                    <span class="criteria-label">Gold Evidence:</span>
+                    <app-question-evidence-list [units]="q.evidence!" />
+                  </div>
+                }
               </div>
             </div>
           }
@@ -244,7 +254,7 @@
           <option [ngValue]="3">Advanced (C codebase / architecture inspection)</option>
         </select>
       </div>
-      <div class="form-group">
+      <div class="form-group q-criteria-group">
         <app-markdown-editor #expectedPointsEditor
           inputId="qExpectedInput"
           label="Expected Answer Criteria (Optional)"
@@ -254,10 +264,14 @@
           [fill]="true"
           [(value)]="expectedPointsValue" />
       </div>
+      <app-question-evidence-editor idPrefix="qEvidence" [(units)]="evidenceUnits" />
+      @if (questionFormError) {
+        <p class="error-message" role="alert">{{ questionFormError }}</p>
+      }
     </div>
     <div class="dialog-footer">
       <button type="button" class="btn-gh btn-gh-cancel" (click)="questionFormDialog.close()">Cancel</button>
-      <button type="button" class="btn-gh" [disabled]="!questionForm.questionText.trim()" (click)="saveQuestion()">Save Question</button>
+      <button type="button" class="btn-gh" [disabled]="!questionForm.questionText.trim() || !!evidenceError" (click)="saveQuestion()">Save Question</button>
     </div>
   </div>
 </dialog>

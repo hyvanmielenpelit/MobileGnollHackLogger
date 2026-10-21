@@ -347,6 +347,30 @@ public class AdminBenchmarkQuestionImportTests
     }
 
     [Fact]
+    public async Task AnItemWithoutEvidence_OverAnUnreadableStoredValue_IsUnchanged()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+        var (suite, _, _, _) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+        var q = suite.Questions.Single();
+        var modified = new System.DateTime(2026, 1, 2, 3, 4, 5, System.DateTimeKind.Utc);
+        q.EvidenceJson = "not json";
+        q.ModifiedAtUtc = modified;
+        await db.SaveChangesAsync(ct);
+
+        var dto = ReadResult(await controller.ImportQuestions(suite.Id, new ImportBenchmarkQuestionsRequest
+        {
+            Items = { new() { QuestionId = q.Id } }
+        }, ct));
+
+        Assert.Equal(1, dto.UnchangedCount);
+        Assert.Equal(0, dto.ReplacedCount);
+        var stored = await db.BenchmarkQuestions.AsNoTracking().SingleAsync(x => x.Id == q.Id, ct);
+        Assert.Equal("not json", stored.EvidenceJson);
+        Assert.Equal(modified, stored.ModifiedAtUtc);
+    }
+
+    [Fact]
     public async Task ChangedRubricWithEvidence_BumpsItemRevision_AndStoresTheEvidence()
     {
         var ct = TestContext.Current.CancellationToken;

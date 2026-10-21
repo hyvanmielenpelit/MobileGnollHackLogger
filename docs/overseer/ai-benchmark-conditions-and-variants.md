@@ -221,6 +221,17 @@ assessed difficulty and keeps the review mark; the review step shows an **eviden
 and *Apply N changes* counts it. A change to the question text, difficulty or rubric still makes a new
 revision, with or without evidence beside it.
 
+**In Manage Questions.** Each question card lists its gold evidence in a **Gold Evidence** box under the
+rubric, with an *Evidence: N* badge beside the difficulty badges, and the dialog subtitle counts the
+questions that have any (*11 Questions Total · 3 with Gold Evidence*, or *No Gold Evidence*). *Edit
+Question* and *Add Question* edit it as rows: kind, path, then section for a wiki unit or lines and
+function for a source unit, and the *personal* flag. The rules are the YAML's: the form validates as the
+server does, sends `evidence` only when its rows changed (so a form opened before an evidence import
+does not overwrite that import), an emptied list clears the stored evidence, and an evidence-only save
+makes no new revision. The create and update endpoints (`POST suites/{suiteId}/questions`,
+`PUT questions/{id}`) accept `evidence` with the import's semantics: null keeps, an empty list clears
+(`BenchmarkEvidence.Resolve`).
+
 ### 3.2 The suite evidence SHA
 
 `BenchmarkEvidence.SuiteEvidenceSha` is the SHA-256 of the ordinal-sorted `questionId:canonicalJson`

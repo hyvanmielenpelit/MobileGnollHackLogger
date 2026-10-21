@@ -63,6 +63,12 @@
 
 @include shared.shared-14;
 
+/* The criteria editor takes the free height but keeps its own rows; the evidence editor follows
+   it, and the dialog body scrolls once both no longer fit. */
+.gh-dialog.benchmark-question-form-dialog .dialog-body > .q-criteria-group {
+  flex: 1 0 auto;
+}
+
 @include shared.shared-15;
 
 @include shared.shared-16;

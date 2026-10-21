@@ -71,7 +71,8 @@ The evidence of a suite is a questions YAML that carries only `id` and `evidence
    `kb`.
 6. **Hand it off.** The developer imports it with *Import Questions from YAML*; the review step shows
    an **evidence** badge on each card. An evidence-only import makes no new item revision and needs
-   no re-assessment.
+   no re-assessment. Afterwards each question card in Manage Questions lists its evidence; a single
+   unit can be fixed in Edit Question without another import.
 
 Evidence is read from the suite when a report is rendered, so the manifest applies to earlier runs
 too; the report's suite evidence SHA prefix tells which version it was read against.

@@ -3,12 +3,17 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   AdminBenchmarkService,
+  BenchmarkEvidenceUnit,
   BenchmarkSuiteDto,
   BenchmarkQuestionDto,
   CreateBenchmarkQuestionRequest
 } from '../../../services/admin-benchmark.service';
 import { CollapsibleMarkdownComponent } from '../../../shared/collapsible-markdown/collapsible-markdown.component';
 import { MarkdownEditorComponent } from '../../../shared/markdown-editor/markdown-editor.component';
+import { QuestionEvidenceEditorComponent } from '../question-evidence/question-evidence-editor.component';
+import { QuestionEvidenceListComponent } from '../question-evidence/question-evidence-list.component';
+import { evidenceEquals, normalizeEvidenceUnit, validateEvidenceUnits } from '../question-evidence/question-evidence';
+import { refusalText } from '../benchmark-run-format';
 import { refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDifficulty } from '../../../utils/model-badge-format.util';
 import { firstValueFrom, map } from 'rxjs';
@@ -30,7 +35,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
   selector: 'app-suite-questions-dialog',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, CollapsibleMarkdownComponent, MarkdownEditorComponent
+    CommonModule, FormsModule, CollapsibleMarkdownComponent, MarkdownEditorComponent,
+    QuestionEvidenceEditorComponent, QuestionEvidenceListComponent
   ],
   templateUrl: './suite-questions-dialog.component.html',
   styleUrls: ['./suite-questions-dialog.component.scss']
@@ -129,6 +135,23 @@ export class SuiteQuestionsDialogComponent implements OnDestroy {
 
   questionForm: CreateBenchmarkQuestionRequest = { questionText: '', difficulty: 1, expectedPoints: '' };
 
+  /** The evidence rows the form edits; a copy, never the list the question card renders. */
+  evidenceUnits: BenchmarkEvidenceUnit[] = [];
+
+  /** The evidence the form opened with, a second copy, so a save sends evidence only when it changed. */
+  private originalEvidence: BenchmarkEvidenceUnit[] = [];
+
+  /** The server's refusal of the last save, shown above the form's footer. */
+  questionFormError = '';
+
+  get evidenceError(): string | null {
+    return validateEvidenceUnits(this.evidenceUnits);
+  }
+
+  get questionsWithEvidenceCount(): number {
+    return this.workspace.questions.filter(q => q.evidence?.length).length;
+  }
+
   /** A sample rubric in the shape the assessor reads: the four graded sections and a source line. */
   readonly expectedPointsPlaceholder = [
     '**REQUIRED** (accuracy + completeness)',
@@ -170,6 +193,8 @@ export class SuiteQuestionsDialogComponent implements OnDestroy {
     this.editingQuestionId = null;
     this.questionFormSuiteId = this.workspace.currentSuiteForQuestions?.id ?? null;
     this.questionForm = { questionText: '', difficulty: 1, expectedPoints: '' };
+    this.evidenceUnits = [];
+    this.originalEvidence = [];
     this.showQuestionForm();
   }
 
@@ -181,6 +206,8 @@ export class SuiteQuestionsDialogComponent implements OnDestroy {
       difficulty: typeof q.difficulty === 'number' ? q.difficulty : this.parseDifficulty(q.difficulty),
       expectedPoints: q.expectedPoints || ''
     };
+    this.evidenceUnits = structuredClone(q.evidence ?? []);
+    this.originalEvidence = structuredClone(q.evidence ?? []);
     this.showQuestionForm();
   }
 
@@ -190,6 +217,7 @@ export class SuiteQuestionsDialogComponent implements OnDestroy {
    * toolbar tooltips are re-scanned once the dialog is in the top layer.
    */
   private showQuestionForm(): void {
+    this.questionFormError = '';
     this.expectedPointsEditor?.resetToWrite();
     this.questionFormDialog?.nativeElement.showModal();
     refreshAnchorPositioning();
@@ -197,23 +225,35 @@ export class SuiteQuestionsDialogComponent implements OnDestroy {
 
   saveQuestion() {
     const suiteId = this.questionFormSuiteId;
-    if (!this.questionForm.questionText.trim() || suiteId == null) return;
+    if (!this.questionForm.questionText.trim() || suiteId == null || this.evidenceError) return;
+
+    // Evidence goes only when edited, so a form opened before an evidence import keeps that import.
+    const request: CreateBenchmarkQuestionRequest = evidenceEquals(this.evidenceUnits, this.originalEvidence)
+      ? { ...this.questionForm }
+      : { ...this.questionForm, evidence: this.evidenceUnits.map(normalizeEvidenceUnit) };
 
     if (this.editingQuestionId) {
-      this.benchmarkService.updateQuestion(this.editingQuestionId, this.questionForm).subscribe({
+      this.benchmarkService.updateQuestion(this.editingQuestionId, request).subscribe({
         next: () => this.onQuestionSaved(suiteId),
-        error: (err) => console.error('Failed to update question', err)
+        error: (err) => this.onQuestionSaveFailed(err, 'Failed to update question')
       });
     } else {
-      this.benchmarkService.createQuestion(suiteId, this.questionForm).subscribe({
+      this.benchmarkService.createQuestion(suiteId, request).subscribe({
         next: () => this.onQuestionSaved(suiteId),
-        error: (err) => console.error('Failed to create question', err)
+        error: (err) => this.onQuestionSaveFailed(err, 'Failed to create question')
       });
     }
   }
 
+  private onQuestionSaveFailed(err: unknown, fallback: string): void {
+    console.error(fallback, err);
+    this.questionFormError = refusalText(err, `${fallback}.`);
+    this.cdr.markForCheck();
+  }
+
   /** Reloads the list when it shows the saved question's suite; Manage Questions may hold another suite. */
   private onQuestionSaved(suiteId: number): void {
+    this.questionFormError = '';
     this.questionFormDialog?.nativeElement.close();
     if (this.workspace.currentSuiteForQuestions?.id === suiteId) {
       this.workspace.loadQuestions(suiteId);

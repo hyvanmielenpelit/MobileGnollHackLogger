@@ -15,7 +15,6 @@ import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import {
   AdminBenchmarkService,
-  BenchmarkEvidenceUnit,
   BenchmarkQuestionDto,
   BenchmarkSuiteDto,
   BoardFactsCheckDto,
@@ -53,6 +52,7 @@ import {
   resolveImportedSuiteName
 } from './import-expectation';
 import { PANEL_LABELS } from './suite-workflow-instructions';
+import { evidenceUnitText } from '../question-evidence/question-evidence';
 
 export const MAX_IMPORT_FILE_BYTES = 2 * 1024 * 1024;
 
@@ -74,17 +74,6 @@ export interface ReviewCard {
   evidenceDiff: DiffLine[];
   /** Either side has evidence, so the card shows it. */
   showEvidence: boolean;
-}
-
-/** One evidence unit as the review card lists it: `wiki · Races/Human.md · personal`. */
-export function evidenceUnitText(unit: BenchmarkEvidenceUnit): string {
-  return [
-    `${unit.kind} · ${unit.path}`,
-    unit.section ? `§ ${unit.section}` : null,
-    unit.lines ? `L${unit.lines}` : null,
-    unit.function ? `${unit.function}()` : null,
-    unit.personal ? 'personal' : null
-  ].filter(part => part !== null).join(' · ');
 }
 
 /** What a host needs to redraw its stepper and footer. */

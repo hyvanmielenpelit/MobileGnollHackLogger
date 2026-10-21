@@ -1,0 +1,20 @@
+<ul class="evidence-list">
+  @for (unit of units; track $index) {
+    <li class="evidence-item">
+      <span class="evidence-kind" [attr.data-kind]="unit.kind">{{ kindChip(unit.kind) }}</span>
+      <code class="evidence-path">{{ unit.path }}</code>
+      @if (unit.section) {
+        <span class="evidence-detail">§ {{ unit.section }}</span>
+      }
+      @if (unit.lines) {
+        <span class="evidence-detail">L{{ unit.lines }}</span>
+      }
+      @if (unit.function) {
+        <code class="evidence-detail">{{ unit.function }}()</code>
+      }
+      @if (unit.personal) {
+        <span class="evidence-personal">personal</span>
+      }
+    </li>
+  }
+</ul>

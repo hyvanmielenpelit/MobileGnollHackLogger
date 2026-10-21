@@ -1,5 +1,4 @@
 import type {
-  BenchmarkEvidenceKind,
   BenchmarkEvidenceUnit,
   BenchmarkQuestionDto,
   BenchmarkSuiteDto,
@@ -8,6 +7,7 @@ import type {
   RubricAuthoringGuidance
 } from '../../../services/admin-benchmark.service';
 import { formatDifficulty } from '../../../utils/model-badge-format.util';
+import { EVIDENCE_KINDS } from '../question-evidence/question-evidence';
 
 /**
  * The YAML interchange format for benchmark questions and suites.
@@ -75,7 +75,6 @@ const SUITE_KEYS = ['name', 'description', 'suggested_description', 'snapshot'];
 const SNAPSHOT_KEYS = ['name', 'gnollhack_version', 'captured_at', 'snapshot_format', 'notes', 'sha256', 'text'];
 const QUESTION_KEYS = ['id', 'difficulty', 'question', 'rubric', 'evidence'];
 const EVIDENCE_KEYS = ['kind', 'path', 'section', 'lines', 'function', 'personal'];
-const EVIDENCE_KINDS: readonly BenchmarkEvidenceKind[] = ['wiki', 'source', 'kb'];
 export const MAX_SUITE_NAME_LENGTH = 128;
 export const MAX_SNAPSHOT_NAME_LENGTH = 128;
 export const MAX_GNOLLHACK_VERSION_LENGTH = 64;
@@ -955,7 +954,7 @@ const FORMAT_MARKDOWN = `## Format essentials
 
 ## Evidence
 
-\`evidence\` lists the wiki pages, source spans and knowledge base articles a grounded answer reads. Each item has \`kind\` (wiki, source or kb) and \`path\`, and may have \`section\`, \`lines\` (a first and a last line, as in 1200-1260), \`function\` and \`personal\` (true when the unit is about the player's own character). Leave the key out to keep the current evidence; \`evidence: []\` clears it.
+\`evidence\` lists the wiki pages, source spans and knowledge base articles a grounded answer reads. Each item has \`kind\` (wiki, source or kb) and \`path\`, and may have \`section\`, \`lines\` (a first and a last line, as in 1200-1260), \`function\` and \`personal\` (true when the unit is about the player's own character). Leave the key out to keep the current evidence; \`evidence: []\` clears it. Manage Questions lists each question's evidence under its rubric, and Edit Question edits it.
 
 \`\`\`yaml
 questions:

@@ -1,0 +1,68 @@
+<fieldset class="evidence-editor" [attr.aria-describedby]="idPrefix + '-hint'">
+  <legend class="evidence-editor-legend">Gold Evidence (Optional)</legend>
+  <span [id]="idPrefix + '-hint'" class="evidence-editor-hint">
+    Wiki pages, source spans and knowledge-base topics a grounded answer reads. Paths are repository-relative with forward slashes.
+    Metadata only: changing evidence makes no new revision and keeps the difficulty assessment.
+  </span>
+
+  @if (units.length) {
+    <ol class="evidence-rows">
+      @for (unit of units; track unit; let i = $index) {
+        <li class="evidence-row" role="group" [attr.aria-label]="'Evidence unit ' + (i + 1)">
+          <div class="evidence-field evidence-field-kind">
+            <label [for]="idPrefix + '-kind-' + i">Kind</label>
+            <select class="gh-input" [id]="idPrefix + '-kind-' + i" [(ngModel)]="unit.kind">
+              @for (kind of kinds; track kind) {
+                <option [ngValue]="kind">{{ kindLabels[kind] }}</option>
+              }
+            </select>
+          </div>
+          <div class="evidence-field evidence-field-path">
+            <label [for]="idPrefix + '-path-' + i">Path</label>
+            <input type="text" class="gh-input" [id]="idPrefix + '-path-' + i" [(ngModel)]="unit.path"
+                   [placeholder]="pathPlaceholder(unit.kind)" autocomplete="off" spellcheck="false">
+          </div>
+          @if (unit.kind === 'wiki') {
+            <div class="evidence-field">
+              <label [for]="idPrefix + '-section-' + i">Section</label>
+              <input type="text" class="gh-input" [id]="idPrefix + '-section-' + i" [(ngModel)]="unit.section" autocomplete="off">
+            </div>
+          }
+          @if (unit.kind === 'source') {
+            <div class="evidence-field evidence-field-lines">
+              <label [for]="idPrefix + '-lines-' + i">Lines</label>
+              <input type="text" class="gh-input" [id]="idPrefix + '-lines-' + i" [(ngModel)]="unit.lines"
+                     placeholder="140-203" autocomplete="off" inputmode="numeric" spellcheck="false">
+            </div>
+            <div class="evidence-field">
+              <label [for]="idPrefix + '-function-' + i">Function</label>
+              <input type="text" class="gh-input" [id]="idPrefix + '-function-' + i" [(ngModel)]="unit.function"
+                     autocomplete="off" spellcheck="false">
+            </div>
+          }
+          <div class="evidence-row-end">
+            <label class="evidence-personal" [for]="idPrefix + '-personal-' + i">
+              <input type="checkbox" [id]="idPrefix + '-personal-' + i" [(ngModel)]="unit.personal">
+              The asker's own race or role page
+            </label>
+            <button type="button" class="action-btn action-btn-danger" (click)="removeUnit(i)"
+                    [attr.aria-label]="'Remove evidence unit ' + (i + 1)"
+                    [attr.interestfor]="idPrefix + '-tip-remove-' + i"
+                    [attr.style]="'anchor-name: --' + idPrefix + '-tip-remove-' + i">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-tip-remove-' + i"
+                 [attr.style]="'position-anchor: --' + idPrefix + '-tip-remove-' + i">Remove evidence unit</div>
+          </div>
+        </li>
+      }
+    </ol>
+  } @else {
+    <p class="evidence-editor-empty">No gold evidence.</p>
+  }
+
+  <div class="evidence-editor-actions">
+    <button type="button" class="btn-gh" [id]="idPrefix + '-add'" (click)="addUnit()">Add Evidence Unit</button>
+  </div>
+  <p class="evidence-editor-error" role="alert">{{ error }}</p>
+</fieldset>

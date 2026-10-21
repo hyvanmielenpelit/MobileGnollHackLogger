@@ -673,12 +673,16 @@ export interface CreateBenchmarkQuestionRequest {
   questionText: string;
   difficulty: string | number;
   expectedPoints?: string | null;
+  /** Null keeps the current evidence; an empty list clears it. */
+  evidence?: BenchmarkEvidenceUnit[] | null;
 }
 
 export interface UpdateBenchmarkQuestionRequest {
   questionText: string;
   difficulty: string | number;
   expectedPoints?: string | null;
+  /** Null keeps the current evidence; an empty list clears it. */
+  evidence?: BenchmarkEvidenceUnit[] | null;
 }
 
 /** One question of a YAML import: `questionId` replaces that question, null creates a new one. */

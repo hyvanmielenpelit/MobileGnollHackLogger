@@ -1,0 +1,73 @@
+:host {
+  display: block;
+}
+
+.evidence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.evidence-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+  font-size: var(--text-secondary);
+  line-height: var(--leading-body);
+  color: #ddd;
+}
+
+.evidence-kind {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(136, 136, 136, 0.4);
+  background: rgba(136, 136, 136, 0.08);
+  color: #aaa;
+
+  &[data-kind='wiki'] {
+    border-color: var(--border-glass);
+    color: var(--primary-color);
+  }
+
+  &[data-kind='source'] {
+    border-color: rgba(127, 178, 229, 0.45);
+    color: #7fb2e5;
+  }
+}
+
+.evidence-path,
+code.evidence-detail {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+.evidence-path,
+.evidence-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.evidence-detail {
+  color: #aaa;
+}
+
+.evidence-personal {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--score-high-ink);
+}

@@ -192,6 +192,70 @@ public class BenchmarkEvidenceTests
         Assert.Null(BenchmarkEvidence.FromJson(json));
     }
 
+    private const string HumanJson = "[{\"kind\":\"wiki\",\"path\":\"Races/Human.md\",\"personal\":true}]";
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(HumanJson)]
+    [InlineData("not json")]
+    public void Resolve_NullKeepsTheStoredStringItself(string? stored)
+    {
+        var (json, changed) = BenchmarkEvidence.Resolve(stored, null);
+
+        Assert.Same(stored, json);
+        Assert.False(changed);
+    }
+
+    [Fact]
+    public void Resolve_AnEmptyListOverNothing_IsUnchanged()
+    {
+        Assert.Equal(((string?)null, false), BenchmarkEvidence.Resolve(null, new List<BenchmarkEvidenceUnit>()));
+    }
+
+    [Theory]
+    [InlineData(HumanJson)]
+    [InlineData("not json")]
+    public void Resolve_AnEmptyListClears_EvenAnUnreadableStoredValue(string stored)
+    {
+        Assert.Equal(((string?)null, true), BenchmarkEvidence.Resolve(stored, new List<BenchmarkEvidenceUnit>()));
+    }
+
+    [Fact]
+    public void Resolve_AnEqualList_IsUnchanged_AndReturnsItsCanonicalJson()
+    {
+        string spaced = "[ { \"path\": \"Races/Human.md\", \"kind\": \"wiki\", \"personal\": true } ]";
+
+        Assert.Equal(((string?)HumanJson, false), BenchmarkEvidence.Resolve(spaced, new List<BenchmarkEvidenceUnit> { Wiki("Races/Human.md", personal: true) }));
+    }
+
+    [Fact]
+    public void Resolve_AChangedUnit_IsChanged()
+    {
+        var (json, changed) = BenchmarkEvidence.Resolve(HumanJson, new List<BenchmarkEvidenceUnit> { Wiki("Races/Human.md") });
+
+        Assert.True(changed);
+        Assert.Equal("[{\"kind\":\"wiki\",\"path\":\"Races/Human.md\"}]", json);
+    }
+
+    [Fact]
+    public void Resolve_TheSameUnitsInAnotherOrder_IsChanged()
+    {
+        var a = Wiki("Races/Human.md");
+        var b = Source("src/bones.c", lines: "140-203");
+        string? stored = BenchmarkEvidence.ToJson(new List<BenchmarkEvidenceUnit> { a, b });
+
+        var (json, changed) = BenchmarkEvidence.Resolve(stored, new List<BenchmarkEvidenceUnit> { b, a });
+
+        Assert.True(changed);
+        Assert.NotEqual(stored, json);
+    }
+
+    [Fact]
+    public void Resolve_AnUnreadableStoredValueAgainstAValidList_IsChanged()
+    {
+        Assert.Equal(((string?)HumanJson, true), BenchmarkEvidence.Resolve("not json", new List<BenchmarkEvidenceUnit> { Wiki("Races/Human.md", personal: true) }));
+    }
+
     [Fact]
     public void SuiteEvidenceSha_IsStableUnderQuestionOrder()
     {
