@@ -440,6 +440,38 @@ a:hover {
   }
 }
 
+/* A tab's sticky head: its header card, if any, and its sub-tab row stay at the top of the scrolling
+   tab content. The row is transparent at rest and takes an opaque ground while stuck, so content never
+   scrolls through it. The ground is queried from the head, a named scroll-state container, because an
+   element cannot query its own stuck state. */
+.gh-subtab-head {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  container: gh-subtab-head / scroll-state;
+
+  > .tab-header-row + .gh-tabs {
+    padding-block-start: 1rem;
+  }
+}
+
+@container gh-subtab-head scroll-state(stuck: top) {
+  .gh-subtab-head > .gh-tabs {
+    background: rgba(17, 17, 17, 0.94);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+
+/* Without scroll-state queries (Firefox and Safari as of 2026-10) the ground is always painted. */
+@supports not (container-type: scroll-state) {
+  .gh-subtab-head > .gh-tabs {
+    background: rgba(17, 17, 17, 0.94);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+
 /* ==========================================================================
    Interest-triggered tooltips
    Paired with the `interestfor` attribute on the trigger and popover="hint"

@@ -295,7 +295,7 @@ export class TelemetryUserModelsDialogComponent implements OnInit, OnDestroy {
     return `Usage by model: ${this.userName}`;
   }
 
-  /** `Both · 2026-09-20 to 2026-10-20`. */
+  /** `All keys · 2026-09-20 to 2026-10-20`. */
   get subtitle(): string {
     const request = this.request;
     if (!request) {

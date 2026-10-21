@@ -34,7 +34,7 @@ export const KEY_SOURCES: readonly AiTelemetryKeySource[] = ['system', 'user', '
 export const KEY_SOURCE_LABELS: Readonly<Record<AiTelemetryKeySource, string>> = {
   system: 'System AI configurations',
   user: 'User keys',
-  both: 'Both'
+  both: 'All keys'
 };
 
 export function roleGroupLabel(group: AiUsageRoleGroup): string {
@@ -528,15 +528,13 @@ export interface TelemetryBreakdownView {
   sort: BreakdownSort;
   /** Lower-cased provider keys; empty means every provider. */
   providers: string[];
-  /** Whether the Date Range and Keys bar is collapsed to its summary line. */
-  toolbarCollapsed: boolean;
 }
 
-/** The three named role groups, levels grouped, system configurations, most requests first, every provider, the bar expanded. */
+/** The three named role groups, levels grouped, system configurations, most requests first, every provider. */
 export function defaultBreakdownView(): TelemetryBreakdownView {
   return {
     roles: [...NAMED_ROLE_GROUPS], separateThinkingLevels: false, keys: 'system',
-    sort: DEFAULT_BREAKDOWN_SORT, providers: [], toolbarCollapsed: false
+    sort: DEFAULT_BREAKDOWN_SORT, providers: []
   };
 }
 
@@ -585,16 +583,15 @@ export function readBreakdownView(storage: Storage | null = safeLocalStorage()):
     const keys = KEY_SOURCES.find(k => k === parsed.keys) ?? fallback.keys;
     const sort = readSort(parsed.sort);
     const providers = readProviders(parsed.providers);
-    const toolbarCollapsed = typeof parsed.toolbarCollapsed === 'boolean' ? parsed.toolbarCollapsed : fallback.toolbarCollapsed;
-    return { roles, separateThinkingLevels, keys, sort, providers, toolbarCollapsed };
+    return { roles, separateThinkingLevels, keys, sort, providers };
   } catch {
     return fallback;
   }
 }
 
 /**
- * Stores the view as `{ version: 1, roles, separateThinkingLevels, keys, sort, providers,
- * toolbarCollapsed }`; a failure is ignored.
+ * Stores the view as `{ version: 1, roles, separateThinkingLevels, keys, sort, providers }`; a
+ * failure is ignored.
  */
 export function writeBreakdownView(view: TelemetryBreakdownView, storage: Storage | null = safeLocalStorage()): void {
   try {
@@ -604,8 +601,7 @@ export function writeBreakdownView(view: TelemetryBreakdownView, storage: Storag
       separateThinkingLevels: view.separateThinkingLevels,
       keys: view.keys,
       sort: { field: view.sort.field, direction: view.sort.direction },
-      providers: view.providers,
-      toolbarCollapsed: view.toolbarCollapsed
+      providers: view.providers
     }));
   } catch {
     // Storage full or unavailable: the view is simply not remembered.

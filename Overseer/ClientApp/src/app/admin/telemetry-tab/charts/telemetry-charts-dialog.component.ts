@@ -145,7 +145,7 @@ export const TL_CHARTS_VIEW_TABS: readonly { readonly id: TelemetryChartsView; r
 export const TL_CHARTS_KEY_OPTIONS: readonly { readonly value: AiTelemetryKeySource; readonly label: string }[] = [
   { value: 'system', label: 'System AI configurations' },
   { value: 'user', label: 'User keys' },
-  { value: 'both', label: 'Both' }
+  { value: 'both', label: 'All keys' }
 ];
 
 export const TL_CHARTS_ROLE_OPTIONS: readonly { readonly value: AiUsageRoleGroup; readonly label: string }[] = [

@@ -106,6 +106,11 @@ describe('AdminUsersTabComponent', () => {
 
       const list = host().querySelector('[role="tablist"]') as HTMLElement;
       expect(list.getAttribute('aria-label')).toBe('User sections');
+      expect(list.classList).toContain('gh-tabs-wrap');
+      const head = list.parentElement as HTMLElement;
+      expect(head.classList).toContain('gh-subtab-head');
+      expect(head.querySelector(':scope > .tab-header-row')).not.toBeNull();
+      expect(getComputedStyle(head).position).toBe('sticky');
       expect(Array.from(list.querySelectorAll('[role="tab"]')).map(t => t.id)).toEqual([
         'users-subtab-users', 'users-subtab-groups', 'users-subtab-deletions', 'users-subtab-log'
       ]);

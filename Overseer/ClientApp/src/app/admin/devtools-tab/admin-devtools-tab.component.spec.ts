@@ -38,17 +38,36 @@ describe('AdminDevtoolsTabComponent', () => {
     expect(host().querySelector('.tab-header-row h3')?.textContent?.trim()).toBe('Services');
   });
 
-  it('keeps the heading and the sub-tab row together in one sticky head over an opaque ground', () => {
+  it('keeps the heading and the sub-tab row together in one sticky head, transparent at rest', () => {
     fixture.detectChanges();
 
-    const head = host().querySelector('.devtools-head') as HTMLElement;
+    const head = host().querySelector('.gh-subtab-head') as HTMLElement;
     expect(head.querySelector('.tab-header-row')).not.toBeNull();
     const list = head.querySelector('[role="tablist"]') as HTMLElement;
     expect(list).not.toBeNull();
     const style = getComputedStyle(head);
     expect(style.position).toBe('sticky');
     expect(style.top).toBe('0px');
-    expect(getComputedStyle(list).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(getComputedStyle(list).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+  });
+
+  it('gives the sub-tab row an opaque ground once the head is stuck', async () => {
+    const scroller = document.createElement('div');
+    scroller.style.cssText = 'height: 200px; overflow-y: auto;';
+    document.body.appendChild(scroller);
+    try {
+      host().style.cssText = 'display: block; min-height: 2000px;';
+      scroller.appendChild(host());
+      fixture.detectChanges();
+
+      const list = host().querySelector('.gh-subtab-head [role="tablist"]') as HTMLElement;
+      scroller.scrollTop = 50;
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+      expect(getComputedStyle(list).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    } finally {
+      scroller.remove();
+    }
   });
 
   it('renders six sub-tabs in order with the tab contract, GnollHack Source selected', () => {

@@ -1340,7 +1340,8 @@ describe('AdminBenchmarkComponent', () => {
         expect(fixture.nativeElement.querySelector('.bm-brand')).toBeNull();
         const container = fixture.nativeElement.querySelector('.benchmark-container') as HTMLElement;
         const firstChild = container.firstElementChild as HTMLElement;
-        expect(firstChild.matches('.gh-tabs[role="tablist"]')).toBe(true);
+        expect(firstChild.matches('.gh-subtab-head')).toBe(true);
+        expect(firstChild.firstElementChild?.matches('.gh-tabs[role="tablist"]')).toBe(true);
 
         const emblem = dialog().querySelector('.rr-identity > img.gnollbench-emblem') as HTMLImageElement;
         expect(emblem).toBeTruthy();

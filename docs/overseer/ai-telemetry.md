@@ -63,8 +63,8 @@ a retired entry's name, else the model id.
 
 ## 6. Key sources
 
-The **Keys** filter on the sub-tab row (§ 7) selects *System AI configurations* (the default), *User
-keys* or *Both*, for every sub-tab. User-key rows show the user's current name. Calls on a user's own key are logged without content.
+The **Keys** filter in the tab's header (§ 7) selects *System AI configurations* (the default), *User
+keys* or *All keys*, for every sub-tab. User-key rows show the user's current name. Calls on a user's own key are logged without content.
 **An incognito turn on a user's own
 key writes nothing** — no usage row and no attempt row. Incognito turns on a system configuration keep
 recording as before (they spend the operator's quota), and confidential turns record on both key sources.
@@ -75,7 +75,7 @@ The breakdown, on the **Models** sub-tab, shows one card per key source, user, p
 group; the list is labeled *Usage by model and role* (`aria-label`), with no section heading. Each card
 is titled with the model name (§ 5), with the model id and the provider badge on the line under it, then a
 badge row: the role (*Chat*, *Title Generation*, *Benchmark*, *Other*, each in its role color), the
-thinking level and, under *Keys: Both*, the key (*System key*, *User key: alice*). With *Show separately*
+thinking level and, under *Keys: All keys*, the key (*System key*, *User key: alice*). With *Show separately*
 a card has one thinking badge — the level, or *None sent* / *Not recorded* in a neutral badge; with
 *Group together* it has one badge per level its rows recorded, in `ThinkingLevelOrder.json` order, and
 none for *None sent* or *Not recorded*.
@@ -97,13 +97,14 @@ sorts last in both orders. Ties go by title, then thinking level in the catalog 
 *All shown* sums the shown cards and stays last. The charts dialog does not take the search, the provider
 toggles or the sort.
 
-The **Date range** and **Keys** controls sit on the sub-tab row, right-aligned after the tabs, each with a
-visible inline label, in a `role="group"` *Date range and keys* that is a sibling of the tablist, not
-inside it. Below about 48 rem of the row they take their own line above the tabs. Every sub-tab honors
-both. A chevron button (*Date range and keys*, `aria-expanded`) at the end of the group collapses it to
-one line, *Last 30 days · System AI configurations*. The tab header and that row form one sticky head at
-the top of the tab; the head's height is kept in `--tl-sticky-clearance`, so a focused or scrolled-to
-element stops below it.
+The **Date range** and **Keys** selects sit in the tab's header after the title, in a `role="group"`
+*Date range and keys*, named by visually hidden labels: each value names its dimension (*Last 30 days*,
+*All keys*). A custom range adds *Start date* and *End date* inputs. Every sub-tab honors both. The
+header ends in two icon-only buttons with tooltips: **Charts** (*Telemetry charts*, opens the charts
+dialog) and **Refresh** (*Refresh telemetry*; `aria-disabled`, with a spinner in place of its icon, while
+a load runs). The header and the sub-tab row form one sticky head (`.gh-subtab-head`) at the top of the
+tab; the row is transparent at rest and takes an opaque ground once stuck. The head's height is kept in
+`--tl-sticky-clearance`, so a focused or scrolled-to element stops below it.
 
 The **Request Governor** card and the *Rate Limit Partitions* heading carry the scope tag *live*, as
 *Overseer Activity* carries *all keys*: they show the governor's current state and ignore both the range
@@ -167,14 +168,14 @@ full-width card each. The two dialogs share the stylesheet partial `_telemetry-u
   keys, *Provider errors are not recorded per user for system AI configurations.* (as in § 7a), and *Cost
   recorded since {date}.* when the range starts earlier.
 - **Filter bar.** A search (*Search model or provider*, `#tl-um-search`), a *Role* select (from two role
-  groups up), a *Key* select (only under *Keys: Both*: *All keys*, *System AI configurations*, *User
+  groups up), a *Key* select (only under *Keys: All keys*: *All keys*, *System AI configurations*, *User
   keys*), a thinking-level filter (from two level values up), the *Thinking levels* grouping (*Group
   together* / *Show separately*), the Sort popover and *Clear filters*, which clears the search and the
   role, key and level filters.
 - **Shares and rank are of the scope** after the role, key and level filters, **before the search**, as
   in § 7a.
 - **Cards.** The rank, the model name with the search highlights, the model id and the provider badge, the
-  role and thinking badges and, under *Both*, *System key* or *Own key*, *Last request … UTC*, a share bar
+  role and thinking badges and, under *All keys*, *System key* or *Own key*, *Last request … UTC*, a share bar
   and § 7a's nine figures, each additive one with *{p} of total*.
 - **Sort**: *Est. cost* (the default, highest first), *Requests*, *Input (uncached)*, *Cache read*, *Cache
   created*, *Output*, *Total tokens*, *Cache hit*, *Avg duration*, *Last request*, *Model name* or
@@ -273,7 +274,7 @@ and its scope line says what it counts:
 |---|---|---|
 | *System AI configurations* (the default) | usage on system AI configurations (`SystemAiUsageLog`) | *System AI configurations. Chats, messages and refusals count every key.* |
 | *User keys* | usage on users' own API keys (`UserKeyAiUsageLog`) | *Users' own API keys. Limits apply to system AI configurations only; chats, messages and refusals count every key.* |
-| *Both* | both | *System AI configurations and users' own keys. Chats, messages and refusals count every key.* |
+| *All keys* | both | *System AI configurations and users' own keys. Chats, messages and refusals count every key.* |
 
 Showing user-key usage per user exposes nothing new: the breakdown already shows it per user under *Keys:
 User keys* (§ 7). Refusals, chats and messages come from `SecurityEvent` and `OverseerDailyActivity`,
@@ -292,7 +293,7 @@ The cards are built like the breakdown's, on the same layout mixins and breakpoi
 configurations table, full width, in a keyboard-scrollable labeled region that stacks under 36 rem. The
 metrics are requests (chat and title), tokens, estimated cost, the **busiest hour** (most requests in one
 UTC clock hour) with *typical n per active hour*, active days, chats, messages, and the limit refusals and
-provider refusals from `SecurityEvent` (security plan). Under *Both*, *Requests* carries the note *system N
+provider refusals from `SecurityEvent` (security plan). Under *All keys*, *Requests* carries the note *system N
 · own key M* and *Est. cost* the note *own key $X*; the busiest hour, active days and requests per active
 hour sum both logs per user, day and hour.
 
@@ -339,7 +340,7 @@ controls hidden through `hiddenKeys`), and **Download** (size and format).
 - **Buckets:** `auto` = day up to 45 days, week (Monday 00:00 UTC) up to 180, else month (the 1st, UTC);
   empty buckets are included. A range with more than 1,100 buckets is refused with 400.
 - **Split by:** none, role, provider, model, key source, or user (only with user keys; system rows form
-  one *System AI configurations* line under *Both*). The 8 lines with the most requests are kept; the
+  one *System AI configurations* line under *All keys*). The 8 lines with the most requests are kept; the
   rest merge into one *Other* line.
 - **Activity figures** ignore *Split by* and *Keys*; buckets before the counting start are gaps, not zero;
   under a user filter the incognito lines are omitted.

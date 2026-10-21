@@ -5,7 +5,7 @@ import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import {
   AdminService,
   AiTelemetrySummaryDto,
@@ -326,7 +326,7 @@ describe('AdminTelemetryTabComponent', () => {
 
       const select = host().querySelector('#telemetryKeysSelect') as HTMLSelectElement;
       expect(host().querySelector('label[for="telemetryKeysSelect"]')?.textContent?.trim()).toBe('Keys');
-      expect(Array.from(select.options).map(o => o.textContent?.trim())).toEqual(['System AI configurations', 'User keys', 'Both']);
+      expect(Array.from(select.options).map(o => o.textContent?.trim())).toEqual(['System AI configurations', 'User keys', 'All keys']);
 
       select.value = 'user';
       select.dispatchEvent(new Event('change'));
@@ -449,7 +449,7 @@ describe('AdminTelemetryTabComponent', () => {
       expect(unnamed.querySelector('.tl-card-identity .gh-model-card-model-id')).toBeNull();
     });
 
-    it('names the user of a user-key card and marks system cards under Both', () => {
+    it('names the user of a user-key card and marks system cards under All keys', () => {
       summarySpy.mockReturnValue(of(summary({
         keySource: 'both',
         rows: [row({ requests: 3 }), row({ keySource: 'user', userId: 'u-1', userName: 'alice', requests: 2 })]
@@ -712,19 +712,27 @@ describe('AdminTelemetryTabComponent', () => {
       });
     });
 
-    // --- Sticky head, sub-tabs and the collapsible Date range and Keys controls ---
+    // --- Sticky head, the header's filters and actions, and the sub-tabs ---
 
-    it('keeps the header and the sub-tab row with the Date range and Keys controls in one sticky head', () => {
+    it('keeps the header, with Date range, Keys, Charts and Refresh, and the sub-tab row in one sticky head', () => {
       openTab();
 
       const head = host().querySelector('.tl-head') as HTMLElement;
-      expect(head.querySelector('.tab-header-row')).not.toBeNull();
-      expect(head.querySelector('.tl-nav [role="tablist"]')).not.toBeNull();
-      expect(head.querySelector('.tl-nav #telemetryKeysSelect')).not.toBeNull();
+      expect(head.classList.contains('gh-subtab-head')).toBe(true);
+      const header = head.querySelector('.tab-header-row') as HTMLElement;
+      for (const id of ['telemetryTimeSpanSelect', 'telemetryKeysSelect', 'tl-charts-btn', 'tl-refresh-btn']) {
+        expect(header.querySelector('#' + id)).not.toBeNull();
+      }
+      expect(head.querySelector(':scope > [role="tablist"]')).not.toBeNull();
       const style = getComputedStyle(head);
       expect(style.position).toBe('sticky');
       expect(style.top).toBe('0px');
-      expect(getComputedStyle(head.querySelector('.tl-nav-ground')!).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    });
+
+    it('wraps the sub-tab row rather than scrolling it', () => {
+      openTab();
+
+      expect(host().querySelector('[role="tablist"]')?.classList.contains('gh-tabs-wrap')).toBe(true);
     });
 
     const subTabButtons = (): HTMLButtonElement[] =>
@@ -770,20 +778,38 @@ describe('AdminTelemetryTabComponent', () => {
       expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['-1', '-1', '0']);
     });
 
-    it('puts the Date range and Keys controls after the tablist in the same row, not inside it', () => {
+    it('puts Date range and Keys in the header, named by visually hidden labels', () => {
       openTab();
 
-      const nav = host().querySelector('.tl-nav') as HTMLElement;
-      const tablist = nav.querySelector('[role="tablist"]') as HTMLElement;
-      const group = nav.querySelector('.tl-range') as HTMLElement;
+      const header = host().querySelector('.tab-header-row') as HTMLElement;
+      const tablist = host().querySelector('[role="tablist"]') as HTMLElement;
+      const group = header.querySelector('.tl-range') as HTMLElement;
       expect(group.getAttribute('role')).toBe('group');
       expect(group.getAttribute('aria-label')).toBe('Date range and keys');
-      expect(group.parentElement).toBe(nav);
       expect(tablist.contains(group)).toBe(false);
-      expect(tablist.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(Array.from(tablist.children).every(c => c.getAttribute('role') === 'tab')).toBe(true);
-      expect(group.querySelector('label[for="telemetryTimeSpanSelect"]')?.textContent?.trim()).toBe('Date range');
-      expect(group.querySelector('#tl-toolbar-toggle')).not.toBeNull();
+      for (const [id, name] of [['telemetryTimeSpanSelect', 'Date range'], ['telemetryKeysSelect', 'Keys']]) {
+        const label = group.querySelector(`label[for="${id}"]`) as HTMLElement;
+        expect(label.textContent?.trim()).toBe(name);
+        expect(label.classList.contains('visually-hidden')).toBe(true);
+      }
+      expect(host().querySelector('#tl-toolbar-toggle')).toBeNull();
+    });
+
+    it('names the custom range dates by visually hidden labels, with a decorative dash between them', () => {
+      store.telemetryRange.timeSpan = 'custom';
+      store.telemetryRange.start = '2026-09-01';
+      store.telemetryRange.end = '2026-09-30';
+      openTab();
+
+      const group = host().querySelector('.tab-header-row .tl-range') as HTMLElement;
+      for (const [id, name] of [['telemetryStartDateInput', 'Start date'], ['telemetryEndDateInput', 'End date']]) {
+        expect(group.querySelector('#' + id)).not.toBeNull();
+        const label = group.querySelector(`label[for="${id}"]`) as HTMLElement;
+        expect(label.textContent?.trim()).toBe(name);
+        expect(label.classList.contains('visually-hidden')).toBe(true);
+      }
+      expect(group.querySelector('.tl-range-dash')?.getAttribute('aria-hidden')).toBe('true');
     });
 
     it('renders a panel on first selection and keeps it, hidden, after leaving it', () => {
@@ -873,42 +899,6 @@ describe('AdminTelemetryTabComponent', () => {
         expect(badge.scrollWidth).toBeGreaterThan(badge.clientWidth);
         expect(badge.getBoundingClientRect().right).toBeLessThanOrEqual(card.getBoundingClientRect().right);
       });
-    });
-
-    it('collapses the bar to a summary line, keeps focus on the toggle, and remembers it', () => {
-      openTab();
-
-      const toggle = host().querySelector('#tl-toolbar-toggle') as HTMLButtonElement;
-      const controls = host().querySelector('#tl-toolbar-controls') as HTMLElement;
-      expect(toggle.getAttribute('aria-label')).toBe('Date range and keys');
-      expect(toggle.getAttribute('aria-controls')).toBe('tl-toolbar-controls');
-      expect(toggle.getAttribute('aria-expanded')).toBe('true');
-      expect(host().querySelector('#' + toggle.getAttribute('interestfor'))?.getAttribute('popover')).toBe('hint');
-      expect(host().querySelector('.tl-toolbar-summary')).toBeNull();
-
-      toggle.focus();
-      toggle.click();
-      fixture.detectChanges();
-
-      expect(toggle.getAttribute('aria-expanded')).toBe('false');
-      expect(controls.hidden).toBe(true);
-      expect(host().querySelector('#telemetryKeysSelect')).not.toBeNull();
-      expect(host().querySelector('.tl-toolbar-summary')?.textContent?.trim()).toBe('Last 30 days · System AI configurations');
-      expect(document.activeElement).toBe(toggle);
-      expect(JSON.parse(localStorage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY)!).toolbarCollapsed).toBe(true);
-
-      store.telemetryRange.timeSpan = 'custom';
-      store.telemetryRange.start = '2026-09-01';
-      store.telemetryRange.end = '2026-09-30';
-      fixture.detectChanges();
-      expect(host().querySelector('.tl-toolbar-summary')?.textContent?.trim()).toBe('2026-09-01 – 2026-09-30 · System AI configurations');
-
-      const again = TestBed.createComponent(AdminTelemetryTabComponent);
-      again.detectChanges();
-      const restored = again.nativeElement as HTMLElement;
-      expect(restored.querySelector('#tl-toolbar-toggle')?.getAttribute('aria-expanded')).toBe('false');
-      expect((restored.querySelector('#tl-toolbar-controls') as HTMLElement).hidden).toBe(true);
-      again.destroy();
     });
 
     it('is a labeled list of articles, each labeled by its title, ending in the All shown total', () => {
@@ -1080,10 +1070,15 @@ describe('AdminTelemetryTabComponent', () => {
     it('opens the charts dialog with the range, the Keys filter and the selected roles', () => {
       openTab();
 
-      const button = host().querySelector('.tab-header-row button.telemetry-charts-btn') as HTMLButtonElement;
-      expect(button.matches('.btn-gh[type="button"]')).toBe(true);
-      expect(button.textContent?.trim()).toBe('Charts');
+      const button = host().querySelector('.tab-header-row #tl-charts-btn') as HTMLButtonElement;
+      expect(button.matches('.action-btn[type="button"]')).toBe(true);
+      expect(button.getAttribute('aria-label')).toBe('Telemetry charts');
+      expect(button.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(button.textContent?.trim()).toBe('');
       expect(button.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+      const tip = host().querySelector('#' + button.getAttribute('interestfor'));
+      expect(tip?.getAttribute('popover')).toBe('hint');
+      expect(tip?.textContent?.trim()).toBe('Charts');
       button.click();
 
       expect(chartsDialog().open).toHaveBeenCalledWith({
@@ -1092,6 +1087,42 @@ describe('AdminTelemetryTabComponent', () => {
         keys: 'system',
         roles: ['chat', 'title', 'benchmark']
       });
+    });
+
+    // --- Refresh ---
+
+    it('makes Refresh an icon button that is aria-disabled while loading and refuses the click', () => {
+      const pending = new Subject<AiTelemetrySummaryDto>();
+      summarySpy.mockReturnValueOnce(pending.asObservable());
+      openTab();
+      const refresh = vi.spyOn(component, 'refreshTelemetryTab');
+
+      const button = () => host().querySelector('.tab-header-row #tl-refresh-btn') as HTMLButtonElement;
+      expect(button().matches('.action-btn[type="button"]')).toBe(true);
+      expect(button().getAttribute('aria-label')).toBe('Refresh telemetry');
+      expect(button().textContent?.trim()).toBe('');
+      const tip = host().querySelector('#' + button().getAttribute('interestfor'));
+      expect(tip?.getAttribute('popover')).toBe('hint');
+      expect(tip?.textContent?.trim()).toBe('Refresh telemetry');
+
+      expect(button().getAttribute('aria-disabled')).toBe('true');
+      expect(button().disabled).toBe(false);
+      expect(button().querySelector('.gh-spinner-small')).not.toBeNull();
+      const calls = summarySpy.mock.calls.length;
+      button().click();
+      fixture.detectChanges();
+      expect(summarySpy.mock.calls.length).toBe(calls);
+      expect(refresh).not.toHaveBeenCalled();
+
+      pending.next(summary());
+      pending.complete();
+      fixture.detectChanges();
+      expect(button().hasAttribute('aria-disabled')).toBe(false);
+      expect(button().querySelector('.gh-spinner-small')).toBeNull();
+      expect(button().querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+
+      button().click();
+      expect(refresh).toHaveBeenCalledWith(true);
     });
 
     // --- Usage by user ---
@@ -1118,7 +1149,7 @@ describe('AdminTelemetryTabComponent', () => {
       expect(tip?.getAttribute('popover')).toBe('hint');
     });
 
-    it('names each Usage by user button apart: by level under Show separately, by key under Both', () => {
+    it('names each Usage by user button apart: by level under Show separately, by key under All keys', () => {
       summarySpy.mockReturnValue(of(summary({
         rows: [row({ thinkingLevel: 'high', requests: 4 }), row({ thinkingLevel: 'low', requests: 2 })]
       })));

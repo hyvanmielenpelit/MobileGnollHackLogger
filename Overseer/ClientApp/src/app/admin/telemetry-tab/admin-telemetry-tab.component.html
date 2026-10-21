@@ -1,84 +1,65 @@
-<!-- The header and the sub-tab row with the Date range / Keys controls stay at the top while the tab scrolls. -->
-<div class="tl-head" #tlHead>
-  <div class="tab-header-row d-flex justify-content-between align-items-center">
+<!-- The header, with the Date range and Keys filters and the tab's actions, and the sub-tab row stay at the top while the tab scrolls. -->
+<div class="tl-head gh-subtab-head" #tlHead>
+  <div class="tab-header-row">
     <h3 class="m-0">AI Telemetry & Request Governor</h3>
-    <div class="d-flex align-items-center telemetry-header-actions">
-      <button type="button" class="btn-gh telemetry-charts-btn" (click)="openCharts()">
-        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-        Charts
-      </button>
-      <button type="button" class="btn-gh" (click)="refreshTelemetryTab(true)" [disabled]="telemetryLoading || governorLoading">
-        @if (telemetryLoading || governorLoading) {
-          <span class="gh-spinner-small"></span>
+    <div class="tl-header-tools">
+      <!-- Each value names its dimension, so the labels are visually hidden. -->
+      <div class="tl-range" role="group" aria-label="Date range and keys">
+        <label for="telemetryTimeSpanSelect" class="visually-hidden">Date range</label>
+        <select id="telemetryTimeSpanSelect" class="gh-input" [(ngModel)]="telemetryTimeSpan" (ngModelChange)="onTelemetryTimeSpanChange()">
+          @for (span of timeSpans; track span) {
+            <option [value]="span">{{ timeSpanLabels[span] }}</option>
+          }
+        </select>
+        @if (telemetryTimeSpan === 'custom') {
+          <label for="telemetryStartDateInput" class="visually-hidden">Start date</label>
+          <input id="telemetryStartDateInput" type="date" class="gh-input" [(ngModel)]="telemetryStartDate" (ngModelChange)="onCustomDateChange()" [max]="todayDate">
+          <span class="tl-range-dash" aria-hidden="true">–</span>
+          <label for="telemetryEndDateInput" class="visually-hidden">End date</label>
+          <input id="telemetryEndDateInput" type="date" class="gh-input" [(ngModel)]="telemetryEndDate" (ngModelChange)="onCustomDateChange()" [min]="telemetryStartDate" [max]="todayDate">
         }
-        Refresh Telemetry
-      </button>
+        <label for="telemetryKeysSelect" class="visually-hidden">Keys</label>
+        <select id="telemetryKeysSelect" class="gh-input" [ngModel]="keys" (ngModelChange)="onKeysChange($event)">
+          @for (source of keySources; track source) {
+            <option [value]="source">{{ keySourceLabels[source] }}</option>
+          }
+        </select>
+      </div>
+      <div class="tl-header-actions">
+        <button type="button" class="action-btn telemetry-charts-btn" id="tl-charts-btn"
+                aria-label="Telemetry charts" aria-haspopup="dialog"
+                interestfor="tl-charts-tip" style="anchor-name: --tl-charts-btn"
+                (click)="openCharts()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+        </button>
+        <div popover="hint" class="gh-tooltip" id="tl-charts-tip" style="position-anchor: --tl-charts-btn">Charts</div>
+        <!-- aria-disabled while a load runs, so the button keeps its focus and its tooltip. -->
+        <button type="button" class="action-btn tl-refresh-btn" id="tl-refresh-btn"
+                aria-label="Refresh telemetry"
+                [attr.aria-disabled]="telemetryLoading || governorLoading ? 'true' : null"
+                interestfor="tl-refresh-tip" style="anchor-name: --tl-refresh-btn"
+                (click)="refreshFromHeader()">
+          @if (telemetryLoading || governorLoading) {
+            <span class="gh-spinner-small" aria-hidden="true"></span>
+          } @else {
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          }
+        </button>
+        <div popover="hint" class="gh-tooltip" id="tl-refresh-tip" style="position-anchor: --tl-refresh-btn">Refresh telemetry</div>
+      </div>
     </div>
   </div>
 
-  <!-- The sub-tabs, then the Date range / Keys controls at the row's end, collapsible to one summary line.
-       The controls are hidden, not removed, so their ids and bindings stay. -->
-  <div class="tl-nav-ground">
-    <div class="tl-nav">
-      <div class="gh-tabs gh-tabs-secondary tl-subtabs" role="tablist" aria-label="AI Telemetry sections">
-        @for (tab of subTabs; track tab; let i = $index) {
-          <button type="button" role="tab" class="gh-tab"
-                  [id]="'tl-subtab-' + tab"
-                  [attr.aria-controls]="'tl-subpanel-' + tab"
-                  [attr.aria-selected]="subTab === tab"
-                  [attr.tabindex]="subTab === tab ? 0 : -1"
-                  (keydown)="onSubTabKeydown($event, i)"
-                  (click)="selectSubTab(tab)">{{ subTabLabels[tab] }}</button>
-        }
-      </div>
-      <div class="tl-range" role="group" aria-label="Date range and keys" [class.is-collapsed]="view.toolbarCollapsed">
-        <div class="tl-range-controls" id="tl-toolbar-controls" [hidden]="view.toolbarCollapsed">
-          <div class="tl-range-field">
-            <label for="telemetryTimeSpanSelect">Date range</label>
-            <select id="telemetryTimeSpanSelect" class="gh-input" [(ngModel)]="telemetryTimeSpan" (ngModelChange)="onTelemetryTimeSpanChange()">
-              @for (span of timeSpans; track span) {
-                <option [value]="span">{{ timeSpanLabels[span] }}</option>
-              }
-            </select>
-          </div>
-          @if (telemetryTimeSpan === 'custom') {
-            <div class="tl-range-field">
-              <label for="telemetryStartDateInput">Start date</label>
-              <input id="telemetryStartDateInput" type="date" class="gh-input" [(ngModel)]="telemetryStartDate" (ngModelChange)="onCustomDateChange()" [max]="todayDate">
-            </div>
-            <div class="tl-range-field">
-              <label for="telemetryEndDateInput">End date</label>
-              <input id="telemetryEndDateInput" type="date" class="gh-input" [(ngModel)]="telemetryEndDate" (ngModelChange)="onCustomDateChange()" [min]="telemetryStartDate" [max]="todayDate">
-            </div>
-          }
-          <div class="tl-range-field">
-            <label for="telemetryKeysSelect">Keys</label>
-            <select id="telemetryKeysSelect" class="gh-input" [ngModel]="keys" (ngModelChange)="onKeysChange($event)">
-              @for (source of keySources; track source) {
-                <option [value]="source">{{ keySourceLabels[source] }}</option>
-              }
-            </select>
-          </div>
-        </div>
-        @if (view.toolbarCollapsed) {
-          <p class="tl-toolbar-summary">{{ toolbarSummary }}</p>
-        }
-        <!-- A constant name; aria-expanded carries the state and the chevron shows it. -->
-        <button type="button" class="action-btn tl-toolbar-toggle" id="tl-toolbar-toggle"
-                aria-label="Date range and keys" aria-controls="tl-toolbar-controls"
-                [attr.aria-expanded]="!view.toolbarCollapsed"
-                [attr.interestfor]="'tl-toolbar-toggle-tip'" style="anchor-name: --tl-toolbar-toggle"
-                (click)="toggleToolbar()">
-          @if (view.toolbarCollapsed) {
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-          } @else {
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>
-          }
-        </button>
-        <div popover="hint" class="gh-tooltip" id="tl-toolbar-toggle-tip"
-             style="position-anchor: --tl-toolbar-toggle">{{ view.toolbarCollapsed ? 'Expand' : 'Collapse' }}</div>
-      </div>
-    </div>
+  <div class="gh-tabs gh-tabs-secondary gh-tabs-wrap tl-subtabs" role="tablist" aria-label="AI Telemetry sections">
+    @for (tab of subTabs; track tab; let i = $index) {
+      <button type="button" role="tab" class="gh-tab"
+              [id]="'tl-subtab-' + tab"
+              [attr.aria-controls]="'tl-subpanel-' + tab"
+              [attr.aria-selected]="subTab === tab"
+              [attr.tabindex]="subTab === tab ? 0 : -1"
+              (keydown)="onSubTabKeydown($event, i)"
+              (click)="selectSubTab(tab)">{{ subTabLabels[tab] }}</button>
+    }
   </div>
 </div>
 

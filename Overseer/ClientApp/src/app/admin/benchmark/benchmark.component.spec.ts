@@ -1595,6 +1595,8 @@ describe('AdminBenchmarkComponent', () => {
       expect(tabList().getAttribute('aria-label')).toBe('Benchmark sections');
       expect(tabs().length).toBe(component.subTabs.length);
       expect(tabList().classList.contains('gh-tabs-wrap')).toBe(true);
+      expect(tabList().parentElement.classList.contains('gh-subtab-head')).toBe(true);
+      expect(getComputedStyle(tabList().parentElement).position).toBe('sticky');
     });
 
     it('should place Batteries fourth, right after Multi-Run Analysis', () => {
@@ -1625,7 +1627,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(last.id).toBe('bm-tab-chatconsistency');
       expect((last.textContent || '').trim()).toBe('Chat Consistency');
       expect(last.getAttribute('aria-controls')).toBe('bm-panel-chatconsistency');
-      expect(last.querySelector('svg.btn-icon[aria-hidden="true"]')).toBeTruthy();
+      expect(last.querySelector('svg')).toBeNull();
 
       last.click();
       fixture.detectChanges();
@@ -1638,9 +1640,9 @@ describe('AdminBenchmarkComponent', () => {
       expect(last.getAttribute('aria-selected')).toBe('true');
     });
 
-    it('should give every tab an icon', () => {
+    it('should keep every tab text-only, as the other Admin sub-tab rows are', () => {
       for (const tab of tabs()) {
-        expect(tab.querySelectorAll('svg.btn-icon').length, tab.id).toBe(1);
+        expect(tab.querySelector('svg'), tab.id).toBeNull();
       }
     });
 

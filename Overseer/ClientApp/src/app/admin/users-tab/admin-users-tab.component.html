@@ -1,21 +1,23 @@
-<div class="tab-header-row au-tab-header">
-  <h3 class="m-0">Users</h3>
-  <button type="button" id="au-bulk-actions" class="btn-gh au-bulk-actions" aria-haspopup="dialog" (click)="openBulkWizard()">
-    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
-    Bulk Actions
-  </button>
-</div>
+<div class="gh-subtab-head">
+  <div class="tab-header-row au-tab-header">
+    <h3 class="m-0">Users</h3>
+    <button type="button" id="au-bulk-actions" class="btn-gh au-bulk-actions" aria-haspopup="dialog" (click)="openBulkWizard()">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+      Bulk Actions
+    </button>
+  </div>
 
-<div class="gh-tabs gh-tabs-secondary users-subtabs" role="tablist" aria-label="User sections">
-  @for (tab of subTabs; track tab; let i = $index) {
-    <button type="button" role="tab" class="gh-tab"
-            [id]="'users-subtab-' + tab"
-            [attr.aria-controls]="'users-subpanel-' + tab"
-            [attr.aria-selected]="subTab === tab"
-            [attr.tabindex]="subTab === tab ? 0 : -1"
-            (keydown)="onSubTabKeydown($event, i)"
-            (click)="selectSubTab(tab)">{{ subTabLabel(tab) }}</button>
-  }
+  <div class="gh-tabs gh-tabs-secondary gh-tabs-wrap users-subtabs" role="tablist" aria-label="User sections">
+    @for (tab of subTabs; track tab; let i = $index) {
+      <button type="button" role="tab" class="gh-tab"
+              [id]="'users-subtab-' + tab"
+              [attr.aria-controls]="'users-subpanel-' + tab"
+              [attr.aria-selected]="subTab === tab"
+              [attr.tabindex]="subTab === tab ? 0 : -1"
+              (keydown)="onSubTabKeydown($event, i)"
+              (click)="selectSubTab(tab)">{{ subTabLabel(tab) }}</button>
+    }
+  </div>
 </div>
 
 @if (subTab === 'users') {

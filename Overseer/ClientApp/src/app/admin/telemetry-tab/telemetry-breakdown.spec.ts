@@ -57,7 +57,7 @@ const titles = (cards: readonly BreakdownCard[]) => cards.map(c => c.modelName ?
 /** A view with every field set away from its default. */
 const fullView = (): TelemetryBreakdownView => ({
   roles: ['title', 'other'], separateThinkingLevels: true, keys: 'both',
-  sort: { field: 'cost', direction: 'asc' }, providers: ['google', 'openai'], toolbarCollapsed: true
+  sort: { field: 'cost', direction: 'asc' }, providers: ['google', 'openai']
 });
 
 describe('telemetry breakdown', () => {
@@ -355,10 +355,10 @@ describe('telemetry breakdown', () => {
   });
 
   describe('view storage', () => {
-    it('falls back to the three named roles, grouped levels, system keys, most requests first, every provider and the bar expanded', () => {
+    it('falls back to the three named roles, grouped levels, system keys, most requests first and every provider', () => {
       expect(readBreakdownView(memoryStorage())).toEqual({
         roles: ['chat', 'title', 'benchmark'], separateThinkingLevels: false, keys: 'system',
-        sort: { field: 'requests', direction: 'desc' }, providers: [], toolbarCollapsed: false
+        sort: { field: 'requests', direction: 'desc' }, providers: []
       });
       expect(readBreakdownView(null)).toEqual(defaultBreakdownView());
     });
@@ -369,19 +369,28 @@ describe('telemetry breakdown', () => {
 
       expect(JSON.parse(storage.getItem(TELEMETRY_BREAKDOWN_STORAGE_KEY)!)).toEqual({
         version: 1, roles: ['title', 'other'], separateThinkingLevels: true, keys: 'both',
-        sort: { field: 'cost', direction: 'asc' }, providers: ['google', 'openai'], toolbarCollapsed: true
+        sort: { field: 'cost', direction: 'asc' }, providers: ['google', 'openai']
       });
       expect(readBreakdownView(storage)).toEqual(fullView());
     });
 
-    it('reads a record written before the sort, providers and collapse existed with their defaults', () => {
+    it('reads a record written before the sort and providers existed with their defaults', () => {
       const storage = memoryStorage({
         [TELEMETRY_BREAKDOWN_STORAGE_KEY]: JSON.stringify({ version: 1, roles: ['title'], separateThinkingLevels: true, keys: 'user' })
       });
       expect(readBreakdownView(storage)).toEqual({
         roles: ['title'], separateThinkingLevels: true, keys: 'user',
-        sort: DEFAULT_BREAKDOWN_SORT, providers: [], toolbarCollapsed: false
+        sort: DEFAULT_BREAKDOWN_SORT, providers: []
       });
+    });
+
+    it('reads a record that still carries the retired toolbarCollapsed field to the full view without it', () => {
+      const storage = memoryStorage({
+        [TELEMETRY_BREAKDOWN_STORAGE_KEY]: JSON.stringify({ ...fullView(), version: 1, toolbarCollapsed: true })
+      });
+      const view = readBreakdownView(storage);
+      expect(view).toEqual(fullView());
+      expect('toolbarCollapsed' in view).toBe(false);
     });
 
     it('keeps an empty role selection', () => {
@@ -402,7 +411,7 @@ describe('telemetry breakdown', () => {
         .toEqual({ ...defaultBreakdownView(), keys: 'user' });
     });
 
-    it('falls back field by field for an invalid sort, providers or collapse value', () => {
+    it('falls back field by field for an invalid sort or providers value', () => {
       const read = (fields: Record<string, unknown>) => readBreakdownView(memoryStorage({
         [TELEMETRY_BREAKDOWN_STORAGE_KEY]: JSON.stringify({ ...fullView(), version: 1, ...fields })
       }));
@@ -412,7 +421,6 @@ describe('telemetry breakdown', () => {
       expect(read({ sort: 'cost' })).toEqual({ ...fullView(), sort: DEFAULT_BREAKDOWN_SORT });
       expect(read({ providers: 'google' })).toEqual({ ...fullView(), providers: [] });
       expect(read({ providers: [' Google ', 'google', 3, '', 'OpenAI'] })).toEqual({ ...fullView(), providers: ['google', 'openai'] });
-      expect(read({ toolbarCollapsed: 'yes' })).toEqual({ ...fullView(), toolbarCollapsed: false });
     });
 
     it('falls back when storage throws', () => {

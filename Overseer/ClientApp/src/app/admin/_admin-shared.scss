@@ -213,6 +213,11 @@
       }
     }
   }
+
+  /* In a sticky head the gap below the card belongs to the row, whose ground covers it. */
+  .gh-subtab-head > .tab-header-row {
+    margin-bottom: 0;
+  }
 }
 
 @mixin btn-gh-wide {

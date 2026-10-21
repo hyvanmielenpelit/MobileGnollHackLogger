@@ -174,7 +174,7 @@ describe('TelemetryUserModelsDialogComponent', () => {
     expect(dialog().getAttribute('aria-labelledby')).toBe('tl-um-title');
     expect(document.activeElement?.id).toBe('tl-um-title');
     expect(text(q('#tl-um-title'))).toBe('Usage by model: alice');
-    expect(text(q('.tl-mu-subtitle'))).toBe('Both · 2026-10-01 to 2026-10-03');
+    expect(text(q('.tl-mu-subtitle'))).toBe('All keys · 2026-10-01 to 2026-10-03');
     expect(q('.tl-mu-close')?.getAttribute('aria-label')).toBe('Close usage by model');
     expect(text(q('#tl-um-tip-close'))).toBe('Close');
     expect(q('.tl-mu-loading')).not.toBeNull();

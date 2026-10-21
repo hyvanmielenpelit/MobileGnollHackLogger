@@ -324,19 +324,6 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
     this.loadTelemetry();
   }
 
-  /** The collapsed bar's line: `Last 30 days · System AI configurations`, or the custom range's two dates. */
-  get toolbarSummary(): string {
-    const span = this.telemetryTimeSpan === 'custom'
-      ? `${this.telemetryStartDate} – ${this.telemetryEndDate}`
-      : TELEMETRY_TIME_SPAN_LABELS[this.telemetryTimeSpan] ?? this.telemetryTimeSpan;
-    return `${span} · ${KEY_SOURCE_LABELS[this.keys]}`;
-  }
-
-  /** Collapses the Date Range and Keys bar to its summary line, or expands it; stored. The toggle stays, and so does focus. */
-  toggleToolbar() {
-    this.saveView({ ...this.view, toolbarCollapsed: !this.view.toolbarCollapsed });
-  }
-
   loadTelemetry(showFeedback = false) {
     this.telemetryLoading = true;
     this.adminService.getAiTelemetrySummary(this.telemetryStartDate || undefined, this.telemetryEndDate || undefined, this.keys).subscribe({
@@ -412,6 +399,14 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
         this.store.showToast('AI Telemetry refreshed.', 'info', 'Telemetry Refreshed');
       }
     });
+  }
+
+  /** Header Refresh: refused while a load runs (the button is aria-disabled then). */
+  refreshFromHeader() {
+    if (this.telemetryLoading || this.governorLoading) {
+      return;
+    }
+    this.refreshTelemetryTab(true);
   }
 
   loadGovernorStatus(showFeedback = false) {
