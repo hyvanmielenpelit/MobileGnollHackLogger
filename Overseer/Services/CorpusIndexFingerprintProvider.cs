@@ -84,6 +84,12 @@ public class CorpusIndexFingerprintProvider
         }
     }
 
+    /// <summary>
+    /// The corpus condition the GnollHack wiki's published index declared (<c>condition:label</c>
+    /// or <c>invalid</c>); null for the live wiki.
+    /// </summary>
+    public virtual string? WikiCorpusCondition => _wiki?.CorpusCondition;
+
     public virtual IReadOnlyDictionary<string, CorpusContentFingerprint?> Snapshot()
         => new Dictionary<string, CorpusContentFingerprint?>
         {

@@ -913,10 +913,85 @@ public class BenchmarkComparabilityKeyTests
     }
 
     [Fact]
-    public void TheDefinitionVersion_IsTwo()
+    public void TheDefinitionVersion_IsThree()
     {
         // Stored beside every persisted key hash; a group analysed under another version reads as stale.
-        Assert.Equal(2, BenchmarkComparabilityKey.DefinitionVersion);
+        Assert.Equal(3, BenchmarkComparabilityKey.DefinitionVersion);
+    }
+
+    // -- The corpus condition and the instruction variant: two Instrument keys --------------------
+
+    [Fact]
+    public void AnAbsentCorpusCondition_ReadsLive_AndAnAbsentVariant_ReadsNone()
+    {
+        var keys = BenchmarkComparabilityKey.Extract(Run(13));
+
+        var corpus = keys.Single(k => k.Name == BenchmarkComparabilityKey.CorpusConditionKey);
+        var variant = keys.Single(k => k.Name == BenchmarkComparabilityKey.InstructionVariantKey);
+
+        Assert.Equal(BenchmarkComparabilityKeyKind.Instrument, corpus.Kind);
+        Assert.Equal(BenchmarkComparabilityKeyKind.Instrument, variant.Kind);
+        Assert.Equal(BenchmarkCorpusConditionMarker.Live, corpus.Value);
+        Assert.Equal("live", corpus.Value);
+        Assert.Equal("none", variant.Value);
+    }
+
+    [Fact]
+    public void TwoProductionRuns_StillResolveTierA_WithTheTwoNewKeys()
+    {
+        var result = BenchmarkComparabilityKey.Resolve(new[] { Run(13), Run(14) });
+
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
+        Assert.Empty(result.Differences);
+    }
+
+    [Fact]
+    public void AScarceCorpusLabel_MovesExactlyOneInstrumentKey()
+    {
+        var live = Run(13);
+        var scarce = Run(14);
+        scarce.CorpusCondition = "scarce:run-130-gold-facts";
+
+        var liveKeys = BenchmarkComparabilityKey.Extract(live);
+        var scarceKeys = BenchmarkComparabilityKey.Extract(scarce).ToDictionary(k => k.Name);
+
+        var moved = liveKeys.Where(k => scarceKeys[k.Name].Value != k.Value).ToList();
+        var key = Assert.Single(moved);
+        Assert.Equal(BenchmarkComparabilityKey.CorpusConditionKey, key.Name);
+        Assert.Equal(BenchmarkComparabilityKeyKind.Instrument, key.Kind);
+        Assert.Equal("scarce:run-130-gold-facts", scarceKeys[BenchmarkComparabilityKey.CorpusConditionKey].Value);
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { live, scarce });
+        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
+        Assert.Equal(BenchmarkComparabilityKey.CorpusConditionKey, Assert.Single(result.Differences).Name);
+    }
+
+    [Fact]
+    public void AVariantStamp_MovesExactlyOneInstrumentKey()
+    {
+        var production = Run(13);
+        var variant = Run(14);
+        variant.InstructionVariant = "source-tools-v1:0123456789ab";
+
+        var productionKeys = BenchmarkComparabilityKey.Extract(production);
+        var variantKeys = BenchmarkComparabilityKey.Extract(variant).ToDictionary(k => k.Name);
+
+        var key = Assert.Single(productionKeys, k => variantKeys[k.Name].Value != k.Value);
+        Assert.Equal(BenchmarkComparabilityKey.InstructionVariantKey, key.Name);
+        Assert.Equal("source-tools-v1:0123456789ab", variantKeys[BenchmarkComparabilityKey.InstructionVariantKey].Value);
+        Assert.NotEqual(BenchmarkComparabilityKey.ComputeKeyHash(production), BenchmarkComparabilityKey.ComputeKeyHash(variant));
+    }
+
+    [Fact]
+    public void Describe_NamesBothNewKeys()
+    {
+        foreach (string name in new[] { BenchmarkComparabilityKey.CorpusConditionKey, BenchmarkComparabilityKey.InstructionVariantKey })
+        {
+            var info = BenchmarkComparabilityKey.Describe(name);
+            Assert.False(string.IsNullOrWhiteSpace(info.Label));
+            Assert.False(string.IsNullOrWhiteSpace(info.Description));
+            Assert.Equal(BenchmarkComparabilityValueKind.Text, info.ValueKind);
+        }
     }
 
     // -- Two-family assessor panel: member B folded into the assessor key -------------------------

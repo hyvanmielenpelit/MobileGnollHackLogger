@@ -7,12 +7,14 @@ namespace Overseer.Services.Tools
     public class GetItemStatsTool : IToolHandler
     {
         private readonly SourceCodeService _sourceCodeService;
+        private readonly IConfiguration _configuration;
         private readonly int _truncationThreshold;
         private readonly int _hardLimit;
 
         public GetItemStatsTool(SourceCodeService sourceCodeService, IConfiguration configuration)
         {
             _sourceCodeService = sourceCodeService;
+            _configuration = configuration;
             _truncationThreshold = configuration.GetValue<int>("Tools:get_item_stats:TruncationThreshold", 9900);
             _hardLimit = configuration.GetValue<int>("Tools:get_item_stats:HardLimit", 10000);
         }
@@ -64,15 +66,29 @@ namespace Overseer.Services.Tools
                 : null;
 
             var result = _sourceCodeService.GetItemStats(name, objectClass);
-            
+
+            if (result.Error == null
+                && context?.Variant?.HasExperiment(Benchmarking.BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment) == true)
+            {
+                result.ReferencedBy = SourceReferenceIndex.ForStatsResult(
+                    _sourceCodeService, _configuration, ObjectConstantOf(result), SourceReferenceIndex.OnamesHeaderPath);
+            }
+
             var options = new JsonSerializerOptions
             {
                 WriteIndented = true,
                 DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
                 Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             };
-            
+
             string jsonResult = JsonSerializer.Serialize(result, options);
+
+            if (jsonResult.Length > _truncationThreshold && result.ReferencedBy != null)
+            {
+                /* Level 0: drop referenced_by before anything else */
+                result.ReferencedBy = null;
+                jsonResult = JsonSerializer.Serialize(result, options);
+            }
 
             if (jsonResult.Length > _truncationThreshold)
             {
@@ -129,6 +145,17 @@ namespace Overseer.Services.Tools
             }
 
             return minResult;
+        }
+
+        /// <summary>The object constant of an item result, from its resolved name, class and material; null without structured stats.</summary>
+        private static string? ObjectConstantOf(StatsResponse<ItemStats> result)
+        {
+            if (result.Stats == null) return null;
+            var fields = result.Stats.Fields;
+            fields.TryGetValue("name", out var itemName);
+            fields.TryGetValue("object_class", out var itemClass);
+            fields.TryGetValue("material", out var material);
+            return SourceReferenceIndex.ObjectConstant(itemName as string, itemClass as string, material?.ToString());
         }
 
         /// <summary>The identifier before the raw definition's first '(', e.g. "SPELL" from "SPELL(...)".</summary>

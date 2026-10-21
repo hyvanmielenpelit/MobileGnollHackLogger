@@ -224,7 +224,7 @@ A benchmark run executes the **production tool registry**, so a tool defect seen
 - **Whether arguments and results were stored is a version boundary — check the run's harness version before anything else.** For a run **before harness 17** they were not stored: `BenchmarkRunAnswer.ToolCallSummary` is a `name×count` string over *successful* calls only, `AgentRunRequest.ShowDebugLog` is hardcoded `false` at every benchmark call site, and a run creates no `ChatMessage` rows, so nothing equivalent to `ChatMessageToolCall.ArgsText` / `.Result` exists. For such a run, *"compare the parameters and results"* is **reconstruction and replay**, never transcript reading. **From harness 17** a run's `BenchmarkRunAnswer.ToolCalls` rows carry the real `ArgsText`, `Result`, `Error`, `Status`, emission order (`SortOrder`), tool round (`IterationIndex`), timings and the result size as `ToolExecutor` handed it over (`ResultLengthChars`) for **every attempted call**, read through `GET /api/admin/benchmark/runs/{id}/answers/{answerId}/tool-calls` (admin-authenticated). Reading those rows is **rung zero** — attempted before any reconstruction or replay (`server_benchmark_tool_diagnostics` § 2, § 7). A row whose payload the retention sweep pruned shows `ArgsText`/`Result` null beside a non-zero `ResultLengthChars`; that is the sweep, not an absent record.
 - **The count of failed tool calls is derived for a run before harness 17.** `ToolCallCount − Σ(ToolCallSummary counts) − ToolCallsBlocked` is the number of calls that errored technically. No report section surfaces it, and a non-zero value is direct evidence of a tool problem. Compute it first. A null `ToolCallsBlocked` means *not recorded*, never zero. **From harness 17 the figure is reported** as the answer's three-way outcome split, so read it rather than deriving what the record already states.
 - **From harness 16 a run fingerprints three of the five corpora** — knowledge base, GnollHack wiki, GnollHack source — by their Git HEAD, which says nothing about an uncommitted working tree. **From harness 48 it also records what each of the five indexes held** (`CorpusIndexFingerprintsJson`: a SHA-256 over the indexed text of every file, with a file count), the NetHack wiki and NetHack source included. All of these are **provenance, not comparability keys**: a difference is a fact to investigate, not an automatic tier drop.
-- **Version currency.** The bullets above were last checked against harness **58**, on 2026-10-21. `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
+- **Version currency.** The bullets above were last checked against harness **59**, on 2026-10-21. `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
 
 > 🛑 **Stop here.** Read the three tool-layer skills **now**, before dispatching any research about a tool, a corpus, or a tool count, and before writing the first finding. All three are read at this point; none is reached through the others.
 >
@@ -295,6 +295,8 @@ last column names the heading in `docs/overseer/ai-benchmark.md` that holds the 
 | Harness 40 | The two-family panel (§ 6, *Reading a panel run*) | A different grader instrument from every single-assessor run | *Harness Version 40 Updates*; *The Two-Family Assessor Panel* |
 | Harness 44 | The **Source Code References** launcher field, default *Disallowed — production default* | Every earlier run graded *Allowed*, the other prompt branch | *Harness Version 44 Updates* |
 | Harness 48 | `CorpusIndexFingerprintsJson` for all five indexes | Provenance, not a key: investigate a difference, never drop a tier for it | *Harness Version 48 Updates* |
+| Harness 57–58 | The `_policy.md` role-relative sentence is in the prompt of a 57-stamped run only | A 57-stamped run differs from its neighbors on `CandidateSystemPromptSha256` and `ToolGuidesSha256` (two Instrument keys), so it pairs with none of them | *Harness Version 57 Updates*; *Harness Version 58 Updates* |
+| Harness 59 | Critical-error quotes in the run report; the information condition, corpus condition and instruction variant recorded and keyed, under comparability key definition 3; evidence reach | Production runs are comparable across it on scores (`ReportingOnly`); condition and variant runs pair only as contrasts; a group analysis stored under definition 2 shows *Comparability definition changed* until re-analyzed | *Harness Version 59 Updates* |
 | Comparability key definition 2 (2026-09-24) | Candidate and grader settings read from recorded model snapshots; `CandidateEndpoint` joins the candidate keys; grader signatures gain the output cap and endpoint and lose `parallelMode` | Earlier runs read as a different grader instrument (`(not recorded)`); a group analyzed before shows *Comparability definition changed* until re-analyzed | *Model Configuration Snapshots* |
 
 ### Axis 2: Speed and Latency
@@ -513,6 +515,7 @@ When an empirical chat-transferable finding clears the evidence bar, resolve it 
      | `Overseer/ToolGuides/_policy_parallel_disabled.md`, `_policy_parallel_on_request.md` | Parallel-mode overrides |
      | `Overseer/ToolGuides/<tool_name>.md` | Per-tool description, overriding the handler default |
    - `_policy.md` is inlined into the candidate system prompt (`ToolRegistry.GetPolicyText()`), so editing it moves `CandidateSystemPromptSha256` and the frozen-segment cache as well as `ToolGuidesSha256`.
+   - **Test it as an instruction variant first.** A tool-guide text, a `_policy.md` or prompt sentence, a new tool, or a tool-output change is tried as a benchmark-only variant (`docs/overseer/ai-benchmark-conditions-and-variants.md`) before it reaches production. Its variant contrast against a run without it is § 6's controlled pair. It is promoted only when its pre-declared criteria are met, including one criterion on questions it was not motivated by, and one confirming production run follows promotion.
 4. **Limits Parity**:
    - Aligning session and iteration budgets between chat and benchmark bands per `docs/overseer/ai-benchmark.md` § 9.
 5. **Prompt Segmentation**:
@@ -522,6 +525,7 @@ When an empirical chat-transferable finding clears the evidence bar, resolve it 
    - Adjusting default models or reasoning effort in `/settings` rather than hacking prompt prose.
 7. **Chat System Prompt Modification (Highest Risk, Last Resort)**:
    - Modifying `ChatService.BuildSystemPrompt` prose directly. Reserved exclusively for systemic, cross-model deficiencies backed by multiple comparable runs.
+   - **Test it as an instruction variant first**, as rung 3 says.
 
 ---
 
@@ -546,7 +550,7 @@ To preserve Overseer chat quality for real human players, agents and developers 
 
 A protocol that authorises production prompt edits but specifies no way to detect that an edit made things worse is incomplete in the direction that matters most. Every change that reached **rung 3 or above** carries these four obligations.
 
-1. **Re-run.** The change is followed by a benchmark run under the **same** configuration as the run that motivated it — same prompt options, harness version, scoring profile and assessor regime, per § 6. A change verified against a differently-configured run is unverified.
+1. **Re-run.** The change is followed by a benchmark run under the **same** configuration as the run that motivated it — same prompt options, harness version, scoring profile and assessor regime, per § 6. A change verified against a differently-configured run is unverified. For a variant, the re-run is the variant contrast itself; the confirming production run after promotion is the second half.
 2. **Pre-declared acceptance criterion.** *Before* the change is made, write down which dimension is expected to move, in which direction, and by how much — **referenced to the run's own confidence interval.** Run 11's Intelligence Index carried 91.5 ± 5.9 at 95% CI; a 3-point movement is not a result. Declaring the criterion afterwards is choosing the target after seeing the arrow land.
 3. **Side-effect check.** Improvement on the intended axis is not sufficient. Check the specific opposing pairs from § 5:
 
@@ -657,8 +661,10 @@ folded earlier is in this file's Git history before its folding round. Battery r
 was retired on 2026-10-20: chat changes in the ledger, open items in the bones-round entry. The
 bones quest-artifact round (2026-10-18, `bones_quest_artifact_trap/`) was retired on 2026-10-21: its
 W1 and W2 rows are in the ledger, its open items and battery run 12's in the run-124 entry's *Still
-outstanding*, and its lesson, a role-relative predicate read as absolute, in the run-122 and
-run-123 entries.
+outstanding*, and its lesson, a role-relative predicate read as absolute, in the chat change
+ledger's `_policy.md` sentence (T1) row.
+Run 122 (the bones round's R1) was retired on 2026-10-21; its rows are in the chat change ledger.
+Run 123 was retired on 2026-10-21; its rows are in the chat change ledger.
 Comparison #4 (battery runs 100–119, `comparison_4_rca_review/`) was retired on 2026-10-20: its T1
 routing row is in the ledger, its grader-family gap in § 6 *Reading a panel run*; its R1 replicate
 of all nine models was never made.
@@ -683,7 +689,7 @@ the plans repository.
   index. Read the flag and the cited code path before the count. From scoring method 13 a cap is
   confirmed before it applies (§ 5).
 - **A claim-verifier verdict is advisory evidence, and a human reads the cited line before any
-  change rests on it.** Sixty-nine wrong verdicts are recorded, run 24 to battery run 11; the
+  change rests on it.** Seventy wrong verdicts are recorded, run 24 to run 125; the
   recurring shape cites a default flag, a data table, a wiki page, a declaration or the wrong
   function, and misses the code applying or overriding it. Instructions 3a–3m and the deterministic
   citation notes (no live call site, not in the indexed source, a file without a line, a definition
@@ -741,50 +747,6 @@ the plans repository.
   runs. Read [`references/registry_corrections.md`](references/registry_corrections.md) before using
   a figure from those runs or that period.
 
-### Run 122 — 2026-10-20: GPT-6 Luna (high), GnollHack Trap Questions
-- **Candidate**: GPT-6 Luna (`gpt-6-luna`) @ `high`, default tier, parallel mode 2, max output 128,000. The bones round's R1, without its R0.
-- **Prompt options**: mode 0, concise, tools on, no web search, no subagents, source refs **Disallowed**, spoiler-free off, no snapshot, no history, no pre-injected wiki context.
-- **Grading regime**: harness 56, scoring 14, Standard profile (1). Panel: A Claude 5 Opus @ `medium`, B GPT-5.6 Sol @ `medium` (the candidate's family). Reference reader and claim verifier: Gemini 3.8 Flash @ `medium`, every answer, blind. Report writer: Gemini 4 Argon @ `medium`.
-- **Instrument SHAs**:
-  - `ChatService.cs` `53373897`, `Overseer/ToolGuides` `a3de3901`, `appsettings.json` `53373897`
-  - Prompt `ce36c4b442c3`; ToolGuides `639ba74661d9`
-  - KB `d2af7241`; wiki `6602759b` (the W1 commit); source `1ba33370`
-  - WIKI-IDX `7cb798461028`, SRC-IDX `49a062d361aa`, KB-IDX `1fd04d3e2f09`, NHW-IDX `e5dc755ab200`, NHS-IDX `c3929071a8d9`
-  - Suite 9, item revisions all r1
-- **Quality**:
-  - Index 70 ± 19 (A 69, B 70, reference reader 79), ICC 0.99, 0 disagreements.
-  - 1 confirmed critical error (Q6).
-  - Outcomes 3/3/2/0; Completeness 65.4 lowest.
-  - Claims 10 supported; accused sentences 2 supported, 2 refuted. All 14 verdicts right.
-- **Speed**: median model time 17.2 s, P90 36.1 s, TTFT P50 2.26 s; 4.5 model calls per answer; source-family share r = 0.89 with model time (n = 8).
-- **Cost**: US$1.36 per run; candidate US$0.0179 (US$0.0022 per question); claim verifier 43 %; candidate cache-read share 91 %. 36 tool calls, 0 failed, 0 refused.
-- **Transfer Action**: see `benchmark_run_122_analysis/implementation_plan_v2.md`.
-  - W2 (rung 2, `wiki_handoff_prompt_v2.md`).
-  - Generator and client fixes H1–H5 (Root Cause Analysis engine 11 → 12).
-  - UI tasks U1–U3.
-  - T1 deferred to R1's outcome.
-  - No change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides/` or `RecommendedModels`.
-- **Verification Outcome (bones round)**: R0 not made. W1 criterion 2 met (4 of 4), criterion 1 failed (1 of 4 correct, Completeness-limited); W1 partially closed.
-- **Still outstanding**: T1 (precondition pending R1); W2 validation; the items the bones-round entry carries from battery run 12.
-
-### Run 123 — 2026-10-20: GPT-6 Luna (high), GnollHack Trap Questions
-- **Candidate**: GPT-6 Luna (`gpt-6-luna`) @ `high`, default tier, parallel mode 2, max output 128,000. Made outside the run-122 runbook; by its keys a replicate of run 122 on the W2 wiki.
-- **Prompt options**: mode 0, concise, tools on, no web search, no subagents, source refs **Disallowed**, spoiler-free off, no snapshot, no history, no pre-injected wiki context.
-- **Grading regime**: harness 56, scoring 14, Standard profile (1). Panel A Claude 5 Opus @ `medium`, B GPT-5.6 Sol @ `medium` (the candidate's family); reference reader and claim verifier Gemini 3.8 Flash @ `medium`, every answer, blind. Writer Gemini 4 Argon @ `medium`, report format 24.
-- **Instrument SHAs**:
-  - `ChatService.cs` `53373897`, `Overseer/ToolGuides` `a3de3901`, `appsettings.json` `53373897` (unchanged since run 122 by the unchanged prompt and ToolGuides hashes; commits not re-read)
-  - Prompt `ce36c4b442c3`; ToolGuides `639ba74661d9`
-  - KB `d2af7241`; wiki `e82a48c1` (the W2 commit); source `1ba33370`
-  - WIKI-IDX `d57802310d34`, SRC-IDX `49a062d361aa`, KB-IDX `1fd04d3e2f09`, NHW-IDX `e5dc755ab200`, NHS-IDX `c3929071a8d9`
-  - Suite 9, item revisions all r1
-- **Quality**: Index 85 ± 9 (A 86, B 84, reference reader 94), ICC 0.85, 1 disagreement (Q6). 0 critical errors. Outcomes 6/1/1/0; Completeness 77.5 lowest. Claims 5 supported; accused sentences 1 supported, 3 refuted.
-- **Speed**: median model time 11.7 s, P90 32.9 s, TTFT P50 2.1 s; 3.2 model calls per answer; source-family share r = 0.90 with model time (n = 8).
-- **Cost**: US$1.14 per run; candidate US$0.0017 per question; claim verifier 41 %; candidate cache-read share 89 %. 25 tool calls, 0 failed, 0 refused, 1 cut (T2).
-- **Transfer Action**: `benchmark_run_123_analysis/implementation_plan_v2.md` — T1 (rung 3, `_policy.md`, with three held-out questions), T2 (`WikiService` leading-"The" title match), harness 57; report-writer fixes (the Executive Summary written from the Root Cause Analysis, validator gaps), UI tasks; Pets wiki article deferred until R1 is analyzed. No change to `ChatService.BuildSystemPrompt` or `RecommendedModels`.
-- **Verification Outcome**: W1 closed (criterion 1 met on the floor of 3, criterion 2 4 of 4); W2 closed (Q6 no critical error, states another role's quest artifact can be wished for; Q1, Q3 role correct). T1 precondition met on Q8 (runs 122, 123).
-- **Still outstanding**: T1 validation (R1); the deferred Pets article; T3, T4 logged; the items the bones-round entry carries from battery run 12.
-- **Analysis directory**: `hyvanmielenpelit/MobileGnollHackLogger/2026-10-20/benchmark_run_123_analysis/`
-
 ### Run 124 — 2026-10-21: GPT-6 Luna (high), GnollHack Trap Questions (11)
 - **Candidate**: GPT-6 Luna (`gpt-6-luna`) @ `high`, default tier, parallel mode 2, max output 128,000. R1 of the run-123 round.
 - **Prompt options**: mode 0, concise, tools on, no web search, no subagents, source refs **Disallowed**, spoiler-free off, no snapshot, no history, no pre-injected wiki context.
@@ -802,6 +764,24 @@ the plans repository.
 - **Verification Outcome**: T1 criteria (a), (c) and the side effect failed → reverted; (a) was confounded: Q9 and Q11 were answered from wrong or incomplete wiki pages. Lesson: a held-out question meant to need the source is checked for wiki text that hedges or misstates it, not only for absence.
 - **Still outstanding**: W3 (R1 of this round); T3 logged; from the bones round and battery run 12: suite 8 board refresh with run-73 repairs S1–S2, NetHack wiki converter E1, T4 `get_monster_stats` near names, B8 verifier coverage on long answers, R2 (Haiku at a lower thinking level).
 - **Analysis directory**: `hyvanmielenpelit/MobileGnollHackLogger/2026-10-21/benchmark_run_124_analysis/`
+
+### Run 125 — 2026-10-21: GPT-6 Luna (high), GnollHack Trap Questions (11)
+- **Candidate**: GPT-6 Luna (`gpt-6-luna`) @ `high`, default tier, parallel mode 2, max output 128,000. R1 of the run-124 round.
+- **Prompt options**: mode 0, concise, tools on, no web search, no subagents, source refs **Disallowed**, spoiler-free off, no snapshot, no history, no pre-injected wiki context.
+- **Grading regime**: harness 58, scoring 14, Standard profile (1). Panel A Claude 5 Opus @ `medium`, B GPT-5.6 Sol @ `medium` (the candidate's family); reference reader and claim verifier Gemini 3.8 Flash @ `medium`, every answer, blind. Writer Gemini 4 Argon @ `medium` (set at launch), report format 26, engine 14.
+- **Instrument SHAs**:
+  - `ChatService.cs`, `appsettings.json` unchanged since run 124 by the prompt hash (commits not re-read); `Overseer/ToolGuides` back to the pre-T1 tree
+  - Prompt `ce36c4b442c3`; ToolGuides `639ba74661d9` (both equal to runs 122–123)
+  - KB `d2af7241`; wiki `30cb23d2` (the W3 commit); source `881ae951`
+  - WIKI-IDX `97f42c0b8f99`, SRC-IDX `1d32997d83c9`, KB-IDX `1fd04d3e2f09`, NHW-IDX `e5dc755ab200`, NHS-IDX `c3929071a8d9`
+  - Suite 9, 11 items all r1
+- **Quality**: Index 79 ± 14 (A 79, B 79, reference reader 87), ICC 0.99, 0 disagreements. 2 confirmed critical errors (Q9, Q11). Outcomes 7/2/2/0; Completeness 68.5 lowest. Claims 10 supported; accused sentences 1 supported, 2 refuted; critical-error quotes 2 refuted (Q9, absent from the run report: H1). One verifier error (instance 70).
+- **Speed**: median model time 10.2 s, P90 36.1 s, TTFT P50 2.55 s; 3.0 model calls per answer; source-family share r = 0.81 with model time (n = 11).
+- **Cost**: US$1.57 per run; candidate US$0.0018 per question; claim verifier 38 %; candidate cache-read share 90.5 %. 26 tool calls, 0 failed, 0 refused.
+- **Transfer Action**: `benchmark_run_125_analysis/implementation_plan_v5.md` — W4 rung 2 (`wiki_handoff_prompt_v5.md`, five pages: the W3 Orc and Gnoll hostility lines repaired, Chaotic, Eating Guide, Master Key); harness 59 (H1 critical-error quotes in the run report, H2–H6 report fixes, information conditions, evidence reach, instruction variants); `server_wiki_handoff` quantifier rule (M1). T1 (asker's race/role) and T2 (category) logged. No change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides/` or `RecommendedModels`.
+- **Verification Outcome**: W3 partially closed (Q8, Q7, Q3 passed; Q9 failed on W3's own Orc clause; Q11 failed, Healer page not reached). Harness-57 T2 closed, kept. T1 revert confirmed (Q1–Q7 14.3 s, 34,406 tokens). Lesson: a quantified or comparative clause on one entity's page ("as they may be to any chaotic character") is a claim about every member of the set it names; validate it against each.
+- **Still outstanding**: W4 (R1 of this round); T1, T2 logged; from earlier rounds, the run-124 entry's *Still outstanding* after W3.
+- **Analysis directory**: `hyvanmielenpelit/MobileGnollHackLogger/2026-10-21/benchmark_run_125_analysis/`
 ---
 
 ## 12. Cross-References

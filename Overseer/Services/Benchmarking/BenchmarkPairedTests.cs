@@ -68,7 +68,16 @@ public enum BenchmarkRunPairKind
     Verification = 2,
 
     /// <summary>No quality-relevant key differs.</summary>
-    Replicate = 3
+    Replicate = 3,
+
+    /// <summary>
+    /// Only the information condition differs (and, with it, at most the prompt hash and the
+    /// corpus condition): a contrast between conditions, compared and never pooled.
+    /// </summary>
+    ConditionContrast = 4,
+
+    /// <summary>Only the instruction variant differs (and, with it, at most the prompt hash).</summary>
+    VariantContrast = 5
 }
 
 /// <summary>What two runs differ on, and therefore what their paired test can show.</summary>
@@ -945,18 +954,25 @@ public static class BenchmarkPairedTests
 
     public static string KindName(BenchmarkRunPairKind kind) => kind.ToString();
 
+    private static string VariantDisplay(string? stamp) => stamp ?? "none";
+
     public static string KindLabel(BenchmarkRunPairKind kind) => kind switch
     {
         BenchmarkRunPairKind.ModelComparison => "Model comparison",
         BenchmarkRunPairKind.Verification => "Verification of a change",
         BenchmarkRunPairKind.Replicate => "Replicate",
+        BenchmarkRunPairKind.ConditionContrast => "Condition contrast",
+        BenchmarkRunPairKind.VariantContrast => "Variant contrast",
         _ => "Not comparable"
     };
 
     /// <summary>
-    /// The kind of comparison two runs on one suite make, from the 27 comparability keys as
+    /// The kind of comparison two runs on one suite make, from the 29 comparability keys as
     /// <see cref="BenchmarkBatteryComparability.CanCompare"/> reads them for batteries:
     /// <list type="bullet">
+    /// <item><b>Condition contrast</b>: only the information condition differs, with at most the
+    /// prompt hash and the corpus condition beside it;</item>
+    /// <item><b>Variant contrast</b>: only the instruction variant differs, with at most the prompt hash beside it;</item>
     /// <item><b>Model comparison</b>: every must-match key agrees and a model-axis key differs;</item>
     /// <item><b>Verification of a change</b>: every candidate key agrees and exactly one instrument key differs;</item>
     /// <item><b>Replicate</b>: no quality-relevant key differs;</item>
@@ -1050,7 +1066,31 @@ public static class BenchmarkPairedTests
         IReadOnlyList<string> changed;
         string explanation;
 
-        if (mustMatch.Count == 0 && modelAxis.Count > 0)
+        var baselineOptions = BenchmarkCandidatePromptOptions.FromJson(baseline.CandidatePromptOptionsJson);
+        var treatmentOptions = BenchmarkCandidatePromptOptions.FromJson(treatment.CandidatePromptOptionsJson);
+        bool onlyPromptOptionsDiffer = candidate.Count == 1 && candidate[0].Name == BenchmarkComparabilityKey.CandidatePromptOptionsKey;
+
+        if (onlyPromptOptionsDiffer
+            && baselineOptions.Condition != treatmentOptions.Condition
+            && baselineOptions.ComparabilitySignatureWithoutCondition(MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled)
+                == treatmentOptions.ComparabilitySignatureWithoutCondition(MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled)
+            && instrument.All(n => n is BenchmarkComparabilityKey.CorpusConditionKey or BenchmarkComparabilityKey.CandidateSystemPromptKey))
+        {
+            kind = BenchmarkRunPairKind.ConditionContrast;
+            changed = new[] { BenchmarkComparabilityKey.CandidatePromptOptionsKey }.Concat(instrument).ToList();
+            explanation = $"Condition contrast: {baselineOptions.Condition.DisplayName()} against {treatmentOptions.Condition.DisplayName()}, "
+                + "with everything else the same. The difference measures what the information condition changes; compare, never pool." + tail;
+        }
+        else if (candidate.Count == 0
+            && instrument.Contains(BenchmarkComparabilityKey.InstructionVariantKey)
+            && instrument.All(n => n is BenchmarkComparabilityKey.InstructionVariantKey or BenchmarkComparabilityKey.CandidateSystemPromptKey))
+        {
+            kind = BenchmarkRunPairKind.VariantContrast;
+            changed = instrument;
+            explanation = $"Variant contrast: instruction variant {VariantDisplay(baseline.InstructionVariant)} against "
+                + $"{VariantDisplay(treatment.InstructionVariant)}, with everything else the same; compare, never pool." + tail;
+        }
+        else if (mustMatch.Count == 0 && modelAxis.Count > 0)
         {
             kind = BenchmarkRunPairKind.ModelComparison;
             changed = modelAxis;

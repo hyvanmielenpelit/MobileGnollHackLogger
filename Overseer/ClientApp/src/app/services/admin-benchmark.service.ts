@@ -337,6 +337,47 @@ export interface BenchmarkQuestionDto {
   assessedDifficultyMaxOutputTokensUsed?: number | null;
   createdAtUtc: string;
   modifiedAtUtc?: string | null;
+  /** The pages and source spans a grounded answer reads; null or empty when none is recorded. */
+  evidence?: BenchmarkEvidenceUnit[] | null;
+}
+
+/** The kind of corpus an evidence unit points into. */
+export type BenchmarkEvidenceKind = 'wiki' | 'source' | 'kb';
+
+/** One page or source span a question's grounded answer reads. */
+export interface BenchmarkEvidenceUnit {
+  kind: BenchmarkEvidenceKind;
+  path: string;
+  section?: string | null;
+  /** A line range, `a-b`. */
+  lines?: string | null;
+  function?: string | null;
+  /** The unit is about the asking player's own character. */
+  personal?: boolean;
+}
+
+/** Where a graded answer stands against its question's evidence. */
+export type BenchmarkEvidenceReach =
+  'GroundedCorrect' | 'UngroundedCorrect' | 'RetrievalFailure' | 'NavigationFailure' | 'ReadButWrong' | 'NotApplicable';
+
+/** The information conditions a run can be made under; production is the default. */
+export type BenchmarkInformationCondition = 'production' | 'sourceOnly' | 'closedBook';
+
+/** The information conditions in launcher order, with their display names. */
+export const BENCHMARK_INFORMATION_CONDITIONS: readonly { value: BenchmarkInformationCondition; label: string }[] = [
+  { value: 'production', label: 'Production — all tools (production default)' },
+  { value: 'sourceOnly', label: 'Source code only — no wiki, knowledge base or lookup tools' },
+  { value: 'closedBook', label: 'Closed book — no tools' }
+];
+
+/** A benchmark-only instruction variant the server's catalog offers. */
+export interface BenchmarkInstructionVariantDto {
+  name: string;
+  description?: string | null;
+  extends?: string | null;
+  hashPrefix?: string | null;
+  isValid: boolean;
+  invalidReason?: string | null;
 }
 
 export interface BenchmarkGameSnapshotDto {
@@ -650,6 +691,8 @@ export interface ImportBenchmarkQuestionItem {
   /** Applied only when `replaceExpectedPoints` is true; empty clears the rubric. */
   expectedPoints: string | null;
   replaceExpectedPoints: boolean;
+  /** Null keeps the current evidence; an empty list clears it. */
+  evidence?: BenchmarkEvidenceUnit[] | null;
 }
 
 export interface ImportBenchmarkQuestionsRequest {
@@ -757,6 +800,13 @@ export interface StartBenchmarkRunRequest {
    * regular user who has not turned on Show source code references; omitted is the server's default.
    */
   allowSourceCodeReferences?: boolean | null;
+  /**
+   * The information condition's wire name: `production` (null means the same), `sourceOnly` or
+   * `closedBook`.
+   */
+  informationCondition?: string | null;
+  /** A benchmark-only instruction variant's name; null runs the production instructions. */
+  instructionVariant?: string | null;
   /**
    * How many times to execute this identical request, strictly one at a time. 1 (the default)
    * is the single-run path exactly as before multi-run existed: no series row, no auto-created
@@ -1206,6 +1256,8 @@ export interface BenchmarkRunAnswerDto {
   rerunOfStatus?: string | null;
   /** The replaced attempt's error message, truncated to 512 characters. */
   rerunOfErrorMessage?: string | null;
+  /** Where the answer stands against its question's evidence; null when not classified. */
+  evidenceReach?: BenchmarkEvidenceReach | string | null;
 }
 
 /**
@@ -1499,6 +1551,12 @@ export interface BenchmarkRunDetailDto extends ProviderAvailabilityCardFields {
 
   candidatePromptOptionsJson?: string | null;
   candidatePromptSourceUsed?: string | null;
+  /** The information condition's wire name; null is production. */
+  informationCondition?: string | null;
+  /** The corpus condition, `condition:label`; null is the live wiki. */
+  corpusCondition?: string | null;
+  /** The instruction variant, `name:hash12`; null is none. */
+  instructionVariant?: string | null;
   candidateSystemPromptSha256?: string | null;
   toolGuidesSha256?: string | null;
   knowledgeBaseHeadSha?: string | null;
@@ -1991,6 +2049,12 @@ export interface BenchmarkRunSummaryDto extends ProviderAvailabilityCardFields {
   secondOpinionCriticalErrorSplitCount?: number;
   candidatePromptOptionsJson?: string | null;
   candidatePromptSourceUsed?: string | null;
+  /** The information condition's wire name; null is production. */
+  informationCondition?: string | null;
+  /** The corpus condition, `condition:label`; null is the live wiki. */
+  corpusCondition?: string | null;
+  /** The instruction variant, `name:hash12`; null is none. */
+  instructionVariant?: string | null;
   harnessVersion?: string | null;
   totalDurationMs: number;
   /**
@@ -4195,7 +4259,7 @@ export interface BenchmarkPairedComparisonDto {
 }
 
 /** The kind of paired comparison two runs, or two battery results, make. */
-export type BenchmarkPairKind = 'ModelComparison' | 'Verification' | 'Replicate';
+export type BenchmarkPairKind = 'ModelComparison' | 'Verification' | 'Replicate' | 'ConditionContrast' | 'VariantContrast';
 
 /** One pair tested on every measure, unadjusted: two runs on one suite, or two battery results of one definition. */
 export interface BenchmarkPairComparisonDto {
@@ -4644,6 +4708,11 @@ export class AdminBenchmarkService {
    */
   getRunLimits(): Observable<BenchmarkRunLimitsDto> {
     return this.http.get<BenchmarkRunLimitsDto>('/api/admin/benchmark/runs/limits');
+  }
+
+  /** The benchmark-only instruction variants the catalog lists, valid or not. */
+  getInstructionVariants(): Observable<BenchmarkInstructionVariantDto[]> {
+    return this.http.get<BenchmarkInstructionVariantDto[]>('/api/admin/benchmark/instruction-variants');
   }
 
   startRunSeries(req: StartBenchmarkRunRequest): Observable<{ seriesId: number }> {

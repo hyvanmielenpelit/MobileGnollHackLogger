@@ -289,6 +289,7 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
     getLastAssessor: vi.fn().mockName("AdminBenchmarkService.getLastAssessor"),
     retryClaimVerification: vi.fn().mockName("AdminBenchmarkService.retryClaimVerification"),
     getRunLimits: vi.fn().mockName("AdminBenchmarkService.getRunLimits"),
+    getInstructionVariants: vi.fn().mockName("AdminBenchmarkService.getInstructionVariants"),
     startRunSeries: vi.fn().mockName("AdminBenchmarkService.startRunSeries"),
     getRunSeries: vi.fn().mockName("AdminBenchmarkService.getRunSeries"),
     getActiveRunSeries: vi.fn().mockName("AdminBenchmarkService.getActiveRunSeries"),
@@ -448,6 +449,8 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
     remainingDailyHeadroom: 20,
     maxRunCountPerSeries: 20
   }));
+  // The Run Benchmark sub-tab reads the instruction variant catalog; it lists none.
+  benchmarkServiceMock.getInstructionVariants.mockReturnValue(of([]));
   benchmarkServiceMock.getRun.mockReturnValue(of({ id: 1, answers: [] } as any));
   benchmarkServiceMock.getQuestions.mockReturnValue(of([]));
   benchmarkServiceMock.getSuiteRunsFootprint.mockReturnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));

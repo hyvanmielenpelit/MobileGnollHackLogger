@@ -147,6 +147,17 @@ namespace Overseer.Services.Tools
                     };
                 }
 
+                // An experimental tool runs only under the instruction variant that offers it.
+                if (handler.IsExperimental && !ToolRegistry.IsEnabledByVariant(handler.ToolName, context))
+                {
+                    return new ToolResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Tool '{toolName}' is not available in this session.",
+                        RemainingBudget = remainingBudget
+                    };
+                }
+
                 // 3. Throttling and Execution
                 SemaphoreSlim? categoryThrottler = null;
                 bool requiresProcessThrottler = true;

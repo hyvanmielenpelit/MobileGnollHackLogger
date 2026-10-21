@@ -1,0 +1,14 @@
+{
+  "name": "source-tools-v1",
+  "description": "Source-derived tools: get_character_info, and referenced_by in the stats tools. No new instruction prose.",
+  "extends": null,
+  "promptAppendix": null,
+  "toolGuides": {
+    "get_character_info": "get_character_info.md",
+    "get_artifact_stats": "get_artifact_stats.md",
+    "get_item_stats": "get_item_stats.md",
+    "get_monster_stats": "get_monster_stats.md"
+  },
+  "experimentalTools": ["get_character_info"],
+  "experiments": ["stats_referenced_by"]
+}

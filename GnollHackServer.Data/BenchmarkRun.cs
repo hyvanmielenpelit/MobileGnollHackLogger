@@ -771,6 +771,21 @@ public class BenchmarkRun
     public string? CorpusIndexFingerprintsJson { get; set; }
 
     /// <summary>
+    /// The corpus condition the GnollHack wiki declared about itself when the run was stamped:
+    /// <c>condition:label</c> from a <c>.gnollbench-corpus.json</c> at the wiki root, or
+    /// <c>invalid</c> when that file did not parse. Null means the live wiki (no marker).
+    /// </summary>
+    [MaxLength(128)]
+    public string? CorpusCondition { get; set; }
+
+    /// <summary>
+    /// The benchmark-only instruction variant the candidate ran under, as <c>name:hash12</c>.
+    /// Null means production instructions.
+    /// </summary>
+    [MaxLength(160)]
+    public string? InstructionVariant { get; set; }
+
+    /// <summary>
     /// The instrument the most recent re-run (failed-question or single-answer) executed under, recorded separately so the five
     /// fingerprints above keep describing the instrument the run's other answers were produced
     /// under. Those five are the only record that the prompt did not move between two runs, so a

@@ -777,4 +777,76 @@ public class ChatConsistencyComparabilityTests
         Assert.False(possible.BuildReplaced);
         Assert.EndsWith("under the same Overseer build as run #11.", possible.SuggestedText);
     }
+
+    // --- Benchmark-only configurations ------------------------------------------------------------
+
+    [Theory]
+    [InlineData("{\"verboseMode\":false}")]
+    [InlineData("{\"verboseMode\":false,\"informationCondition\":\"production\"}")]
+    [InlineData("{\"verboseMode\":false,\"informationCondition\":\"noSuchCondition\"}")]
+    [InlineData(null)]
+    public void NonProductionReason_IsNullForAProductionRun(string? optionsJson)
+    {
+        var run = Run(1);
+        run.CandidatePromptOptionsJson = optionsJson;
+
+        Assert.Null(ChatConsistencyComparability.NonProductionReason(run));
+    }
+
+    [Theory]
+    [InlineData("sourceOnly", "the information condition Source code only — no wiki, knowledge base or lookup tools")]
+    [InlineData("closedBook", "the information condition Closed book — no tools")]
+    public void NonProductionReason_NamesANonProductionInformationCondition(string wire, string reason)
+    {
+        var run = Run(1);
+        run.CandidatePromptOptionsJson = "{\"verboseMode\":false,\"informationCondition\":\"" + wire + "\"}";
+
+        Assert.Equal(reason, ChatConsistencyComparability.NonProductionReason(run));
+    }
+
+    [Theory]
+    [InlineData("scarce:Run 125 scrub", "the corpus condition scarce — Run 125 scrub")]
+    [InlineData("scarce:", "the corpus condition scarce")]
+    [InlineData("invalid", "the corpus condition invalid")]
+    public void NonProductionReason_NamesACorpusConditionOtherThanTheLiveWiki(string corpusCondition, string reason)
+    {
+        var run = Run(1);
+        run.CorpusCondition = corpusCondition;
+
+        Assert.Equal(reason, ChatConsistencyComparability.NonProductionReason(run));
+    }
+
+    [Fact]
+    public void NonProductionReason_NamesAnInstructionVariant()
+    {
+        var run = Run(1);
+        run.InstructionVariant = "source-tools-v1:0123456789ab";
+
+        Assert.Equal("the instruction variant source-tools-v1:0123456789ab", ChatConsistencyComparability.NonProductionReason(run));
+    }
+
+    [Fact]
+    public void NonProductionReason_NamesTheInformationConditionFirst_ThenTheCorpus()
+    {
+        var run = Run(1);
+        run.CandidatePromptOptionsJson = "{\"verboseMode\":false,\"informationCondition\":\"closedBook\"}";
+        run.CorpusCondition = "scarce:Run 125 scrub";
+        run.InstructionVariant = "source-tools-v1:0123456789ab";
+        Assert.Equal("the information condition Closed book — no tools", ChatConsistencyComparability.NonProductionReason(run));
+
+        run.CandidatePromptOptionsJson = "{\"verboseMode\":false}";
+        Assert.Equal("the corpus condition scarce — Run 125 scrub", ChatConsistencyComparability.NonProductionReason(run));
+    }
+
+    [Theory]
+    [InlineData(" ")]
+    [InlineData("")]
+    public void NonProductionReason_ReadsABlankCorpusOrVariantAsProduction(string blank)
+    {
+        var run = Run(1);
+        run.CorpusCondition = blank;
+        run.InstructionVariant = blank;
+
+        Assert.Null(ChatConsistencyComparability.NonProductionReason(run));
+    }
 }

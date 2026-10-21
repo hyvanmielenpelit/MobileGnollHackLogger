@@ -318,6 +318,8 @@ public static class HarnessImpactLedger
                 "Wiki title equality ignores one leading 'The' in wiki_view, item_lookup and monster_lookup; _policy.md asks for a role-relative helper's definition."),
             new("58", CI,
                 "The harness-57 _policy.md sentence on role-relative helpers is removed; the tool guides and the candidate system prompt hash as under harness 56."),
+            new("59", R,
+                "Run report prints critical-error-quote verifications; report-pack status word, digest wording, single-model rank and PDF heading fixes; information condition, candidate tool list and corpus condition recorded on runs; evidence reach from tool-call rows; benchmark-only instruction variants and experimental tools, never loaded by production."),
         };
 
         return table.OrderBy(e => e.Number).ToList();

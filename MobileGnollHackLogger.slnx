@@ -13,6 +13,7 @@
     <File Path="docs/overseer/admin-user-management.md" />
     <File Path="docs/overseer/ai-benchmark.md" />
     <File Path="docs/overseer/ai-benchmark-chat-consistency.md" />
+    <File Path="docs/overseer/ai-benchmark-conditions-and-variants.md" />
     <File Path="docs/overseer/ai-benchmark-model-batches.md" />
     <File Path="docs/overseer/ai-benchmark-multi-run.md" />
     <File Path="docs/overseer/ai-benchmark-multi-suite.md" />

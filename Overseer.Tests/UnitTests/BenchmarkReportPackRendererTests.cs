@@ -2856,6 +2856,61 @@ public class BenchmarkReportPackRendererTests
             RootCauseReportFixture.ModelDocument(RootCauseReportFixture.ModelPackSheet(), BenchmarkReportDocumentOrigin.ReportPack), RcaNamed));
     }
 
+    // --- Ranks only among two or more models ----------------------------------------------------
+
+    /// <summary>The model-scope sheet of the fixture's first model against its second alone: two models.</summary>
+    private static BenchmarkReportFactSheet RcaTwoModelSheet()
+    {
+        var all = BenchmarkReportPackFixture.FiveModelComparison();
+        var keys = new[] { "run:" + RootCauseReportFixture.SubjectRunId, "run:" + BenchmarkReportPackFixture.ComparisonModels[1].RunId };
+        var comparison = BenchmarkReportPackFixture.Comparison(all.Entries.Where(e => keys.Contains(e.Key)).ToArray());
+        comparison.ComputedAtUtc = all.ComputedAtUtc;
+        var built = BenchmarkReportFacts.Build(new BenchmarkReportFactsInput
+        {
+            Comparison = comparison,
+            SubjectKey = keys[0],
+            Runs = RootCauseReportFixture.Runs(),
+            CandidatePricing = RootCauseReportFixture.Pricing(),
+            Catalog = RootCauseReportFixture.Catalog()
+        });
+        Assert.True(built.Sheet != null, built.Refusal);
+        Assert.Single(built.Sheet!.Peers);
+        return built.Sheet!;
+    }
+
+    [Fact]
+    public void AStandAloneRootCauseAnalysis_PrintsNoRank_WhileOneOfTwoOrMoreModelsDoes()
+    {
+        var alone = new[]
+        {
+            RootCauseReportFixture.ModelDocument(RootCauseReportFixture.RunSheet(controls: false), BenchmarkReportDocumentOrigin.RunCompletion),
+            RootCauseReportFixture.ModelDocument(RootCauseReportFixture.RunSheet(controls: true), BenchmarkReportDocumentOrigin.RunCompletion),
+            RootCauseReportFixture.BatteryDocument()
+        };
+        foreach (var document in alone)
+        {
+            string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
+            Assert.DoesNotContain(", rank ", text);
+            Assert.DoesNotContain("| Rank |", text);
+            Assert.DoesNotContain("is a tied rank", text);
+            Assert.Contains("| Model | Intelligence Index | 95% interval | Critical errors |\n|---|---|---|---|\n", RcaSection(text, "## Evidence: intelligence"));
+        }
+
+        var several = new[]
+        {
+            RootCauseReportFixture.ModelDocument(RcaTwoModelSheet(), BenchmarkReportDocumentOrigin.ReportPack),
+            RootCauseReportFixture.ModelDocument(RootCauseReportFixture.ModelPackSheet(), BenchmarkReportDocumentOrigin.ReportPack),
+            RcaDocument()
+        };
+        foreach (var document in several)
+        {
+            string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
+            Assert.Contains(", rank ", RcaSection(text, "## Why each model scored as it did"));
+            Assert.Contains("| Model | Intelligence Index | 95% interval | Rank | Critical errors |\n|---|---|---|---|---|\n", RcaSection(text, "## Evidence: intelligence"));
+            Assert.Contains("is a tied rank", RcaSection(text, "## Evidence: intelligence"));
+        }
+    }
+
     // --- Evidence: cost, hypotheses, conclusions and appendices -----------------------------------
 
     /// <summary>A cost component of a decomposition.</summary>

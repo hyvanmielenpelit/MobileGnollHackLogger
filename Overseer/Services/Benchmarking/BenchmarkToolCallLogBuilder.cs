@@ -51,7 +51,8 @@ public static class BenchmarkToolCallLogBuilder
             : "*No tool calls attempted on this answer.*";
     }
 
-    public static string Build(BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers)
+    /// <param name="candidateTools">The candidate's resolved tool list; null prints it as not recorded.</param>
+    public static string Build(BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers, IReadOnlyList<string>? candidateTools = null)
     {
         var sb = new StringBuilder();
 
@@ -66,6 +67,11 @@ public static class BenchmarkToolCallLogBuilder
         sb.AppendLine($"- **Knowledge Base HEAD SHA:** {run.KnowledgeBaseHeadSha ?? "not recorded"}");
         sb.AppendLine($"- **GnollHack Wiki HEAD SHA:** {run.WikiHeadSha ?? "not recorded"}");
         sb.AppendLine($"- **GnollHack Source HEAD SHA:** {run.SourceCodeHeadSha ?? "not recorded"}");
+        foreach (string conditionLine in BenchmarkReportBuilder.ConditionManifestLines(
+                     run, BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson), candidateTools))
+        {
+            sb.AppendLine($"- {conditionLine}");
+        }
         const string CorpusFingerprintsLabel = "- **Corpus Index Fingerprints** (what each index held; provenance, not a comparability key):";
         if (BenchmarkReportBuilder.CorpusFingerprintLines(run.CorpusIndexFingerprintsJson) is { } corpusLines)
         {

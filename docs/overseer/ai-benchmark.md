@@ -8001,6 +8001,102 @@ GnollBench run 124 round (2026-10-21). `HarnessVersion` moves to **"58"**; `Scor
 
 No answer flag is added, and the grading and synthesis prompts are unchanged.
 
+### Harness Version 59 Updates
+
+GnollBench run 125 round (2026-10-21). `HarnessVersion` moves to **"59"**; `ScoringMethodVersion` stays
+**14**. Migration `AddBenchmarkEvidenceConditionsAndVariants` adds `BenchmarkQuestion.EvidenceJson`,
+`BenchmarkRun.CorpusCondition` and `BenchmarkRun.InstructionVariant`. `HarnessImpactLedger` classifies 59
+as `ReportingOnly`: the Production condition without an instruction variant sends the candidate exactly
+what harness 58 sent — the same prompt bytes, the same declared tools with the same descriptions — so
+`CandidateSystemPromptSha256` and `ToolGuidesSha256` do not move. A non-production condition or a variant
+is a different candidate configuration, kept apart by its own record and keys. The method for the new
+measurements is [`ai-benchmark-conditions-and-variants.md`](ai-benchmark-conditions-and-variants.md);
+this section lists what changed.
+
+#### Run report and Report Pack fixes
+
+- **Critical-error quotes in the run report (B1).** The sentences the graders quoted as the critical
+  error, which the claim verifier checks, are reported as such when they are neither an accused sentence
+  nor a claim of the answer's own. Each answer prints *"Critical-error quotes checked: N (panel split) —
+  upheld (refuted) r, cleared (supported) s, indeterminate i"* and one line per quote; an answer with no
+  checked claims of its own reads *"0 own claims; N critical-error quotes checked — …"*. *Assessor
+  Findings* gains a run total, and *Claim Verification Yield* in *Harness Cost* a *critical-error
+  quote(s)* population. Run 125's Q9 read 0 supported, 0 refuted, 0 indeterminate before, though both of
+  its quotes had been checked and upheld.
+- **Rule 34 and "confirmed critical errors" (B2).** The Root Cause certainty rule (report-pack rule 34)
+  no longer flags *confirmed* directly before or after *critical error(s)* (*"Confirmed critical errors
+  …"*, *"critical errors confirmed by both panel members"*), which is a status word. The exemption is in
+  `RootCauseClaimSupport.CertaintyRegex`; the word list printed into the writer prompts is unchanged, so
+  the prompt SHAs and the `prompt_rca_*.txt` goldens do not move.
+- **A plain-language digest (B3).** The Root Cause digest the Executive Summary writer reads drops the
+  hypothesis reference parentheses (`({{rca.hypothesis.….ref}})`, ranges included), the analyst scope
+  glosses (*"(where its points go, not a comparison)"* and the time and cost forms) and the *locus*; a
+  hypothesis reads *"<axis>: <statement>, graded <grade>."*. The RCA document's own tables keep the full
+  wording, and reuse readiness, which compares `FactsSha256`, is unaffected.
+- **No rank for a single model (B4).** A Root Cause Analysis that shows one model prints no *rank n*,
+  no *Rank* column and no tied-rank note; ranks appear from two models up.
+- **Small denominators (B5).** Below three incorrect-or-not-attempted answers
+  (`BenchmarkComparisonModelProfile.WrongInsteadOfAbstainingMinAnswers`), the run report's *wrong instead
+  of abstaining* reads *"too few to rate (I of N)"* instead of a percentage.
+- **A heading keeps its first list item (B6).** In the PDFs, a heading followed by a list reserves room
+  for the list's first item when that item takes at most a third of a page, so the heading never stays
+  alone at the foot of a page (run 125's Executive Summary, *"Where it fell short"*).
+
+#### Information conditions, corpus conditions and gold evidence
+
+- **Information condition (C1).** The launcher's **Information Condition** (*Production*, *Source code
+  only*, *Closed book*) narrows the candidate's tool list through
+  `BenchmarkInformationConditions.ResolveAllowedTools`. *Source code only* withholds the wiki,
+  knowledge-base and lookup tools and appends a notice that overrides the prompt's instructions to
+  consult them first; *Closed book* records `EnableToolUse = false` and offers no tools. The condition is
+  stored as `informationCondition` in the prompt options record, omitted for Production so production
+  records hash as before. The graders' *Available tools* line names the candidate's resolved list, and
+  the run report's *Chat Prompt Under Test*, the tool-call log header and the copied diagnostics print
+  the condition, the candidate tools, the corpus condition and the instruction variant.
+- **Corpus condition (C2).** A scrubbed wiki declares itself in `.gnollbench-corpus.json` at its root;
+  `WikiService` reads it at each index pass and every run stamps `BenchmarkRun.CorpusCondition`
+  (`condition:label`, `invalid`, or null for the live wiki). The marker is never indexed.
+- **Gold evidence (C3).** A question may carry an `evidence` list in the questions YAML (wiki pages,
+  source files with lines or a function, knowledge-base topics, `personal` for the asker's own race or
+  role page), stored in `BenchmarkQuestion.EvidenceJson`. Evidence is metadata: an evidence-only import
+  bumps no item revision and keeps the assessed difficulty and the review mark.
+- **Evidence Reach (C4).** The run report's § 2 gains an *Evidence Reach* section and each question in
+  § 3 an *Evidence:* line, computed at render time from the stored tool-call rows against the suite's
+  current evidence: *grounded correct*, *ungrounded correct*, *retrieval failure*, *navigation failure*,
+  *read but wrong* or *not applicable*, with *unavailable* for pruned rows and *record cut* for a result
+  the recorder cut.
+
+#### Instruction variants and experimental tools (E)
+
+- **Variants.** `Overseer/BenchmarkVariants/<name>/variant.json` defines a benchmark-only bundle: a
+  prompt appendix, replacement tool-guide texts, experimental tools and experiment switches, with one
+  level of `extends`. `BenchmarkInstructionVariantCatalog` loads and validates the folders at startup;
+  `GET api/admin/benchmark/instruction-variants` lists them, and the launcher's **Instruction Variant**
+  offers the valid ones. A run stamps `BenchmarkRun.InstructionVariant` as `name:hash12`, and a re-run
+  refuses a variant whose hash has changed. Two variants ship: `source-tools-v1` (the experimental
+  `get_character_info` and `referenced_by` in the stats tools, no new instruction prose) and
+  `asker-profile-v1` (that, plus a generic procedure for questions about the player's own character).
+- **Experimental tools.** `IToolHandler.IsExperimental` marks a tool that no request declares unless its
+  variant names it, and `ToolExecutor` refuses a call to one the request's variant does not enable.
+  Variant guide text is read per request and never written to the shared handler.
+  `ToolExecutionContext.Variant` is set only on the benchmark candidate's own requests, so production
+  never loads a variant.
+- **`get_character_info`** returns a race's or a role's allowed roles or races and alignments, its
+  intrinsics by experience level and, for a race, the races it is always peaceful or always hostile
+  toward, from `src/role.c`, `src/attrib.c` and `src/prop.c`. **`referenced_by`** (the
+  `stats_referenced_by` experiment) lists the functions whose code uses an artifact's, monster's or
+  item's constant.
+
+**Comparability.** Two Instrument keys are added, `CorpusCondition` (absent reads `live`) and
+`InstructionVariant` (absent reads `none`), so no historical pair changes tier, and
+`BenchmarkComparabilityKey.DefinitionVersion` moves to **3**: every Multi-Run group persisted under
+definition 2 shows *Comparability definition changed* until it is re-analyzed. Two pair kinds are
+added: **Condition contrast** (only the information condition differs, with at most the prompt hash and
+the corpus condition beside it) and **Variant contrast** (only the variant differs, with at most the
+prompt hash beside it); both are compared, never pooled. A pair that differs only in the corpus
+condition is a *Verification of a change* pair, Tier C cross-condition in Multi-Run Analysis. Chat
+consistency excludes runs with a non-production condition, a non-live corpus or a variant.
+
 ---
 
 ## 3. Assessor Strategy
@@ -9088,7 +9184,7 @@ questions:
 | H1 | A mapping with `format: overseer-benchmark-questions` and `version: 1`; only the keys `format`, `version`, `suite`, `questions`. |
 | H2 | `suite` is optional: `name` (1–128 characters), `description`, `suggested_description`, `snapshot`; no other keys. `suggested_description` is Markdown read only by the Snapshot Suite Wizard's add-questions route; no export writes it. `snapshot` is a **mapping**, whose keys are only `name` (1–128), `gnollhack_version` (≤ 64), `captured_at` (a parseable date, normalized to ISO 8601), `notes`, `sha256` (64 hexadecimal characters) and `text` (required, non-blank). A **string** `snapshot`, or a `snapshot_text` key, gets the old-shape error: *"`suite.snapshot` is now a mapping with `name` and `text`; `suite.snapshot_text` is no longer a key."* |
 | Q1 | `questions` is a non-empty list of mappings. |
-| Q2 | Question keys are only `id`, `difficulty`, `question`, `rubric`. |
+| Q2 | Question keys are only `id`, `difficulty`, `question`, `rubric`, `evidence`. |
 | Q3 | `id`, when present, is a positive integer, unique in the document. |
 | Q4 | `difficulty` is Simple, Intermediate or Advanced (case-insensitive) or 1–3. |
 | Q5 | `question` and `rubric` are text. An absent key keeps the current value on a replace. |
@@ -9125,6 +9221,13 @@ or rubric differs after trimming, the question gets exactly what `PUT questions/
 `ItemRevision` and a cleared AI-assessed difficulty; an identical re-import changes nothing. A
 create is appended after the highest `OrderIndex`, `IsGenerated = false`, difficulty Simple unless
 given.
+
+- **`evidence`** lists a question's gold evidence (wiki pages, source files with `lines` or a
+  `function`, knowledge-base topics, `personal: true` for the asker's own race or role page). It is
+  metadata: an evidence-only change bumps no `ItemRevision`, keeps the assessed difficulty and the review
+  mark, and shows an **evidence** badge on the review card; a missing key keeps the stored evidence and
+  `evidence: []` clears it. The format and what reads it are in
+  [`ai-benchmark-conditions-and-variants.md`](ai-benchmark-conditions-and-variants.md) § 3.
 
 **What an import never does**: delete or reorder questions, touch runs, assessments or reviews,
 change an **existing** game snapshot, or write anything before the whole document has validated. The dialog's steps are

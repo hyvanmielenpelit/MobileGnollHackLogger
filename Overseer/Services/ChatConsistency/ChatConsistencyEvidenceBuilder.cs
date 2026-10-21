@@ -515,7 +515,8 @@ public class ChatConsistencyEvidenceBuilder
         headers.AddRange(batteryMemberRuns.Values.Where(r => headerIds.Add(r.Id)));
 
         var keyOf = headers.ToDictionary(r => r.Id, ChatConsistencyComparability.ModelAxisKey);
-        bool Usable(BenchmarkRun r) => statuses.Contains(r.Status);
+        // A run outside the production condition measured a benchmark-only configuration, not the chat.
+        bool Usable(BenchmarkRun r) => statuses.Contains(r.Status) && ChatConsistencyComparability.NonProductionReason(r) == null;
         bool InWindow(BenchmarkRun r, DateTime start, DateTime end) => r.StartedAtUtc >= start && r.StartedAtUtc <= end;
         bool InSuite(BenchmarkRun r) => !suiteSet || string.Equals(ChatConsistencyMeasures.SuiteIdentity(r), set!.Value, StringComparison.Ordinal);
         bool InBatterySet(BatteryRunState b) => batterySet && string.Equals(b.Row.DefinitionSha256, set!.Value, StringComparison.Ordinal);
@@ -542,6 +543,10 @@ public class ChatConsistencyEvidenceBuilder
                 {
                     notes.Add(Note("excludedRun", "Run #" + Inv(id) + " given for the " + period + " measured another model axis and was left out."));
                 }
+                else if (ChatConsistencyComparability.NonProductionReason(run) is { } nonProduction)
+                {
+                    notes.Add(Note("excludedRun", "Run #" + Inv(id) + " given for the " + period + " ran under " + nonProduction + " and was left out."));
+                }
                 else if (!Usable(run))
                 {
                     notes.Add(Note("excludedRun", "Run #" + Inv(id) + " given for the " + period + " has status " + run.Status + " and was left out."));
@@ -559,12 +564,18 @@ public class ChatConsistencyEvidenceBuilder
             return picked;
         }
 
+        string? BatteryNonProductionReason(BatteryRunState battery)
+            => battery.MemberRunIds
+                .Select(id => batteryMemberRuns.TryGetValue(id, out var member) ? ChatConsistencyComparability.NonProductionReason(member) : null)
+                .FirstOrDefault(reason => reason != null);
+
         List<BatteryRunState> PickBatteries(HashSet<long>? explicitSet, DateTime start, DateTime end)
         {
             if (explicitSet == null)
             {
                 return batteries
-                    .Where(b => InBatterySet(b) && b.Complete && b.Row.StartedAtUtc >= start && b.Row.StartedAtUtc <= end)
+                    .Where(b => InBatterySet(b) && b.Complete && b.Row.StartedAtUtc >= start && b.Row.StartedAtUtc <= end
+                                && BatteryNonProductionReason(b) == null)
                     .ToList();
             }
 
@@ -588,6 +599,10 @@ public class ChatConsistencyEvidenceBuilder
                 else if (!battery.Complete)
                 {
                     notes.Add(Note("excludedBatteryRun", head + " is incomplete (" + battery.IncompleteReason + ") and was left out."));
+                }
+                else if (BatteryNonProductionReason(battery) is { } nonProduction)
+                {
+                    notes.Add(Note("excludedBatteryRun", head + " ran under " + nonProduction + " and was left out."));
                 }
                 else
                 {

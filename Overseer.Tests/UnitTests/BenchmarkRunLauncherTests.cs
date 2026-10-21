@@ -21,8 +21,40 @@ public class BenchmarkRunLauncherTests
 {
     private static BenchmarkCandidatePromptOptions RecordedOptions(StartBenchmarkRunRequest request, bool hasGameSnapshot = false)
     {
-        var (verboseMode, allowSourceCodeReferences) = BenchmarkRunLauncher.ResolvePromptSwitches(request);
-        return BenchmarkService.CandidatePromptOptionsFor(verboseMode, allowSourceCodeReferences, hasGameSnapshot);
+        var switches = BenchmarkRunLauncher.ResolvePromptSwitches(request);
+        return BenchmarkService.CandidatePromptOptionsFor(
+            switches.VerboseMode, switches.AllowSourceCodeReferences, hasGameSnapshot, switches.InformationCondition);
+    }
+
+    [Fact]
+    public void ANullConditionAndVariant_ResolveToProduction()
+    {
+        var switches = BenchmarkRunLauncher.ResolvePromptSwitches(new StartBenchmarkRunRequest());
+
+        Assert.Equal(BenchmarkInformationCondition.Production, switches.InformationCondition);
+        Assert.Null(switches.InstructionVariant);
+        Assert.DoesNotContain("informationCondition", RecordedOptions(new StartBenchmarkRunRequest()).ToCanonicalJson());
+    }
+
+    [Fact]
+    public void TheConditionAndVariant_AreResolvedAsGiven_AndTheVariantNameTrimmed()
+    {
+        var request = new StartBenchmarkRunRequest
+        {
+            InformationCondition = BenchmarkInformationConditions.ClosedBookWire,
+            InstructionVariant = "  source-tools-v1 "
+        };
+
+        var switches = BenchmarkRunLauncher.ResolvePromptSwitches(request);
+
+        Assert.Equal(BenchmarkInformationCondition.ClosedBook, switches.InformationCondition);
+        Assert.Equal("source-tools-v1", switches.InstructionVariant);
+
+        var options = RecordedOptions(request);
+        Assert.False(options.EnableToolUse);
+        Assert.Equal(BenchmarkInformationConditions.ClosedBookWire, options.InformationCondition);
+
+        Assert.Null(BenchmarkRunLauncher.ResolvePromptSwitches(new StartBenchmarkRunRequest { InstructionVariant = " " }).InstructionVariant);
     }
 
     [Fact]
@@ -104,6 +136,60 @@ public class BenchmarkRunLauncherTests
         Assert.False(RecordedOptions(stored).AllowSourceCodeReferences);
     }
 
+    [Fact]
+    public void AStoredStartRequest_KeepsItsInformationConditionAndVariant()
+    {
+        // Series, model batches and batteries store the start request as JSON and launch from it.
+        var request = new StartBenchmarkRunRequest
+        {
+            SuiteId = 1,
+            TestedModelConfigurationId = 1,
+            AssessorModelConfigurationId = 2,
+            RunCount = 3,
+            InformationCondition = BenchmarkInformationConditions.SourceOnlyWire,
+            InstructionVariant = "source-tools-v1"
+        };
+        var series = new BenchmarkRunSeries { StartRequestJson = JsonSerializer.Serialize(request) };
+
+        var stored = BenchmarkSeriesOrchestrator.DeserializeRequest(series);
+
+        Assert.NotNull(stored);
+        var switches = BenchmarkRunLauncher.ResolvePromptSwitches(stored!);
+        Assert.Equal(BenchmarkInformationCondition.SourceOnly, switches.InformationCondition);
+        Assert.Equal("source-tools-v1", switches.InstructionVariant);
+    }
+
+    [Fact]
+    public void ARerun_RefusesAVariantWhoseHashNoLongerMatchesTheRunsStamp()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "variant-rerun-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "probe-variant"));
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "probe-variant", BenchmarkInstructionVariantCatalog.VariantFileName),
+                "{ \"name\": \"probe-variant\", \"description\": \"Probe.\" }");
+            var catalog = new BenchmarkInstructionVariantCatalog(
+                root, Array.Empty<Overseer.Services.Tools.IToolHandler>(), NullLogger.Instance);
+            var service = CreateService(catalog);
+            string stamp = catalog.Find("probe-variant")!.Context!.Stamp;
+
+            var (variant, error) = service.ResolveRunVariant(new BenchmarkRun { InstructionVariant = stamp });
+            Assert.Null(error);
+            Assert.Equal("probe-variant", variant!.Name);
+
+            var (_, changed) = service.ResolveRunVariant(new BenchmarkRun { InstructionVariant = "probe-variant:000000000000" });
+            Assert.Equal("The instruction variant 'probe-variant' has changed since this run; re-run is not possible.", changed);
+
+            var (none, noError) = service.ResolveRunVariant(new BenchmarkRun());
+            Assert.Null(none);
+            Assert.Null(noError);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     // --- The orchestrator claim and battery members ------------------------------------------
 
     /// <summary>Runs an action once, while the first save that inserts a run is being written.</summary>
@@ -140,9 +226,22 @@ public class BenchmarkRunLauncherTests
     /// chat service and agent loop are null.
     /// </summary>
     private static BenchmarkRunLauncher CreateLauncher(
-        ApplicationDbContext db, BenchmarkRunManager runManager, ModelAvailabilityService? modelAvailability = null)
+        ApplicationDbContext db,
+        BenchmarkRunManager runManager,
+        ModelAvailabilityService? modelAvailability = null,
+        BenchmarkInstructionVariantCatalog? variantCatalog = null)
     {
-        var config = new ConfigurationBuilder()
+        var benchmarkService = CreateService(variantCatalog, runManager);
+        var config = LauncherConfig();
+        var endpointPolicy = new Overseer.Services.Privacy.EndpointPolicy(config);
+
+        return new BenchmarkRunLauncher(
+            db, benchmarkService, runManager, new BenchmarkComplianceGuard(config, db), endpointPolicy,
+            modelAvailabilityService: modelAvailability);
+    }
+
+    private static IConfiguration LauncherConfig()
+        => new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 { "Benchmark:Compliance:MaxRunsPerDay", "20" },
@@ -151,6 +250,11 @@ public class BenchmarkRunLauncherTests
             })
             .Build();
 
+    /// <summary>A benchmark service that never executes a candidate: the chat service and agent loop are null.</summary>
+    private static BenchmarkService CreateService(
+        BenchmarkInstructionVariantCatalog? variantCatalog = null, BenchmarkRunManager? runManager = null)
+    {
+        var config = LauncherConfig();
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(config);
         var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
@@ -161,16 +265,18 @@ public class BenchmarkRunLauncherTests
             null!,
             null!,
             new CryptoService(config),
-            runManager,
+            runManager ?? new BenchmarkRunManager(),
             new BenchmarkDifficultyJobManager(),
             new BenchmarkScoringProfileService(scopeFactory, NullLogger<BenchmarkScoringProfileService>.Instance),
             endpointPolicy,
             config,
             NullLogger<BenchmarkService>.Instance);
+        if (variantCatalog != null)
+        {
+            benchmarkService.VariantCatalog = variantCatalog;
+        }
 
-        return new BenchmarkRunLauncher(
-            db, benchmarkService, runManager, new BenchmarkComplianceGuard(config, db), endpointPolicy,
-            modelAvailabilityService: modelAvailability);
+        return benchmarkService;
     }
 
     /// <summary>A suite the launcher admits, two admissible configurations of two providers, and a battery run.</summary>
@@ -442,6 +548,153 @@ public class BenchmarkRunLauncherTests
 
             Assert.Null(await CreateLauncher(db, new BenchmarkRunManager(), availability)
                 .ValidateRequestAsync(RoleRequest(suiteId, role), ct));
+        }
+    }
+
+    // --- Information conditions and instruction variants ------------------------------------------
+
+    /// <summary>A catalog over a fresh temporary root holding the given variant folders.</summary>
+    private static (BenchmarkInstructionVariantCatalog Catalog, string Root) VariantCatalogOver(
+        params (string Folder, string? VariantJson)[] folders)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "launcher-variants-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        foreach (var (folder, variantJson) in folders)
+        {
+            string path = Path.Combine(root, folder);
+            Directory.CreateDirectory(path);
+            if (variantJson != null)
+            {
+                File.WriteAllText(Path.Combine(path, BenchmarkInstructionVariantCatalog.VariantFileName), variantJson);
+            }
+        }
+
+        return (new BenchmarkInstructionVariantCatalog(
+            root, Array.Empty<Overseer.Services.Tools.IToolHandler>(), NullLogger.Instance), root);
+    }
+
+    private static void DeleteRoot(string root)
+    {
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
+    public async Task AnUnknownInformationCondition_IsRefused_AndWritesNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateDb(Guid.NewGuid().ToString());
+        var (suiteId, _) = await SeedAsync(db);
+        var launcher = CreateLauncher(db, new BenchmarkRunManager());
+
+        var request = LaunchRequest(suiteId);
+        request.InformationCondition = "openBook";
+
+        var refusal = await launcher.ValidateRequestAsync(request, ct);
+
+        Assert.NotNull(refusal);
+        Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, refusal!.Outcome);
+        Assert.Equal("Unknown information condition 'openBook'.", refusal.Error);
+
+        var launch = await launcher.CreateAndLaunchRunAsync(request, "user", ct: ct);
+        Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, launch.Outcome);
+        Assert.Empty(await db.BenchmarkRuns.ToListAsync(ct));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("production")]
+    [InlineData("sourceOnly")]
+    [InlineData("closedBook")]
+    public async Task AKnownInformationCondition_PassesValidation(string? condition)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateDb(Guid.NewGuid().ToString());
+        var (suiteId, _) = await SeedAsync(db);
+
+        var request = LaunchRequest(suiteId);
+        request.InformationCondition = condition;
+
+        Assert.Null(await CreateLauncher(db, new BenchmarkRunManager()).ValidateRequestAsync(request, ct));
+    }
+
+    [Fact]
+    public async Task AnUnknownInstructionVariant_IsRefused_AndWritesNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (catalog, root) = VariantCatalogOver();
+        try
+        {
+            using var db = CreateDb(Guid.NewGuid().ToString());
+            var (suiteId, _) = await SeedAsync(db);
+            var launcher = CreateLauncher(db, new BenchmarkRunManager(), variantCatalog: catalog);
+
+            var request = LaunchRequest(suiteId);
+            request.InstructionVariant = " no-such-variant ";
+
+            var refusal = await launcher.ValidateRequestAsync(request, ct);
+
+            Assert.NotNull(refusal);
+            Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, refusal!.Outcome);
+            Assert.Equal("Unknown instruction variant 'no-such-variant'.", refusal.Error);
+
+            var launch = await launcher.CreateAndLaunchRunAsync(request, "user", ct: ct);
+            Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, launch.Outcome);
+            Assert.Empty(await db.BenchmarkRuns.ToListAsync(ct));
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task AnInvalidInstructionVariant_IsRefused_WithItsReason()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (catalog, root) = VariantCatalogOver(("broken-variant", null));
+        try
+        {
+            using var db = CreateDb(Guid.NewGuid().ToString());
+            var (suiteId, _) = await SeedAsync(db);
+
+            var request = LaunchRequest(suiteId);
+            request.InstructionVariant = "broken-variant";
+
+            var refusal = await CreateLauncher(db, new BenchmarkRunManager(), variantCatalog: catalog)
+                .ValidateRequestAsync(request, ct);
+
+            Assert.NotNull(refusal);
+            Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, refusal!.Outcome);
+            Assert.StartsWith("The instruction variant 'broken-variant' is invalid: ", refusal.Error);
+            Assert.Contains(BenchmarkInstructionVariantCatalog.VariantFileName, refusal.Error);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task AValidInstructionVariant_PassesValidation()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (catalog, root) = VariantCatalogOver(("plain-variant", "{\"name\":\"plain-variant\"}"));
+        try
+        {
+            Assert.True(catalog.Find("plain-variant")!.IsValid);
+
+            using var db = CreateDb(Guid.NewGuid().ToString());
+            var (suiteId, _) = await SeedAsync(db);
+
+            var request = LaunchRequest(suiteId);
+            request.InstructionVariant = "plain-variant";
+
+            Assert.Null(await CreateLauncher(db, new BenchmarkRunManager(), variantCatalog: catalog)
+                .ValidateRequestAsync(request, ct));
+        }
+        finally
+        {
+            DeleteRoot(root);
         }
     }
 }

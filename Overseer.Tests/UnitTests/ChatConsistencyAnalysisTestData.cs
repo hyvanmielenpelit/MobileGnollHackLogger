@@ -307,6 +307,34 @@ internal static class ChatConsistencyAnalysisTestData
 
     public const string RunSelectionLimitationStart = "The operator chose the runs: ";
 
+    /// <summary>The benchmark-only configurations <see cref="MakeNonProduction"/> applies.</summary>
+    public const string InformationConditionKind = "informationCondition";
+    public const string CorpusConditionKind = "corpusCondition";
+    public const string InstructionVariantKind = "instructionVariant";
+
+    /// <summary>
+    /// Puts <paramref name="run"/> under the benchmark-only configuration <paramref name="kind"/> names: the
+    /// source-only information condition, a scarce corpus or an instruction variant. Returns the reason
+    /// <see cref="ChatConsistencyComparability.NonProductionReason"/> gives for it.
+    /// </summary>
+    public static string MakeNonProduction(BenchmarkRun run, string kind)
+    {
+        switch (kind)
+        {
+            case InformationConditionKind:
+                run.CandidatePromptOptionsJson = "{\"verboseMode\":false,\"informationCondition\":\"sourceOnly\"}";
+                return "the information condition Source code only — no wiki, knowledge base or lookup tools";
+            case CorpusConditionKind:
+                run.CorpusCondition = "scarce:Run 125 scrub";
+                return "the corpus condition scarce — Run 125 scrub";
+            case InstructionVariantKind:
+                run.InstructionVariant = "source-tools-v1:0123456789ab";
+                return "the instruction variant source-tools-v1:0123456789ab";
+            default:
+                throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown benchmark-only configuration.");
+        }
+    }
+
     public static ChatConsistencyEndpointResult EndpointOf(ChatConsistencyAnalysisResult result, string id)
         => result.Endpoints.Single(e => e.Id == id);
 

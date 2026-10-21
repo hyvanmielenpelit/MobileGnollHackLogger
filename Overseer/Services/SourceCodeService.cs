@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -43,6 +44,10 @@ namespace Overseer.Services
         private SourceIndexSnapshot _snapshot = SourceIndexSnapshot.Empty;
 
         public GameDataParser Parser => Volatile.Read(ref _snapshot).Parser;
+
+        /* The character tables of each pass, keyed by that pass's parser, so they are published and
+           replaced together with its snapshot. */
+        private readonly ConditionalWeakTable<GameDataParser, CharacterTables> _characterTables = new();
 
         private readonly IConfiguration _configuration;
         private readonly IExternalProcessRunner _processRunner;
@@ -1009,6 +1014,22 @@ namespace Overseer.Services
             catch (Exception pex)
             {
                 _logger.LogError(pex, "Error parsing game data macros and structs.");
+            }
+
+            try
+            {
+                string[]? Lines(string path) => documents.TryGetValue(path, out var d) ? d.ContentLines : null;
+                var tables = CharacterTables.Parse(Lines("src/role.c"), Lines("src/attrib.c"), Lines("src/prop.c"), Lines("include/artilist.h"));
+                _characterTables.AddOrUpdate(parser, tables);
+                _logger.LogInformation("Parsed {RoleCount} roles and {RaceCount} races for character info.", tables.Roles.Count, tables.Races.Count);
+                if (tables.Problems.Count > 0)
+                {
+                    _logger.LogInformation("Character tables: {Problems}", string.Join(" ", tables.Problems));
+                }
+            }
+            catch (Exception cex)
+            {
+                _logger.LogError(cex, "Error parsing the character tables.");
             }
         }
 
@@ -2249,6 +2270,13 @@ namespace Overseer.Services
             }
             return results;
         }
+
+        /// <summary>
+        /// The roles, races and their abilities parsed in the published pass; null before a pass has
+        /// parsed them, and always for a service whose <see cref="ParseGameData"/> parses nothing.
+        /// </summary>
+        public CharacterTables? GetCharacterTables()
+            => _characterTables.TryGetValue(Volatile.Read(ref _snapshot).Parser, out var tables) ? tables : null;
 
         /* --- Helper methods for monster stats Level 1 parsing --- */
 

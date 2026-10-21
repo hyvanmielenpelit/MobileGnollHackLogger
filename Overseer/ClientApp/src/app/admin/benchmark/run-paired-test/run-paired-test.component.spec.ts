@@ -42,7 +42,8 @@ function detail(id: number): BenchmarkRunDetailDto {
 
 function kind(runId: number, value: BenchmarkRunPairKindDto['kind'], explanation = ''): BenchmarkRunPairKindDto {
   const labels: Record<string, string> = {
-    ModelComparison: 'Model comparison', Verification: 'Verification of a change', Replicate: 'Replicate', NotComparable: 'Not comparable'
+    ModelComparison: 'Model comparison', Verification: 'Verification of a change', Replicate: 'Replicate',
+    ConditionContrast: 'Condition contrast', VariantContrast: 'Variant contrast', NotComparable: 'Not comparable'
   };
   return {
     runId,
@@ -155,6 +156,29 @@ describe('RunPairedTestComponent', () => {
     // The same run and candidates ask once.
     show({ candidateRuns: [...candidates] });
     expect(service.getRunPairKinds).toHaveBeenCalledTimes(1);
+  });
+
+  it('groups condition and variant contrasts after the replicates', () => {
+    service.getRunPairKinds.mockReturnValue(of([
+      kind(6, 'ModelComparison', ''),
+      kind(5, 'VariantContrast', ''),
+      kind(4, 'Verification', ''),
+      kind(3, 'Replicate', ''),
+      kind(2, 'NotComparable', 'Not comparable: ScoringMethodVersion differs.'),
+      kind(1, 'ConditionContrast', '')
+    ]));
+    show({ run: detail(10), candidateRuns: [...candidates, summary(5), summary(1)], active: true });
+
+    const groups = Array.from(el().querySelectorAll('#rpt-baseline optgroup'));
+    expect(groups.map(group => group.getAttribute('label'))).toEqual(
+      ['Model comparison', 'Verification of a change', 'Replicate', 'Condition contrast', 'Variant contrast']);
+    expect(groups.map(group => Array.from(group.querySelectorAll('option')).map(o => (o as HTMLOptionElement).value)))
+      .toEqual([['6'], ['4'], ['3'], ['1'], ['5']]);
+
+    choose('1');
+    expect(text('#rpt-kind')).toContain('Condition contrast');
+    choose('5');
+    expect(text('#rpt-kind')).toContain('Variant contrast');
   });
 
   it('names the kind of the chosen baseline and, for a verification, the changed key', () => {

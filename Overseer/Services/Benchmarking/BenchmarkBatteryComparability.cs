@@ -163,7 +163,7 @@ public sealed record BenchmarkBatteryAttachCheck(bool Eligible, string? Reason)
 /// (M9), the eligibility of two battery runs for comparison (M7), and the eligibility of an existing
 /// run for a slot of a battery run. Pure computation: no I/O, no AI calls, no writes.
 ///
-/// <para>The 27 keys of <see cref="BenchmarkComparabilityKey.Extract"/> are reused unchanged and
+/// <para>The 29 keys of <see cref="BenchmarkComparabilityKey.Extract"/> are reused unchanged and
 /// split into three classes. Suite-intrinsic keys differ between suites by design and are judged
 /// within each suite by <see cref="BenchmarkComparabilityKey.Resolve"/>; battery-wide keys must agree
 /// across every member; speed-and-cost keys degrade the speed and cost composites.</para>
@@ -215,7 +215,9 @@ public static class BenchmarkBatteryComparability
                 or BenchmarkComparabilityKey.AssessorConfigurationKey
                 or BenchmarkComparabilityKey.SecondOpinionConfigurationKey
                 or BenchmarkComparabilityKey.ClaimVerifierConfigurationKey
-                or BenchmarkComparabilityKey.PerQuestionBudgetsKey => BenchmarkBatteryKeyClass.BatteryWide,
+                or BenchmarkComparabilityKey.PerQuestionBudgetsKey
+                or BenchmarkComparabilityKey.CorpusConditionKey
+                or BenchmarkComparabilityKey.InstructionVariantKey => BenchmarkBatteryKeyClass.BatteryWide,
 
             BenchmarkComparabilityKey.QuestionParallelismKey
                 or BenchmarkComparabilityKey.SpeedCalibrationKey

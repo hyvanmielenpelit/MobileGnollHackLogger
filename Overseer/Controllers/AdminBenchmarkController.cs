@@ -143,7 +143,8 @@ public class AdminBenchmarkController : ControllerBase
         AssessedDifficultyServiceTierUsed = q.AssessedDifficultyModelSnapshot?.ServiceTier,
         AssessedDifficultyMaxOutputTokensUsed = q.AssessedDifficultyModelSnapshot?.MaxOutputTokens,
         CreatedAtUtc = q.CreatedAtUtc,
-        ModifiedAtUtc = q.ModifiedAtUtc
+        ModifiedAtUtc = q.ModifiedAtUtc,
+        Evidence = BenchmarkEvidence.FromJson(q.EvidenceJson)
     };
 
     private static BenchmarkGameSnapshotDto ToSnapshotDto(BenchmarkGameSnapshot s, long? suiteId = null, string? suiteName = null) => new()
@@ -190,6 +191,26 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict(new { error = $"Cannot start {requestingJobName}: Rubric gap author job '{gapJob.Id}' is currently running on this suite." });
         }
         return null;
+    }
+
+    // --- Instruction variants ---
+
+    /// <summary>The benchmark-only instruction variants the launcher may offer, valid or not.</summary>
+    [HttpGet("instruction-variants")]
+    public IActionResult GetInstructionVariants()
+    {
+        var dtos = _benchmarkService.ListInstructionVariants()
+            .Select(v => new BenchmarkInstructionVariantDto
+            {
+                Name = v.Name,
+                Description = v.Description,
+                Extends = v.Extends,
+                HashPrefix = v.Context?.Hash[..Math.Min(12, v.Context.Hash.Length)],
+                IsValid = v.IsValid,
+                InvalidReason = v.InvalidReason
+            })
+            .ToList();
+        return Ok(dtos);
     }
 
     // --- Scoring Profiles CRUD ---
@@ -676,6 +697,7 @@ public class AdminBenchmarkController : ControllerBase
                 QuestionText = q.QuestionText,
                 Difficulty = q.Difficulty,
                 ExpectedPoints = q.ExpectedPoints,
+                EvidenceJson = q.EvidenceJson,
                 AssessedDifficulty = q.AssessedDifficulty,
                 AssessedDifficultyAtUtc = q.AssessedDifficultyAtUtc,
                 AssessedDifficultyModelConfigurationId = q.AssessedDifficultyModelConfigurationId,
@@ -913,6 +935,14 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest("Question text is required for a new question.");
         }
 
+        string? suiteEvidenceError = request.Questions
+            .Select(q => BenchmarkEvidence.Validate(q.Evidence))
+            .FirstOrDefault(e => e != null);
+        if (suiteEvidenceError != null)
+        {
+            return BadRequest(suiteEvidenceError);
+        }
+
         var (canAdd, addDenial) = _complianceGuard.CanAddQuestions(0, request.Questions.Count);
         if (!canAdd)
         {
@@ -958,6 +988,7 @@ public class AdminBenchmarkController : ControllerBase
                     QuestionText = item.QuestionText!.Trim(),
                     Difficulty = item.Difficulty ?? BenchmarkDifficulty.Simple,
                     ExpectedPoints = NullIfBlank(item.ExpectedPoints?.Trim()),
+                    EvidenceJson = BenchmarkEvidence.ToJson(item.Evidence),
                     IsGenerated = false,
                     CreatedAtUtc = now,
                     ModifiedAtUtc = now
@@ -1678,6 +1709,12 @@ public class AdminBenchmarkController : ControllerBase
                 {
                     return BadRequest("Question text is required for a new question.");
                 }
+
+                string? evidenceError = BenchmarkEvidence.Validate(item.Evidence);
+                if (evidenceError != null)
+                {
+                    return BadRequest(item.QuestionId is long eid ? $"Question {eid}: {evidenceError}" : evidenceError);
+                }
             }
 
             int createCount = request.Items.Count(i => i.QuestionId == null);
@@ -1702,13 +1739,29 @@ public class AdminBenchmarkController : ControllerBase
                     string newText = item.QuestionText?.Trim() ?? q.QuestionText;
                     var newDifficulty = item.Difficulty ?? q.Difficulty;
                     string? newPoints = item.ReplaceExpectedPoints ? NullIfBlank(item.ExpectedPoints?.Trim()) : q.ExpectedPoints;
+                    bool contentChanged = q.QuestionText != newText || q.Difficulty != newDifficulty || q.ExpectedPoints != newPoints;
 
-                    if (q.QuestionText != newText || q.Difficulty != newDifficulty || q.ExpectedPoints != newPoints)
+                    // Evidence is metadata: writing it bumps no item revision and clears no assessment.
+                    string? newEvidence = item.Evidence == null
+                        ? q.EvidenceJson
+                        : BenchmarkEvidence.ToJson(item.Evidence);
+                    bool evidenceChanged = !string.Equals(
+                        BenchmarkEvidence.ToJson(BenchmarkEvidence.FromJson(q.EvidenceJson)), newEvidence, StringComparison.Ordinal);
+
+                    if (contentChanged)
                     {
                         q.QuestionText = newText;
                         q.Difficulty = newDifficulty;
                         q.ExpectedPoints = newPoints;
                         BenchmarkQuestionAssessment.Clear(q);
+                    }
+                    if (evidenceChanged)
+                    {
+                        q.EvidenceJson = newEvidence;
+                    }
+
+                    if (contentChanged || evidenceChanged)
+                    {
                         q.ModifiedAtUtc = now;
                         replaced++;
                     }
@@ -1726,6 +1779,7 @@ public class AdminBenchmarkController : ControllerBase
                         QuestionText = item.QuestionText!.Trim(),
                         Difficulty = item.Difficulty ?? BenchmarkDifficulty.Simple,
                         ExpectedPoints = NullIfBlank(item.ExpectedPoints?.Trim()),
+                        EvidenceJson = BenchmarkEvidence.ToJson(item.Evidence),
                         IsGenerated = false,
                         CreatedAtUtc = now,
                         ModifiedAtUtc = now
@@ -3236,6 +3290,8 @@ public class AdminBenchmarkController : ControllerBase
         // The classification is duplicated from BenchmarkToolCallRecorder.Outcomes only because it
         // must run as SQL against the Error column rather than pull that column into memory; it must
         // stay in step with Outcomes, which is the owner of the rule.
+        var evidenceReachByAnswer = await ComputeEvidenceReachByAnswerAsync(run);
+
         var toolCallOutcomes = await _dbContext.BenchmarkRunAnswerToolCalls
             .Where(tc => tc.BenchmarkRunAnswer!.BenchmarkRunId == id)
             .Select(tc => new
@@ -3427,6 +3483,9 @@ public class AdminBenchmarkController : ControllerBase
             KnowledgeBaseHeadSha = run.KnowledgeBaseHeadSha,
             WikiHeadSha = run.WikiHeadSha,
             SourceCodeHeadSha = run.SourceCodeHeadSha,
+            InformationCondition = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson).InformationCondition,
+            CorpusCondition = run.CorpusCondition,
+            InstructionVariant = run.InstructionVariant,
             DefaultSuiteKeyUsed = run.DefaultSuiteKeyUsed,
             BoardFactsCheck = BenchmarkBoardFactsChecker.Deserialize(run.BoardFactsCheckJson),
             GameSnapshotFormatVersionUsed = run.GameSnapshotFormatVersionUsed,
@@ -3583,6 +3642,7 @@ public class AdminBenchmarkController : ControllerBase
                     BenchmarkRunId = a.BenchmarkRunId,
                     BenchmarkQuestionId = a.BenchmarkQuestionId,
                     ItemRevisionUsed = a.ItemRevisionUsed,
+                    EvidenceReach = evidenceReachByAnswer.GetValueOrDefault(a.Id),
                     OrderIndex = a.OrderIndex,
                     QuestionText = a.QuestionText,
                     Difficulty = a.Difficulty,
@@ -3866,6 +3926,8 @@ public class AdminBenchmarkController : ControllerBase
                     KnowledgeBaseHeadSha = r.KnowledgeBaseHeadSha,
                     WikiHeadSha = r.WikiHeadSha,
                     SourceCodeHeadSha = r.SourceCodeHeadSha,
+                    CorpusCondition = r.CorpusCondition,
+                    InstructionVariant = r.InstructionVariant,
                     HarnessVersion = r.HarnessVersion,
                     TotalDurationMs = r.TotalDurationMs
                 },
@@ -3935,6 +3997,8 @@ public class AdminBenchmarkController : ControllerBase
         {
             item.Summary.IsAborted = BenchmarkRunFinalizer.IsAbortedRun(
                 item.Summary.Status, item.Summary.TotalQuestionCount, item.AnswerRowCount);
+            item.Summary.InformationCondition =
+                BenchmarkCandidatePromptOptions.FromJson(item.Summary.CandidatePromptOptionsJson).InformationCondition;
         }
 
         await FillBatteryMembershipsAsync(rows.Select(r => r.Summary).ToList());
@@ -5111,10 +5175,68 @@ public class AdminBenchmarkController : ControllerBase
 
         // The run's provider availability over its attempt ledger and its lineage predecessors.
         var availability = (await ProviderAvailability.ForRunAsync(run.Id)).Summary;
-        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion(), runPricing, battery, availability);
+        var conditions = await BuildRunConditionContextAsync(run);
+        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion(), runPricing, battery, availability, conditions);
         string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_{run.StartedAtUtc:yyyyMMdd_HHmmss}.md";
 
         return (run, markdown, filename);
+    }
+
+    /// <summary>
+    /// The candidate's tool list and the run's suite's current gold evidence, for the run report.
+    /// </summary>
+    private async Task<BenchmarkRunConditionContext> BuildRunConditionContextAsync(BenchmarkRun run)
+    {
+        long? suiteId = run.BenchmarkSuiteIdUsed ?? run.BenchmarkSuiteId;
+        var questions = suiteId.HasValue
+            ? await _dbContext.BenchmarkQuestions.AsNoTracking().Where(q => q.BenchmarkSuiteId == suiteId.Value).ToListAsync()
+            : new List<BenchmarkQuestion>();
+        var evidence = new Dictionary<long, IReadOnlyList<BenchmarkEvidenceUnit>>();
+        foreach (var question in questions)
+        {
+            if (BenchmarkEvidence.FromJson(question.EvidenceJson) is { } units)
+            {
+                evidence[question.Id] = units;
+            }
+        }
+
+        return new BenchmarkRunConditionContext
+        {
+            CandidateTools = _benchmarkService?.CandidateAllowedToolsOf(run),
+            EvidenceByQuestionId = evidence,
+            SuiteEvidenceShaPrefix = BenchmarkEvidence.SuiteEvidenceShaPrefix(questions)
+        };
+    }
+
+    /// <summary>
+    /// Each answer's Evidence Reach class name, for the answers whose question has gold evidence.
+    /// Loads the tool-call payloads of those answers only, and nothing when the suite has no evidence.
+    /// </summary>
+    private async Task<Dictionary<long, string>> ComputeEvidenceReachByAnswerAsync(BenchmarkRun run)
+    {
+        var result = new Dictionary<long, string>();
+        var conditions = await BuildRunConditionContextAsync(run);
+        if (!conditions.HasEvidence) return result;
+
+        var answers = run.Answers.Where(a => conditions.EvidenceFor(a) != null).ToList();
+        if (answers.Count == 0) return result;
+        var answerIds = answers.Select(a => a.Id).ToList();
+        var rows = await _dbContext.BenchmarkRunAnswerToolCalls
+            .AsNoTracking()
+            .Where(tc => answerIds.Contains(tc.BenchmarkRunAnswerId))
+            .ToListAsync();
+        var rowsByAnswer = rows.GroupBy(r => r.BenchmarkRunAnswerId).ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var answer in answers)
+        {
+            var answerRows = rowsByAnswer.GetValueOrDefault(answer.Id) ?? new List<BenchmarkRunAnswerToolCall>();
+            BenchmarkOutcomeClass? outcome = BenchmarkCriticalErrorResolver.Applies(run)
+                ? BenchmarkOutcomeSummary.Classify(run, answer, BenchmarkRunFinalizer.IsPanelRun(run))
+                : null;
+            var reach = BenchmarkEvidenceReach.Compute(answerRows, conditions.EvidenceFor(answer), outcome);
+            result[answer.Id] = reach.Class.ToString();
+        }
+        return result;
     }
 
     /// <summary>
@@ -5133,7 +5255,7 @@ public class AdminBenchmarkController : ControllerBase
 
         if (run == null) return (null, null, null);
 
-        string markdown = BenchmarkToolCallLogBuilder.Build(run, run.Answers);
+        string markdown = BenchmarkToolCallLogBuilder.Build(run, run.Answers, _benchmarkService?.CandidateAllowedToolsOf(run));
         string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_run{run.Id}_tool_calls.md";
 
         return (run, markdown, filename);
@@ -5501,9 +5623,10 @@ public class AdminBenchmarkController : ControllerBase
         var request = BenchmarkSeriesOrchestrator.DeserializeRequest(series);
         if (request != null)
         {
+            var switches = BenchmarkRunLauncher.ResolvePromptSwitches(request);
             var current = await _benchmarkService.ComputeCurrentInstrumentFingerprintAsync(
-                _dbContext, request.SuiteId, request.TestedModelConfigurationId, request.VerboseMode ?? false,
-                request.AllowSourceCodeReferences ?? false);
+                _dbContext, request.SuiteId, request.TestedModelConfigurationId, switches.VerboseMode,
+                switches.AllowSourceCodeReferences, default, switches.InformationCondition, switches.InstructionVariant);
 
             if (current != null)
             {

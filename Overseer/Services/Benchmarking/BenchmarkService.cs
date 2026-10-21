@@ -815,7 +815,13 @@ public class BenchmarkService
         run.BoardSnapshot = await BenchmarkRunBoardSnapshotStore.GetOrCreateAsync(db, board, ct);
     }
 
-    public async Task RunAsync(long runId, CancellationToken cancellationToken, bool verboseMode = false, bool allowSourceCodeReferences = false)
+    public async Task RunAsync(
+        long runId,
+        CancellationToken cancellationToken,
+        bool verboseMode = false,
+        bool allowSourceCodeReferences = false,
+        BenchmarkInformationCondition informationCondition = BenchmarkInformationCondition.Production,
+        string? instructionVariant = null)
     {
         var runStopwatch = Stopwatch.StartNew();
         try
@@ -979,13 +985,33 @@ public class BenchmarkService
 
             await db.SaveChangesAsync(cancellationToken);
 
+            BenchmarkVariantContext? variant = null;
+            if (instructionVariant != null)
+            {
+                var resolved = FindInstructionVariant(instructionVariant);
+                if (resolved?.Context == null)
+                {
+                    run.Status = BenchmarkRunStatus.Failed;
+                    run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(resolved == null
+                        ? $"Unknown instruction variant '{instructionVariant}'."
+                        : $"The instruction variant '{instructionVariant}' is invalid: {resolved.InvalidReason}");
+                    run.CompletedAtUtc = DateTime.UtcNow;
+                    await db.SaveChangesAsync(cancellationToken);
+                    _runManager.Complete(runId);
+                    return;
+                }
+                variant = resolved.Context;
+            }
+            run.InstructionVariant = variant?.Stamp;
+
             bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
-            var promptOptions = CandidatePromptOptionsFor(verboseMode, allowSourceCodeReferences, suiteHasBoard);
+            var promptOptions = CandidatePromptOptionsFor(verboseMode, allowSourceCodeReferences, suiteHasBoard, informationCondition);
             run.CandidatePromptOptionsJson = promptOptions.ToCanonicalJson();
             run.CandidatePromptSourceUsed = "ChatService.BuildSystemPrompt";
+            var candidateTools = CandidateAllowedTools(promptOptions.Condition, allowedTools, variant);
 
-            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
-            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
+            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode, variant?.Appendix);
+            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode, variant?.Appendix);
             PopulateInstrumentFingerprint(run, systemPrompt);
 
             VerifyCandidateDeliveryBeforeRun(
@@ -1049,8 +1075,9 @@ public class BenchmarkService
 
                         var ans = await ExecuteSingleQuestionAsync(
                             qDb, qConfigService, run, question, testedConfig, testedApiKey,
-                            systemPrompt, segmentedPrompt, allowedTools,
-                            maxResultLength, maxToolCallsPerQuestion, cancellationToken);
+                            systemPrompt, segmentedPrompt, candidateTools,
+                            maxResultLength, maxToolCallsPerQuestion, cancellationToken,
+                            promptOptions.EnableToolUse, variant);
 
                         createdAnswers.Add(ans);
 
@@ -1091,8 +1118,9 @@ public class BenchmarkService
 
                         var ans = await ExecuteSingleQuestionAsync(
                             qDb, qConfigService, run, question, testedConfig, testedApiKey,
-                            systemPrompt, segmentedPrompt, allowedTools,
-                            maxResultLength, maxToolCallsPerQuestion, cancellationToken);
+                            systemPrompt, segmentedPrompt, candidateTools,
+                            maxResultLength, maxToolCallsPerQuestion, cancellationToken,
+                            promptOptions.EnableToolUse, variant);
 
                         createdAnswers.Add(ans);
 
@@ -1426,11 +1454,19 @@ public class BenchmarkService
             // A re-run overwrites answer rows in place and adds none, so the suite totals cannot
             // describe its progress. The scope and the two marks below are what the progress
             // dialog counts instead.
+            var (variant, variantError) = ResolveRunVariant(run);
+            if (variantError != null)
+            {
+                await RestoreTerminalStatusAsync(db, run, variantError);
+                _runManager.Complete(runId);
+                return;
+            }
+
             _runManager.SetRerunScope(runId, failedAnswers.Select(a => a.OrderIndex));
 
             var promptOptions = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson!);
-            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
-            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
+            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode, variant?.Appendix);
+            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode, variant?.Appendix);
 
             BeginRerun(run, systemPrompt);
             BeginRepairPass(run, failedAnswers);
@@ -1456,8 +1492,9 @@ public class BenchmarkService
 
                 await ReExecuteSingleAnswerAsync(
                     db, configService, run, answer, testedConfig, testedApiKey,
-                    systemPrompt, segmentedPrompt, allowedTools,
-                    maxResultLength, maxCallsPerSession, cancellationToken);
+                    systemPrompt, segmentedPrompt, CandidateAllowedTools(promptOptions.Condition, allowedTools, variant),
+                    maxResultLength, maxCallsPerSession, cancellationToken,
+                    promptOptions.EnableToolUse, variant);
                 _runManager.MarkRerunAnswered(runId, answer.OrderIndex);
 
                 await ExecutePerQuestionAssessmentAsync(
@@ -1966,7 +2003,9 @@ public class BenchmarkService
         List<string> allowedTools,
         int maxResultLength,
         int maxCallsPerSession,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool enableToolUse = true,
+        BenchmarkVariantContext? variant = null)
     {
         // The three resource caps are the same for every question in a run; only the timeout is still
         // resolved per difficulty band. A flat 25 starved advanced questions - Q11, Q16 and Q18 of the
@@ -2002,7 +2041,7 @@ public class BenchmarkService
             ServiceTier = testedConfig.ServiceTier,
             MaxOutputTokens = testedConfig.MaxOutputTokens,
             MaxToolIterations = maxToolIterations,
-            EnableToolUse = true,
+            EnableToolUse = enableToolUse,
             EnableWebSearch = false,
             EnableSubAgents = false,
             AllowedTools = allowedTools,
@@ -2019,7 +2058,8 @@ public class BenchmarkService
                 UserId = run.StartedByUserId ?? string.Empty,
                 MaxResultLength = maxResultLength,
                 MaxCallsPerSession = toolCallBudget,
-                ShowDebugLog = false
+                ShowDebugLog = false,
+                Variant = variant
             },
             SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, question.QuestionText),
 
@@ -2308,7 +2348,9 @@ public class BenchmarkService
         List<string> allowedTools,
         int maxResultLength,
         int maxCallsPerSession,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool enableToolUse = true,
+        BenchmarkVariantContext? variant = null)
     {
         int toolCallBudget = ResolveToolCallBudget();
         int maxToolIterations = ResolveToolIterations();
@@ -2338,7 +2380,7 @@ public class BenchmarkService
             ServiceTier = testedConfig.ServiceTier,
             MaxOutputTokens = testedConfig.MaxOutputTokens,
             MaxToolIterations = maxToolIterations,
-            EnableToolUse = true,
+            EnableToolUse = enableToolUse,
             EnableWebSearch = false,
             EnableSubAgents = false,
             AllowedTools = allowedTools,
@@ -2351,7 +2393,8 @@ public class BenchmarkService
                 UserId = run.StartedByUserId ?? string.Empty,
                 MaxResultLength = maxResultLength,
                 MaxCallsPerSession = toolCallBudget,
-                ShowDebugLog = false
+                ShowDebugLog = false,
+                Variant = variant
             },
             SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, answer.QuestionText),
 
@@ -2828,7 +2871,7 @@ public class BenchmarkService
             expectedPoints,
             answer.AnswerText,
             answer.Status,
-            allowedTools,
+            CandidateAllowedToolsOf(run, allowedTools),
             answer.ToolCallCount ?? 0,
             answer.ToolBudgetExhausted,
             answer.ScrubbedArtifactCount,
@@ -5507,7 +5550,7 @@ public class BenchmarkService
                 verifications,
                 criticalErrorQuote: answer.CriticalError ? answer.CriticalErrorQuote : null,
                 outOfRubricBasis: OutOfRubricBasisOf(answer),
-                allowedTools: allowedTools,
+                allowedTools: CandidateAllowedToolsOf(run, allowedTools),
                 toolCallsCompleted: answer.ToolCallCount ?? 0,
                 toolBudgetExhausted: answer.ToolBudgetExhausted,
                 scrubbedArtifactCount: answer.ScrubbedArtifactCount,
@@ -6585,7 +6628,7 @@ public class BenchmarkService
             expectedPoints,
             answer.AnswerText,
             answer.Status,
-            allowedTools,
+            CandidateAllowedToolsOf(run, allowedTools),
             answer.ToolCallCount ?? 0,
             answer.ToolBudgetExhausted,
             answer.ScrubbedArtifactCount,
@@ -7164,7 +7207,7 @@ public class BenchmarkService
             firstQualityScore,
             answer.CriticalError,
             answer.ReviewComment,
-            allowedTools,
+            CandidateAllowedToolsOf(run, allowedTools),
             answer.ToolCallCount ?? 0,
             answer.ToolBudgetExhausted,
             answer.ScrubbedArtifactCount,
@@ -8642,11 +8685,18 @@ public class BenchmarkService
                 return;
             }
 
+            var (variant, variantError) = ResolveRunVariant(run);
+            if (variantError != null)
+            {
+                await RestoreTerminalStatusAsync(db, run, variantError);
+                return;
+            }
+
             string testedApiKey = _cryptoService.Decrypt(testedConfig.EncryptedApiKey, testedConfig.ApiKeyNonce!, testedConfig.ApiKeyTag!, "SYSTEM_API_KEY");
 
             var promptOptions = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson!);
-            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
-            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
+            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode, variant?.Appendix);
+            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode, variant?.Appendix);
 
             BeginRerun(run, systemPrompt);
             BeginRepairPass(run, new[] { answer });
@@ -8676,8 +8726,9 @@ public class BenchmarkService
 
             await ReExecuteSingleAnswerAsync(
                 db, configService, run, answer, testedConfig, testedApiKey,
-                systemPrompt, segmentedPrompt, allowedTools,
-                maxResultLength, maxToolCallsPerQuestion, cancellationToken);
+                systemPrompt, segmentedPrompt, CandidateAllowedTools(promptOptions.Condition, allowedTools, variant),
+                maxResultLength, maxToolCallsPerQuestion, cancellationToken,
+                promptOptions.EnableToolUse, variant);
             _runManager.MarkRerunAnswered(runId, answer.OrderIndex);
 
             await ExecutePerQuestionAssessmentAsync(
@@ -9327,7 +9378,8 @@ public class BenchmarkService
     /// carrying them changes what the request looks like on the wire and not what the run records.
     /// </summary>
     private SegmentedPrompt? BuildCandidateSegmentedPrompt(
-        BenchmarkCandidatePromptOptions promptOptions, MobileGnollHackLogger.Data.ParallelExecutionMode parallelMode)
+        BenchmarkCandidatePromptOptions promptOptions, MobileGnollHackLogger.Data.ParallelExecutionMode parallelMode,
+        string? appendix = null)
     {
         if (!_configuration.GetValue<bool>("PromptCacheSettings:EnableSegmentedPrompt", true))
         {
@@ -9335,7 +9387,7 @@ public class BenchmarkService
         }
 
         var (frozen, session, volatileSuffix) =
-            promptOptions.BuildSegmentedSystemPrompt(_chatService, parallelMode);
+            promptOptions.BuildSegmentedSystemPrompt(_chatService, parallelMode, appendix);
         return new SegmentedPrompt(frozen, session, volatileSuffix);
     }
 
@@ -9378,6 +9430,26 @@ public class BenchmarkService
         }
 
         run.CorpusIndexFingerprintsJson = CaptureCorpusIndexFingerprintsJson();
+        run.CorpusCondition = CaptureWikiCorpusCondition();
+    }
+
+    /// <summary>
+    /// The corpus condition the GnollHack wiki's index declared, or null for the live wiki and when
+    /// no <see cref="CorpusIndexFingerprintProvider"/> is available.
+    /// </summary>
+    private string? CaptureWikiCorpusCondition()
+    {
+        if (_scopeFactory == null) return null;
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            return scope.ServiceProvider.GetService<CorpusIndexFingerprintProvider>()?.WikiCorpusCondition;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Corpus condition not recorded.");
+            return null;
+        }
     }
 
     /// <summary>
@@ -9465,10 +9537,17 @@ public class BenchmarkService
     }
 
     internal static string? ComputeToolGuidesSha256()
+        => ComputeToolGuidesSha256(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ToolGuides"));
+
+    /// <summary>
+    /// SHA-256 over the sorted <c>relative path:file SHA-256</c> lines of every file under
+    /// <paramref name="guidesPath"/>; null when the directory is absent, empty or unreadable. The
+    /// instruction-variant content hash uses the same manifest.
+    /// </summary>
+    internal static string? ComputeToolGuidesSha256(string guidesPath)
     {
         try
         {
-            string guidesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ToolGuides");
             if (!Directory.Exists(guidesPath))
             {
                 return null;
@@ -9517,13 +9596,98 @@ public class BenchmarkService
     internal static BenchmarkCandidatePromptOptions CandidatePromptOptionsFor(
         bool verboseMode,
         bool allowSourceCodeReferences,
-        bool hasGameSnapshot)
+        bool hasGameSnapshot,
+        BenchmarkInformationCondition informationCondition = BenchmarkInformationCondition.Production)
         => new()
         {
             VerboseMode = verboseMode,
             AllowSourceCodeReferences = allowSourceCodeReferences,
-            HasGameSnapshot = hasGameSnapshot
+            HasGameSnapshot = hasGameSnapshot,
+            EnableToolUse = informationCondition != BenchmarkInformationCondition.ClosedBook,
+            InformationCondition = informationCondition.ToStoredWire()
         };
+
+    /// <summary>
+    /// The candidate's tool allowlist: <paramref name="configured"/> narrowed by the condition, plus
+    /// the variant's experimental tools unless the condition is Closed book.
+    /// </summary>
+    internal static List<string> CandidateAllowedTools(
+        BenchmarkInformationCondition condition, IReadOnlyList<string> configured, BenchmarkVariantContext? variant)
+    {
+        var tools = condition.ResolveAllowedTools(configured).ToList();
+        if (condition == BenchmarkInformationCondition.ClosedBook || variant == null)
+        {
+            return tools;
+        }
+
+        foreach (string tool in variant.ExperimentalTools)
+        {
+            if (!tools.Contains(tool, StringComparer.OrdinalIgnoreCase))
+            {
+                tools.Add(tool);
+            }
+        }
+        return tools;
+    }
+
+    /// <summary>
+    /// The candidate's tool allowlist of a recorded run, rebuilt from its prompt options and its
+    /// variant: what the graders' prompt names as the tools the candidate had.
+    /// </summary>
+    /// <summary><see cref="CandidateAllowedToolsOf(BenchmarkRun, IReadOnlyList{string})"/> against <c>Benchmark:AllowedTools</c>.</summary>
+    internal List<string> CandidateAllowedToolsOf(BenchmarkRun run)
+        => CandidateAllowedToolsOf(run, _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools);
+
+    internal List<string> CandidateAllowedToolsOf(BenchmarkRun run, IReadOnlyList<string> configured)
+    {
+        var options = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson);
+        var variant = run.InstructionVariant == null
+            ? null
+            : FindInstructionVariant(BenchmarkInstructionVariantCatalog.NameOfStamp(run.InstructionVariant))?.Context;
+        return CandidateAllowedTools(options.Condition, configured, variant);
+    }
+
+    /// <summary>Set by tests; otherwise the catalog registered in the container.</summary>
+    internal BenchmarkInstructionVariantCatalog? VariantCatalog { get; set; }
+
+    private BenchmarkInstructionVariantCatalog? ResolveVariantCatalog()
+    {
+        if (VariantCatalog != null || _scopeFactory == null) return VariantCatalog;
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            return scope.ServiceProvider.GetService<BenchmarkInstructionVariantCatalog>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Instruction variant catalog unavailable.");
+            return null;
+        }
+    }
+
+    /// <summary>The catalog entry named <paramref name="name"/>, valid or not; null when there is none.</summary>
+    internal BenchmarkInstructionVariant? FindInstructionVariant(string? name)
+        => name == null ? null : ResolveVariantCatalog()?.Find(name);
+
+    /// <summary>Every variant of the catalog, valid or not.</summary>
+    internal IReadOnlyList<BenchmarkInstructionVariant> ListInstructionVariants()
+        => ResolveVariantCatalog()?.All ?? Array.Empty<BenchmarkInstructionVariant>();
+
+    /// <summary>
+    /// The variant a recorded run ran under, resolved by the name in its stamp. A re-run refuses
+    /// when the variant is gone, invalid, or its hash no longer matches the stamp.
+    /// </summary>
+    internal (BenchmarkVariantContext? Variant, string? Error) ResolveRunVariant(BenchmarkRun run)
+    {
+        if (string.IsNullOrWhiteSpace(run.InstructionVariant)) return (null, null);
+        string name = BenchmarkInstructionVariantCatalog.NameOfStamp(run.InstructionVariant);
+        var context = FindInstructionVariant(name)?.Context;
+        if (context == null || !string.Equals(context.Stamp, run.InstructionVariant, StringComparison.Ordinal))
+        {
+            return (null, $"The instruction variant '{name}' has changed since this run; re-run is not possible.");
+        }
+        return (context, null);
+    }
 
     /// <summary>
     /// The five instrument hashes as they would be stamped on a run launched <b>right now</b> from
@@ -9548,7 +9712,9 @@ public class BenchmarkService
         long testedModelConfigurationId,
         bool verboseMode,
         bool allowSourceCodeReferences,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        BenchmarkInformationCondition informationCondition = BenchmarkInformationCondition.Production,
+        string? instructionVariant = null)
     {
         var suite = await db.BenchmarkSuites
             .Include(s => s.GameSnapshot)
@@ -9559,9 +9725,11 @@ public class BenchmarkService
             .FirstOrDefaultAsync(c => c.Id == testedModelConfigurationId, ct);
         if (testedConfig == null) return null;
 
-        var promptOptions = CandidatePromptOptionsFor(verboseMode, allowSourceCodeReferences, suite.GameSnapshot != null);
+        var promptOptions = CandidatePromptOptionsFor(
+            verboseMode, allowSourceCodeReferences, suite.GameSnapshot != null, informationCondition);
+        string? appendix = FindInstructionVariant(instructionVariant)?.Context?.Appendix;
 
-        string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
+        string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode, appendix);
 
         var probe = new BenchmarkRun();
         PopulateInstrumentFingerprint(probe, systemPrompt);

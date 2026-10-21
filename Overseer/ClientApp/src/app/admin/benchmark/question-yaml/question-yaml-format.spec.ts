@@ -202,7 +202,50 @@ describe('question-yaml-format', () => {
 
     it('Q2: rejects unknown question keys', async () => {
       expect(await messages(header + 'questions:\n  - question: a\n  - question: b\n    tier: hard\n')).toEqual([
-        'questions[1]: unknown key `tier`; allowed: id, difficulty, question, rubric.'
+        'questions[1]: unknown key `tier`; allowed: id, difficulty, question, rubric, evidence.'
+      ]);
+    });
+
+    it('Q7: parses an evidence list, absent as null and empty as a clear', async () => {
+      const parsed = await parseQuestionYaml(header
+        + 'questions:\n  - id: 150\n    evidence:\n'
+        + '      - kind: wiki\n        path: Races/Human.md\n        personal: true\n'
+        + '      - kind: Source\n        path: src/role.c\n        lines: 1200 - 1260\n        function: peace_minded\n        section: Peacefulness\n'
+        + '  - id: 151\n    evidence: []\n'
+        + '  - id: 152\n    question: a\n');
+      expect(parsed.errors).toEqual([]);
+      expect(parsed.questions[0].evidence).toEqual([
+        { kind: 'wiki', path: 'Races/Human.md', section: null, lines: null, function: null, personal: true },
+        { kind: 'source', path: 'src/role.c', section: 'Peacefulness', lines: '1200-1260', function: 'peace_minded', personal: false }
+      ]);
+      expect(parsed.questions[1].evidence).toEqual([]);
+      expect(parsed.questions[2].evidence).toBeNull();
+    });
+
+    it('Q7: rejects an unknown kind, a bad line range, a missing path, a non-boolean personal and an unknown key', async () => {
+      expect(await messages(header + 'questions:\n  - id: 9\n    evidence:\n      - kind: forum\n        path: x\n')).toEqual([
+        'questions[0] (id 9): evidence[0]: `kind` must be wiki, source or kb.'
+      ]);
+      expect(await messages(header + 'questions:\n  - evidence:\n      - kind: source\n        path: src/role.c\n        lines: 1260\n')).toEqual([
+        'questions[0]: evidence[0]: `lines` must read a-b, a first and a last line, as in 1200-1260.'
+      ]);
+      expect(await messages(header + 'questions:\n  - evidence:\n      - kind: source\n        path: src/role.c\n        lines: 1260-1200\n')).toEqual([
+        'questions[0]: evidence[0]: `lines` must read a-b, a first and a last line, as in 1200-1260.'
+      ]);
+      expect(await messages(header + 'questions:\n  - evidence:\n      - kind: kb\n')).toEqual([
+        'questions[0]: evidence[0]: `path` is required and must be text.'
+      ]);
+      expect(await messages(header + 'questions:\n  - evidence:\n      - kind: kb\n        path: a.md\n        personal: yes please\n')).toEqual([
+        'questions[0]: evidence[0]: `personal` must be true or false.'
+      ]);
+      expect(await messages(header + 'questions:\n  - evidence:\n      - kind: kb\n        path: a.md\n        url: x\n')).toEqual([
+        'questions[0]: evidence[0]: unknown key `url`; allowed: kind, path, section, lines, function, personal.'
+      ]);
+      expect(await messages(header + 'questions:\n  - evidence: Races/Human.md\n')).toEqual([
+        'questions[0]: `evidence` must be a list of mappings with `kind` and `path` keys.'
+      ]);
+      expect(await messages(header + 'questions:\n  - evidence:\n      - Races/Human.md\n')).toEqual([
+        'questions[0]: evidence[0] must be a mapping with `kind` and `path` keys.'
       ]);
     });
 
@@ -315,6 +358,47 @@ describe('question-yaml-format', () => {
       const plan = buildImportPlan(cleared, 'questions', existing);
       expect(plan[0].rubricCleared).toBe(true);
       expect(toImportItems(plan, 'suite')[0].questionId).toBeNull();
+    });
+
+    it('round-trips evidence, and sees an evidence-only change as a change that sends the evidence', async () => {
+      const stored = {
+        ...existing[0],
+        evidence: [
+          { kind: 'wiki' as const, path: 'Races/Human.md', personal: true },
+          { kind: 'source' as const, path: 'src/role.c', lines: '1200-1260', function: 'peace_minded', section: 'A: "quoted" #section' }
+        ]
+      };
+      const yaml = serializeQuestionsYaml([stored], null);
+      expect(yaml).toContain('    evidence:\n      - kind: wiki\n        path: "Races/Human.md"\n        personal: true\n');
+
+      const same = await parseQuestionYaml(yaml);
+      expect(same.errors).toEqual([]);
+      const unchangedPlan = buildImportPlan(same, 'questions', [stored]);
+      expect(unchangedPlan[0].evidenceChanged).toBe(false);
+      expect(unchangedPlan[0].unchanged).toBe(true);
+
+      // The stored question had none: the same document now changes only the evidence.
+      const plan = buildImportPlan(same, 'questions', existing);
+      expect(plan[0].evidenceChanged).toBe(true);
+      expect(plan[0].questionChanged).toBe(false);
+      expect(plan[0].rubricChanged).toBe(false);
+      expect(plan[0].unchanged).toBe(false);
+      expect(toImportItems(plan, 'questions')[0].evidence).toEqual([
+        { kind: 'wiki', path: 'Races/Human.md', section: null, lines: null, function: null, personal: true },
+        { kind: 'source', path: 'src/role.c', section: 'A: "quoted" #section', lines: '1200-1260', function: 'peace_minded', personal: false }
+      ]);
+
+      const cleared = await parseQuestionYaml('format: overseer-benchmark-questions\nversion: 1\nquestions:\n  - id: 17\n    evidence: []\n');
+      const clearPlan = buildImportPlan(cleared, 'questions', [stored]);
+      expect(clearPlan[0].evidenceChanged).toBe(true);
+      expect(toImportItems(clearPlan, 'questions')[0].evidence).toEqual([]);
+      // Nothing to clear is no change.
+      expect(buildImportPlan(cleared, 'questions', existing)[0].unchanged).toBe(true);
+    });
+
+    it('leaves evidence out of a request whose document has no evidence key', async () => {
+      const parsed = await parseQuestionYaml('format: overseer-benchmark-questions\nversion: 1\nquestions:\n  - id: 17\n    difficulty: Advanced\n');
+      expect('evidence' in toImportItems(buildImportPlan(parsed, 'questions', existing), 'questions')[0]).toBe(false);
     });
 
     it('carries every authored difficulty into the request items of a suite import', async () => {

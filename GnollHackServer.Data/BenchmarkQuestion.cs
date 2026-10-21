@@ -56,6 +56,13 @@ public class BenchmarkQuestion
     public long? AssessedDifficultyModelSnapshotId { get; set; }
     public SystemAiConfigurationSnapshot? AssessedDifficultyModelSnapshot { get; set; }
 
+    /// <summary>
+    /// The question's gold evidence: a JSON array of units (wiki page, source range, knowledge-base
+    /// topic) that state the facts its rubric turns on. Metadata, not rubric: no score reads it, so
+    /// an edit here bumps no <see cref="ItemRevision"/>. Null when none is recorded.
+    /// </summary>
+    public string? EvidenceJson { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime ModifiedAtUtc { get; set; } = DateTime.UtcNow;

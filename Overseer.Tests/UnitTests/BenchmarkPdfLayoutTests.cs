@@ -14,7 +14,7 @@ using Xunit;
 
 /// <summary>
 /// What the benchmark PDFs keep together and how a comparison document's title page reads: a short
-/// callout on one page with its heading, a heading with a lead paragraph and the table it introduces,
+/// callout on one page with its heading, a heading with its list's first item, a heading with a lead paragraph and the table it introduces,
 /// a table taller than a page flowing from where it starts, the comparison title printed once with the
 /// document type in the metadata, and a tied rank printed as the span of its tie group.
 /// </summary>
@@ -83,6 +83,62 @@ public class BenchmarkPdfLayoutTests
         var quote = prepared.Blocks.OfType<Markdig.Syntax.QuoteBlock>().Single();
         Assert.NotNull(BenchmarkPdfMarkdownComposer.CalloutOf(quote, prepared.Source));
         return BenchmarkPdfMarkdownComposer.IsShortCallout(quote, prepared, frame);
+    }
+
+    // --- Headings and lists ------------------------------------------------------------------------
+
+    [Fact]
+    public void AHeadingBeforeAList_StaysOnThePageOfItsFiveLineFirstItem_WhereverThePageBreakFalls()
+    {
+        bool movedPastPageOne = false;
+        for (int filler = 14; filler <= 60; filler += 2)
+        {
+            var markdown = new StringBuilder();
+            for (int i = 1; i <= filler; i++)
+            {
+                markdown.Append("Filler paragraph ").Append(i).Append(" moves the heading and its list down the page.\n\n");
+            }
+            markdown.Append("### HEADINGMARKER\n\n")
+                .Append("- ITEMSTART The model lost most of its points on the board questions, where both panel members flagged a critical ")
+                .Append("error on the answer that misread the map, and the claim verifier upheld both flags; the same answer also ran ")
+                .Append("past the time budget, because three tool rounds came back empty before the model answered from memory alone, ")
+                .Append("so the points it lost there and the time it spent there share one cause that the next run is meant to settle ")
+                .Append("for the Overseer chat before any model selection run is made ITEMEND.\n")
+                .Append("- A second item.\n\n")
+                .Append("Closing paragraph.\n");
+
+            byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown.ToString(), Info(), TestContext.Current.CancellationToken);
+
+            using var reader = PdfDocument.Open(pdf);
+            var pages = reader.GetPages().ToList();
+            int heading = PageOf(pages, "HEADINGMARKER");
+            int start = PageOf(pages, "ITEMSTART");
+            int end = PageOf(pages, "ITEMEND");
+            Assert.True(heading == start && start == end,
+                $"With {filler} filler paragraphs the heading is on page {heading}, the first item starts on page {start} and ends on page {end}.");
+            movedPastPageOne |= heading > 1;
+        }
+
+        Assert.True(movedPastPageOne, "No filler count pushed the heading past page 1.");
+    }
+
+    [Fact]
+    public void AListItem_IsShortUpToAThirdOfAPage()
+    {
+        var frame = BenchmarkPdfRenderer.FigureFrameFor(BenchmarkPdfPaper.A4);
+        var longer = new StringBuilder("- A long item.\n");
+        for (int i = 0; i < 30; i++) longer.Append("\n  Paragraph ").Append(i).Append(" of a list item longer than a third of a page.\n");
+
+        Assert.True(IsShortListItem("- A short item.\n- Another.\n", frame));
+        Assert.False(IsShortListItem(longer.ToString(), frame));
+        Assert.False(IsShortListItem("- A short item.\n", frame with { PageHeight = 0 }));
+    }
+
+    private static bool IsShortListItem(string markdown, BenchmarkPdfMarkdownComposer.FigureFrame frame)
+    {
+        var prepared = BenchmarkPdfMarkdownComposer.Prepare(markdown, "Title");
+        var item = prepared.Blocks.OfType<Markdig.Syntax.ListBlock>().Single().OfType<Markdig.Syntax.ListItemBlock>().First();
+        return BenchmarkPdfMarkdownComposer.IsShortListItem(item, prepared, frame);
     }
 
     // --- Headings and tables -----------------------------------------------------------------------

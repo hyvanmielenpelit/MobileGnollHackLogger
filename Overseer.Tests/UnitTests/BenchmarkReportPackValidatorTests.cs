@@ -1922,6 +1922,52 @@ public class BenchmarkReportPackValidatorTests
         Assert.False(hype.Dropped);
         Assert.Equal("Its outstanding lore helped.", hype.Text);
     }
+
+    // Rule 34: confirmed as the status word of a critical error ----------------------------------
+
+    [Theory]
+    [InlineData("Confirmed critical errors may explain most of the lost points, graded Low.", false)]
+    [InlineData("A confirmed critical error cost the most points.", false)]
+    [InlineData("The critical errors confirmed by both panel members cost the most points.", false)]
+    [InlineData("The critical-error confirmed by the verifier cost the most points.", false)]
+    [InlineData("CONFIRMED CRITICAL ERRORS cost the most points.", false)]
+    [InlineData("This confirmed the cause.", true)]
+    [InlineData("The graders confirmed that the critical errors cost the most points.", true)]
+    [InlineData("Critical errors were confirmed by both panel members.", true)]
+    [InlineData("Critical errors definitely cost the most points.", true)]
+    [InlineData("The cause is established for confirmed critical errors.", true)]
+    public void Rule34_ConfirmedBesideCriticalErrors_IsNoCertaintyWord(string sentence, bool certain)
+        => Assert.Equal(certain, Overseer.Services.Benchmarking.RootCause.RootCauseClaimSupport.CertaintyPhrases(sentence).Any());
+
+    [Fact]
+    public void Rule34_Run125sCriticalErrorSentence_IsKept_AndAnUnsupportedConfirmedIsNot()
+    {
+        var sheet = RootCauseReportFixture.RunSheet(controls: false);
+        var content = BenchmarkReportContent.Build(new[] { RootCauseReportFixture.Runs()[RootCauseReportFixture.SubjectRunId] }, 120);
+        IReadOnlyList<BenchmarkReportValidationNote> Certainty(string paragraph)
+        {
+            var output = RootCauseReportFixture.Writer(sheet, comparison: false);
+            output.Sections[BenchmarkReportSlots.Conclusions] = output.Sections[BenchmarkReportSlots.Conclusions] + "\n\n" + paragraph;
+            return BenchmarkReportPackValidator.Validate(BenchmarkReportAudience.RootCauseAnalysis, output, sheet, content)
+                .Where(n => n.Rule == BenchmarkReportPackValidator.RootCauseCertaintyRule)
+                .ToList();
+        }
+
+        Assert.Empty(Certainty("Confirmed critical errors may explain most of the lost points, graded Low."));
+        Assert.NotEmpty(Certainty("This confirmed the cause."));
+    }
+
+    [Fact]
+    public void Rule34_TheCertaintyWordsTheWriterIsTold_AreUnchanged()
+    {
+        const string words = "established, confirmed, proven, prove, proves, proved, definitely, certainly, root cause was found";
+
+        Assert.Equal(words, string.Join(", ", Overseer.Services.Benchmarking.RootCause.RootCauseClaimSupport.CertaintyWords));
+        foreach (bool comparison in new[] { false, true })
+        {
+            Assert.Contains("- Certainty words (" + words + ") need, in the same sentence,", BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(comparison));
+        }
+    }
 }
 
 public class BenchmarkReportPackParserTests

@@ -72,8 +72,61 @@ export type CandidatePromptParts =
     readonly style: 'concise' | 'detailed';
     readonly tools: 'tools on' | 'tools off';
     readonly snapshot: boolean;
+    /** The run's non-production conditions, as `runConditionTags` words them. */
+    readonly conditions: readonly string[];
   }
   | { readonly fallback: string };
+
+/** What `runConditionTags` reads from a run. */
+export interface RunConditionFields {
+  candidatePromptOptionsJson?: string | null;
+  informationCondition?: string | null;
+  corpusCondition?: string | null;
+  instructionVariant?: string | null;
+}
+
+/** An information condition's short name; null for production, the wire name for one the client does not know. */
+export function informationConditionShortName(condition: string | null | undefined): string | null {
+  const value = (condition ?? '').trim();
+  switch (value) {
+    case '':
+    case 'production':
+      return null;
+    case 'sourceOnly':
+      return 'source code only';
+    case 'closedBook':
+      return 'closed book';
+    default:
+      return value;
+  }
+}
+
+/**
+ * The run's settings that differ from production, in the order information condition, instruction
+ * variant, corpus condition: `closed book`, `variant: cite-first:ab12cd34ef56`, `corpus: scarce:2026-10`.
+ * The condition is the run's own field, else the prompt options' `informationCondition`. Empty for a
+ * production run.
+ */
+export function runConditionTags(run: RunConditionFields | null | undefined): string[] {
+  if (!run) return [];
+  const tags: string[] = [];
+  let condition = run.informationCondition ?? null;
+  if (condition == null && run.candidatePromptOptionsJson) {
+    try {
+      const opts = JSON.parse(run.candidatePromptOptionsJson);
+      condition = opts && typeof opts.informationCondition === 'string' ? opts.informationCondition : null;
+    } catch {
+      condition = null;
+    }
+  }
+  const conditionName = informationConditionShortName(condition);
+  if (conditionName) tags.push(conditionName);
+  const variant = (run.instructionVariant ?? '').trim();
+  if (variant) tags.push(`variant: ${variant}`);
+  const corpus = (run.corpusCondition ?? '').trim();
+  if (corpus) tags.push(`corpus: ${corpus}`);
+  return tags;
+}
 
 const BOARD_NOTE = 'Synthesis: yes · Difficulty assessment: digest (no map)';
 
@@ -104,24 +157,25 @@ export function runFactBadges(model: RunFactModel): RunFactBadge[] {
 
 /** Parses the run's candidate prompt options; null when the run recorded none. */
 export function candidatePromptParts(
-  run: { candidatePromptOptionsJson?: string | null; candidatePromptSourceUsed?: string | null } | null | undefined
+  run: (RunConditionFields & { candidatePromptSourceUsed?: string | null }) | null | undefined
 ): CandidatePromptParts | null {
   if (!run?.candidatePromptOptionsJson) return null;
   try {
     const opts = JSON.parse(run.candidatePromptOptionsJson);
     const style = opts.verboseMode ? 'detailed' : 'concise';
     const tools = opts.enableToolUse !== false ? 'tools on' : 'tools off';
-    return { name: 'Gameplay Help', style, tools, snapshot: !!opts.hasGameSnapshot };
+    return { name: 'Gameplay Help', style, tools, snapshot: !!opts.hasGameSnapshot, conditions: runConditionTags(run) };
   } catch {
     return { fallback: run.candidatePromptSourceUsed || 'ChatService.BuildSystemPrompt' };
   }
 }
 
-/** `Gameplay Help · concise (tools on) · snapshot`, the fallback source, or null. */
+/** `Gameplay Help · concise (tools on) · snapshot · closed book`, the fallback source, or null. */
 export function formatCandidatePrompt(parts: CandidatePromptParts | null): string | null {
   if (!parts) return null;
   if ('fallback' in parts) return parts.fallback;
-  return `${parts.name} · ${parts.style} (${parts.tools})${parts.snapshot ? ' · snapshot' : ''}`;
+  const conditions = parts.conditions.map(condition => ` · ${condition}`).join('');
+  return `${parts.name} · ${parts.style} (${parts.tools})${parts.snapshot ? ' · snapshot' : ''}${conditions}`;
 }
 
 /**
@@ -302,7 +356,7 @@ export function buildRunFacts(run: BenchmarkRunDetailDto, options: { gaps: reado
         : {
           kind: 'prompt',
           name: prompt.name,
-          tags: [prompt.style, prompt.tools, ...(prompt.snapshot ? ['snapshot'] : [])],
+          tags: [prompt.style, prompt.tools, ...(prompt.snapshot ? ['snapshot'] : []), ...prompt.conditions],
           summary: formatCandidatePrompt(prompt)!
         }
     });

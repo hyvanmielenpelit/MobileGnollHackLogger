@@ -112,6 +112,12 @@ the place named in the item.
   (run 34: the saving-throw attribute of each of 27 spells) has one claim per page, listed in the
   Step 1 table. A link-only edit still names the claim the link implies (that the linked mechanic
   applies to this page).
+- **A quantified or comparative clause is a claim about every member of its set.** Words such as
+  *any*, *every*, *all*, *always*, *never*, *as for*, *like other* on one entity's page assert
+  something about entities the page is not about. Either rewrite the clause to speak about the
+  page's own subject, or list the set's members as separate claims and verify each. Run 124's W3
+  added *"as they may be to any chaotic character"* to `Races/Orc.md`. It was true for orcs and
+  false for a chaotic human, it passed validation, and it produced run 125's Q9 critical error.
 - **Produce the diffs without touching `C:\hmp\GnollHackWiki`.** Copy each target file to the
   session scratchpad twice — `<scratch>\before\<file>` and `<scratch>\after\<file>` — edit the
   second copy, and let Git write the diff to a file, so that PowerShell never re-encodes the
@@ -150,7 +156,10 @@ the place named in the item.
   detail that could be added, and a condition the text does not assert are not defects: they go
   under *Optional suggestions* and never change the verdict. How a page reads is owned by the wiki's
   own skills (`wiki_editing`) and settled by the execution session, which may reword as long as no
-  mechanic changes. The § 4.2 template carries this rule; do not tighten it in a handoff.
+  mechanic changes. The § 4.2 template carries this rule; do not tighten it in a handoff. Its
+  class-clause check (task item 3: a clause about *any*, *every*, *all*, *always* or *never* is
+  checked against each member of the class) is a factual check and stays within this limit: a
+  class clause that is false for one member states a false fact.
 
 ### The Execution Prompt
 
@@ -388,7 +397,10 @@ Task:
    has its own editing rules, and the session that makes the edit applies them. If you have
    such remarks, put them under "Optional suggestions"; they are advice and do not affect the
    verdict. When in doubt whether a wording point is blocking, ask: would a player who
-   believes this sentence be wrong about the game? If not, it is a suggestion.
+   believes this sentence be wrong about the game? If not, it is a suggestion. A clause that
+   speaks about a whole class — "any", "every", "all", "always", "never", "as for other …" —
+   is checked against each member of that class the source distinguishes, and a member for
+   which it is false is a blocking issue.
 
 Report format:
 - A table: | Claim | Verdict | GnollHack source citation (path:line) | Notes / corrected statement |
@@ -581,6 +593,25 @@ prompt may not carry a source reference or a code-identifier grep into the page 
 still shows what the old rule produced — `Saving Throws.md` gained a paragraph of `save_adj`,
 `src/zap.c` line numbers and a function name in the run-39/40 round, and is the only
 player-facing page in the wiki that cites the source.
+
+### Run 124, W3 (2026-10-20)
+
+W3 added the clause *"as they may be to any chaotic character"* to `Races/Orc.md`, which was true
+for orcs and false for a chaotic human. Validation passed it because each numbered claim was true,
+and the clause was not a numbered claim. On run 125 it produced Q9's critical error. Two rules
+are the response: the quantified-clause item of the § 2 pre-flight, and the class-clause check
+in task item 3 of the § 4.2 validation prompt.
+
+### Run 125, W4 (2026-10-21)
+
+The round's own v2 handoff failed validation on the same rule twice: *"Chaotic creatures may be
+peaceful to you, unless your race is always hostile with theirs"* omitted the always-peaceful
+monsters and quest leaders that win before race hostility, and *"one of the prompts below"*
+treated an incomplete table as the complete set of a gnoll's warnings. The validator caught both,
+with the quantifier check now in the § 4.2 template. The lesson for the analyst's pre-flight is
+that an exception clause ("unless …") and a reference to a list ("one of the prompts below") are
+quantified claims too: read the code path for every earlier branch that can return first, and
+every case the list may omit.
 
 ## 7. Cross-References
 

@@ -201,6 +201,86 @@ describe('QuestionYamlImportPanelComponent', () => {
     expect(host.querySelector('.import-intent')).toBeNull();
   });
 
+  it('counts an evidence-only change, shows its badge, and sends the evidence', async () => {
+    service.importQuestions.mockReturnValue(of({ createdCount: 0, replacedCount: 0, unchangedCount: 1, questions: [] }));
+
+    open('questions');
+    await paste(header + 'questions:\n  - id: 17\n    evidence:\n      - kind: wiki\n        path: Races/Human.md\n        personal: true\n');
+    await component.validate();
+    await component.review();
+    fixture.detectChanges();
+
+    const badges = Array.from(host.querySelectorAll('.import-card .import-badges .status-badge')).map(b => b.textContent!.trim());
+    expect(badges).toEqual(['evidence']);
+    expect(component.changeCount).toBe(1);
+    expect(component.applyLabel).toBe('Apply 1 change');
+
+    component.apply();
+    fixture.detectChanges();
+
+    expect(service.importQuestions).toHaveBeenCalledWith(7, {
+      items: [{
+        questionId: 17, questionText: null, difficulty: null, expectedPoints: null, replaceExpectedPoints: false,
+        evidence: [{ kind: 'wiki', path: 'Races/Human.md', section: null, lines: null, function: null, personal: true }]
+      }]
+    });
+  });
+
+  it('shows the current and imported evidence on the card, side by side and as a diff', async () => {
+    const withEvidence: BenchmarkQuestionDto = {
+      ...existing[0], evidence: [{ kind: 'source', path: 'src/role.c', lines: '1200-1260', function: 'peace_minded' }]
+    };
+    fixture.componentRef.setInput('existing', [withEvidence, existing[1]]);
+    open('questions');
+    await paste(header + 'questions:\n  - id: 17\n    evidence:\n      - kind: wiki\n        path: Races/Human.md\n        personal: true\n');
+    await component.validate();
+    await component.review();
+    fixture.detectChanges();
+
+    const lists = Array.from(host.querySelectorAll('.import-card .import-evidence-list'))
+      .map(list => Array.from(list.querySelectorAll('li')).map(li => li.textContent!.trim()));
+    expect(lists).toEqual([
+      ['source · src/role.c · L1200-1260 · peace_minded()'],
+      ['wiki · Races/Human.md · personal']
+    ]);
+
+    button('Diff').click();
+    fixture.detectChanges();
+    const lines = Array.from(host.querySelectorAll('.import-evidence-diff .diff-line')).map(l => l.textContent);
+    expect(lines).toEqual(['- source · src/role.c · L1200-1260 · peace_minded()', '+ wiki · Races/Human.md · personal']);
+  });
+
+  it('says an absent evidence key keeps the stored evidence, and shows nothing when neither side has any', async () => {
+    const withEvidence: BenchmarkQuestionDto = { ...existing[0], evidence: [{ kind: 'wiki', path: 'Bones Files.md' }] };
+    fixture.componentRef.setInput('existing', [withEvidence, existing[1]]);
+    open('questions');
+    await paste(header + 'questions:\n  - id: 17\n    difficulty: Advanced\n  - id: 18\n    difficulty: Advanced\n');
+    await component.validate();
+    await component.review();
+    fixture.detectChanges();
+
+    const cards = Array.from(host.querySelectorAll('.import-card'));
+    expect(cards[0].textContent).toContain('Evidence: not in the document, kept as is.');
+    expect(cards[0].querySelector('.import-evidence-list li')!.textContent!.trim()).toBe('wiki · Bones Files.md');
+    expect(cards[1].textContent).not.toContain('Evidence');
+  });
+
+  it('marks an unchanged evidence list as no changes', async () => {
+    const withEvidence: BenchmarkQuestionDto = {
+      ...existing[0], evidence: [{ kind: 'source', path: 'src/role.c', lines: '1200-1260', function: 'peace_minded' }]
+    };
+    fixture.componentRef.setInput('existing', [withEvidence, existing[1]]);
+    open('questions');
+    await paste(serializeQuestionsYaml([withEvidence], suite));
+    await component.validate();
+    await component.review();
+    fixture.detectChanges();
+
+    expect(Array.from(host.querySelectorAll('.import-card .import-badges .status-badge')).map(b => b.textContent!.trim()))
+      .toEqual(['no changes']);
+    expect(component.changeCount).toBe(0);
+  });
+
   it('lists a missing board-facts literal the import result carries, with the repair sentence', async () => {
     const check: BoardFactsCheckDto = {
       bulletCount: 10, checkedLiteralCount: 9, unquotedBulletCount: 2,

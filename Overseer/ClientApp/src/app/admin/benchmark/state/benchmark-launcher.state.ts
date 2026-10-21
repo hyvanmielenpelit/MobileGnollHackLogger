@@ -15,7 +15,10 @@ import {
   BenchmarkModelBatchFindingDto,
   BenchmarkModelBatchPreflightResponse,
   BenchmarkModelBatchProjectionDto,
-  StartBenchmarkModelBatchRequest
+  StartBenchmarkModelBatchRequest,
+  BENCHMARK_INFORMATION_CONDITIONS,
+  BenchmarkInformationCondition,
+  BenchmarkInstructionVariantDto
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
 import { Observable, Subject, Subscription, catchError, debounceTime, map, of, switchMap } from 'rxjs';
@@ -206,6 +209,87 @@ export class BenchmarkLauncherState implements OnDestroy {
    * regular users see only with *Show source code references* on) or true.
    */
   candidateAllowSourceCodeReferences = false;
+
+  /**
+   * The information condition's wire name: `production` (the default, every tool), `sourceOnly` or
+   * `closedBook`. A non-production run is analyzed as a condition contrast.
+   */
+  informationCondition: BenchmarkInformationCondition = 'production';
+
+  /**
+   * A benchmark-only instruction variant's name, or null for the production instructions (the
+   * default). A run with one is analyzed as a variant contrast.
+   */
+  instructionVariant: string | null = null;
+
+  /** The instruction variant catalog, valid and invalid entries alike; empty until it arrives. */
+  instructionVariants: BenchmarkInstructionVariantDto[] = [];
+
+  /** True once the catalog has answered, successfully or not. */
+  instructionVariantsLoaded = false;
+
+  private instructionVariantsSubscription: Subscription | null = null;
+
+  /** The information condition a wire value names, or null when it names none the launcher offers. */
+  static informationConditionOf(value: unknown): BenchmarkInformationCondition | null {
+    return BENCHMARK_INFORMATION_CONDITIONS.find(c => c.value === value)?.value ?? null;
+  }
+
+  /** A recorded instruction variant, `name:hash12`, as its name alone; null for none. */
+  static instructionVariantName(recorded: string | null | undefined): string | null {
+    const text = (recorded ?? '').trim();
+    if (text === '') return null;
+    const colon = text.lastIndexOf(':');
+    return colon > 0 ? text.slice(0, colon) : text;
+  }
+
+  /** The variants the Instruction Variant select offers: the valid ones. */
+  get validInstructionVariants(): BenchmarkInstructionVariantDto[] {
+    return this.instructionVariants.filter(v => v.isValid);
+  }
+
+  /**
+   * Fetches the instruction variant catalog. A selected variant the catalog does not list as valid,
+   * or every selection when the catalog cannot be read, falls back to none with a note.
+   */
+  loadInstructionVariants(): void {
+    this.instructionVariantsSubscription?.unsubscribe();
+    this.instructionVariantsSubscription = this.benchmarkService.getInstructionVariants().subscribe({
+      next: (variants) => {
+        this.instructionVariants = variants ?? [];
+        this.instructionVariantsLoaded = true;
+        this.checkInstructionVariant();
+        this.viewSync.notify();
+      },
+      error: () => {
+        this.instructionVariants = [];
+        this.instructionVariantsLoaded = true;
+        this.checkInstructionVariant();
+        this.viewSync.notify();
+      }
+    });
+  }
+
+  /** Clears a selected variant the loaded catalog does not list as valid, and says so beside the prefill or restore notes. */
+  private checkInstructionVariant(): void {
+    const note = this.instructionVariantNote(this.instructionVariant);
+    if (note === null) return;
+    this.instructionVariant = null;
+    if (this.prefillResult) {
+      this.prefillResult = { ...this.prefillResult, notes: [...this.prefillResult.notes, note] };
+    } else {
+      this.restoreNotes = [...this.restoreNotes, note];
+    }
+    this.persistRunSettings();
+  }
+
+  /** The note for a variant the loaded catalog does not list as valid; null when it is valid, none, or the catalog has not arrived. */
+  private instructionVariantNote(name: string | null): string | null {
+    if (name == null || !this.instructionVariantsLoaded || this.validInstructionVariants.some(v => v.name === name)) {
+      return null;
+    }
+    return `Instruction Variant: ${name} is not listed as a valid variant now, so None (the production instructions) was chosen.`;
+  }
 
   /**
    * Per-run override of the scoring profile's second-opinion mode. Null follows the profile, so
@@ -517,6 +601,8 @@ export class BenchmarkLauncherState implements OnDestroy {
       scoringProfileId: this.selectedScoringProfileId,
       verboseMode: this.candidateVerboseMode,
       allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
+      informationCondition: this.informationCondition,
+      instructionVariant: this.instructionVariant,
       runCount: this.effectiveRunCount,
       targetKind: this.runTargetKind,
       batteryId: this.selectedBatteryId,
@@ -587,6 +673,9 @@ export class BenchmarkLauncherState implements OnDestroy {
       scoringProfileId: num(raw.scoringProfileId),
       verboseMode: typeof raw.verboseMode === 'boolean' ? raw.verboseMode : null,
       allowSourceCodeReferences: typeof raw.allowSourceCodeReferences === 'boolean' ? raw.allowSourceCodeReferences : null,
+      informationCondition: BenchmarkLauncherState.informationConditionOf(raw.informationCondition),
+      instructionVariant: typeof raw.instructionVariant === 'string' && raw.instructionVariant.trim() !== ''
+        ? raw.instructionVariant.trim() : null,
       runCount: num(raw.runCount),
       targetKind: raw.targetKind === 'battery' || raw.targetKind === 'suite' ? raw.targetKind : null,
       batteryId: num(raw.batteryId),
@@ -620,6 +709,15 @@ export class BenchmarkLauncherState implements OnDestroy {
     // Absent (a blob predating this field) leaves the Disallowed default standing.
     if (this.pendingRunSettings.allowSourceCodeReferences !== null) {
       this.candidateAllowSourceCodeReferences = this.pendingRunSettings.allowSourceCodeReferences;
+    }
+    // Absent or unrecognized leaves Production standing.
+    if (this.pendingRunSettings.informationCondition) {
+      this.informationCondition = this.pendingRunSettings.informationCondition as BenchmarkInformationCondition;
+    }
+    // Checked against the catalog once it arrives, or now when it already has.
+    if (this.pendingRunSettings.instructionVariant) {
+      this.instructionVariant = this.pendingRunSettings.instructionVariant;
+      this.checkInstructionVariant();
     }
     // Absent (a blob predating this field, or storage that threw) leaves the true default standing.
     if (this.pendingRunSettings.completionSound !== null) {
@@ -837,6 +935,24 @@ export class BenchmarkLauncherState implements OnDestroy {
       }
     }
 
+    // The prompt options carry the condition only when it is not production; the run's own field is the fallback.
+    const recordedCondition = options?.['informationCondition'] ?? run.informationCondition ?? null;
+    const condition = BenchmarkLauncherState.informationConditionOf(recordedCondition ?? 'production');
+    if (condition) {
+      this.informationCondition = condition;
+    } else {
+      notes.push(`Information Condition: ${String(recordedCondition)} is not one the launcher offers, so the current condition was kept.`);
+    }
+
+    const variant = BenchmarkLauncherState.instructionVariantName(run.instructionVariant);
+    const variantNote = this.instructionVariantNote(variant);
+    if (variantNote) {
+      this.instructionVariant = null;
+      notes.push(variantNote);
+    } else {
+      this.instructionVariant = variant;
+    }
+
     this.runCount = 1;
     this.runTargetKind = 'suite';
     this.runMode = 'single';
@@ -934,6 +1050,9 @@ export class BenchmarkLauncherState implements OnDestroy {
     if (setup.allowSourceCodeReferences != null) {
       this.candidateAllowSourceCodeReferences = setup.allowSourceCodeReferences;
     }
+    // A recommended run is a production run without an instruction variant.
+    this.informationCondition = BenchmarkLauncherState.informationConditionOf(setup.informationCondition ?? 'production') ?? 'production';
+    this.instructionVariant = null;
 
     // A batch's runs are Runs per model (Runs per Suite on a battery); a single model's, Number of Runs (Runs per Suite).
     if (this.isModelBatch && !this.isBatteryTarget) {
@@ -1026,6 +1145,8 @@ export class BenchmarkLauncherState implements OnDestroy {
       reportWriterModelConfigurationId: this.reportWriterConfigId,
       verboseMode: this.candidateVerboseMode,
       allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
+      informationCondition: this.informationCondition,
+      instructionVariant: this.instructionVariant,
       scoringProfileId: this.selectedScoringProfileId,
       acknowledgeSameProvider: this.launchAcknowledgments.assessor,
       // Only once acknowledged, so every other request carries the body it always has.
@@ -1473,6 +1594,8 @@ export class BenchmarkLauncherState implements OnDestroy {
   ngOnDestroy(): void {
     this.reusePreviewSubscription?.unsubscribe();
     this.reusePreviewSubscription = null;
+    this.instructionVariantsSubscription?.unsubscribe();
+    this.instructionVariantsSubscription = null;
     this.preflightSubscription.unsubscribe();
     this.clearPreflightRetry();
   }

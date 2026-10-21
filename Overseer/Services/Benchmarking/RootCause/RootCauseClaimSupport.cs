@@ -26,7 +26,7 @@ using Overseer.Models;
 /// <item>A certainty word (<see cref="CertaintyWords"/>), anywhere, needs in the same sentence a token of a
 /// hypothesis graded High that is no price effect (its <c>.priceCard</c> fact), its label included, or the
 /// <c>rca.axis.&lt;axis&gt;.status</c> token of an axis whose root cause is established. A certainty word after
-/// <c>not</c>, <c>never</c> or <c>cannot</c> is not one.</item>
+/// <c>not</c>, <c>never</c> or <c>cannot</c> is not one, nor is <c>confirmed</c> directly beside <c>critical error(s)</c>.</item>
 /// <item>The conclusions cite every axis' <see cref="StatusKey"/>.</item>
 /// </list>
 /// </summary>
@@ -96,8 +96,18 @@ public sealed class RootCauseClaimSupport
     /// <summary>A causal phrase that states a cause: every one that no negation precedes.</summary>
     internal static readonly Regex UnnegatedCausalRegex = PhraseRegex(CausalWords, "(?<!" + CausalNegation + ")");
 
+    /// <summary><c>critical error</c> or <c>critical errors</c>, its words separated like a phrase's.</summary>
+    private const string CriticalErrors = @"critical[\s-]+errors?";
+
+    /// <summary>
+    /// Every certainty phrase that no negation precedes. <c>confirmed</c> directly before or after <c>critical error(s)</c>
+    /// is a status word, not a certainty: <c>confirmed critical errors</c>, <c>critical errors confirmed by both panel members</c>.
+    /// </summary>
     internal static readonly Regex CertaintyRegex = PhraseRegex(
-        CertaintyWords, @"(?<!(?<![\p{L}\p{N}])(?:not|never|cannot)\s+(?:yet\s+)?(?:be\s+|been\s+)?)");
+        CertaintyWords, @"(?<!(?<![\p{L}\p{N}])(?:not|never|cannot)\s+(?:yet\s+)?(?:be\s+|been\s+)?)",
+        (phrase, pattern) => string.Equals(phrase, "confirmed", StringComparison.OrdinalIgnoreCase)
+            ? @"(?<!(?<![\p{L}\p{N}-])" + CriticalErrors + @"[\s-]+)" + pattern + @"(?![\s-]+" + CriticalErrors + @"(?![\p{L}\p{N}-]))"
+            : pattern);
 
     internal static readonly Regex HedgeRegex = PhraseRegex(HedgeWords);
 
@@ -376,14 +386,16 @@ public sealed class RootCauseClaimSupport
     /// <summary>
     /// Whole words and phrases of <paramref name="phrases"/>, ignoring case, longest first; a space inside a
     /// phrase matches any run of whitespace and hyphens, and a match never touches a letter, digit or hyphen.
+    /// <paramref name="alternative"/>, when given, rewrites a phrase's pattern from the phrase and that pattern.
     /// </summary>
-    private static Regex PhraseRegex(IEnumerable<string> phrases, string? lookbehind = null)
+    private static Regex PhraseRegex(IEnumerable<string> phrases, string? lookbehind = null, Func<string, string, string>? alternative = null)
     {
         var alternatives = phrases
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(p => p.Length)
             .ThenBy(p => p, StringComparer.Ordinal)
-            .Select(p => string.Join(@"[\s-]+", Regex.Split(p.Trim(), @"[\s-]+").Select(Regex.Escape)));
+            .Select(p => (Phrase: p, Pattern: string.Join(@"[\s-]+", Regex.Split(p.Trim(), @"[\s-]+").Select(Regex.Escape))))
+            .Select(x => alternative == null ? x.Pattern : alternative(x.Phrase, x.Pattern));
         return new Regex(
             @"(?<![\p{L}\p{N}-])" + (lookbehind ?? string.Empty) + "(?:" + string.Join("|", alternatives) + @")(?![\p{L}\p{N}-])",
             RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);

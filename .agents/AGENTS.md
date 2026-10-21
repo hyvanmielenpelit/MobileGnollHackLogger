@@ -218,7 +218,9 @@ AI snapshot into a one-file benchmark suite YAML, offline), `server_chat_consist
 (GnollBench Chat Consistency: whether the Overseer chat stays as good, fast and cheap over time
 with a given model), `server_nuget_packages` (NuGet references in the .NET projects, tracing a
 NuGet audit warning to the transitive package behind it, and the deliberate pins that override
-one, such as `System.Security.Cryptography.Pkcs`), and the tool-layer trio
+one, such as `System.Security.Cryptography.Pkcs`), `server_benchmark_conditions_and_variants`
+(GnollBench information conditions, scarce corpora, gold evidence and instruction variants), and
+the tool-layer trio
 `server_tool_data_sources`, `server_tool_parameter_reference` and
 `server_benchmark_tool_diagnostics`.
 

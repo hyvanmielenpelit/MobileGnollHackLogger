@@ -93,6 +93,7 @@ Reading the tables:
 | 67 | run 97, Q17 (battery run 11) | Gemini 3.8 Flash @ `medium` | A recomputation from the wrong baseline despite instruction 3g | `src/spell.c:5281-5282` † | — | None stated; 3g did not hold | No |
 | 68 | run 97, Q18 (battery run 11) | Gemini 3.8 Flash @ `medium` | The first component of a `matcomps.c` entry read as the whole entry ("protection needs no wood") | `src/matcomps.c:2607-2621` † | — | None stated | Not stated |
 | 69 | run 97, Q15 (battery run 11) | Gemini 3.8 Flash @ `medium` | A hedge ("about 1500 turns") refuted as false | — | — | None stated | No — run 99 Q15 (battery run 12) again refuted the same hedge |
+| 70 | run 125, Q11 | Gemini 3.8 Flash @ `medium` | A sentence refuted from one branch of an `if … else if` chain, missing the sibling branch that makes it partly true | `src/eat.c:3806-3828` | `src/eat.c:3829-4002`, the corpse confirmation (`ParanoidCorpse`, on by default through `flags.paranoia_bits` at `src/options.c:871`), which warns a character who has neither edibility appraisal nor active blessed food detection about a corpse's or glob's known dangers and uncertain freshness | None; instruction 3n names a `switch` or `if` condition but not its sibling branches | No |
 
 ## Shapes
 
@@ -140,10 +141,19 @@ Reading the tables:
 | A recomputation from the wrong baseline | 67 | 1 | **No**: occurred despite 3g |
 | The first component of an entry read as the whole entry | 68 | 1 | Not stated |
 | A hedge refuted as false | 69 | 1 | **No**: recurred on run 99 Q15 (battery run 12), not numbered |
+| One branch of a conditional chain read as the whole behavior | 70 | 1 | Not stated |
 
 Instruction 3c (harness 29) sends the board to the claim verifier and allows `board:` citations; it
 answers no instance. Instruction 3p, as § 11's battery run 4 row names it, is the claim-verifier
-batching instruction (harness 49). The source names no instruction 3n or 3o.
+batching instruction (harness 49). Instructions 3n and 3o are in
+`Overseer/Services/Benchmarking/BenchmarkClaimVerificationPrompt.cs`. 3n says that a line inside a
+`switch` is reached only for that `case`'s labels and a line inside an `if` only when its condition
+holds, so the `case` labels and the `if`/`else` conditions above a line are read before it is cited
+as what an item does; the shapes of 59 and 60 are the ones it describes. 3o says that a wiki page's
+hedge (usually, often, typically, in most cases) is not evidence that exceptions exist, and that a
+claim is judged by the code when the code shows the rule without an exception. Neither covers a
+sibling branch of an `if … else if` chain that makes a refuted sentence partly true (70), and 3o
+speaks of a wiki page's hedge, not of a hedge in the candidate's answer (69).
 
 ## The Rule That Binds
 

@@ -289,4 +289,41 @@ public class AdminBenchmarkSuiteImportTests
         Assert.Equal(0, await db.BenchmarkSuites.CountAsync(ct));
         Assert.Equal(0, await db.BenchmarkGameSnapshots.CountAsync(ct));
     }
+
+    [Fact]
+    public async Task EachQuestionsEvidence_IsStoredWithIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+
+        var request = Request("Evidence Suite", 2);
+        request.Questions[0].Evidence = new List<BenchmarkEvidenceUnit>
+        {
+            new() { Kind = BenchmarkEvidenceUnit.SourceKind, Path = "src/artifact.c", Lines = "4194-4231" }
+        };
+
+        var dto = Assert.IsType<BenchmarkSuiteDto>(Assert.IsType<OkObjectResult>(await controller.ImportSuite(request, ct)).Value);
+
+        var questions = await db.BenchmarkQuestions.AsNoTracking()
+            .Where(q => q.BenchmarkSuiteId == dto.Id).OrderBy(q => q.OrderIndex).ToListAsync(ct);
+        Assert.Equal("[{\"kind\":\"source\",\"path\":\"src/artifact.c\",\"lines\":\"4194-4231\"}]", questions[0].EvidenceJson);
+        Assert.Null(questions[1].EvidenceJson);
+    }
+
+    [Fact]
+    public async Task InvalidEvidence_Returns400_AndPersistsNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+
+        var request = Request("Bad Evidence", 2);
+        request.Questions[1].Evidence = new List<BenchmarkEvidenceUnit>
+        {
+            new() { Kind = "web", Path = "https://example.com" }
+        };
+
+        var bad = Assert.IsType<BadRequestObjectResult>(await controller.ImportSuite(request, ct));
+        Assert.StartsWith("Evidence unit 1: unknown kind 'web'", bad.Value?.ToString());
+        Assert.Equal(0, await db.BenchmarkSuites.CountAsync(ct));
+    }
 }

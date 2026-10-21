@@ -323,6 +323,7 @@ builder.Services.AddSingleton<Overseer.Services.Telemetry.IActivityCounter, Over
 builder.Services.AddScoped<Overseer.Services.Telemetry.AiTelemetrySummaryService>();
 builder.Services.AddSingleton<OngoingChatManager>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRunManager>();
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkInstructionVariantCatalog>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkDifficultyJobManager>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComplianceGuard>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkSnapshotImporter>();
@@ -453,6 +454,7 @@ builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Ser
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetMonsterStatsTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetItemStatsTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetArtifactStatsTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetCharacterInfoTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.WikiViewTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SearchDefinitionsTool>();
 

@@ -7,12 +7,14 @@ namespace Overseer.Services.Tools
     public class GetMonsterStatsTool : IToolHandler
     {
         private readonly SourceCodeService _sourceCodeService;
+        private readonly IConfiguration _configuration;
         private readonly int _truncationThreshold;
         private readonly int _hardLimit;
 
         public GetMonsterStatsTool(SourceCodeService sourceCodeService, IConfiguration configuration)
         {
             _sourceCodeService = sourceCodeService;
+            _configuration = configuration;
             _truncationThreshold = configuration.GetValue<int>("Tools:get_monster_stats:TruncationThreshold", 9900);
             _hardLimit = configuration.GetValue<int>("Tools:get_monster_stats:HardLimit", 10000);
         }
@@ -56,16 +58,30 @@ namespace Overseer.Services.Tools
             }
             
             var result = _sourceCodeService.GetMonsterStats(name);
-            
+
+            if (result.Error == null
+                && context?.Variant?.HasExperiment(Benchmarking.BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment) == true)
+            {
+                result.ReferencedBy = SourceReferenceIndex.ForStatsResult(
+                    _sourceCodeService, _configuration, MonsterConstantOf(result), SourceReferenceIndex.PmHeaderPath);
+            }
+
             var options = new JsonSerializerOptions
             {
                 WriteIndented = true,
                 DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
                 Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             };
-            
+
             string jsonResult = JsonSerializer.Serialize(result, options);
-            
+
+            if (jsonResult.Length > _truncationThreshold && result.ReferencedBy != null)
+            {
+                /* Level 0: drop referenced_by before anything else */
+                result.ReferencedBy = null;
+                jsonResult = JsonSerializer.Serialize(result, options);
+            }
+
             if (jsonResult.Length > _truncationThreshold)
             {
                 if (result.RawDefinition != null)
@@ -99,6 +115,24 @@ namespace Overseer.Services.Tools
             }
             
             return Task.FromResult(new ToolResult { Success = true, Content = jsonResult });
+        }
+
+        /// <summary>
+        /// The <c>PM_</c> constant of a monster result, from its parsed name and class; null for a raw
+        /// definition of a were-creature, whose class decides the constant.
+        /// </summary>
+        private static string? MonsterConstantOf(StatsResponse<MonsterStats> result)
+        {
+            if (result.Stats != null)
+            {
+                result.Stats.Fields.TryGetValue("mname", out var mname);
+                result.Stats.Fields.TryGetValue("mlet", out var mlet);
+                return SourceReferenceIndex.MonsterConstant(mname as string, mlet as string);
+            }
+
+            string? rawName = SourceReferenceIndex.FirstStringLiteral(result.RawDefinition);
+            if (rawName == null || rawName.StartsWith("were", StringComparison.Ordinal)) return null;
+            return SourceReferenceIndex.MonsterConstant(rawName, null);
         }
     }
 }

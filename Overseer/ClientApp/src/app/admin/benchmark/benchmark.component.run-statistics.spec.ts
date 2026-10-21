@@ -262,6 +262,20 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runDiagnosticsText).toContain('snapshot=false');
     });
 
+    it('should record the information condition, the instruction variant and the corpus condition', () => {
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({
+        candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}'
+      });
+      expect(component.runDiagnosticsText).toContain('snapshot=false, condition=production, variant=none, corpus=live');
+
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({
+        candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true,"informationCondition":"closedBook"}',
+        instructionVariant: 'cite-first:ab12cd34ef56',
+        corpusCondition: 'scarce:2026-10'
+      });
+      expect(component.runDiagnosticsText).toContain('condition=closedBook, variant=cite-first:ab12cd34ef56, corpus=scarce:2026-10');
+    });
+
     it('should record the candidate delivery probe and the board delivery per grading role', () => {
       ctx.monitor.activeRunDetail = buildDiagnosticsRun();
       expect(component.runDiagnosticsText).toContain('Candidate delivery probe: not recorded');

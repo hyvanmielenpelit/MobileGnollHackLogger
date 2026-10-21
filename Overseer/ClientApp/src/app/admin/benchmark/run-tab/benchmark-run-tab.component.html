@@ -537,6 +537,47 @@
           </div>
           <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'sourceCodeReferences' }"></ng-container>
         </div>
+
+        <div class="form-group">
+          <label for="candidateInformationCondition">Information Condition</label>
+          <div class="gh-field-row">
+            <select id="candidateInformationCondition" class="gh-input"
+                    [(ngModel)]="launcher.informationCondition" (ngModelChange)="onReuseInputsChanged()"
+                    [attr.aria-describedby]="launcher.informationCondition !== 'production' ? 'candidateInformationConditionHint candidateInformationConditionNote' : 'candidateInformationConditionHint'">
+              @for (condition of informationConditionOptions; track condition.value) {
+                <option [ngValue]="condition.value">{{ condition.label }}</option>
+              }
+            </select>
+            <app-info-tip trigger="click" tipId="candidateInformationConditionHint" subject="Information Condition">
+              Which tools the candidate may use. Production gives it every tool the chat has; the other
+              conditions withhold some or all of them, to measure what they contribute.
+            </app-info-tip>
+          </div>
+          @if (launcher.informationCondition !== 'production') {
+            <span id="candidateInformationConditionNote" class="form-hint">Not comparable with production runs; analyzed as a condition contrast.</span>
+          }
+        </div>
+
+        <div class="form-group">
+          <label for="candidateInstructionVariant">Instruction Variant</label>
+          <div class="gh-field-row">
+            <select id="candidateInstructionVariant" class="gh-input"
+                    [(ngModel)]="launcher.instructionVariant" (ngModelChange)="onReuseInputsChanged()"
+                    [attr.aria-describedby]="launcher.instructionVariant !== null ? 'candidateInstructionVariantHint candidateInstructionVariantNote' : 'candidateInstructionVariantHint'">
+              <option [ngValue]="null">None — production instructions (production default)</option>
+              @for (variant of launcher.validInstructionVariants; track variant.name) {
+                <option [ngValue]="variant.name">{{ instructionVariantLabel(variant) }}</option>
+              }
+            </select>
+            <app-info-tip trigger="click" tipId="candidateInstructionVariantHint" subject="Instruction Variant">
+              Runs the candidate with a benchmark-only change to its instructions. The production chat
+              never uses one.
+            </app-info-tip>
+          </div>
+          @if (launcher.instructionVariant !== null) {
+            <span id="candidateInstructionVariantNote" class="form-hint">Benchmark-only. Analyzed as a variant contrast against a run without it.</span>
+          }
+        </div>
       </fieldset>
 
       <fieldset class="gh-fieldset setup-group setup-group-grading">

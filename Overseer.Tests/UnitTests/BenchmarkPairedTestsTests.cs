@@ -570,4 +570,138 @@ public class BenchmarkPairedTestsTests
         Assert.Null(result);
         Assert.Equal("Comparing needs two comparable entries.", error);
     }
+
+    // --- Condition and variant contrasts ------------------------------------------------------------------
+
+    private const string OtherPromptSha = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0";
+
+    /// <summary>A run of the fixture under <paramref name="condition"/>, its prompt hash moved when it is not Production.</summary>
+    private static BenchmarkRun ConditionRun(
+        long id, BenchmarkInformationCondition condition, bool verboseMode = false, bool movePromptHash = true)
+    {
+        var run = Run(id, SixScores);
+        run.CandidatePromptOptionsJson = BenchmarkService
+            .CandidatePromptOptionsFor(verboseMode, allowSourceCodeReferences: true, hasGameSnapshot: false, condition)
+            .ToCanonicalJson();
+        if (condition != BenchmarkInformationCondition.Production && movePromptHash)
+        {
+            run.CandidateSystemPromptSha256 = OtherPromptSha;
+        }
+        return run;
+    }
+
+    [Theory]
+    [InlineData(BenchmarkInformationCondition.SourceOnly)]
+    [InlineData(BenchmarkInformationCondition.ClosedBook)]
+    public void AProductionRun_AgainstAnotherCondition_IsAConditionContrast(BenchmarkInformationCondition condition)
+    {
+        var baseline = ConditionRun(1, BenchmarkInformationCondition.Production);
+        var treatment = ConditionRun(2, condition);
+
+        var classification = BenchmarkPairedTests.ClassifyRunPair(baseline, treatment, repriced: false);
+
+        Assert.Equal(BenchmarkRunPairKind.ConditionContrast, classification.Kind);
+        Assert.Equal(
+            new[] { BenchmarkComparabilityKey.CandidatePromptOptionsKey, BenchmarkComparabilityKey.CandidateSystemPromptKey },
+            classification.ChangedKeys);
+        Assert.StartsWith("Condition contrast:", classification.Explanation);
+        Assert.Contains(condition.DisplayName(), classification.Explanation);
+    }
+
+    [Fact]
+    public void AConditionContrast_MayAlsoDifferOnTheCorpusCondition()
+    {
+        var baseline = ConditionRun(1, BenchmarkInformationCondition.Production);
+        var treatment = ConditionRun(2, BenchmarkInformationCondition.ClosedBook);
+        treatment.CorpusCondition = "scarce:gold-facts-removed";
+
+        var classification = BenchmarkPairedTests.ClassifyRunPair(baseline, treatment, repriced: false);
+
+        Assert.Equal(BenchmarkRunPairKind.ConditionContrast, classification.Kind);
+        Assert.Contains(BenchmarkComparabilityKey.CorpusConditionKey, classification.ChangedKeys);
+        Assert.Contains(BenchmarkComparabilityKey.CandidatePromptOptionsKey, classification.ChangedKeys);
+    }
+
+    [Fact]
+    public void AConditionPair_AlsoDifferingOnTheResponseStyle_IsNotComparable()
+    {
+        var baseline = ConditionRun(1, BenchmarkInformationCondition.Production);
+        var treatment = ConditionRun(2, BenchmarkInformationCondition.SourceOnly, verboseMode: true);
+
+        var classification = BenchmarkPairedTests.ClassifyRunPair(baseline, treatment, repriced: false);
+
+        Assert.Equal(BenchmarkRunPairKind.NotComparable, classification.Kind);
+        Assert.Empty(classification.ChangedKeys);
+    }
+
+    [Fact]
+    public void AConditionPair_AlsoDifferingOnAnotherInstrumentKey_IsNotComparable()
+    {
+        var baseline = ConditionRun(1, BenchmarkInformationCondition.Production);
+        var treatment = ConditionRun(2, BenchmarkInformationCondition.SourceOnly);
+        treatment.ToolGuidesSha256 = "b7c1d9e3f5a7b9c1d3e5f7a9b1c3d5e7";
+
+        var classification = BenchmarkPairedTests.ClassifyRunPair(baseline, treatment, repriced: false);
+
+        Assert.Equal(BenchmarkRunPairKind.NotComparable, classification.Kind);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AVariantPair_IsAVariantContrast_WithOrWithoutAPromptHashDifference(bool movePromptHash)
+    {
+        var baseline = Run(1, SixScores);
+        var treatment = Run(2, SixScores);
+        treatment.InstructionVariant = "asker-profile-v1:0123456789ab";
+        if (movePromptHash)
+        {
+            treatment.CandidateSystemPromptSha256 = OtherPromptSha;
+        }
+
+        var classification = BenchmarkPairedTests.ClassifyRunPair(baseline, treatment, repriced: false);
+
+        Assert.Equal(BenchmarkRunPairKind.VariantContrast, classification.Kind);
+        Assert.Contains(BenchmarkComparabilityKey.InstructionVariantKey, classification.ChangedKeys);
+        Assert.Equal(movePromptHash, classification.ChangedKeys.Contains(BenchmarkComparabilityKey.CandidateSystemPromptKey));
+        Assert.Equal(movePromptHash ? 2 : 1, classification.ChangedKeys.Count);
+        Assert.StartsWith("Variant contrast:", classification.Explanation);
+        Assert.Contains("none", classification.Explanation);
+        Assert.Contains("asker-profile-v1:0123456789ab", classification.Explanation);
+    }
+
+    [Fact]
+    public void AVariantPair_AlsoDifferingOnTheCondition_IsNotComparable()
+    {
+        var baseline = ConditionRun(1, BenchmarkInformationCondition.Production);
+        var treatment = ConditionRun(2, BenchmarkInformationCondition.SourceOnly);
+        treatment.InstructionVariant = "source-tools-v1:0123456789ab";
+
+        var classification = BenchmarkPairedTests.ClassifyRunPair(baseline, treatment, repriced: false);
+
+        Assert.Equal(BenchmarkRunPairKind.NotComparable, classification.Kind);
+    }
+
+    [Fact]
+    public void APromptHashDifferenceAlone_IsStillAVerification()
+    {
+        var baseline = Run(1, SixScores);
+        var treatment = Run(2, SixScores);
+        treatment.CandidateSystemPromptSha256 = OtherPromptSha;
+
+        var classification = BenchmarkPairedTests.ClassifyRunPair(baseline, treatment, repriced: false);
+
+        Assert.Equal(BenchmarkRunPairKind.Verification, classification.Kind);
+    }
+
+    [Fact]
+    public void TheContrastKinds_HaveTheirLabels()
+    {
+        Assert.Equal(4, (int)BenchmarkRunPairKind.ConditionContrast);
+        Assert.Equal(5, (int)BenchmarkRunPairKind.VariantContrast);
+        Assert.Equal("Condition contrast", BenchmarkPairedTests.KindLabel(BenchmarkRunPairKind.ConditionContrast));
+        Assert.Equal("Variant contrast", BenchmarkPairedTests.KindLabel(BenchmarkRunPairKind.VariantContrast));
+        Assert.Equal("ConditionContrast", BenchmarkPairedTests.KindName(BenchmarkRunPairKind.ConditionContrast));
+        Assert.Equal("VariantContrast", BenchmarkPairedTests.KindName(BenchmarkRunPairKind.VariantContrast));
+    }
 }

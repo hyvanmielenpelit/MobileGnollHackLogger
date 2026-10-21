@@ -771,9 +771,10 @@ public class BenchmarkBatteryOrchestrator
         CancellationToken ct)
     {
         var benchmarkService = services.GetRequiredService<BenchmarkService>();
-        var (verboseMode, allowSourceCodeReferences) = BenchmarkRunLauncher.ResolvePromptSwitches(request);
+        var switches = BenchmarkRunLauncher.ResolvePromptSwitches(request);
         return benchmarkService.ComputeCurrentInstrumentFingerprintAsync(
-            db, suiteId, request.TestedModelConfigurationId, verboseMode, allowSourceCodeReferences, ct);
+            db, suiteId, request.TestedModelConfigurationId, switches.VerboseMode, switches.AllowSourceCodeReferences, ct,
+            switches.InformationCondition, switches.InstructionVariant);
     }
 
     // ---------------------------------------------------------------------------------------

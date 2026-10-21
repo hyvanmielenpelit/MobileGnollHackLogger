@@ -61,6 +61,13 @@ public class WikiService : IDisposable
     /// <summary>What the index the tools currently read holds; null until the first pass finishes.</summary>
     public CorpusContentFingerprint? ContentFingerprint { get; private set; }
 
+    /// <summary>
+    /// The corpus condition the published index's wiki root declared in
+    /// <c>.gnollbench-corpus.json</c> (<c>condition:label</c>, or <c>invalid</c>); null for the live
+    /// wiki. Swapped with <see cref="ContentFingerprint"/>, so the two describe the same index.
+    /// </summary>
+    public string? CorpusCondition { get; private set; }
+
     /// <summary>The id of the most recently started indexing job, running or finished; null before the first.</summary>
     public string? LastStartedJobId => _runner.LastStartedJobId;
 
@@ -217,6 +224,7 @@ public class WikiService : IDisposable
         // Read before the files, so a commit that lands during the pass gets a pass of its own.
         string? headSha = GitHelper.GetGitHeadSha(_wikiPath);
         string? branch = NullIfEmpty(GitHelper.GetCurrentBranch(_wikiPath));
+        string? corpusCondition = Benchmarking.BenchmarkCorpusConditionMarker.Read(_wikiPath, _logger);
 
         var candidates = System.IO.Directory.GetFiles(_wikiPath, "*.*", SearchOption.AllDirectories)
             .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
@@ -348,6 +356,7 @@ public class WikiService : IDisposable
                 _analyzer = analyzer;
                 var contentFingerprint = fingerprint.Build();
                 ContentFingerprint = contentFingerprint;
+                CorpusCondition = corpusCondition;
 
                 // The statistics swap with the searcher, so a status never pairs one index's
                 // figures with another index's fingerprint.

@@ -15,6 +15,7 @@ import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import {
   AdminBenchmarkService,
+  BenchmarkEvidenceUnit,
   BenchmarkQuestionDto,
   BenchmarkSuiteDto,
   BoardFactsCheckDto,
@@ -66,6 +67,24 @@ export interface ReviewCard {
   rubricDiff: DiffLine[];
   /** Advisory house-format notices for an imported rubric that is present and changed. */
   rubricNotices: RubricNotice[];
+  /** The stored evidence, one line per unit. */
+  currentEvidence: string[];
+  /** The document's evidence, one line per unit; null when the document leaves it out (kept). */
+  importedEvidence: string[] | null;
+  evidenceDiff: DiffLine[];
+  /** Either side has evidence, so the card shows it. */
+  showEvidence: boolean;
+}
+
+/** One evidence unit as the review card lists it: `wiki · Races/Human.md · personal`. */
+export function evidenceUnitText(unit: BenchmarkEvidenceUnit): string {
+  return [
+    `${unit.kind} · ${unit.path}`,
+    unit.section ? `§ ${unit.section}` : null,
+    unit.lines ? `L${unit.lines}` : null,
+    unit.function ? `${unit.function}()` : null,
+    unit.personal ? 'personal' : null
+  ].filter(part => part !== null).join(' · ');
 }
 
 /** What a host needs to redraw its stepper and footer. */
@@ -358,15 +377,23 @@ export class QuestionYamlImportPanelComponent implements OnDestroy {
 
     const plan = buildImportPlan(parsed, this.mode, this.existing, this.target ?? undefined);
     this.plan = plan;
-    this.cards = plan.map(item => ({
-      rubricNotices: item.rubricChanged && item.parsed.rubric ? lintRubric(item.parsed.rubric, this.suiteHasSnapshot) : [],
-      item,
-      questionDiff: diffLines(item.current?.questionText ?? '', item.parsed.questionText ?? item.current?.questionText ?? '').lines,
-      rubricDiff: diffLines(
-        item.current?.expectedPoints ?? '',
-        item.parsed.rubric === null ? (item.current?.expectedPoints ?? '') : item.parsed.rubric
-      ).lines
-    }));
+    this.cards = plan.map(item => {
+      const currentEvidence = (item.current?.evidence ?? []).map(evidenceUnitText);
+      const importedEvidence = item.parsed.evidence === null ? null : item.parsed.evidence.map(evidenceUnitText);
+      return {
+        rubricNotices: item.rubricChanged && item.parsed.rubric ? lintRubric(item.parsed.rubric, this.suiteHasSnapshot) : [],
+        item,
+        currentEvidence,
+        importedEvidence,
+        evidenceDiff: diffLines(currentEvidence.join('\n'), (importedEvidence ?? currentEvidence).join('\n')).lines,
+        showEvidence: currentEvidence.length > 0 || importedEvidence !== null,
+        questionDiff: diffLines(item.current?.questionText ?? '', item.parsed.questionText ?? item.current?.questionText ?? '').lines,
+        rubricDiff: diffLines(
+          item.current?.expectedPoints ?? '',
+          item.parsed.rubric === null ? (item.current?.expectedPoints ?? '') : item.parsed.rubric
+        ).lines
+      };
+    });
     this.suiteName = parsed.suite?.name ?? '';
     this.suiteDescription = parsed.suite?.description ?? null;
     this.suggestedDescription = parsed.suite?.suggestedDescription ?? null;

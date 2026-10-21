@@ -1412,6 +1412,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int>("Difficulty")
                         .HasColumnType("int");
 
+                    b.Property<string>("EvidenceJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("ExpectedPoints")
                         .HasColumnType("nvarchar(max)");
 
@@ -1862,6 +1865,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int>("ContestedVerdictAnswerCount")
                         .HasColumnType("int");
 
+                    b.Property<string>("CorpusCondition")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("CorpusIndexFingerprintsJson")
                         .HasColumnType("nvarchar(max)");
 
@@ -1909,6 +1916,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("HarnessVersion")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("InstructionVariant")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
 
                     b.Property<bool>("IsConsistencyAnchor")
                         .HasColumnType("bit");

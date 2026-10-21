@@ -431,6 +431,70 @@ public static class BenchmarkReportBuilder
     }
 
     /// <summary>
+    /// The information condition, the candidate's tool list, the corpus condition and the
+    /// instruction variant, as the manifest, the tool-call log and the diagnostics print them.
+    /// <paramref name="candidateTools"/> null prints the list as not recorded, except under
+    /// Closed book, which has none.
+    /// </summary>
+    internal static IReadOnlyList<string> ConditionManifestLines(
+        BenchmarkRun run, BenchmarkCandidatePromptOptions promptOptions, IReadOnlyList<string>? candidateTools)
+    {
+        var condition = promptOptions.Condition;
+        string tools = condition == BenchmarkInformationCondition.ClosedBook
+            ? "none"
+            : candidateTools == null
+                ? "not recorded"
+                : candidateTools.Count == 0 ? "none" : string.Join(", ", candidateTools);
+        string variant = string.IsNullOrWhiteSpace(run.InstructionVariant)
+            ? "none"
+            : $"{BenchmarkInstructionVariantCatalog.NameOfStamp(run.InstructionVariant)} "
+              + $"({run.InstructionVariant[(run.InstructionVariant.IndexOf(':') + 1)..]}) — benchmark-only instruction text and tools that production does not have";
+        return new[]
+        {
+            $"**Information condition:** {condition.DisplayName()}",
+            $"**Candidate tools:** {tools}",
+            $"**Corpus condition:** {BenchmarkCorpusConditionMarker.Describe(run.CorpusCondition)}",
+            $"**Instruction variant:** {variant}"
+        };
+    }
+
+    /// <summary>
+    /// The Evidence Reach section of § 2: how far each answer's tool calls reached its question's
+    /// gold evidence, computed at render time from the stored tool-call rows.
+    /// </summary>
+    private static void AppendEvidenceReachSection(
+        StringBuilder sb, BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers, BenchmarkRunConditionContext conditions)
+    {
+        var reaches = answers
+            .Select(a => (Answer: a, Units: conditions.EvidenceFor(a)))
+            .Where(x => x.Units is { Count: > 0 })
+            .Select(x => (x.Answer, Reach: BenchmarkEvidenceReach.Compute(run, x.Answer, x.Units)))
+            .ToList();
+        if (reaches.Count == 0) return;
+
+        var options = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson);
+        sb.AppendLine("### Evidence Reach");
+        sb.AppendLine($"- **Condition:** {options.Condition.DisplayName()} · **Corpus condition:** {BenchmarkCorpusConditionMarker.Describe(run.CorpusCondition)} · **Suite evidence:** `{conditions.SuiteEvidenceShaPrefix ?? "none"}`");
+
+        var classCounts = Enum.GetValues<BenchmarkEvidenceReachClass>()
+            .Select(c => (Class: c, Count: reaches.Count(r => r.Reach.Class == c)))
+            .Where(x => x.Count > 0)
+            .Select(x => $"{BenchmarkEvidenceReach.ClassLabel(x.Class)} {Inv(x.Count)}");
+        sb.AppendLine($"- **Classes:** {string.Join(", ", classCounts)} (of {Inv(reaches.Count)} answer(s) with evidence)");
+
+        var available = reaches.Where(r => !r.Reach.Unavailable).ToList();
+        int opened = available.Count(r => r.Reach.GoldOpened);
+        var withPersonal = available.Where(r => r.Reach.PersonalContextOpened != null).ToList();
+        int personalOpened = withPersonal.Count(r => r.Reach.PersonalContextOpened == true);
+        int zeroCall = reaches.Count(r => r.Reach.NoToolCall);
+        int unavailable = reaches.Count - available.Count;
+        sb.AppendLine($"- **Gold opened:** {Inv(opened)} of {Inv(available.Count)} · **Personal context opened:** {Inv(personalOpened)} of {Inv(withPersonal.Count)} · **Zero-call answers:** {Inv(zeroCall)}"
+            + (unavailable > 0 ? $" · **Unavailable (pruned rows):** {Inv(unavailable)}" : string.Empty));
+        sb.AppendLine("- *Read but wrong covers answering against the opened evidence, misreading it, and another page contradicting it; open the answer before calling it a model trait.*");
+        sb.AppendLine();
+    }
+
+    /// <summary>
     /// The sentences of the answer the assessor quoted as false and the harness sent to the claim
     /// verifier, each with its verdict. Read by role, so a record stored without roles has none.
     /// </summary>
@@ -438,6 +502,52 @@ public static class BenchmarkReportBuilder
         => (ClaimVerificationsOf(answer) ?? new List<BenchmarkClaimVerification>())
             .Where(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.AccusedQuote))
             .ToList();
+
+    /// <summary>
+    /// The critical-error quotes the verifier checked that are neither an accused sentence nor a
+    /// claim of the answer's own, each with its verdict: those two are reported as such already.
+    /// A refuted quote upholds the graders' critical error; a supported one clears the answer.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> CriticalErrorQuotesOf(BenchmarkRunAnswer answer)
+        => (ClaimVerificationsOf(answer) ?? new List<BenchmarkClaimVerification>())
+            .Where(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.CriticalErrorQuote)
+                        && !BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.AccusedQuote)
+                        && !BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.UnverifiedClaim))
+            .ToList();
+
+    /// <summary>
+    /// The verdicts of critical-error quotes in the graders' terms: <c>upheld 2</c> when all agree,
+    /// else <c>upheld r, cleared s, indeterminate i</c>.
+    /// </summary>
+    internal static string CriticalErrorQuoteVerdictText(IReadOnlyList<BenchmarkClaimVerification> quotes)
+    {
+        var (supported, refuted, indeterminate) = VerdictCounts(quotes);
+        var verdicts = quotes.Select(v => v.EffectiveVerdict).Distinct().ToList();
+        if (verdicts.Count == 1)
+        {
+            string word = verdicts[0] switch
+            {
+                BenchmarkClaimVerdict.Refuted => "upheld",
+                BenchmarkClaimVerdict.Supported => "cleared",
+                _ => "indeterminate"
+            };
+            return $"{word} {Inv(quotes.Count)}";
+        }
+        return $"upheld {Inv(refuted)}, cleared {Inv(supported)}, indeterminate {Inv(indeterminate)}";
+    }
+
+    /// <summary>
+    /// The panel split of critical-error quotes by the member(s) that raised them, in parentheses
+    /// with a leading space; "members not recorded" when none records a member set; empty for a
+    /// single-assessor run.
+    /// </summary>
+    private static string CriticalErrorQuoteSplitText(IReadOnlyList<BenchmarkClaimVerification> quotes, bool isPanelRun)
+    {
+        if (!isPanelRun) return string.Empty;
+        return quotes.Any(v => v.RaisedBy != null)
+            ? $" ({MemberSplitText(quotes, membersOf: v => v.RaisedBy)})"
+            : " (members not recorded)";
+    }
 
     /// <summary>
     /// The statements of the assessor's own evidence the harness sent to the claim verifier, each with
@@ -558,7 +668,8 @@ public static class BenchmarkReportBuilder
     /// </summary>
     internal static string? ChargesOnlyVerificationText(
         IReadOnlyList<BenchmarkClaimVerification> accusedSentences,
-        IReadOnlyList<BenchmarkClaimVerification> assessorStatements)
+        IReadOnlyList<BenchmarkClaimVerification> assessorStatements,
+        IReadOnlyList<BenchmarkClaimVerification>? criticalErrorQuotes = null)
     {
         static string? Part(IReadOnlyList<BenchmarkClaimVerification> items, string singular, string plural)
         {
@@ -571,12 +682,24 @@ public static class BenchmarkReportBuilder
             return $"{Inv(items.Count)} {(items.Count == 1 ? singular : plural)} checked — {verdictText}{UnansweredByVerifierText(items)}";
         }
 
+        string? QuotePart(IReadOnlyList<BenchmarkClaimVerification>? items)
+        {
+            if (items == null || items.Count == 0) return null;
+            return $"{Inv(items.Count)} {(items.Count == 1 ? "critical-error quote" : "critical-error quotes")} checked — "
+                + CriticalErrorQuoteVerdictText(items) + UnansweredByVerifierText(items);
+        }
+
         var parts = new[]
         {
             Part(accusedSentences, "charged sentence", "charged sentences"),
-            Part(assessorStatements, "assessor statement", "assessor statements")
+            Part(assessorStatements, "assessor statement", "assessor statements"),
+            QuotePart(criticalErrorQuotes)
         }.Where(p => p != null).ToList();
-        return parts.Count == 0 ? null : string.Join("; ", parts);
+        if (parts.Count == 0) return null;
+        // Critical-error quotes are not claims of the answer, so the line says it raised none.
+        return criticalErrorQuotes is { Count: > 0 }
+            ? "0 own claims; " + string.Join("; ", parts)
+            : string.Join("; ", parts);
     }
 
     /// <summary>
@@ -1963,7 +2086,8 @@ public static class BenchmarkReportBuilder
         string? overseerVersion = null,
         BenchmarkRunPricing? runPricing = null,
         BenchmarkRunBatteryContext? battery = null,
-        ProviderAvailabilitySummary? availability = null)
+        ProviderAvailabilitySummary? availability = null,
+        BenchmarkRunConditionContext? conditions = null)
     {
         var sb = new StringBuilder();
         // Read back from the run's own profile snapshot, so the report describes the run in
@@ -2281,6 +2405,10 @@ public static class BenchmarkReportBuilder
             if (promptOpts.AllowSourceCodeReferences)
             {
                 sb.AppendLine($"  - {SourceCodeReferencesAllowedNote}");
+            }
+            foreach (string conditionLine in ConditionManifestLines(run, promptOpts, conditions?.CandidateTools))
+            {
+                sb.AppendLine($"- {conditionLine}");
             }
             sb.AppendLine($"- **Spoiler-free mode:** {spoilerStr} · **Active game:** {activeGameStr} · **Message history:** {historyStr} · **Game snapshot:** {(promptOpts.HasGameSnapshot ? "yes" : "no")}");
             sb.AppendLine($"- **Tool batching policy:** {run.TestedModelSnapshot.ParallelExecutionMode ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled} — {ParallelPolicyDescription(run.TestedModelSnapshot.ParallelExecutionMode ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled)}");
@@ -2728,7 +2856,9 @@ public static class BenchmarkReportBuilder
                 ? $"{PercentText(cwa)} ({outcomeSummary.CorrectCount} of {attempted})"
                 : "n/a";
             string wrongInsteadOfAbstaining = outcomeSummary.WrongInsteadOfAbstaining is double wia
-                ? $"{PercentText(wia)} ({outcomeSummary.IncorrectCount} of {abstainedOrWrong})"
+                ? abstainedOrWrong < BenchmarkComparisonModelProfile.WrongInsteadOfAbstainingMinAnswers
+                    ? $"too few to rate ({outcomeSummary.IncorrectCount} of {abstainedOrWrong})"
+                    : $"{PercentText(wia)} ({outcomeSummary.IncorrectCount} of {abstainedOrWrong})"
                 : "n/a";
             sb.AppendLine($"- **Outcomes:** {outcomeSummary.CorrectCount} correct, {outcomeSummary.PartialCount} partial, {outcomeSummary.IncorrectCount} incorrect, {outcomeSummary.NotAttemptedCount} not attempted, {outcomeSummary.NoAnswerCount} without an answer · correct when attempted {correctWhenAttempted} · wrong instead of abstaining {wrongInsteadOfAbstaining}");
         }
@@ -3338,13 +3468,15 @@ public static class BenchmarkReportBuilder
                     // ClaimVerificationJson: the run's claim columns count the answers' own claims only.
                     var accusedChecked = answers.SelectMany(a => AccusedSentencesOf(a)).ToList();
                     var assessorChecked = answers.SelectMany(a => AssessorStatementsOf(a)).ToList();
+                    var quotesChecked = answers.SelectMany(a => CriticalErrorQuotesOf(a)).ToList();
 
                     // Items the verifier's response did not answer, over the populations this line counts.
                     int unansweredByVerifier = UnansweredByVerifierCount(answers
                         .SelectMany(a => ClaimVerificationsOf(a) ?? new List<BenchmarkClaimVerification>())
                         .Where(BenchmarkClaimRoles.IsOrdinaryClaim)
                         .Concat(accusedChecked)
-                        .Concat(assessorChecked));
+                        .Concat(assessorChecked)
+                        .Concat(quotesChecked));
                     string unansweredClause = unansweredByVerifier > 0
                         ? $"; {Inv(unansweredByVerifier, "N0")} not answered by the verifier"
                         : string.Empty;
@@ -3354,7 +3486,7 @@ public static class BenchmarkReportBuilder
                     int providerRetriedAnswers = answers.Count(ClaimVerificationHadProviderErrorRetry);
                     string providerRetriedPart = $"{Inv(providerRetriedAnswers, "N0")} answer(s) needed a provider-error retry";
                     string providerRetriedClause = providerRetriedAnswers > 0 ? $"; {providerRetriedPart}" : string.Empty;
-                    if (claimsChecked > 0 && accusedChecked.Count == 0 && assessorChecked.Count == 0)
+                    if (claimsChecked > 0 && accusedChecked.Count == 0 && assessorChecked.Count == 0 && quotesChecked.Count == 0)
                     {
                         decimal costPerClaim = verifierTotalCost / claimsChecked;
                         decimal verifierCostShare = totalCost > 0 ? verifierTotalCost / totalCost * 100m : 0m;
@@ -3364,9 +3496,9 @@ public static class BenchmarkReportBuilder
                             $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate{unansweredClause}{retriedClause}{providerRetriedClause}. " +
                             $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerClaim)}/claim), {Inv(verifierCostShare, "F0")}% of run cost.");
                     }
-                    else if (accusedChecked.Count > 0 || assessorChecked.Count > 0)
+                    else if (accusedChecked.Count > 0 || assessorChecked.Count > 0 || quotesChecked.Count > 0)
                     {
-                        int itemsChecked = claimsChecked + accusedChecked.Count + assessorChecked.Count;
+                        int itemsChecked = claimsChecked + accusedChecked.Count + assessorChecked.Count + quotesChecked.Count;
                         decimal costPerItem = verifierTotalCost / itemsChecked;
                         decimal verifierCostShare = totalCost > 0 ? verifierTotalCost / totalCost * 100m : 0m;
                         var heads = new List<string> { $"{Inv(claimsChecked, "N0")} unverified claim(s)" };
@@ -3383,7 +3515,8 @@ public static class BenchmarkReportBuilder
                         }
                         AddPopulation("accused sentence(s)", "accused sentences", accusedChecked);
                         AddPopulation("assessor statement(s)", "assessor statements", assessorChecked);
-                        string over = heads.Count == 2 ? "both" : "all three";
+                        AddPopulation("critical-error quote(s)", "critical-error quotes", quotesChecked);
+                        string over = heads.Count switch { 2 => "both", 3 => "all three", _ => $"all {Inv(heads.Count)}" };
                         if (unansweredByVerifier > 0)
                         {
                             parts.Add($"{Inv(unansweredByVerifier, "N0")} not answered by the verifier");
@@ -3856,6 +3989,13 @@ public static class BenchmarkReportBuilder
             .ToList();
         var assessorStatementTotals = VerdictCounts(assessorStatementsByAnswer.SelectMany(x => x.Statements));
         int assessorStatementRunCount = assessorStatementsByAnswer.Sum(x => x.Statements.Count);
+        var criticalErrorQuotesByAnswer = answers
+            .OrderBy(a => a.OrderIndex)
+            .Select(a => (Answer: a, Quotes: CriticalErrorQuotesOf(a)))
+            .Where(x => x.Quotes.Count > 0)
+            .ToList();
+        var criticalErrorQuoteTotals = VerdictCounts(criticalErrorQuotesByAnswer.SelectMany(x => x.Quotes));
+        int criticalErrorQuoteRunCount = criticalErrorQuotesByAnswer.Sum(x => x.Quotes.Count);
         var suspectedFalseByAnswer = answers
             .Select(a => (Answer: a, Claims: SuspectedFalseClaimsOf(a)))
             .Where(x => x.Claims.Count > 0)
@@ -3872,7 +4012,7 @@ public static class BenchmarkReportBuilder
             : new List<(BenchmarkRunAnswer Answer, List<BenchmarkClaimVerification> Claims)>();
         int panelClaimCount = panelClaimsByAnswer.Sum(x => x.Claims.Count);
 
-        if (!claimsRecorded || unverifiedTotal > 0 || panelClaimCount > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || dimensionOutlierAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0 || supportedAccusations.Count > 0 || accusedRunCount > 0 || assessorStatementRunCount > 0)
+        if (!claimsRecorded || unverifiedTotal > 0 || panelClaimCount > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || dimensionOutlierAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0 || supportedAccusations.Count > 0 || accusedRunCount > 0 || assessorStatementRunCount > 0 || criticalErrorQuoteRunCount > 0)
         {
             sb.AppendLine("### Assessor Findings");
             if (!claimsRecorded)
@@ -3952,6 +4092,11 @@ public static class BenchmarkReportBuilder
             if (assessorStatementRunCount > 0)
             {
                 sb.AppendLine($"- **Assessor Statements Checked:** {assessorStatementRunCount} across {assessorStatementsByAnswer.Count} answer(s) ({string.Join(", ", assessorStatementsByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — supported {assessorStatementTotals.Supported}, refuted {assessorStatementTotals.Refuted}, indeterminate {assessorStatementTotals.Indeterminate}. *Sentences of the assessor's own accuracy evidence, sent to the claim verifier on a contested answer. A refuted one means the **assessor** was wrong; none is counted as a claim of the answer.*");
+            }
+            if (criticalErrorQuoteRunCount > 0)
+            {
+                var allQuotes = criticalErrorQuotesByAnswer.SelectMany(x => x.Quotes).ToList();
+                sb.AppendLine($"- **Critical-error quotes checked:** {criticalErrorQuoteRunCount} across {criticalErrorQuotesByAnswer.Count} answer(s) ({string.Join(", ", criticalErrorQuotesByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}){CriticalErrorQuoteSplitText(allQuotes, isPanelRun)} — upheld {criticalErrorQuoteTotals.Refuted}, cleared {criticalErrorQuoteTotals.Supported}, indeterminate {criticalErrorQuoteTotals.Indeterminate}. *The sentences the graders quoted as the critical error, sent to the claim verifier; a refuted quote upholds the critical error, a supported one clears the answer.*");
             }
             if (suspectedFalseRunCount > 0 && isPanelRun)
             {
@@ -4773,6 +4918,11 @@ public static class BenchmarkReportBuilder
         // apart once the figure is on the page.
         bool hasToolCallRows = answers.Any(a => a.ToolCalls.Count > 0);
 
+        if (conditions is { HasEvidence: true })
+        {
+            AppendEvidenceReachSection(sb, run, answers, conditions);
+        }
+
         sb.AppendLine("### Tool Usage Profile");
         int totalToolCalls = answers.Sum(a => a.ToolCallCount ?? 0);
         sb.AppendLine($"- **Total Tool Calls:** {totalToolCalls}");
@@ -5114,6 +5264,10 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"- **Transport Artifacts Removed:** {a.ScrubbedArtifactCount} block(s) removed before grading");
             }
+            if (conditions?.EvidenceFor(a) is { Count: > 0 } evidenceUnits)
+            {
+                sb.AppendLine($"- {BenchmarkEvidenceReach.Describe(BenchmarkEvidenceReach.Compute(run, a, evidenceUnits))}");
+            }
 
             // The ordered record of this turn: every call the model attempted, successes and
             // failures alike, in emission order rather than in the aggregate shape of
@@ -5414,7 +5568,7 @@ public static class BenchmarkReportBuilder
                     // With no claim of the answer's own checked, the line counts the charged sentences
                     // and assessor statements the verifier did check.
                     string? chargesOnlyText = sCount + rCount + iCount == 0 && ordinaryClaims.Count == 0
-                        ? ChargesOnlyVerificationText(AccusedSentencesOf(a), AssessorStatementsOf(a))
+                        ? ChargesOnlyVerificationText(AccusedSentencesOf(a), AssessorStatementsOf(a), CriticalErrorQuotesOf(a))
                         : null;
                     sb.AppendLine(chargesOnlyText != null
                         ? $"> - **Claim Verification ({verifierName}):** {chargesOnlyText} — *checked against source/wiki; advisory, not reflected in the score.*{ClaimVerificationSpendText(a)}{ClaimVerificationRetryText(a)}"
@@ -5438,6 +5592,25 @@ public static class BenchmarkReportBuilder
                     string verdictWord = accusation.EffectiveVerdict.ToString().ToLowerInvariant();
                     string citation = string.IsNullOrWhiteSpace(accusation.Citation) ? "no citation" : accusation.Citation;
                     sb.AppendLine($"> - **Accused sentence, {verdictWord}:** a sentence {AccusedByText(accusation)} charged as false was checked by the claim verifier and returned **{VerdictText(accusation)}** — \"{accusation.Claim}\"{QuotedFragmentsText(accusation)} ({citation}).");
+                }
+                // The sentences the graders quoted as the critical error, when the verifier checked them.
+                var criticalErrorQuotes = CriticalErrorQuotesOf(a);
+                if (criticalErrorQuotes.Count > 0)
+                {
+                    var (quoteSupported, quoteRefuted, quoteIndeterminate) = VerdictCounts(criticalErrorQuotes);
+                    sb.AppendLine($"> - **Critical-error quotes checked:** {criticalErrorQuotes.Count}{CriticalErrorQuoteSplitText(criticalErrorQuotes, isPanelRun)} — upheld (refuted) {quoteRefuted}, cleared (supported) {quoteSupported}, indeterminate {quoteIndeterminate}{UnansweredByVerifierText(criticalErrorQuotes)}");
+                    foreach (var quote in criticalErrorQuotes)
+                    {
+                        string side = quote.EffectiveVerdict switch
+                        {
+                            BenchmarkClaimVerdict.Refuted => " — the verifier sided with the graders",
+                            BenchmarkClaimVerdict.Supported => " — the verifier sided with the answer",
+                            _ => string.Empty
+                        };
+                        string citation = string.IsNullOrWhiteSpace(quote.Citation) ? "no citation" : quote.Citation;
+                        string verdictWord = quote.EffectiveVerdict.ToString().ToLowerInvariant();
+                        sb.AppendLine($"> - **Critical-error quote, {verdictWord}:** a sentence {MemberPhrase(quote) ?? "the assessor"} quoted as the critical error was checked by the claim verifier and returned **{VerdictText(quote)}**{side} — \"{quote.Claim}\" ({citation}).");
+                    }
                 }
                 // The assessor's own evidence sentences: a refutation clears the answer, not convicts it.
                 var assessorStatements = AssessorStatementsOf(a);

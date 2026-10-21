@@ -183,6 +183,9 @@
             } @else if (card.item.rubricChanged) {
               <span class="status-badge badge-warning">rubric</span>
             }
+            @if (card.item.evidenceChanged) {
+              <span class="status-badge badge-warning import-badge-evidence">evidence</span>
+            }
           }
         </div>
       </div>
@@ -206,6 +209,18 @@
                 } @else {
                   <p class="text-muted">(no rubric)</p>
                 }
+                @if (card.showEvidence) {
+                  <p class="import-field-label">Evidence</p>
+                  @if (card.currentEvidence.length > 0) {
+                    <ul class="import-evidence-list">
+                      @for (unit of card.currentEvidence; track $index) {
+                        <li>{{ unit }}</li>
+                      }
+                    </ul>
+                  } @else {
+                    <p class="text-muted">(no evidence)</p>
+                  }
+                }
               } @else {
                 <p class="text-muted">(new question)</p>
               }
@@ -228,6 +243,20 @@
             } @else {
               <app-collapsible-markdown [text]="card.item.parsed.rubric" label="imported rubric" />
             }
+            @if (card.showEvidence) {
+              <p class="import-field-label">Evidence</p>
+              @if (card.importedEvidence === null) {
+                <p class="text-muted">Evidence: not in the document, kept as is.</p>
+              } @else if (card.importedEvidence.length === 0) {
+                <p class="text-muted">(evidence cleared)</p>
+              } @else {
+                <ul class="import-evidence-list">
+                  @for (unit of card.importedEvidence; track $index) {
+                    <li>{{ unit }}</li>
+                  }
+                </ul>
+              }
+            }
           </div>
         </div>
       } @else {
@@ -238,6 +267,14 @@
           <p class="text-muted">Rubric: not in the document, kept as is.</p>
         } @else {
           <pre class="import-diff">@for (line of card.rubricDiff; track $index) {<span class="diff-line" [class.diff-added]="line.kind === 'added'" [class.diff-removed]="line.kind === 'removed'" [class.diff-equal]="line.kind === 'equal'">{{ diffPrefix(line) }}{{ line.text }}</span>}</pre>
+        }
+        @if (card.showEvidence) {
+          <p class="import-field-label">Evidence</p>
+          @if (card.importedEvidence === null) {
+            <p class="text-muted">Evidence: not in the document, kept as is.</p>
+          } @else {
+            <pre class="import-diff import-evidence-diff">@for (line of card.evidenceDiff; track $index) {<span class="diff-line" [class.diff-added]="line.kind === 'added'" [class.diff-removed]="line.kind === 'removed'" [class.diff-equal]="line.kind === 'equal'">{{ diffPrefix(line) }}{{ line.text }}</span>}</pre>
+          }
         }
       }
     </section>

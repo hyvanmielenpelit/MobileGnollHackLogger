@@ -24,6 +24,13 @@ namespace Overseer.Services.Tools
         /// </summary>
         int? MaxResultLengthOverride => null;
 
+        /// <summary>
+        /// An experimental tool is offered to no request unless the request's benchmark-only
+        /// instruction variant names it (<see cref="ToolExecutionContext.Variant"/>), so live chat
+        /// never sees it. It has no production tool guide.
+        /// </summary>
+        bool IsExperimental => false;
+
         Task<ToolResult> ExecuteAsync(JsonElement parameters,
                                       ToolExecutionContext context,
                                       CancellationToken cancellationToken);
@@ -96,6 +103,13 @@ namespace Overseer.Services.Tools
         /// </summary>
         public ApiKeyAlerts.ApiKeyAlertContext? ApiKeyAlert { get; set; }
 
+        /// <summary>
+        /// The benchmark-only instruction variant this request runs under: its experimental tools,
+        /// per-request tool-guide texts and tool-output switches. Null everywhere except a benchmark
+        /// candidate's own requests.
+        /// </summary>
+        public Benchmarking.BenchmarkVariantContext? Variant { get; set; }
+
         public ToolExecutionContext CloneFor(string toolCallId)
         {
             return new ToolExecutionContext
@@ -124,7 +138,8 @@ namespace Overseer.Services.Tools
                 ParallelExecutionMode = this.ParallelExecutionMode,
                 BlockExternalEgress = this.BlockExternalEgress,
                 DisableProviderPromptCache = this.DisableProviderPromptCache,
-                ApiKeyAlert = this.ApiKeyAlert
+                ApiKeyAlert = this.ApiKeyAlert,
+                Variant = this.Variant
             };
         }
     }

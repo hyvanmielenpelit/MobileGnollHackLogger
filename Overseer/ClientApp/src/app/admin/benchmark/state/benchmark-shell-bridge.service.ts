@@ -67,6 +67,10 @@ export type LauncherSetupFields = Pick<RecommendedRun,
 export interface LauncherSetupPrefill extends LauncherSetupFields {
   /** The heading of the launcher's note: *Set up from Root Cause Analysis #12, run 2*. */
   sourceLabel: string;
+  /** The information condition's wire name; a recommended run is always `production`. Absent means production. */
+  informationCondition?: string | null;
+  /** The instruction variant's name; a recommended run never has one. */
+  instructionVariant?: string | null;
 }
 
 /** The launcher settings of a recommended run, with the note heading `sourceLabel`. */
@@ -93,6 +97,9 @@ export function launcherSetupFromRecommendedRun(run: RecommendedRun, sourceLabel
     secondOpinionAssessorModelConfigurationId: run.secondOpinionAssessorModelConfigurationId ?? null,
     secondOpinionMode: run.secondOpinionMode ?? null,
     claimVerifierModelConfigurationId: run.claimVerifierModelConfigurationId ?? null,
+    // A Root Cause Analysis recommends production runs only.
+    informationCondition: 'production',
+    instructionVariant: null,
     notes: [...(run.notes ?? [])]
   };
 }

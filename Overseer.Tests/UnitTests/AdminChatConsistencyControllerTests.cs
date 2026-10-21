@@ -580,6 +580,81 @@ public class AdminChatConsistencyControllerTests
         Assert.Empty(h.Db.ChatConsistencyAnalyses.ToList());
     }
 
+    // --- Benchmark-only configurations ----------------------------------------------------------
+
+    [Theory]
+    [InlineData(ChatConsistencyAnalysisTestData.InformationConditionKind)]
+    [InlineData(ChatConsistencyAnalysisTestData.CorpusConditionKind)]
+    [InlineData(ChatConsistencyAnalysisTestData.InstructionVariantKind)]
+    public async Task AnExplicitlyGivenNonProductionRun_IsLeftOutWithANote(string kind)
+    {
+        using var h = new Harness();
+        string key = Seed(h.Db);
+        var first = h.Db.BenchmarkRuns.Local.Single(r => r.Id == 1);
+        var benchmarkOnly = Run(5, BaselineDay2.AddHours(2), first.TestedModelSnapshot!, first.AssessorModelSnapshot!);
+        string reason = ChatConsistencyAnalysisTestData.MakeNonProduction(benchmarkOnly, kind);
+        h.Db.BenchmarkRuns.Add(benchmarkOnly);
+        h.Db.SaveChanges();
+
+        var result = ValueOf<ChatConsistencyAnalysisResult>(await h.Controller.Analyze(Request(key) with
+        {
+            BaselineRunIds = new long[] { 1, 2, 5 },
+            ComparisonRunIds = new long[] { 3, 4 }
+        }, CancellationToken.None));
+
+        Assert.Equal(new long[] { 1, 2 }, result.Baseline.RunIds);
+        Assert.Equal(new long[] { 3, 4 }, result.Comparison.RunIds);
+        var note = Assert.Single(result.DataQuality, n => n.Kind == "excludedRun");
+        Assert.Equal("Run #5 given for the baseline ran under " + reason + " and was left out.", note.Text);
+    }
+
+    [Theory]
+    [InlineData(ChatConsistencyAnalysisTestData.InformationConditionKind)]
+    [InlineData(ChatConsistencyAnalysisTestData.CorpusConditionKind)]
+    [InlineData(ChatConsistencyAnalysisTestData.InstructionVariantKind)]
+    public async Task ANonProductionRunInsideAPeriod_IsNotSelectedImplicitly(string kind)
+    {
+        using var db = ChatConsistencyAnalysisTestData.NewDb();
+        string key = ChatConsistencyAnalysisTestData.Seed(db, new ChatConsistencyAnalysisTestData.Scenario { Controls = false });
+        ChatConsistencyAnalysisTestData.MakeNonProduction(db.BenchmarkRuns.Local.Single(r => r.Id == 2), kind);
+        db.SaveChanges();
+
+        var evidence = await ChatConsistencyAnalysisTestData.Evidence(db, ChatConsistencyAnalysisTestData.Request(key));
+
+        Assert.Equal(new long[] { 1 }, evidence.BaselineRuns.Select(r => r.Id));
+        Assert.Equal(new long[] { 3, 4 }, evidence.ComparisonRuns.Select(r => r.Id));
+        Assert.DoesNotContain(evidence.Notes, n => n.Kind == "excludedRun");
+    }
+
+    [Theory]
+    [InlineData(ChatConsistencyAnalysisTestData.InformationConditionKind)]
+    [InlineData(ChatConsistencyAnalysisTestData.CorpusConditionKind)]
+    [InlineData(ChatConsistencyAnalysisTestData.InstructionVariantKind)]
+    public async Task ABatteryRunWithANonProductionMember_IsLeftOut(string kind)
+    {
+        using var db = ChatConsistencyAnalysisTestData.NewDb();
+        string key = ChatConsistencyAnalysisTestData.SeedBatteries(db);
+        string reason = ChatConsistencyAnalysisTestData.MakeNonProduction(db.BenchmarkRuns.Local.Single(r => r.Id == 22), kind);
+        db.SaveChanges();
+
+        var implicitly = await ChatConsistencyAnalysisTestData.Evidence(db, ChatConsistencyAnalysisTestData.Request(key) with
+        {
+            ComparisonSet = ChatConsistencyAnalysisTestData.BatterySet()
+        });
+        Assert.Equal(new long[] { 1, 21 }, implicitly.BaselineRuns.Select(r => r.Id));
+        Assert.DoesNotContain(implicitly.Notes, n => n.Kind == "excludedBatteryRun");
+
+        var given = await ChatConsistencyAnalysisTestData.Evidence(db, ChatConsistencyAnalysisTestData.Request(key) with
+        {
+            ComparisonSet = ChatConsistencyAnalysisTestData.BatterySet(),
+            BaselineBatteryRunIds = new long[] { 101, 102 },
+            ComparisonBatteryRunIds = new long[] { 103, 104 }
+        });
+        Assert.Equal(new long[] { 1, 21 }, given.BaselineRuns.Select(r => r.Id));
+        var note = Assert.Single(given.Notes, n => n.Kind == "excludedBatteryRun");
+        Assert.Equal("Battery run #102 ran under " + reason + " and was left out.", note.Text);
+    }
+
     [Fact]
     public async Task ANewAnalysisIsV2_AndAnalyzingAgainKeepsTheStoredProtocol()
     {

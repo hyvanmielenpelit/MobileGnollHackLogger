@@ -52,11 +52,13 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       const labels = groupLabels('test');
-      expect(labels.length).toBe(4);
+      expect(labels.length).toBe(6);
       expect(labels[0]).toMatch(/^Benchmark Suite/);
       expect(labels[1]).toMatch(/^Scoring Profile/);
       expect(labels[2]).toMatch(/^Response Style/);
       expect(labels[3]).toMatch(/^Source Code References/);
+      expect(labels[4]).toMatch(/^Information Condition/);
+      expect(labels[5]).toMatch(/^Instruction Variant/);
     });
 
     it('should lift the Model Under Test into a primary field above the setup groups', () => {
@@ -590,6 +592,52 @@ describe('AdminBenchmarkComponent', () => {
       expect(hint.closest('.gh-info-popup')?.getAttribute('popover')).toBe('auto');
       expect(hint.textContent).toContain('Show source code references');
       expect(select.parentElement!.classList).toContain('gh-field-row');
+    });
+
+    it('should offer the Information Condition, Production first and by default, with a note for the others', () => {
+      fixture.detectChanges();
+
+      const select = card().querySelector('#candidateInformationCondition') as HTMLSelectElement;
+      expect(select.closest('fieldset')).toBe(card().querySelector('#candidateSourceCodeReferences')!.closest('fieldset'));
+      expect(Array.from(select.options).map(o => o.textContent?.trim())).toEqual([
+        'Production — all tools (production default)',
+        'Source code only — no wiki, knowledge base or lookup tools',
+        'Closed book — no tools'
+      ]);
+      expect(ctx.launcher.informationCondition).toBe('production');
+      expect(card().querySelector('#candidateInformationConditionNote')).toBeNull();
+      expect(select.getAttribute('aria-describedby')).toBe('candidateInformationConditionHint');
+
+      ctx.launcher.informationCondition = 'closedBook';
+      ctx.refresh();
+
+      expect(card().querySelector('#candidateInformationConditionNote')?.textContent)
+        .toBe('Not comparable with production runs; analyzed as a condition contrast.');
+      expect(card().querySelector('#candidateInformationCondition')!.getAttribute('aria-describedby'))
+        .toBe('candidateInformationConditionHint candidateInformationConditionNote');
+    });
+
+    it('should offer None and each valid Instruction Variant from the catalog, with a note while one is chosen', () => {
+      benchmarkServiceMock.getInstructionVariants.mockReturnValue(of([
+        { name: 'cite-first', description: 'Cite the page before answering', extends: null, hashPrefix: 'ab12cd34ef56', isValid: true },
+        { name: 'broken', description: 'Does not parse', extends: null, hashPrefix: null, isValid: false, invalidReason: 'Bad file.' }
+      ]));
+      ctx.launcher.loadInstructionVariants();
+      ctx.refresh();
+
+      const select = card().querySelector('#candidateInstructionVariant') as HTMLSelectElement;
+      expect(Array.from(select.options).map(o => o.textContent?.trim())).toEqual([
+        'None — production instructions (production default)',
+        'cite-first — Cite the page before answering'
+      ]);
+      expect(ctx.launcher.instructionVariant).toBeNull();
+      expect(card().querySelector('#candidateInstructionVariantNote')).toBeNull();
+
+      ctx.launcher.instructionVariant = 'cite-first';
+      ctx.refresh();
+
+      expect(card().querySelector('#candidateInstructionVariantNote')?.textContent)
+        .toBe('Benchmark-only. Analyzed as a variant contrast against a run without it.');
     });
 
     it('should show the Second Opinion Mode reason while the mode is disabled', () => {

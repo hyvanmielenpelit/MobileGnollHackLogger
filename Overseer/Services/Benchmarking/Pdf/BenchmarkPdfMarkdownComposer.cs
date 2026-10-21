@@ -646,6 +646,28 @@ internal static class BenchmarkPdfMarkdownComposer
                     });
                     i = nextIndex!.Value;
                 }
+                else if (next is ListBlock list && list.OfType<ListItemBlock>().FirstOrDefault() is { } firstItem
+                         && IsShortListItem(firstItem, ctx.Document, ctx.Frame))
+                {
+                    // A list's first item of at most a third of a page stays on one page with its headings;
+                    // the rest of the list follows at the list's own item spacing.
+                    int itemCount = list.OfType<ListItemBlock>().Count();
+                    col.Item().Column(listCol =>
+                    {
+                        listCol.Spacing(ListItemSpacing);
+                        listCol.Item().PreventPageBreak().Column(group =>
+                        {
+                            group.Spacing(BenchmarkPdfStyle.BlockSpacing);
+                            foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
+                            group.Item().Element(c => ComposeList(c, list, ctx, listDepth, skip: 0, take: 1));
+                        });
+                        if (itemCount > 1)
+                        {
+                            listCol.Item().Element(c => ComposeList(c, list, ctx, listDepth, skip: 1));
+                        }
+                    });
+                    i = nextIndex!.Value;
+                }
                 else
                 {
                     col.Item().EnsureSpace(KeepWithNextHeight(headings, next)).Column(group =>
@@ -764,6 +786,13 @@ internal static class BenchmarkPdfMarkdownComposer
     internal static bool IsShortCallout(QuoteBlock quote, Prepared document, FigureFrame frame)
         => frame.PageHeight > 0
            && EstimatedHeight(quote, document, frame) + CalloutVerticalPadding <= frame.PageHeight * CalloutKeepMaxShare;
+
+    /// <summary>
+    /// A list item whose <see cref="EstimatedHeight"/> takes at most <see cref="CalloutKeepMaxShare"/> of the page's
+    /// height, so the headings before its list keep room for it. False when the page height is unknown.
+    /// </summary>
+    internal static bool IsShortListItem(ListItemBlock item, Prepared document, FigureFrame frame)
+        => frame.PageHeight > 0 && EstimatedHeight(item, document, frame) <= frame.PageHeight * CalloutKeepMaxShare;
 
     /// <summary>
     /// A table kept on one page: at most <see cref="ShortTableMaxBodyRows"/> body rows (<see cref="IsShortTable"/>),
@@ -1025,7 +1054,14 @@ internal static class BenchmarkPdfMarkdownComposer
         container.Text(t => t.Span(text));
     }
 
-    private static void ComposeList(IContainer container, ListBlock list, Context ctx, int listDepth)
+    /// <summary>The space between two items of one list, in points.</summary>
+    private const float ListItemSpacing = 3;
+
+    /// <summary>
+    /// The list's items from <paramref name="skip"/>, at most <paramref name="take"/> of them, numbered
+    /// as in the whole list.
+    /// </summary>
+    private static void ComposeList(IContainer container, ListBlock list, Context ctx, int listDepth, int skip = 0, int? take = null)
     {
         int start = 1;
         if (list.IsOrdered && !string.IsNullOrEmpty(list.OrderedStart)
@@ -1038,9 +1074,10 @@ internal static class BenchmarkPdfMarkdownComposer
 
         container.SemanticList().Column(col =>
         {
-            col.Spacing(3);
-            int index = 0;
-            foreach (var item in list.OfType<ListItemBlock>())
+            col.Spacing(ListItemSpacing);
+            int index = skip;
+            var items = list.OfType<ListItemBlock>().Skip(skip);
+            foreach (var item in take is int count ? items.Take(count) : items)
             {
                 ctx.Token.ThrowIfCancellationRequested();
                 string label = list.IsOrdered

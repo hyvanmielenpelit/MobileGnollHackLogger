@@ -316,6 +316,10 @@ export interface BenchmarkRunSettings {
   verboseMode: boolean | null;
   /** Whether the candidate may cite source files and lines. Defaults to false when absent. */
   allowSourceCodeReferences: boolean | null;
+  /** The information condition's wire name. Absent restores Production. */
+  informationCondition?: string | null;
+  /** The instruction variant's name, or null for the production instructions. Absent restores none. */
+  instructionVariant?: string | null;
   runCount: number | null;
   /** Single suite or a battery of suites. Absent restores Single suite. */
   targetKind: 'suite' | 'battery' | null;

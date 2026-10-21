@@ -255,7 +255,7 @@ public static class BenchmarkComparabilityKey
     /// persisted <see cref="ComputeKeyHash"/> result; a stored hash of another version is stale.
     /// Bump it whenever a key is added, removed or rendered differently.
     /// </summary>
-    public const int DefinitionVersion = 2;
+    public const int DefinitionVersion = 3;
 
     // Key names are constants because the UI, the diagnostics text and the tests all name them,
     // and a differing key reported by a string literal in three places drifts.
@@ -283,6 +283,8 @@ public static class BenchmarkComparabilityKey
     public const string SecondOpinionConfigurationKey = "SecondOpinionConfiguration";
     public const string ClaimVerifierConfigurationKey = "ClaimVerifierConfiguration";
     public const string PerQuestionBudgetsKey = "PerQuestionBudgets";
+    public const string CorpusConditionKey = "CorpusCondition";
+    public const string InstructionVariantKey = "InstructionVariant";
     public const string QuestionParallelismKey = "QuestionParallelism";
     public const string SpeedCalibrationKey = "SpeedCalibration";
     public const string PricingSnapshotKey = "PricingSnapshot";
@@ -483,6 +485,19 @@ public static class BenchmarkComparabilityKey
                 + "truncates an investigation and moves what the candidate scored.",
                 BenchmarkComparabilityValueKind.List),
 
+            CorpusConditionKey => Info(name,
+                "Corpus condition",
+                "The condition the GnollHack wiki declared about itself: live, or a scrubbed "
+                + "benchmark corpus with the questions' gold facts removed. A difference means the "
+                + "documentation the candidate could reach was deliberately different.",
+                BenchmarkComparabilityValueKind.Text),
+
+            InstructionVariantKey => Info(name,
+                "Instruction variant",
+                "The benchmark-only instruction text, tool guides and experimental tools the "
+                + "candidate ran under, or none; a difference is the variant contrast it exists for.",
+                BenchmarkComparabilityValueKind.Text),
+
             // --- Speed and cost ---------------------------------------------------------------
             QuestionParallelismKey => Info(name,
                 "Question parallelism",
@@ -578,6 +593,11 @@ public static class BenchmarkComparabilityKey
             Key(SecondOpinionConfigurationKey, BenchmarkComparabilityKeyKind.Instrument, SecondOpinionSignature(run)),
             Key(ClaimVerifierConfigurationKey, BenchmarkComparabilityKeyKind.Instrument, ClaimVerifierSignature(run)),
             Key(PerQuestionBudgetsKey, BenchmarkComparabilityKeyKind.Instrument, BudgetSignature(run)),
+
+            // Absent reads as the production default, so no run recorded before the two keys moves.
+            Key(CorpusConditionKey, BenchmarkComparabilityKeyKind.Instrument,
+                run.CorpusCondition ?? BenchmarkCorpusConditionMarker.Live),
+            Key(InstructionVariantKey, BenchmarkComparabilityKeyKind.Instrument, run.InstructionVariant ?? "none"),
 
             // --- Speed and cost ---------------------------------------------------------------
             //

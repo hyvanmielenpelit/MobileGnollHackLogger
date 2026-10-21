@@ -23,7 +23,7 @@ import {
 const WORKFLOW_MARKDOWN = `## Download, edit, import
 
 1. **Download** a suite with the two icon buttons on its card: **Download Suite as YAML** and **Copy Suite as YAML to Clipboard**. Both are inert only while the suite has neither questions nor a game snapshot. A snapshot suite with no questions yet downloads with \`questions: []\`: that file is for an agent to write questions against, and does not import as it is.
-2. The file holds the suite's name and description, the \`snapshot\` mapping for a snapshot suite, and every question with its \`id\`, \`difficulty\`, \`question\` and \`rubric\`. It is named \`overseer-suite-export-<slug>.yaml\`.
+2. The file holds the suite's name and description, the \`snapshot\` mapping for a snapshot suite, and every question with its \`id\`, \`difficulty\`, \`question\` and \`rubric\`, and its \`evidence\` when it has any. It is named \`overseer-suite-export-<slug>.yaml\`.
 3. **Import Suite from YAML** on this toolbar takes it back: **Validate** checks the whole document, **Review changes** shows the new suite, what happens to the game snapshot and every question, and **Create suite** writes all of it at once.
 
 ## What a suite import does
@@ -150,6 +150,7 @@ It leaves out the two an export alone can know: \`sha256\`, the hash of the boar
 | \`difficulty\` | no | **Simple**, **Intermediate** or **Advanced**. Absent, the question becomes Simple, silently. |
 | \`question\` | **yes** | The question text, phrased as a player would ask it. |
 | \`rubric\` | no | Allowed to be absent, but the assessor has nothing to charge without one. |
+| \`evidence\` | no | The wiki pages, source spans and knowledge base articles a grounded answer reads. Each item has \`kind\` (wiki, source or kb) and \`path\`, and may have \`section\`, \`lines\` (first-last, as in 1200-1260), \`function\` and \`personal: true\`. |
 
 \`\`\`yaml
 questions:
@@ -164,6 +165,10 @@ questions:
       - Claims prayer is always safe regardless of timeout.
 
       **SOURCE** — C source: src/pray.c (prayer troubles and timeout)
+    evidence:
+      - kind: source
+        path: src/pray.c
+        function: in_trouble
 \`\`\`
 
 Any other question key is an error.

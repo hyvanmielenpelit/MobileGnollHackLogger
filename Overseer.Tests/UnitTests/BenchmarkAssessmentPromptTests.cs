@@ -224,11 +224,71 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFiftyEight()
+    public void HarnessVersion_IsFiftyNine()
     {
-        // Harness 58: the harness-57 tool-policy sentence on role-relative helpers is removed, so
-        // the tool guides and the candidate system prompt hash as they did under harness 56.
-        Assert.Equal("58", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 59: critical-error-quote verifications in the run report, information and corpus
+        // conditions and instruction variants recorded on runs; production prompts unchanged.
+        Assert.Equal("59", BenchmarkAssessmentPrompt.HarnessVersion);
+    }
+
+    private static readonly IReadOnlyList<string> ConfiguredCandidateTools = new[]
+    {
+        "wiki_search", "wiki_view", "source_code_search", "get_item_stats", "monster_lookup"
+    };
+
+    private static string AvailableToolsLine(IReadOnlyList<string> allowedTools)
+        => BenchmarkAssessmentPrompt.BuildPerQuestionBody(
+                1,
+                "What does a gnoll lord drop?",
+                BenchmarkDifficulty.Simple,
+                "**REQUIRED** - A fact.",
+                "An answer.",
+                BenchmarkAnswerStatus.Ok,
+                allowedTools: allowedTools)
+            .Replace("\r\n", "\n")
+            .Split('\n')
+            .Single(line => line.StartsWith("- Available tools: ", StringComparison.Ordinal));
+
+    [Fact]
+    public void PerQuestionBody_UnderClosedBook_SaysNoToolsWereAvailable()
+    {
+        var tools = BenchmarkService.CandidateAllowedTools(
+            BenchmarkInformationCondition.ClosedBook, ConfiguredCandidateTools, null);
+
+        Assert.Equal("- Available tools: None", AvailableToolsLine(tools));
+    }
+
+    [Fact]
+    public void PerQuestionBody_UnderSourceOnly_OmitsTheWikiTools()
+    {
+        var tools = BenchmarkService.CandidateAllowedTools(
+            BenchmarkInformationCondition.SourceOnly, ConfiguredCandidateTools, null);
+
+        string line = AvailableToolsLine(tools);
+
+        Assert.Equal("- Available tools: source_code_search, get_item_stats", line);
+        Assert.DoesNotContain("wiki_search", line);
+        Assert.DoesNotContain("monster_lookup", line);
+    }
+
+    [Fact]
+    public void PerQuestionBody_UnderAVariant_NamesItsExperimentalTool()
+    {
+        var variant = new BenchmarkVariantContext
+        {
+            Name = "source-tools-v1",
+            Hash = new string('e', 64),
+            ExperimentalTools = new[] { "get_character_info" }
+        };
+
+        var production = BenchmarkService.CandidateAllowedTools(
+            BenchmarkInformationCondition.Production, ConfiguredCandidateTools, variant);
+
+        Assert.Equal(
+            "- Available tools: wiki_search, wiki_view, source_code_search, get_item_stats, monster_lookup, get_character_info",
+            AvailableToolsLine(production));
+        Assert.DoesNotContain("get_character_info", AvailableToolsLine(
+            BenchmarkService.CandidateAllowedTools(BenchmarkInformationCondition.Production, ConfiguredCandidateTools, null)));
     }
 
     [Fact]

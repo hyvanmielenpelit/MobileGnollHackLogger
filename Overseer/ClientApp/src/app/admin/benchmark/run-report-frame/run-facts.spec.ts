@@ -9,6 +9,7 @@ import {
   candidatePromptParts,
   formatCandidatePrompt,
   runFactBadges,
+  runConditionTags,
   runFactPlainText,
   runFactsReadout
 } from './run-facts';
@@ -324,6 +325,29 @@ describe('run facts', () => {
     it('returns null for no run', () => {
       expect(candidatePromptParts(null)).toBeNull();
       expect(formatCandidatePrompt(null)).toBeNull();
+    });
+
+    it('names a non-production condition, the instruction variant and the corpus condition', () => {
+      const parts = candidatePromptParts({
+        candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true,"informationCondition":"closedBook"}',
+        instructionVariant: 'cite-first:ab12cd34ef56', corpusCondition: 'scarce:2026-10'
+      });
+      expect(formatCandidatePrompt(parts))
+        .toBe('Gameplay Help · concise (tools on) · closed book · variant: cite-first:ab12cd34ef56 · corpus: scarce:2026-10');
+
+      // The run's own field wins over the prompt options; production is not named.
+      expect(runConditionTags({ informationCondition: 'sourceOnly', candidatePromptOptionsJson: '{"informationCondition":"closedBook"}' }))
+        .toEqual(['source code only']);
+      expect(runConditionTags({ informationCondition: 'production', candidatePromptOptionsJson: '{}' })).toEqual([]);
+      expect(runConditionTags(null)).toEqual([]);
+    });
+
+    it('adds the conditions to the Prompt row\'s tags', () => {
+      const prompt = row(buildRunFacts(run({ candidatePromptOptionsJson: PROMPT_JSON, informationCondition: 'sourceOnly' }), { gaps: [] }), 'prompt')!;
+      expect(prompt.item).toEqual({
+        kind: 'prompt', name: 'Gameplay Help', tags: ['concise', 'tools on', 'snapshot', 'source code only'],
+        summary: 'Gameplay Help · concise (tools on) · snapshot · source code only'
+      });
     });
   });
 });

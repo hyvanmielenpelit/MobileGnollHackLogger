@@ -13,7 +13,9 @@ import {
   BoardFactIssueDto,
   BenchmarkModelBatchFindingDto,
   BenchmarkModelBatchLimitsDto,
-  BenchmarkModelBatchRunDto
+  BenchmarkModelBatchRunDto,
+  BENCHMARK_INFORMATION_CONDITIONS,
+  BenchmarkInstructionVariantDto
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
 import { BenchmarkCompletionSoundKind, BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
@@ -168,6 +170,7 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
   private cdr = inject(ChangeDetectorRef);
   private completionSoundService = inject(BenchmarkCompletionSoundService);
   readonly secondOpinionModeOptions = BENCHMARK_SECOND_OPINION_MODES;
+  readonly informationConditionOptions = BENCHMARK_INFORMATION_CONDITIONS;
   readonly formatStatus = formatStatus;
   readonly formatElapsed = formatElapsed;
   readonly formatCostAmount = formatCostAmount;
@@ -193,6 +196,8 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
   ngOnInit(): void {
     // The model batch confirmation's close button carries an interest-triggered tooltip.
     ensureOverlayPolyfills();
+    // The Instruction Variant select lists the catalog's valid variants as they are now.
+    this.launcher.loadInstructionVariants();
   }
 
   ngAfterViewInit(): void {
@@ -659,6 +664,12 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
   onReuseEarlierRunsChange(checked: boolean): void {
     this.launcher.reuseEarlierRuns = checked;
     this.launcher.refreshReusePreview();
+  }
+
+  /** An Instruction Variant option: *name — description*, or the name alone. */
+  instructionVariantLabel(variant: BenchmarkInstructionVariantDto): string {
+    const description = (variant.description ?? '').trim();
+    return description ? `${variant.name} — ${description}` : variant.name;
   }
 
   /** A launcher field that shapes the battery request changed: Runs per Suite, the profile, the response style. */

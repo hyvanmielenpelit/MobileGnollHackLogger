@@ -1,4 +1,6 @@
 import type {
+  BenchmarkEvidenceKind,
+  BenchmarkEvidenceUnit,
   BenchmarkQuestionDto,
   BenchmarkSuiteDto,
   ImportBenchmarkQuestionItem,
@@ -24,6 +26,8 @@ export interface ParsedQuestion {
   difficulty: ParsedDifficulty | null;
   /** Null when the key is absent. */
   questionText: string | null;
+  /** Null when the key is absent, which keeps the stored evidence; an empty list clears it. */
+  evidence: BenchmarkEvidenceUnit[] | null;
   /** Null when the key is absent; '' clears the rubric. */
   rubric: string | null;
 }
@@ -69,7 +73,9 @@ export const QUESTION_YAML_VERSION = 1;
 const TOP_LEVEL_KEYS = ['format', 'version', 'suite', 'questions'];
 const SUITE_KEYS = ['name', 'description', 'suggested_description', 'snapshot'];
 const SNAPSHOT_KEYS = ['name', 'gnollhack_version', 'captured_at', 'snapshot_format', 'notes', 'sha256', 'text'];
-const QUESTION_KEYS = ['id', 'difficulty', 'question', 'rubric'];
+const QUESTION_KEYS = ['id', 'difficulty', 'question', 'rubric', 'evidence'];
+const EVIDENCE_KEYS = ['kind', 'path', 'section', 'lines', 'function', 'personal'];
+const EVIDENCE_KINDS: readonly BenchmarkEvidenceKind[] = ['wiki', 'source', 'kb'];
 export const MAX_SUITE_NAME_LENGTH = 128;
 export const MAX_SNAPSHOT_NAME_LENGTH = 128;
 export const MAX_GNOLLHACK_VERSION_LENGTH = 64;
@@ -164,9 +170,35 @@ function serialize(
     if (q.expectedPoints && q.expectedPoints.trim() !== '') {
       out.push(...blockScalar('rubric', q.expectedPoints, 4));
     }
+    if (q.evidence && q.evidence.length > 0) {
+      out.push(...evidenceLines(q.evidence, 4));
+    }
   });
 
   return out.join('\n') + '\n';
+}
+
+/** Writes `evidence:` as a block sequence of mappings, every text value quoted. */
+function evidenceLines(units: readonly BenchmarkEvidenceUnit[], keyIndent: number): string[] {
+  const pad = ' '.repeat(keyIndent);
+  const lines = [`${pad}evidence:`];
+  for (const unit of units) {
+    lines.push(`${pad}  - kind: ${unit.kind}`);
+    lines.push(`${pad}    path: ${quoted(unit.path)}`);
+    if (unit.section) {
+      lines.push(`${pad}    section: ${quoted(unit.section)}`);
+    }
+    if (unit.lines) {
+      lines.push(`${pad}    lines: ${quoted(unit.lines)}`);
+    }
+    if (unit.function) {
+      lines.push(`${pad}    function: ${quoted(unit.function)}`);
+    }
+    if (unit.personal) {
+      lines.push(`${pad}    personal: true`);
+    }
+  }
+  return lines;
 }
 
 /** A JSON string is a valid YAML double-quoted scalar, and quoting keeps `:` and `#` in names safe. */
@@ -412,7 +444,7 @@ function checkSchema(doc: unknown, result: ParseResult): void {
       return;
     }
 
-    const parsed: ParsedQuestion = { index, id: null, difficulty: null, questionText: null, rubric: null };
+    const parsed: ParsedQuestion = { index, id: null, difficulty: null, questionText: null, rubric: null, evidence: null };
     let where = `questions[${index}]`;
 
     // Q3
@@ -466,9 +498,106 @@ function checkSchema(doc: unknown, result: ParseResult): void {
         parsed.rubric = cleanText(value ?? '');
       }
     }
+    if ('evidence' in raw) {
+      parsed.evidence = checkEvidence(raw['evidence'], where, errors);
+    }
 
     result.questions.push(parsed);
   });
+}
+
+/**
+ * Checks a question's `evidence` list; an empty list, or the bare key, clears the stored evidence.
+ * Returns the units read, with the errors pushed for the ones that are not usable.
+ */
+function checkEvidence(value: unknown, where: string, errors: ParseIssue[]): BenchmarkEvidenceUnit[] {
+  if (value === null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    errors.push({ line: null, message: `${where}: \`evidence\` must be a list of mappings with \`kind\` and \`path\` keys.` });
+    return [];
+  }
+
+  const units: BenchmarkEvidenceUnit[] = [];
+  value.forEach((raw, i) => {
+    const at = `${where}: evidence[${i}]`;
+    if (!isMapping(raw)) {
+      errors.push({ line: null, message: `${at} must be a mapping with \`kind\` and \`path\` keys.` });
+      return;
+    }
+    for (const key of Object.keys(raw)) {
+      if (!EVIDENCE_KEYS.includes(key)) {
+        errors.push({ line: null, message: `${at}: unknown key \`${key}\`; allowed: ${EVIDENCE_KEYS.join(', ')}.` });
+      }
+    }
+
+    let ok = true;
+    const kindText = typeof raw['kind'] === 'string' ? raw['kind'].trim().toLowerCase() : '';
+    const kind = EVIDENCE_KINDS.find(k => k === kindText);
+    if (!kind) {
+      errors.push({ line: null, message: `${at}: \`kind\` must be ${EVIDENCE_KINDS.slice(0, -1).join(', ')} or ${EVIDENCE_KINDS[EVIDENCE_KINDS.length - 1]}.` });
+      ok = false;
+    }
+
+    const path = typeof raw['path'] === 'string' ? raw['path'].trim() : '';
+    if (path === '') {
+      errors.push({ line: null, message: `${at}: \`path\` is required and must be text.` });
+      ok = false;
+    }
+
+    const optionalText = (key: 'section' | 'function'): string | null => {
+      const v = raw[key];
+      if (v === undefined || v === null) return null;
+      if (typeof v !== 'string') {
+        errors.push({ line: null, message: `${at}: \`${key}\` must be text.` });
+        ok = false;
+        return null;
+      }
+      return v.trim() === '' ? null : v.trim();
+    };
+    const section = optionalText('section');
+    const fn = optionalText('function');
+
+    let lines: string | null = null;
+    if (raw['lines'] !== undefined && raw['lines'] !== null) {
+      const text = typeof raw['lines'] === 'string' ? raw['lines'].replace(/\s+/g, '') : '';
+      const match = /^(\d+)-(\d+)$/.exec(text);
+      if (!match || Number(match[1]) < 1 || Number(match[2]) < Number(match[1])) {
+        errors.push({ line: null, message: `${at}: \`lines\` must read a-b, a first and a last line, as in 1200-1260.` });
+        ok = false;
+      } else {
+        lines = `${Number(match[1])}-${Number(match[2])}`;
+      }
+    }
+
+    let personal = false;
+    if (raw['personal'] !== undefined && raw['personal'] !== null) {
+      if (typeof raw['personal'] !== 'boolean') {
+        errors.push({ line: null, message: `${at}: \`personal\` must be true or false.` });
+        ok = false;
+      } else {
+        personal = raw['personal'];
+      }
+    }
+
+    if (ok && kind) {
+      units.push({ kind, path, section, lines, function: fn, personal });
+    }
+  });
+  return units;
+}
+
+/** An evidence list in one canonical JSON form: every key present, blanks as null, order kept. */
+function canonicalEvidence(units: readonly BenchmarkEvidenceUnit[] | null | undefined): string {
+  return JSON.stringify((units ?? []).map(u => ({
+    kind: (u.kind ?? '').toLowerCase(),
+    path: (u.path ?? '').trim(),
+    section: (u.section ?? '').trim() || null,
+    lines: (u.lines ?? '').trim() || null,
+    function: (u.function ?? '').trim() || null,
+    personal: !!u.personal
+  })));
 }
 
 /**
@@ -667,6 +796,8 @@ export interface ImportPlanItem {
   difficultyChanged: boolean;
   rubricChanged: boolean;
   rubricCleared: boolean;
+  /** The document's evidence differs from the stored evidence; an absent key never does. */
+  evidenceChanged: boolean;
   /** True for a replace that changes nothing. */
   unchanged: boolean;
 }
@@ -692,7 +823,9 @@ export function buildImportPlan(
         parsed, current: null,
         questionChanged: true, difficultyChanged: false,
         rubricChanged: !!parsed.rubric && parsed.rubric.trim() !== '',
-        rubricCleared: false, unchanged: false
+        rubricCleared: false,
+        evidenceChanged: !!parsed.evidence && parsed.evidence.length > 0,
+        unchanged: false
       };
     }
 
@@ -702,22 +835,27 @@ export function buildImportPlan(
     const importedRubric = parsed.rubric === null ? null : parsed.rubric.trim();
     const rubricChanged = importedRubric !== null && importedRubric !== currentRubric;
     const rubricCleared = rubricChanged && importedRubric === '';
+    const evidenceChanged = parsed.evidence !== null && canonicalEvidence(parsed.evidence) !== canonicalEvidence(current.evidence);
     return {
       parsed, current,
-      questionChanged, difficultyChanged, rubricChanged, rubricCleared,
-      unchanged: !questionChanged && !difficultyChanged && !rubricChanged
+      questionChanged, difficultyChanged, rubricChanged, rubricCleared, evidenceChanged,
+      unchanged: !questionChanged && !difficultyChanged && !rubricChanged && !evidenceChanged
     };
   });
 }
 
-/** The request items for a plan. Suite mode drops ids, so every item is a create. */
+/**
+ * The request items for a plan. Suite mode drops ids, so every item is a create. `evidence` is sent
+ * only when the document has the key; leaving it out keeps the stored evidence.
+ */
 export function toImportItems(plan: ImportPlanItem[], mode: ImportMode): ImportBenchmarkQuestionItem[] {
   return plan.map(item => ({
     questionId: mode === 'suite' ? null : (item.current?.id ?? null),
     questionText: item.parsed.questionText,
     difficulty: item.parsed.difficulty,
     expectedPoints: item.parsed.rubric,
-    replaceExpectedPoints: item.parsed.rubric !== null
+    replaceExpectedPoints: item.parsed.rubric !== null,
+    ...(item.parsed.evidence !== null ? { evidence: item.parsed.evidence.map(unit => ({ ...unit })) } : {})
   }));
 }
 
@@ -795,8 +933,9 @@ const RULES_MARKDOWN = `## Replace or create
 
 - A question **with** \`id\` replaces the question with that id. The id must belong to the open suite.
 - A question **without** \`id\` is created at the end of the suite, with difficulty *Simple* unless \`difficulty\` says otherwise.
-- A key you leave out keeps the current value: no \`rubric\` key keeps the rubric, no \`difficulty\` key keeps the difficulty.
-- \`rubric: |\` with nothing under it **clears** the rubric.
+- A key you leave out keeps the current value: no \`rubric\` key keeps the rubric, no \`difficulty\` key keeps the difficulty, no \`evidence\` key keeps the evidence.
+- \`rubric: |\` with nothing under it **clears** the rubric, and \`evidence: []\` clears the evidence.
+- A change to \`evidence\` alone is not a new revision: the question keeps its AI assessment.
 
 ## The catch: a change resets the AI assessment
 
@@ -808,11 +947,28 @@ Re-importing an unchanged export changes nothing: the review step marks those qu
 const FORMAT_MARKDOWN = `## Format essentials
 
 - The document starts with \`format: ${QUESTION_YAML_FORMAT}\` and \`version: ${QUESTION_YAML_VERSION}\`. Both are required.
-- Top-level keys: \`format\`, \`version\`, \`suite\`, \`questions\`. Suite keys: \`name\`, \`description\`, \`suggested_description\`, \`snapshot\`; only the Snapshot Suite Wizard's add-questions route reads \`suggested_description\`. Question keys: \`id\`, \`difficulty\`, \`question\`, \`rubric\`. Any other key is an error.
+- Top-level keys: \`format\`, \`version\`, \`suite\`, \`questions\`. Suite keys: \`name\`, \`description\`, \`suggested_description\`, \`snapshot\`; only the Snapshot Suite Wizard's add-questions route reads \`suggested_description\`. Question keys: \`id\`, \`difficulty\`, \`question\`, \`rubric\`, \`evidence\`. Any other key is an error.
 - Write \`question\` and \`rubric\` as \`|\` block scalars, and indent every line of the block by the same number of spaces. Inside the block anything goes: Markdown headings, code fences, \`---\` lines. A \`#\` line inside a block is text, not a comment.
 - Indent with spaces, never tabs.
 - \`difficulty\` is Simple, Intermediate or Advanced.
 - An uploaded file may be at most 2 MB.
+
+## Evidence
+
+\`evidence\` lists the wiki pages, source spans and knowledge base articles a grounded answer reads. Each item has \`kind\` (wiki, source or kb) and \`path\`, and may have \`section\`, \`lines\` (a first and a last line, as in 1200-1260), \`function\` and \`personal\` (true when the unit is about the player's own character). Leave the key out to keep the current evidence; \`evidence: []\` clears it.
+
+\`\`\`yaml
+questions:
+  - id: 150
+    evidence:
+      - kind: wiki
+        path: Races/Human.md
+        personal: true
+      - kind: source
+        path: src/role.c
+        lines: 1200-1260
+        function: peace_minded
+\`\`\`
 
 ## Reading a validation message
 
@@ -836,7 +992,7 @@ export const HUMAN_GUIDE_TABS: ReadonlyArray<HumanGuideTab> = [
   {
     id: 'format',
     label: 'Format',
-    ingress: 'The keys a question document may contain, and how to read a validation message.',
+    ingress: 'The keys a question document may contain, the evidence list, and how to read a validation message.',
     markdown: FORMAT_MARKDOWN
   }
 ];
@@ -1107,10 +1263,22 @@ ${indent(skeletonRubric, 6)}
 2. Keep every \`id\` you were given, on the question it was given for. A question without \`id\` is created as a new question.
 3. Write \`question\` and \`rubric\` as \`|\` block scalars, and indent every line of them by the same amount. Indent with spaces, never tabs.
 4. Omit \`rubric\` to keep the current rubric; write \`rubric: |\` with no content to clear it.
-5. Use only the keys id, difficulty, question, rubric inside a question, and only format, version, suite, questions at the top level. \`suite\` may hold name, description, suggested_description and snapshot; only the Snapshot Suite Wizard's add-questions route reads suggested_description. Return \`snapshot\` unchanged: its \`text\` is the game board the questions are written against, so use it to check every BOARD FACT.
+5. Use only the keys id, difficulty, question, rubric, evidence inside a question, and only format, version, suite, questions at the top level. \`suite\` may hold name, description, suggested_description and snapshot; only the Snapshot Suite Wizard's add-questions route reads suggested_description. Return \`snapshot\` unchanged: its \`text\` is the game board the questions are written against, so use it to check every BOARD FACT.
 6. Difficulty is Simple, Intermediate or Advanced.
 7. Inside a block scalar any Markdown is allowed, including headings, code fences and \`---\` lines, as long as every line keeps the block's indentation.
 8. Do not add comments inside a block scalar: a \`#\` line there is part of the text.
+9. Return \`evidence\` unchanged unless asked to edit it. It lists what a grounded answer reads: each item has \`kind\` (wiki, source or kb) and \`path\`, and may have \`section\`, \`lines\` (first-last, as in 1200-1260), \`function\` and \`personal: true\`. Omit the key to keep the current evidence; \`evidence: []\` clears it. For example:
+
+\`\`\`yaml
+    evidence:
+      - kind: wiki
+        path: Races/Human.md
+        personal: true
+      - kind: source
+        path: src/role.c
+        lines: 1200-1260
+        function: peace_minded
+\`\`\`
 `;
 
   if (guidance) {

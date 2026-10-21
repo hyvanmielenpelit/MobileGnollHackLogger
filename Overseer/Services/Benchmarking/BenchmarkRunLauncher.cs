@@ -266,6 +266,30 @@ public class BenchmarkRunLauncher
                 BenchmarkRunLaunchOutcome.Invalid, "Benchmark suite has no questions."), null);
         }
 
+        if (!BenchmarkInformationConditions.TryParse(request.InformationCondition, out _))
+        {
+            return (BenchmarkRunLaunchResult.Fail(
+                BenchmarkRunLaunchOutcome.Invalid,
+                $"Unknown information condition '{request.InformationCondition}'."), null);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.InstructionVariant))
+        {
+            string variantName = request.InstructionVariant.Trim();
+            var variant = _benchmarkService.FindInstructionVariant(variantName);
+            if (variant == null)
+            {
+                return (BenchmarkRunLaunchResult.Fail(
+                    BenchmarkRunLaunchOutcome.Invalid, $"Unknown instruction variant '{variantName}'."), null);
+            }
+            if (!variant.IsValid)
+            {
+                return (BenchmarkRunLaunchResult.Fail(
+                    BenchmarkRunLaunchOutcome.Invalid,
+                    $"The instruction variant '{variantName}' is invalid: {variant.InvalidReason}"), null);
+            }
+        }
+
         int unassessedCount = suite.Questions.Count(q => q.AssessedDifficulty == null);
         if (unassessedCount > 0)
         {
@@ -679,7 +703,7 @@ public class BenchmarkRunLauncher
         // Sentry's scope stack is async-local, so without this the run reports under the launch
         // request's context and collects a tag from every log scope opened beneath it while it runs.
         long runId = run.Id;
-        var (verboseMode, allowSourceCodeReferences) = ResolvePromptSwitches(request);
+        var switches = ResolvePromptSwitches(request);
         // async, not a Task-returning lambda: the scope must be disposed when the run finishes, and
         // a non-async lambda would dispose it the moment RunAsync hit its first await.
         _ = Task.Run(async () =>
@@ -691,19 +715,26 @@ public class BenchmarkRunLauncher
                 scope.SetTag("RunId", runId.ToString(CultureInfo.InvariantCulture));
             });
 
-            await _benchmarkService.RunAsync(runId, cts.Token, verboseMode, allowSourceCodeReferences);
+            await _benchmarkService.RunAsync(
+                runId, cts.Token, switches.VerboseMode, switches.AllowSourceCodeReferences,
+                switches.InformationCondition, switches.InstructionVariant);
         });
 
         return BenchmarkRunLaunchResult.Ok(run.Id);
     }
 
     /// <summary>
-    /// The request's two candidate prompt switches as a run records them: a null
-    /// <see cref="StartBenchmarkRunRequest.VerboseMode"/> is the concise style, and a null
-    /// <see cref="StartBenchmarkRunRequest.AllowSourceCodeReferences"/> is disallowed, a user's default.
+    /// The request's candidate prompt switches as a run records them: a null
+    /// <see cref="StartBenchmarkRunRequest.VerboseMode"/> is the concise style, a null
+    /// <see cref="StartBenchmarkRunRequest.AllowSourceCodeReferences"/> is disallowed, a user's default,
+    /// a null information condition is Production and a null variant is production instructions.
     /// </summary>
-    internal static (bool VerboseMode, bool AllowSourceCodeReferences) ResolvePromptSwitches(StartBenchmarkRunRequest request)
-        => (request.VerboseMode ?? false, request.AllowSourceCodeReferences ?? false);
+    internal static BenchmarkPromptSwitches ResolvePromptSwitches(StartBenchmarkRunRequest request)
+        => new(
+            request.VerboseMode ?? false,
+            request.AllowSourceCodeReferences ?? false,
+            BenchmarkInformationConditions.FromWire(request.InformationCondition),
+            string.IsNullOrWhiteSpace(request.InstructionVariant) ? null : request.InstructionVariant.Trim());
 
     /// <summary>
     /// The orchestrator claim a launch runs under: the series' for a series member, the battery
@@ -784,3 +815,10 @@ public class BenchmarkRunLauncher
         });
     }
 }
+
+/// <summary>The candidate prompt switches of a launch request, as a run records them.</summary>
+internal readonly record struct BenchmarkPromptSwitches(
+    bool VerboseMode,
+    bool AllowSourceCodeReferences,
+    BenchmarkInformationCondition InformationCondition,
+    string? InstructionVariant);

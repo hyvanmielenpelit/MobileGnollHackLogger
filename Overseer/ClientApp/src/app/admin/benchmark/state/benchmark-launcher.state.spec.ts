@@ -4,14 +4,17 @@ import { of, throwError } from 'rxjs';
 import {
   AdminBenchmarkService,
   BenchmarkBatteryDto,
+  BenchmarkInstructionVariantDto,
   BenchmarkModelBatchFindingDto,
   BenchmarkRunDetailDto,
   BenchmarkScoringProfileDto,
   BenchmarkSecondOpinionMode,
-  BenchmarkSuiteDto
+  BenchmarkSuiteDto,
+  RecommendedRun
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
 import { BenchmarkLauncherState, MODEL_BATCH_PREFLIGHT_DEBOUNCE_MS } from './benchmark-launcher.state';
+import { launcherSetupFromRecommendedRun } from './benchmark-shell-bridge.service';
 import type { LauncherSetupPrefill } from './benchmark-shell-bridge.service';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
@@ -896,5 +899,196 @@ describe('BenchmarkLauncherState: prefillFromSetup', () => {
     expect(launcher.pendingPrefillSetupLabel).toBeNull();
     expect(launcher.prefillResult?.sourceLabel).toBe('Set up from Root Cause Analysis #12, run 1');
     expect(launcher.selectedSuiteId).toBe(2);
+  });
+
+  it('sets the production condition and no instruction variant, as a recommended run has them', () => {
+    loadPage();
+    launcher.informationCondition = 'closedBook';
+    launcher.instructionVariant = 'cite-first';
+
+    launcher.prefillFromSetup(setup());
+
+    expect(launcher.informationCondition).toBe('production');
+    expect(launcher.instructionVariant).toBeNull();
+    expect(launcher.prefillResult!.notes).toEqual([]);
+
+    const prefill = launcherSetupFromRecommendedRun({ kind: 'control', targetKind: 'Suite', runMode: 'Single' } as RecommendedRun, 'x');
+    expect(prefill.informationCondition).toBe('production');
+    expect(prefill.instructionVariant).toBeNull();
+  });
+});
+
+describe('BenchmarkLauncherState: information condition and instruction variant', () => {
+  let launcher: BenchmarkLauncherState;
+  let workspace: BenchmarkWorkspaceStore;
+  let variants: Mock;
+
+  const stored = (): any => JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY) ?? 'null');
+
+  const variant = (name: string, isValid = true): BenchmarkInstructionVariantDto => ({
+    name, description: `${name} description`, extends: null, hashPrefix: 'ab12cd34ef56', isValid,
+    invalidReason: isValid ? null : 'Its file does not parse.'
+  });
+
+  function loadPage(): void {
+    launcher.restoreRunSettings();
+    workspace.suitesLoaded$.next();
+    workspace.profilesLoaded$.next();
+    launcher.setDefaultModelSelections();
+    workspace.batteriesLoaded$.next(true);
+  }
+
+  beforeEach(() => {
+    clearRunSettings();
+    variants = vi.fn(() => of([variant('cite-first'), variant('broken', false)]));
+    TestBed.configureTestingModule({
+      providers: [
+        BenchmarkLauncherState,
+        BenchmarkWorkspaceStore,
+        BenchmarkViewSync,
+        {
+          provide: AdminBenchmarkService,
+          useValue: {
+            getLastAssessor: vi.fn(() => of({})),
+            previewBatteryReuse: vi.fn(() => of(null)),
+            getInstructionVariants: variants
+          }
+        }
+      ]
+    });
+    launcher = TestBed.inject(BenchmarkLauncherState);
+    workspace = TestBed.inject(BenchmarkWorkspaceStore);
+    workspace.suites = [suite(1, 'Default Suite'), suite(2, 'Second Suite')];
+    workspace.scoringProfiles = [profile(1, 'Standard', true), profile(2, 'Strict')];
+    workspace.setSystemConfigs([
+      config(1, 'Model One'), config(2, 'Model Two', { provider: 'OpenAI' }), config(3, 'Model Three', { provider: 'Google' })
+    ]);
+  });
+
+  afterEach(clearRunSettings);
+
+  it('defaults to Production and no variant, and the request carries both', () => {
+    expect(launcher.informationCondition).toBe('production');
+    expect(launcher.instructionVariant).toBeNull();
+
+    const req = launcher.buildRunRequest(1, 2, 1);
+    expect(req.informationCondition).toBe('production');
+    expect(req.instructionVariant).toBeNull();
+
+    launcher.informationCondition = 'sourceOnly';
+    launcher.instructionVariant = 'cite-first';
+    const changed = launcher.buildRunRequest(1, 2, 1);
+    expect(changed.informationCondition).toBe('sourceOnly');
+    expect(changed.instructionVariant).toBe('cite-first');
+  });
+
+  it('carries both into a model batch template', () => {
+    loadPage();
+    launcher.runMode = 'batch';
+    launcher.setBatchModels([2, 3]);
+    launcher.informationCondition = 'closedBook';
+    launcher.instructionVariant = 'cite-first';
+
+    const req = launcher.buildModelBatchRequest()!;
+
+    expect(req.run.informationCondition).toBe('closedBook');
+    expect(req.run.instructionVariant).toBe('cite-first');
+  });
+
+  it('round-trips both through the remembered settings', () => {
+    loadPage();
+    launcher.informationCondition = 'closedBook';
+    launcher.instructionVariant = 'cite-first';
+    launcher.persistRunSettings();
+    expect(stored()).toEqual(expect.objectContaining({ informationCondition: 'closedBook', instructionVariant: 'cite-first' }));
+
+    launcher.informationCondition = 'production';
+    launcher.instructionVariant = null;
+    launcher.restoreRunSettings();
+    expect(launcher.informationCondition).toBe('closedBook');
+    expect(launcher.instructionVariant).toBe('cite-first');
+  });
+
+  it('restores Production from a blob that predates the fields or names an unknown condition', () => {
+    localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, informationCondition: 'openBook' }));
+
+    loadPage();
+
+    expect(launcher.informationCondition).toBe('production');
+    expect(launcher.instructionVariant).toBeNull();
+  });
+
+  it('offers the valid variants and clears a remembered one the catalog no longer lists as valid, with a note', () => {
+    localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, instructionVariant: 'broken' }));
+    loadPage();
+    expect(launcher.instructionVariant).toBe('broken');
+
+    launcher.loadInstructionVariants();
+
+    expect(variants).toHaveBeenCalledTimes(1);
+    expect(launcher.validInstructionVariants.map(v => v.name)).toEqual(['cite-first']);
+    expect(launcher.instructionVariant).toBeNull();
+    expect(launcher.restoreNotes).toEqual([expect.stringContaining('Instruction Variant: broken')]);
+    expect(stored().instructionVariant).toBeNull();
+  });
+
+  it('falls back to no variant when the catalog cannot be read', () => {
+    variants.mockReturnValue(throwError(() => ({ status: 500 })));
+    loadPage();
+    launcher.instructionVariant = 'cite-first';
+
+    launcher.loadInstructionVariants();
+
+    expect(launcher.instructionVariantsLoaded).toBe(true);
+    expect(launcher.instructionVariant).toBeNull();
+  });
+
+  it('repeats a run\'s condition and variant, the variant without its hash', () => {
+    loadPage();
+    launcher.loadInstructionVariants();
+
+    launcher.prefillFromRun(run({
+      candidatePromptOptionsJson: '{"verboseMode":true,"enableToolUse":true,"allowSourceCodeReferences":true,"informationCondition":"sourceOnly"}',
+      instructionVariant: 'cite-first:ab12cd34ef56'
+    }));
+
+    expect(launcher.informationCondition).toBe('sourceOnly');
+    expect(launcher.instructionVariant).toBe('cite-first');
+    expect(launcher.prefillResult!.notes).toEqual([]);
+    expect(stored()).toEqual(expect.objectContaining({ informationCondition: 'sourceOnly', instructionVariant: 'cite-first' }));
+  });
+
+  it('repeats Production for a run whose prompt options name no condition, falling back to the run\'s own field', () => {
+    loadPage();
+    launcher.informationCondition = 'closedBook';
+
+    launcher.prefillFromRun(run());
+    expect(launcher.informationCondition).toBe('production');
+
+    launcher.prefillFromRun(run({ informationCondition: 'closedBook' }));
+    expect(launcher.informationCondition).toBe('closedBook');
+  });
+
+  it('repeats no variant, with a note, when the catalog no longer lists the run\'s as valid', () => {
+    loadPage();
+    launcher.loadInstructionVariants();
+    launcher.instructionVariant = 'cite-first';
+
+    launcher.prefillFromRun(run({ instructionVariant: 'broken:0123456789ab' }));
+
+    expect(launcher.instructionVariant).toBeNull();
+    expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Instruction Variant: broken')]);
+  });
+
+  it('checks a repeated variant once the catalog arrives, when it arrives later', () => {
+    loadPage();
+
+    launcher.prefillFromRun(run({ instructionVariant: 'gone:0123456789ab' }));
+    expect(launcher.instructionVariant).toBe('gone');
+
+    launcher.loadInstructionVariants();
+
+    expect(launcher.instructionVariant).toBeNull();
+    expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Instruction Variant: gone')]);
   });
 });

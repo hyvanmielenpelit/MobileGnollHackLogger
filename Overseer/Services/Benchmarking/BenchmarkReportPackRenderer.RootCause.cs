@@ -860,15 +860,21 @@ public static partial class BenchmarkReportPackRenderer
         }
     }
 
-    /// <summary>The Intelligence Index as At a glance prints it: <c>79 (75–83), rank 5–9 (tied)</c>; not available without one.</summary>
+    /// <summary>
+    /// The Intelligence Index as At a glance prints it: <c>79 (75–83), rank 5–9 (tied)</c>, without the rank in a document
+    /// of one model (<see cref="RcaRanksModels"/>); not available without one.
+    /// </summary>
     private static string RcaIndexCell(Context ctx, BenchmarkReportEntryFigures entry)
         => entry.QualityIndex.HasValue
             ? BenchmarkReportFormat.Whole(entry.QualityIndex.Value)
               + (entry.QualityLower.HasValue && entry.QualityUpper.HasValue
                   ? " (" + BenchmarkReportFormat.Whole(entry.QualityLower.Value) + "–" + BenchmarkReportFormat.Whole(entry.QualityUpper.Value) + ")"
                   : string.Empty)
-              + ", rank " + QualityRankCell(ctx, entry)
+              + (RcaRanksModels(ctx) ? ", rank " + QualityRankCell(ctx, entry) : string.Empty)
             : BenchmarkReportFacts.NotAvailable;
+
+    /// <summary>The document shows two or more models, so it prints their ranks; a rank of a model shown alone ranks nothing here.</summary>
+    private static bool RcaRanksModels(Context ctx) => RcaRows(ctx).Count >= 2;
 
     // ---------------------------------------------------------------------------------------------
     // 2. Why each model scored as it did
@@ -1266,22 +1272,27 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// Every model's Intelligence Index, its 95% interval, its rank and its critical errors: five columns, so a
-    /// name is never broken mid-word. Speed and cost are under their own evidence.
+    /// name is never broken mid-word; a document of one model has no Rank column and no tied-rank note. Speed and cost
+    /// are under their own evidence.
     /// </summary>
     private static void RcaScoreboard(StringBuilder sb, Context ctx)
     {
-        Line(sb, "| Model | " + Label("quality.index") + " | " + Label("quality.interval") + " | Rank | " + Label("errors.critical") + " |");
-        Line(sb, "|---|---|---|---|---|");
+        bool ranked = RcaRanksModels(ctx);
+        Line(sb, "| Model | " + Label("quality.index") + " | " + Label("quality.interval") + (ranked ? " | Rank | " : " | ") + Label("errors.critical") + " |");
+        Line(sb, ranked ? "|---|---|---|---|---|" : "|---|---|---|---|");
         foreach (var (entry, peer) in RcaRows(ctx))
         {
             string index = entry.QualityIndex.HasValue ? BenchmarkReportFormat.Whole(entry.QualityIndex.Value) : BenchmarkReportFacts.NotAvailable;
             string interval = entry.QualityLower.HasValue && entry.QualityUpper.HasValue
                 ? BenchmarkReportFormat.Whole(entry.QualityLower.Value) + "–" + BenchmarkReportFormat.Whole(entry.QualityUpper.Value)
                 : BenchmarkReportFacts.NotAvailable;
-            Line(sb, RcaRow(RcaRowName(ctx, peer), index, interval, QualityRankCell(ctx, entry), CriticalErrorsCell(ctx, entry, peer)));
+            Line(sb, ranked
+                ? RcaRow(RcaRowName(ctx, peer), index, interval, QualityRankCell(ctx, entry), CriticalErrorsCell(ctx, entry, peer))
+                : RcaRow(RcaRowName(ctx, peer), index, interval, CriticalErrorsCell(ctx, entry, peer)));
         }
         Line(sb);
         UseTerms(ctx, RootCauseGlossary.IntelligenceIndex, RootCauseGlossary.CriticalError);
+        if (!ranked) return;
         ExplainedTerms(ctx, RootCauseGlossary.TiedRank);
         Line(sb, "*A rank shown as a span, such as 5–9 (tied), is a tied rank: the model's 95% interval" + Gloss(ctx, RootCauseGlossary.Interval95)
             + " overlaps others', so its rank is the span of places the interval allows. " + RoundedBoundsNote + "*");

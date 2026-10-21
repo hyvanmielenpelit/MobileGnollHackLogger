@@ -125,10 +125,11 @@ public class BenchmarkRootCauseDigestTests
         Assert.Equal("Intelligence: not established; every hypothesis was ruled out.", facts["rcaDigest.axis.intelligence"]);
         Assert.Equal("Speed: probable cause — tool rounds multiply time (graded Moderate).", facts["rcaDigest.axis.speed"]);
         Assert.Equal("Cost: not established; no rule found a possible cause on this axis.", facts["rcaDigest.axis.cost"]);
-        Assert.Equal("Intelligence: the model lost points on the board questions — graded Low, locus model.", facts["rcaDigest.hypothesis.1"]);
-        Assert.Equal("Intelligence, ruled out: the model lost its points on answers given without a tool call — graded Not supported, locus model / chat.",
+        Assert.Equal("Intelligence: the model lost points on the board questions, graded Low.", facts["rcaDigest.hypothesis.1"]);
+        Assert.Equal("Intelligence, ruled out: the model lost its points on answers given without a tool call, graded Not supported.",
             facts["rcaDigest.hypothesis.2"]);
-        Assert.Equal("Speed: tool rounds multiply the model's time per question — graded Moderate, locus chat.", facts["rcaDigest.hypothesis.3"]);
+        Assert.Equal("Speed: tool rounds multiply the model's time per question, graded Moderate.", facts["rcaDigest.hypothesis.3"]);
+        Assert.DoesNotContain(digest.Facts, f => f.Display.Contains("locus", StringComparison.Ordinal));
         Assert.Equal("An untested lead (Low), from the graders' comments: the model under test may have misread the board on Q2.", facts["rcaDigest.lead.1"]);
         Assert.Equal("Run 1, a replicate of the model's run, for purpose C, the Overseer chat.", facts["rcaDigest.nextRun.1"]);
         Assert.Equal("Check 1, a review of the rubric of Q2.", facts["rcaDigest.check.1"]);
@@ -157,6 +158,74 @@ public class BenchmarkRootCauseDigestTests
         Assert.Equal(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(digest.Text))), digest.Sha256);
         Assert.Equal(digest.Sha256, Digest().Sha256);
         Assert.InRange(digest.Text.Length, 1, 10_000);
+    }
+
+    [Fact]
+    public void TheKeyFinding_LeavesOutTheHypothesisReferences_AndTheParenthesesThatHeldOnlyThem()
+    {
+        var (sheet, writer) = RootCauseAnalysis();
+        foreach (string key in new[] { "WS3.1", "WC3.1", "WQ1.1", "WQ1.3" })
+        {
+            sheet.Facts.Add(new BenchmarkReportFact { Key = "rca.hypothesis." + key + ".ref", Display = key });
+        }
+        string KeyFinding(string headline)
+        {
+            writer.Headline = headline;
+            return BenchmarkRootCauseDigest.From(RootCauseDocumentId, sheet, writer)!.Facts.Single(f => f.Key == BenchmarkRootCauseDigest.KeyFindingKey).Display;
+        }
+
+        // Run 125's headline.
+        Assert.Equal("On Q9 accuracy, both panel members flagged a critical error, while tool rounds multiply time and input cost.",
+            KeyFinding("On Q9 accuracy, both panel members flagged a critical error, while tool rounds multiply time ({{rca.hypothesis.WS3.1.ref}}) "
+                       + "and input cost ({{rca.hypothesis.WC3.1.ref}})."));
+
+        // A range of one rule's references goes whole, and so does a share's reference.
+        Assert.Equal("The board questions cost the most points.",
+            KeyFinding("The board questions cost the most points ({{rca.hypothesis.WQ1.1.ref}}–{{rca.hypothesis.WQ1.3.ref}})."));
+        Assert.Equal("Critical errors hold 62% of the points at risk.",
+            KeyFinding("Critical errors hold 62% of the points at risk ({{rca.hypothesis.WQ1.1.ref}})."));
+
+        // A parenthesis with words of its own stays; a reference outside parentheses leaves no id behind.
+        Assert.Equal("Speed (the tool rounds) is slow.", KeyFinding("Speed (the tool rounds) is slow ({{rca.hypothesis.WS3.1.ref}})."));
+        string bare = KeyFinding("{{rca.hypothesis.WS3.1.ref}} holds: tool rounds multiply time.");
+        Assert.Equal("Holds: tool rounds multiply time.", bare);
+        Assert.DoesNotContain("WS3.1", bare);
+        Assert.DoesNotContain("\uE000", bare);
+    }
+
+    [Fact]
+    public void AHypothesisStatement_LosesItsScopeGloss_InTheDigestOnly()
+    {
+        var (sheet, writer) = RootCauseAnalysis();
+        sheet.SubjectDisplayName = "GPT-6 Luna";
+        sheet.RootCause!.Hypotheses.Insert(0, new RootCauseHypothesis
+        {
+            Id = "WQ3", Number = 1, Key = "WQ3.1", Axis = RootCauseAxes.Intelligence, Kind = "within", Grade = RootCauseGrades.Low,
+            Statement = "Confirmed critical errors cost GPT-6 Luna most of its points (where its points go, not a comparison).",
+            ShortStatement = "Critical errors: GPT-6 Luna", Locus = RootCauseLoci.Model
+        });
+
+        var facts = BenchmarkRootCauseDigest.From(RootCauseDocumentId, sheet, writer)!.Facts.ToDictionary(f => f.Key, f => f.Display);
+
+        Assert.Equal("Intelligence: confirmed critical errors cost GPT-6 Luna most of its points, graded Low.", facts["rcaDigest.hypothesis.1"]);
+        Assert.DoesNotContain(facts.Values, d => d.Contains("not a comparison", StringComparison.Ordinal));
+
+        // An axis whose best hypothesis has no short statement or label shows the statement, its gloss left out too.
+        var best = new RootCauseHypothesis
+        {
+            Key = "WS3.1", Axis = RootCauseAxes.Speed, Grade = RootCauseGrades.Moderate,
+            Statement = "Tool rounds multiply GPT-6 Luna's time (where its time goes, not a comparison)."
+        };
+        Assert.Equal("Speed: probable cause — tool rounds multiply GPT-6 Luna's time (graded Moderate).",
+            BenchmarkRootCauseDigest.AxisSentence(new RootCauseAxisStatus { Axis = RootCauseAxes.Speed, Status = RootCauseStatuses.Probable, BestHypothesis = "WS3.1" }, best));
+
+        // Each of the three glosses goes; the statement itself is unchanged.
+        Assert.Equal(3, BenchmarkRootCauseDigest.ScopeGlosses.Count);
+        foreach (string gloss in BenchmarkRootCauseDigest.ScopeGlosses)
+        {
+            Assert.Equal("Uncached input is the largest cost component.", BenchmarkRootCauseDigest.WithoutScopeGloss("Uncached input is the largest cost component" + gloss + "."));
+        }
+        Assert.EndsWith("(where its time goes, not a comparison).", best.Statement);
     }
 
     [Fact]

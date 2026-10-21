@@ -1,6 +1,8 @@
 namespace Overseer.Services.Benchmarking;
 
 using System;
+using System.Collections.Generic;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using MobileGnollHackLogger.Data;
@@ -54,6 +56,17 @@ public sealed record BenchmarkCandidatePromptOptions
     [JsonPropertyName("hasGameSnapshot")]
     public bool HasGameSnapshot { get; init; }          // false — defaulted or from suite (suiteHasBoard)
 
+    /// <summary>
+    /// The information condition's wire name; null means Production and is omitted from the JSON,
+    /// so a production record serializes exactly as it did before conditions existed.
+    /// </summary>
+    [JsonPropertyName("informationCondition")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? InformationCondition { get; init; }
+
+    [JsonIgnore]
+    public BenchmarkInformationCondition Condition => BenchmarkInformationConditions.FromWire(InformationCondition);
+
     private static readonly JsonSerializerOptions CanonicalOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -85,6 +98,14 @@ public sealed record BenchmarkCandidatePromptOptions
     public string BatteryWideSignature(ParallelExecutionMode parallelMode)
         => (this with { HasGameSnapshot = false }).ComparabilitySignature(parallelMode);
 
+    /// <summary>
+    /// <see cref="ComparabilitySignature"/> of the record as a production run would hold it: the
+    /// condition cleared and tools enabled, because a closed-book record also disables tools. Two
+    /// runs that differ only in their information condition share it.
+    /// </summary>
+    public string ComparabilitySignatureWithoutCondition(ParallelExecutionMode parallelMode)
+        => (this with { InformationCondition = null, EnableToolUse = true }).ComparabilitySignature(parallelMode);
+
     public static BenchmarkCandidatePromptOptions FromJson(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -105,10 +126,12 @@ public sealed record BenchmarkCandidatePromptOptions
 
     /// <summary>
     /// Builds the system prompt using this configuration and the specified parallel execution mode.
+    /// The source-only notice and then <paramref name="appendix"/> (an instruction variant's text)
+    /// follow the production prompt as final paragraphs.
     /// </summary>
-    public string BuildSystemPrompt(ChatService chatService, ParallelExecutionMode parallelMode)
+    public string BuildSystemPrompt(ChatService chatService, ParallelExecutionMode parallelMode, string? appendix = null)
     {
-        return chatService.BuildSystemPrompt(
+        string prompt = chatService.BuildSystemPrompt(
             wikiContext: Array.Empty<string>(),
             spoilerFreeMode: SpoilerFreeMode,
             verboseMode: VerboseMode,
@@ -123,17 +146,18 @@ public sealed record BenchmarkCandidatePromptOptions
             allowSourceCodeReferences: AllowSourceCodeReferences,
             enableSubAgents: EnableSubAgents,
             parallelMode: parallelMode);
+        return AppendBenchmarkParagraphs(prompt, appendix);
     }
 
     /// <summary>
     /// The same prompt as <see cref="BuildSystemPrompt"/>, in the three cache segments the
     /// providers key their prompt caches on. The three concatenate to that flat string, which is
-    /// what the run snapshot still hashes.
+    /// what the run snapshot still hashes; the benchmark's own paragraphs end the volatile suffix.
     /// </summary>
     public (string frozenPrefix, string sessionPrefix, string volatileSuffix) BuildSegmentedSystemPrompt(
-        ChatService chatService, ParallelExecutionMode parallelMode)
+        ChatService chatService, ParallelExecutionMode parallelMode, string? appendix = null)
     {
-        return chatService.BuildSegmentedSystemPrompt(
+        var (frozen, session, volatileSuffix) = chatService.BuildSegmentedSystemPrompt(
             wikiContext: Array.Empty<string>(),
             spoilerFreeMode: SpoilerFreeMode,
             verboseMode: VerboseMode,
@@ -148,6 +172,42 @@ public sealed record BenchmarkCandidatePromptOptions
             allowSourceCodeReferences: AllowSourceCodeReferences,
             enableSubAgents: EnableSubAgents,
             parallelMode: parallelMode);
+        // The paragraphs are separated as in the flat prompt, so the three segments still concatenate to it.
+        string before = frozen + session + volatileSuffix;
+        string after = AppendBenchmarkParagraphs(before, appendix);
+        return (frozen, session, volatileSuffix + after[before.Length..]);
+    }
+
+    /// <summary>
+    /// <paramref name="text"/> followed by the benchmark-only paragraphs: the source-only notice
+    /// under that condition, then <paramref name="appendix"/> when given. Unchanged when neither applies.
+    /// </summary>
+    private string AppendBenchmarkParagraphs(string text, string? appendix)
+    {
+        var paragraphs = new List<string>();
+        if (Condition == BenchmarkInformationCondition.SourceOnly)
+        {
+            paragraphs.Add(BenchmarkInformationConditions.SourceOnlyNotice);
+        }
+        if (!string.IsNullOrWhiteSpace(appendix))
+        {
+            paragraphs.Add(appendix.Trim());
+        }
+        if (paragraphs.Count == 0)
+        {
+            return text;
+        }
+
+        var sb = new StringBuilder(text);
+        foreach (string paragraph in paragraphs)
+        {
+            if (sb.Length > 0)
+            {
+                sb.Append(sb[^1] == '\n' ? "\n" : "\n\n");
+            }
+            sb.Append(paragraph).Append('\n');
+        }
+        return sb.ToString();
     }
 
     /// <summary>
@@ -157,6 +217,9 @@ public sealed record BenchmarkCandidatePromptOptions
     {
         string style = VerboseMode ? "detailed (verboseMode: true)" : "concise (verboseMode: false)";
         string mode = OverseerMode == 0 ? "Gameplay Help" : $"Mode {OverseerMode}";
-        return $"{mode}, {style}, tools: {(EnableToolUse ? "enabled" : "disabled")}, web search: {(EnableWebSearch ? "enabled" : "disabled")}, subagents: {(EnableSubAgents ? "enabled" : "disabled")}, source code references: {(AllowSourceCodeReferences ? "allowed" : "disallowed")}";
+        string description = $"{mode}, {style}, tools: {(EnableToolUse ? "enabled" : "disabled")}, web search: {(EnableWebSearch ? "enabled" : "disabled")}, subagents: {(EnableSubAgents ? "enabled" : "disabled")}, source code references: {(AllowSourceCodeReferences ? "allowed" : "disallowed")}";
+        return Condition == BenchmarkInformationCondition.Production
+            ? description
+            : $"{description}, information condition: {Condition.DisplayName()}";
     }
 }

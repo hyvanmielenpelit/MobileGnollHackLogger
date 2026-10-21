@@ -830,7 +830,7 @@ public static class BenchmarkAssessmentPrompt
     ///     _policy.md is inlined into the candidate system prompt, so both hashes move with it.
     ///     ScoringMethodVersion stays 14.
     /// </summary>
-    public const string HarnessVersion = "58";
+    public const string HarnessVersion = "59";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

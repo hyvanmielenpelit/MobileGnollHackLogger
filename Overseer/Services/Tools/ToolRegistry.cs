@@ -105,7 +105,7 @@ namespace Overseer.Services.Tools
                 {
                     handler.Description = File.ReadAllText(guideFile);
                 }
-                else
+                else if (!handler.IsExperimental)
                 {
                     _logger.LogWarning("Missing tool guide for {ToolName}. Using fallback description.", handler.ToolName);
                 }
@@ -175,6 +175,8 @@ namespace Overseer.Services.Tools
 
             foreach (var handler in _handlers)
             {
+                if (handler.IsExperimental && !IsEnabledByVariant(handler.ToolName, context)) continue;
+
                 if (allowedSet != null && !allowedSet.Contains(handler.ToolName))
                 {
                     continue;
@@ -218,9 +220,27 @@ namespace Overseer.Services.Tools
             return result;
         }
 
+        /// <summary>
+        /// Whether the request's instruction variant offers the experimental tool <paramref name="toolName"/>.
+        /// A request without a variant offers none.
+        /// </summary>
+        internal static bool IsEnabledByVariant(string toolName, ToolExecutionContext context)
+            => context.Variant?.ExperimentalTools.Contains(toolName, StringComparer.OrdinalIgnoreCase) == true;
+
+        /// <summary>Whether <paramref name="toolName"/> names a registered experimental tool.</summary>
+        public bool IsExperimentalTool(string toolName)
+            => _handlers.Any(h => h.IsExperimental && string.Equals(h.ToolName, toolName, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>Whether <paramref name="toolName"/> names a registered tool.</summary>
+        public bool IsRegisteredTool(string toolName)
+            => _handlers.Any(h => string.Equals(h.ToolName, toolName, StringComparison.OrdinalIgnoreCase));
+
+        // The variant's guide text is read per request; the shared handler's Description is never mutated after startup.
         private string GetAdjustedDescription(IToolHandler handler, ToolExecutionContext context)
         {
-            var desc = handler.Description;
+            var desc = context.Variant?.ToolGuides.TryGetValue(handler.ToolName, out var variantGuide) == true
+                ? variantGuide
+                : handler.Description;
             if (context.SpoilerFreeMode)
             {
                 desc += "\n[Spoiler Free Mode Active: Evaluate returned information against the spoiler policy before sharing with the player.]";

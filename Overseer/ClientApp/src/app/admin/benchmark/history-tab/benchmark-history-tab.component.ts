@@ -15,6 +15,7 @@ import { ProviderErrorBadgeComponent } from '../shared/provider-availability/pro
 import { cardHasProviderTrouble } from '../shared/provider-availability/provider-availability';
 import {
   RunFactBadge,
+  runConditionTags,
   runFactBadges
 } from '../run-report-frame/run-facts';
 import {
@@ -237,6 +238,19 @@ export class BenchmarkHistoryTabComponent implements OnInit {
       this.historyBadgeCache.set(run, badges);
     }
     return badges;
+  }
+
+  /** The run's non-production conditions per run, built once per run object. */
+  private readonly historyConditionCache = new WeakMap<BenchmarkRunSummaryDto, string[]>();
+
+  /** A Run History card's meta-line entries for a run made under other than production conditions; empty otherwise. */
+  historyConditionTags(run: BenchmarkRunSummaryDto): string[] {
+    let tags = this.historyConditionCache.get(run);
+    if (!tags) {
+      tags = runConditionTags(run);
+      this.historyConditionCache.set(run, tags);
+    }
+    return tags;
   }
 
   /** A battery card's headline: the tested model's label, else its id. */

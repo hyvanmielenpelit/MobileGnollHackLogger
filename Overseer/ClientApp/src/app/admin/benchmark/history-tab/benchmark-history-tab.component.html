@@ -188,6 +188,10 @@
                       <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                       <span>by {{ run.startedByUserName }}</span>
                     }
+                    @for (tag of historyConditionTags(run); track tag) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="rh-card-condition">{{ tag }}</span>
+                    }
                   </p>
                 </header>
 

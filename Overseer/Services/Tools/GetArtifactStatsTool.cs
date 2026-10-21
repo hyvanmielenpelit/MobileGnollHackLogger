@@ -7,12 +7,14 @@ namespace Overseer.Services.Tools
     public class GetArtifactStatsTool : IToolHandler
     {
         private readonly SourceCodeService _sourceCodeService;
+        private readonly IConfiguration _configuration;
         private readonly int _truncationThreshold;
         private readonly int _hardLimit;
 
         public GetArtifactStatsTool(SourceCodeService sourceCodeService, IConfiguration configuration)
         {
             _sourceCodeService = sourceCodeService;
+            _configuration = configuration;
             _truncationThreshold = configuration.GetValue<int>("Tools:get_artifact_stats:TruncationThreshold", 9900);
             _hardLimit = configuration.GetValue<int>("Tools:get_artifact_stats:HardLimit", 10000);
         }
@@ -56,16 +58,33 @@ namespace Overseer.Services.Tools
             }
             
             var result = _sourceCodeService.GetArtifactStats(name);
-            
+
+            if (result.Error == null
+                && context?.Variant?.HasExperiment(Benchmarking.BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment) == true)
+            {
+                string? artifactName = result.Stats != null && result.Stats.Fields.TryGetValue("name", out var statsName)
+                    ? statsName as string
+                    : SourceReferenceIndex.FirstStringLiteral(result.RawDefinition);
+                result.ReferencedBy = SourceReferenceIndex.ForStatsResult(
+                    _sourceCodeService, _configuration, SourceReferenceIndex.ArtifactConstant(artifactName), SourceReferenceIndex.OnamesHeaderPath);
+            }
+
             var options = new JsonSerializerOptions
             {
                 WriteIndented = true,
                 DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
                 Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             };
-            
+
             string jsonResult = JsonSerializer.Serialize(result, options);
-            
+
+            if (jsonResult.Length > _truncationThreshold && result.ReferencedBy != null)
+            {
+                /* Level 0: drop referenced_by before anything else */
+                result.ReferencedBy = null;
+                jsonResult = JsonSerializer.Serialize(result, options);
+            }
+
             if (jsonResult.Length > _truncationThreshold)
             {
                 if (result.Stats != null)

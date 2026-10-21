@@ -2404,6 +2404,9 @@ public class BenchmarkReportBuilderTests
     // Assessor statements are counted as a third population.
     [InlineData(null, BenchmarkClaimRoles.AssessorStatement, "The assessor's own statement.", null, null, 1,
         "- **Claim Verification Yield:** 8 unverified claim(s) + 1 accused sentence(s) + 1 assessor statement(s) checked — claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 0 refuted, 0 indeterminate; assessor statements: 0 supported, 1 refuted, 0 indeterminate. $1.70 ($0.17/item over all three), 67% of run cost.")]
+    // Critical-error quotes the verifier checked are a population of their own.
+    [InlineData(null, BenchmarkClaimRoles.CriticalErrorQuote, Method13QuoteA, null, null, 1,
+        "- **Claim Verification Yield:** 8 unverified claim(s) + 1 accused sentence(s) + 1 critical-error quote(s) checked — claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 0 refuted, 0 indeterminate; critical-error quotes: 0 supported, 1 refuted, 0 indeterminate. $1.70 ($0.17/item over all three), 67% of run cost.")]
     public void ClaimVerificationYield_ReportsWhatTheVerifiersDollarsBought(
         string? q1UsageJson,
         string? secondItemRole,
@@ -2465,6 +2468,46 @@ public class BenchmarkReportBuilderTests
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
 
         Assert.Contains(expectedLine, report);
+    }
+
+    [Fact]
+    public void ClaimVerificationYield_OverFourPopulations_SaysAllFour()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            RoleItem(0, "Charged but true.", BenchmarkClaimVerdict.Supported, "src/objects.c:2889", BenchmarkClaimRoles.AccusedQuote),
+            RoleItem(1, "The assessor's own statement.", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", BenchmarkClaimRoles.AssessorStatement),
+            RoleItem(2, Method13QuoteA, BenchmarkClaimVerdict.Refuted, "src/pray.c:120", BenchmarkClaimRoles.CriticalErrorQuote)
+        });
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
+        run.TotalInputTokens = 200_000;
+        run.TotalOutputTokens = 30_000;
+        run.TotalAssessmentInputTokens = 100_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalClaimVerificationInputTokens = 1_300_000;
+        run.TotalClaimVerificationOutputTokens = 100_000;
+        run.ClaimsSupportedCount = 7;
+        run.ClaimsRefutedCount = 0;
+        run.ClaimsIndeterminateCount = 0;
+
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: null,
+            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
+            IsSnapshot: true
+        );
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+
+        Assert.Contains(
+            "- **Claim Verification Yield:** 7 unverified claim(s) + 1 accused sentence(s) + 1 assessor statement(s) + 1 critical-error quote(s) checked — claims: 7 supported, 0 refuted, 0 indeterminate; accused sentences: 1 supported, 0 refuted, 0 indeterminate; assessor statements: 0 supported, 1 refuted, 0 indeterminate; critical-error quotes: 0 supported, 1 refuted, 0 indeterminate. $1.70 ($0.17/item over all 4), 67% of run cost.",
+            report);
     }
 
     [Fact]
@@ -7832,5 +7875,473 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("Assessed by:** Override Assessor (Anthropic, claude-3-opus) — differs from this run's assessor", report);
         // Question 2 should not have "differs from this run's assessor" callout
         Assert.DoesNotContain("Original Assessor (Anthropic, claude-3-5-sonnet) — differs from this run's assessor", report);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Critical-error quotes the claim verifier checked.
+    // -------------------------------------------------------------------------------------
+
+    private static BenchmarkClaimVerification CriticalErrorQuoteItem(
+        int index, string claim, BenchmarkClaimVerdict verdict, string? citation = "src/pray.c:120", string[]? raisedBy = null, string? otherRole = null)
+        => new(index, claim, verdict, citation, "The source decides it.")
+        {
+            Roles = otherRole == null
+                ? new[] { BenchmarkClaimRoles.CriticalErrorQuote }
+                : new[] { BenchmarkClaimRoles.CriticalErrorQuote, otherRole },
+            RaisedBy = raisedBy
+        };
+
+    [Fact]
+    public void CriticalErrorQuotes_BothRefuted_ArePrintedPerAnswer_InTheClaimLine_AndAtRunLevel()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            CriticalErrorQuoteItem(0, Method13QuoteA, BenchmarkClaimVerdict.Refuted),
+            CriticalErrorQuoteItem(1, Method13QuoteB, BenchmarkClaimVerdict.Refuted)
+        });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.Contains("> - **Critical-error quotes checked:** 2 — upheld (refuted) 2, cleared (supported) 0, indeterminate 0" + Environment.NewLine, report);
+        Assert.Contains($"> - **Critical-error quote, refuted:** a sentence the assessor quoted as the critical error was checked by the claim verifier and returned **refuted** — the verifier sided with the graders — \"{Method13QuoteA}\" (src/pray.c:120).", report);
+        Assert.Contains($"> - **Critical-error quote, refuted:** a sentence the assessor quoted as the critical error was checked by the claim verifier and returned **refuted** — the verifier sided with the graders — \"{Method13QuoteB}\" (src/pray.c:120).", report);
+        Assert.Contains(":** 0 own claims; 2 critical-error quotes checked — upheld 2 — *checked against source/wiki; advisory, not reflected in the score.*", ClaimVerificationLine(report));
+        Assert.Contains(
+            "- **Critical-error quotes checked:** 2 across 1 answer(s) (Q1) — upheld 2, cleared 0, indeterminate 0. *The sentences the graders quoted as the critical error, sent to the claim verifier; a refuted quote upholds the critical error, a supported one clears the answer.*",
+            report);
+        Assert.DoesNotContain("Accused sentences checked", report);
+        Assert.DoesNotContain("Assessor statements checked", report);
+    }
+
+    [Fact]
+    public void CriticalErrorQuotes_WithMixedVerdicts_CountEachAndSayWhichSideTheVerifierTook()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            CriticalErrorQuoteItem(0, "Quote upheld.", BenchmarkClaimVerdict.Refuted),
+            CriticalErrorQuoteItem(1, "Quote cleared.", BenchmarkClaimVerdict.Supported, "src/pray.c:300"),
+            CriticalErrorQuoteItem(2, "Quote unsettled.", BenchmarkClaimVerdict.Indeterminate, citation: null)
+        });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.Contains("> - **Critical-error quotes checked:** 3 — upheld (refuted) 1, cleared (supported) 1, indeterminate 1" + Environment.NewLine, report);
+        Assert.Contains("returned **refuted** — the verifier sided with the graders — \"Quote upheld.\" (src/pray.c:120).", report);
+        Assert.Contains("> - **Critical-error quote, supported:** a sentence the assessor quoted as the critical error was checked by the claim verifier and returned **supported** — the verifier sided with the answer — \"Quote cleared.\" (src/pray.c:300).", report);
+        Assert.Contains("> - **Critical-error quote, indeterminate:** a sentence the assessor quoted as the critical error was checked by the claim verifier and returned **indeterminate** — \"Quote unsettled.\" (no citation).", report);
+        Assert.Contains(":** 0 own claims; 3 critical-error quotes checked — upheld 1, cleared 1, indeterminate 1 — *checked against source/wiki;", ClaimVerificationLine(report));
+        Assert.Contains("- **Critical-error quotes checked:** 3 across 1 answer(s) (Q1) — upheld 1, cleared 1, indeterminate 1.", report);
+    }
+
+    [Fact]
+    public void ACriticalErrorQuoteThatIsAlsoAnAccusedSentence_IsReportedOnceAsTheAccusedSentence()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            CriticalErrorQuoteItem(0, "Charged and quoted.", BenchmarkClaimVerdict.Refuted, otherRole: BenchmarkClaimRoles.AccusedQuote)
+        });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.Contains("> - **Accused sentences checked:** 1 — supported 0, refuted 1, indeterminate 0", report);
+        Assert.Contains("> - **Accused sentence, refuted:** a sentence the assessor charged as false was checked by the claim verifier and returned **refuted** — \"Charged and quoted.\" (src/pray.c:120).", report);
+        Assert.Contains(":** 1 charged sentence checked — refuted — *checked against source/wiki;", ClaimVerificationLine(report));
+        Assert.DoesNotContain("Critical-error quotes checked", report);
+        Assert.DoesNotContain("Critical-error quote, ", report);
+        Assert.DoesNotContain("own claims;", report);
+    }
+
+    [Fact]
+    public void ACriticalErrorQuoteThatIsAlsoAnUnverifiedClaim_IsReportedAsAnOrdinaryClaim()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25);
+        q1.ClaimsRefutedCount = 1;
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            CriticalErrorQuoteItem(0, "Claimed and quoted.", BenchmarkClaimVerdict.Refuted, otherRole: BenchmarkClaimRoles.UnverifiedClaim)
+        });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.Contains(":** 0 supported, 1 refuted, 0 indeterminate — *checked against source/wiki;", ClaimVerificationLine(report));
+        Assert.DoesNotContain("Critical-error quotes checked", report);
+        Assert.DoesNotContain("Critical-error quote, ", report);
+        Assert.DoesNotContain("own claims;", report);
+    }
+
+    [Fact]
+    public void ARunWithoutCriticalErrorQuotes_PrintsNoneOfTheirLines()
+    {
+        var q1 = BoardGradedAnswer(1, 60);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            RoleItem(0, "Own supported claim.", BenchmarkClaimVerdict.Supported, "src/own.c:1", BenchmarkClaimRoles.UnverifiedClaim),
+            RoleItem(1, "Charged and false.", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", BenchmarkClaimRoles.AccusedQuote),
+            RoleItem(2, BasisStatement, BenchmarkClaimVerdict.Refuted, "src/pray.c:1", BenchmarkClaimRoles.AssessorStatement)
+        });
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 80);
+        q2.ClaimVerificationJson = JsonSerializer.Serialize(new[] { ChargedSentence(0, BenchmarkClaimVerdict.Supported) });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1, q2));
+
+        Assert.Contains("> - **Accused sentences checked:** 1 — supported 0, refuted 1, indeterminate 0", report);
+        Assert.Contains(":** 1 charged sentence checked — supported — *checked against source/wiki;", report);
+        Assert.DoesNotContain("Critical-error quotes checked", report);
+        Assert.DoesNotContain("Critical-error quote, ", report);
+        Assert.DoesNotContain("critical-error quote(s)", report);
+        Assert.DoesNotContain("own claims;", report);
+    }
+
+    [Fact]
+    public void CriticalErrorQuotes_OnAPanelRun_SplitByTheRaisingMember_OrSayTheMembersWereNotRecorded()
+    {
+        var five = (5, 5, 5, 5);
+        var q1 = WithMemberB(Method13Answer(1, 25, 85, five, criticalError: true), 70, 70, five);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            CriticalErrorQuoteItem(0, Method13QuoteA, BenchmarkClaimVerdict.Refuted, raisedBy: new[] { "A" })
+        });
+        var q2 = WithMemberB(Method13Answer(2, 25, 90, five, criticalError: true), 80, 80, five);
+        q2.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            CriticalErrorQuoteItem(0, Method13QuoteA, BenchmarkClaimVerdict.Supported)
+        });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Method13Run(panel: true, q1, q2));
+
+        Assert.Contains("> - **Critical-error quotes checked:** 1 (A 1, B 0, both 0) — upheld (refuted) 1, cleared (supported) 0, indeterminate 0" + Environment.NewLine, report);
+        Assert.Contains($"> - **Critical-error quote, refuted:** a sentence member A quoted as the critical error was checked by the claim verifier and returned **refuted** — the verifier sided with the graders — \"{Method13QuoteA}\" (src/pray.c:120).", report);
+        Assert.Contains("> - **Critical-error quotes checked:** 1 (members not recorded) — upheld (refuted) 0, cleared (supported) 1, indeterminate 0" + Environment.NewLine, report);
+        Assert.Contains($"> - **Critical-error quote, supported:** a sentence the assessor quoted as the critical error was checked by the claim verifier and returned **supported** — the verifier sided with the answer — \"{Method13QuoteA}\" (src/pray.c:120).", report);
+        Assert.Contains("- **Critical-error quotes checked:** 2 across 2 answer(s) (Q1, Q2) (A 1, B 0, both 1) — upheld 1, cleared 1, indeterminate 0.", report);
+    }
+
+    [Fact]
+    public void ChargesOnlyVerificationText_WithCriticalErrorQuotes_SaysTheAnswerRaisedNoClaimOfItsOwn()
+    {
+        var none = Array.Empty<BenchmarkClaimVerification>();
+        var upheld = new[]
+        {
+            CriticalErrorQuoteItem(0, "A.", BenchmarkClaimVerdict.Refuted),
+            CriticalErrorQuoteItem(1, "B.", BenchmarkClaimVerdict.Refuted)
+        };
+        var cleared = new[] { CriticalErrorQuoteItem(0, "A.", BenchmarkClaimVerdict.Supported) };
+        var unsettled = new[] { CriticalErrorQuoteItem(0, "A.", BenchmarkClaimVerdict.Indeterminate) };
+        var mixed = new[]
+        {
+            CriticalErrorQuoteItem(0, "A.", BenchmarkClaimVerdict.Refuted),
+            CriticalErrorQuoteItem(1, "B.", BenchmarkClaimVerdict.Supported),
+            CriticalErrorQuoteItem(2, "C.", BenchmarkClaimVerdict.Supported)
+        };
+
+        Assert.Equal("0 own claims; 2 critical-error quotes checked — upheld 2", BenchmarkReportBuilder.ChargesOnlyVerificationText(none, none, upheld));
+        Assert.Equal("0 own claims; 1 critical-error quote checked — cleared 1", BenchmarkReportBuilder.ChargesOnlyVerificationText(none, none, cleared));
+        Assert.Equal("0 own claims; 1 critical-error quote checked — indeterminate 1", BenchmarkReportBuilder.ChargesOnlyVerificationText(none, none, unsettled));
+        Assert.Equal("0 own claims; 3 critical-error quotes checked — upheld 1, cleared 2, indeterminate 0", BenchmarkReportBuilder.ChargesOnlyVerificationText(none, none, mixed));
+        Assert.Equal(
+            "0 own claims; 1 charged sentence checked — supported; 1 critical-error quote checked — upheld 1",
+            BenchmarkReportBuilder.ChargesOnlyVerificationText(new[] { ChargedSentence(0, BenchmarkClaimVerdict.Supported) }, none, new[] { upheld[0] }));
+
+        // Without quotes the text is as it was.
+        Assert.Equal("1 charged sentence checked — supported",
+            BenchmarkReportBuilder.ChargesOnlyVerificationText(new[] { ChargedSentence(0, BenchmarkClaimVerdict.Supported) }, none, none));
+        Assert.Equal("1 charged sentence checked — supported",
+            BenchmarkReportBuilder.ChargesOnlyVerificationText(new[] { ChargedSentence(0, BenchmarkClaimVerdict.Supported) }, none));
+        Assert.Null(BenchmarkReportBuilder.ChargesOnlyVerificationText(none, none, none));
+    }
+
+    [Fact]
+    public void CriticalErrorQuotesOf_TakesOnlyTheItemsWithNoOtherRole()
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25);
+        answer.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            CriticalErrorQuoteItem(0, "Quote only.", BenchmarkClaimVerdict.Refuted),
+            CriticalErrorQuoteItem(1, "Also accused.", BenchmarkClaimVerdict.Refuted, otherRole: BenchmarkClaimRoles.AccusedQuote),
+            CriticalErrorQuoteItem(2, "Also a claim.", BenchmarkClaimVerdict.Refuted, otherRole: BenchmarkClaimRoles.UnverifiedClaim),
+            new BenchmarkClaimVerification(3, "Legacy.", BenchmarkClaimVerdict.Supported, "src/a.c:1", "True.")
+        });
+
+        var quote = Assert.Single(BenchmarkReportBuilder.CriticalErrorQuotesOf(answer));
+        Assert.Equal("Quote only.", quote.Claim);
+        Assert.Empty(BenchmarkReportBuilder.CriticalErrorQuotesOf(ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 25)));
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Outcomes: wrong instead of abstaining needs three answers to rate.
+    // -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void Outcomes_WithFewerThanThreeWrongOrAbstainingAnswers_SaysTooFewToRate()
+    {
+        var five = (5, 5, 5, 5);
+        var oneWrong = Method13Run(
+            panel: false,
+            Method13Answer(1, 87, 87, five),
+            Method13Answer(2, 25, 87, five, criticalError: true));
+        var oneWrongOneAbstained = Method13Run(
+            panel: false,
+            Method13Answer(1, 87, 87, five),
+            Method13Answer(2, 25, 87, five, criticalError: true),
+            Method13Answer(3, 50, 50, (5, 0, 6, 6), notAttempted: true));
+        var allCorrect = Method13Run(
+            panel: false,
+            Method13Answer(1, 87, 87, five),
+            Method13Answer(2, 90, 90, five));
+
+        Assert.Contains("- **Outcomes:** 1 correct, 0 partial, 1 incorrect, 0 not attempted, 0 without an answer · correct when attempted 50% (1 of 2) · wrong instead of abstaining too few to rate (1 of 1)" + Environment.NewLine,
+            BenchmarkReportBuilder.BuildMarkdownReport(oneWrong));
+        Assert.Contains("· wrong instead of abstaining too few to rate (1 of 2)" + Environment.NewLine,
+            BenchmarkReportBuilder.BuildMarkdownReport(oneWrongOneAbstained));
+        Assert.Contains("· wrong instead of abstaining n/a" + Environment.NewLine,
+            BenchmarkReportBuilder.BuildMarkdownReport(allCorrect));
+        Assert.Equal(3, BenchmarkComparisonModelProfile.WrongInsteadOfAbstainingMinAnswers);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The run condition manifest under Chat Prompt Under Test.
+    // -------------------------------------------------------------------------------------
+
+    private static BenchmarkRun PromptOptionsRun(BenchmarkCandidatePromptOptions options)
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.CandidatePromptOptionsJson = options.ToCanonicalJson();
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+        return run;
+    }
+
+    [Fact]
+    public void ConditionManifest_ForAProductionRun_FollowsTheToolsLine()
+    {
+        var run = PromptOptionsRun(new BenchmarkCandidatePromptOptions());
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, conditions: new BenchmarkRunConditionContext
+        {
+            CandidateTools = new[] { "wiki_search", "source_code_view" }
+        });
+
+        string[] lines =
+        {
+            "- **Information condition:** Production — all tools (production default)" + Environment.NewLine,
+            "- **Candidate tools:** wiki_search, source_code_view" + Environment.NewLine,
+            "- **Corpus condition:** live" + Environment.NewLine,
+            "- **Instruction variant:** none" + Environment.NewLine
+        };
+        int previous = report.IndexOf("- **Tools:** ", StringComparison.Ordinal);
+        Assert.True(previous >= 0);
+        foreach (string line in lines)
+        {
+            int at = report.IndexOf(line, StringComparison.Ordinal);
+            Assert.True(at > previous, line);
+            previous = at;
+        }
+        Assert.DoesNotContain("### Evidence Reach", report);
+    }
+
+    [Fact]
+    public void ConditionManifest_PrintsTheToolListAsNotRecorded_WithoutAConditionContext_AndNoneForAnEmptyList()
+    {
+        var run = PromptOptionsRun(new BenchmarkCandidatePromptOptions());
+
+        Assert.Contains("- **Candidate tools:** not recorded" + Environment.NewLine, BenchmarkReportBuilder.BuildMarkdownReport(run));
+        Assert.Contains("- **Candidate tools:** none" + Environment.NewLine, BenchmarkReportBuilder.BuildMarkdownReport(
+            run, conditions: new BenchmarkRunConditionContext { CandidateTools = Array.Empty<string>() }));
+    }
+
+    [Fact]
+    public void ConditionManifest_ForAClosedBookRun_PrintsNoCandidateTools()
+    {
+        var run = PromptOptionsRun(new BenchmarkCandidatePromptOptions
+        {
+            InformationCondition = BenchmarkInformationConditions.ClosedBookWire,
+            EnableToolUse = false
+        });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **Information condition:** Closed book — no tools" + Environment.NewLine, report);
+        Assert.Contains("- **Candidate tools:** none" + Environment.NewLine, report);
+    }
+
+    [Fact]
+    public void ConditionManifest_ForASourceOnlyRun_PrintsTheResolvedToolList()
+    {
+        var run = PromptOptionsRun(new BenchmarkCandidatePromptOptions { InformationCondition = BenchmarkInformationConditions.SourceOnlyWire });
+        var tools = BenchmarkInformationCondition.SourceOnly.ResolveAllowedTools(
+            new[] { "wiki_search", "source_code_search", "item_lookup", "get_item_stats" });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, conditions: new BenchmarkRunConditionContext { CandidateTools = tools });
+
+        Assert.Contains("- **Information condition:** Source code only — no wiki, knowledge base or lookup tools" + Environment.NewLine, report);
+        Assert.Contains("- **Candidate tools:** source_code_search, get_item_stats" + Environment.NewLine, report);
+    }
+
+    [Fact]
+    public void ConditionManifest_NamesAScarceCorpusAndAnInstructionVariant()
+    {
+        var run = PromptOptionsRun(new BenchmarkCandidatePromptOptions());
+        run.CorpusCondition = "scarce:Run 125 scrub";
+        run.InstructionVariant = "source-tools-v1:0123456789ab";
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **Corpus condition:** scarce — Run 125 scrub" + Environment.NewLine, report);
+        Assert.Contains("- **Instruction variant:** source-tools-v1 (0123456789ab) — benchmark-only instruction text and tools that production does not have" + Environment.NewLine, report);
+    }
+
+    [Fact]
+    public void ConditionManifest_IsAbsent_WhenThePromptOptionsWereNotRecorded()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.CandidatePromptOptionsJson = null;
+        run.InstructionVariant = "source-tools-v1:0123456789ab";
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("**Information condition:**", report);
+        Assert.DoesNotContain("**Instruction variant:**", report);
+    }
+
+    [Fact]
+    public void ConditionManifestLines_AreTheFourLinesInOrder()
+    {
+        var run = new BenchmarkRun { CorpusCondition = "invalid", InstructionVariant = "source-tools-v1:0123456789ab" };
+
+        var lines = BenchmarkReportBuilder.ConditionManifestLines(
+            run, new BenchmarkCandidatePromptOptions { InformationCondition = BenchmarkInformationConditions.SourceOnlyWire }, null);
+
+        Assert.Equal(
+            new[]
+            {
+                "**Information condition:** Source code only — no wiki, knowledge base or lookup tools",
+                "**Candidate tools:** not recorded",
+                "**Corpus condition:** invalid",
+                "**Instruction variant:** source-tools-v1 (0123456789ab) — benchmark-only instruction text and tools that production does not have"
+            },
+            lines);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Evidence Reach.
+    // -------------------------------------------------------------------------------------
+
+    private static BenchmarkRunAnswerToolCall ReachRow(int sortOrder, string name, string? result, int? resultLength = null)
+        => new()
+        {
+            SortOrder = sortOrder,
+            Name = name,
+            Status = "completed",
+            Result = result,
+            ResultLengthChars = resultLength ?? result?.Length ?? 0
+        };
+
+    private static BenchmarkRunConditionContext ReachConditions() => new()
+    {
+        EvidenceByQuestionId = new Dictionary<long, IReadOnlyList<BenchmarkEvidenceUnit>>
+        {
+            [101] = new[] { new BenchmarkEvidenceUnit { Kind = BenchmarkEvidenceUnit.WikiKind, Path = "Races/Human.md", Personal = true } },
+            [102] = new[] { new BenchmarkEvidenceUnit { Kind = BenchmarkEvidenceUnit.WikiKind, Path = "Races/Orc.md" } },
+            [103] = new[] { new BenchmarkEvidenceUnit { Kind = BenchmarkEvidenceUnit.KnowledgeBaseKind, Path = "Praying" } }
+        },
+        SuiteEvidenceShaPrefix = "0123456789ab"
+    };
+
+    /// <summary>
+    /// A scoring method 13 run: Q1 correct, opening its personal race page; Q2 a confirmed critical
+    /// error whose gold page a search surfaced but nothing opened; Q3 not attempted with no tool call;
+    /// Q4 correct on a question without evidence.
+    /// </summary>
+    private static BenchmarkRun EvidenceReachRun()
+    {
+        var five = (5, 5, 5, 5);
+        var q1 = Method13Answer(1, 87, 87, five);
+        q1.BenchmarkQuestionId = 101;
+        q1.ToolCalls = new List<BenchmarkRunAnswerToolCall> { ReachRow(0, "wiki_view", "--- Races/Human.md ---\nHumans are versatile.\n") };
+        var q2 = Method13Answer(2, 25, 87, five, criticalError: true);
+        q2.BenchmarkQuestionId = 102;
+        q2.ToolCalls = new List<BenchmarkRunAnswerToolCall> { ReachRow(0, "wiki_search", "--- Races/Orc.md ---\nOrcs.\n\n--- Races/Elf.md ---\nElves.\n") };
+        var q3 = Method13Answer(3, 50, 50, (5, 0, 6, 6), notAttempted: true);
+        q3.BenchmarkQuestionId = 103;
+        var q4 = Method13Answer(4, 87, 87, five);
+        return Method13Run(panel: false, q1, q2, q3, q4);
+    }
+
+    [Fact]
+    public void EvidenceReach_PrintsItsSectionBeforeTheToolUsageProfile_WithClassesAndReachCounts()
+    {
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(EvidenceReachRun(), conditions: ReachConditions());
+
+        Assert.Contains("### Evidence Reach" + Environment.NewLine
+            + "- **Condition:** Production — all tools (production default) · **Corpus condition:** live · **Suite evidence:** `0123456789ab`" + Environment.NewLine
+            + "- **Classes:** grounded correct 1, retrieval failure 1, navigation failure 1 (of 3 answer(s) with evidence)" + Environment.NewLine
+            + "- **Gold opened:** 1 of 3 · **Personal context opened:** 1 of 1 · **Zero-call answers:** 1" + Environment.NewLine
+            + "- *Read but wrong covers answering against the opened evidence, misreading it, and another page contradicting it; open the answer before calling it a model trait.*" + Environment.NewLine
+            + Environment.NewLine
+            + "### Tool Usage Profile",
+            report);
+    }
+
+    [Fact]
+    public void EvidenceReach_PrintsOneEvidenceLinePerAnswerWithEvidence()
+    {
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(EvidenceReachRun(), conditions: ReachConditions());
+
+        Assert.Contains("- Evidence: surfaced yes (Races/Human.md), opened yes (Races/Human.md); personal page opened; Retrieval of gold: grounded correct" + Environment.NewLine, report);
+        Assert.Contains("- Evidence: surfaced yes (Races/Orc.md), opened no; Retrieval of gold: navigation failure" + Environment.NewLine, report);
+        Assert.Contains("- Evidence: surfaced no, opened no; no tool call; Retrieval of gold: retrieval failure" + Environment.NewLine, report);
+        Assert.Equal(3, Regex.Matches(report, Regex.Escape("- Evidence: ")).Count);
+    }
+
+    [Fact]
+    public void EvidenceReach_IsAbsent_WithoutEvidence()
+    {
+        var run = EvidenceReachRun();
+
+        foreach (string report in new[]
+        {
+            BenchmarkReportBuilder.BuildMarkdownReport(run),
+            BenchmarkReportBuilder.BuildMarkdownReport(run, conditions: new BenchmarkRunConditionContext { CandidateTools = new[] { "wiki_search" } })
+        })
+        {
+            Assert.DoesNotContain("### Evidence Reach", report);
+            Assert.DoesNotContain("- Evidence: ", report);
+            Assert.Contains("### Tool Usage Profile", report);
+        }
+    }
+
+    [Fact]
+    public void EvidenceReach_CountsPrunedRowsAsUnavailable()
+    {
+        var q1 = Method13Answer(1, 87, 87, (5, 5, 5, 5));
+        q1.BenchmarkQuestionId = 101;
+        q1.ToolCalls = new List<BenchmarkRunAnswerToolCall> { ReachRow(0, "wiki_view", null, resultLength: 4200) };
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Method13Run(panel: false, q1), conditions: ReachConditions());
+
+        Assert.Contains("- **Classes:** not applicable 1 (of 1 answer(s) with evidence)" + Environment.NewLine, report);
+        Assert.Contains("- **Gold opened:** 0 of 0 · **Personal context opened:** 0 of 0 · **Zero-call answers:** 0 · **Unavailable (pruned rows):** 1" + Environment.NewLine, report);
+        Assert.Contains("- Evidence: not available (the tool-call rows were pruned)" + Environment.NewLine, report);
+    }
+
+    [Fact]
+    public void EvidenceReach_BeforeScoringMethod13_IsNotApplicable()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90);
+        q1.BenchmarkQuestionId = 101;
+        q1.ToolCalls = new List<BenchmarkRunAnswerToolCall> { ReachRow(0, "wiki_view", "--- Races/Human.md ---\nHumans.\n") };
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.ScoringMethodVersion = 12;
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, conditions: ReachConditions());
+
+        Assert.Contains("- **Classes:** not applicable 1 (of 1 answer(s) with evidence)" + Environment.NewLine, report);
+        Assert.Contains("- **Gold opened:** 1 of 1 · **Personal context opened:** 1 of 1 · **Zero-call answers:** 0" + Environment.NewLine, report);
+        Assert.Contains("- Evidence: surfaced yes (Races/Human.md), opened yes (Races/Human.md); personal page opened; Retrieval of gold: not applicable" + Environment.NewLine, report);
     }
 }

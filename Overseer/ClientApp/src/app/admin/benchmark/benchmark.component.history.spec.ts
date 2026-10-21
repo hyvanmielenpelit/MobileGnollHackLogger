@@ -259,6 +259,19 @@ describe('AdminBenchmarkComponent', () => {
       expect(card.querySelectorAll('[title]').length).toBe(0);
     });
 
+    it('should name a non-production condition, the variant and the corpus on the meta line, and nothing for production', () => {
+      openHistoryWith([
+        buildHistoryRun({ id: 43, informationCondition: 'closedBook', instructionVariant: 'cite-first:ab12cd34ef56', corpusCondition: 'scarce:2026-10' }),
+        buildHistoryRun({ id: 44 })
+      ]);
+
+      const conditions = (id: number) => Array.from(
+        fixture.nativeElement.querySelectorAll(`article.rh-card[data-run-id="${id}"] .rh-card-meta .rh-card-condition`) as NodeListOf<HTMLElement>
+      ).map(span => span.textContent?.trim());
+      expect(conditions(43)).toEqual(['closed book', 'variant: cite-first:ab12cd34ef56', 'corpus: scarce:2026-10']);
+      expect(conditions(44)).toEqual([]);
+    });
+
     it('should fit ten run cards in 1360 px without scrolling sideways, their metrics lined up', async () => {
       const hash = (seed: string, length: number) => seed.repeat(Math.ceil(length / seed.length)).substring(0, length);
       const instrument = {

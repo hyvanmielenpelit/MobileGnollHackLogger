@@ -131,7 +131,7 @@ public class BenchmarkBatteryComparabilityTests
         // Walks Extract's own output, so a key added there later fails here until it is classified.
         var names = BenchmarkComparabilityKey.Extract(Run(1, 10, board: true)).Select(k => k.Name).ToList();
 
-        Assert.Equal(27, names.Count);
+        Assert.Equal(29, names.Count);
         Assert.Equal(names.Count, names.Distinct().Count());
         foreach (string name in names)
         {
@@ -176,7 +176,9 @@ public class BenchmarkBatteryComparabilityTests
 
         Assert.Contains(BenchmarkComparabilityKey.CandidatePromptOptionsKey, byClass[BenchmarkBatteryKeyClass.BatteryWide]);
         Assert.Contains(BenchmarkComparabilityKey.HarnessVersionKey, byClass[BenchmarkBatteryKeyClass.BatteryWide]);
-        Assert.Equal(19, byClass[BenchmarkBatteryKeyClass.BatteryWide].Count);
+        Assert.Contains(BenchmarkComparabilityKey.CorpusConditionKey, byClass[BenchmarkBatteryKeyClass.BatteryWide]);
+        Assert.Contains(BenchmarkComparabilityKey.InstructionVariantKey, byClass[BenchmarkBatteryKeyClass.BatteryWide]);
+        Assert.Equal(21, byClass[BenchmarkBatteryKeyClass.BatteryWide].Count);
     }
 
     [Fact]

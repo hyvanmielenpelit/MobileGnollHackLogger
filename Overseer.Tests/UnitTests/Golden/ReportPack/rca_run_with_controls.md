@@ -21,7 +21,7 @@
 
 | Model | Intelligence | Median time | Cost per question |
 |---|---|---|---|
-| **Orion Max** | 85 (82–88), rank 1 | 12.0 s | $0.050 |
+| **Orion Max** | 85 (82–88) | 12.0 s | $0.050 |
 
 Why each model scored as it did gives, for each model, its strengths, where it gained and lost points, its flags and the hypotheses about it.
 
@@ -52,7 +52,7 @@ The terms the summary and the conclusions use, each in plain words. A term is al
 
 ## Why each model scored as it did
 
-**Orion Max**: Intelligence 85 (82–88), rank 1.
+**Orion Max**: Intelligence 85 (82–88).
 
 - *Strengths:* None ranked first or second.
 - *Gained points on:* Not measured with fewer than 3 models.
@@ -94,11 +94,9 @@ One run per suite on each side limits what this design can decide; the next runs
 
 ## Evidence: intelligence
 
-| Model | Intelligence Index | 95% interval | Rank | Critical errors |
-|---|---|---|---|---|
-| **Orion Max** | 85 | 82–88 | 1 | 0 of 6 answers |
-
-*A rank shown as a span, such as 5–9 (tied), is a tied rank: the model's 95% interval (the range the true value most likely lies in) overlaps others', so its rank is the span of places the interval allows. Interval bounds are rounded to whole numbers, so two intervals printed as touching may not overlap; ranks use the unrounded bounds.*
+| Model | Intelligence Index | 95% interval | Critical errors |
+|---|---|---|---|
+| **Orion Max** | 85 | 82–88 | 0 of 6 answers |
 
 | Model | Accuracy | Completeness | Conciseness | Readability |
 |---|---|---|---|---|
@@ -495,7 +493,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 - **Runs per suite:** How many times a model answered every question of a suite. With one run per suite, the data cannot show whether a result would repeat.
 - **Scoring levels:** Each dimension is graded on a fixed scale of levels, each described by the answer behavior that earns it (behaviorally anchored levels). Each level stands for a fixed score.
 - **Suite:** A fixed set of benchmark questions, each with its rubric. A run answers every question of one suite once.
-- **Tied rank:** When a model's 95% interval overlaps others', the data cannot fix its place, so its rank is the span of places the interval allows, such as 5–9 (tied). The span starts one place below the models whose intervals lie wholly above its own and ends one place above those whose intervals lie wholly below it.
 - **Time to first token:** The seconds from sending a request to the first word of the reply. For reasoning models it is mostly the time the model spends thinking before it answers.
 - **Tokens:** The pieces of text, roughly three quarters of a word each, that a model reads and writes; providers price by them. Uncached input is text read at the full price. Cache reads are input stored from an earlier call and charged less; cache writes store it. Visible output is the answer, and reasoning is the model's hidden thinking, billed as output; a provider that does not report it separately counts it inside output.
 - **Tool round:** One cycle in which the model calls a tool, such as the wiki search, reads its result and continues. Each round adds a model call, with its own wait for the first token.

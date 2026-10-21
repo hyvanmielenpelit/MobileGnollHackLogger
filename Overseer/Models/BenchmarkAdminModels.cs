@@ -3,6 +3,7 @@ namespace Overseer.Models;
 using System;
 using System.Collections.Generic;
 using MobileGnollHackLogger.Data;
+using Overseer.Services.Benchmarking;
 
 public class BenchmarkSuiteDto
 {
@@ -128,6 +129,9 @@ public class BenchmarkQuestionDto
     public int? AssessedDifficultyMaxOutputTokensUsed { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime ModifiedAtUtc { get; set; }
+
+    /// <summary>The question's gold evidence units; null when none is recorded.</summary>
+    public List<BenchmarkEvidenceUnit>? Evidence { get; set; }
 }
 
 public class CreateBenchmarkQuestionRequest
@@ -155,6 +159,12 @@ public class ImportBenchmarkQuestionItem
     /// <summary>Applied only when <see cref="ReplaceExpectedPoints"/> is true; empty clears the rubric.</summary>
     public string? ExpectedPoints { get; set; }
     public bool ReplaceExpectedPoints { get; set; }
+
+    /// <summary>
+    /// Null keeps the current evidence; an empty list clears it. Evidence is metadata: writing it
+    /// bumps no item revision.
+    /// </summary>
+    public List<BenchmarkEvidenceUnit>? Evidence { get; set; }
 }
 
 public class ImportBenchmarkQuestionsRequest
@@ -334,6 +344,19 @@ public class StartBenchmarkRunRequest
     /// setting on receives. Snapshotted onto the run with the other prompt options.
     /// </summary>
     public bool? AllowSourceCodeReferences { get; set; }
+
+    /// <summary>
+    /// Optional. The information condition the candidate answers under, by wire name:
+    /// <c>production</c> (null means the same), <c>sourceOnly</c> or <c>closedBook</c>. A
+    /// non-production run is analyzed against a production run as a condition contrast.
+    /// </summary>
+    public string? InformationCondition { get; set; }
+
+    /// <summary>
+    /// Optional. The name of a benchmark-only instruction variant; null runs production
+    /// instructions.
+    /// </summary>
+    public string? InstructionVariant { get; set; }
 
     /// <summary>
     /// How many times to execute this identical request, strictly one at a time. <c>1</c> — the
@@ -580,6 +603,13 @@ public class BenchmarkRunAnswerDto
     /// </summary>
     public long? BenchmarkQuestionId { get; set; }
     public int? ItemRevisionUsed { get; set; }
+
+    /// <summary>
+    /// The answer's Evidence Reach class (<c>GroundedCorrect</c>, <c>NavigationFailure</c>, …),
+    /// computed from its tool-call rows against the question's gold evidence. Null when the
+    /// question has no evidence.
+    /// </summary>
+    public string? EvidenceReach { get; set; }
 
     public int OrderIndex { get; set; }
     public string QuestionText { get; set; } = string.Empty;
@@ -1209,6 +1239,15 @@ public class BenchmarkRunDetailDto : IProviderAvailabilityCardDto
     public string? KnowledgeBaseHeadSha { get; set; }
     public string? WikiHeadSha { get; set; }
     public string? SourceCodeHeadSha { get; set; }
+
+    /// <summary>The information condition's wire name; null for production.</summary>
+    public string? InformationCondition { get; set; }
+
+    /// <summary>The wiki's declared corpus condition (<c>condition:label</c>); null for the live wiki.</summary>
+    public string? CorpusCondition { get; set; }
+
+    /// <summary>The instruction variant as <c>name:hash12</c>; null for production instructions.</summary>
+    public string? InstructionVariant { get; set; }
 
     /// <summary>The default-suite key the run's suite carried at launch; null for a custom suite or an older run.</summary>
     public string? DefaultSuiteKeyUsed { get; set; }
@@ -2077,6 +2116,15 @@ public class BenchmarkRunSummaryDto : IProviderAvailabilityCardDto
     public string? WikiHeadSha { get; set; }
     public string? SourceCodeHeadSha { get; set; }
 
+    /// <summary>The information condition's wire name; null for production.</summary>
+    public string? InformationCondition { get; set; }
+
+    /// <summary>The wiki's declared corpus condition (<c>condition:label</c>); null for the live wiki.</summary>
+    public string? CorpusCondition { get; set; }
+
+    /// <summary>The instruction variant as <c>name:hash12</c>; null for production instructions.</summary>
+    public string? InstructionVariant { get; set; }
+
     public decimal? EstimatedCost { get; set; }
 
     /// <summary>The candidate's own share of <see cref="EstimatedCost"/>. Null when pricing is incomplete.</summary>
@@ -2408,4 +2456,17 @@ public class BenchmarkRunBoardDto
     public string? DigestText { get; set; }
     public int CharCount { get; set; }
     public string Sha256 { get; set; } = string.Empty;
+}
+
+/// <summary>One benchmark-only instruction variant as the launcher lists it.</summary>
+public class BenchmarkInstructionVariantDto
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string? Extends { get; set; }
+    /// <summary>The first 12 hex characters of the variant's content hash; null when invalid.</summary>
+    public string? HashPrefix { get; set; }
+    public bool IsValid { get; set; }
+    /// <summary>Why the variant is not selectable; null when valid.</summary>
+    public string? InvalidReason { get; set; }
 }

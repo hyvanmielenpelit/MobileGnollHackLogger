@@ -528,9 +528,10 @@ public class BenchmarkSeriesOrchestrator
         }
 
         var benchmarkService = services.GetRequiredService<BenchmarkService>();
+        var switches = BenchmarkRunLauncher.ResolvePromptSwitches(request);
         var current = await benchmarkService.ComputeCurrentInstrumentFingerprintAsync(
-            db, request.SuiteId, request.TestedModelConfigurationId, request.VerboseMode ?? false,
-            request.AllowSourceCodeReferences ?? false, ct);
+            db, request.SuiteId, request.TestedModelConfigurationId, switches.VerboseMode,
+            switches.AllowSourceCodeReferences, ct, switches.InformationCondition, switches.InstructionVariant);
 
         if (current == null) return Array.Empty<string>();
 

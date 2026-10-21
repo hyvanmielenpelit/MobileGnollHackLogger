@@ -706,9 +706,10 @@ public class BenchmarkModelBatchOrchestrator
         CancellationToken ct)
     {
         var benchmarkService = services.GetRequiredService<BenchmarkService>();
-        var (verboseMode, allowSourceCodeReferences) = BenchmarkRunLauncher.ResolvePromptSwitches(template);
+        var switches = BenchmarkRunLauncher.ResolvePromptSwitches(template);
         return benchmarkService.ComputeCurrentInstrumentFingerprintAsync(
-            db, suiteId, testedModelConfigurationId, verboseMode, allowSourceCodeReferences, ct);
+            db, suiteId, testedModelConfigurationId, switches.VerboseMode, switches.AllowSourceCodeReferences, ct,
+            switches.InformationCondition, switches.InstructionVariant);
     }
 
     private static BenchmarkModelBatchChildState Ended(BenchmarkModelBatchMemberStatus status, string error)

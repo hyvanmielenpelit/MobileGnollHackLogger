@@ -25,6 +25,14 @@ namespace Overseer.Services
         
         [JsonPropertyName("message")]
         public string? Message { get; set; }
+
+        /// <summary>
+        /// The functions referencing the entry's constant, from <see cref="SourceReferenceIndex"/>;
+        /// set only under a benchmark variant's <c>stats_referenced_by</c> experiment.
+        /// </summary>
+        [JsonPropertyName("referenced_by")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<string>? ReferencedBy { get; set; }
     }
 
     public class MonsterStats

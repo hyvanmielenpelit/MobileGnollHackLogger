@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
+using Overseer.Services.Benchmarking;
 using Xunit;
 
 /// <summary>
@@ -255,5 +256,187 @@ public class AdminBenchmarkQuestionImportTests
 
         Assert.Equal(1, dto.CreatedCount);
         Assert.Null(dto.BoardFactsCheck);
+    }
+
+    // --- Gold evidence ------------------------------------------------------------------------
+
+    private const string HumanEvidenceJson = "[{\"kind\":\"wiki\",\"path\":\"Races/Human.md\",\"personal\":true}]";
+
+    private static List<BenchmarkEvidenceUnit> HumanEvidence() => new()
+    {
+        new() { Kind = BenchmarkEvidenceUnit.WikiKind, Path = "Races/Human.md", Personal = true }
+    };
+
+    [Fact]
+    public async Task EvidenceOnlyImport_StoresTheEvidence_AndKeepsRevisionAssessmentAndReviewMark()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+        var (suite, _, _, _) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+        var q = suite.Questions.Single();
+        q.ExpectedPoints = "- the rubric";
+        q.ReviewedAtRevision = 1;
+        await db.SaveChangesAsync(ct);
+
+        var dto = ReadResult(await controller.ImportQuestions(suite.Id, new ImportBenchmarkQuestionsRequest
+        {
+            Items = { new() { QuestionId = q.Id, Evidence = HumanEvidence() } }
+        }, ct));
+
+        Assert.Equal(1, dto.ReplacedCount);
+        Assert.Equal(0, dto.UnchangedCount);
+        var unit = Assert.Single(dto.Questions.Single().Evidence!);
+        Assert.Equal("Races/Human.md", unit.Path);
+        Assert.True(unit.Personal);
+
+        var stored = await db.BenchmarkQuestions.AsNoTracking().SingleAsync(x => x.Id == q.Id, ct);
+        Assert.Equal(HumanEvidenceJson, stored.EvidenceJson);
+        Assert.Equal(1, stored.ItemRevision);
+        Assert.Equal(25, stored.AssessedDifficulty);
+        Assert.Equal(1, stored.ReviewedAtRevision);
+        Assert.Equal("- the rubric", stored.ExpectedPoints);
+        Assert.Equal("Q1", stored.QuestionText);
+    }
+
+    [Fact]
+    public async Task TheSameEvidenceAgain_IsUnchanged()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+        var (suite, _, _, _) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+        var q = suite.Questions.Single();
+        q.EvidenceJson = HumanEvidenceJson;
+        await db.SaveChangesAsync(ct);
+
+        var dto = ReadResult(await controller.ImportQuestions(suite.Id, new ImportBenchmarkQuestionsRequest
+        {
+            Items = { new() { QuestionId = q.Id, Evidence = HumanEvidence() } }
+        }, ct));
+
+        Assert.Equal(1, dto.UnchangedCount);
+        Assert.Equal(0, dto.ReplacedCount);
+    }
+
+    [Fact]
+    public async Task NullEvidenceKeeps_AndAnEmptyListClears_WithoutARevisionBump()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+        var (suite, _, _, _) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+        var q = suite.Questions.Single();
+        q.EvidenceJson = HumanEvidenceJson;
+        await db.SaveChangesAsync(ct);
+
+        var kept = ReadResult(await controller.ImportQuestions(suite.Id, new ImportBenchmarkQuestionsRequest
+        {
+            Items = { new() { QuestionId = q.Id, QuestionText = "Q1", Evidence = null } }
+        }, ct));
+        Assert.Equal(1, kept.UnchangedCount);
+        Assert.Equal(HumanEvidenceJson, (await db.BenchmarkQuestions.AsNoTracking().SingleAsync(x => x.Id == q.Id, ct)).EvidenceJson);
+
+        var cleared = ReadResult(await controller.ImportQuestions(suite.Id, new ImportBenchmarkQuestionsRequest
+        {
+            Items = { new() { QuestionId = q.Id, Evidence = new List<BenchmarkEvidenceUnit>() } }
+        }, ct));
+        Assert.Equal(1, cleared.ReplacedCount);
+        Assert.Null(cleared.Questions.Single().Evidence);
+        var stored = await db.BenchmarkQuestions.AsNoTracking().SingleAsync(x => x.Id == q.Id, ct);
+        Assert.Null(stored.EvidenceJson);
+        Assert.Equal(1, stored.ItemRevision);
+        Assert.Equal(25, stored.AssessedDifficulty);
+    }
+
+    [Fact]
+    public async Task ChangedRubricWithEvidence_BumpsItemRevision_AndStoresTheEvidence()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+        var (suite, _, _, _) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+        var q = suite.Questions.Single();
+
+        var dto = ReadResult(await controller.ImportQuestions(suite.Id, new ImportBenchmarkQuestionsRequest
+        {
+            Items = { new() { QuestionId = q.Id, ExpectedPoints = "- new rubric", ReplaceExpectedPoints = true, Evidence = HumanEvidence() } }
+        }, ct));
+
+        Assert.Equal(1, dto.ReplacedCount);
+        var stored = await db.BenchmarkQuestions.AsNoTracking().SingleAsync(x => x.Id == q.Id, ct);
+        Assert.Equal(2, stored.ItemRevision);
+        Assert.Null(stored.AssessedDifficulty);
+        Assert.Equal("- new rubric", stored.ExpectedPoints);
+        Assert.Equal(HumanEvidenceJson, stored.EvidenceJson);
+    }
+
+    [Fact]
+    public async Task ANewQuestion_IsCreatedWithItsEvidence()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+        var (suite, _, _, _) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+
+        var dto = ReadResult(await controller.ImportQuestions(suite.Id, new ImportBenchmarkQuestionsRequest
+        {
+            Items = { new() { QuestionText = "New", Evidence = HumanEvidence() } }
+        }, ct));
+
+        Assert.Equal(1, dto.CreatedCount);
+        var created = await db.BenchmarkQuestions.AsNoTracking().SingleAsync(x => x.BenchmarkSuiteId == suite.Id && x.QuestionText == "New", ct);
+        Assert.Equal(HumanEvidenceJson, created.EvidenceJson);
+        Assert.Equal(1, created.ItemRevision);
+    }
+
+    [Fact]
+    public async Task InvalidEvidence_Returns400_AndWritesNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+        var (suite, _, _, _) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+        var q = suite.Questions.Single();
+
+        var result = await controller.ImportQuestions(suite.Id, new ImportBenchmarkQuestionsRequest
+        {
+            Items =
+            {
+                new() { QuestionText = "Would be created" },
+                new()
+                {
+                    QuestionId = q.Id,
+                    ExpectedPoints = "- would be replaced",
+                    ReplaceExpectedPoints = true,
+                    Evidence = new List<BenchmarkEvidenceUnit> { new() { Kind = BenchmarkEvidenceUnit.WikiKind, Path = "Races\\Human.md" } }
+                }
+            }
+        }, ct);
+
+        var bad = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal($"Question {q.Id}: Evidence unit 1: path 'Races\\Human.md' must be repository-relative with forward slashes.", bad.Value);
+        Assert.Equal(1, await db.BenchmarkQuestions.CountAsync(x => x.BenchmarkSuiteId == suite.Id, ct));
+        var stored = await db.BenchmarkQuestions.AsNoTracking().SingleAsync(x => x.Id == q.Id, ct);
+        Assert.Null(stored.EvidenceJson);
+        Assert.Null(stored.ExpectedPoints);
+    }
+
+    [Fact]
+    public async Task InvalidEvidenceOnANewQuestion_Returns400WithoutAQuestionId()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+        var (suite, _, _, _) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+
+        var result = await controller.ImportQuestions(suite.Id, new ImportBenchmarkQuestionsRequest
+        {
+            Items =
+            {
+                new()
+                {
+                    QuestionText = "New",
+                    Evidence = new List<BenchmarkEvidenceUnit> { new() { Kind = BenchmarkEvidenceUnit.WikiKind, Path = "Races/Human.md", Lines = "1-5" } }
+                }
+            }
+        }, ct);
+
+        var bad = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("Evidence unit 1: lines apply to source units only.", bad.Value);
+        Assert.Equal(1, await db.BenchmarkQuestions.CountAsync(x => x.BenchmarkSuiteId == suite.Id, ct));
     }
 }

@@ -22,12 +22,16 @@ using Overseer.Services.Benchmarking.RootCause;
 /// <item><c>rcaDigest.axis.&lt;axis&gt;</c>: each axis's status, its best hypothesis and that hypothesis' grade.</item>
 /// <item><c>rcaDigest.hypothesis.&lt;n&gt;</c>: the top hypotheses of each axis, at most <see cref="MaxHypothesesPerAxis"/> in
 /// a run or battery document and <see cref="MaxComparisonHypothesesPerAxis"/> in a comparison, best grade first, each with
-/// its grade and locus; a ruled-out one reads as ruled out.</item>
+/// its grade; a ruled-out one reads as ruled out.</item>
 /// <item><c>rcaDigest.lead.&lt;n&gt;</c>: at most <see cref="MaxLeads"/> of the writer's own hypotheses, each an untested lead.</item>
 /// <item><c>rcaDigest.nextRun.&lt;n&gt;</c> and <c>rcaDigest.check.&lt;n&gt;</c>: at most <see cref="MaxNextRuns"/> next runs, with
 /// their purpose, and at most <see cref="MaxChecks"/> checks, in code's order.</item>
 /// <item><c>rcaDigest.limits</c>: the control limit and the replicate limit in one sentence.</item>
 /// </list>
+///
+/// <para>The items are plain language: a hypothesis' reference token (<c>rca.hypothesis.&lt;id&gt;.ref</c>), which prints a
+/// bare id, is left out with the parentheses around it, and a statement drops its analyst scope gloss
+/// (<see cref="ScopeGlosses"/>).</para>
 ///
 /// <para>Each fact's raw value says what the item is: an axis' status, a hypothesis' grade, <see cref="LeadValue"/> for a
 /// lead, a run's or a check's number, so the validator can ask for a hedge beside a lead or a Low grade. The digest's text
@@ -56,7 +60,31 @@ public sealed class BenchmarkRootCauseDigest
     public const int MaxNextRuns = 2;
     public const int MaxChecks = 2;
 
+    /// <summary>
+    /// The scope glosses a within-model hypothesis' statement carries for the Root Cause Analysis' own tables, each
+    /// directly before the statement's period; the digest leaves them out.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> ScopeGlosses = new[]
+    {
+        " (where its points go, not a comparison)",
+        " (where its time goes, not a comparison)",
+        " (where its cost goes, not a comparison)"
+    };
+
     private static readonly Regex TokenRegex = new(@"\{\{([^{}]+)\}\}", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>What a hypothesis' reference token resolves to before it is removed; a private-use character no prose holds.</summary>
+    private const char RefSentinel = '\uE000';
+
+    /// <summary>
+    /// A parenthesized group holding only reference sentinels, dashes, commas, slashes and whitespace, with the whitespace
+    /// before it: <c> (WS3.1)</c>, <c> (WQ1.1–WQ1.3)</c>.
+    /// </summary>
+    private static readonly Regex RefGroupRegex = new(
+        @"\s*\([\s,/\-\u2010-\u2015]*\uE000[\uE000\s,/\-\u2010-\u2015]*\)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>A reference sentinel outside parentheses, with the whitespace before it.</summary>
+    private static readonly Regex RefSentinelRegex = new(@"\s*\uE000", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private BenchmarkRootCauseDigest(long documentId, List<BenchmarkReportFact> facts)
     {
@@ -205,21 +233,31 @@ public sealed class BenchmarkRootCauseDigest
 
         string what = !string.IsNullOrWhiteSpace(best.ShortStatement) ? best.ShortStatement
             : !string.IsNullOrWhiteSpace(best.Label) ? best.Label
-            : best.Statement;
+            : WithoutScopeGloss(best.Statement);
         string grade = best.PriceEffect ? RootCauseGrades.PriceCardWord.ToLowerInvariant() : "graded " + RootCauseGrades.Display(best.Grade);
         return head + " — " + LowerFirst(Trim(what)) + " (" + grade + ").";
     }
 
     /// <summary>
-    /// <c>Speed: the model makes more tool rounds — graded Moderate, locus chat.</c>; a ruled-out one
-    /// <c>Speed, ruled out: … — graded Not supported, locus model.</c>
+    /// <c>Speed: the model makes more tool rounds, graded Moderate.</c>; a ruled-out one
+    /// <c>Speed, ruled out: …, graded Not supported.</c>
     /// </summary>
     internal static string HypothesisSentence(RootCauseHypothesis h)
     {
         bool ruledOut = h.Grade == RootCauseGrades.NotSupported;
         string head = RootCauseAxes.Name(h.Axis) + (ruledOut ? ", ruled out: " : ": ");
-        string locus = string.IsNullOrWhiteSpace(h.Locus) ? string.Empty : ", locus " + h.Locus.Trim();
-        return head + LowerFirst(Trim(h.Statement)) + " — graded " + RootCauseGrades.Display(h.Grade) + locus + ".";
+        return head + LowerFirst(Trim(WithoutScopeGloss(h.Statement))) + ", graded " + RootCauseGrades.Display(h.Grade) + ".";
+    }
+
+    /// <summary><paramref name="statement"/> without any of the <see cref="ScopeGlosses"/>.</summary>
+    internal static string WithoutScopeGloss(string? statement)
+    {
+        string text = statement ?? string.Empty;
+        foreach (string gloss in ScopeGlosses)
+        {
+            text = text.Replace(gloss, string.Empty, StringComparison.Ordinal);
+        }
+        return text;
     }
 
     /// <summary>The control limit and the replicate limit in one sentence.</summary>
@@ -239,7 +277,8 @@ public sealed class BenchmarkRootCauseDigest
     /// <summary>
     /// <paramref name="text"/> with every token resolved: a fact token to its display (<c>not available</c> without one),
     /// <c>{{subject}}</c> to <paramref name="subject"/> (<c>the model under test</c> when null), <c>{{peer:X}}</c> and
-    /// <c>{{model:X}}</c> to <c>Model X</c>; the first letter capitalized.
+    /// <c>{{model:X}}</c> to <c>Model X</c>; a hypothesis' <c>.ref</c> token removed, with any parentheses that held only
+    /// such tokens (<see cref="RefGroupRegex"/>); the first letter capitalized.
     /// </summary>
     internal static string ResolveTokens(string? text, IReadOnlyDictionary<string, BenchmarkReportFact> facts, string? subject = null)
     {
@@ -250,8 +289,10 @@ public sealed class BenchmarkRootCauseDigest
             if (key == "subject") return string.IsNullOrWhiteSpace(subject) ? "the model under test" : subject;
             if (key.StartsWith("peer:", StringComparison.Ordinal)) return "Model " + key[5..].Trim();
             if (key.StartsWith("model:", StringComparison.Ordinal)) return "Model " + key[6..].Trim();
+            if (RootCauseClaimSupport.HypothesisPrefixOf(key) is string prefix && key == prefix + "ref") return RefSentinel.ToString();
             return facts.TryGetValue(key, out var fact) && fact.Available ? fact.Display : BenchmarkReportFacts.NotAvailable;
         });
+        resolved = RefSentinelRegex.Replace(RefGroupRegex.Replace(resolved, string.Empty), string.Empty);
         resolved = Regex.Replace(resolved.Replace("\r\n", " ").Replace('\n', ' ').Replace('\r', ' '), @"\s{2,}", " ").Trim();
         return resolved.Length > 0 && char.IsLower(resolved[0]) ? char.ToUpperInvariant(resolved[0]) + resolved[1..] : resolved;
     }

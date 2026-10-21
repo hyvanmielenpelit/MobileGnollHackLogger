@@ -25,12 +25,15 @@ import { kindDescription, pairedErrorText } from '../shared/paired-test/paired-t
 import { PairedTestResultComponent } from '../shared/paired-test/paired-test-result.component';
 
 /** The kinds a baseline can make with this run, in the order the select groups them. */
-const KIND_ORDER: readonly BenchmarkPairKind[] = ['ModelComparison', 'Verification', 'Replicate'];
+const KIND_ORDER: readonly BenchmarkPairKind[] =
+  ['ModelComparison', 'Verification', 'Replicate', 'ConditionContrast', 'VariantContrast'];
 
 const KIND_GROUP_LABELS: Readonly<Record<BenchmarkPairKind, string>> = {
   ModelComparison: 'Model comparison',
   Verification: 'Verification of a change',
-  Replicate: 'Replicate'
+  Replicate: 'Replicate',
+  ConditionContrast: 'Condition contrast',
+  VariantContrast: 'Variant contrast'
 };
 
 /** One baseline the select offers. */
@@ -66,8 +69,9 @@ export function runPairedOptionLabel(run: BenchmarkRunSummaryDto): string {
  * The run report's **Paired Test** tab: this run (the treatment) against another finished run on the
  * same suite, on every measure — the Intelligence Index first, then the quality dimensions, speed and
  * cost — as one unadjusted pair. The baselines are grouped by the kind of comparison they would make
- * (model comparison, verification of a change, replicate), which the server decides from the
- * comparability keys; a run that is not comparable is left out and counted.
+ * (model comparison, verification of a change, replicate, condition contrast, variant contrast),
+ * which the server decides from the comparability keys; a run that is not comparable is left out and
+ * counted.
  *
  * The kinds are fetched when the tab is first shown for a run; Compare fetches the result.
  */
