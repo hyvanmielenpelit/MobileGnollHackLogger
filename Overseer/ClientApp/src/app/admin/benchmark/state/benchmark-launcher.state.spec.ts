@@ -1028,7 +1028,7 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
     expect(variants).toHaveBeenCalledTimes(1);
     expect(launcher.validInstructionVariants.map(v => v.name)).toEqual(['cite-first']);
     expect(launcher.instructionVariant).toBeNull();
-    expect(launcher.restoreNotes).toEqual([expect.stringContaining('Instruction Variant: broken')]);
+    expect(launcher.restoreNotes).toEqual([expect.stringContaining('Experimental Changes: broken is no longer available')]);
     expect(stored().instructionVariant).toBeNull();
   });
 
@@ -1069,6 +1069,18 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
     expect(launcher.informationCondition).toBe('closedBook');
   });
 
+  it('keeps the current Tool Access, with a note, for a condition the launcher does not offer', () => {
+    loadPage();
+    launcher.informationCondition = 'sourceOnly';
+
+    launcher.prefillFromRun(run({ informationCondition: 'oracle' }));
+
+    expect(launcher.informationCondition).toBe('sourceOnly');
+    expect(launcher.prefillResult!.notes).toEqual([
+      'Tool Access: the run used oracle, which this launcher does not offer, so the current choice was kept.'
+    ]);
+  });
+
   it('repeats no variant, with a note, when the catalog no longer lists the run\'s as valid', () => {
     loadPage();
     launcher.loadInstructionVariants();
@@ -1077,7 +1089,7 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
     launcher.prefillFromRun(run({ instructionVariant: 'broken:0123456789ab' }));
 
     expect(launcher.instructionVariant).toBeNull();
-    expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Instruction Variant: broken')]);
+    expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Experimental Changes: broken is no longer available')]);
   });
 
   it('checks a repeated variant once the catalog arrives, when it arrives later', () => {
@@ -1089,6 +1101,6 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
     launcher.loadInstructionVariants();
 
     expect(launcher.instructionVariant).toBeNull();
-    expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Instruction Variant: gone')]);
+    expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Experimental Changes: gone is no longer available')]);
   });
 });

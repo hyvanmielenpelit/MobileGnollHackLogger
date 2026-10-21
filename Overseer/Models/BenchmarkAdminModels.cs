@@ -2475,4 +2475,56 @@ public class BenchmarkInstructionVariantDto
     public bool IsValid { get; set; }
     /// <summary>Why the variant is not selectable; null when valid.</summary>
     public string? InvalidReason { get; set; }
+    /// <summary>The experimental tools the candidate is offered, a parent's included.</summary>
+    public List<string> ExperimentalTools { get; set; } = new();
+    /// <summary>The tool-output switches the variant turns on, a parent's included.</summary>
+    public List<string> Experiments { get; set; } = new();
+    /// <summary>The production tools whose description the variant replaces, in ordinal order.</summary>
+    public List<string> RewordedTools { get; set; } = new();
+    /// <summary>Whether the variant appends text to the system prompt.</summary>
+    public bool HasPromptAppendix { get; set; }
+    /// <summary>The <see cref="RewordedTools"/> that Source code only withholds, so their rewording never reaches the candidate there.</summary>
+    public List<string> RewordingsWithheldUnderSourceOnly { get; set; } = new();
+
+    /// <summary>The launcher's view of <paramref name="variant"/>; the content lists are empty when it is invalid.</summary>
+    public static BenchmarkInstructionVariantDto From(BenchmarkInstructionVariant variant)
+    {
+        var context = variant.Context;
+        var experimentalTools = new List<string>(context?.ExperimentalTools ?? Array.Empty<string>());
+        var rewordedTools = new List<string>();
+        var withheld = new List<string>();
+        foreach (string tool in context?.ToolGuides.Keys ?? (IEnumerable<string>)Array.Empty<string>())
+        {
+            if (!experimentalTools.Contains(tool))
+            {
+                rewordedTools.Add(tool);
+            }
+        }
+        rewordedTools.Sort(StringComparer.Ordinal);
+        foreach (string tool in rewordedTools)
+        {
+            foreach (string excluded in BenchmarkInformationConditions.SourceOnlyExcludedTools)
+            {
+                if (string.Equals(tool, excluded, StringComparison.OrdinalIgnoreCase))
+                {
+                    withheld.Add(tool);
+                    break;
+                }
+            }
+        }
+        return new BenchmarkInstructionVariantDto
+        {
+            Name = variant.Name,
+            Description = variant.Description,
+            Extends = variant.Extends,
+            HashPrefix = context?.Hash[..Math.Min(12, context.Hash.Length)],
+            IsValid = variant.IsValid,
+            InvalidReason = variant.InvalidReason,
+            ExperimentalTools = experimentalTools,
+            Experiments = new List<string>(context?.Experiments ?? Array.Empty<string>()),
+            RewordedTools = rewordedTools,
+            HasPromptAppendix = !string.IsNullOrWhiteSpace(context?.Appendix),
+            RewordingsWithheldUnderSourceOnly = withheld
+        };
+    }
 }

@@ -538,44 +538,93 @@
           <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'sourceCodeReferences' }"></ng-container>
         </div>
 
+        <p class="setup-experiments-caption">
+          <strong>Experiment settings</strong> — Leave both at their defaults for a normal run. Change one
+          only to test what the AI's tools or instructions contribute.
+        </p>
+
         <div class="form-group">
-          <label for="candidateInformationCondition">Information Condition</label>
+          <label for="candidateInformationCondition">Tool Access</label>
           <div class="gh-field-row">
             <select id="candidateInformationCondition" class="gh-input"
                     [(ngModel)]="launcher.informationCondition" (ngModelChange)="onReuseInputsChanged()"
-                    [attr.aria-describedby]="launcher.informationCondition !== 'production' ? 'candidateInformationConditionHint candidateInformationConditionNote' : 'candidateInformationConditionHint'">
+                    [attr.aria-describedby]="informationConditionDescribedBy">
               @for (condition of informationConditionOptions; track condition.value) {
                 <option [ngValue]="condition.value">{{ condition.label }}</option>
               }
             </select>
-            <app-info-tip trigger="click" tipId="candidateInformationConditionHint" subject="Information Condition">
-              Which tools the candidate may use. Production gives it every tool the chat has; the other
-              conditions withhold some or all of them, to measure what they contribute.
+            <app-info-tip trigger="click" tipId="candidateInformationConditionHint" subject="Tool Access">
+              <p>Which sources the AI may look things up in while it answers.</p>
+              <dl>
+                @for (condition of informationConditionOptions; track condition.value) {
+                  <div>
+                    <dt>
+                      <span class="gh-info-term">{{ condition.name }}</span>
+                      @if (condition.isDefault) {
+                        <span class="gh-info-badge">Default</span>
+                      }
+                    </dt>
+                    <dd>{{ condition.hint }}</dd>
+                  </div>
+                }
+              </dl>
+              <p>Reports call this the information condition.</p>
             </app-info-tip>
           </div>
           @if (launcher.informationCondition !== 'production') {
-            <span id="candidateInformationConditionNote" class="form-hint">Not comparable with production runs; analyzed as a condition contrast.</span>
+            <span id="candidateInformationConditionNote" class="form-hint">{{ selectedCondition?.hint }}</span>
+            <p id="candidateInformationConditionWarning" class="gh-field-warning">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <span>Test run: its scores are not comparable with normal runs. Compare it only with a run that is
+                identical except for Tool Access, on the Paired Test tab of its report.</span>
+            </p>
           }
         </div>
 
         <div class="form-group">
-          <label for="candidateInstructionVariant">Instruction Variant</label>
+          <label for="candidateInstructionVariant">Experimental Changes</label>
           <div class="gh-field-row">
             <select id="candidateInstructionVariant" class="gh-input"
                     [(ngModel)]="launcher.instructionVariant" (ngModelChange)="onReuseInputsChanged()"
-                    [attr.aria-describedby]="launcher.instructionVariant !== null ? 'candidateInstructionVariantHint candidateInstructionVariantNote' : 'candidateInstructionVariantHint'">
-              <option [ngValue]="null">None — production instructions (production default)</option>
+                    [attr.aria-describedby]="instructionVariantDescribedBy">
+              <option [ngValue]="null">None — same as the live chat (default)</option>
               @for (variant of launcher.validInstructionVariants; track variant.name) {
                 <option [ngValue]="variant.name">{{ instructionVariantLabel(variant) }}</option>
               }
             </select>
-            <app-info-tip trigger="click" tipId="candidateInstructionVariantHint" subject="Instruction Variant">
-              Runs the candidate with a benchmark-only change to its instructions. The production chat
-              never uses one.
+            <app-info-tip trigger="click" tipId="candidateInstructionVariantHint" subject="Experimental Changes">
+              <p>A test-only change to the AI's tools or instructions, tried out before anyone decides to put
+                it into the live chat. The live chat never uses one. Choose None for a normal run; pick a
+                change to see what it does, and compare that run with one that differs only here.</p>
+              <p>Reports call this the instruction variant.</p>
             </app-info-tip>
           </div>
-          @if (launcher.instructionVariant !== null) {
-            <span id="candidateInstructionVariantNote" class="form-hint">Benchmark-only. Analyzed as a variant contrast against a run without it.</span>
+          @if (selectedVariant; as variant) {
+            <div id="candidateInstructionVariantSummary" class="variant-summary" role="group"
+                 aria-labelledby="candidateInstructionVariantSummaryTitle">
+              <p id="candidateInstructionVariantSummaryTitle" class="variant-summary-title">What {{ variant.name }} changes</p>
+              @if (selectedVariantLines.length > 0) {
+                <ul class="variant-summary-lines">
+                  @for (line of selectedVariantLines; track $index) {
+                    <li>@for (segment of line; track $index) {@if (segment.code) {<code>{{ segment.text }}</code>} @else {<span>{{ segment.text }}</span>}}</li>
+                  }
+                </ul>
+              }
+              @if (variant.description?.trim()) {
+                <p class="variant-summary-note"><em>Technical note:</em> {{ variant.description }}</p>
+              }
+              <p id="candidateInstructionVariantWarning" class="gh-field-warning">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                <span>Test only: the live chat never uses it. Compare this run only with a run that is identical
+                  except for Experimental Changes, on the Paired Test tab of its report.</span>
+              </p>
+            </div>
+            @if (selectedVariantConditionWarning; as conditionWarning) {
+              <p id="candidateInstructionVariantConditionWarning" class="gh-field-warning">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                <span>{{ conditionWarning }}</span>
+              </p>
+            }
           }
         </div>
       </fieldset>

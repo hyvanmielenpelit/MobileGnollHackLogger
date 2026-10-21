@@ -43,9 +43,13 @@ Implementation:
 
 | Condition (wire name) | Launcher label | What changes |
 |---|---|---|
-| Production (`production`) | *Production — all tools (production default)* | Nothing: the candidate gets `Benchmark:AllowedTools` and the production prompt. |
-| Source code only (`sourceOnly`) | *Source code only — no wiki, knowledge base or lookup tools* | The tools that read a wiki or the knowledge base are withheld, and the source-only notice ends the prompt. |
-| Closed book (`closedBook`) | *Closed book — no tools* | No tools at all; the prompt is built with `EnableToolUse = false`. |
+| Production (`production`) | *Production — every tool, as in the live chat (default)* | Nothing: the candidate gets `Benchmark:AllowedTools` and the production prompt. |
+| Source code only (`sourceOnly`) | *Source code only — no wikis, no knowledge base* | The tools that read a wiki or the knowledge base are withheld, and the source-only notice ends the prompt. |
+| Closed book (`closedBook`) | *Closed book — no tools, memory only* | No tools at all; the prompt is built with `EnableToolUse = false`. |
+
+The report's display names (`BenchmarkInformationConditions.DisplayName()`, § 1.4) are the earlier,
+longer texts — *Production — all tools (production default)*, *Source code only — no wiki, knowledge
+base or lookup tools*, *Closed book — no tools* — and the first words name the same condition.
 
 The candidate's tool list is `BenchmarkInformationConditions.ResolveAllowedTools(configured)`:
 
@@ -80,9 +84,16 @@ own requests keep reading `Benchmark:AllowedTools`: the verifier keeps the wiki.
 
 ### 1.2 The launcher
 
-The **Information Condition** select sits in the *Test Setup* fieldset of Run Benchmark, after
-**Source Code References**. Production is first and the default. For the other two a hint reads
-*"Not comparable with production runs; analyzed as a condition contrast."* The value travels in
+The launcher labels the field **Tool Access**; its info tip ends *"Reports call this the information
+condition."* It sits in the *Test Setup* fieldset of Run Benchmark, after **Source Code References**
+and an *Experiment settings* caption (*"Leave both at their defaults for a normal run. Change one only
+to test what the AI's tools or instructions contribute."*), above **Experimental Changes** (§ 6.4).
+Production is first and the default. The info tip lists the three conditions in plain words, Production
+with a *Default* badge (`BENCHMARK_INFORMATION_CONDITIONS` in `admin-benchmark.service.ts` holds the
+labels and the sentences). For the other two the condition's sentence shows under the select
+(`#candidateInformationConditionNote`), then a warning (`#candidateInformationConditionWarning`):
+*"Test run: its scores are not comparable with normal runs. Compare it only with a run that is
+identical except for Tool Access, on the Paired Test tab of its report."* The value travels in
 `StartBenchmarkRunRequest.InformationCondition`, so a model batch, a series and a battery template
 carry it; the launcher refuses an unknown value with *"Unknown information condition '<v>'."* *Repeat
 this run's setup* reads it back from the run's prompt options. A Root Cause Analysis recommendation
@@ -388,7 +399,7 @@ A variant is a folder `Overseer/BenchmarkVariants/<name>/`, copied to the build 
 | Field | Meaning |
 |---|---|
 | `name` | Equal to the folder name; lower-case kebab-case, at most 64 characters |
-| `description` | The launcher's label after the name |
+| `description` | The *Technical note* of the launcher's summary box (§ 6.4); one sentence |
 | `extends` | Another variant whose content this one starts from, or null |
 | `promptAppendix` | A Markdown file of the folder whose text ends the system prompt, or null |
 | `toolGuides` | Tool name → a file of the folder whose text replaces that tool's description for the candidate's requests |
@@ -441,11 +452,37 @@ benchmark question by itself is a wiki edit in disguise. The anti-overfitting ru
 - **Re-runs.** A re-run resolves the variant by the stamped name and refuses, *"The instruction variant
   '<name>' has changed since this run; re-run is not possible."*, when the variant is gone, invalid,
   or its hash no longer matches the stamp.
-- **The launcher.** The **Instruction Variant** select sits under **Information Condition**: *None —
-  production instructions (production default)*, then each valid variant as *<name> — <description>*,
-  with the hint *"Benchmark-only. Analyzed as a variant contrast against a run without it."* *Repeat
+- **The launcher.** The launcher labels the field **Experimental Changes**; its info tip ends *"Reports
+  call this the instruction variant."* It sits under **Tool Access** (§ 1.2): *None — same as the live
+  chat (default)*, then each valid variant as *<name> — <what it adds>*. The suffix and the summary
+  are derived from what the variant contains (`run-tab/instruction-variant-summary.ts`), never written
+  for it, so a new variant needs no launcher text and `variant.json` never has to change for the
+  launcher's sake (editing it would move the variant's hash):
+
+  | The variant | Suffix |
+  |---|---|
+  | adds a tool or an experiment, and has an appendix | *new tools and extra instructions* |
+  | adds a tool or an experiment only | *new tools* |
+  | has an appendix only | *extra instructions* |
+  | only replaces tool guides | *reworded tool descriptions* |
+  | none of these | the name alone |
+
+  With a variant chosen, a summary box (`#candidateInstructionVariantSummary`) is headed *What
+  <name> changes* and lists, in plain words, each experimental tool (*Adds a tool the live chat does not
+  have: race and role lookup.*), each experiment, the appendix, the reworded tool guides and the parent
+  (*Builds on source-tools-v1.*); a tool without a plain name shows its identifier as code. Then the
+  variant's `description` as a *Technical note*, and the warning *"Test only: the live chat never uses
+  it. Compare this run only with a run that is identical except for Experimental Changes, on the Paired
+  Test tab of its report."* When the Tool Access choice voids part of the variant, one more warning
+  (`#candidateInstructionVariantConditionWarning`) says so: under Closed book only the appendix applies,
+  or nothing does; under Source code only a reworded guide of a withheld tool does not apply. *Repeat
   this run's setup* strips the hash suffix and, when the catalog no longer lists the name as valid,
   chooses None and says so.
+- **The catalog endpoint.** Besides the name, description, parent, hash prefix, validity and reason,
+  each entry carries `experimentalTools` and `experiments` (a parent's included), `rewordedTools` (the
+  `toolGuides` keys that are not experimental tools), `hasPromptAppendix`, and
+  `rewordingsWithheldUnderSourceOnly` (the reworded tools Source code only withholds), all from the
+  resolved variant (`BenchmarkInstructionVariantDto.From`); the lists are empty for an invalid one.
 
 **Production never loads a variant.** `ToolExecutionContext.Variant` is null on every live-chat
 request and on every benchmark run whose variant is None, and such a request declares the same tools,

@@ -8044,8 +8044,8 @@ this section lists what changed.
 
 #### Information conditions, corpus conditions and gold evidence
 
-- **Information condition (C1).** The launcher's **Information Condition** (*Production*, *Source code
-  only*, *Closed book*) narrows the candidate's tool list through
+- **Information condition (C1).** The launcher's **Tool Access** field (*Production*, *Source code
+  only*, *Closed book*; reports call it the information condition) narrows the candidate's tool list through
   `BenchmarkInformationConditions.ResolveAllowedTools`. *Source code only* withholds the wiki,
   knowledge-base and lookup tools and appends a notice that overrides the prompt's instructions to
   consult them first; *Closed book* records `EnableToolUse = false` and offers no tools. The condition is
@@ -8071,8 +8071,8 @@ this section lists what changed.
 - **Variants.** `Overseer/BenchmarkVariants/<name>/variant.json` defines a benchmark-only bundle: a
   prompt appendix, replacement tool-guide texts, experimental tools and experiment switches, with one
   level of `extends`. `BenchmarkInstructionVariantCatalog` loads and validates the folders at startup;
-  `GET api/admin/benchmark/instruction-variants` lists them, and the launcher's **Instruction Variant**
-  offers the valid ones. A run stamps `BenchmarkRun.InstructionVariant` as `name:hash12`, and a re-run
+  `GET api/admin/benchmark/instruction-variants` lists them, and the launcher's **Experimental Changes**
+  field offers the valid ones. A run stamps `BenchmarkRun.InstructionVariant` as `name:hash12`, and a re-run
   refuses a variant whose hash has changed. Two variants ship: `source-tools-v1` (the experimental
   `get_character_info` and `referenced_by` in the stats tools, no new instruction prose) and
   `asker-profile-v1` (that, plus a generic procedure for questions about the player's own character).

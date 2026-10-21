@@ -105,6 +105,65 @@
   gap: 1rem;
 }
 
+// Test Setup: the caption over Tool Access and Experimental Changes, which most runs leave at their defaults.
+.setup-experiments-caption {
+  margin: 0;
+  padding-block-start: 1rem;
+  border-block-start: 1px solid var(--border-glass);
+  color: #aaa;
+  font-size: var(--text-secondary);
+  line-height: 1.45;
+
+  > strong {
+    color: #e4e4e7;
+    font-weight: 600;
+  }
+}
+
+// Experimental Changes: what the chosen variant changes, under its select.
+.variant-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-block-start: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: var(--text-secondary);
+  line-height: 1.45;
+
+  > p {
+    margin: 0;
+  }
+}
+
+.variant-summary-title {
+  color: #e4e4e7;
+  font-size: var(--text-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.variant-summary-lines {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  color: #ccc;
+
+  > li {
+    overflow-wrap: anywhere;
+  }
+
+  > li + li {
+    margin-block-start: 0.25rem;
+  }
+}
+
+.variant-summary-note {
+  color: #aaa;
+  overflow-wrap: anywhere;
+}
+
 .exec-fields,
 .exec-runs {
   display: flex;

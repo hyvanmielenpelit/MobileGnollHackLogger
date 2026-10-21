@@ -57,8 +57,18 @@ describe('AdminBenchmarkComponent', () => {
       expect(labels[1]).toMatch(/^Scoring Profile/);
       expect(labels[2]).toMatch(/^Response Style/);
       expect(labels[3]).toMatch(/^Source Code References/);
-      expect(labels[4]).toMatch(/^Information Condition/);
-      expect(labels[5]).toMatch(/^Instruction Variant/);
+      expect(labels[4]).toMatch(/^Tool Access/);
+      expect(labels[5]).toMatch(/^Experimental Changes/);
+
+      // The Experiment settings caption sits between Source Code References and Tool Access.
+      const fieldset = fixture.nativeElement.querySelector('.setup-group-test') as HTMLElement;
+      const children = Array.from(fieldset.children) as HTMLElement[];
+      const caption = fieldset.querySelector(':scope > .setup-experiments-caption') as HTMLElement;
+      const toolAccess = fieldset.querySelector('#candidateInformationCondition')!.closest('.form-group') as HTMLElement;
+      const sourceCodeReferences = fieldset.querySelector('#candidateSourceCodeReferences')!.closest('.form-group') as HTMLElement;
+      expect(caption.textContent).toContain('Experiment settings');
+      expect(children.indexOf(caption)).toBe(children.indexOf(sourceCodeReferences) + 1);
+      expect(children.indexOf(toolAccess)).toBe(children.indexOf(caption) + 1);
     });
 
     it('should lift the Model Under Test into a primary field above the setup groups', () => {
@@ -594,32 +604,46 @@ describe('AdminBenchmarkComponent', () => {
       expect(select.parentElement!.classList).toContain('gh-field-row');
     });
 
-    it('should offer the Information Condition, Production first and by default, with a note for the others', () => {
+    it('should offer Tool Access, Production first and by default, with a plain note and a warning for the others', () => {
       fixture.detectChanges();
 
       const select = card().querySelector('#candidateInformationCondition') as HTMLSelectElement;
       expect(select.closest('fieldset')).toBe(card().querySelector('#candidateSourceCodeReferences')!.closest('fieldset'));
       expect(Array.from(select.options).map(o => o.textContent?.trim())).toEqual([
-        'Production — all tools (production default)',
-        'Source code only — no wiki, knowledge base or lookup tools',
-        'Closed book — no tools'
+        'Production — every tool, as in the live chat (default)',
+        'Source code only — no wikis, no knowledge base',
+        'Closed book — no tools, memory only'
       ]);
       expect(ctx.launcher.informationCondition).toBe('production');
       expect(card().querySelector('#candidateInformationConditionNote')).toBeNull();
+      expect(card().querySelector('#candidateInformationConditionWarning')).toBeNull();
       expect(select.getAttribute('aria-describedby')).toBe('candidateInformationConditionHint');
+
+      const tip = card().querySelector('#candidateInformationConditionHint') as HTMLElement;
+      expect(Array.from(tip.querySelectorAll('dt .gh-info-term')).map(t => t.textContent?.trim()))
+        .toEqual(['Production', 'Source code only', 'Closed book']);
+      expect(Array.from(tip.querySelectorAll('dt .gh-info-badge')).map(b => b.textContent?.trim())).toEqual(['Default']);
+      expect(tip.textContent).toContain('Reports call this the information condition.');
 
       ctx.launcher.informationCondition = 'closedBook';
       ctx.refresh();
 
       expect(card().querySelector('#candidateInformationConditionNote')?.textContent)
-        .toBe('Not comparable with production runs; analyzed as a condition contrast.');
+        .toContain('the AI answers from what it already knows');
+      expect(card().querySelector('#candidateInformationConditionWarning')?.textContent?.replace(/\s+/g, ' ').trim())
+        .toBe('Test run: its scores are not comparable with normal runs. Compare it only with a run that is identical '
+          + 'except for Tool Access, on the Paired Test tab of its report.');
       expect(card().querySelector('#candidateInformationCondition')!.getAttribute('aria-describedby'))
-        .toBe('candidateInformationConditionHint candidateInformationConditionNote');
+        .toBe('candidateInformationConditionHint candidateInformationConditionNote candidateInformationConditionWarning');
     });
 
-    it('should offer None and each valid Instruction Variant from the catalog, with a note while one is chosen', () => {
+    it('should offer None and each valid Experimental Change, and say what the chosen one changes', () => {
       benchmarkServiceMock.getInstructionVariants.mockReturnValue(of([
-        { name: 'cite-first', description: 'Cite the page before answering', extends: null, hashPrefix: 'ab12cd34ef56', isValid: true },
+        {
+          name: 'cite-first', description: 'Cite the page before answering', extends: null, hashPrefix: 'ab12cd34ef56', isValid: true,
+          experimentalTools: ['get_character_info'], experiments: [], rewordedTools: ['wiki_search'],
+          hasPromptAppendix: true, rewordingsWithheldUnderSourceOnly: ['wiki_search']
+        },
         { name: 'broken', description: 'Does not parse', extends: null, hashPrefix: null, isValid: false, invalidReason: 'Bad file.' }
       ]));
       ctx.launcher.loadInstructionVariants();
@@ -627,17 +651,50 @@ describe('AdminBenchmarkComponent', () => {
 
       const select = card().querySelector('#candidateInstructionVariant') as HTMLSelectElement;
       expect(Array.from(select.options).map(o => o.textContent?.trim())).toEqual([
-        'None — production instructions (production default)',
-        'cite-first — Cite the page before answering'
+        'None — same as the live chat (default)',
+        'cite-first — new tools and extra instructions'
       ]);
       expect(ctx.launcher.instructionVariant).toBeNull();
-      expect(card().querySelector('#candidateInstructionVariantNote')).toBeNull();
+      expect(card().querySelector('#candidateInstructionVariantSummary')).toBeNull();
+      expect(select.getAttribute('aria-describedby')).toBe('candidateInstructionVariantHint');
+      expect(card().querySelector('#candidateInstructionVariantHint')?.textContent)
+        .toContain('Reports call this the instruction variant.');
 
       ctx.launcher.instructionVariant = 'cite-first';
       ctx.refresh();
 
-      expect(card().querySelector('#candidateInstructionVariantNote')?.textContent)
-        .toBe('Benchmark-only. Analyzed as a variant contrast against a run without it.');
+      const summary = card().querySelector('#candidateInstructionVariantSummary') as HTMLElement;
+      expect(summary.getAttribute('role')).toBe('group');
+      expect(summary.querySelector('#candidateInstructionVariantSummaryTitle')?.textContent?.trim()).toBe('What cite-first changes');
+      expect(Array.from(summary.querySelectorAll('li')).map(li => li.textContent?.trim())).toEqual([
+        'Adds a tool the live chat does not have: race and role lookup.',
+        'Adds extra instructions to the end of the AI\'s instructions.',
+        'Rewords the descriptions of: wiki search.'
+      ]);
+      expect(summary.querySelector('.variant-summary-note')?.textContent).toContain('Cite the page before answering');
+      expect(summary.querySelector('#candidateInstructionVariantWarning')?.textContent).toContain('Test only: the live chat never uses it.');
+      expect(card().querySelector('#candidateInstructionVariantConditionWarning')).toBeNull();
+      expect(card().querySelector('#candidateInstructionVariant')!.getAttribute('aria-describedby'))
+        .toBe('candidateInstructionVariantHint candidateInstructionVariantSummary');
+
+      ctx.launcher.informationCondition = 'closedBook';
+      ctx.refresh();
+
+      expect(card().querySelector('#candidateInstructionVariantConditionWarning')?.textContent?.trim())
+        .toBe('With Closed book the AI gets no tools, so only this change\'s extra instructions apply.');
+      expect(card().querySelector('#candidateInstructionVariant')!.getAttribute('aria-describedby'))
+        .toBe('candidateInstructionVariantHint candidateInstructionVariantSummary candidateInstructionVariantConditionWarning');
+
+      ctx.launcher.informationCondition = 'sourceOnly';
+      ctx.refresh();
+
+      expect(card().querySelector('#candidateInstructionVariantConditionWarning')?.textContent?.trim())
+        .toBe('With Source code only, its rewording of wiki search does not apply: that tool is switched off.');
+
+      ctx.launcher.informationCondition = 'production';
+      ctx.refresh();
+
+      expect(card().querySelector('#candidateInstructionVariantConditionWarning')).toBeNull();
     });
 
     it('should show the Second Opinion Mode reason while the mode is disabled', () => {

@@ -200,15 +200,7 @@ public class AdminBenchmarkController : ControllerBase
     public IActionResult GetInstructionVariants()
     {
         var dtos = _benchmarkService.ListInstructionVariants()
-            .Select(v => new BenchmarkInstructionVariantDto
-            {
-                Name = v.Name,
-                Description = v.Description,
-                Extends = v.Extends,
-                HashPrefix = v.Context?.Hash[..Math.Min(12, v.Context.Hash.Length)],
-                IsValid = v.IsValid,
-                InvalidReason = v.InvalidReason
-            })
+            .Select(BenchmarkInstructionVariantDto.From)
             .ToList();
         return Ok(dtos);
     }

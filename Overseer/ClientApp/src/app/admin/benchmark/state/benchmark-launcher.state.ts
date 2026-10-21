@@ -288,7 +288,7 @@ export class BenchmarkLauncherState implements OnDestroy {
     if (name == null || !this.instructionVariantsLoaded || this.validInstructionVariants.some(v => v.name === name)) {
       return null;
     }
-    return `Instruction Variant: ${name} is not listed as a valid variant now, so None (the production instructions) was chosen.`;
+    return `Experimental Changes: ${name} is no longer available, so None (the same as the live chat) was chosen.`;
   }
 
   /**
@@ -941,7 +941,7 @@ export class BenchmarkLauncherState implements OnDestroy {
     if (condition) {
       this.informationCondition = condition;
     } else {
-      notes.push(`Information Condition: ${String(recordedCondition)} is not one the launcher offers, so the current condition was kept.`);
+      notes.push(`Tool Access: the run used ${String(recordedCondition)}, which this launcher does not offer, so the current choice was kept.`);
     }
 
     const variant = BenchmarkLauncherState.instructionVariantName(run.instructionVariant);

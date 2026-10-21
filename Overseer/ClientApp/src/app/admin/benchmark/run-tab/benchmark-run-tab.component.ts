@@ -15,8 +15,15 @@ import {
   BenchmarkModelBatchLimitsDto,
   BenchmarkModelBatchRunDto,
   BENCHMARK_INFORMATION_CONDITIONS,
+  BenchmarkInformationConditionOption,
   BenchmarkInstructionVariantDto
 } from '../../../services/admin-benchmark.service';
+import {
+  VariantSummarySegment,
+  variantChangeLines,
+  variantConditionWarning,
+  variantOptionSuffix
+} from './instruction-variant-summary';
 import { SystemAiConfigDto } from '../../../services/admin.service';
 import { BenchmarkCompletionSoundKind, BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
 import {
@@ -666,10 +673,50 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
     this.launcher.refreshReusePreview();
   }
 
-  /** An Instruction Variant option: *name — description*, or the name alone. */
+  /** An Experimental Changes option: *name — what it adds*, or the name alone. */
   instructionVariantLabel(variant: BenchmarkInstructionVariantDto): string {
-    const description = (variant.description ?? '').trim();
-    return description ? `${variant.name} — ${description}` : variant.name;
+    const suffix = variantOptionSuffix(variant);
+    return suffix ? `${variant.name} — ${suffix}` : variant.name;
+  }
+
+  /** The Tool Access option chosen now. */
+  get selectedCondition(): BenchmarkInformationConditionOption | undefined {
+    return this.informationConditionOptions.find(c => c.value === this.launcher.informationCondition);
+  }
+
+  /** The valid variant chosen now; null for None. */
+  get selectedVariant(): BenchmarkInstructionVariantDto | null {
+    const name = this.launcher.instructionVariant;
+    return name == null ? null : this.launcher.validInstructionVariants.find(v => v.name === name) ?? null;
+  }
+
+  /** The lines of the *What <name> changes* box. */
+  get selectedVariantLines(): VariantSummarySegment[][] {
+    const variant = this.selectedVariant;
+    return variant ? variantChangeLines(variant) : [];
+  }
+
+  /** The line saying what the chosen Tool Access voids of the chosen variant; null when nothing. */
+  get selectedVariantConditionWarning(): string | null {
+    const variant = this.selectedVariant;
+    return variant ? variantConditionWarning(variant, this.launcher.informationCondition) : null;
+  }
+
+  /** The Tool Access select's `aria-describedby`. */
+  get informationConditionDescribedBy(): string {
+    return this.launcher.informationCondition !== 'production'
+      ? 'candidateInformationConditionHint candidateInformationConditionNote candidateInformationConditionWarning'
+      : 'candidateInformationConditionHint';
+  }
+
+  /** The Experimental Changes select's `aria-describedby`. */
+  get instructionVariantDescribedBy(): string {
+    if (!this.selectedVariant) {
+      return 'candidateInstructionVariantHint';
+    }
+    return this.selectedVariantConditionWarning
+      ? 'candidateInstructionVariantHint candidateInstructionVariantSummary candidateInstructionVariantConditionWarning'
+      : 'candidateInstructionVariantHint candidateInstructionVariantSummary';
   }
 
   /** A launcher field that shapes the battery request changed: Runs per Suite, the profile, the response style. */

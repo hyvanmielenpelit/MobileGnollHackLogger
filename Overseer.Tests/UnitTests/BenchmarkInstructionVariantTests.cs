@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using Overseer.Models;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Tools;
 using Xunit;
@@ -418,5 +419,48 @@ public sealed class BenchmarkInstructionVariantTests : IDisposable
 
         Assert.False(catalog.Find("source-tools-v1")!.IsValid);
         Assert.False(catalog.Find("asker-profile-v1")!.IsValid);
+    }
+
+    // -- The launcher's view ---------------------------------------------------------------------
+
+    [Fact]
+    public void TheShippedVariants_DescribeWhatTheyContain()
+    {
+        string shipped = Path.Combine(AppContext.BaseDirectory, "BenchmarkVariants");
+        Assert.SkipUnless(Directory.Exists(shipped), "BenchmarkVariants is not copied to the test output.");
+
+        var catalog = new BenchmarkInstructionVariantCatalog(shipped, Handlers, NullLogger.Instance);
+
+        var sourceTools = BenchmarkInstructionVariantDto.From(catalog.Find("source-tools-v1")!);
+        Assert.Equal(new[] { "get_character_info" }, sourceTools.ExperimentalTools);
+        Assert.Equal(new[] { BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment }, sourceTools.Experiments);
+        Assert.Equal(new[] { "get_artifact_stats", "get_item_stats", "get_monster_stats" }, sourceTools.RewordedTools);
+        Assert.False(sourceTools.HasPromptAppendix);
+        Assert.Empty(sourceTools.RewordingsWithheldUnderSourceOnly);
+        Assert.Equal(12, sourceTools.HashPrefix!.Length);
+
+        var askerProfile = BenchmarkInstructionVariantDto.From(catalog.Find("asker-profile-v1")!);
+        Assert.Equal(new[] { "get_character_info" }, askerProfile.ExperimentalTools);
+        Assert.Equal(new[] { BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment }, askerProfile.Experiments);
+        Assert.Equal(new[] { "get_artifact_stats", "get_item_stats", "get_monster_stats", "wiki_search" }, askerProfile.RewordedTools);
+        Assert.True(askerProfile.HasPromptAppendix);
+        Assert.Equal(new[] { "wiki_search" }, askerProfile.RewordingsWithheldUnderSourceOnly);
+        Assert.Equal("source-tools-v1", askerProfile.Extends);
+    }
+
+    [Fact]
+    public void AnInvalidVariant_DescribesNothing()
+    {
+        WriteVariant("empty-folder", null);
+
+        var dto = BenchmarkInstructionVariantDto.From(Catalog().Find("empty-folder")!);
+
+        Assert.False(dto.IsValid);
+        Assert.Null(dto.HashPrefix);
+        Assert.Empty(dto.ExperimentalTools);
+        Assert.Empty(dto.Experiments);
+        Assert.Empty(dto.RewordedTools);
+        Assert.False(dto.HasPromptAppendix);
+        Assert.Empty(dto.RewordingsWithheldUnderSourceOnly);
     }
 }

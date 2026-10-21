@@ -363,11 +363,44 @@ export type BenchmarkEvidenceReach =
 /** The information conditions a run can be made under; production is the default. */
 export type BenchmarkInformationCondition = 'production' | 'sourceOnly' | 'closedBook';
 
-/** The information conditions in launcher order, with their display names. */
-export const BENCHMARK_INFORMATION_CONDITIONS: readonly { value: BenchmarkInformationCondition; label: string }[] = [
-  { value: 'production', label: 'Production — all tools (production default)' },
-  { value: 'sourceOnly', label: 'Source code only — no wiki, knowledge base or lookup tools' },
-  { value: 'closedBook', label: 'Closed book — no tools' }
+/** One Tool Access option: its option text, its name, and what it gives the AI in plain words. */
+export interface BenchmarkInformationConditionOption {
+  value: BenchmarkInformationCondition;
+  label: string;
+  name: string;
+  hint: string;
+  isDefault: boolean;
+}
+
+/**
+ * The information conditions in launcher order. The names match the run report's display names;
+ * the report calls the field the information condition, the launcher Tool Access.
+ */
+export const BENCHMARK_INFORMATION_CONDITIONS: readonly BenchmarkInformationConditionOption[] = [
+  {
+    value: 'production',
+    label: 'Production — every tool, as in the live chat (default)',
+    name: 'Production',
+    hint: 'Everything the live chat has: the GnollHack and NetHack wikis, the knowledge base, the game\'s '
+      + 'source code and the item and monster lookups. Measures what players actually get.',
+    isDefault: true
+  },
+  {
+    value: 'sourceOnly',
+    label: 'Source code only — no wikis, no knowledge base',
+    name: 'Source code only',
+    hint: 'The game\'s source code only; the wikis, the knowledge base and the item and monster lookups are '
+      + 'switched off. Shows whether the AI can find an answer when the documentation says nothing.',
+    isDefault: false
+  },
+  {
+    value: 'closedBook',
+    label: 'Closed book — no tools, memory only',
+    name: 'Closed book',
+    hint: 'No tools at all; the AI answers from what it already knows. Shows how much it knows without '
+      + 'looking anything up.',
+    isDefault: false
+  }
 ];
 
 /** A benchmark-only instruction variant the server's catalog offers. */
@@ -378,6 +411,16 @@ export interface BenchmarkInstructionVariantDto {
   hashPrefix?: string | null;
   isValid: boolean;
   invalidReason?: string | null;
+  /** The experimental tools the candidate is offered, a parent's included. */
+  experimentalTools?: string[] | null;
+  /** The tool-output switches the variant turns on, a parent's included. */
+  experiments?: string[] | null;
+  /** The production tools whose description the variant replaces. */
+  rewordedTools?: string[] | null;
+  /** Whether the variant appends text to the system prompt. */
+  hasPromptAppendix?: boolean | null;
+  /** The reworded tools that Source code only switches off. */
+  rewordingsWithheldUnderSourceOnly?: string[] | null;
 }
 
 export interface BenchmarkGameSnapshotDto {

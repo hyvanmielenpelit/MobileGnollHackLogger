@@ -529,6 +529,8 @@ to stop if the projection is more than about twice the estimate.
 | Scoring Profile | <name> | same |
 | Response Style | Concise — production default | same |
 | Source Code References | Allowed / Disallowed — production default | same |
+| Tool Access | Production — every tool, as in the live chat (default) / Source code only — no wikis, no knowledge base / Closed book — no tools, memory only | same / CHANGED |
+| Experimental Changes | None — same as the live chat (default), or <name — suffix as the dropdown prints it> | same / CHANGED |
 | Assessor | ... | same |
 | Co-Assessor (optional) | <entry as the dropdown prints it> or "None - single assessor" | same / CHANGED |
 | Second Reader (optional) | ... or "None — no second reader" | same |
@@ -773,6 +775,7 @@ Labels drift; these are the files to grep, with the state verified on 2026-09-19
 | The model batch progress dialog's resume options and their labels | `admin/benchmark/model-batch/`, `Overseer/Services/Benchmarking/BenchmarkModelBatchOrchestrator.cs` (`ResumeOptionsFor`) |
 | The `Source Code References` field and its two option labels (from 2026-09-30, harness 44; a run before it always used *Allowed*, so a card repeating an earlier run's configuration sets *Allowed* explicitly) | `admin/benchmark/run-tab/benchmark-run-tab.component.html` |
 | Coverage option labels | `Overseer/ClientApp/src/app/services/admin-benchmark.service.ts` |
+| The `Tool Access` and `Experimental Changes` fields (reports call them the information condition and the instruction variant): Tool Access option labels, and the Experimental Changes option suffixes derived from each variant's contents (from 2026-10-22) | `Overseer/ClientApp/src/app/services/admin-benchmark.service.ts` (`BENCHMARK_INFORMATION_CONDITIONS`), `admin/benchmark/run-tab/instruction-variant-summary.ts` |
 | Launcher refusals and their messages | `Overseer/Services/Benchmarking/BenchmarkRunLauncher.cs` |
 | Delivery-check failure messages | `Overseer/Services/Benchmarking/BenchmarkCandidateRequestProbe.cs`, `BenchmarkGradingRequestProbe.cs` |
 | Comparability tiers, key categories and their members | `Overseer/Services/Benchmarking/BenchmarkComparabilityKey.cs` |
