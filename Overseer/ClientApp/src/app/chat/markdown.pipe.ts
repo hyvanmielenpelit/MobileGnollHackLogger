@@ -1,8 +1,20 @@
-import { Pipe, PipeTransform, inject } from '@angular/core';
+import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked, MarkedExtension } from 'marked';
-import katex, { KatexOptions } from 'katex';
+import type { KatexOptions } from 'katex';
 import DOMPurify from 'dompurify';
+import { KatexLoaderService, type Katex } from '../services/katex-loader.service';
+
+// Set by MarkdownPipe.transform around marked.parse, inside which the renderers run synchronously.
+let activeKatex: Katex | null = null;
+let mathPending = false;
+
+/** The TeX source, shown until KaTeX has loaded. */
+function mathPlaceholder(raw: string, display: boolean): string {
+  mathPending = true;
+  const cls = display ? 'math-pending math-pending-display' : 'math-pending';
+  return `<span class="${cls}">${escapeHtml(raw.trim())}</span>`;
+}
 
 function createKatexExtension(options: KatexOptions = {}): MarkedExtension {
   const katexOptions: KatexOptions = {
@@ -54,8 +66,11 @@ function createKatexExtension(options: KatexOptions = {}): MarkedExtension {
           return undefined;
         },
         renderer(token: any) {
+          if (!activeKatex) {
+            return mathPlaceholder(token.raw, true) + '\n';
+          }
           try {
-            return katex.renderToString(token.text, { ...katexOptions, displayMode: true }) + '\n';
+            return activeKatex.renderToString(token.text, { ...katexOptions, displayMode: true }) + '\n';
           } catch {
             return `<pre class="katex-error">${token.text}</pre>\n`;
           }
@@ -131,8 +146,11 @@ function createKatexExtension(options: KatexOptions = {}): MarkedExtension {
           return undefined;
         },
         renderer(token: any) {
+          if (!activeKatex) {
+            return mathPlaceholder(token.raw, token.displayMode ?? false);
+          }
           try {
-            return katex.renderToString(token.text, { ...katexOptions, displayMode: token.displayMode ?? false });
+            return activeKatex.renderToString(token.text, { ...katexOptions, displayMode: token.displayMode ?? false });
           } catch {
             return token.raw;
           }
@@ -333,12 +351,47 @@ function installDefangHooks(): boolean {
 
 @Pipe({
   name: 'markdown',
-  standalone: true
+  standalone: true,
+  pure: false
 })
-export class MarkdownPipe implements PipeTransform {
-  constructor(private sanitizer: DomSanitizer) {}
+export class MarkdownPipe implements PipeTransform, OnDestroy {
+  private lastValue: string | undefined;
+  private lastKatexReady = false;
+  private lastResult: SafeHtml | string = '';
+  private awaitingKatex = false;
+  private destroyed = false;
+
+  // ChangeDetectorRef is optional so a spec can construct the pipe outside a template.
+  constructor(private sanitizer: DomSanitizer, private katexLoader: KatexLoaderService, private cdr?: ChangeDetectorRef) {}
 
   transform(value: string): SafeHtml | string {
+    // Impure: an unchanged input with unchanged KaTeX readiness returns the previous result.
+    const ready = this.katexLoader.get() !== null;
+    if (value === this.lastValue && ready === this.lastKatexReady) {
+      return this.lastResult;
+    }
+
+    const result = this.render(value);
+
+    if (mathPending && !this.awaitingKatex) {
+      this.awaitingKatex = true;
+      this.katexLoader.load().then(k => {
+        if (k && !this.destroyed) this.cdr?.markForCheck();
+      });
+    }
+
+    this.lastValue = value;
+    this.lastKatexReady = ready;
+    this.lastResult = result;
+    return result;
+  }
+
+  ngOnDestroy(): void {
+    this.destroyed = true;
+  }
+
+  private render(value: string): SafeHtml | string {
+    mathPending = false;
     if (!value) return '';
     // Split the string into code blocks/inline code/math blocks and normal text
     // This ensures we don't accidentally modify code snippets or math expressions
@@ -421,7 +474,13 @@ export class MarkdownPipe implements PipeTransform {
     
     let processed = parts.join('');
 
-    const parsed = marked.parse(processed);
+    activeKatex = this.katexLoader.get();
+    let parsed: string | Promise<string>;
+    try {
+      parsed = marked.parse(processed);
+    } finally {
+      activeKatex = null;
+    }
     // marked.parse can return a Promise if async options are used, but by default it returns a string
     const html = typeof parsed === 'string' ? parsed : '';
     

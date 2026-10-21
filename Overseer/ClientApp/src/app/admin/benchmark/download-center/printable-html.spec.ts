@@ -1,7 +1,7 @@
 import { Marked, marked } from 'marked';
 import DOMPurify from 'dompurify';
 
-// Loaded for its side effects: it configures the global `marked` (KaTeX, image renderer) and the
+// Loaded for its side effects: it configures the global `marked` (math extension, image renderer) and the
 // default DOMPurify instance (sanitize hooks) on import, which the converter must not see.
 import { MARKDOWN_IMAGE_DEFANG_HOOKS_INSTALLED } from '../../../chat/markdown.pipe';
 import { escapeHtml, markdownToPrintableHtml, markdownToSafeHtmlFragment } from './printable-html';
@@ -30,8 +30,9 @@ describe('printable-html', () => {
 
   it('is unaffected by the chat pipe configuring the global marked and DOMPurify', () => {
     expect(MARKDOWN_IMAGE_DEFANG_HOOKS_INSTALLED).toBe(true);
-    // The global instance renders inline math once the pipe is loaded; the converter must not.
-    expect(marked.parse('Inline $x+y$ math.', { async: false }) as string).toContain('katex');
+    // The global instance carries the pipe's math extension, which renders the TeX placeholder
+    // outside a pipe transform; the converter must not.
+    expect(marked.parse('Inline $x+y$ math.', { async: false }) as string).toContain('math-pending');
 
     const pristine = DOMPurify(window).sanitize(
       new Marked({ gfm: true, breaks: false }).parse(report, { async: false }) as string,

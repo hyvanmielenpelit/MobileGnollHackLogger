@@ -5366,6 +5366,19 @@ app-table-pager {
     scrollbar-color: var(--border-glass) rgba(0, 0, 0, 0.3);
   }
 
+  .math-pending {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    opacity: 0.7;
+  }
+
+  .math-pending-display {
+    display: block;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    padding: 6px 0;
+    margin: 8px 0;
+  }
+
   /* Block Code Container (Best Practice: Horizontal Scroll) */
   pre {
     background: rgba(0, 0, 0, 0.45);

@@ -1,17 +1,33 @@
 import type { MockedObject } from "vitest";
 import { MarkdownPipe } from './markdown.pipe';
 import { DomSanitizer } from '@angular/platform-browser';
+import { KatexLoaderService } from '../services/katex-loader.service';
 
 describe('MarkdownPipe', () => {
   let pipe: MarkdownPipe;
   let mockSanitizer: MockedObject<DomSanitizer>;
+  let loader: KatexLoaderService;
+
+  beforeAll(async () => {
+    loader = new KatexLoaderService();
+    await loader.load();
+  });
 
   beforeEach(() => {
     mockSanitizer = {
       bypassSecurityTrustHtml: vi.fn().mockName("DomSanitizer.bypassSecurityTrustHtml")
     } as unknown as MockedObject<DomSanitizer>;
     mockSanitizer.bypassSecurityTrustHtml.mockImplementation((html: string) => html as any);
-    pipe = new MarkdownPipe(mockSanitizer);
+    pipe = new MarkdownPipe(mockSanitizer, loader);
+  });
+
+  it('returns the previous result while the input is unchanged', () => {
+    pipe.transform('Same **text**.');
+    pipe.transform('Same **text**.');
+    expect(mockSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledTimes(1);
+
+    pipe.transform('Other text.');
+    expect(mockSanitizer.bypassSecurityTrustHtml).toHaveBeenCalledTimes(2);
   });
 
   it('should insert newlines before and after squished code blocks', () => {

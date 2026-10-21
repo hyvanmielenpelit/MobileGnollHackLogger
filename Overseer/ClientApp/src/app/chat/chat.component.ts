@@ -19,6 +19,7 @@ import { ModelResolutionDialogComponent } from '../shared/model-resolution-dialo
 import { TermsAcceptedEvent, TermsDialogComponent } from '../shared/terms-dialog/terms-dialog.component';
 import { ModelResolutionResult, isResolutionDeletion, needsAttention } from '../shared/model-availability/model-availability';
 import { AttachedSnapshotService, type AttachedSnapshotInfo } from '../services/attached-snapshot.service';
+import { KatexLoaderService } from '../services/katex-loader.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import { parseServerUtcDate } from '../utils/date.util';
 import { formatThinkingLevel, showReasoningBadge } from '../utils/model-badge-format.util';
@@ -200,6 +201,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
   chatService = inject(ChatService);
   settingsService = inject(SettingsService);
+  katexLoader = inject(KatexLoaderService);
+  private cancelKatexPrefetch?: () => void;
   
   showChatCost = true;
   liveCost: number | null = null;
@@ -1463,6 +1466,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.localToolRequests.forEach(req => clearTimeout(req.timer));
     this.localToolRequests.clear();
     this.sessionSearchSub?.unsubscribe();
+    this.cancelKatexPrefetch?.();
     if (this.timeUpdateInterval) clearInterval(this.timeUpdateInterval);
     if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
 
@@ -1544,6 +1548,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         });
       }
     }
+
+    this.cancelKatexPrefetch = this.katexLoader.prefetchWhenIdle();
   }
 
   private focusPromptInput() {

@@ -445,6 +445,13 @@ chat needs from an admin service is imported with `import type`. The `initial` b
 `angular.json` (1.5 MB warning, 2 MB error) is the tripwire; to see what `main` contains, run
 `ng build --stats-json` and load the stats file into the esbuild bundle analyzer.
 
+KaTeX is not in the initial bundle either: `services/katex-loader.service.ts` loads it on demand,
+and `ChatComponent` prefetches it at background priority once the chat has rendered. Nothing may
+import `katex` as a value — only `import type` — and the markdown pipe renders TeX as a
+`.math-pending` placeholder until KaTeX arrives, then re-renders through `markForCheck()`. The
+Vitest run is not isolated per file (`isolate: false`, the Angular builder's default), so a spec
+that needs KaTeX unloaded builds its own `new KatexLoaderService()`.
+
 ### Popups (`<dialog>` elements)
 To find specific popups, look in the corresponding component's `.html` template:
 
