@@ -438,7 +438,7 @@ public class ConfigHealthService
                         Id = $"ai-spend:{now.ToString("yyyyMMdd", money)}:{spenders.Count}",
                         Type = "warning",
                         Message = $"{subject} spent over ${spendThreshold.ToString("0.00", money)} on AI in the last 24 hours (highest: ${highest.ToString("0.00", money)}).",
-                        LinkUrl = "/admin/telemetry",
+                        LinkUrl = "/admin/telemetry/users",
                         LinkText = "Review"
                     });
                 }

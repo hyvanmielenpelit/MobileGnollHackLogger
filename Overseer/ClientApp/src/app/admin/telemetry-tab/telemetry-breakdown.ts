@@ -41,6 +41,18 @@ export function roleGroupLabel(group: AiUsageRoleGroup): string {
   return ROLE_GROUP_LABELS[group] ?? group;
 }
 
+const ROLE_BADGE_CLASSES: Readonly<Record<AiUsageRoleGroup, string>> = {
+  chat: 'badge-role-chat',
+  title: 'badge-role-title',
+  benchmark: 'badge-role-benchmark',
+  other: 'badge-role-other'
+};
+
+/** The `status-badge` variant of a role group's badge. */
+export function roleBadgeClass(group: AiUsageRoleGroup): string {
+  return ROLE_BADGE_CLASSES[group] ?? ROLE_BADGE_CLASSES.other;
+}
+
 /** `Not recorded` for null, `None sent` for an empty level, else the level itself. */
 export function thinkingLevelLabel(level: string | null | undefined): string {
   if (level === null || level === undefined) {

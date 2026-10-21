@@ -117,6 +117,19 @@ describe('admin URL scheme', () => {
       expect(parseAdminPath('toString', null).tab).toBe('users');
     });
 
+    it('reads the AI Telemetry sub-tabs from their paths, Summary by default', () => {
+      expect(parseAdminPath('telemetry', null)).toEqual(
+        { tab: 'telemetry', subTab: 'summary', canonical: ['/admin', 'telemetry'], isCanonical: true });
+      expect(parseAdminPath('telemetry', 'models')).toEqual(
+        { tab: 'telemetry', subTab: 'models', canonical: ['/admin', 'telemetry', 'models'], isCanonical: true });
+      expect(parseAdminPath('telemetry', 'users')).toEqual(
+        { tab: 'telemetry', subTab: 'users', canonical: ['/admin', 'telemetry', 'users'], isCanonical: true });
+      expect(parseAdminPath('telemetry', 'bogus')).toEqual(
+        { tab: 'telemetry', subTab: 'summary', canonical: ['/admin', 'telemetry'], isCanonical: false });
+      expect(adminCommands('telemetry', 'summary')).toEqual(['/admin', 'telemetry']);
+      expect(adminCommands('telemetry', 'users')).toEqual(['/admin', 'telemetry', 'users']);
+    });
+
     it('reads the Services sub-tabs from their slugs', () => {
       for (const [slug, id] of [['gnollhack-wiki', 'gnollhack-wiki'], ['nethack-wiki', 'nethack-wiki'],
         ['knowledge-base', 'knowledge-base'], ['config-health', 'config-health'], ['developer-tools', 'sentry']]) {
@@ -162,6 +175,12 @@ describe('admin URL scheme', () => {
       expect(legacy({ tab: 'users', subtab: 'bogus' })).toEqual(['/admin', 'users']);
     });
 
+    it('maps the AI Telemetry sub-tabs', () => {
+      expect(legacy({ tab: 'telemetry', subtab: 'users' })).toEqual(['/admin', 'telemetry', 'users']);
+      expect(legacy({ tab: 'telemetry', subtab: 'models' })).toEqual(['/admin', 'telemetry', 'models']);
+      expect(legacy({ tab: 'telemetry', subtab: 'bogus' })).toEqual(['/admin', 'telemetry']);
+    });
+
     it('maps every GnollBench sub-tab by its code id', () => {
       for (const [id, slug] of ADMIN_SUBTAB_SLUGS.benchmark!) {
         expect(legacy({ tab: 'benchmark', subtab: id })).toEqual(slug ? ['/admin', 'gnollbench', slug] : ['/admin', 'gnollbench']);
@@ -184,6 +203,7 @@ describe('admin URL scheme', () => {
     expect(isAdminTabId(null)).toBe(false);
     expect(defaultAdminSubTab('users')).toBe('users');
     expect(defaultAdminSubTab('benchmark')).toBe('run');
+    expect(defaultAdminSubTab('telemetry')).toBe('summary');
     expect(defaultAdminSubTab('database')).toBeNull();
   });
 });

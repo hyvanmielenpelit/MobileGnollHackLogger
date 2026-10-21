@@ -15,67 +15,56 @@
 @include cards.sticky-clearance;
 @include sort.sort-panel('.tl-sort-panel');
 
-/* The header and the Date Range / Keys bar stay at the top together, as the Services tab's head does. */
+/* The header and the sub-tab row stay at the top together, as the Services tab's head does. */
 .tl-head {
   position: sticky;
   top: 0;
   z-index: 20;
-  margin-bottom: 1.5rem;
 
   .tab-header-row {
     margin-bottom: 0;
   }
 }
 
-/* An opaque ground under the bar, the gap above it included, so cards never scroll through it. */
-.tl-toolbar-ground {
+/* An opaque ground under the sub-tab row, the gap above it included, so cards never scroll through it. */
+.tl-nav-ground {
   padding-top: 0.75rem;
   background: rgba(17, 17, 17, 0.94);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
 
-/* Telemetry & Governor Dashboard Styles */
-.telemetry-toolbar {
-  display: flex;
-  gap: 1.5rem;
-  align-items: flex-end;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-  border-radius: 8px;
-  padding: 1rem 1.25rem;
-  margin: 0;
-
-  /* Collapsed: one line, the summary and the toggle. */
-  &.is-collapsed {
-    align-items: center;
-    padding: 0.375rem 0.75rem 0.375rem 1.25rem;
-  }
-
-  .control-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-
-    label {
-      font-size: 0.85em;
-      font-weight: 600;
-      color: #aaa;
-      letter-spacing: 0.3px;
-    }
-
-    .gh-input {
-      min-width: 180px;
-    }
-  }
-}
-
-.tl-toolbar-controls {
+/* The sub-tabs, then the Date range / Keys controls at the row's end, all on one rule. */
+.tl-nav {
   display: flex;
   flex-wrap: wrap;
-  flex: 1 1 auto;
-  gap: 1.5rem;
   align-items: flex-end;
+  column-gap: 1.5rem;
+  row-gap: 0.5rem;
+  border-block-end: 1px solid rgba(255, 255, 255, 0.08);
+  container: tl-nav / inline-size;
+}
+
+/* The row draws the rule; the selected tab's underline sits on it. */
+.tl-subtabs {
+  border-bottom: none;
+  margin-block-end: -1px;
+}
+
+.tl-range {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-block-end: 0.375rem;
+  min-inline-size: 0;
+}
+
+.tl-range-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
   min-inline-size: 0;
 
   &[hidden] {
@@ -83,9 +72,26 @@
   }
 }
 
+/* A label inline before its control. */
+.tl-range-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  label {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #aaa;
+    white-space: nowrap;
+  }
+
+  select.gh-input {
+    min-width: 10rem;
+  }
+}
+
 .tl-toolbar-summary {
   margin: 0;
-  flex: 1 1 auto;
   min-inline-size: 0;
   font-size: var(--text-secondary);
   color: #d4d4d8;
@@ -94,11 +100,25 @@
 
 .tl-toolbar-toggle {
   flex: none;
-  align-self: flex-end;
+}
 
-  .is-collapsed & {
-    align-self: center;
+/* Narrow: the controls take their own line above the tabs, so the tabs still sit on the rule. */
+@container tl-nav (inline-size < 48rem) {
+  .tl-range {
+    order: -1;
+    inline-size: 100%;
+    margin-inline-start: 0;
+    flex-wrap: wrap;
   }
+}
+
+.tl-subpanel {
+  padding-block-start: 1.5rem;
+}
+
+[role='tabpanel']:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 .telemetry-section-card {
@@ -132,12 +152,26 @@
   container-type: inline-size;
 }
 
+/* The title text and its scope badge are the row's items, so a badge that does not fit moves to the next line whole. */
 .telemetry-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 4px;
   font-size: 0.85em;
   font-weight: 600;
   text-transform: uppercase;
   color: #aaa;
   letter-spacing: 0.5px;
+}
+
+.tl-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 4px;
 }
 
 .telemetry-stat-value {
@@ -305,8 +339,10 @@ progress.telemetry-progress-bar {
   flex-wrap: wrap;
 }
 
+/* A flex item of its title row, so it is never broken across lines. */
 .telemetry-card-scope {
-  margin-inline-start: 6px;
+  flex: none;
+  white-space: nowrap;
   padding: 0 6px;
   border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
   border-radius: 999px;
@@ -321,38 +357,14 @@ progress.telemetry-progress-bar {
   padding-inline-start: 0.75rem;
 }
 
-/* --- Breakdown and users sections ------------------------------------------------------------ */
+/* --- Breakdown ------------------------------------------------------------------------------- */
 
-.tl-section-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 4px 12px;
-  margin-bottom: 0.75rem;
+.tl-breakdown-status {
+  margin: 0 0 0.75rem;
 
-  h4 {
-    margin: 0;
-  }
-
-  .gh-list-status:empty {
+  &:empty {
     display: none;
   }
-}
-
-.tl-users h4:focus {
-  outline: none;
-}
-
-.tl-users h4:focus-visible {
-  outline: 2px solid var(--primary-color);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-.tl-users-scope {
-  margin: -0.5rem 0 0.75rem;
-  font-size: var(--text-secondary);
 }
 
 /* Two rows: search, thinking levels and Sort; then roles, provider toggles and Clear filters. */
@@ -461,16 +473,7 @@ progress.telemetry-progress-bar {
 
 /* Nine metrics by the list's width: 9 beside the head from 100 rem, 5 + 4 beside it from 68 rem,
    5 + 4 under it, 3 × 3 below 44 rem, 2 per row below 28 rem. */
-.tl-card {
-  @include cards.card-surface;
-  --tl-metric-cols: 5;
-
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas:
-    "head"
-    "metrics";
-  gap: var(--tl-row-gap) var(--tl-zone-gap);
-}
+@include cards.card-layout('.tl-card', '.tl-metrics', tl-cards);
 
 /* Same 1 px border as the other cards, so the columns line up; the inset ring is outside layout. */
 .tl-card-total {
@@ -484,12 +487,7 @@ progress.telemetry-progress-bar {
 }
 
 .tl-card-head {
-  grid-area: head;
-  align-self: center;
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  min-inline-size: 0;
+  @include cards.card-head;
 }
 
 .tl-card-identity,
@@ -497,32 +495,26 @@ progress.telemetry-progress-bar {
   margin: 0;
 }
 
-/* A user's name can be long: the key badge wraps rather than overflowing the head. */
+/* A user's name can be long: the key badge stays one line, capped at the card's width with an ellipsis. */
+.tl-key-item {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
 .tl-key-badge {
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tl-card-title {
-  margin: 0;
-  font-size: 1.0625rem;
-  font-weight: 700;
-  line-height: 1.3;
-  color: #f4f4f5;
-  overflow-wrap: anywhere;
+  @include cards.card-title;
 }
 
 /* The title, and the card's icon buttons at its end. */
 .tl-card-title-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.5rem;
-
-  .tl-card-title {
-    flex: 1;
-    min-inline-size: 0;
-  }
+  @include cards.card-title-row;
 }
 
 .tl-card-actions {
@@ -535,40 +527,6 @@ progress.telemetry-progress-bar {
   margin: 0;
   font-size: var(--text-secondary);
   color: var(--nav-color);
-}
-
-.tl-metrics {
-  grid-area: metrics;
-  @include cards.metrics-grid;
-}
-
-@container tl-cards (inline-size >= 68rem) {
-  .tl-card {
-    grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr);
-    grid-template-areas: "head metrics";
-  }
-
-  .tl-metrics {
-    @include cards.metrics-beside;
-  }
-}
-
-@container tl-cards (inline-size >= 100rem) {
-  .tl-card {
-    --tl-metric-cols: 9;
-  }
-}
-
-@container tl-cards (inline-size < 44rem) {
-  .tl-card {
-    --tl-metric-cols: 3;
-  }
-}
-
-@container tl-cards (inline-size < 28rem) {
-  .tl-card {
-    --tl-metric-cols: 2;
-  }
 }
 
 @include cards.metric;

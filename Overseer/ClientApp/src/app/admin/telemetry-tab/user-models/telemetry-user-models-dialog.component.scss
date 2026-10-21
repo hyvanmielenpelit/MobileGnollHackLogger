@@ -1,0 +1,3 @@
+@use '../telemetry-usage-dialog' as dialog;
+
+@include dialog.usage-dialog;

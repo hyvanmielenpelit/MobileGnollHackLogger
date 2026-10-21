@@ -515,12 +515,14 @@ public class OverseerActivityDto
     public DateOnly? CountedSinceUtc { get; set; }
 }
 
-/// <summary>One page of per-user usage of system AI configurations.</summary>
+/// <summary>One page of per-user usage of the selected key sources.</summary>
 public class AiTelemetryUsersPageDto
 {
+    /// <summary>system | user | both.</summary>
+    public string KeySource { get; set; } = "system";
     public List<AiTelemetryUserRowDto> Users { get; set; } = new();
 
-    /// <summary>Users with system-configuration usage in the range (matching the search).</summary>
+    /// <summary>Users with usage of the selected key sources in the range (matching the search).</summary>
     public int TotalUsers { get; set; }
 
     /// <summary>The security event log exists, so the refusal counts are meaningful.</summary>
@@ -532,14 +534,26 @@ public class AiTelemetryUserRowDto
     public string UserId { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
 
-    /// <summary>All system-configuration rows.</summary>
+    /// <summary>All rows of the selected key sources.</summary>
     public long Requests { get; set; }
+
+    /// <summary>The system-configuration share of <see cref="Requests"/>.</summary>
+    public long SystemRequests { get; set; }
+
+    /// <summary>The own-key share of <see cref="Requests"/>.</summary>
+    public long UserKeyRequests { get; set; }
     public long ChatRequests { get; set; }
     public long TitleRequests { get; set; }
     public long BenchmarkRequests { get; set; }
     public long PromptTokens { get; set; }
     public long OutputTokens { get; set; }
     public decimal EstimatedCost { get; set; }
+
+    /// <summary>The system-configuration share of <see cref="EstimatedCost"/>.</summary>
+    public decimal SystemEstimatedCost { get; set; }
+
+    /// <summary>The own-key share of <see cref="EstimatedCost"/>.</summary>
+    public decimal UserKeyEstimatedCost { get; set; }
     public long PricedRequests { get; set; }
 
     /// <summary>Most requests in one UTC clock hour; information for setting limits, never a misuse signal.</summary>
@@ -549,7 +563,7 @@ public class AiTelemetryUserRowDto
     /// <summary>Mean over hours with at least one request.</summary>
     public double RequestsPerActiveHour { get; set; }
 
-    /// <summary>Days with any system-configuration request.</summary>
+    /// <summary>Days with any request of the selected key sources.</summary>
     public int ActiveDays { get; set; }
     public DateTime? LastRequestUtc { get; set; }
     public int ChatsCreated { get; set; }
@@ -567,16 +581,21 @@ public class AiTelemetryUserRowDto
     public List<AiTelemetryUserConfigDto> Configs { get; set; } = new();
 }
 
+/// <summary>One system configuration, or one of the user's own-key models, that the user's usage rows name.</summary>
 public class AiTelemetryUserConfigDto
 {
+    /// <summary>system | user.</summary>
+    public string KeySource { get; set; } = "system";
+
+    /// <summary>The SystemAiApiConfiguration id, or the UserAiModel id (0 when not recorded); unique only within <see cref="KeySource"/>.</summary>
     public long ConfigId { get; set; }
 
-    /// <summary>The current display name, else the usage rows' ModelDisplayName.</summary>
+    /// <summary>The current display name, else the usage rows' ModelDisplayName, else (own key) the model id.</summary>
     public string ConfigName { get; set; } = string.Empty;
     public long Requests { get; set; }
     public decimal EstimatedCost { get; set; }
 
-    /// <summary>The user's UserSystemAiApiConfiguration, if any.</summary>
+    /// <summary>The user's UserSystemAiApiConfiguration, if any; null on an own-key line.</summary>
     public long? AssignmentId { get; set; }
     public bool? AssignmentEnabled { get; set; }
 
@@ -588,8 +607,49 @@ public class AiTelemetryUserConfigDto
     public long? DailyChatTokens { get; set; }
     public long? MaxDailyChatTokens { get; set; }
 
-    /// <summary>user | group | systemWide | none.</summary>
+    /// <summary>user | group | systemWide | ownKey | none.</summary>
     public string LimitSource { get; set; } = "none";
+}
+
+/// <summary>The usage of one user by model, role context and thinking level, over a date range.</summary>
+public class AiTelemetryUserModelsDto
+{
+    /// <summary>system | user | both.</summary>
+    public string KeySource { get; set; } = "system";
+    public string UserId { get; set; } = string.Empty;
+
+    /// <summary>The user's current name; null when the account is gone.</summary>
+    public string? UserName { get; set; }
+    public DateTime? CostRecordedSinceUtc { get; set; }
+    public List<AiTelemetryUserModelRowDto> Rows { get; set; } = new();
+}
+
+/// <summary>The user's usage of one model in one key source, role context and thinking level.</summary>
+public class AiTelemetryUserModelRowDto
+{
+    /// <summary>system | user.</summary>
+    public string KeySource { get; set; } = "system";
+    public string Provider { get; set; } = string.Empty;
+    public string ModelId { get; set; } = string.Empty;
+
+    /// <summary>The catalog name, else the retired entry's, else null.</summary>
+    public string? ModelName { get; set; }
+    public int RoleContext { get; set; }
+    public string RoleGroup { get; set; } = string.Empty;
+
+    /// <summary>"" when none was sent, null when not recorded.</summary>
+    public string? ThinkingLevel { get; set; }
+    public long Requests { get; set; }
+    public long PromptTokens { get; set; }
+    public long UncachedInputTokens { get; set; }
+    public long CacheReadTokens { get; set; }
+    public long CacheCreationTokens { get; set; }
+    public long OutputTokens { get; set; }
+    public long DurationSumMs { get; set; }
+    public long DurationCount { get; set; }
+    public decimal EstimatedCost { get; set; }
+    public long PricedRequests { get; set; }
+    public DateTime? LastRequestUtc { get; set; }
 }
 
 /// <summary>Telemetry over time, one line per series key, aligned with <see cref="BucketStartsUtc"/>.</summary>

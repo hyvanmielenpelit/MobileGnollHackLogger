@@ -3350,7 +3350,9 @@ label.checkbox-label,
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: normal;
-  
+  /* A badge moves to the next line whole; inline, so its padding does not grow the line. */
+  white-space: nowrap;
+
   &.badge-success {
     background-color: rgba(46, 204, 113, 0.2);
     color: #2ecc71;
@@ -3458,6 +3460,7 @@ label.checkbox-label,
   border-radius: 12px;
   font-size: 0.75rem;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .badge-system-wide {

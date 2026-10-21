@@ -1,6 +1,8 @@
 /* The filter bar, the status line and Load more are the global card-list classes in styles.scss;
-   `.action-btn`, `.btn-ghost` and `.gh-tag` are global too. */
+   `.action-btn`, `.btn-ghost`, `.gh-tag`, `.gh-model-card-badges` and the Sort popover's frame are
+   global too. The card's grid, head and title are the breakdown cards', from _telemetry-cards.scss. */
 @use '../telemetry-cards' as cards;
+@use '../telemetry-sort' as sort;
 
 :host {
   display: flex;
@@ -8,11 +10,19 @@
   gap: 0.75rem;
 }
 
+@include sort.sort-panel('.tl-users-sort-panel');
+
 .tl-users-note,
 .tl-users-filter,
 .tl-users-empty,
 .tl-users-error {
   margin: 0;
+}
+
+.tl-users-scope {
+  margin: 0 0 0.75rem;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
 }
 
 .tl-users-note,
@@ -25,31 +35,44 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 12px;
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+/* The search, then the Sort trigger at the row's end, then Clear filters. */
+.tl-users-filters-row {
+  column-gap: 1.5rem;
 }
 
 .tl-users-search {
   flex: 1 1 16rem;
 }
 
-.tl-users-sort {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* The Sort popover hangs from the trigger's end, so the trigger ends the row. */
+.tl-sort {
+  margin-inline-start: auto;
+}
 
-  label {
-    font-size: var(--text-secondary);
-    font-weight: 600;
-    color: #aaa;
-    white-space: nowrap;
+.tl-sort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  svg {
+    flex: none;
   }
 }
 
-.tl-users-status {
-  margin-inline-start: auto;
-
-  &:empty {
-    display: none;
-  }
+.tl-users-status:empty {
+  display: none;
 }
 
 /* --- Cards ----------------------------------------------------------------------------------- */
@@ -67,49 +90,42 @@
   min-inline-size: 0;
 }
 
-/* Nine metrics by the list's width, each breakpoint 8 rem wider than the breakdown cards' for the
-   actions: 9 beside the head from 108 rem, 5 + 4 beside it from 76 rem, 5 + 4 under it, 3 × 3
-   below 44 rem, and one column with 2 metrics per row below 28 rem. The configurations go below. */
-.tl-user-card {
-  @include cards.card-surface;
-  --tl-metric-cols: 5;
-
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "head    actions"
-    "metrics metrics"
-    "configs configs";
-  gap: var(--tl-row-gap) var(--tl-zone-gap);
-  transition: border-color 0.15s ease;
-
-  &:hover {
-    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
-  }
-}
+/* The breakdown cards' grid, with the configurations in a row of their own under head and metrics. */
+@include cards.card-layout('.tl-user-card', '.tl-metrics', tl-user-cards, $extra: true);
 
 .tl-user-head {
-  grid-area: head;
-  align-self: center;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-inline-size: 0;
+  @include cards.card-head;
 }
 
-.tl-user-kicker {
+.tl-user-title-row {
+  @include cards.card-title-row('.tl-user-title');
+}
+
+.tl-user-title {
+  @include cards.card-title;
+}
+
+.tl-user-actions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
+  gap: 4px;
+  flex: none;
+}
+
+.tl-user-meta {
+  margin: 0;
   font-size: var(--text-secondary);
-  color: #a1a1aa;
+  color: var(--nav-color);
+}
+
+/* The row wraps between badges; a badge never wraps inside itself (`.gh-tag` is nowrap). */
+.tl-user-badges {
+  margin: 0;
 
   .gh-tag {
     margin: 0;
   }
 }
 
-@include cards.separator;
 @include cards.sticky-clearance;
 
 /* The words carry each state; the outlines reinforce them. */
@@ -118,7 +134,8 @@
   color: #fca5a5;
 }
 
-.tl-user-hold {
+.tl-user-hold,
+.tl-user-refusals {
   border-color: var(--border-glass);
   color: #d4d4d8;
 }
@@ -127,11 +144,17 @@ time {
   font-variant-numeric: tabular-nums;
 }
 
-.tl-user-title {
-  margin: 0;
-  font-size: 1.0625rem;
-  color: #e4e4e7;
-  overflow-wrap: anywhere;
+@include cards.metric;
+
+/* --- Configurations -------------------------------------------------------------------------- */
+
+.tl-user-configs {
+  grid-area: extra;
+  position: relative;
+  min-inline-size: 0;
+  overflow-x: auto;
+  container: tl-user-configs / inline-size;
+  border-radius: 4px;
 
   &:focus {
     outline: none;
@@ -140,70 +163,7 @@ time {
   &:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 4px;
   }
-}
-
-.tl-user-actions {
-  grid-area: actions;
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  gap: 0.25rem;
-}
-
-.tl-user-metrics {
-  grid-area: metrics;
-  @include cards.metrics-grid;
-}
-
-@container tl-user-cards (inline-size >= 76rem) {
-  .tl-user-card {
-    grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr) auto;
-    grid-template-areas:
-      "head    metrics actions"
-      "configs configs configs";
-  }
-
-  .tl-user-metrics {
-    @include cards.metrics-beside;
-  }
-}
-
-@container tl-user-cards (inline-size >= 108rem) {
-  .tl-user-card {
-    --tl-metric-cols: 9;
-  }
-}
-
-@container tl-user-cards (inline-size < 44rem) {
-  .tl-user-card {
-    --tl-metric-cols: 3;
-  }
-}
-
-@container tl-user-cards (inline-size < 28rem) {
-  .tl-user-card {
-    --tl-metric-cols: 2;
-
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "head"
-      "actions"
-      "metrics"
-      "configs";
-  }
-
-  .tl-user-actions {
-    justify-content: flex-start;
-  }
-}
-
-@include cards.metric;
-
-.tl-user-configs {
-  grid-area: configs;
-  overflow-x: auto;
 }
 
 .tl-user-config-table {
@@ -241,15 +201,66 @@ time {
   }
 }
 
+/* Narrow: each row a block, each value led by its column's name; the header row stays for assistive technology. */
+@container tl-user-configs (inline-size < 36rem) {
+  .tl-user-config-table {
+    thead {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    tbody,
+    tr,
+    th,
+    td {
+      display: block;
+    }
+
+    tr {
+      padding-block: 6px;
+      border-bottom: 1px solid var(--border-glass);
+    }
+
+    tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    th,
+    td {
+      padding: 2px 0;
+      border-bottom: none;
+    }
+
+    tbody th {
+      font-weight: 600;
+    }
+
+    .num {
+      text-align: start;
+    }
+
+    td::before {
+      content: attr(data-label) ": ";
+      color: var(--nav-color);
+    }
+  }
+}
+
+.tl-config-own-key,
 .tl-config-disabled {
   margin-inline-start: 6px;
   border-color: var(--border-glass);
-  border-style: dashed;
   color: #a1a1aa;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .tl-user-card {
-    transition: none;
-  }
+.tl-config-own-key {
+  color: #d4d4d8;
+}
+
+.tl-config-disabled {
+  border-style: dashed;
 }

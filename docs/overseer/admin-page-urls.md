@@ -12,13 +12,14 @@ that knows the scheme is `Overseer/ClientApp/src/app/admin/admin-url.ts`, pinned
 | `/admin` | Replaced by `/admin/users` |
 | `/admin/users` · `/admin/users/groups` · `/admin/users/deletions` · `/admin/users/log` | Users and its sub-tabs *Users*, *Groups*, *Deletion requests*, *Admin log* |
 | `/admin/configs` · `/admin/configs/api-keys` | System Configs; the second with the **API Keys** dialog (*Default API Keys*) open |
-| `/admin/database` · `/admin/telemetry` · `/admin/security` | Database, AI Telemetry, Security (no sub-tabs) |
+| `/admin/database` · `/admin/security` | Database, Security (no sub-tabs) |
+| `/admin/telemetry` · `/admin/telemetry/models` · `/admin/telemetry/users` | AI Telemetry: *Summary*, *Models*, *Users* |
 | `/admin/gnollbench` · `/admin/gnollbench/history` · `…/multi-run` · `…/multi-suite` · `…/suites` · `…/profiles` · `…/model-comparison` · `…/chat-consistency` | GnollBench: *Run Benchmark*, *Run History*, *Multi-Run Analysis*, *Batteries*, *Manage Suites*, *Scoring Profiles*, *Model Comparison*, *Chat Consistency* |
 | `/admin/services` · `/admin/services/gnollhack-wiki` · `…/nethack-wiki` · `…/knowledge-base` · `…/config-health` · `…/developer-tools` | Services: *GnollHack Source*, *GnollHack Wiki*, *NetHack Wiki*, *Knowledge Base*, *Configuration Health*, *Developer Tools* |
 
-- **The first sub-tab is the default and has no segment.** `/admin/users/users` and
-  `/admin/services/source`, which name the default by its id, are accepted and replaced by
-  `/admin/users` and `/admin/services`. A sub-tab named by a code id that differs from its slug
+- **The first sub-tab is the default and has no segment.** `/admin/users/users`,
+  `/admin/telemetry/summary` and `/admin/services/source`, which name the default by its id, are
+  accepted and replaced by `/admin/users`, `/admin/telemetry` and `/admin/services`. A sub-tab named by a code id that differs from its slug
   (`/admin/gnollbench/multirun`, `/admin/services/sentry`) is replaced by its slug the same way. A
   tab is found by its slug, or by a retired slug in `RETIRED_ADMIN_TAB_SLUGS` (`devtools`, the
   Services tab's slug until 2026-10-18), which is then replaced by the current one;
@@ -69,6 +70,7 @@ other parameter (so `suiteId` and `resolveConfig` still work):
 | `?tab=apikeys` | `/admin/configs/api-keys` |
 | `?tab=benchmark&subtab=suites&suiteId=7` | `/admin/gnollbench/suites?suiteId=7` |
 | `?tab=configs&resolveConfig=7` | `/admin/configs?resolveConfig=7` |
+| `?tab=telemetry&subtab=users` | `/admin/telemetry/users` |
 | `?tab=` an unknown tab | `/admin/users` |
 
 `legacyAdminPath()` does the mapping. The legacy redirect runs before any other correction, in the
@@ -87,7 +89,7 @@ query parameter:
 maps through `legacyAdminPath()` to `/admin/services`.
 
 The server's own links use the path form: the system alerts (`/admin/configs`,
-`/admin/users/deletions`, `/admin/telemetry`, `/admin/services`) and the deletion review email, whose
+`/admin/users/deletions`, `/admin/telemetry/users`, `/admin/services`) and the deletion review email, whose
 link is `OverseerAdminUrl` with `/users/deletions` appended to its path
 (`AccountDeletionReviewEmail.ReviewLink`).
 

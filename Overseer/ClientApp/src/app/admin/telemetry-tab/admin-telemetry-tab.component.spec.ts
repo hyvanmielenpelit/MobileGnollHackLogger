@@ -17,11 +17,12 @@ import {
   ChatProviderAvailabilityDto,
   OverseerActivityDto
 } from '../../services/admin.service';
-import { AdminPageStore } from '../admin-page.store';
+import { AdminPageStore, AdminTelemetrySubTab } from '../admin-page.store';
 import { spyAdminService } from '../admin.component.testing';
 import { AdminTelemetryTabComponent } from './admin-telemetry-tab.component';
 import { TelemetryChartsDialogComponent } from './charts/telemetry-charts-dialog.component';
 import { TelemetryModelUsersDialogComponent } from './model-users/telemetry-model-users-dialog.component';
+import { TelemetryUserModelsDialogComponent } from './user-models/telemetry-user-models-dialog.component';
 import { TELEMETRY_BREAKDOWN_STORAGE_KEY } from './telemetry-breakdown';
 import { TELEMETRY_USERS_VIEW_STORAGE_KEY } from './users/telemetry-users.component';
 
@@ -34,6 +35,12 @@ class ChartsDialogStub {
 /** Stands in for the Usage by user dialog, so every test of the tab does not compile and run it. */
 @Component({ selector: 'app-telemetry-model-users-dialog', template: '' })
 class ModelUsersDialogStub {
+  open = vi.fn();
+}
+
+/** Stands in for the Usage by model dialog. */
+@Component({ selector: 'app-telemetry-user-models-dialog', template: '' })
+class UserModelsDialogStub {
   open = vi.fn();
 }
 
@@ -73,7 +80,8 @@ const row = (overrides: Partial<AiUsageBreakdownRowDto> = {}): AiUsageBreakdownR
 });
 
 const userRow = (overrides: Partial<AiTelemetryUserRowDto> = {}): AiTelemetryUserRowDto => ({
-  userId: 'u-1', userName: 'alice', requests: 0, chatRequests: 0, titleRequests: 0, benchmarkRequests: 0,
+  userId: 'u-1', userName: 'alice', requests: 0, systemRequests: 0, userKeyRequests: 0, systemEstimatedCost: 0, userKeyEstimatedCost: 0,
+  chatRequests: 0, titleRequests: 0, benchmarkRequests: 0,
   promptTokens: 0, outputTokens: 0, estimatedCost: 0, pricedRequests: 0, peakHourRequests: 0, peakHourStartUtc: null,
   requestsPerActiveHour: 0, activeDays: 0, lastRequestUtc: null, chatsCreated: 0, userMessages: 0,
   limitRefusals: 0, providerRefusals: 0, isOverseerBlocked: false, hasAccountHold: false, configs: [],
@@ -81,7 +89,7 @@ const userRow = (overrides: Partial<AiTelemetryUserRowDto> = {}): AiTelemetryUse
 });
 
 const usersPage = (users: AiTelemetryUserRowDto[] = []): AiTelemetryUsersPage => ({
-  users, totalUsers: users.length, securityEventsAvailable: true
+  users, totalUsers: users.length, securityEventsAvailable: true, keySource: 'system'
 });
 
 describe('AdminTelemetryTabComponent', () => {
@@ -100,8 +108,8 @@ describe('AdminTelemetryTabComponent', () => {
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(), AdminPageStore]
     })
       .overrideComponent(AdminTelemetryTabComponent, {
-        remove: { imports: [TelemetryChartsDialogComponent, TelemetryModelUsersDialogComponent] },
-        add: { imports: [ChartsDialogStub, ModelUsersDialogStub] }
+        remove: { imports: [TelemetryChartsDialogComponent, TelemetryModelUsersDialogComponent, TelemetryUserModelsDialogComponent] },
+        add: { imports: [ChartsDialogStub, ModelUsersDialogStub, UserModelsDialogStub] }
       })
       .compileComponents();
 
@@ -140,7 +148,9 @@ describe('AdminTelemetryTabComponent', () => {
 
     const host = () => fixture.nativeElement as HTMLElement;
 
-    const openTab = () => {
+    /** Renders the tab on a sub-tab, Summary by default. */
+    const openTab = (subTab: AdminTelemetrySubTab = 'summary') => {
+      store.telemetrySubTab = subTab;
       fixture.detectChanges();
     };
 
@@ -170,6 +180,9 @@ describe('AdminTelemetryTabComponent', () => {
 
     const modelUsersDialog = (): ModelUsersDialogStub =>
       fixture.debugElement.query(By.directive(ModelUsersDialogStub)).componentInstance;
+
+    const userModelsDialog = (): UserModelsDialogStub =>
+      fixture.debugElement.query(By.directive(UserModelsDialogStub)).componentInstance;
 
     it('renders Clear All Cooldowns as a small image button, aria-disabled only when nothing is rate-limited', () => {
       openTab();
@@ -332,7 +345,7 @@ describe('AdminTelemetryTabComponent', () => {
           row({ provider: 'OpenAI', modelId: 'gpt-x', modelName: 'GPT X', roleGroup: 'title', roleContext: 2, requests: 3 })
         ]
       })));
-      openTab();
+      openTab('models');
 
       expect(cards().length).toBe(2);
       expect(status()).toBe('Showing 2 entries · 8 requests');
@@ -349,7 +362,7 @@ describe('AdminTelemetryTabComponent', () => {
     });
 
     it('lists Other only while it has rows, and says when no role is selected', () => {
-      openTab();
+      openTab('models');
       expect(host().querySelector('#tl-role-other')).toBeNull();
 
       component.telemetrySummary = summary({ rows: [row({ roleGroup: 'other', roleContext: 9 })] });
@@ -365,7 +378,7 @@ describe('AdminTelemetryTabComponent', () => {
     });
 
     it('says so when the range has no usage at all', () => {
-      openTab();
+      openTab('models');
       expect(host().querySelector('.tl-empty')?.textContent).toContain('No AI usage logged for the selected date range.');
       expect(host().querySelector('#tl-thinking-select')).toBeNull();
     });
@@ -374,7 +387,7 @@ describe('AdminTelemetryTabComponent', () => {
       summarySpy.mockReturnValue(of(summary({
         rows: [row({ thinkingLevel: 'high', requests: 4 }), row({ thinkingLevel: '', requests: 2 })]
       })));
-      openTab();
+      openTab('models');
       expect(cards().length).toBe(1);
       expect(cards()[0].textContent).not.toContain('Thinking:');
 
@@ -394,7 +407,7 @@ describe('AdminTelemetryTabComponent', () => {
       summarySpy.mockReturnValue(of(summary({
         rows: [row({ thinkingLevel: 'high' }), row({ thinkingLevel: 'medium' }), row({ thinkingLevel: '' }), row({ thinkingLevel: null })]
       })));
-      openTab();
+      openTab('models');
 
       expect(cards().length).toBe(1);
       expect(badgeTexts(cards()[0], '.thinking-badge')).toEqual(['thinking level Medium', 'thinking level High']);
@@ -410,7 +423,7 @@ describe('AdminTelemetryTabComponent', () => {
           row({ modelId: 'd', modelName: 'D', roleGroup: 'other', roleContext: 9, requests: 1 })
         ]
       })));
-      openTab();
+      openTab('models');
       (host().querySelector('#tl-role-other') as HTMLInputElement).click();
       fixture.detectChanges();
 
@@ -425,7 +438,7 @@ describe('AdminTelemetryTabComponent', () => {
       summarySpy.mockReturnValue(of(summary({
         rows: [row({ requests: 2 }), row({ modelId: 'mystery-1', modelName: null })]
       })));
-      openTab();
+      openTab('models');
 
       const [named, unnamed] = cards();
       expect(named.querySelector('h5')?.textContent?.trim()).toBe('Claude X');
@@ -441,7 +454,7 @@ describe('AdminTelemetryTabComponent', () => {
         keySource: 'both',
         rows: [row({ requests: 3 }), row({ keySource: 'user', userId: 'u-1', userName: 'alice', requests: 2 })]
       })));
-      openTab();
+      openTab('models');
 
       const select = host().querySelector('#telemetryKeysSelect') as HTMLSelectElement;
       select.value = 'both';
@@ -475,7 +488,7 @@ describe('AdminTelemetryTabComponent', () => {
       vi.useFakeTimers();
       try {
         summarySpy.mockReturnValue(of(threeProviders()));
-        openTab();
+        openTab('models');
         expect(host().querySelector('label[for="tl-breakdown-search"]')?.textContent).toContain('Search by model name');
 
         typeSearch('flash');
@@ -507,7 +520,7 @@ describe('AdminTelemetryTabComponent', () => {
       vi.useFakeTimers();
       try {
         summarySpy.mockReturnValue(of(threeProviders()));
-        openTab();
+        openTab('models');
         typeSearch('gpt');
         vi.advanceTimersByTime(200);
         fixture.detectChanges();
@@ -538,7 +551,7 @@ describe('AdminTelemetryTabComponent', () => {
       vi.useFakeTimers();
       try {
         summarySpy.mockReturnValue(of(threeProviders()));
-        openTab();
+        openTab('models');
 
         const group = host().querySelector('.tl-providers') as HTMLElement;
         expect(group.getAttribute('role')).toBe('group');
@@ -582,13 +595,13 @@ describe('AdminTelemetryTabComponent', () => {
 
     it('hides the provider toggles with one provider', () => {
       summarySpy.mockReturnValue(of(summary({ rows: [row(), row({ modelId: 'b', modelName: 'B' })] })));
-      openTab();
+      openTab('models');
       expect(host().querySelector('.tl-providers')).toBeNull();
     });
 
     it('sorts the cards from the Sort popover, keeps All shown last, and stores the sort', () => {
       summarySpy.mockReturnValue(of(threeProviders()));
-      openTab();
+      openTab('models');
 
       const trigger = host().querySelector('#tl-sort-trigger') as HTMLButtonElement;
       expect(trigger.matches('button.btn-ghost[type="button"]')).toBe(true);
@@ -631,7 +644,7 @@ describe('AdminTelemetryTabComponent', () => {
       /** Opens the Sort popover from its trigger, runs the check, and closes it again. */
       const withSortPanel = (check: (panel: HTMLElement) => void) => {
         summarySpy.mockReturnValue(of(threeProviders()));
-        openTab();
+        openTab('models');
         (host().querySelector('#tl-sort-trigger') as HTMLButtonElement).click();
         fixture.detectChanges();
         const panel = host().querySelector('#tl-sort-panel') as HTMLElement;
@@ -699,18 +712,167 @@ describe('AdminTelemetryTabComponent', () => {
       });
     });
 
-    // --- Sticky, collapsible Date Range and Keys bar ---
+    // --- Sticky head, sub-tabs and the collapsible Date range and Keys controls ---
 
-    it('keeps the header and the Date Range and Keys bar in one sticky head', () => {
+    it('keeps the header and the sub-tab row with the Date range and Keys controls in one sticky head', () => {
       openTab();
 
       const head = host().querySelector('.tl-head') as HTMLElement;
       expect(head.querySelector('.tab-header-row')).not.toBeNull();
-      expect(head.querySelector('.telemetry-toolbar')).not.toBeNull();
+      expect(head.querySelector('.tl-nav [role="tablist"]')).not.toBeNull();
+      expect(head.querySelector('.tl-nav #telemetryKeysSelect')).not.toBeNull();
       const style = getComputedStyle(head);
       expect(style.position).toBe('sticky');
       expect(style.top).toBe('0px');
-      expect(getComputedStyle(head.querySelector('.tl-toolbar-ground')!).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+      expect(getComputedStyle(head.querySelector('.tl-nav-ground')!).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    });
+
+    const subTabButtons = (): HTMLButtonElement[] =>
+      Array.from(host().querySelectorAll<HTMLButtonElement>('.tl-subtabs [role="tab"]'));
+
+    it('is a named tablist of Summary, Models and Users, each tab paired with its panel', () => {
+      openTab();
+
+      const tablist = host().querySelector('.tl-subtabs') as HTMLElement;
+      expect(tablist.getAttribute('role')).toBe('tablist');
+      expect(tablist.getAttribute('aria-label')).toBe('AI Telemetry sections');
+      expect(subTabButtons().map(b => b.textContent?.trim())).toEqual(['Summary', 'Models', 'Users']);
+      expect(subTabButtons().map(b => b.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
+      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['0', '-1', '-1']);
+      for (const tab of subTabButtons()) {
+        expect(tab.getAttribute('type')).toBe('button');
+        const panel = host().querySelector('#' + tab.getAttribute('aria-controls')) as HTMLElement;
+        expect(panel.getAttribute('role')).toBe('tabpanel');
+        expect(panel.getAttribute('aria-labelledby')).toBe(tab.id);
+        expect(panel.getAttribute('tabindex')).toBe('0');
+      }
+      expect((host().querySelector('#tl-subpanel-summary') as HTMLElement).hidden).toBe(false);
+      expect((host().querySelector('#tl-subpanel-models') as HTMLElement).hidden).toBe(true);
+    });
+
+    it('moves the address with a history entry on click, and replaces it with the arrow keys and moves focus', () => {
+      openTab();
+      const goTo = vi.spyOn(store, 'goTo');
+
+      subTabButtons()[0].click();
+      expect(goTo).not.toHaveBeenCalled();
+
+      subTabButtons()[1].click();
+      fixture.detectChanges();
+      expect(goTo).toHaveBeenLastCalledWith('telemetry', 'models', 'push');
+      expect(store.telemetrySubTab).toBe('models');
+      expect(subTabButtons()[1].getAttribute('aria-selected')).toBe('true');
+
+      subTabButtons()[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+      expect(goTo).toHaveBeenLastCalledWith('telemetry', 'users', 'replace');
+      expect(document.activeElement).toBe(host().querySelector('#tl-subtab-users'));
+      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['-1', '-1', '0']);
+    });
+
+    it('puts the Date range and Keys controls after the tablist in the same row, not inside it', () => {
+      openTab();
+
+      const nav = host().querySelector('.tl-nav') as HTMLElement;
+      const tablist = nav.querySelector('[role="tablist"]') as HTMLElement;
+      const group = nav.querySelector('.tl-range') as HTMLElement;
+      expect(group.getAttribute('role')).toBe('group');
+      expect(group.getAttribute('aria-label')).toBe('Date range and keys');
+      expect(group.parentElement).toBe(nav);
+      expect(tablist.contains(group)).toBe(false);
+      expect(tablist.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(Array.from(tablist.children).every(c => c.getAttribute('role') === 'tab')).toBe(true);
+      expect(group.querySelector('label[for="telemetryTimeSpanSelect"]')?.textContent?.trim()).toBe('Date range');
+      expect(group.querySelector('#tl-toolbar-toggle')).not.toBeNull();
+    });
+
+    it('renders a panel on first selection and keeps it, hidden, after leaving it', () => {
+      usersSpy.mockReturnValue(of(usersPage([userRow()])));
+      openTab();
+      expect(host().querySelector('#tl-subpanel-users app-telemetry-users')).toBeNull();
+      expect(host().querySelector('#tl-subpanel-models .tl-breakdown-status')).toBeNull();
+      expect(usersSpy).not.toHaveBeenCalled();
+
+      subTabButtons()[2].click();
+      fixture.detectChanges();
+      const view = host().querySelector('#tl-subpanel-users app-telemetry-users');
+      expect(view).not.toBeNull();
+      expect(usersSpy).toHaveBeenCalledTimes(1);
+
+      subTabButtons()[0].click();
+      fixture.detectChanges();
+      const panel = host().querySelector('#tl-subpanel-users') as HTMLElement;
+      expect(panel.hidden).toBe(true);
+      expect(panel.querySelector('app-telemetry-users')).toBe(view);
+
+      subTabButtons()[2].click();
+      fixture.detectChanges();
+      expect(usersSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows no heading that repeats a sub-tab name', () => {
+      summarySpy.mockReturnValue(of(summary({ rows: [row()] })));
+      openTab('models');
+      subTabButtons()[2].click();
+      fixture.detectChanges();
+
+      const headings = Array.from(host().querySelectorAll('h1, h2, h3, h4, h5, h6')).map(h => normalize(h.textContent));
+      expect(headings).not.toContain('Usage by Model and Role');
+      expect(headings).not.toContain('System AI usage by user');
+      expect(host().querySelector('#tl-breakdown-heading, #tl-users-heading')).toBeNull();
+    });
+
+    it('tags the Request Governor card and the Rate Limit Partitions heading live', () => {
+      openTab();
+
+      const governorTitle = host().querySelector('.telemetry-governor-card .telemetry-card-title') as HTMLElement;
+      expect(normalize(governorTitle.querySelector('.telemetry-card-scope')?.textContent)).toBe('live');
+      const partitions = host().querySelector('.telemetry-partitions h4') as HTMLElement;
+      expect(partitions.classList.contains('tl-title-row')).toBe(true);
+      expect(normalize(partitions.querySelector('.telemetry-card-scope')?.textContent)).toBe('live');
+    });
+
+    describe('badges that never wrap', () => {
+      /** Narrows a summary card, and checks that its scope badge is one box below the title text. */
+      const expectBadgeOnNextLine = (cardSelector: string, width: string) => {
+        const card = host().querySelector(cardSelector) as HTMLElement;
+        card.style.width = width;
+        void card.offsetWidth;
+        const title = card.querySelector('.telemetry-card-title') as HTMLElement;
+        const text = title.querySelector(':scope > span:not(.telemetry-card-scope)') as HTMLElement;
+        const badge = title.querySelector('.telemetry-card-scope') as HTMLElement;
+        expect(getComputedStyle(badge).whiteSpace).toBe('nowrap');
+        expect(badge.getClientRects().length).toBe(1);
+        expect(badge.getBoundingClientRect().top).toBeGreaterThan(text.getBoundingClientRect().top);
+      };
+
+      it('moves the all keys badge of a narrow Overseer Activity card to the next line whole', () => {
+        openTab();
+        expectBadgeOnNextLine('.telemetry-activity-card', '220px');
+      });
+
+      it('moves the live badge of a narrow Request Governor card to the next line whole', () => {
+        openTab();
+        expectBadgeOnNextLine('.telemetry-governor-card', '150px');
+      });
+
+      it('keeps a long user-key badge on one line, cut with an ellipsis inside its card', () => {
+        summarySpy.mockReturnValue(of(summary({
+          keySource: 'user',
+          rows: [row({ keySource: 'user', userId: 'u-1', userName: 'a'.repeat(60) })]
+        })));
+        openTab('models');
+        host().style.width = '420px';
+        fixture.detectChanges();
+        void host().offsetWidth;
+
+        const card = cards()[0];
+        const badge = card.querySelector('.tl-key-badge') as HTMLElement;
+        expect(badge.getClientRects().length).toBe(1);
+        expect(getComputedStyle(badge).whiteSpace).toBe('nowrap');
+        expect(badge.scrollWidth).toBeGreaterThan(badge.clientWidth);
+        expect(badge.getBoundingClientRect().right).toBeLessThanOrEqual(card.getBoundingClientRect().right);
+      });
     });
 
     it('collapses the bar to a summary line, keeps focus on the toggle, and remembers it', () => {
@@ -751,12 +913,12 @@ describe('AdminTelemetryTabComponent', () => {
 
     it('is a labeled list of articles, each labeled by its title, ending in the All shown total', () => {
       summarySpy.mockReturnValue(of(summary({ rows: [row({ requests: 2, outputTokens: 10 }), row({ modelId: 'b', modelName: 'B', outputTokens: 5 })] })));
-      openTab();
+      openTab('models');
 
       const list = host().querySelector('ul.tl-cards') as HTMLElement;
       expect(list.getAttribute('role')).toBe('list');
-      expect(list.getAttribute('aria-labelledby')).toBe('tl-breakdown-heading');
-      expect(host().querySelector('h4#tl-breakdown-heading')).not.toBeNull();
+      expect(list.getAttribute('aria-label')).toBe('Usage by model and role');
+      expect(host().querySelector('#tl-subpanel-models h4')).toBeNull();
 
       for (const article of Array.from(list.querySelectorAll<HTMLElement>(':scope > li > article'))) {
         const title = host().querySelector('#' + article.getAttribute('aria-labelledby'));
@@ -775,7 +937,7 @@ describe('AdminTelemetryTabComponent', () => {
           row({ modelId: 'c', modelName: 'C', roleGroup: 'benchmark', roleContext: 4, requests: 3 })
         ]
       })));
-      openTab();
+      openTab('models');
 
       const errors = (card: HTMLElement) => card.querySelector('.tl-metric-errors')?.textContent?.replace(/\s+/g, ' ').trim();
       const [chat, title, benchmark] = cards();
@@ -800,7 +962,7 @@ describe('AdminTelemetryTabComponent', () => {
 
     it('shows a partial cost with its unpriced qualifier', () => {
       summarySpy.mockReturnValue(of(summary({ rows: [row({ requests: 4, pricedRequests: 3, estimatedCost: 1.5 })] })));
-      openTab();
+      openTab('models');
 
       const cost = cards()[0].querySelector('.tl-metric-cost')?.textContent ?? '';
       expect(cost).toContain('$1.50');
@@ -809,7 +971,7 @@ describe('AdminTelemetryTabComponent', () => {
 
     it('lays the nine metrics out in 9, 5, 5 and 2 columns as the list narrows, lined up with the total', () => {
       summarySpy.mockReturnValue(of(summary({ rows: [row({ requests: 2 }), row({ modelId: 'b', modelName: 'A much longer model name' })] })));
-      openTab();
+      openTab('models');
 
       const metrics = () => cards()[0].querySelector<HTMLElement>('.tl-metrics')!;
       const totalMetrics = () => host().querySelector<HTMLElement>('.tl-card-total .tl-metrics')!;
@@ -941,7 +1103,7 @@ describe('AdminTelemetryTabComponent', () => {
       summarySpy.mockReturnValue(of(summary({
         rows: [row({ requests: 3 }), row({ modelId: 'b', modelName: 'B', roleGroup: 'title', roleContext: 2 })]
       })));
-      openTab();
+      openTab('models');
 
       expect(cards().map(c => c.querySelectorAll('button.tl-card-users').length)).toEqual([1, 1]);
       expect(host().querySelector('.tl-card-total button')).toBeNull();
@@ -960,7 +1122,7 @@ describe('AdminTelemetryTabComponent', () => {
       summarySpy.mockReturnValue(of(summary({
         rows: [row({ thinkingLevel: 'high', requests: 4 }), row({ thinkingLevel: 'low', requests: 2 })]
       })));
-      openTab();
+      openTab('models');
       const thinking = host().querySelector('#tl-thinking-select') as HTMLSelectElement;
       thinking.value = 'separate';
       thinking.dispatchEvent(new Event('change'));
@@ -988,7 +1150,7 @@ describe('AdminTelemetryTabComponent', () => {
       summarySpy.mockReturnValue(of(summary({
         rows: [row({ provider: 'OpenAI', modelId: 'gpt-x', modelName: 'GPT X', roleGroup: 'title', roleContext: 2, thinkingLevel: 'low' })]
       })));
-      openTab();
+      openTab('models');
 
       const button = usersButtons()[0];
       button.click();
@@ -1018,7 +1180,7 @@ describe('AdminTelemetryTabComponent', () => {
         keySource: 'user',
         rows: [row({ keySource: 'user', userId: 'u-1', userName: 'alice' })]
       })));
-      openTab();
+      openTab('models');
 
       usersButtons()[0].click();
 
@@ -1027,47 +1189,66 @@ describe('AdminTelemetryTabComponent', () => {
 
     // --- Users view ---
 
-    it('places the users view under its heading and scope line, and opens a user\'s charts from it', () => {
+    it('places the users view in the Users panel with the range and keys, and opens a user\'s charts from it', () => {
       usersSpy.mockReturnValue(of(usersPage([userRow({ userId: 'u-3', userName: 'carol', requests: 4 })])));
-      openTab();
+      openTab('users');
 
-      const section = host().querySelector('section.telemetry-section-card.tl-users') as HTMLElement;
-      expect(section.querySelector('h4#tl-users-heading')?.textContent?.trim()).toBe('System AI usage by user');
-      expect(section.querySelector('.tl-users-scope')?.textContent).toContain('Keys filter does not apply');
-      expect(section.querySelector('app-telemetry-users')).not.toBeNull();
+      const panel = host().querySelector('#tl-subpanel-users') as HTMLElement;
+      expect(panel.querySelector('app-telemetry-users')).not.toBeNull();
       expect(usersSpy).toHaveBeenCalledWith(expect.objectContaining({
-        startDate: component.telemetryStartDate, endDate: component.telemetryEndDate, sort: 'cost', skip: 0
+        startDate: component.telemetryStartDate, endDate: component.telemetryEndDate, keys: 'system', sort: 'cost', skip: 0
       }));
 
-      (section.querySelector('button[aria-label="Usage charts of carol"]') as HTMLButtonElement).click();
+      (panel.querySelector('button[aria-label="Usage charts of carol"]') as HTMLButtonElement).click();
 
       expect(chartsDialog().open).toHaveBeenCalledWith(expect.objectContaining({
         start: component.telemetryStartDate, end: component.telemetryEndDate, keys: 'system', userId: 'u-3', userName: 'carol'
       }));
     });
 
-    it('filters the users view to a user a Usage link asked for, and clears the request', () => {
-      usersSpy.mockReturnValue(of(usersPage([userRow({ userId: 'u-5', userName: 'eve' })])));
-      store.pendingTelemetryUserId = 'u-5';
-      store.pendingTelemetryUserName = 'eve';
-
-      openTab();
-
-      expect(store.pendingTelemetryUserId).toBeNull();
-      expect(store.pendingTelemetryUserName).toBeNull();
-      expect(usersSpy).toHaveBeenCalledWith(expect.objectContaining({ userId: 'u-5' }));
-      expect(host().querySelector('.tl-users-status')?.textContent?.trim()).toBe('Showing 1 user — eve');
-    });
-
-    it('filters the users view when a Usage request arrives while the tab is open', () => {
-      openTab();
+    it('refetches the users view with the Keys filter when it changes', () => {
+      openTab('users');
       usersSpy.mockClear();
 
-      store.requestTelemetryUser('u-6', 'frank');
+      const select = host().querySelector('#telemetryKeysSelect') as HTMLSelectElement;
+      select.value = 'both';
+      select.dispatchEvent(new Event('change'));
       fixture.detectChanges();
 
+      expect(usersSpy).toHaveBeenCalledWith(expect.objectContaining({ keys: 'both', skip: 0 }));
+    });
+
+    it('opens the Usage by model dialog with the tab\'s range and keys, the button as the opener', () => {
+      usersSpy.mockReturnValue(of(usersPage([userRow({ userId: 'u-3', userName: 'carol', requests: 4 })])));
+      openTab('users');
+
+      const button = host().querySelector('#tl-subpanel-users button[aria-label="Usage by model: carol"]') as HTMLButtonElement;
+      button.click();
+
+      expect(userModelsDialog().open).toHaveBeenCalledWith({
+        start: component.telemetryStartDate,
+        end: component.telemetryEndDate,
+        keys: 'system',
+        userId: 'u-3',
+        userName: 'carol'
+      }, button);
+    });
+
+    it('selects and mounts the Users panel for a Usage request made on Summary, and its first request carries the user', () => {
+      usersSpy.mockReturnValue(of(usersPage([userRow({ userId: 'u-5', userName: 'eve' })])));
+      openTab();
+      expect(usersSpy).not.toHaveBeenCalled();
+
+      store.requestTelemetryUser('u-5', 'eve');
+      fixture.detectChanges();
+
+      expect(store.telemetrySubTab).toBe('users');
+      expect(subTabButtons()[2].getAttribute('aria-selected')).toBe('true');
       expect(store.pendingTelemetryUserId).toBeNull();
-      expect(usersSpy).toHaveBeenCalledWith(expect.objectContaining({ userId: 'u-6' }));
+      expect(store.pendingTelemetryUserName).toBeNull();
+      expect(usersSpy).toHaveBeenCalledTimes(1);
+      expect(usersSpy).toHaveBeenCalledWith(expect.objectContaining({ userId: 'u-5' }));
+      expect(host().querySelector('.tl-users-status')?.textContent?.trim()).toBe('Showing 1 user — eve');
     });
   });
 });

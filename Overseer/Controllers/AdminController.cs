@@ -1380,14 +1380,17 @@ public class AdminController : ControllerBase
             string.IsNullOrWhiteSpace(userId) ? null : userId));
     }
 
-    /// <summary>Per-user usage of system AI configurations, sorted by aggregate and paged on the server.</summary>
-    /// <param name="sort">cost (default) | requests | tokens | peakHour | refusals | lastActive.</param>
+    /// <summary>Per-user usage of the selected key sources, sorted by aggregate or name and paged on the server.</summary>
+    /// <param name="sort">cost (default) | requests | tokens | peakHour | refusals | lastActive | name.</param>
+    /// <param name="keys">system (default) | user | both.</param>
+    /// <param name="direction">asc | desc (default).</param>
     [HttpGet("ai-telemetry/users")]
     public async Task<IActionResult> GetAiTelemetryUsers([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
         [FromQuery] string? search, [FromQuery] string? userId, [FromQuery] string? sort, [FromQuery] int skip, [FromQuery] int take,
+        [FromQuery] string? keys, [FromQuery] string? direction,
         [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
         => Ok(await summaryService.GetUsersAsync(startDate, endDate, search,
-            string.IsNullOrWhiteSpace(userId) ? null : userId, sort, skip, take));
+            string.IsNullOrWhiteSpace(userId) ? null : userId, sort, skip, take, keys, direction));
 
     /// <summary>Usage of one model by user, in one key source and the given role groups.</summary>
     /// <param name="keys">system (default) | user.</param>
@@ -1406,6 +1409,21 @@ public class AdminController : ControllerBase
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();
         return Ok(await summaryService.GetModelUsersAsync(startDate, endDate, keys, provider, modelId, roleList));
+    }
+
+    /// <summary>Usage of one user by model, role context and thinking level, in the selected key sources.</summary>
+    /// <param name="keys">system (default) | user | both.</param>
+    [HttpGet("ai-telemetry/user-models")]
+    public async Task<IActionResult> GetAiTelemetryUserModels([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromQuery] string? keys, [FromQuery] string? userId,
+        [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return BadRequest(new { message = "userId is required." });
+        }
+
+        return Ok(await summaryService.GetUserModelsAsync(startDate, endDate, keys, userId));
     }
 
     // --- Helper Methods ---

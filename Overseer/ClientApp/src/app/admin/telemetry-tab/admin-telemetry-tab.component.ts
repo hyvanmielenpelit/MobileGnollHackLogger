@@ -1,7 +1,7 @@
 import { AfterViewInit, Component, ChangeDetectionStrategy, ElementRef, OnInit, OnDestroy, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Observable, Subscription, forkJoin, of } from 'rxjs';
+import { Observable, forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import {
   AdminService,
@@ -19,6 +19,7 @@ import {
   searchTerms
 } from '../../shared/model-picker/model-picker-view';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
+import { rovingTabIndex } from '../../utils/roving-tab.util';
 import { formatCost } from '../benchmark/batteries/battery.models';
 import {
   FEW_ATTEMPTS_THRESHOLD,
@@ -29,9 +30,10 @@ import {
   formatOneIn,
   formatPercent
 } from '../benchmark/shared/provider-availability/provider-availability';
-import { AdminPageStore, TelemetryTimeSpan } from '../admin-page.store';
+import { AdminHistoryMode, AdminPageStore, AdminTelemetrySubTab, TelemetryTimeSpan } from '../admin-page.store';
 import { TelemetryChartsDialogComponent } from './charts/telemetry-charts-dialog.component';
 import { TelemetryModelUsersDialogComponent } from './model-users/telemetry-model-users-dialog.component';
+import { TelemetryUserModelsDialogComponent } from './user-models/telemetry-user-models-dialog.component';
 import {
   BREAKDOWN_SORT_FIELDS,
   Breakdown,
@@ -59,12 +61,20 @@ import {
   readBreakdownView,
   roleCosts,
   roleCounts,
+  roleBadgeClass,
   roleGroupLabel,
   thinkingBadgesOf,
   thinkingLevelLabel,
   writeBreakdownView
 } from './telemetry-breakdown';
-import { TelemetryUserRef, TelemetryUsersComponent } from './users/telemetry-users.component';
+import { TelemetryUserModelsRef, TelemetryUserRef, TelemetryUsersComponent } from './users/telemetry-users.component';
+
+/** The sub-tabs' visible labels, in tab order. */
+export const TELEMETRY_SUBTAB_LABELS: Readonly<Record<AdminTelemetrySubTab, string>> = {
+  summary: 'Summary',
+  models: 'Models',
+  users: 'Users'
+};
 
 /** The Date Range select's options, also the collapsed bar's summary. */
 export const TELEMETRY_TIME_SPAN_LABELS: Readonly<Record<TelemetryTimeSpan, string>> = {
@@ -79,13 +89,6 @@ export const TELEMETRY_TIME_SPAN_LABELS: Readonly<Record<TelemetryTimeSpan, stri
 
 const TIME_SPANS = Object.keys(TELEMETRY_TIME_SPAN_LABELS) as TelemetryTimeSpan[];
 
-const ROLE_BADGE_CLASSES: Readonly<Record<AiUsageRoleGroup, string>> = {
-  chat: 'badge-role-chat',
-  title: 'badge-role-title',
-  benchmark: 'badge-role-benchmark',
-  other: 'badge-role-other'
-};
-
 /** The applied search follows the field after this much quiet, so the status line is not announced per keystroke. */
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -99,13 +102,16 @@ export interface TelemetrySummaryLine {
 const NO_ROWS: readonly AiUsageBreakdownRowDto[] = [];
 
 /**
- * The Admin page's AI Telemetry tab: usage, cost, provider availability and Overseer activity for a
- * date range and key source, the request governor's partitions, a breakdown by model and role, and
- * the usage of system AI configurations by user.
+ * The Admin page's AI Telemetry tab, in three sub-tabs that share one date range and key source:
+ * Summary (usage, cost, provider availability, Overseer activity and the request governor's
+ * partitions), Models (the breakdown by model and role) and Users (the usage by user).
  */
 @Component({
   selector: 'app-admin-telemetry-tab',
-  imports: [CommonModule, FormsModule, ProviderBadgeComponent, TelemetryUsersComponent, TelemetryChartsDialogComponent, TelemetryModelUsersDialogComponent],
+  imports: [
+    CommonModule, FormsModule, ProviderBadgeComponent, TelemetryUsersComponent, TelemetryChartsDialogComponent,
+    TelemetryModelUsersDialogComponent, TelemetryUserModelsDialogComponent
+  ],
   templateUrl: './admin-telemetry-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
   styleUrl: './admin-telemetry-tab.component.scss'
@@ -117,9 +123,12 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
 
   @ViewChild('chartsDialog') chartsDialog?: TelemetryChartsDialogComponent;
   @ViewChild('modelUsersDialog') modelUsersDialog?: TelemetryModelUsersDialogComponent;
-  @ViewChild(TelemetryUsersComponent, { static: true }) usersView?: TelemetryUsersComponent;
+  @ViewChild('userModelsDialog') userModelsDialog?: TelemetryUserModelsDialogComponent;
+  @ViewChild(TelemetryUsersComponent) usersView?: TelemetryUsersComponent;
   @ViewChild('tlHead') private tlHead?: ElementRef<HTMLElement>;
 
+  readonly subTabs: readonly AdminTelemetrySubTab[] = ['summary', 'models', 'users'];
+  readonly subTabLabels = TELEMETRY_SUBTAB_LABELS;
   readonly keySources = KEY_SOURCES;
   readonly keySourceLabels = KEY_SOURCE_LABELS;
   readonly timeSpans = TIME_SPANS;
@@ -152,7 +161,8 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
   private governorCountdownTimer?: ReturnType<typeof setInterval>;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private headObserver?: ResizeObserver;
-  private telemetryUserSub?: Subscription;
+  /** The sub-tabs whose panels have been shown; they stay rendered, hidden, once left. */
+  private readonly mounted = new Set<AdminTelemetrySubTab>();
   private breakdownMemo: {
     rows: readonly AiUsageBreakdownRowDto[];
     roles: readonly AiUsageRoleGroup[];
@@ -193,19 +203,50 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
     return this.view.keys;
   }
 
+  /** The selected sub-tab lives in the page store, which follows the address. */
+  get subTab(): AdminTelemetrySubTab {
+    return this.store.telemetrySubTab;
+  }
+
   ngOnInit() {
     ensureOverlayPolyfills();
     this.todayDate = this.formatLocalDate(new Date());
     if (!this.telemetryStartDate && !this.telemetryEndDate) {
       this.applyTelemetryPreset(this.telemetryTimeSpan, false);
     }
-    this.takePendingTelemetryUser();
-    this.telemetryUserSub = this.store.telemetryUserRequested$.subscribe(() => {
-      if (this.takePendingTelemetryUser()) {
-        document.getElementById('tl-users-heading')?.focus();
-      }
-    });
     this.refreshTelemetryTab();
+  }
+
+  // --- Sub-tabs ---
+
+  /** Moves the address to a sub-tab; the selected one is left alone. */
+  selectSubTab(tab: AdminTelemetrySubTab, mode: AdminHistoryMode = 'push') {
+    if (tab === this.subTab) {
+      return;
+    }
+    this.store.goTo('telemetry', tab, mode);
+    // A Sort popover anchored in the panel just hidden, or one about to show, is repositioned.
+    setTimeout(() => refreshAnchorPositioning());
+  }
+
+  /** Arrow keys, Home and End move between the sub-tabs, select the one reached and focus it. */
+  onSubTabKeydown(event: KeyboardEvent, index: number) {
+    const next = rovingTabIndex(event, index, this.subTabs.length);
+    if (next === null) {
+      return;
+    }
+    const tab = this.subTabs[next];
+    this.selectSubTab(tab, 'replace');
+    this.host.nativeElement.querySelector<HTMLElement>(`#tl-subtab-${tab}`)?.focus();
+  }
+
+  /** True for the selected sub-tab and every one shown before; marks the selected one as shown. */
+  isMounted(tab: AdminTelemetrySubTab): boolean {
+    if (tab === this.subTab) {
+      this.mounted.add(tab);
+      return true;
+    }
+    return this.mounted.has(tab);
   }
 
   /** Focused or scrolled-to elements stop below the sticky head: its height, plus a gap, as `--tl-sticky-clearance`. */
@@ -223,7 +264,6 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
 
   ngOnDestroy() {
     this.stopGovernorCountdown();
-    this.telemetryUserSub?.unsubscribe();
     this.headObserver?.disconnect();
     this.cancelSearchTimer();
   }
@@ -332,7 +372,7 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
   }
 
   /**
-   * Reloads the summary and the governor status together, and the users view. Each request settles
+   * Reloads the summary and the governor status together, and the users view once it exists. Each request settles
    * on its own, so one failure still shows the other's data; the feedback is a single toast either way.
    */
   refreshTelemetryTab(showFeedback = false) {
@@ -501,19 +541,17 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
     }, (event?.currentTarget as HTMLElement | null) ?? undefined);
   }
 
-  // --- Users view ---
+  // --- Usage by model ---
 
-  /** Reads and clears the page store's pending telemetry-user request and filters the users view; true when there was one. */
-  private takePendingTelemetryUser(): boolean {
-    const id = this.store.pendingTelemetryUserId;
-    if (!id) {
-      return false;
-    }
-    const name = this.store.pendingTelemetryUserName || id;
-    this.store.pendingTelemetryUserId = null;
-    this.store.pendingTelemetryUserName = null;
-    this.usersView?.filterToUser(id, name);
-    return true;
+  /** Opens the Usage by model dialog for one user, over the tab's range and Keys filter. */
+  openUserModels(ref: TelemetryUserModelsRef) {
+    this.userModelsDialog?.open({
+      start: this.telemetryStartDate,
+      end: this.telemetryEndDate,
+      keys: this.keys,
+      userId: ref.userId,
+      userName: ref.userName
+    }, ref.opener ?? undefined);
   }
 
   // --- Summary cards ---
@@ -896,7 +934,7 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
   }
 
   roleBadgeClass(group: AiUsageRoleGroup): string {
-    return ROLE_BADGE_CLASSES[group] ?? ROLE_BADGE_CLASSES.other;
+    return roleBadgeClass(group);
   }
 
   /**

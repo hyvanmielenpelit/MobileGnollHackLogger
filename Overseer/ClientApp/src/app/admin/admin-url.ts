@@ -40,6 +40,7 @@ const BENCHMARK_SUBTAB_SLUGS: Readonly<Record<BenchmarkSubTab, string>> = {
 export const ADMIN_SUBTAB_SLUGS: Readonly<Partial<Record<AdminTabId, readonly AdminSubTabSlug[]>>> = {
   users: [['users', ''], ['groups', 'groups'], ['deletions', 'deletions'], ['log', 'log']],
   configs: [['', ''], ['api-keys', 'api-keys']],
+  telemetry: [['summary', ''], ['models', 'models'], ['users', 'users']],
   benchmark: Object.entries(BENCHMARK_SUBTAB_SLUGS) as [BenchmarkSubTab, string][],
   devtools: [['source', ''], ['gnollhack-wiki', 'gnollhack-wiki'], ['nethack-wiki', 'nethack-wiki'],
              ['knowledge-base', 'knowledge-base'], ['config-health', 'config-health'], ['sentry', 'developer-tools']]

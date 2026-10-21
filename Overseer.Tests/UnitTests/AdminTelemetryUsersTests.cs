@@ -1,18 +1,25 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
+using Overseer.Controllers;
 using Overseer.Models;
 using Overseer.Services;
+using Overseer.Services.Providers;
 using Overseer.Services.Telemetry;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
 
 /// <summary>
-/// Per-user usage of system AI configurations: totals, per-configuration rows with effective counters and the
-/// limit source, the peak hour, refusal counts, flags, search, filter, sorting and paging.
+/// Per-user usage of system AI configurations and own keys: totals and their split by key source, per-configuration
+/// rows with effective counters and the limit source, the peak hour, refusal counts, flags, search, filter, sorting
+/// and paging.
 /// </summary>
 public class AdminTelemetryUsersTests
 {
@@ -123,9 +130,40 @@ public class AdminTelemetryUsersTests
     }
 
     private static async Task<AiTelemetryUsersPageDto> UsersAsync(ApplicationDbContext db, string? search = null, string? userId = null,
-        string? sort = null, int skip = 0, int take = 20) =>
-        await new AiTelemetrySummaryService(db, new ModelMetadataService())
-            .GetUsersAsync(null, null, search, userId, sort, skip, take, TestContext.Current.CancellationToken);
+        string? sort = null, int skip = 0, int take = 20, string? keys = null, string? direction = null) =>
+        await Service(db).GetUsersAsync(null, null, search, userId, sort, skip, take, keys, direction,
+            ct: TestContext.Current.CancellationToken);
+
+    private static AiTelemetrySummaryService Service(ApplicationDbContext db) => new(db, new ModelMetadataService());
+
+    private static AdminController CreateController(ApplicationDbContext db)
+    {
+        var keyBytes = new byte[32];
+        keyBytes[0] = 77;
+        keyBytes[31] = 99;
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "AesEncryptionKey", Convert.ToBase64String(keyBytes) },
+                { "AiRateLimitSettings:MaxConcurrentModelCalls", "2" },
+                { "AiRateLimitSettings:MaxRetryAfterSeconds", "90" }
+            })
+            .Build();
+
+        var cryptoService = new CryptoService(config);
+        var governor = new AiRequestGovernor(config, NullLogger<AiRequestGovernor>.Instance);
+        var metadataService = new ModelMetadataService();
+        var pricingService = new ModelPricingService(metadataService, db);
+        var endpointPolicy = new Overseer.Services.Privacy.EndpointPolicy(config);
+        var usageGuard = new SystemConfigUsageGuard(
+            db,
+            new Overseer.Services.Benchmarking.BenchmarkDifficultyJobManager(),
+            new Overseer.Services.Benchmarking.BenchmarkGenerationJobManager(),
+            new Overseer.Services.Benchmarking.BenchmarkRubricCheckJobManager(),
+            new Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorJobManager(),
+            new Overseer.Services.Benchmarking.BenchmarkReportPackJobManager());
+        return new AdminController(db, config, null!, cryptoService, governor, endpointPolicy, usageGuard, pricingService);
+    }
 
     [Fact]
     public async Task GetUsers_ReportsTotalsAndPerConfigurationRows()
@@ -383,5 +421,250 @@ public class AdminTelemetryUsersTests
         Assert.Equal(2, second.TotalUsers);
         Assert.Equal(Alice, Assert.Single(second.Users).UserId);
         Assert.Empty(beyond.Users);
+    }
+
+    // --- Key sources -----------------------------------------------------------------------------
+
+    private const string Carol = "u-carol";
+
+    private static UserKeyAiUsageLog UserKeyUsage(string userId, DateTime at, long? userAiModelId, int roleContext = 1,
+        decimal? cost = 0.02m, string modelId = "own-model", string? displayName = "Logged own") => new()
+    {
+        AspNetUserId = userId,
+        UserAiModelId = userAiModelId,
+        TimestampUtc = at,
+        Provider = "Anthropic",
+        ModelId = modelId,
+        ModelDisplayName = displayName,
+        RoleContext = roleContext,
+        ThinkingLevel = string.Empty,
+        InputTokens = 50,
+        OutputTokens = 5,
+        CacheReadInputTokens = 0,
+        EstimatedCost = cost
+    };
+
+    /// <summary>
+    /// <see cref="SeedAsync"/> plus own-key usage. Alice: 2 requests on her UserAiModel 1 ("My Claude", the same id as
+    /// her system configuration 1) in D1 10:00, the hour of her 4 system requests, $0.04. Carol, own keys only: 3
+    /// requests on UserAiModel 5 ("Carol Model", D2 09:00, D2 09:10, D3 09:00, $0.30) and 1 with no model id (D3 10:00,
+    /// $0.05, no logged display name).
+    /// </summary>
+    private static async Task SeedWithOwnKeysAsync(ApplicationDbContext db)
+    {
+        await SeedAsync(db);
+        db.Users.Add(new ApplicationUser { Id = Carol, UserName = "carol", Email = "carol@sample.org" });
+        db.UserAiModels.AddRange(
+            new UserAiModel { Id = 1, AspNetUserId = Alice, Provider = "Anthropic", ModelId = "own-model", DisplayName = "My Claude" },
+            new UserAiModel { Id = 5, AspNetUserId = Carol, Provider = "Anthropic", ModelId = "own-model", DisplayName = "Carol Model" });
+        db.UserKeyAiUsageLogs.AddRange(
+            UserKeyUsage(Alice, D1.AddHours(10).AddMinutes(20), 1),
+            UserKeyUsage(Alice, D1.AddHours(10).AddMinutes(40), 1),
+            UserKeyUsage(Carol, D2.AddHours(9), 5, cost: 0.10m),
+            UserKeyUsage(Carol, D2.AddHours(9).AddMinutes(10), 5, cost: 0.10m),
+            UserKeyUsage(Carol, D3.AddHours(9), 5, cost: 0.10m),
+            UserKeyUsage(Carol, D3.AddHours(10), null, cost: 0.05m, modelId: "loose-model", displayName: null));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task GetUsers_NoKeySourceIsTheSystemView()
+    {
+        using var db = NewDb();
+        await SeedWithOwnKeysAsync(db);
+
+        foreach (var page in new[] { await UsersAsync(db), await UsersAsync(db, keys: "system") })
+        {
+            Assert.Equal("system", page.KeySource);
+            Assert.Equal(2, page.TotalUsers);
+            Assert.Equal(new[] { Bob, Alice }, page.Users.Select(u => u.UserId));
+
+            var alice = Assert.Single(page.Users, u => u.UserId == Alice);
+            Assert.Equal(7, alice.Requests);
+            Assert.Equal(7, alice.SystemRequests);
+            Assert.Equal(0, alice.UserKeyRequests);
+            Assert.Equal(0.07m, alice.EstimatedCost);
+            Assert.Equal(0.07m, alice.SystemEstimatedCost);
+            Assert.Equal(0m, alice.UserKeyEstimatedCost);
+            Assert.Equal(4, alice.PeakHourRequests);
+            Assert.Equal(1.75, alice.RequestsPerActiveHour);
+            Assert.Equal(new long[] { 1, 2 }, alice.Configs.Select(c => c.ConfigId));
+            Assert.All(alice.Configs, c => Assert.Equal("system", c.KeySource));
+            Assert.Equal("Config One", alice.Configs[0].ConfigName);
+            Assert.Equal("user", alice.Configs[0].LimitSource);
+        }
+    }
+
+    [Fact]
+    public async Task GetUsers_UserKeysShowOnlyOwnKeyUsage()
+    {
+        using var db = NewDb();
+        await SeedWithOwnKeysAsync(db);
+
+        var page = await UsersAsync(db, keys: "user");
+
+        Assert.Equal("user", page.KeySource);
+        Assert.Equal(2, page.TotalUsers);
+        Assert.DoesNotContain(page.Users, u => u.UserId == Bob);
+
+        var alice = Assert.Single(page.Users, u => u.UserId == Alice);
+        Assert.Equal(2, alice.Requests);
+        Assert.Equal(0, alice.SystemRequests);
+        Assert.Equal(2, alice.UserKeyRequests);
+        Assert.Equal(0.04m, alice.EstimatedCost);
+        Assert.Equal(0.04m, alice.UserKeyEstimatedCost);
+        Assert.Equal(100, alice.PromptTokens);
+        Assert.Equal(2, alice.PeakHourRequests);
+        Assert.Equal(1, alice.ActiveDays);
+
+        var line = Assert.Single(alice.Configs);
+        Assert.Equal("user", line.KeySource);
+        Assert.Equal(1, line.ConfigId);
+        Assert.Equal("My Claude", line.ConfigName);
+        Assert.Equal("ownKey", line.LimitSource);
+        Assert.Equal(2, line.Requests);
+        Assert.Equal(0.04m, line.EstimatedCost);
+        Assert.Null(line.AssignmentId);
+        Assert.Null(line.AssignmentEnabled);
+        Assert.Null(line.DailyChatRequests);
+        Assert.Null(line.MonthlyChatRequests);
+        Assert.Null(line.DailyChatTokens);
+
+        var carol = Assert.Single(page.Users, u => u.UserId == Carol);
+        Assert.Equal(new long[] { 5, 0 }, carol.Configs.Select(c => c.ConfigId));
+        Assert.Equal("Carol Model", carol.Configs[0].ConfigName);
+        Assert.Equal(3, carol.Configs[0].Requests);
+        // No model id and no logged display name: the model id names the line.
+        Assert.Equal("loose-model", carol.Configs[1].ConfigName);
+        Assert.All(carol.Configs, c => Assert.Equal("ownKey", c.LimitSource));
+    }
+
+    [Fact]
+    public async Task GetUsers_AnOwnKeyLineFallsBackToTheLoggedNameOnceTheModelIsDeleted()
+    {
+        using var db = NewDb();
+        await SeedWithOwnKeysAsync(db);
+        db.UserAiModels.Remove(await db.UserAiModels.SingleAsync(m => m.Id == 1, TestContext.Current.CancellationToken));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var alice = Assert.Single((await UsersAsync(db, keys: "user")).Users, u => u.UserId == Alice);
+
+        Assert.Equal("Logged own", Assert.Single(alice.Configs).ConfigName);
+    }
+
+    [Fact]
+    public async Task GetUsers_BothSumsTheSourcesAndSplitsThem()
+    {
+        using var db = NewDb();
+        await SeedWithOwnKeysAsync(db);
+
+        var page = await UsersAsync(db, keys: "both");
+
+        Assert.Equal("both", page.KeySource);
+        Assert.Equal(3, page.TotalUsers);
+
+        var alice = Assert.Single(page.Users, u => u.UserId == Alice);
+        Assert.Equal(9, alice.Requests);
+        Assert.Equal(7, alice.SystemRequests);
+        Assert.Equal(2, alice.UserKeyRequests);
+        Assert.Equal(0.11m, alice.EstimatedCost);
+        Assert.Equal(0.07m, alice.SystemEstimatedCost);
+        Assert.Equal(0.04m, alice.UserKeyEstimatedCost);
+        Assert.Equal(9, alice.PricedRequests);
+        Assert.Equal(9, alice.ChatRequests);
+        Assert.Equal(800, alice.PromptTokens);
+
+        // 4 system and 2 own-key requests in D1 10:00 make one hour of 6.
+        Assert.Equal(6, alice.PeakHourRequests);
+        Assert.Equal(D1.AddHours(10), alice.PeakHourStartUtc);
+        // Nine requests over four active hours.
+        Assert.Equal(2.25, alice.RequestsPerActiveHour);
+        Assert.Equal(2, alice.ActiveDays);
+
+        // System configuration 1 and UserAiModel 1 are two lines.
+        Assert.Equal(new[] { ("system", 1L), ("system", 2L), ("user", 1L) }, alice.Configs.Select(c => (c.KeySource, c.ConfigId)));
+        Assert.Equal("Config One", alice.Configs[0].ConfigName);
+        Assert.Equal("My Claude", alice.Configs[2].ConfigName);
+
+        var carol = Assert.Single(page.Users, u => u.UserId == Carol);
+        Assert.Equal(4, carol.Requests);
+        Assert.Equal(0, carol.SystemRequests);
+        Assert.Equal(0.35m, carol.EstimatedCost);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("system", false)]
+    [InlineData("user", true)]
+    [InlineData("both", true)]
+    public async Task GetUsers_AnOwnKeyOnlyUserAppearsOnlyWhenOwnKeysAreIncluded(string? keys, bool listed)
+    {
+        using var db = NewDb();
+        await SeedWithOwnKeysAsync(db);
+
+        var page = await UsersAsync(db, keys: keys);
+
+        Assert.Equal(listed, page.Users.Any(u => u.UserId == Carol));
+        Assert.Equal(listed, (await UsersAsync(db, keys: keys, userId: Carol)).TotalUsers == 1);
+    }
+
+    [Theory]
+    [InlineData("asc", new[] { Alice, Bob, Carol })]
+    [InlineData("desc", new[] { Carol, Bob, Alice })]
+    [InlineData(null, new[] { Carol, Bob, Alice })]
+    public async Task GetUsers_SortsByName(string? direction, string[] expected)
+    {
+        using var db = NewDb();
+        await SeedWithOwnKeysAsync(db);
+
+        var page = await UsersAsync(db, sort: "name", keys: "both", direction: direction);
+
+        Assert.Equal(expected, page.Users.Select(u => u.UserId));
+    }
+
+    [Theory]
+    [InlineData("cost", "asc", Alice, Bob)]
+    [InlineData("cost", "ASC", Alice, Bob)]
+    [InlineData("cost", "sideways", Bob, Alice)]
+    [InlineData("requests", "asc", Bob, Alice)]
+    [InlineData("lastActive", "asc", Alice, Bob)]
+    [InlineData("lastActive", "desc", Bob, Alice)]
+    public async Task GetUsers_SortsInTheChosenDirection(string sort, string direction, string first, string second)
+    {
+        using var db = NewDb();
+        await SeedAsync(db);
+
+        var page = await UsersAsync(db, sort: sort, direction: direction);
+
+        Assert.Equal(new[] { first, second }, page.Users.Select(u => u.UserId));
+    }
+
+    [Fact]
+    public async Task GetUsers_TiesOnNameAreOrderedByUserId()
+    {
+        using var db = NewDb();
+        db.Users.AddRange(new ApplicationUser { Id = "t-b", UserName = "same" }, new ApplicationUser { Id = "t-a", UserName = "Same" });
+        db.SystemAiUsageLogs.AddRange(Usage("t-b", 1, D1), Usage("t-a", 1, D1));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        foreach (var direction in new[] { "asc", "desc" })
+        {
+            var page = await UsersAsync(db, sort: "name", direction: direction);
+            Assert.Equal(new[] { "t-a", "t-b" }, page.Users.Select(u => u.UserId));
+        }
+    }
+
+    [Fact]
+    public async Task GetAiTelemetryUsers_PassesKeysAndDirection()
+    {
+        using var db = NewDb();
+        await SeedWithOwnKeysAsync(db);
+        var controller = CreateController(db);
+
+        var result = await controller.GetAiTelemetryUsers(null, null, null, null, "name", 0, 20, "both", "asc", Service(db));
+
+        var page = Assert.IsType<AiTelemetryUsersPageDto>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal("both", page.KeySource);
+        Assert.Equal(new[] { Alice, Bob, Carol }, page.Users.Select(u => u.UserId));
     }
 }

@@ -30,6 +30,9 @@ export type AdminUsersSubTab = 'users' | 'groups' | 'deletions' | 'log';
 /** The Services tab's sub-tabs. */
 export type AdminDevtoolsSubTab = 'source' | 'gnollhack-wiki' | 'nethack-wiki' | 'knowledge-base' | 'config-health' | 'sentry';
 
+/** The AI Telemetry tab's sub-tabs. */
+export type AdminTelemetrySubTab = 'summary' | 'models' | 'users';
+
 /** How a store navigation treats the browser history: a new entry, or the current one replaced. */
 export type AdminHistoryMode = 'push' | 'replace';
 
@@ -114,6 +117,9 @@ export class AdminPageStore {
   /** The Users tab's selected sub-tab, kept while the tab is closed. */
   usersSubTab: AdminUsersSubTab = 'users';
 
+  /** The AI Telemetry tab's selected sub-tab, kept while the tab is closed. */
+  telemetrySubTab: AdminTelemetrySubTab = 'summary';
+
   /** The Services tab's selected sub-tab, kept while the tab is closed. */
   devtoolsSubTab: AdminDevtoolsSubTab = 'source';
 
@@ -126,7 +132,7 @@ export class AdminPageStore {
   /** Emits when `apiKeysDialogOpen` changes. */
   readonly apiKeysDialogChanged$ = new Subject<void>();
 
-  /** A user whose AI usage a link asked the AI Telemetry tab to show; cleared once the tab has read it. */
+  /** A user whose AI usage a link asked the AI Telemetry Users view to show; cleared once the view has read it. */
   pendingTelemetryUserId: string | null = null;
   pendingTelemetryUserName: string | null = null;
 
@@ -218,6 +224,8 @@ export class AdminPageStore {
     this.activeTab = tab;
     if (tab === 'users') {
       this.usersSubTab = known as AdminUsersSubTab;
+    } else if (tab === 'telemetry') {
+      this.telemetrySubTab = known as AdminTelemetrySubTab;
     } else if (tab === 'devtools') {
       this.devtoolsSubTab = known as AdminDevtoolsSubTab;
     } else if (tab === 'benchmark') {
@@ -234,6 +242,7 @@ export class AdminPageStore {
   private rememberedSubTab(tab: AdminTabId): string | null {
     switch (tab) {
       case 'users': return this.usersSubTab;
+      case 'telemetry': return this.telemetrySubTab;
       case 'devtools': return this.devtoolsSubTab;
       case 'benchmark': return this.benchmarkSubTab;
       default: return null;
@@ -247,12 +256,12 @@ export class AdminPageStore {
     }
   }
 
-  /** Asks the AI Telemetry tab to show one user's usage, and selects it. */
+  /** Asks the AI Telemetry Users view to show one user's usage, and selects it. */
   requestTelemetryUser(userId: string, userName: string): void {
     this.pendingTelemetryUserId = userId;
     this.pendingTelemetryUserName = userName;
     this.telemetryUserRequested$.next();
-    this.requestTab('telemetry');
+    this.goTo('telemetry', 'users');
   }
 
   /** Asks the Security tab to show one user's events, and selects it. */

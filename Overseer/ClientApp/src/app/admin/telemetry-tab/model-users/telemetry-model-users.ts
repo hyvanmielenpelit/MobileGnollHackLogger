@@ -371,7 +371,7 @@ function share(part: number, whole: number): number | null {
  * The card's share of the scope total for each additive figure; null where the total is 0, and for
  * the cost also while the card has requests but none of them priced.
  */
-export function modelUserShares(card: ModelUserCard, total: BreakdownMetrics): ModelUserShares {
+export function modelUserShares(card: BreakdownMetrics, total: BreakdownMetrics): ModelUserShares {
   const unpriced = card.requests > 0 && card.pricedRequests === 0;
   return {
     cost: unpriced ? null : share(card.estimatedCost, total.estimatedCost),

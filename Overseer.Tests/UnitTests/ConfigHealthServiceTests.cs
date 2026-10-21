@@ -168,7 +168,7 @@ public class ConfigHealthServiceTests
         });
         Assert.Equal("warning", alert.Type);
         Assert.Equal("2 users spent over $20.00 on AI in the last 24 hours (highest: $30.00).", alert.Message);
-        Assert.Equal("/admin/telemetry", alert.LinkUrl);
+        Assert.Equal("/admin/telemetry/users", alert.LinkUrl);
         Assert.Equal("Review", alert.LinkText);
     }
 

@@ -15,24 +15,36 @@ import {
 import { Subscription } from 'rxjs';
 import {
   AdminService,
+  AiTelemetryKeySource,
   AiTelemetryUserConfigDto,
   AiTelemetryUserRowDto,
-  AiTelemetryUsersQuery,
-  AiTelemetryUsersSort
+  AiTelemetryUsersQuery
 } from '../../../services/admin.service';
 import { AdminUsersService } from '../../../services/admin-users.service';
 import { formatCost } from '../../benchmark/batteries/battery.models';
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
-import { CardListSort, CardListState } from '../../../shared/data-table/card-list-state';
-import { TableState, customFilter } from '../../../shared/data-table/table-state';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { AdminConfirmDialogComponent } from '../../admin-dialogs/admin-confirm-dialog.component';
 import { AdminReasonDialogComponent } from '../../admin-dialogs/admin-reason-dialog.component';
 import { AdminPageStore } from '../../admin-page.store';
+import {
+  DEFAULT_TELEMETRY_USERS_SORT,
+  TELEMETRY_USERS_SORT_FIELDS,
+  TelemetryUsersSort,
+  TelemetryUsersSortDirection,
+  TelemetryUsersSortField,
+  TelemetryUsersView,
+  isDefaultUsersSort,
+  readUsersView,
+  usersDirectionLabel,
+  usersSortField,
+  usersSortLabel,
+  writeUsersView
+} from './telemetry-users-view';
 
-/** Where the list's Sort by choice is kept, per browser. */
-export const TELEMETRY_USERS_VIEW_STORAGE_KEY = 'overseer.admin.telemetry.users.view';
+/** Where the view's sort is kept, per browser. */
+export { TELEMETRY_USERS_VIEW_STORAGE_KEY } from './telemetry-users-view';
 
 /** The users the list fetches at first, and how many more Show more fetches. */
 export const TELEMETRY_USERS_BATCH = 20;
@@ -43,15 +55,8 @@ export const TELEMETRY_BLOCK_REASON_MAX = 256;
 /** The largest page the server returns. */
 const MAX_PAGE = 100;
 
-/** The orders Sort by offers; the server sorts. Highest cost is the default. */
-export const TELEMETRY_USERS_SORTS: readonly CardListSort[] = [
-  { id: 'cost', label: 'Highest cost', column: 'cost', direction: 'desc' },
-  { id: 'requests', label: 'Most requests', column: 'requests', direction: 'desc' },
-  { id: 'tokens', label: 'Most tokens', column: 'tokens', direction: 'desc' },
-  { id: 'peakHour', label: 'Busiest hour', column: 'peakHour', direction: 'desc' },
-  { id: 'refusals', label: 'Most refusals', column: 'refusals', direction: 'desc' },
-  { id: 'lastActive', label: 'Most recently active', column: 'lastActive', direction: 'desc' }
-];
+/** The applied search follows the field after this much quiet, so the status line is not announced per keystroke. */
+const SEARCH_DEBOUNCE_MS = 200;
 
 /** The user whose usage charts were asked for. */
 export interface TelemetryUserRef {
@@ -59,18 +64,39 @@ export interface TelemetryUserRef {
   userName: string;
 }
 
+/** The user whose usage by model was asked for, and the button to return focus to. */
+export interface TelemetryUserModelsRef {
+  userId: string;
+  userName: string;
+  opener: HTMLElement | null;
+}
+
 const LIMIT_SOURCE_LABELS: Readonly<Record<AiTelemetryUserConfigDto['limitSource'], string>> = {
   user: 'user',
   group: 'group',
   systemWide: 'system-wide',
+  ownKey: 'own key',
   none: '—'
 };
 
+const SCOPE_TEXTS: Readonly<Record<AiTelemetryKeySource, string>> = {
+  system: 'System AI configurations. Chats, messages and refusals count every key.',
+  user: "Users' own API keys. Limits apply to system AI configurations only; chats, messages and refusals count every key.",
+  both: "System AI configurations and users' own keys. Chats, messages and refusals count every key."
+};
+
+const EMPTY_TEXTS: Readonly<Record<AiTelemetryKeySource, string>> = {
+  system: 'No system AI usage in this range.',
+  user: "No usage of users' own keys in this range.",
+  both: 'No AI usage in this range.'
+};
+
 /**
- * The AI Telemetry tab's usage of system AI configurations by user: a server-paged card list with a
- * search by user name or email and a Sort by order, each user with the usage figures, the limits of
- * the configurations they used, and actions to open their usage charts, manage their limits and
- * block or unblock them. The figures are information for setting limits, never a misuse signal.
+ * The AI Telemetry tab's Users view: AI usage by user on the tab's key sources, as a server-paged
+ * card list with a search by user name or email and a Sort popover of a field and an order, each
+ * user with the usage figures, the configurations they used with their limits, and actions to open
+ * their usage by model and usage charts, manage their limits and block or unblock them. The
+ * figures are information for setting limits, never a misuse signal.
  */
 @Component({
   selector: 'app-telemetry-users',
@@ -91,11 +117,17 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
   /** The tab's date range, "YYYY-MM-DD"; empty for no bound. */
   readonly startDate = input<string>('');
   readonly endDate = input<string>('');
+  /** The tab's Keys filter. */
+  readonly keys = input<AiTelemetryKeySource>('system');
 
   /** Usage charts was pressed for a user. */
   readonly usageCharts = output<TelemetryUserRef>();
+  /** Usage by model was pressed for a user. */
+  readonly usageByModel = output<TelemetryUserModelsRef>();
 
-  readonly sorts = TELEMETRY_USERS_SORTS;
+  readonly sortFields = TELEMETRY_USERS_SORT_FIELDS;
+  readonly sortDirections: readonly TelemetryUsersSortDirection[] = ['desc', 'asc'];
+  readonly batch = TELEMETRY_USERS_BATCH;
   readonly formatInteger = formatInteger;
   readonly formatCost = formatCost;
 
@@ -112,54 +144,52 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
   /** The user whose Block or Unblock is in flight. */
   readonly busyUserId = signal<string | null>(null);
 
-  /** The server pages and sorts the users; the table only carries the search. */
-  readonly table = new TableState<AiTelemetryUserRowDto>('cost', 'desc').registerAccessors(
-    {},
-    { search: customFilter<AiTelemetryUserRowDto>(() => true) }
-  );
-
-  /** The search and Sort by; a change refetches the first page. */
-  readonly list = new CardListState<AiTelemetryUserRowDto>(this.table, {
-    idPrefix: 'tl-users',
-    batch: TELEMETRY_USERS_BATCH,
-    sorts: TELEMETRY_USERS_SORTS,
-    defaultSort: 'cost',
-    storageKey: TELEMETRY_USERS_VIEW_STORAGE_KEY,
-    facets: [],
-    onChange: () => this.reload()
-  });
+  /** The sort, remembered per browser. */
+  view: TelemetryUsersView = readUsersView();
+  /** The search field as typed. */
+  searchInput = '';
+  /** The search the list applies; follows `searchInput` after a short quiet. Never stored. */
+  search = '';
+  /** Whether the Sort popover is open; the popover polyfill does not set `aria-expanded`. */
+  sortOpen = false;
 
   private listSub: Subscription | null = null;
+  private telemetryUserSub: Subscription | null = null;
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private initialized = false;
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
-    this.table.setRemoteTotal(0);
+    const pending = this.takePendingUser();
+    if (pending) this.userFilter.set(pending);
+    this.telemetryUserSub = this.store.telemetryUserRequested$.subscribe(() => {
+      const requested = this.takePendingUser();
+      if (requested) {
+        this.filterToUser(requested.userId, requested.userName);
+        this.focusAfterRender('tl-users-filter');
+      }
+    });
     this.initialized = true;
     this.reload();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    const rangeChanged = (changes['startDate'] && !changes['startDate'].firstChange)
-      || (changes['endDate'] && !changes['endDate'].firstChange);
-    if (rangeChanged && this.initialized) {
+    const changed = (name: string) => !!changes[name] && !changes[name].firstChange;
+    if (this.initialized && (changed('keys') || changed('startDate') || changed('endDate'))) {
       this.reload();
     }
   }
 
   ngOnDestroy(): void {
-    this.list.dispose();
+    this.cancelSearchTimer();
     this.listSub?.unsubscribe();
+    this.telemetryUserSub?.unsubscribe();
   }
 
   // --- Filters ---
 
   get searchTerm(): string {
-    return (this.table.filters['search'] ?? '').trim();
-  }
-
-  get sortKey(): AiTelemetryUsersSort {
-    return this.list.sortId as AiTelemetryUsersSort;
+    return this.search.trim();
   }
 
   get remainingCount(): number {
@@ -167,7 +197,17 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   get nextBatchCount(): number {
-    return Math.min(this.list.batch, this.remainingCount);
+    return Math.min(this.batch, this.remainingCount);
+  }
+
+  /** What the counts cover, by the tab's Keys filter. */
+  get scopeText(): string {
+    return SCOPE_TEXTS[this.keys()] ?? SCOPE_TEXTS.system;
+  }
+
+  get emptyText(): string {
+    if (this.searchTerm && !this.userFilter()) return 'No users match this search.';
+    return EMPTY_TEXTS[this.keys()] ?? EMPTY_TEXTS.system;
   }
 
   /** `Showing 20 of 143 users`, `One user`, or `Showing 1 user — alice` while restricted to one. */
@@ -182,18 +222,27 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   onSearchInput(event: Event): void {
-    this.list.setSearchInput((event.target as HTMLInputElement).value);
+    this.searchInput = (event.target as HTMLInputElement).value;
+    this.cancelSearchTimer();
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = null;
+      this.applySearch(this.searchInput);
+      this.cdr.markForCheck();
+    }, SEARCH_DEBOUNCE_MS);
   }
 
-  /** Escape with text clears the search at once and refetches. */
+  /** Escape with text clears the search at once and refetches; with none, Escape is left alone. */
   onSearchKeydown(event: KeyboardEvent): void {
-    if (this.list.clearSearchOnEscape(event)) this.reload();
+    if (event.key !== 'Escape' || this.searchInput === '') return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.clearSearch();
   }
 
-  onSortChange(event: Event): void {
-    if (this.list.setSort((event.target as HTMLSelectElement).value)) {
-      this.reload();
-    }
+  /** Clears the search and focuses the search field. */
+  clearFilters(): void {
+    this.clearSearch();
+    this.focusAfterRender('tl-users-search');
   }
 
   /** Restricts the list to one user and refetches once the list exists. */
@@ -202,24 +251,132 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
     if (this.initialized) this.reload();
   }
 
-  /** Drops the one-user restriction, refetches, then focuses the section heading. */
+  /** Drops the one-user restriction, refetches, then focuses the search field it brings back. */
   clearUserFilter(): void {
     this.userFilter.set(null);
     this.reload();
-    document.getElementById('tl-users-heading')?.focus();
+    this.focusAfterRender('tl-users-search');
+  }
+
+  private clearSearch(): void {
+    this.cancelSearchTimer();
+    this.searchInput = '';
+    this.applySearch('');
+  }
+
+  /** Applies the search; a change of the trimmed text refetches the first page. */
+  private applySearch(text: string): void {
+    const changed = text.trim() !== this.search.trim();
+    this.search = text;
+    if (changed) this.reload();
+  }
+
+  private cancelSearchTimer(): void {
+    if (this.searchTimer !== null) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+  }
+
+  /** Reads and clears the page store's pending user; null when there is none. The name falls back to the id. */
+  private takePendingUser(): TelemetryUserRef | null {
+    const id = this.store.pendingTelemetryUserId;
+    if (!id) return null;
+    const name = this.store.pendingTelemetryUserName || id;
+    this.store.pendingTelemetryUserId = null;
+    this.store.pendingTelemetryUserName = null;
+    return { userId: id, userName: name };
+  }
+
+  // --- Sort ---
+
+  /** `Est. cost, highest first`. */
+  get sortLabel(): string {
+    return usersSortLabel(this.view.sort);
+  }
+
+  get sortIsDefault(): boolean {
+    return isDefaultUsersSort(this.view.sort);
+  }
+
+  /** `Highest first`, `Newest first` or `A–Z`, by the kind of the chosen field. */
+  directionLabel(direction: TelemetryUsersSortDirection): string {
+    return usersDirectionLabel(usersSortField(this.view.sort.field).kind, direction);
+  }
+
+  /** Applies at once and keeps the direction; the popover stays open. */
+  chooseSortField(field: TelemetryUsersSortField): void {
+    if (field !== this.view.sort.field) {
+      this.saveSort({ field, direction: this.view.sort.direction });
+    }
+  }
+
+  chooseSortDirection(direction: TelemetryUsersSortDirection): void {
+    if (direction !== this.view.sort.direction) {
+      this.saveSort({ field: this.view.sort.field, direction });
+    }
+  }
+
+  /** Back to the highest cost first; refused at the default (the button is aria-disabled), and the button keeps focus. */
+  resetSort(): void {
+    if (!this.sortIsDefault) {
+      this.saveSort(DEFAULT_TELEMETRY_USERS_SORT);
+    }
+  }
+
+  onSortToggle(event: Event): void {
+    this.sortOpen = (event as ToggleEvent).newState === 'open';
+    const panel = this.sortPanel();
+    if (this.sortOpen) {
+      refreshAnchorPositioning();
+      (panel?.querySelector<HTMLInputElement>('input:checked') ?? panel?.querySelector<HTMLInputElement>('input'))?.focus();
+      return;
+    }
+    const active = document.activeElement;
+    if (!active || active === document.body || !!panel?.contains(active)) {
+      this.sortTrigger()?.focus();
+    }
+  }
+
+  /** Escape closes the Sort popover only. */
+  onSortPanelKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      this.sortPanel()?.hidePopover();
+    } catch {
+      // Already hidden.
+    }
+    this.sortTrigger()?.focus();
+  }
+
+  /** Stores the sort and refetches the first page in it. */
+  private saveSort(sort: TelemetryUsersSort): void {
+    this.view = { ...this.view, sort };
+    writeUsersView(this.view);
+    this.reload();
+  }
+
+  private sortPanel(): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>('#tl-users-sort-panel');
+  }
+
+  private sortTrigger(): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>('#tl-users-sort-trigger');
   }
 
   // --- Fetching ---
 
   /** Fetches the first page of the current query, replacing the list. */
-  reload(take: number = this.list.batch): void {
+  reload(take: number = this.batch): void {
     this.fetch(false, take);
   }
 
   /** Appends the next page and focuses the title of the first new card. */
   showMore(): void {
     if (this.loading() || this.remainingCount === 0) return;
-    this.fetch(true, this.list.batch);
+    this.fetch(true, this.batch);
   }
 
   private fetch(append: boolean, take: number): void {
@@ -229,7 +386,9 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
       endDate: this.endDate() || undefined,
       search: filter ? undefined : this.searchTerm || undefined,
       userId: filter?.userId,
-      sort: this.sortKey,
+      keys: this.keys(),
+      sort: this.view.sort.field,
+      direction: this.view.sort.direction,
       skip: append ? this.rows().length : 0,
       take
     };
@@ -248,7 +407,6 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
         }
         this.totalUsers.set(page.totalUsers);
         this.securityEventsAvailable.set(page.securityEventsAvailable);
-        this.table.setRemoteTotal(page.totalUsers);
         this.loading.set(false);
         this.loaded.set(true);
         if (firstNew >= 0 && firstNew < this.rows().length) {
@@ -272,7 +430,7 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
 
   /** Refetches the cards shown, keeping their number. */
   private refetchShown(): void {
-    this.reload(Math.min(MAX_PAGE, Math.max(this.list.batch, this.rows().length)));
+    this.reload(Math.min(MAX_PAGE, Math.max(this.batch, this.rows().length)));
   }
 
   // --- A card ---
@@ -296,6 +454,30 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
     return `${formatInteger(n)} ${n === 1 ? 'refusal' : 'refusals'}`;
   }
 
+  /** Whether the card's Account state row has a badge. */
+  hasBadges(user: AiTelemetryUserRowDto): boolean {
+    return user.isOverseerBlocked || user.hasAccountHold || (this.securityEventsAvailable() && this.refusals(user) > 0);
+  }
+
+  /** `chat 8 · title 2`, with `· benchmark 3` when there are benchmark requests. */
+  requestsNote(user: AiTelemetryUserRowDto): string {
+    const parts = [`chat ${formatInteger(user.chatRequests)}`, `title ${formatInteger(user.titleRequests)}`];
+    if (user.benchmarkRequests > 0) parts.push(`benchmark ${formatInteger(user.benchmarkRequests)}`);
+    return parts.join(' · ');
+  }
+
+  /** Under both key sources: `system 7 · own key 3`; otherwise empty. */
+  keySplitNote(user: AiTelemetryUserRowDto): string {
+    if (this.keys() !== 'both') return '';
+    return `system ${formatInteger(user.systemRequests)} · own key ${formatInteger(user.userKeyRequests)}`;
+  }
+
+  /** Under both key sources: `own key $0.12`; otherwise empty. */
+  ownKeyCostNote(user: AiTelemetryUserRowDto): string {
+    if (this.keys() !== 'both') return '';
+    return `own key ${formatCost(user.userKeyEstimatedCost)}`;
+  }
+
   unpricedRequests(user: AiTelemetryUserRowDto): number {
     return Math.max(0, user.requests - user.pricedRequests);
   }
@@ -317,11 +499,24 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
     return max ? `${used} / ${formatInteger(max)}` : `${used} (no limit)`;
   }
 
+  /** `12 / 50` on a system configuration; a dash on the user's own key, which has no limits here. */
+  configLimitText(config: AiTelemetryUserConfigDto, count: number | null | undefined, max: number | null | undefined): string {
+    return config.keySource === 'user' ? '—' : this.limitText(count, max);
+  }
+
   limitSourceText(config: AiTelemetryUserConfigDto): string {
     return LIMIT_SOURCE_LABELS[config.limitSource] ?? config.limitSource;
   }
 
   // --- Actions ---
+
+  openUsageByModel(user: AiTelemetryUserRowDto, event: Event): void {
+    this.usageByModel.emit({
+      userId: user.userId,
+      userName: user.userName,
+      opener: (event.currentTarget as HTMLElement | null) ?? null
+    });
+  }
 
   openUsageCharts(user: AiTelemetryUserRowDto): void {
     this.usageCharts.emit({ userId: user.userId, userName: user.userName });

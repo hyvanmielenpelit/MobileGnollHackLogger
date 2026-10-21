@@ -518,8 +518,10 @@ export interface AiTelemetrySummaryDto {
   activity: OverseerActivityDto;
 }
 
-/** One system configuration a user used in the range, with that user's limits on it. */
+/** One configuration a user used in the range: a system configuration with that user's limits on it, or one of the user's own models. */
 export interface AiTelemetryUserConfigDto {
+  /** A configId is unique only within its key source. */
+  keySource: 'system' | 'user';
   configId: number;
   configName: string;
   requests: number;
@@ -534,14 +536,19 @@ export interface AiTelemetryUserConfigDto {
   maxMonthlyChatRequests?: number | null;
   dailyChatTokens?: number | null;
   maxDailyChatTokens?: number | null;
-  limitSource: 'user' | 'group' | 'systemWide' | 'none';
+  limitSource: 'user' | 'group' | 'systemWide' | 'ownKey' | 'none';
 }
 
-/** One user's usage of system AI configurations. Busiest-hour figures are information for limits, never a misuse signal. */
+/** One user's AI usage in the selected key sources. Busiest-hour figures are information for limits, never a misuse signal. */
 export interface AiTelemetryUserRowDto {
   userId: string;
   userName: string;
+  /** Total over the selected key sources. */
   requests: number;
+  systemRequests: number;
+  userKeyRequests: number;
+  systemEstimatedCost: number;
+  userKeyEstimatedCost: number;
   chatRequests: number;
   titleRequests: number;
   benchmarkRequests: number;
@@ -568,9 +575,10 @@ export interface AiTelemetryUsersPage {
   users: AiTelemetryUserRowDto[];
   totalUsers: number;
   securityEventsAvailable: boolean;
+  keySource: AiTelemetryKeySource;
 }
 
-export type AiTelemetryUsersSort = 'cost' | 'requests' | 'tokens' | 'peakHour' | 'refusals' | 'lastActive';
+export type AiTelemetryUsersSort = 'cost' | 'requests' | 'tokens' | 'peakHour' | 'refusals' | 'lastActive' | 'name';
 
 export interface AiTelemetryUsersQuery {
   startDate?: string;
@@ -579,7 +587,9 @@ export interface AiTelemetryUsersQuery {
   search?: string;
   /** Restricts the page to one user. */
   userId?: string;
+  keys?: AiTelemetryKeySource;
   sort?: AiTelemetryUsersSort;
+  direction?: 'asc' | 'desc';
   skip?: number;
   /** Clamped to 1–100 by the server. */
   take?: number;
@@ -696,6 +706,48 @@ export interface AiTelemetryModelUsersQuery {
   modelId: string;
   /** Role groups; empty: the three named groups. */
   roles: AiUsageRoleGroup[];
+}
+
+/** One user's usage of one model in one key source, role context and thinking level; token figures normalized as the breakdown's. */
+export interface AiTelemetryUserModelRowDto {
+  keySource: 'system' | 'user';
+  provider: string;
+  modelId: string;
+  /** Catalog name, else the retired entry's, else null. */
+  modelName?: string | null;
+  roleContext: number;
+  roleGroup: AiUsageRoleGroup;
+  /** "" none sent, null not recorded. */
+  thinkingLevel?: string | null;
+  requests: number;
+  promptTokens: number;
+  uncachedInputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  outputTokens: number;
+  durationSumMs: number;
+  durationCount: number;
+  estimatedCost: number;
+  pricedRequests: number;
+  lastRequestUtc?: string | null;
+}
+
+/** The models one user used in the selected key sources over a date range, every role group included. */
+export interface AiTelemetryUserModelsDto {
+  keySource: AiTelemetryKeySource;
+  userId: string;
+  /** Null when the account is gone. */
+  userName?: string | null;
+  /** The earliest priced row of the included logs in the range, of any user. */
+  costRecordedSinceUtc?: string | null;
+  rows: AiTelemetryUserModelRowDto[];
+}
+
+export interface AiTelemetryUserModelsQuery {
+  startDate?: string;
+  endDate?: string;
+  keys: AiTelemetryKeySource;
+  userId: string;
 }
 
 export interface AiGovernorKeyStatusDto {
@@ -1230,14 +1282,16 @@ export class AdminService {
     return this.http.get<AiTelemetrySeriesDto>('/api/Admin/ai-telemetry/series', { params });
   }
 
-  /** Per-user usage of system AI configurations, sorted and paged on the server. */
+  /** Per-user AI usage in the selected key sources, sorted and paged on the server. */
   getAiTelemetryUsers(query: AiTelemetryUsersQuery): Observable<AiTelemetryUsersPage> {
     const params: any = {};
     if (query.startDate) params.startDate = query.startDate;
     if (query.endDate) params.endDate = query.endDate;
     if (query.search) params.search = query.search;
     if (query.userId) params.userId = query.userId;
+    if (query.keys) params.keys = query.keys;
     if (query.sort) params.sort = query.sort;
+    if (query.direction) params.direction = query.direction;
     if (query.skip) params.skip = query.skip;
     if (query.take) params.take = query.take;
     return this.http.get<AiTelemetryUsersPage>('/api/Admin/ai-telemetry/users', { params });
@@ -1253,5 +1307,15 @@ export class AdminService {
     params.modelId = query.modelId;
     if (query.roles.length) params.roles = query.roles.join(',');
     return this.http.get<AiTelemetryModelUsersDto>('/api/Admin/ai-telemetry/model-users', { params });
+  }
+
+  /** The models one user used, in the selected key sources and every role group; 400 without a user id. */
+  getAiTelemetryUserModels(query: AiTelemetryUserModelsQuery): Observable<AiTelemetryUserModelsDto> {
+    const params: any = {};
+    if (query.startDate) params.startDate = query.startDate;
+    if (query.endDate) params.endDate = query.endDate;
+    params.keys = query.keys;
+    params.userId = query.userId;
+    return this.http.get<AiTelemetryUserModelsDto>('/api/Admin/ai-telemetry/user-models', { params });
   }
 }

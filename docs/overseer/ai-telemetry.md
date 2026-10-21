@@ -2,8 +2,14 @@
 
 The Admin page's **AI Telemetry** tab shows what the Overseer chat, title generation and GnollBench cost
 and consume, how available the providers were to the chat, how many people use Overseer, and how each
-user uses the system AI configurations. The server side is `AiTelemetrySummaryService`
+user uses the system AI configurations and their own keys. The server side is `AiTelemetrySummaryService`
 (`Overseer/Services/Telemetry/`); the client is `admin/telemetry-tab/`.
+
+The tab has three sub-tabs, each a place in the URL (`admin-page-urls.md`): **Summary**
+(`/admin/telemetry`, the default: the summary cards and the *Rate Limit Partitions* table), **Models**
+(`/admin/telemetry/models`: the breakdown, § 7) and **Users** (`/admin/telemetry/users`: the Users view,
+§ 12). A panel is mounted when its sub-tab is first selected and then kept, hidden, so the Users list is
+not fetched until it is first shown, and each list keeps its state across switches.
 
 ## 1. Sources
 
@@ -57,15 +63,16 @@ a retired entry's name, else the model id.
 
 ## 6. Key sources
 
-The toolbar's **Keys** filter selects *System AI configurations* (the default), *User keys* or *Both*.
-User-key rows show the user's current name. Calls on a user's own key are logged without content.
+The **Keys** filter on the sub-tab row (§ 7) selects *System AI configurations* (the default), *User
+keys* or *Both*, for every sub-tab. User-key rows show the user's current name. Calls on a user's own key are logged without content.
 **An incognito turn on a user's own
 key writes nothing** — no usage row and no attempt row. Incognito turns on a system configuration keep
 recording as before (they spend the operator's quota), and confidential turns record on both key sources.
 
 ## 7. The breakdown: badges, search, provider filter, sort and the sticky bar
 
-*Usage by Model and Role* shows one card per key source, user, provider, model and role group. Each card
+The breakdown, on the **Models** sub-tab, shows one card per key source, user, provider, model and role
+group; the list is labeled *Usage by model and role* (`aria-label`), with no section heading. Each card
 is titled with the model name (§ 5), with the model id and the provider badge on the line under it, then a
 badge row: the role (*Chat*, *Title Generation*, *Benchmark*, *Other*, each in its role color), the
 thinking level and, under *Keys: Both*, the key (*System key*, *User key: alice*). With *Show separately*
@@ -90,10 +97,17 @@ sorts last in both orders. Ties go by title, then thinking level in the catalog 
 *All shown* sums the shown cards and stays last. The charts dialog does not take the search, the provider
 toggles or the sort.
 
-The tab header and the **Date Range / Keys** bar form one sticky head at the top of the tab. A chevron
-button (*Date range and keys*, `aria-expanded`) collapses the bar to one line, *Last 30 days · System AI
-configurations*. The head's height is kept in `--tl-sticky-clearance`, so a focused or scrolled-to element
-stops below it.
+The **Date range** and **Keys** controls sit on the sub-tab row, right-aligned after the tabs, each with a
+visible inline label, in a `role="group"` *Date range and keys* that is a sibling of the tablist, not
+inside it. Below about 48 rem of the row they take their own line above the tabs. Every sub-tab honors
+both. A chevron button (*Date range and keys*, `aria-expanded`) at the end of the group collapses it to
+one line, *Last 30 days · System AI configurations*. The tab header and that row form one sticky head at
+the top of the tab; the head's height is kept in `--tl-sticky-clearance`, so a focused or scrolled-to
+element stops below it.
+
+The **Request Governor** card and the *Rate Limit Partitions* heading carry the scope tag *live*, as
+*Overseer Activity* carries *all keys*: they show the governor's current state and ignore both the range
+and the keys.
 
 ## 7a. Usage of a model by user
 
@@ -133,6 +147,41 @@ full-width card.
   title. The endpoint returns every group of the model, so sorting and shares are exact on the client.
 - **Storage**: `overseer.admin.telemetry.modelUsers` = `{ version: 1, separateThinkingLevels, sort }`; the
   search and the level filter are not stored.
+
+## 7b. Usage of a user by model
+
+Each card of the Users view (§ 12) has a *pie-chart* icon button first among its actions, *Usage by
+model: {name}* (tooltip *Usage by model*, `aria-haspopup="dialog"`). It opens the full-screen **Usage by
+model** dialog (`user-models/telemetry-user-models-dialog.component.ts`, its logic in
+`user-models/telemetry-user-models.ts`), the mirror image of § 7a: every model one user used, as one
+full-width card each. The two dialogs share the stylesheet partial `_telemetry-usage-dialog.scss` and its
+`tl-mu-*` classes; this dialog's element ids are `tl-um-*`.
+
+- **Header.** *Usage by model: {userName}* (*Unknown user* when the account is gone), with *{Keys label} ·
+  {range}* under it, and Close; the footer has *Done*.
+- **Scope.** That user, over the tab's range and *Keys* filter. `GET api/admin/ai-telemetry/user-models`
+  returns one row per key source, provider, model, role context and thinking level, for every role group;
+  its *cost recorded since* is the earliest priced row of the included logs in the range.
+- **Summary strip.** *Models* (distinct provider and model), *Requests*, *Est. cost*, *Total tokens* and
+  *Top model* (*Claude 5 Opus · Benchmark · 41% of est. cost*). Under it, when the scope includes system
+  keys, *Provider errors are not recorded per user for system AI configurations.* (as in § 7a), and *Cost
+  recorded since {date}.* when the range starts earlier.
+- **Filter bar.** A search (*Search model or provider*, `#tl-um-search`), a *Role* select (from two role
+  groups up), a *Key* select (only under *Keys: Both*: *All keys*, *System AI configurations*, *User
+  keys*), a thinking-level filter (from two level values up), the *Thinking levels* grouping (*Group
+  together* / *Show separately*), the Sort popover and *Clear filters*, which clears the search and the
+  role, key and level filters.
+- **Shares and rank are of the scope** after the role, key and level filters, **before the search**, as
+  in § 7a.
+- **Cards.** The rank, the model name with the search highlights, the model id and the provider badge, the
+  role and thinking badges and, under *Both*, *System key* or *Own key*, *Last request … UTC*, a share bar
+  and § 7a's nine figures, each additive one with *{p} of total*.
+- **Sort**: *Est. cost* (the default, highest first), *Requests*, *Input (uncached)*, *Cache read*, *Cache
+  created*, *Output*, *Total tokens*, *Cache hit*, *Avg duration*, *Last request*, *Model name* or
+  *Provider*. A card without a figure for the field sorts last in both orders.
+- **Batches** of 50 cards, with *Show N more* and *Show all M*.
+- **Storage**: `overseer.admin.telemetry.userModels` = `{ version: 1, separateThinkingLevels, sort }`; the
+  search and the role, key and level filters are not stored.
 
 ## 8. Estimated cost
 
@@ -214,19 +263,50 @@ logged and never fails a chat. Upgrading an existing chat to confidential is not
 The privacy framework's incognito promise covers the four chat tables; this counter is outside them and is
 disclosed in the privacy notice (*Activity counts*).
 
-## 12. The Users view: system AI usage by user
+## 12. The Users view: AI usage by user
 
-Below the breakdown, *System AI usage by user* lists each user's usage of **system AI configurations only**
-(user keys are the user's own business), so that an administrator can set limits on problem users. Search
-by user name or email, sort by cost (the default), requests, tokens, busiest hour, refusals or last
-activity, server paging.
+The **Users** sub-tab lists each user's AI usage, so that an administrator can set limits on problem users;
+the list is labeled *Users* (`aria-label`), with no section heading. It follows the *Keys* filter (§ 6),
+and its scope line says what it counts:
 
-Each card shows requests (chat and title), tokens, estimated cost, the **busiest hour** (most requests in
-one UTC clock hour) with *typical n per active hour*, active days, chats, messages, the limit refusals and
-provider refusals from `SecurityEvent` (security plan), and the *Blocked* and *Deletion hold* states; then
-a table of the user's configurations with today's and this month's **effective** counters against their
-limits (a daily counter whose last reset was before today reads 0 — computed, never written, so the view
-never resets a counter), and the limit source (*user*, *group*, *system-wide*).
+| Keys | Lists | Scope line |
+|---|---|---|
+| *System AI configurations* (the default) | usage on system AI configurations (`SystemAiUsageLog`) | *System AI configurations. Chats, messages and refusals count every key.* |
+| *User keys* | usage on users' own API keys (`UserKeyAiUsageLog`) | *Users' own API keys. Limits apply to system AI configurations only; chats, messages and refusals count every key.* |
+| *Both* | both | *System AI configurations and users' own keys. Chats, messages and refusals count every key.* |
+
+Showing user-key usage per user exposes nothing new: the breakdown already shows it per user under *Keys:
+User keys* (§ 7). Refusals, chats and messages come from `SecurityEvent` and `OverseerDailyActivity`,
+which carry no key source, so they ignore *Keys*.
+
+The filter bar is the breakdown's: a search by user name or email (debounced 200 ms; Escape with text
+clears it) and the **Sort** popover, over server paging. The sort fields are *Est. cost* (the
+default, highest first), *Requests*, *Tokens*, *Busiest hour*, *Refusals*, *Last active* (*Newest first* /
+*Oldest first*) and *User name* (*A–Z* / *Z–A*). The server sorts (`sort` = `cost`, `requests`, `tokens`,
+`peakHour`, `refusals`, `lastActive` or `name`; `direction` = `asc` or `desc`, the default); a user with no
+last request sorts last in both directions, and ties go by user name, then user id.
+
+The cards are built like the breakdown's, on the same layout mixins and breakpoints
+(`_telemetry-cards.scss`): a title row with the icon buttons at its end, the meta line *Last active …*, an
+*Account state* badge row (*Blocked*, *Deletion hold*, *N refusals*), nine metrics, then the
+configurations table, full width, in a keyboard-scrollable labeled region that stacks under 36 rem. The
+metrics are requests (chat and title), tokens, estimated cost, the **busiest hour** (most requests in one
+UTC clock hour) with *typical n per active hour*, active days, chats, messages, and the limit refusals and
+provider refusals from `SecurityEvent` (security plan). Under *Both*, *Requests* carries the note *system N
+· own key M* and *Est. cost* the note *own key $X*; the busiest hour, active days and requests per active
+hour sum both logs per user, day and hour.
+
+The table lists the user's configurations. A system line shows today's and this month's **effective**
+counters against their limits (a daily counter whose last reset was before today reads 0 — computed, never
+written, so the view never resets a counter), and the limit source (*user*, *group*, *system-wide*). An
+own-key line is one per user and `UserAiModelId`, named by the `UserAiModel`'s `DisplayName`, else the
+logged `ModelDisplayName`, else the model id, and tagged *own key*; it shows *—* under *Today* and *This
+month* and the limit source *own key* (`LimitSource = "ownKey"`), since limits apply to system
+configurations only.
+
+The server's row carries `systemRequests`, `userKeyRequests`, `systemEstimatedCost` and
+`userKeyEstimatedCost` beside the totals, each configuration line its `keySource` (a `configId` is unique
+only within its key source), and the page its `keySource`.
 
 **Busiest hour is information for setting limits, never a misuse signal.** Long play sessions
 legitimately produce busy hours. Nothing labels, colors, flags, records or acts on a busy hour, and the
@@ -235,13 +315,13 @@ administrator already issued, and the *Blocked* state.
 
 The **spend alert** is a separate, cost-based signal outside this view: when a non-admin user's
 operator-funded estimated cost (roles 1–3) over the last 24 hours reaches
-`AiUsageGuard:AlertUserDailyCostUsd`, the admin page shows an alert banner linking to this tab
-(`security-monitoring.md` § 2). It never limits anyone.
+`AiUsageGuard:AlertUserDailyCostUsd`, the admin page shows an alert banner whose *Review* link opens this
+view, `/admin/telemetry/users` (`security-monitoring.md` § 2). It never limits anyone.
 
-Actions: *Usage charts* (the charts dialog for that user), *Manage limits* (selects the Users tab and
-opens its *AI configuration access for {user}* dialog, where the Rate Limits dialog edits each assignment;
-no limit editing is duplicated here), and *Block* / *Unblock*. The Security tab's *Usage* action lands
-here with that one user selected.
+Actions: *Usage by model* (the dialog of § 7b), *Usage charts* (the charts dialog for that user), *Manage
+limits* (selects the Users tab and opens its *AI configuration access for {user}* dialog, where the Rate
+Limits dialog edits each assignment; no limit editing is duplicated here), and *Block* / *Unblock*. The
+Security tab's *Usage* action lands here, on the Users sub-tab, with that one user selected.
 
 ## 13. The charts dialog
 
@@ -274,21 +354,29 @@ controls hidden through `hiddenKeys`), and **Download** (size and format).
 |---|---|---|
 | `GET` | `api/admin/ai-telemetry/summary?startDate&endDate&keys` | totals, breakdown rows, cost, availability, activity |
 | `GET` | `api/admin/ai-telemetry/series?startDate&endDate&keys&roles&bucket&splitBy&userId` | the series (400 past 1,100 buckets) |
-| `GET` | `api/admin/ai-telemetry/users?startDate&endDate&search&userId&sort&skip&take` | the Users view page (`take` 1–100) |
+| `GET` | `api/admin/ai-telemetry/users?startDate&endDate&keys&search&userId&sort&direction&skip&take` | the Users view page (`take` 1–100; `direction` `asc` or `desc`, the default) |
 | `GET` | `api/admin/ai-telemetry/model-users?startDate&endDate&keys&provider&modelId&roles` | one model's usage by user, role context and thinking level (`keys` system or user; 400 without `provider` or `modelId`) |
+| `GET` | `api/admin/ai-telemetry/user-models?startDate&endDate&keys&userId` | one user's usage by key source, provider, model, role context and thinking level (`AiTelemetryUserModelsDto`; 400 `{ message: "userId is required." }` without `userId`) |
 
 The breakdown's view settings are stored as `overseer.admin.telemetry.breakdown`
 (`{ version: 1, roles, separateThinkingLevels, keys, sort, providers, toolbarCollapsed }`, `sort` being
 `{ field, direction }`; a record without the last three reads them as their defaults); the search is not
 stored, so an old search never hides cards on a later visit. The Users view's settings are stored as
-`overseer.admin.telemetry.users.view`, and the Usage by user dialog's as
-`overseer.admin.telemetry.modelUsers` (`{ version: 1, separateThinkingLevels, sort }`).
+`overseer.admin.telemetry.users.view` (`{ version: 2, sort: { field, direction } }`; a version 1 record,
+`{ version: 1, sort: '<id>' }`, is read as that field, highest first), the Usage by user dialog's as
+`overseer.admin.telemetry.modelUsers` and the Usage by model dialog's as
+`overseer.admin.telemetry.userModels` (each `{ version: 1, separateThinkingLevels, sort }`).
 
 ## 15. Tests
 
-`AdminTelemetrySummaryTests`, `AdminTelemetrySeriesTests`, `AdminTelemetryUsersTests`,
-`AdminTelemetryModelUsersTests`, `ActivityCounterTests`, `ActivityCountingCallSiteTests`, `SystemAiUsageRecordingTests`,
+`AdminTelemetrySummaryTests`, `AdminTelemetrySeriesTests`, `AdminTelemetryUsersTests` (key sources,
+order, the name sort, own-key lines, the controller's pass-through), `AdminTelemetryModelUsersTests`,
+`AdminTelemetryUserModelsTests`, `ActivityCounterTests`, `ActivityCountingCallSiteTests`, `SystemAiUsageRecordingTests`,
 `ChatProviderAttemptLedgerTests`, `TitleAttemptClassificationTests`, `ProviderTitleUsageTests` and
-`ChatProviderAttemptMaintenanceTests` in `Overseer.Tests/UnitTests/`; the client specs beside the tab,
-the Users view, the charts dialog and the Usage by user dialog (`telemetry-model-users.spec.ts`,
-`telemetry-model-users-dialog.component.spec.ts`).
+`ChatProviderAttemptMaintenanceTests` in `Overseer.Tests/UnitTests/`, and the spend alert's link in
+`ConfigHealthServiceTests`; the client specs beside the tab (sub-tabs, panels, the *live* tags, the badge
+layout), the Users view (`telemetry-users-view.spec.ts`, `telemetry-users.component.spec.ts`), the charts
+dialog, the Usage by user dialog (`telemetry-model-users.spec.ts`,
+`telemetry-model-users-dialog.component.spec.ts`) and the Usage by model dialog
+(`telemetry-user-models.spec.ts`, `telemetry-user-models-dialog.component.spec.ts`), and the sub-tab paths
+in `admin-url.spec.ts`.

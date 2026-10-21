@@ -1,8 +1,10 @@
-<!-- The section card, its heading h4#tl-users-heading and the scope line are in the AI Telemetry tab's template. -->
+<!-- The tab's Users sub-tab panel holds this view; the Keys filter and date range are the tab's. -->
+<p class="tl-users-scope">{{ scopeText }}</p>
 <p class="tl-users-note tl-users-busy-note">Busy hours are normal during long play sessions. These figures help you set limits; they are not evidence of misuse.</p>
 
 @if (userFilter(); as filter) {
-  <p class="tl-users-filter">
+  <!-- Focused when a Usage link restricts the list. -->
+  <p class="tl-users-filter" id="tl-users-filter" tabindex="-1">
     <span>Showing the usage of <strong>{{ filter.userName }}</strong></span>
     <button type="button" class="btn-ghost tl-users-filter-clear"
             [attr.aria-label]="'Clear the filter to the usage of ' + filter.userName"
@@ -10,29 +12,70 @@
   </p>
 }
 
-<!-- Search and Sort by; both refetch the first page. -->
+<!-- Search and Sort; both refetch the first page. -->
 <div class="gh-filter-bar tl-users-filter-bar">
-  <div class="gh-filter-bar-row">
+  <div class="gh-filter-bar-row tl-users-filters-row">
     @if (!userFilter()) {
       <div class="gh-search-field tl-users-search">
         <label class="visually-hidden" for="tl-users-search">Search users by user name or email</label>
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        <input type="search" class="gh-input" id="tl-users-search" autocomplete="off" placeholder="Search user name or email"
-               [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+        <input type="search" class="gh-input" id="tl-users-search" autocomplete="off"
+               autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"
+               placeholder="Search user name or email" [value]="searchInput"
+               (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
       </div>
     }
-    <div class="tl-users-sort">
-      <label for="tl-users-sort">Sort by</label>
-      <select id="tl-users-sort" class="gh-input" (change)="onSortChange($event)">
-        @for (sort of sorts; track sort.id) {
-          <option [value]="sort.id" [selected]="list.sortId === sort.id">{{ sort.label }}</option>
-        }
-      </select>
+    <div class="tl-sort tl-users-sort">
+      <button type="button" class="btn-ghost tl-sort-trigger" id="tl-users-sort-trigger"
+              popovertarget="tl-users-sort-panel" [attr.aria-expanded]="sortOpen"
+              style="anchor-name: --tl-users-sort-trigger">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 4 4 4-4"></path><path d="M7 20V4"></path><path d="m21 8-4-4-4 4"></path><path d="M17 4v16"></path></svg>
+        <span>Sort: {{ sortLabel }}</span>
+      </button>
+      <div popover="auto" class="gh-facet-popover model-picker-sort-panel tl-users-sort-panel" id="tl-users-sort-panel"
+           style="position-anchor: --tl-users-sort-trigger"
+           (toggle)="onSortToggle($event)" (keydown)="onSortPanelKeydown($event)">
+        <fieldset class="gh-facet-group">
+          <legend class="gh-facet-legend">Sort by</legend>
+          <div class="tl-sort-fields">
+            @for (option of sortFields; track option.field) {
+              <label class="gh-radio gh-facet-option">
+                <input type="radio" name="tl-users-sort-field" [id]="'tl-users-sort-field-' + option.field" [value]="option.field"
+                       [checked]="view.sort.field === option.field" (change)="chooseSortField(option.field)">
+                <span class="gh-facet-option-label">{{ option.label }}</span>
+              </label>
+            }
+          </div>
+        </fieldset>
+        <div class="tl-sort-footer">
+          <div class="tl-sort-order" role="radiogroup" aria-labelledby="tl-users-sort-order-label">
+            <span class="gh-facet-legend" id="tl-users-sort-order-label">Order</span>
+            <div class="tl-sort-segments">
+              @for (direction of sortDirections; track direction) {
+                <label class="tl-sort-segment">
+                  <input type="radio" name="tl-users-sort-direction" [id]="'tl-users-sort-direction-' + direction" [value]="direction"
+                         [checked]="view.sort.direction === direction" (change)="chooseSortDirection(direction)">
+                  <span>{{ directionLabel(direction) }}</span>
+                </label>
+              }
+            </div>
+          </div>
+          <div class="model-picker-sort-clear">
+            <button type="button" class="btn-link" id="tl-users-sort-reset"
+                    [attr.aria-disabled]="sortIsDefault ? 'true' : null"
+                    (click)="resetSort()">Reset sorting</button>
+          </div>
+        </div>
+      </div>
     </div>
-    <!-- The list's one polite live region. -->
-    <p class="gh-list-status tl-users-status" id="tl-users-status" role="status">{{ listStatus }}</p>
+    @if (!userFilter() && searchInput !== '') {
+      <button type="button" class="btn-link gh-filter-clear" id="tl-users-clear" (click)="clearFilters()">Clear filters</button>
+    }
   </div>
 </div>
+
+<!-- The list's one polite live region. -->
+<p class="gh-list-status tl-users-status" id="tl-users-status" role="status">{{ listStatus }}</p>
 
 @if (error(); as message) {
   <p class="gh-field-error tl-users-error" role="alert">
@@ -40,88 +83,106 @@
     <span>{{ message }}</span>
   </p>
 } @else if (loaded() && rows().length === 0) {
-  <p class="tl-users-empty">{{ searchTerm && !userFilter() ? 'No users match this search.' : 'No system AI usage in this range.' }}</p>
+  <p class="tl-users-empty">{{ emptyText }}</p>
 } @else if (rows().length > 0) {
-  <ul class="tl-user-cards" role="list" aria-labelledby="tl-users-heading">
+  <ul class="tl-user-cards" role="list" aria-label="Users">
     @for (user of rows(); track user.userId; let i = $index) {
       <li class="tl-user-item">
         <article class="tl-user-card" [attr.data-user-id]="user.userId" [attr.aria-labelledby]="'tl-users-' + i + '-title'">
           <div class="tl-user-head">
-            <!-- A dot on screen between the parts, a comma for assistive technology. Every state is a word. -->
-            <div class="tl-user-kicker">
-              @if (user.isOverseerBlocked) {
-                <span class="gh-tag tl-user-blocked">Blocked</span>
-                <span class="tl-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-              }
-              @if (user.hasAccountHold) {
-                <span class="gh-tag tl-user-hold">Deletion hold</span>
-                <span class="tl-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-              }
-              @if (securityEventsAvailable() && refusals(user) > 0) {
-                <span class="tl-user-refusals">{{ refusalsText(user) }}</span>
-                <span class="tl-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-              }
-              @if (user.lastRequestUtc) {
-                <span class="tl-user-last">Last active <time [attr.datetime]="user.lastRequestUtc">{{ dateText(user.lastRequestUtc) }}</time></span>
-              } @else {
-                <span class="tl-user-last">No request in this range</span>
-              }
+            <div class="tl-user-title-row">
+              <!-- Focused after Show more. -->
+              <h5 class="tl-user-title" [id]="'tl-users-' + i + '-title'" tabindex="-1">{{ user.userName }}</h5>
+              <div class="tl-user-actions" role="group" [attr.aria-label]="'Actions for ' + user.userName">
+                <button type="button" class="action-btn tl-user-models" aria-haspopup="dialog"
+                        [attr.aria-label]="'Usage by model: ' + user.userName"
+                        [attr.interestfor]="'tl-users-' + i + '-models-tip'"
+                        [attr.style]="'anchor-name: --tl-users-' + i + '-models-tip'"
+                        (click)="openUsageByModel(user, $event)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'tl-users-' + i + '-models-tip'"
+                     [attr.style]="'position-anchor: --tl-users-' + i + '-models-tip'">Usage by model</div>
+
+                <button type="button" class="action-btn tl-user-charts"
+                        [attr.aria-label]="'Usage charts of ' + user.userName"
+                        [attr.interestfor]="'tl-users-' + i + '-charts-tip'"
+                        [attr.style]="'anchor-name: --tl-users-' + i + '-charts-tip'"
+                        (click)="openUsageCharts(user)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'tl-users-' + i + '-charts-tip'"
+                     [attr.style]="'position-anchor: --tl-users-' + i + '-charts-tip'">Usage charts</div>
+
+                <button type="button" class="action-btn tl-user-limits"
+                        [attr.aria-label]="'Manage the limits of ' + user.userName"
+                        [attr.interestfor]="'tl-users-' + i + '-limits-tip'"
+                        [attr.style]="'anchor-name: --tl-users-' + i + '-limits-tip'"
+                        (click)="manageLimits(user)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'tl-users-' + i + '-limits-tip'"
+                     [attr.style]="'position-anchor: --tl-users-' + i + '-limits-tip'">Manage limits</div>
+
+                <button type="button" class="action-btn tl-user-block" [class.action-btn-danger]="!user.isOverseerBlocked"
+                        [attr.aria-label]="user.isOverseerBlocked ? 'Unblock ' + user.userName : 'Block ' + user.userName + ' from the AI chat'"
+                        [attr.aria-busy]="busyUserId() === user.userId ? 'true' : null"
+                        [attr.interestfor]="'tl-users-' + i + '-block-tip'"
+                        [attr.style]="'anchor-name: --tl-users-' + i + '-block-tip'"
+                        (click)="user.isOverseerBlocked ? openUnblock(user) : openBlock(user)">
+                  @if (user.isOverseerBlocked) {
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
+                  } @else {
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+                  }
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'tl-users-' + i + '-block-tip'"
+                     [attr.style]="'position-anchor: --tl-users-' + i + '-block-tip'">{{ user.isOverseerBlocked ? 'Unblock from the AI chat' : 'Block from the AI chat' }}</div>
+              </div>
             </div>
-            <!-- Focused after Show more. -->
-            <h5 class="tl-user-title" [id]="'tl-users-' + i + '-title'" tabindex="-1">{{ user.userName }}</h5>
-          </div>
-
-          <div class="tl-user-actions" role="group" [attr.aria-label]="'Actions for ' + user.userName">
-            <button type="button" class="action-btn tl-user-charts"
-                    [attr.aria-label]="'Usage charts of ' + user.userName"
-                    [attr.interestfor]="'tl-users-' + i + '-charts-tip'"
-                    [attr.style]="'anchor-name: --tl-users-' + i + '-charts-tip'"
-                    (click)="openUsageCharts(user)">
-              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-            </button>
-            <div popover="hint" class="gh-tooltip" [id]="'tl-users-' + i + '-charts-tip'"
-                 [attr.style]="'position-anchor: --tl-users-' + i + '-charts-tip'">Usage charts</div>
-
-            <button type="button" class="action-btn tl-user-limits"
-                    [attr.aria-label]="'Manage the limits of ' + user.userName"
-                    [attr.interestfor]="'tl-users-' + i + '-limits-tip'"
-                    [attr.style]="'anchor-name: --tl-users-' + i + '-limits-tip'"
-                    (click)="manageLimits(user)">
-              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
-            </button>
-            <div popover="hint" class="gh-tooltip" [id]="'tl-users-' + i + '-limits-tip'"
-                 [attr.style]="'position-anchor: --tl-users-' + i + '-limits-tip'">Manage limits</div>
-
-            <button type="button" class="action-btn tl-user-block" [class.action-btn-danger]="!user.isOverseerBlocked"
-                    [attr.aria-label]="user.isOverseerBlocked ? 'Unblock ' + user.userName : 'Block ' + user.userName + ' from the AI chat'"
-                    [attr.aria-busy]="busyUserId() === user.userId ? 'true' : null"
-                    [attr.interestfor]="'tl-users-' + i + '-block-tip'"
-                    [attr.style]="'anchor-name: --tl-users-' + i + '-block-tip'"
-                    (click)="user.isOverseerBlocked ? openUnblock(user) : openBlock(user)">
-              @if (user.isOverseerBlocked) {
-                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
+            <p class="tl-user-meta">
+              @if (user.lastRequestUtc) {
+                Last active <time [attr.datetime]="user.lastRequestUtc">{{ dateText(user.lastRequestUtc) }}</time>
               } @else {
-                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+                No request in this range
               }
-            </button>
-            <div popover="hint" class="gh-tooltip" [id]="'tl-users-' + i + '-block-tip'"
-                 [attr.style]="'position-anchor: --tl-users-' + i + '-block-tip'">{{ user.isOverseerBlocked ? 'Unblock from the AI chat' : 'Block from the AI chat' }}</div>
+            </p>
+            <!-- Every state is a word in an outlined badge, never color alone. -->
+            @if (hasBadges(user)) {
+              <ul class="gh-model-card-badges tl-user-badges" role="list" aria-label="Account state">
+                @if (user.isOverseerBlocked) {
+                  <li><span class="gh-tag tl-user-blocked">Blocked</span></li>
+                }
+                @if (user.hasAccountHold) {
+                  <li><span class="gh-tag tl-user-hold">Deletion hold</span></li>
+                }
+                @if (securityEventsAvailable() && refusals(user) > 0) {
+                  <li><span class="gh-tag tl-user-refusals">{{ refusalsText(user) }}</span></li>
+                }
+              </ul>
+            }
           </div>
 
           <!-- Columns that line up down the list. Busiest hour is plain information. -->
-          <dl class="tl-user-metrics">
-            <div class="tl-metric">
+          <dl class="tl-metrics">
+            <div class="tl-metric tl-metric-requests">
               <dt>Requests</dt>
               <dd>{{ formatInteger(user.requests) }}</dd>
-              <dd class="tl-metric-note">chat {{ formatInteger(user.chatRequests) }} · title {{ formatInteger(user.titleRequests) }}</dd>
+              <dd class="tl-metric-note">{{ requestsNote(user) }}</dd>
+              @if (keySplitNote(user); as split) {
+                <dd class="tl-metric-note tl-metric-keys">{{ split }}</dd>
+              }
             </div>
             <div class="tl-metric">
               <dt>Tokens</dt>
               <dd>{{ formatInteger(user.promptTokens + user.outputTokens) }}</dd>
             </div>
-            <div class="tl-metric">
+            <div class="tl-metric tl-metric-cost">
               <dt>Est. cost</dt>
               <dd>{{ formatCost(user.estimatedCost) }}</dd>
+              @if (ownKeyCostNote(user); as ownKey) {
+                <dd class="tl-metric-note tl-metric-keys">{{ ownKey }}</dd>
+              }
               @if (unpricedRequests(user) > 0) {
                 <dd class="tl-metric-note">{{ formatInteger(unpricedRequests(user)) }} unpriced</dd>
               }
@@ -154,9 +215,10 @@
           </dl>
 
           @if (user.configs.length > 0) {
-            <div class="tl-user-configs table-responsive">
+            <!-- Keyboard-scrollable; under 36 rem of its own width each row is a block of labeled values. -->
+            <div class="tl-user-configs" role="region" tabindex="0" [attr.aria-labelledby]="'tl-users-' + i + '-configs-caption'">
               <table class="tl-user-config-table">
-                <caption class="visually-hidden">System AI configurations {{ user.userName }} used</caption>
+                <caption class="visually-hidden" [id]="'tl-users-' + i + '-configs-caption'">Configurations {{ user.userName }} used</caption>
                 <thead>
                   <tr>
                     <th scope="col">Configuration</th>
@@ -168,19 +230,23 @@
                   </tr>
                 </thead>
                 <tbody>
-                  @for (config of user.configs; track config.configId) {
-                    <tr>
+                  <!-- A configId is unique only within its key source. -->
+                  @for (config of user.configs; track config.keySource + '|' + config.configId) {
+                    <tr [attr.data-key-source]="config.keySource">
                       <th scope="row">
                         {{ config.configName }}
+                        @if (config.keySource === 'user') {
+                          <span class="gh-tag tl-config-own-key">own key</span>
+                        }
                         @if (config.assignmentEnabled === false) {
                           <span class="gh-tag tl-config-disabled">disabled</span>
                         }
                       </th>
-                      <td class="num">{{ formatInteger(config.requests) }}</td>
-                      <td class="num">{{ formatCost(config.estimatedCost) }}</td>
-                      <td class="num tl-config-today">{{ limitText(config.dailyChatRequests, config.maxDailyChatRequests) }}</td>
-                      <td class="num tl-config-month">{{ limitText(config.monthlyChatRequests, config.maxMonthlyChatRequests) }}</td>
-                      <td class="tl-config-source">{{ limitSourceText(config) }}</td>
+                      <td class="num" data-label="Requests">{{ formatInteger(config.requests) }}</td>
+                      <td class="num" data-label="Est. cost">{{ formatCost(config.estimatedCost) }}</td>
+                      <td class="num tl-config-today" data-label="Today">{{ configLimitText(config, config.dailyChatRequests, config.maxDailyChatRequests) }}</td>
+                      <td class="num tl-config-month" data-label="This month">{{ configLimitText(config, config.monthlyChatRequests, config.maxMonthlyChatRequests) }}</td>
+                      <td class="tl-config-source" data-label="Limits from">{{ limitSourceText(config) }}</td>
                     </tr>
                   }
                 </tbody>

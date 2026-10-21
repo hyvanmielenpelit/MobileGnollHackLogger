@@ -357,7 +357,7 @@ describe('AdminSecurityTabComponent', () => {
       expect(eventsSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('shows the user\'s AI usage on the AI Telemetry tab from Usage', () => {
+    it('shows the user\'s AI usage on the AI Telemetry Users sub-tab from Usage', () => {
       create();
       const usage = vi.spyOn(store, 'requestTelemetryUser');
 
@@ -368,6 +368,7 @@ describe('AdminSecurityTabComponent', () => {
       expect(usage).toHaveBeenCalledWith('u1', 'Alice');
       expect(store.pendingTelemetryUserId).toBe('u1');
       expect(store.activeTab).toBe('telemetry');
+      expect(store.telemetrySubTab).toBe('users');
     });
   });
 

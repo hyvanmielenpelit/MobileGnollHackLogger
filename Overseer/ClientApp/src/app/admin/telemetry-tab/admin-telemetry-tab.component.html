@@ -1,4 +1,4 @@
-<!-- The header and the Date Range / Keys bar stay at the top while the tab scrolls. -->
+<!-- The header and the sub-tab row with the Date range / Keys controls stay at the top while the tab scrolls. -->
 <div class="tl-head" #tlHead>
   <div class="tab-header-row d-flex justify-content-between align-items-center">
     <h3 class="m-0">AI Telemetry & Request Governor</h3>
@@ -16,458 +16,474 @@
     </div>
   </div>
 
-  <!-- Date Filter Toolbar: collapsible to one summary line. The controls are hidden, not removed, so their ids and bindings stay. -->
-  <div class="tl-toolbar-ground">
-    <div class="telemetry-toolbar" [class.is-collapsed]="view.toolbarCollapsed">
-      <div class="tl-toolbar-controls" id="tl-toolbar-controls" [hidden]="view.toolbarCollapsed">
-        <div class="control-group">
-          <label for="telemetryTimeSpanSelect">Date Range</label>
-          <select id="telemetryTimeSpanSelect" class="gh-input" [(ngModel)]="telemetryTimeSpan" (ngModelChange)="onTelemetryTimeSpanChange()">
-            @for (span of timeSpans; track span) {
-              <option [value]="span">{{ timeSpanLabels[span] }}</option>
-            }
-          </select>
-        </div>
-        @if (telemetryTimeSpan === 'custom') {
-          <div class="control-group">
-            <label for="telemetryStartDateInput">Start Date</label>
-            <input id="telemetryStartDateInput" type="date" class="gh-input" [(ngModel)]="telemetryStartDate" (ngModelChange)="onCustomDateChange()" [max]="todayDate">
-          </div>
-          <div class="control-group">
-            <label for="telemetryEndDateInput">End Date</label>
-            <input id="telemetryEndDateInput" type="date" class="gh-input" [(ngModel)]="telemetryEndDate" (ngModelChange)="onCustomDateChange()" [min]="telemetryStartDate" [max]="todayDate">
-          </div>
+  <!-- The sub-tabs, then the Date range / Keys controls at the row's end, collapsible to one summary line.
+       The controls are hidden, not removed, so their ids and bindings stay. -->
+  <div class="tl-nav-ground">
+    <div class="tl-nav">
+      <div class="gh-tabs gh-tabs-secondary tl-subtabs" role="tablist" aria-label="AI Telemetry sections">
+        @for (tab of subTabs; track tab; let i = $index) {
+          <button type="button" role="tab" class="gh-tab"
+                  [id]="'tl-subtab-' + tab"
+                  [attr.aria-controls]="'tl-subpanel-' + tab"
+                  [attr.aria-selected]="subTab === tab"
+                  [attr.tabindex]="subTab === tab ? 0 : -1"
+                  (keydown)="onSubTabKeydown($event, i)"
+                  (click)="selectSubTab(tab)">{{ subTabLabels[tab] }}</button>
         }
-        <div class="control-group">
-          <label for="telemetryKeysSelect">Keys</label>
-          <select id="telemetryKeysSelect" class="gh-input" [ngModel]="keys" (ngModelChange)="onKeysChange($event)">
-            @for (source of keySources; track source) {
-              <option [value]="source">{{ keySourceLabels[source] }}</option>
-            }
-          </select>
-        </div>
       </div>
-      @if (view.toolbarCollapsed) {
-        <p class="tl-toolbar-summary">{{ toolbarSummary }}</p>
-      }
-      <!-- A constant name; aria-expanded carries the state and the chevron shows it. -->
-      <button type="button" class="action-btn tl-toolbar-toggle" id="tl-toolbar-toggle"
-              aria-label="Date range and keys" aria-controls="tl-toolbar-controls"
-              [attr.aria-expanded]="!view.toolbarCollapsed"
-              [attr.interestfor]="'tl-toolbar-toggle-tip'" style="anchor-name: --tl-toolbar-toggle"
-              (click)="toggleToolbar()">
-        @if (view.toolbarCollapsed) {
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-        } @else {
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>
-        }
-      </button>
-      <div popover="hint" class="gh-tooltip" id="tl-toolbar-toggle-tip"
-           style="position-anchor: --tl-toolbar-toggle">{{ view.toolbarCollapsed ? 'Expand' : 'Collapse' }}</div>
-    </div>
-  </div>
-</div>
-
-<!-- Telemetry Summary Cards -->
-<div class="telemetry-grid">
-  <!-- Cache Efficiency Card -->
-  <div class="telemetry-card">
-    <div class="telemetry-card-title">Cache Hit Efficiency</div>
-    <div class="telemetry-stat-value highlight-gold">
-      {{ (telemetrySummary?.cacheHitRatio || 0) * 100 | number:'1.1-1' }}%
-    </div>
-    <progress class="telemetry-progress-bar mt-10" aria-label="Cache Hit Efficiency" [value]="(telemetrySummary?.cacheHitRatio || 0) * 100" max="100"></progress>
-    <div class="telemetry-details-list text-muted mt-10">
-      <div>Share of prompt tokens read from cache</div>
-      <div>Prompt Cache Read: {{ formatInteger(telemetrySummary?.totalCacheReadTokens || 0) }} tokens</div>
-    </div>
-  </div>
-
-  <!-- Total Tokens Card: the prompt is the whole input, of which uncached, cache read and cache created are parts. -->
-  <div class="telemetry-card telemetry-tokens-card">
-    <div class="telemetry-card-title">Token Accounting</div>
-    <div class="telemetry-stat-value">
-      {{ formatInteger(totalTokens) }}
-    </div>
-    <div class="telemetry-details-list mt-10">
-      <div>Prompt: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalPromptTokens || 0) }}</span></div>
-      <div class="telemetry-sub-line">Uncached: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalUncachedInputTokens || 0) }}</span></div>
-      <div class="telemetry-sub-line">Cache Read: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalCacheReadTokens || 0) }}</span></div>
-      <div class="telemetry-sub-line">Cache Created: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalCacheCreationTokens || 0) }}</span></div>
-      <div>Output: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalOutputTokens || 0) }}</span></div>
-    </div>
-  </div>
-
-  <!-- Request Volume Card -->
-  <div class="telemetry-card">
-    <div class="telemetry-card-title">Request Volume</div>
-    <div class="telemetry-stat-value highlight-blue">
-      {{ (telemetrySummary?.totalRequests || 0) | number }}
-    </div>
-    <div class="telemetry-details-list mt-10">
-      <div>Chat: <span class="telemetry-value">{{ (telemetrySummary?.totalChatRequests || 0) | number }}</span></div>
-      <div>Title Generation: <span class="telemetry-value">{{ (telemetrySummary?.totalTitleRequests || 0) | number }}</span></div>
-      <div>Benchmark: <span class="telemetry-value">{{ (telemetrySummary?.totalBenchmarkRequests || 0) | number }}</span></div>
-      @if (telemetryOtherRequests > 0) {
-        <div class="telemetry-other-requests">Other: <span class="telemetry-value">{{ telemetryOtherRequests | number }}</span></div>
-      }
-      <div>Avg Duration: <span class="telemetry-value">{{ (telemetrySummary?.avgDurationMs || 0) | number }} ms</span></div>
-    </div>
-  </div>
-
-  <!-- Estimated Cost Card -->
-  <div class="telemetry-card telemetry-cost-card">
-    <div class="telemetry-card-title">Estimated Cost</div>
-    <div class="telemetry-stat-value highlight-gold telemetry-cost-total">
-      {{ formatCost(telemetrySummary?.totalEstimatedCost ?? 0) }}
-    </div>
-    <div class="telemetry-details-list mt-10">
-      @for (line of costLines; track line.label) {
-        <div>{{ line.label }}: <span class="telemetry-value">{{ line.value }}</span></div>
-      }
-      @if (unpricedRequests > 0) {
-        <div class="telemetry-unpriced">{{ unpricedText }}</div>
-      }
-      @if (startsBefore(telemetrySummary?.costRecordedSinceUtc)) {
-        <div class="text-muted telemetry-cost-since">Cost recorded since {{ utcDay(telemetrySummary?.costRecordedSinceUtc) }}</div>
-      }
-    </div>
-  </div>
-
-  <!-- Provider Availability Card -->
-  <div class="telemetry-card telemetry-availability-card">
-    <div class="telemetry-card-title">Provider Availability</div>
-    <div class="telemetry-stat-value telemetry-availability-rate">
-      {{ availabilityHeadline }}
-      @if (telemetrySummary?.chatAvailability?.recorded) {
-        <span class="telemetry-stat-unit">provider errors</span>
-      }
-    </div>
-    @if (telemetrySummary?.chatAvailability?.recorded) {
-      <div class="telemetry-availability-count">{{ availabilityCountText }}</div>
-      <dl class="telemetry-dl">
-        @for (line of availabilityRows; track line.label) {
-          <div>
-            <dt>{{ line.label }}</dt>
-            <dd>
-              {{ line.value }}
-              @if (line.note) {
-                <span class="telemetry-dd-note">{{ line.note }}</span>
+      <div class="tl-range" role="group" aria-label="Date range and keys" [class.is-collapsed]="view.toolbarCollapsed">
+        <div class="tl-range-controls" id="tl-toolbar-controls" [hidden]="view.toolbarCollapsed">
+          <div class="tl-range-field">
+            <label for="telemetryTimeSpanSelect">Date range</label>
+            <select id="telemetryTimeSpanSelect" class="gh-input" [(ngModel)]="telemetryTimeSpan" (ngModelChange)="onTelemetryTimeSpanChange()">
+              @for (span of timeSpans; track span) {
+                <option [value]="span">{{ timeSpanLabels[span] }}</option>
               }
-            </dd>
+            </select>
           </div>
-        }
-      </dl>
-      @if (startsBefore(telemetrySummary?.chatAvailability?.recordedSinceUtc)) {
-        <div class="telemetry-card-foot">Recorded since {{ utcDay(telemetrySummary?.chatAvailability?.recordedSinceUtc) }}</div>
-      }
-    } @else {
-      <div class="telemetry-details-list text-muted mt-10">
-        <div>Provider attempts are not recorded yet.</div>
-      </div>
-    }
-  </div>
-
-  <!-- Provider Errors by Class Card: only once provider attempts are recorded. -->
-  @if (telemetrySummary?.chatAvailability?.recorded) {
-    <div class="telemetry-card telemetry-error-classes-card">
-      <div class="telemetry-card-title">Provider Errors by Class</div>
-      <div class="telemetry-stat-value telemetry-error-total">
-        {{ formatInteger(telemetrySummary?.chatAvailability?.providerErrors ?? 0) }}
-        <span class="telemetry-stat-unit">provider errors</span>
-      </div>
-      <dl class="telemetry-dl telemetry-dl-grid">
-        @for (line of errorClassRows; track line.label) {
-          <div>
-            <dt>{{ line.label }}</dt>
-            <dd>{{ line.value }}</dd>
-          </div>
-        }
-      </dl>
-      <dl class="telemetry-dl telemetry-dl-ruled">
-        @for (line of errorAttributionRows; track line.label) {
-          <div>
-            <dt>{{ line.label }}</dt>
-            <dd>
-              {{ line.value }}
-              @if (line.note) {
-                <span class="telemetry-dd-note">{{ line.note }}</span>
-              }
-            </dd>
-          </div>
-        }
-      </dl>
-    </div>
-  }
-
-  <!-- Overseer Activity Card: independent of the Keys filter. -->
-  <div class="telemetry-card telemetry-activity-card">
-    <div class="telemetry-card-title">Overseer Activity <span class="telemetry-card-scope">all keys</span></div>
-    <div class="telemetry-stat-value highlight-teal telemetry-active-users">
-      {{ formatInteger(telemetrySummary?.activity?.activeUsers ?? 0) }} <span class="telemetry-stat-unit">Active users</span>
-    </div>
-    @if (telemetrySummary?.activity; as activity) {
-      <div class="telemetry-details-list mt-10">
-        <div>New users: <span class="telemetry-value">{{ formatInteger(activity.newUsers) }}</span></div>
-        <div class="telemetry-activity-chats">Chats: <span class="telemetry-value">{{ formatInteger(activity.chatsCreated) }}</span>
-          <span class="text-muted"> (confidential {{ formatInteger(activity.confidentialChatsCreated) }} · GnollHack {{ formatInteger(activity.gnollHackChatsCreated) }})</span></div>
-        <div class="telemetry-activity-messages">Messages: <span class="telemetry-value">{{ formatInteger(activity.userMessages + activity.assistantMessages) }}</span>
-          <span class="text-muted"> (sent {{ formatInteger(activity.userMessages) }} · replies {{ formatInteger(activity.assistantMessages) }})</span></div>
-        <div class="telemetry-activity-incognito">Incognito chats {{ formatInteger(activity.incognitoChatsCreated) }} · messages {{ formatInteger(activity.incognitoUserMessages) }}
-          <span class="text-muted"> (not attributed to users)</span></div>
-        @if (startsBefore(activity.countedSinceUtc)) {
-          <div class="text-muted telemetry-activity-since">Counted since {{ utcDay(activity.countedSinceUtc) }}</div>
-        }
-      </div>
-    }
-  </div>
-
-  <!-- Governor Health Card -->
-  <div class="telemetry-card">
-    <div class="telemetry-card-title">Request Governor</div>
-    <div class="telemetry-stat-value highlight-teal">
-      {{ governorStatus ? governorStatus.maxConcurrentCalls : '—' }} <span class="telemetry-stat-unit">Max Concurrency</span>
-    </div>
-    <div class="telemetry-details-list mt-10">
-      <div>Rate Limited: <span class="telemetry-value">{{ governorStatus ? rateLimitedKeyCount : '—' }}</span></div>
-      <div>Partitions seen: <span class="telemetry-value">{{ governorStatus ? governorStatus.activeKeys.length : '—' }}</span></div>
-      <div>Max Retry-After: <span class="telemetry-value">{{ governorStatus ? governorStatus.maxRetryAfterSeconds + 's' : '—' }}</span></div>
-      <div class="mt-5">
-        <button type="button" class="btn-gh btn-gh-small"
-                [attr.aria-disabled]="rateLimitedKeyCount === 0 ? 'true' : null"
-                (click)="resetGovernorCooldown()">
-          Clear All Cooldowns
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Governor Partitions Table -->
-<div class="telemetry-section-card telemetry-partitions">
-  <h4>Rate Limit Partitions</h4>
-  @if (!governorStatus) {
-    <div class="text-muted telemetry-empty">{{ governorLoading ? 'Loading governor status…' : 'Governor status unavailable.' }}</div>
-  } @else if (governorStatus.activeKeys.length === 0) {
-    <div class="text-muted telemetry-empty">No partitions have been used since the last restart.</div>
-  } @else {
-    <div class="table-responsive mb-0">
-      <table class="modern-table">
-        <thead>
-          <tr>
-            <th>Credential Partition</th>
-            <th>Status</th>
-            <th class="text-center">In Flight</th>
-            <th>Remaining Cooldown</th>
-            <th class="text-right">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (key of governorStatus.activeKeys; track key.credentialKey) {
-            <tr>
-              <td class="telemetry-key">{{ key.credentialKey }}</td>
-              <td>
-                @if (key.isRateLimited) {
-                  <span class="badge badge-rate-limited">Rate Limited (429)</span>
-                } @else {
-                  <span class="badge badge-active">Available</span>
-                }
-              </td>
-              <td class="text-center num-col">{{ key.inFlightCalls }}</td>
-              <td>
-                @if (key.isRateLimited) {
-                  <span class="telemetry-cooldown">{{ key.remainingCooldownSeconds | number:'1.1-1' }}s</span>
-                } @else {
-                  <span class="text-muted">—</span>
-                }
-              </td>
-              <td class="text-right">
-                @if (key.isRateLimited) {
-                  <button type="button" class="action-btn"
-                          [attr.aria-label]="'Clear cooldown for ' + key.credentialKey"
-                          [attr.interestfor]="'tip-gov-reset-' + $index"
-                          [attr.style]="'anchor-name: --tip-gov-reset-' + $index"
-                          (click)="resetGovernorCooldown(key.credentialKey)">
-                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
-                  </button>
-                  <div popover="hint" class="gh-tooltip" [id]="'tip-gov-reset-' + $index"
-                       [attr.style]="'position-anchor: --tip-gov-reset-' + $index">Clear cooldown</div>
-                }
-              </td>
-            </tr>
+          @if (telemetryTimeSpan === 'custom') {
+            <div class="tl-range-field">
+              <label for="telemetryStartDateInput">Start date</label>
+              <input id="telemetryStartDateInput" type="date" class="gh-input" [(ngModel)]="telemetryStartDate" (ngModelChange)="onCustomDateChange()" [max]="todayDate">
+            </div>
+            <div class="tl-range-field">
+              <label for="telemetryEndDateInput">End date</label>
+              <input id="telemetryEndDateInput" type="date" class="gh-input" [(ngModel)]="telemetryEndDate" (ngModelChange)="onCustomDateChange()" [min]="telemetryStartDate" [max]="todayDate">
+            </div>
           }
-        </tbody>
-      </table>
+          <div class="tl-range-field">
+            <label for="telemetryKeysSelect">Keys</label>
+            <select id="telemetryKeysSelect" class="gh-input" [ngModel]="keys" (ngModelChange)="onKeysChange($event)">
+              @for (source of keySources; track source) {
+                <option [value]="source">{{ keySourceLabels[source] }}</option>
+              }
+            </select>
+          </div>
+        </div>
+        @if (view.toolbarCollapsed) {
+          <p class="tl-toolbar-summary">{{ toolbarSummary }}</p>
+        }
+        <!-- A constant name; aria-expanded carries the state and the chevron shows it. -->
+        <button type="button" class="action-btn tl-toolbar-toggle" id="tl-toolbar-toggle"
+                aria-label="Date range and keys" aria-controls="tl-toolbar-controls"
+                [attr.aria-expanded]="!view.toolbarCollapsed"
+                [attr.interestfor]="'tl-toolbar-toggle-tip'" style="anchor-name: --tl-toolbar-toggle"
+                (click)="toggleToolbar()">
+          @if (view.toolbarCollapsed) {
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          } @else {
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          }
+        </button>
+        <div popover="hint" class="gh-tooltip" id="tl-toolbar-toggle-tip"
+             style="position-anchor: --tl-toolbar-toggle">{{ view.toolbarCollapsed ? 'Expand' : 'Collapse' }}</div>
+      </div>
     </div>
-  }
+  </div>
 </div>
 
-<!-- Usage breakdown by key source, user, model, role and (optionally) thinking level -->
-<section class="telemetry-section-card tl-breakdown" aria-labelledby="tl-breakdown-heading">
-  <div class="tl-section-head">
-    <h4 id="tl-breakdown-heading">Usage by Model and Role</h4>
-    <!-- The list's one polite live region. -->
-    <p class="gh-list-status tl-breakdown-status" role="status">{{ breakdownStatus }}</p>
+<!-- Summary: the summary cards and the governor's partitions. -->
+<div role="tabpanel" class="tl-subpanel" id="tl-subpanel-summary" aria-labelledby="tl-subtab-summary" tabindex="0" [hidden]="subTab !== 'summary'">
+  <!-- Telemetry Summary Cards -->
+  <div class="telemetry-grid">
+    <!-- Cache Efficiency Card -->
+    <div class="telemetry-card">
+      <div class="telemetry-card-title">Cache Hit Efficiency</div>
+      <div class="telemetry-stat-value highlight-gold">
+        {{ (telemetrySummary?.cacheHitRatio || 0) * 100 | number:'1.1-1' }}%
+      </div>
+      <progress class="telemetry-progress-bar mt-10" aria-label="Cache Hit Efficiency" [value]="(telemetrySummary?.cacheHitRatio || 0) * 100" max="100"></progress>
+      <div class="telemetry-details-list text-muted mt-10">
+        <div>Share of prompt tokens read from cache</div>
+        <div>Prompt Cache Read: {{ formatInteger(telemetrySummary?.totalCacheReadTokens || 0) }} tokens</div>
+      </div>
+    </div>
+
+    <!-- Total Tokens Card: the prompt is the whole input, of which uncached, cache read and cache created are parts. -->
+    <div class="telemetry-card telemetry-tokens-card">
+      <div class="telemetry-card-title">Token Accounting</div>
+      <div class="telemetry-stat-value">
+        {{ formatInteger(totalTokens) }}
+      </div>
+      <div class="telemetry-details-list mt-10">
+        <div>Prompt: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalPromptTokens || 0) }}</span></div>
+        <div class="telemetry-sub-line">Uncached: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalUncachedInputTokens || 0) }}</span></div>
+        <div class="telemetry-sub-line">Cache Read: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalCacheReadTokens || 0) }}</span></div>
+        <div class="telemetry-sub-line">Cache Created: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalCacheCreationTokens || 0) }}</span></div>
+        <div>Output: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalOutputTokens || 0) }}</span></div>
+      </div>
+    </div>
+
+    <!-- Request Volume Card -->
+    <div class="telemetry-card">
+      <div class="telemetry-card-title">Request Volume</div>
+      <div class="telemetry-stat-value highlight-blue">
+        {{ (telemetrySummary?.totalRequests || 0) | number }}
+      </div>
+      <div class="telemetry-details-list mt-10">
+        <div>Chat: <span class="telemetry-value">{{ (telemetrySummary?.totalChatRequests || 0) | number }}</span></div>
+        <div>Title Generation: <span class="telemetry-value">{{ (telemetrySummary?.totalTitleRequests || 0) | number }}</span></div>
+        <div>Benchmark: <span class="telemetry-value">{{ (telemetrySummary?.totalBenchmarkRequests || 0) | number }}</span></div>
+        @if (telemetryOtherRequests > 0) {
+          <div class="telemetry-other-requests">Other: <span class="telemetry-value">{{ telemetryOtherRequests | number }}</span></div>
+        }
+        <div>Avg Duration: <span class="telemetry-value">{{ (telemetrySummary?.avgDurationMs || 0) | number }} ms</span></div>
+      </div>
+    </div>
+
+    <!-- Estimated Cost Card -->
+    <div class="telemetry-card telemetry-cost-card">
+      <div class="telemetry-card-title">Estimated Cost</div>
+      <div class="telemetry-stat-value highlight-gold telemetry-cost-total">
+        {{ formatCost(telemetrySummary?.totalEstimatedCost ?? 0) }}
+      </div>
+      <div class="telemetry-details-list mt-10">
+        @for (line of costLines; track line.label) {
+          <div>{{ line.label }}: <span class="telemetry-value">{{ line.value }}</span></div>
+        }
+        @if (unpricedRequests > 0) {
+          <div class="telemetry-unpriced">{{ unpricedText }}</div>
+        }
+        @if (startsBefore(telemetrySummary?.costRecordedSinceUtc)) {
+          <div class="text-muted telemetry-cost-since">Cost recorded since {{ utcDay(telemetrySummary?.costRecordedSinceUtc) }}</div>
+        }
+      </div>
+    </div>
+
+    <!-- Provider Availability Card -->
+    <div class="telemetry-card telemetry-availability-card">
+      <div class="telemetry-card-title">Provider Availability</div>
+      <div class="telemetry-stat-value telemetry-availability-rate">
+        {{ availabilityHeadline }}
+        @if (telemetrySummary?.chatAvailability?.recorded) {
+          <span class="telemetry-stat-unit">provider errors</span>
+        }
+      </div>
+      @if (telemetrySummary?.chatAvailability?.recorded) {
+        <div class="telemetry-availability-count">{{ availabilityCountText }}</div>
+        <dl class="telemetry-dl">
+          @for (line of availabilityRows; track line.label) {
+            <div>
+              <dt>{{ line.label }}</dt>
+              <dd>
+                {{ line.value }}
+                @if (line.note) {
+                  <span class="telemetry-dd-note">{{ line.note }}</span>
+                }
+              </dd>
+            </div>
+          }
+        </dl>
+        @if (startsBefore(telemetrySummary?.chatAvailability?.recordedSinceUtc)) {
+          <div class="telemetry-card-foot">Recorded since {{ utcDay(telemetrySummary?.chatAvailability?.recordedSinceUtc) }}</div>
+        }
+      } @else {
+        <div class="telemetry-details-list text-muted mt-10">
+          <div>Provider attempts are not recorded yet.</div>
+        </div>
+      }
+    </div>
+
+    <!-- Provider Errors by Class Card: only once provider attempts are recorded. -->
+    @if (telemetrySummary?.chatAvailability?.recorded) {
+      <div class="telemetry-card telemetry-error-classes-card">
+        <div class="telemetry-card-title">Provider Errors by Class</div>
+        <div class="telemetry-stat-value telemetry-error-total">
+          {{ formatInteger(telemetrySummary?.chatAvailability?.providerErrors ?? 0) }}
+          <span class="telemetry-stat-unit">provider errors</span>
+        </div>
+        <dl class="telemetry-dl telemetry-dl-grid">
+          @for (line of errorClassRows; track line.label) {
+            <div>
+              <dt>{{ line.label }}</dt>
+              <dd>{{ line.value }}</dd>
+            </div>
+          }
+        </dl>
+        <dl class="telemetry-dl telemetry-dl-ruled">
+          @for (line of errorAttributionRows; track line.label) {
+            <div>
+              <dt>{{ line.label }}</dt>
+              <dd>
+                {{ line.value }}
+                @if (line.note) {
+                  <span class="telemetry-dd-note">{{ line.note }}</span>
+                }
+              </dd>
+            </div>
+          }
+        </dl>
+      </div>
+    }
+
+    <!-- Overseer Activity Card: independent of the Keys filter. -->
+    <div class="telemetry-card telemetry-activity-card">
+      <div class="telemetry-card-title"><span>Overseer Activity</span> <span class="telemetry-card-scope">all keys</span></div>
+      <div class="telemetry-stat-value highlight-teal telemetry-active-users">
+        {{ formatInteger(telemetrySummary?.activity?.activeUsers ?? 0) }} <span class="telemetry-stat-unit">Active users</span>
+      </div>
+      @if (telemetrySummary?.activity; as activity) {
+        <div class="telemetry-details-list mt-10">
+          <div>New users: <span class="telemetry-value">{{ formatInteger(activity.newUsers) }}</span></div>
+          <div class="telemetry-activity-chats">Chats: <span class="telemetry-value">{{ formatInteger(activity.chatsCreated) }}</span>
+            <span class="text-muted"> (confidential {{ formatInteger(activity.confidentialChatsCreated) }} · GnollHack {{ formatInteger(activity.gnollHackChatsCreated) }})</span></div>
+          <div class="telemetry-activity-messages">Messages: <span class="telemetry-value">{{ formatInteger(activity.userMessages + activity.assistantMessages) }}</span>
+            <span class="text-muted"> (sent {{ formatInteger(activity.userMessages) }} · replies {{ formatInteger(activity.assistantMessages) }})</span></div>
+          <div class="telemetry-activity-incognito">Incognito chats {{ formatInteger(activity.incognitoChatsCreated) }} · messages {{ formatInteger(activity.incognitoUserMessages) }}
+            <span class="text-muted"> (not attributed to users)</span></div>
+          @if (startsBefore(activity.countedSinceUtc)) {
+            <div class="text-muted telemetry-activity-since">Counted since {{ utcDay(activity.countedSinceUtc) }}</div>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Governor Health Card: the governor's current state, independent of the range and the Keys filter. -->
+    <div class="telemetry-card telemetry-governor-card">
+      <div class="telemetry-card-title"><span>Request Governor</span> <span class="telemetry-card-scope">live</span></div>
+      <div class="telemetry-stat-value highlight-teal">
+        {{ governorStatus ? governorStatus.maxConcurrentCalls : '—' }} <span class="telemetry-stat-unit">Max Concurrency</span>
+      </div>
+      <div class="telemetry-details-list mt-10">
+        <div>Rate Limited: <span class="telemetry-value">{{ governorStatus ? rateLimitedKeyCount : '—' }}</span></div>
+        <div>Partitions seen: <span class="telemetry-value">{{ governorStatus ? governorStatus.activeKeys.length : '—' }}</span></div>
+        <div>Max Retry-After: <span class="telemetry-value">{{ governorStatus ? governorStatus.maxRetryAfterSeconds + 's' : '—' }}</span></div>
+        <div class="mt-5">
+          <button type="button" class="btn-gh btn-gh-small"
+                  [attr.aria-disabled]="rateLimitedKeyCount === 0 ? 'true' : null"
+                  (click)="resetGovernorCooldown()">
+            Clear All Cooldowns
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
-  @if (hasBreakdownRows) {
-    <div class="gh-filter-bar tl-breakdown-filters">
-      <div class="gh-filter-bar-row tl-breakdown-filters-row">
-        <div class="gh-search-field tl-breakdown-search">
-          <label class="visually-hidden" for="tl-breakdown-search">Search by model name, model id or provider</label>
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          <input type="search" class="gh-input" id="tl-breakdown-search" autocomplete="off"
-                 autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"
-                 placeholder="Search model or provider" [value]="searchInput"
-                 (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
-        </div>
-        <div class="control-group tl-thinking">
-          <label for="tl-thinking-select">Thinking levels</label>
-          <select id="tl-thinking-select" class="gh-input" (change)="onThinkingChange($event)">
-            <option value="grouped" [selected]="!view.separateThinkingLevels">Group together</option>
-            <option value="separate" [selected]="view.separateThinkingLevels">Show separately</option>
-          </select>
-        </div>
-        <div class="tl-sort">
-          <button type="button" class="btn-ghost tl-sort-trigger" id="tl-sort-trigger"
-                  popovertarget="tl-sort-panel" [attr.aria-expanded]="sortOpen"
-                  style="anchor-name: --tl-sort-trigger">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 4 4 4-4"></path><path d="M7 20V4"></path><path d="m21 8-4-4-4 4"></path><path d="M17 4v16"></path></svg>
-            <span>Sort: {{ sortLabel }}</span>
-          </button>
-          <div popover="auto" class="gh-facet-popover model-picker-sort-panel tl-sort-panel" id="tl-sort-panel"
-               style="position-anchor: --tl-sort-trigger"
-               (toggle)="onSortToggle($event)" (keydown)="onSortPanelKeydown($event)">
-            <fieldset class="gh-facet-group">
-              <legend class="gh-facet-legend">Sort by</legend>
-              <div class="tl-sort-fields">
-                @for (option of sortFields; track option.field) {
-                  <label class="gh-radio gh-facet-option">
-                    <input type="radio" name="tl-sort-field" [id]="'tl-sort-field-' + option.field" [value]="option.field"
-                           [checked]="view.sort.field === option.field" (change)="chooseSortField(option.field)">
-                    <span class="gh-facet-option-label">{{ option.label }}</span>
-                  </label>
-                }
-              </div>
-            </fieldset>
-            <div class="tl-sort-footer">
-              <div class="tl-sort-order" role="radiogroup" aria-labelledby="tl-sort-order-label">
-                <span class="gh-facet-legend" id="tl-sort-order-label">Order</span>
-                <div class="tl-sort-segments">
-                  @for (direction of sortDirections; track direction) {
-                    <label class="tl-sort-segment">
-                      <input type="radio" name="tl-sort-direction" [id]="'tl-sort-direction-' + direction" [value]="direction"
-                             [checked]="view.sort.direction === direction" (change)="chooseSortDirection(direction)">
-                      <span>{{ directionLabel(direction) }}</span>
+  <!-- Governor Partitions Table -->
+  <div class="telemetry-section-card telemetry-partitions">
+    <h4 class="tl-title-row"><span>Rate Limit Partitions</span> <span class="telemetry-card-scope">live</span></h4>
+    @if (!governorStatus) {
+      <div class="text-muted telemetry-empty">{{ governorLoading ? 'Loading governor status…' : 'Governor status unavailable.' }}</div>
+    } @else if (governorStatus.activeKeys.length === 0) {
+      <div class="text-muted telemetry-empty">No partitions have been used since the last restart.</div>
+    } @else {
+      <div class="table-responsive mb-0">
+        <table class="modern-table">
+          <thead>
+            <tr>
+              <th>Credential Partition</th>
+              <th>Status</th>
+              <th class="text-center">In Flight</th>
+              <th>Remaining Cooldown</th>
+              <th class="text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (key of governorStatus.activeKeys; track key.credentialKey) {
+              <tr>
+                <td class="telemetry-key">{{ key.credentialKey }}</td>
+                <td>
+                  @if (key.isRateLimited) {
+                    <span class="badge badge-rate-limited">Rate Limited (429)</span>
+                  } @else {
+                    <span class="badge badge-active">Available</span>
+                  }
+                </td>
+                <td class="text-center num-col">{{ key.inFlightCalls }}</td>
+                <td>
+                  @if (key.isRateLimited) {
+                    <span class="telemetry-cooldown">{{ key.remainingCooldownSeconds | number:'1.1-1' }}s</span>
+                  } @else {
+                    <span class="text-muted">—</span>
+                  }
+                </td>
+                <td class="text-right">
+                  @if (key.isRateLimited) {
+                    <button type="button" class="action-btn"
+                            [attr.aria-label]="'Clear cooldown for ' + key.credentialKey"
+                            [attr.interestfor]="'tip-gov-reset-' + $index"
+                            [attr.style]="'anchor-name: --tip-gov-reset-' + $index"
+                            (click)="resetGovernorCooldown(key.credentialKey)">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-gov-reset-' + $index"
+                         [attr.style]="'position-anchor: --tip-gov-reset-' + $index">Clear cooldown</div>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+</div>
+
+<!-- Models: usage by key source, user, model, role and (optionally) thinking level. Mounted on first selection, then kept. -->
+<div role="tabpanel" class="tl-subpanel tl-breakdown" id="tl-subpanel-models" aria-labelledby="tl-subtab-models" tabindex="0" [hidden]="subTab !== 'models'">
+  @if (isMounted('models')) {
+    @if (hasBreakdownRows) {
+      <div class="gh-filter-bar tl-breakdown-filters">
+        <div class="gh-filter-bar-row tl-breakdown-filters-row">
+          <div class="gh-search-field tl-breakdown-search">
+            <label class="visually-hidden" for="tl-breakdown-search">Search by model name, model id or provider</label>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input type="search" class="gh-input" id="tl-breakdown-search" autocomplete="off"
+                   autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"
+                   placeholder="Search model or provider" [value]="searchInput"
+                   (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+          </div>
+          <div class="control-group tl-thinking">
+            <label for="tl-thinking-select">Thinking levels</label>
+            <select id="tl-thinking-select" class="gh-input" (change)="onThinkingChange($event)">
+              <option value="grouped" [selected]="!view.separateThinkingLevels">Group together</option>
+              <option value="separate" [selected]="view.separateThinkingLevels">Show separately</option>
+            </select>
+          </div>
+          <div class="tl-sort">
+            <button type="button" class="btn-ghost tl-sort-trigger" id="tl-sort-trigger"
+                    popovertarget="tl-sort-panel" [attr.aria-expanded]="sortOpen"
+                    style="anchor-name: --tl-sort-trigger">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 4 4 4-4"></path><path d="M7 20V4"></path><path d="m21 8-4-4-4 4"></path><path d="M17 4v16"></path></svg>
+              <span>Sort: {{ sortLabel }}</span>
+            </button>
+            <div popover="auto" class="gh-facet-popover model-picker-sort-panel tl-sort-panel" id="tl-sort-panel"
+                 style="position-anchor: --tl-sort-trigger"
+                 (toggle)="onSortToggle($event)" (keydown)="onSortPanelKeydown($event)">
+              <fieldset class="gh-facet-group">
+                <legend class="gh-facet-legend">Sort by</legend>
+                <div class="tl-sort-fields">
+                  @for (option of sortFields; track option.field) {
+                    <label class="gh-radio gh-facet-option">
+                      <input type="radio" name="tl-sort-field" [id]="'tl-sort-field-' + option.field" [value]="option.field"
+                             [checked]="view.sort.field === option.field" (change)="chooseSortField(option.field)">
+                      <span class="gh-facet-option-label">{{ option.label }}</span>
                     </label>
                   }
                 </div>
-              </div>
-              <div class="model-picker-sort-clear">
-                <button type="button" class="btn-link" id="tl-sort-reset"
-                        [attr.aria-disabled]="sortIsDefault ? 'true' : null"
-                        (click)="resetSort()">Reset sorting</button>
+              </fieldset>
+              <div class="tl-sort-footer">
+                <div class="tl-sort-order" role="radiogroup" aria-labelledby="tl-sort-order-label">
+                  <span class="gh-facet-legend" id="tl-sort-order-label">Order</span>
+                  <div class="tl-sort-segments">
+                    @for (direction of sortDirections; track direction) {
+                      <label class="tl-sort-segment">
+                        <input type="radio" name="tl-sort-direction" [id]="'tl-sort-direction-' + direction" [value]="direction"
+                               [checked]="view.sort.direction === direction" (change)="chooseSortDirection(direction)">
+                        <span>{{ directionLabel(direction) }}</span>
+                      </label>
+                    }
+                  </div>
+                </div>
+                <div class="model-picker-sort-clear">
+                  <button type="button" class="btn-link" id="tl-sort-reset"
+                          [attr.aria-disabled]="sortIsDefault ? 'true' : null"
+                          (click)="resetSort()">Reset sorting</button>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-      <div class="gh-filter-bar-row tl-breakdown-filters-row">
-        <fieldset class="tl-roles">
-          <legend>Roles</legend>
-          @for (group of roleOptions; track group) {
-            <label class="checkbox-label tl-role-option" [for]="'tl-role-' + group">
-              <input type="checkbox" [id]="'tl-role-' + group" [checked]="isRoleSelected(group)" (change)="toggleRole(group, $event)">
-              <span>{{ roleGroupLabel(group) }}</span>
-              <span class="tl-role-count">{{ formatInteger(roleRequestCounts[group]) }}<span class="visually-hidden"> requests</span></span>
-            </label>
-          }
-        </fieldset>
-        @if (providerFacets.length >= 2) {
-          <div class="model-picker-providers tl-providers" role="group" aria-label="Filter by provider">
-            @for (facet of providerFacets; track facet.key) {
-              <button type="button" class="model-picker-provider" [attr.data-provider]="facet.key"
-                      [id]="'tl-provider-' + facet.key" [attr.aria-pressed]="isProviderPressed(facet)"
-                      (click)="toggleProvider(facet)">
-                @if (isProviderPressed(facet)) {
-                  <svg class="model-picker-provider-check" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                }
-                <span>{{ facet.provider }}</span>
-                <span class="model-picker-provider-count">{{ facet.count }}<span class="visually-hidden"> {{ facet.count === 1 ? 'entry' : 'entries' }}</span></span>
-              </button>
+        <div class="gh-filter-bar-row tl-breakdown-filters-row">
+          <fieldset class="tl-roles">
+            <legend>Roles</legend>
+            @for (group of roleOptions; track group) {
+              <label class="checkbox-label tl-role-option" [for]="'tl-role-' + group">
+                <input type="checkbox" [id]="'tl-role-' + group" [checked]="isRoleSelected(group)" (change)="toggleRole(group, $event)">
+                <span>{{ roleGroupLabel(group) }}</span>
+                <span class="tl-role-count">{{ formatInteger(roleRequestCounts[group]) }}<span class="visually-hidden"> requests</span></span>
+              </label>
             }
-          </div>
-        }
-        @if (breakdownFiltersActive) {
-          <button type="button" class="btn-link gh-filter-clear" id="tl-breakdown-clear" (click)="clearBreakdownFilters()">Clear filters</button>
-        }
-      </div>
-    </div>
-  }
-
-  @if (!hasBreakdownRows) {
-    <p class="text-muted telemetry-empty tl-empty">No AI usage logged for the selected date range.</p>
-  } @else if (view.roles.length === 0) {
-    <p class="text-muted telemetry-empty tl-empty">No role is selected. Select a role above to show its usage.</p>
-  } @else if (breakdown.all.length === 0) {
-    <p class="text-muted telemetry-empty tl-empty">No usage for the selected roles in this range.</p>
-  } @else if (breakdown.cards.length === 0) {
-    <div class="tl-no-match">
-      <p class="text-muted telemetry-empty tl-empty">{{ breakdownStatus }}</p>
-      <button type="button" class="btn-link gh-filter-clear tl-no-match-clear" (click)="clearBreakdownFilters()">Clear filters</button>
-    </div>
-  } @else {
-    <ul role="list" class="tl-cards" aria-labelledby="tl-breakdown-heading">
-      @for (card of breakdown.cards; track card.key; let i = $index) {
-        <li class="tl-item">
-          <article class="tl-card" [attr.aria-labelledby]="'tl-card-' + i + '-title'">
-            <div class="tl-card-head">
-              <div class="tl-card-title-row">
-                <h5 class="tl-card-title" [id]="'tl-card-' + i + '-title'">@for (part of titleParts(card); track $index) {@if (part.match) {<mark class="model-option-match">{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</h5>
-                <div class="tl-card-actions" role="group" [attr.aria-label]="'Actions for ' + cardLabel(card)">
-                  <button type="button" class="action-btn tl-card-users" aria-haspopup="dialog"
-                          [attr.aria-label]="'Usage by user: ' + cardLabel(card)"
-                          [attr.interestfor]="'tl-card-' + i + '-users-tip'"
-                          [attr.style]="'anchor-name: --tl-card-' + i + '-users'"
-                          (click)="openModelUsers(card, $event)">
-                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
-                  </button>
-                  <div popover="hint" class="gh-tooltip" [id]="'tl-card-' + i + '-users-tip'"
-                       [attr.style]="'position-anchor: --tl-card-' + i + '-users'">Usage by user</div>
-                </div>
-              </div>
-              <p class="gh-model-card-identity tl-card-identity">
-                @if (card.modelName) {
-                  <code class="gh-model-card-model-id">@for (part of modelIdParts(card); track $index) {@if (part.match) {<mark class="model-option-match">{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</code>
-                }
-                <app-provider-badge [provider]="card.provider"></app-provider-badge>
-              </p>
-              <ul class="gh-model-card-badges tl-card-badges" role="list" aria-label="Usage group">
-                <li><span class="status-badge" [ngClass]="roleBadgeClass(card.roleGroup)"><span class="visually-hidden">role </span>{{ roleGroupLabel(card.roleGroup) }}</span></li>
-                @for (badge of thinkingBadges(card); track badge.text) {
-                  <li><span [class]="badge.cssClass"><span class="visually-hidden">{{ badge.prefix }} </span>{{ badge.text }}</span></li>
-                }
-                @if (keyLabel(card); as keyText) {
-                  <li><span class="config-badge tl-key-badge"><span class="visually-hidden">key </span>{{ keyText }}</span></li>
-                }
-              </ul>
+          </fieldset>
+          @if (providerFacets.length >= 2) {
+            <div class="model-picker-providers tl-providers" role="group" aria-label="Filter by provider">
+              @for (facet of providerFacets; track facet.key) {
+                <button type="button" class="model-picker-provider" [attr.data-provider]="facet.key"
+                        [id]="'tl-provider-' + facet.key" [attr.aria-pressed]="isProviderPressed(facet)"
+                        (click)="toggleProvider(facet)">
+                  @if (isProviderPressed(facet)) {
+                    <svg class="model-picker-provider-check" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  }
+                  <span>{{ facet.provider }}</span>
+                  <span class="model-picker-provider-count">{{ facet.count }}<span class="visually-hidden"> {{ facet.count === 1 ? 'entry' : 'entries' }}</span></span>
+                </button>
+              }
             </div>
-            <ng-container *ngTemplateOutlet="metrics; context: { $implicit: card, role: card.roleGroup }"></ng-container>
+          }
+          @if (breakdownFiltersActive) {
+            <button type="button" class="btn-link gh-filter-clear" id="tl-breakdown-clear" (click)="clearBreakdownFilters()">Clear filters</button>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- The list's one polite live region. -->
+    <p class="gh-list-status tl-breakdown-status" role="status">{{ breakdownStatus }}</p>
+
+    @if (!hasBreakdownRows) {
+      <p class="text-muted telemetry-empty tl-empty">No AI usage logged for the selected date range.</p>
+    } @else if (view.roles.length === 0) {
+      <p class="text-muted telemetry-empty tl-empty">No role is selected. Select a role above to show its usage.</p>
+    } @else if (breakdown.all.length === 0) {
+      <p class="text-muted telemetry-empty tl-empty">No usage for the selected roles in this range.</p>
+    } @else if (breakdown.cards.length === 0) {
+      <div class="tl-no-match">
+        <p class="text-muted telemetry-empty tl-empty">{{ breakdownStatus }}</p>
+        <button type="button" class="btn-link gh-filter-clear tl-no-match-clear" (click)="clearBreakdownFilters()">Clear filters</button>
+      </div>
+    } @else {
+      <ul role="list" class="tl-cards" aria-label="Usage by model and role">
+        @for (card of breakdown.cards; track card.key; let i = $index) {
+          <li class="tl-item">
+            <article class="tl-card" [attr.aria-labelledby]="'tl-card-' + i + '-title'">
+              <div class="tl-card-head">
+                <div class="tl-card-title-row">
+                  <h5 class="tl-card-title" [id]="'tl-card-' + i + '-title'">@for (part of titleParts(card); track $index) {@if (part.match) {<mark class="model-option-match">{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</h5>
+                  <div class="tl-card-actions" role="group" [attr.aria-label]="'Actions for ' + cardLabel(card)">
+                    <button type="button" class="action-btn tl-card-users" aria-haspopup="dialog"
+                            [attr.aria-label]="'Usage by user: ' + cardLabel(card)"
+                            [attr.interestfor]="'tl-card-' + i + '-users-tip'"
+                            [attr.style]="'anchor-name: --tl-card-' + i + '-users'"
+                            (click)="openModelUsers(card, $event)">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'tl-card-' + i + '-users-tip'"
+                         [attr.style]="'position-anchor: --tl-card-' + i + '-users'">Usage by user</div>
+                  </div>
+                </div>
+                <p class="gh-model-card-identity tl-card-identity">
+                  @if (card.modelName) {
+                    <code class="gh-model-card-model-id">@for (part of modelIdParts(card); track $index) {@if (part.match) {<mark class="model-option-match">{{ part.text }}</mark>} @else {<ng-container>{{ part.text }}</ng-container>}}</code>
+                  }
+                  <app-provider-badge [provider]="card.provider"></app-provider-badge>
+                </p>
+                <ul class="gh-model-card-badges tl-card-badges" role="list" aria-label="Usage group">
+                  <li><span class="status-badge" [ngClass]="roleBadgeClass(card.roleGroup)"><span class="visually-hidden">role </span>{{ roleGroupLabel(card.roleGroup) }}</span></li>
+                  @for (badge of thinkingBadges(card); track badge.text) {
+                    <li><span [class]="badge.cssClass"><span class="visually-hidden">{{ badge.prefix }} </span>{{ badge.text }}</span></li>
+                  }
+                  @if (keyLabel(card); as keyText) {
+                    <li class="tl-key-item"><span class="config-badge tl-key-badge"><span class="visually-hidden">key </span>{{ keyText }}</span></li>
+                  }
+                </ul>
+              </div>
+              <ng-container *ngTemplateOutlet="metrics; context: { $implicit: card, role: card.roleGroup }"></ng-container>
+            </article>
+          </li>
+        }
+        <li class="tl-item">
+          <article class="tl-card tl-card-total" aria-labelledby="tl-card-total-title">
+            <div class="tl-card-head">
+              <h5 class="tl-card-title" id="tl-card-total-title">All shown</h5>
+              <p class="tl-card-meta">{{ breakdown.cards.length === 1 ? '1 entry' : breakdown.cards.length + ' entries' }}</p>
+            </div>
+            <ng-container *ngTemplateOutlet="metrics; context: { $implicit: breakdown.total, role: 'total' }"></ng-container>
           </article>
         </li>
-      }
-      <li class="tl-item">
-        <article class="tl-card tl-card-total" aria-labelledby="tl-card-total-title">
-          <div class="tl-card-head">
-            <h5 class="tl-card-title" id="tl-card-total-title">All shown</h5>
-            <p class="tl-card-meta">{{ breakdown.cards.length === 1 ? '1 entry' : breakdown.cards.length + ' entries' }}</p>
-          </div>
-          <ng-container *ngTemplateOutlet="metrics; context: { $implicit: breakdown.total, role: 'total' }"></ng-container>
-        </article>
-      </li>
-    </ul>
+      </ul>
+    }
   }
-</section>
+</div>
 
 <!-- One card's figures: columns that line up down the list. -->
 <ng-template #metrics let-m let-role="role">
@@ -500,13 +516,16 @@
   </dl>
 </ng-template>
 
-<!-- Usage of system AI configurations by user -->
-<section class="telemetry-section-card tl-users" aria-labelledby="tl-users-heading">
-  <h4 id="tl-users-heading" tabindex="-1">System AI usage by user</h4>
-  <p class="text-muted tl-users-scope">System AI configurations only: requests on users' own keys are not counted here, and the Keys filter does not apply.</p>
-  <app-telemetry-users [startDate]="telemetryStartDate" [endDate]="telemetryEndDate" (usageCharts)="openUserCharts($event)" />
-</section>
+<!-- Users: AI usage by user in the selected key sources. Mounted on first selection, then kept. -->
+<div role="tabpanel" class="tl-subpanel tl-users" id="tl-subpanel-users" aria-labelledby="tl-subtab-users" tabindex="0" [hidden]="subTab !== 'users'">
+  @if (isMounted('users')) {
+    <app-telemetry-users [startDate]="telemetryStartDate" [endDate]="telemetryEndDate" [keys]="keys"
+                         (usageCharts)="openUserCharts($event)" (usageByModel)="openUserModels($event)" />
+  }
+</div>
 
 <app-telemetry-charts-dialog #chartsDialog />
 
 <app-telemetry-model-users-dialog #modelUsersDialog />
+
+<app-telemetry-user-models-dialog #userModelsDialog />

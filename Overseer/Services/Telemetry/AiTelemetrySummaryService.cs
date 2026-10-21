@@ -7,8 +7,8 @@ using Overseer.Models;
 using Overseer.Services.Benchmarking;
 
 /// <summary>
-/// The AI Telemetry tab's queries: the summary and breakdown, the series over time, and per-user usage of system
-/// AI configurations. Reads <see cref="SystemAiUsageLog"/>, <see cref="UserKeyAiUsageLog"/>,
+/// The AI Telemetry tab's queries: the summary and breakdown, the series over time, per-user usage of the selected
+/// key sources, and the usage of one model by user and of one user by model. Reads <see cref="SystemAiUsageLog"/>, <see cref="UserKeyAiUsageLog"/>,
 /// <see cref="ChatProviderAttempt"/>, <see cref="OverseerDailyActivity"/> and, for refusal counts,
 /// <see cref="SecurityEvent"/>. Token figures are normalized per role context (<see cref="AiUsageRoles"/>).
 /// </summary>
@@ -729,31 +729,71 @@ public class AiTelemetrySummaryService
 
     // --- Users -----------------------------------------------------------------------------------
 
-    /// <param name="sort">cost | requests | tokens | peakHour | refusals | lastActive, descending; ties by user name.</param>
+    /// <summary>One user's sums in one key source and role context.</summary>
+    private sealed record UserRoleUsage(string KeySource, string UserId, int RoleContext, long Requests, long Input, long CacheRead,
+        long Output, decimal Cost, long Priced, DateTime Last);
+
+    /// <summary>One user's requests in one UTC clock hour.</summary>
+    private sealed record UserHourUsage(string UserId, DateTime Day, int Hour, int Count);
+
+    /// <param name="keySource">system (default) | user | both.</param>
+    /// <param name="sort">cost (default) | requests | tokens | peakHour | refusals | lastActive | name.</param>
+    /// <param name="direction">asc | desc (default); ties by user name, then user id. No last request sorts last.</param>
     public async Task<AiTelemetryUsersPageDto> GetUsersAsync(DateTime? start, DateTime? end, string? search, string? userId,
-        string? sort, int skip, int take, CancellationToken ct = default)
+        string? sort, int skip, int take, string? keySource = null, string? direction = null, CancellationToken ct = default)
     {
+        string keys = NormalizeKeySource(keySource);
         take = Math.Clamp(take <= 0 ? 20 : take, 1, 100);
         skip = Math.Max(0, skip);
-        var usage = InRange(_db.SystemAiUsageLogs.AsNoTracking(), start, end);
-        if (!string.IsNullOrWhiteSpace(userId)) usage = usage.Where(l => l.AspNetUserId == userId);
+        var systemUsage = InRange(_db.SystemAiUsageLogs.AsNoTracking(), start, end);
+        var keyUsage = InRange(_db.UserKeyAiUsageLogs.AsNoTracking(), start, end);
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            systemUsage = systemUsage.Where(l => l.AspNetUserId == userId);
+            keyUsage = keyUsage.Where(l => l.AspNetUserId == userId);
+        }
 
-        var byRole = await usage
-            .GroupBy(l => new { l.AspNetUserId, l.RoleContext })
-            .Select(g => new
-            {
-                g.Key.AspNetUserId, g.Key.RoleContext,
-                Requests = g.LongCount(),
-                Input = g.Sum(x => (long)(x.InputTokens ?? 0)),
-                CacheRead = g.Sum(x => (long)(x.CacheReadInputTokens ?? 0)),
-                Output = g.Sum(x => (long)(x.OutputTokens ?? 0)),
-                Cost = g.Sum(x => x.EstimatedCost ?? 0m),
-                Priced = g.LongCount(x => x.EstimatedCost != null),
-                Last = g.Max(x => x.TimestampUtc)
-            })
-            .ToListAsync(ct);
+        var byRole = new List<UserRoleUsage>();
+        if (IncludesSystem(keys))
+        {
+            byRole.AddRange((await systemUsage
+                .GroupBy(l => new { l.AspNetUserId, l.RoleContext })
+                .Select(g => new
+                {
+                    g.Key.AspNetUserId, g.Key.RoleContext,
+                    Requests = g.LongCount(),
+                    Input = g.Sum(x => (long)(x.InputTokens ?? 0)),
+                    CacheRead = g.Sum(x => (long)(x.CacheReadInputTokens ?? 0)),
+                    Output = g.Sum(x => (long)(x.OutputTokens ?? 0)),
+                    Cost = g.Sum(x => x.EstimatedCost ?? 0m),
+                    Priced = g.LongCount(x => x.EstimatedCost != null),
+                    Last = g.Max(x => x.TimestampUtc)
+                })
+                .ToListAsync(ct))
+                .Select(a => new UserRoleUsage("system", a.AspNetUserId, a.RoleContext, a.Requests, a.Input, a.CacheRead, a.Output,
+                    a.Cost, a.Priced, a.Last)));
+        }
+        if (IncludesUser(keys))
+        {
+            byRole.AddRange((await keyUsage
+                .GroupBy(l => new { l.AspNetUserId, l.RoleContext })
+                .Select(g => new
+                {
+                    g.Key.AspNetUserId, g.Key.RoleContext,
+                    Requests = g.LongCount(),
+                    Input = g.Sum(x => (long)(x.InputTokens ?? 0)),
+                    CacheRead = g.Sum(x => (long)(x.CacheReadInputTokens ?? 0)),
+                    Output = g.Sum(x => (long)(x.OutputTokens ?? 0)),
+                    Cost = g.Sum(x => x.EstimatedCost ?? 0m),
+                    Priced = g.LongCount(x => x.EstimatedCost != null),
+                    Last = g.Max(x => x.TimestampUtc)
+                })
+                .ToListAsync(ct))
+                .Select(a => new UserRoleUsage("user", a.AspNetUserId, a.RoleContext, a.Requests, a.Input, a.CacheRead, a.Output,
+                    a.Cost, a.Priced, a.Last)));
+        }
 
-        var userIds = byRole.Select(r => r.AspNetUserId).Distinct().ToList();
+        var userIds = byRole.Select(r => r.UserId).Distinct().ToList();
         var users = await _db.Users.OfType<ApplicationUser>().AsNoTracking()
             .Where(u => userIds.Contains(u.Id))
             .Select(u => new { u.Id, u.UserName, u.Email, Blocked = u.OverseerBlockedUtc != null })
@@ -768,26 +808,61 @@ public class AiTelemetrySummaryService
         var selectedIds = users.Select(u => u.Id).ToList();
         if (selectedIds.Count == 0)
         {
-            return new AiTelemetryUsersPageDto { SecurityEventsAvailable = true };
+            return new AiTelemetryUsersPageDto { KeySource = keys, SecurityEventsAvailable = true };
         }
 
-        var byConfig = await usage
-            .Where(l => selectedIds.Contains(l.AspNetUserId))
-            .GroupBy(l => new { l.AspNetUserId, l.SystemAiApiConfigurationId })
-            .Select(g => new
-            {
-                g.Key.AspNetUserId, g.Key.SystemAiApiConfigurationId,
-                Requests = g.LongCount(),
-                Cost = g.Sum(x => x.EstimatedCost ?? 0m),
-                DisplayName = g.Max(x => x.ModelDisplayName)
-            })
-            .ToListAsync(ct);
+        var byConfig = !IncludesSystem(keys)
+            ? new()
+            : await systemUsage
+                .Where(l => selectedIds.Contains(l.AspNetUserId))
+                .GroupBy(l => new { l.AspNetUserId, l.SystemAiApiConfigurationId })
+                .Select(g => new
+                {
+                    g.Key.AspNetUserId, g.Key.SystemAiApiConfigurationId,
+                    Requests = g.LongCount(),
+                    Cost = g.Sum(x => x.EstimatedCost ?? 0m),
+                    DisplayName = g.Max(x => x.ModelDisplayName)
+                })
+                .ToListAsync(ct);
 
-        var byHour = await usage
-            .Where(l => selectedIds.Contains(l.AspNetUserId))
-            .GroupBy(l => new { l.AspNetUserId, Day = l.TimestampUtc.Date, l.TimestampUtc.Hour })
-            .Select(g => new { g.Key.AspNetUserId, g.Key.Day, g.Key.Hour, Count = g.Count() })
-            .ToListAsync(ct);
+        var byKeyModel = !IncludesUser(keys)
+            ? new()
+            : await keyUsage
+                .Where(l => selectedIds.Contains(l.AspNetUserId))
+                .GroupBy(l => new { l.AspNetUserId, l.UserAiModelId })
+                .Select(g => new
+                {
+                    g.Key.AspNetUserId, g.Key.UserAiModelId,
+                    Requests = g.LongCount(),
+                    Cost = g.Sum(x => x.EstimatedCost ?? 0m),
+                    DisplayName = g.Max(x => x.ModelDisplayName),
+                    ModelId = g.Max(x => x.ModelId)
+                })
+                .ToListAsync(ct);
+
+        var hourRows = new List<UserHourUsage>();
+        if (IncludesSystem(keys))
+        {
+            hourRows.AddRange((await systemUsage
+                .Where(l => selectedIds.Contains(l.AspNetUserId))
+                .GroupBy(l => new { l.AspNetUserId, Day = l.TimestampUtc.Date, l.TimestampUtc.Hour })
+                .Select(g => new { g.Key.AspNetUserId, g.Key.Day, g.Key.Hour, Count = g.Count() })
+                .ToListAsync(ct))
+                .Select(h => new UserHourUsage(h.AspNetUserId, h.Day, h.Hour, h.Count)));
+        }
+        if (IncludesUser(keys))
+        {
+            hourRows.AddRange((await keyUsage
+                .Where(l => selectedIds.Contains(l.AspNetUserId))
+                .GroupBy(l => new { l.AspNetUserId, Day = l.TimestampUtc.Date, l.TimestampUtc.Hour })
+                .Select(g => new { g.Key.AspNetUserId, g.Key.Day, g.Key.Hour, Count = g.Count() })
+                .ToListAsync(ct))
+                .Select(h => new UserHourUsage(h.AspNetUserId, h.Day, h.Hour, h.Count)));
+        }
+        var byHour = hourRows
+            .GroupBy(h => (h.UserId, h.Day, h.Hour))
+            .Select(g => new UserHourUsage(g.Key.UserId, g.Key.Day, g.Key.Hour, g.Sum(h => h.Count)))
+            .ToList();
 
         var activity = await InRange(_db.OverseerDailyActivities.AsNoTracking(), start, end)
             .Where(a => a.AspNetUserId != null && selectedIds.Contains(a.AspNetUserId))
@@ -822,13 +897,19 @@ public class AiTelemetrySummaryService
             .Where(g => groupIds.Contains(g.GroupId) && configIds.Contains(g.SystemAiApiConfigurationId) && g.IsEnabled)
             .Select(g => new { g.GroupId, g.SystemAiApiConfigurationId })
             .ToListAsync(ct);
+        var keyModelIds = byKeyModel.Where(m => m.UserAiModelId != null).Select(m => m.UserAiModelId!.Value).Distinct().ToList();
+        var keyModelNames = keyModelIds.Count == 0
+            ? new Dictionary<long, string?>()
+            : await _db.UserAiModels.AsNoTracking()
+                .Where(m => keyModelIds.Contains(m.Id))
+                .ToDictionaryAsync(m => m.Id, m => m.DisplayName, ct);
 
         var now = DateTime.UtcNow;
         var rows = new List<AiTelemetryUserRowDto>();
         foreach (var u in users)
         {
-            var roles = byRole.Where(r => r.AspNetUserId == u.Id).ToList();
-            var hours = byHour.Where(h => h.AspNetUserId == u.Id).ToList();
+            var roles = byRole.Where(r => r.UserId == u.Id).ToList();
+            var hours = byHour.Where(h => h.UserId == u.Id).ToList();
             var peak = hours.OrderByDescending(h => h.Count).ThenBy(h => h.Day).ThenBy(h => h.Hour).FirstOrDefault();
             var counts = eventCounts.Where(e => e.AspNetUserId == u.Id).ToList();
             activity.TryGetValue(u.Id, out var act);
@@ -839,12 +920,16 @@ public class AiTelemetrySummaryService
                 UserId = u.Id,
                 UserName = u.UserName ?? string.Empty,
                 Requests = roles.Sum(r => r.Requests),
+                SystemRequests = roles.Where(r => r.KeySource == "system").Sum(r => r.Requests),
+                UserKeyRequests = roles.Where(r => r.KeySource == "user").Sum(r => r.Requests),
                 ChatRequests = roles.Where(r => AiUsageRoles.GroupOf(r.RoleContext) == AiUsageRoles.Chat).Sum(r => r.Requests),
                 TitleRequests = roles.Where(r => AiUsageRoles.GroupOf(r.RoleContext) == AiUsageRoles.TitleGeneration).Sum(r => r.Requests),
                 BenchmarkRequests = roles.Where(r => AiUsageRoles.GroupOf(r.RoleContext) == AiUsageRoles.Benchmark).Sum(r => r.Requests),
                 PromptTokens = roles.Sum(r => AiUsageRoles.PromptTokens(r.RoleContext, r.Input, r.CacheRead)),
                 OutputTokens = roles.Sum(r => r.Output),
                 EstimatedCost = roles.Sum(r => r.Cost),
+                SystemEstimatedCost = roles.Where(r => r.KeySource == "system").Sum(r => r.Cost),
+                UserKeyEstimatedCost = roles.Where(r => r.KeySource == "user").Sum(r => r.Cost),
                 PricedRequests = roles.Sum(r => r.Priced),
                 PeakHourRequests = peak?.Count ?? 0,
                 PeakHourStartUtc = peak == null ? null : DateTime.SpecifyKind(peak.Day.AddHours(peak.Hour), DateTimeKind.Utc),
@@ -860,14 +945,16 @@ public class AiTelemetrySummaryService
                 HasAccountHold = heldIds.Contains(u.Id)
             };
 
-            foreach (var c in byConfig.Where(c => c.AspNetUserId == u.Id).OrderByDescending(c => c.Requests))
+            var lines = new List<AiTelemetryUserConfigDto>();
+            foreach (var c in byConfig.Where(c => c.AspNetUserId == u.Id))
             {
                 configs.TryGetValue(c.SystemAiApiConfigurationId, out var config);
                 var assignment = assignments.FirstOrDefault(a => a.AspNetUserId == u.Id && a.SystemAiApiConfigurationId == c.SystemAiApiConfigurationId);
                 bool groupGrants = groupAssignments.Any(g => g.SystemAiApiConfigurationId == c.SystemAiApiConfigurationId && groupsOfUser.Contains(g.GroupId));
 
-                row.Configs.Add(new AiTelemetryUserConfigDto
+                lines.Add(new AiTelemetryUserConfigDto
                 {
+                    KeySource = "system",
                     ConfigId = c.SystemAiApiConfigurationId,
                     ConfigName = !string.IsNullOrEmpty(config?.DisplayName) ? config!.DisplayName : c.DisplayName ?? config?.ModelId ?? c.SystemAiApiConfigurationId.ToString(CultureInfo.InvariantCulture),
                     Requests = c.Requests,
@@ -886,26 +973,57 @@ public class AiTelemetrySummaryService
                         : "none"
                 });
             }
+
+            // One line per UserAiModel the log attributes; a ConfigId is unique only within its key source.
+            foreach (var m in byKeyModel.Where(m => m.AspNetUserId == u.Id))
+            {
+                string? modelName = m.UserAiModelId is long modelId && keyModelNames.TryGetValue(modelId, out var name) ? name : null;
+                lines.Add(new AiTelemetryUserConfigDto
+                {
+                    KeySource = "user",
+                    ConfigId = m.UserAiModelId ?? 0,
+                    ConfigName = !string.IsNullOrEmpty(modelName) ? modelName
+                        : !string.IsNullOrEmpty(m.DisplayName) ? m.DisplayName
+                        : m.ModelId ?? string.Empty,
+                    Requests = m.Requests,
+                    EstimatedCost = m.Cost,
+                    LimitSource = "ownKey"
+                });
+            }
+
+            row.Configs.AddRange(lines.OrderByDescending(l => l.Requests));
             rows.Add(row);
         }
 
+        bool ascending = string.Equals(direction?.Trim(), "asc", StringComparison.OrdinalIgnoreCase);
         IOrderedEnumerable<AiTelemetryUserRowDto> ordered = (sort?.Trim()) switch
         {
-            "requests" => rows.OrderByDescending(r => r.Requests),
-            "tokens" => rows.OrderByDescending(r => r.PromptTokens + r.OutputTokens),
-            "peakHour" => rows.OrderByDescending(r => r.PeakHourRequests),
-            "refusals" => rows.OrderByDescending(r => r.LimitRefusals + r.ProviderRefusals),
-            "lastActive" => rows.OrderByDescending(r => r.LastRequestUtc ?? DateTime.MinValue),
-            _ => rows.OrderByDescending(r => r.EstimatedCost)
+            "requests" => SortBy(rows, r => r.Requests, ascending),
+            "tokens" => SortBy(rows, r => r.PromptTokens + r.OutputTokens, ascending),
+            "peakHour" => SortBy(rows, r => r.PeakHourRequests, ascending),
+            "refusals" => SortBy(rows, r => r.LimitRefusals + r.ProviderRefusals, ascending),
+            "lastActive" => ascending
+                ? rows.OrderBy(r => r.LastRequestUtc == null).ThenBy(r => r.LastRequestUtc)
+                : rows.OrderBy(r => r.LastRequestUtc == null).ThenByDescending(r => r.LastRequestUtc),
+            "name" => SortBy(rows, r => r.UserName, ascending, StringComparer.OrdinalIgnoreCase),
+            _ => SortBy(rows, r => r.EstimatedCost, ascending)
         };
 
         return new AiTelemetryUsersPageDto
         {
+            KeySource = keys,
             TotalUsers = rows.Count,
             SecurityEventsAvailable = true,
-            Users = ordered.ThenBy(r => r.UserName, StringComparer.OrdinalIgnoreCase).Skip(skip).Take(take).ToList()
+            Users = ordered
+                .ThenBy(r => r.UserName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(r => r.UserId, StringComparer.Ordinal)
+                .Skip(skip).Take(take).ToList()
         };
     }
+
+    private static IOrderedEnumerable<T> SortBy<T, TKey>(IEnumerable<T> rows, Func<T, TKey> key, bool ascending,
+        IComparer<TKey>? comparer = null) =>
+        ascending ? rows.OrderBy(key, comparer) : rows.OrderByDescending(key, comparer);
 
     // --- Model users -----------------------------------------------------------------------------
 
@@ -1019,6 +1137,117 @@ public class AiTelemetrySummaryService
             ModelName = ModelName(provider, modelId, new Dictionary<(string, string), string?>()),
             Roles = AiUsageRoles.NamedGroups.Concat(new[] { AiUsageRoles.Other })
                 .Where(roleSet.Contains).ToList(),
+            CostRecordedSinceUtc = Utc(costSince),
+            Rows = rows
+        };
+    }
+
+    // --- User models -----------------------------------------------------------------------------
+
+    /// <summary>One user's sums of one model in one key source, role context and thinking level.</summary>
+    private sealed record UserModelUsage(string KeySource, string Provider, string ModelId, int RoleContext, string? ThinkingLevel,
+        long Requests, long Input, long Output, long CacheRead, long CacheWrite, decimal Cost, long Priced, long DurationSum,
+        long DurationCount, DateTime Last);
+
+    /// <summary>Usage of one user by model, role context and thinking level, in the selected key sources and every role group.</summary>
+    /// <param name="keySource">system (default) | user | both.</param>
+    public async Task<AiTelemetryUserModelsDto> GetUserModelsAsync(DateTime? start, DateTime? end, string? keySource, string userId,
+        CancellationToken ct = default)
+    {
+        string keys = NormalizeKeySource(keySource);
+        var usage = new List<UserModelUsage>();
+        DateTime? costSince = null;
+
+        if (IncludesSystem(keys))
+        {
+            var q = InRange(_db.SystemAiUsageLogs.AsNoTracking(), start, end);
+            usage.AddRange((await q
+                .Where(l => l.AspNetUserId == userId)
+                .GroupBy(l => new { l.Provider, l.ModelId, l.RoleContext, l.ThinkingLevel })
+                .Select(g => new
+                {
+                    g.Key.Provider, g.Key.ModelId, g.Key.RoleContext, g.Key.ThinkingLevel,
+                    Requests = g.LongCount(),
+                    Input = g.Sum(x => (long)(x.InputTokens ?? 0)),
+                    Output = g.Sum(x => (long)(x.OutputTokens ?? 0)),
+                    CacheRead = g.Sum(x => (long)(x.CacheReadInputTokens ?? 0)),
+                    CacheWrite = g.Sum(x => (long)(x.CacheCreationInputTokens ?? 0)),
+                    Cost = g.Sum(x => x.EstimatedCost ?? 0m),
+                    Priced = g.LongCount(x => x.EstimatedCost != null),
+                    DurationSum = g.Sum(x => (long)(x.TotalDurationMs ?? 0)),
+                    DurationCount = g.LongCount(x => x.TotalDurationMs != null),
+                    Last = g.Max(x => x.TimestampUtc)
+                })
+                .ToListAsync(ct))
+                .Select(a => new UserModelUsage("system", a.Provider, a.ModelId, a.RoleContext, a.ThinkingLevel, a.Requests, a.Input,
+                    a.Output, a.CacheRead, a.CacheWrite, a.Cost, a.Priced, a.DurationSum, a.DurationCount, a.Last)));
+            costSince = Earliest(costSince, await q.Where(l => l.EstimatedCost != null).MinAsync(l => (DateTime?)l.TimestampUtc, ct));
+        }
+
+        if (IncludesUser(keys))
+        {
+            var q = InRange(_db.UserKeyAiUsageLogs.AsNoTracking(), start, end);
+            usage.AddRange((await q
+                .Where(l => l.AspNetUserId == userId)
+                .GroupBy(l => new { l.Provider, l.ModelId, l.RoleContext, l.ThinkingLevel })
+                .Select(g => new
+                {
+                    g.Key.Provider, g.Key.ModelId, g.Key.RoleContext, g.Key.ThinkingLevel,
+                    Requests = g.LongCount(),
+                    Input = g.Sum(x => (long)(x.InputTokens ?? 0)),
+                    Output = g.Sum(x => (long)(x.OutputTokens ?? 0)),
+                    CacheRead = g.Sum(x => (long)(x.CacheReadInputTokens ?? 0)),
+                    CacheWrite = g.Sum(x => (long)(x.CacheCreationInputTokens ?? 0)),
+                    Cost = g.Sum(x => x.EstimatedCost ?? 0m),
+                    Priced = g.LongCount(x => x.EstimatedCost != null),
+                    DurationSum = g.Sum(x => (long)(x.TotalDurationMs ?? 0)),
+                    DurationCount = g.LongCount(x => x.TotalDurationMs != null),
+                    Last = g.Max(x => x.TimestampUtc)
+                })
+                .ToListAsync(ct))
+                .Select(a => new UserModelUsage("user", a.Provider, a.ModelId, a.RoleContext, a.ThinkingLevel, a.Requests, a.Input,
+                    a.Output, a.CacheRead, a.CacheWrite, a.Cost, a.Priced, a.DurationSum, a.DurationCount, a.Last)));
+            costSince = Earliest(costSince, await q.Where(l => l.EstimatedCost != null).MinAsync(l => (DateTime?)l.TimestampUtc, ct));
+        }
+
+        var modelNames = new Dictionary<(string, string), string?>();
+        var rows = usage
+            .Select(u => new AiTelemetryUserModelRowDto
+            {
+                KeySource = u.KeySource,
+                Provider = u.Provider,
+                ModelId = u.ModelId,
+                ModelName = ModelName(u.Provider, u.ModelId, modelNames),
+                RoleContext = u.RoleContext,
+                RoleGroup = AiUsageRoles.GroupOf(u.RoleContext),
+                ThinkingLevel = u.ThinkingLevel,
+                Requests = u.Requests,
+                PromptTokens = AiUsageRoles.PromptTokens(u.RoleContext, u.Input, u.CacheRead),
+                UncachedInputTokens = AiUsageRoles.UncachedInputTokens(u.RoleContext, u.Input, u.CacheRead, u.CacheWrite),
+                CacheReadTokens = u.CacheRead,
+                CacheCreationTokens = u.CacheWrite,
+                OutputTokens = u.Output,
+                DurationSumMs = u.DurationSum,
+                DurationCount = u.DurationCount,
+                EstimatedCost = u.Cost,
+                PricedRequests = u.Priced,
+                LastRequestUtc = DateTime.SpecifyKind(u.Last, DateTimeKind.Utc)
+            })
+            .OrderByDescending(r => r.EstimatedCost)
+            .ThenBy(r => r.ModelName ?? r.ModelId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.RoleContext)
+            .ThenBy(r => r.ThinkingLevel, StringComparer.Ordinal)
+            .ThenBy(r => r.KeySource, StringComparer.Ordinal)
+            .ThenBy(r => r.Provider, StringComparer.Ordinal)
+            .ToList();
+
+        string? userName = await _db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.UserName).FirstOrDefaultAsync(ct);
+
+        return new AiTelemetryUserModelsDto
+        {
+            KeySource = keys,
+            UserId = userId,
+            UserName = userName,
             CostRecordedSinceUtc = Utc(costSince),
             Rows = rows
         };

@@ -231,18 +231,18 @@ you already read the label, it is noise; drop it.
 | clipboard | Check Rubrics | A checklist to go through; the rubric is what is being inspected |
 | check | Verify All | The same tick the "Reviewed" badge shows, so the button reads as "mark reviewed" |
 | star | Set Default | The marker used for the default item elsewhere in the UI; the icon *is* the concept |
-| chevron | Show / Hide Model Reasoning; the state glyph that ends a §4f trigger (**Re-run**, **Actions**, step 3's **Preview layout**); **Date range and keys** (icon-only `.action-btn`, the AI Telemetry tab's sticky bar; collapses it to one summary line, *Collapse* / *Expand* tooltip, `aria-expanded`) | A **state** indicator: which way it points says whether the section or popover is open |
+| chevron | Show / Hide Model Reasoning; the state glyph that ends a §4f trigger (**Re-run**, **Actions**, step 3's **Preview layout**); **Date range and keys** (icon-only `.action-btn`, the end of the AI Telemetry tab's *Date range and keys* group on its sub-tab row; collapses the group to one summary line, *Collapse* / *Expand* tooltip, `aria-expanded`) | A **state** indicator: which way it points says whether the section or popover is open |
 | chevron-left / chevron-right (Feather *chevron-left* `<polyline points="15 18 9 12 15 6">`, *chevron-right* `<polyline points="9 18 15 12 9 6">`) | **Previous figure** / **Next figure** (icon-only, Model Comparison's *Single chart* toolbar), **Previous chart** / **Next chart** (icon-only, the Chat Consistency Charts step's *Single chart* toolbar), **Previous month** / **Next month** (icon-only, the header of `app-date-field`'s calendar, §4h) | **Previous / next** in a sequence: the item before or after this one, of the same kind. Never a state indicator — that is the down/up *chevron* above |
 | calendar (Feather *calendar*: a rounded rectangle, two rings and a rule) | **Choose {label} on a calendar** (icon-only `.action-btn` at the end of every `app-date-field`, §4h) | "Choose a date on a calendar" — the one glyph that opens a date picker, and nothing else |
 | search (a magnifier) | The leading glyph of a search field (the Download Center's *Search documents*); **Search models** (icon-only `.action-btn`, the model pickers' view toolbar, §4e; shows the search field) | "Type to find". In a field it is decorative, `aria-hidden`: the field's label names it. The model pickers' toggle is the one button that carries it, and it still means "type to find": it shows the field where the typing happens |
 | x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar), **Clear selection** (`.btn-ghost`, the Model Comparison wizard's step-1 selection bar, §8i), **Clear search** (icon-only `.action-btn`, the model pickers' view toolbar, §4e) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}*. Clear selection drops every selected source as removing one selection chip drops one, and deletes nothing |
 | filter (Feather *filter*: a funnel, `<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3">`) | **Filter and sort models** (icon-only `.action-btn`, the model pickers' trigger, just before the chevron, §4e; shows the view toolbar), the Admin System Configs filter button (`config-filter.component.html`; opens its filter panel) | "Show the filter controls" — the controls appear; the button itself narrows nothing |
-| arrow-down-up (Lucide *arrow-down-up* geometry, matching Feather's 24×24 stroke: `<path d="m3 16 4 4 4-4"/>`, `<path d="M7 20V4"/>`, `<path d="m21 8-4-4-4 4"/>`, `<path d="M17 4v16"/>`) | **Sort models** (icon-only `.action-btn`, the model pickers' view toolbar, §4e; opens the Sort popover), **Sort** (`.btn-ghost` with the visible label *Sort: {field}, {order}*, the AI Telemetry breakdown's filter bar; opens its Sort popover) | "Change the order of this list" — it reorders and hides nothing; the filters are the provider toggles beside it |
+| arrow-down-up (Lucide *arrow-down-up* geometry, matching Feather's 24×24 stroke: `<path d="m3 16 4 4 4-4"/>`, `<path d="M7 20V4"/>`, `<path d="m21 8-4-4-4 4"/>`, `<path d="M17 4v16"/>`) | **Sort models** (icon-only `.action-btn`, the model pickers' view toolbar, §4e; opens the Sort popover), **Sort** (`.btn-ghost` with the visible label *Sort: {field}, {order}*, the filter bars of the AI Telemetry breakdown, the Users view and both usage dialogs; opens the Sort popover) | "Change the order of this list" — it reorders and hides nothing; the filters are the provider toggles beside it |
 | arrow-right (Feather: a line and a chevron head, `<line x1="5" y1="12" x2="19" y2="12">`, `<polyline points="12 5 19 12 12 19">`) | The admin alert's call-to-action link (trailing, `aria-hidden`; the one glyph that ends a label rather than leading it) | "Go there": the link opens the page where the alert is dealt with |
 | bar-chart-2 (Feather: three vertical lines of different heights) | **Charts** (`.btn-gh`, the AI Telemetry tab's header; opens the charts dialog), **Usage charts** (icon-only, each card of the AI Telemetry Users view; the dialog for that user), **Usage analytics of {name}** (icon-only, each System Configs card; opens the configuration's analytics dialog) | "Show it over time as charts" |
 | sliders (Feather *sliders*: three vertical lines with a knob each) | **Manage limits** (icon-only, each card of the AI Telemetry Users view; opens the user's *AI configuration access* dialog in the Users tab), **Rate limits of {name}** (icon-only, each System Configs card; opens the configuration's rate-limits dialog) | "Adjust settings" — the limits are tuned there, not here |
 | key (Feather *key*) | **API Keys** (`.btn-ghost`, the Admin System Configs header, `aria-haspopup="dialog"`; opens the *Default API Keys* dialog) | "Credentials": the stored keys the configurations sign in with |
-| pie-chart (Feather *pie-chart*: `<path d="M21.21 15.89A10 10 0 1 1 8 2.83">`, `<path d="M22 12A10 10 0 0 0 12 2v10z">`) | **Usage by user** (icon-only `.action-btn`, each model card of the AI Telemetry breakdown, `aria-haspopup="dialog"`; opens the full-screen *Usage by user* dialog) | "Break a whole into shares: who accounts for how much". Not *users*, which already means **Manage groups** on the Admin Users cards (see the 2026-10-13 note) |
+| pie-chart (Feather *pie-chart*: `<path d="M21.21 15.89A10 10 0 1 1 8 2.83">`, `<path d="M22 12A10 10 0 0 0 12 2v10z">`) | **Usage by user** (icon-only `.action-btn`, each model card of the AI Telemetry breakdown, `aria-haspopup="dialog"`; opens the full-screen *Usage by user* dialog), **Usage by model** (icon-only `.action-btn`, first among the actions of each card of the AI Telemetry Users view, `aria-haspopup="dialog"`; opens the full-screen *Usage by model* dialog) | "Break a whole into shares: what accounts for how much" — the users of one model, or the models of one user. Not *users*, which already means **Manage groups** on the Admin Users cards (see the 2026-10-13 note) |
 
 *Changed 2026-09-12 (harness 24 round): Import Default Suite(s) moved from `upload` to `download` —
 importing brings suites from the server's catalog into the application, which is the same
@@ -645,6 +645,18 @@ the Admin Users cards' **Manage groups**, and one glyph keeps one meaning. The d
 text-only **Done** (`btn-gh btn-gh-cancel`), a `.btn-ghost` **Retry** with* rotate *after a load
 error, the breakdown's `.btn-ghost` **Sort** trigger with* arrow-down-up*, and text-only **Show N
 more** (`.btn-ghost`) and **Show all M** (`.btn-link`) under its cards.*
+
+*Changed 2026-10-21 (AI Telemetry sub-tabs and usage by model): no glyph or class is new.* pie-chart
+*also marks the icon-only **Usage by model** `.action-btn`, first among the actions of each card of
+the AI Telemetry Users view (before Usage charts, Manage limits and Block / Unblock), named *Usage by
+model: {name}* with a *Usage by model* tooltip and `aria-haspopup="dialog"`. It opens the full-screen
+*Usage by model* dialog, the mirror of *Usage by user*, so the glyph's meaning widens from "who
+accounts for how much" to "what accounts for how much". The Users view's *Sort by* select became the
+breakdown's `.btn-ghost` **Sort** trigger with* arrow-down-up *and its Sort popover. The new dialog's
+controls are the Usage by user dialog's: a `.btn-ghost` **Retry** with* rotate *after a load error,
+the **Sort** trigger with* arrow-down-up*, and text-only **Done** (`btn-gh btn-gh-cancel`), **Show N
+more** (`.btn-ghost`) and **Show all M** (`.btn-link`). The **Date range and keys** chevron moved with
+its group onto the tab's sub-tab row and keeps its meaning.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -2007,6 +2019,17 @@ concerns.
   blocks labeled from each cell's `data-label` below 36rem of the wrap, the decorative share bar
   `.gh-dash-bar` (`aria-hidden`; the table row carries the number), `.gh-dash-pre`, `.gh-dash-muted`,
   `.gh-dash-mono` and `.gh-dash-note`. A dashboard component keeps only what no other dashboard uses.
+- **A badge never wraps inside itself.** Every badge class is `white-space: nowrap`, whatever its
+  `display` (`.status-badge`, `.badge-system-wide` and `.badge-disabled` in `styles.scss`; the AI
+  Telemetry summary cards' `.telemetry-card-scope`, with `flex: none`). A badge with an icon child is
+  `inline-flex`; a text-only badge stays inline, because an inline-flex box's vertical padding grows
+  every line box that holds it. The row that holds badges wraps instead: a flex row with
+  `flex-wrap: wrap` and a gap (the AI Telemetry summary card title: its text, then the scope badge),
+  never a badge inline in running text that can break. A badge whose text can be long (a user name) is
+  capped at its container's width with an ellipsis rather than wrapping (`overflow: hidden`,
+  `text-overflow: ellipsis`), which needs `min-inline-size: 0` on the badge when it is a flex item: the
+  AI Telemetry breakdown's *User key: {name}*, whose `li` also takes `max-inline-size: 100%;
+  min-inline-size: 0`. The named exception is `.gh-tag-changed`, which is a sentence, not a badge.
 - Every `.gh-dialog` contains scroll chaining: `::backdrop` has `overflow: hidden;
   overscroll-behavior: contain` and `:modal` has `overscroll-behavior: contain`, both needed for the
   page not to scroll under a modal.
@@ -2240,7 +2263,7 @@ cards** (`app-cc-period-units`, 2026-10-09) are the fifth; the **Chat Consistenc
 dialog** (`app-cc-analysis-history-dialog`, 2026-10-10) is the sixth; the **Model Comparison wizard's
 step 1 sources** (`app-comparison-source-picker`, 2026-10-12) are the seventh; the **AI Telemetry
 breakdown** (`admin/telemetry-tab/`, 2026-10-13) is the eighth; the **AI Telemetry Users view**
-(`app-telemetry-users`, 2026-10-13) is the ninth; the **Security tab's events**
+(`app-telemetry-users`, 2026-10-13, rebuilt like the breakdown on 2026-10-21) is the ninth; the **Security tab's events**
 (`app-admin-security-tab`, 2026-10-13) are the tenth; the **Users tab's deletion requests**
 (`app-deletion-requests`, 2026-10-13) are the eleventh; the **Users tab's users** (`app-admin-user-list`
 with the shared `app-user-criteria-bar`, 2026-10-13) are the twelfth; the **Users tab's admin log**
@@ -2278,6 +2301,15 @@ the breakdown's Sort popover, in batches of 50 with *Show N more* / *Show all M*
 exception, like the breakdown's: no `CardListState`. Its filters are two selects, its sort the
 field-and-order popover the breakdown uses, and it is read-only and selects nothing, so the batching is
 a `visibleCount` in the component.
+
+The **AI Telemetry Usage by model** dialog (`app-telemetry-user-models-dialog`,
+`admin/telemetry-tab/user-models/`, 2026-10-21) is the twentieth, the mirror image of the nineteenth:
+one full-width card per model of one user (key source, provider, model and role group), with the same
+rank, share bar and metric columns, a model-or-provider search (`#tl-um-search`), *Role*, *Key* (under
+*Keys: Both* only) and thinking-level selects, the *Thinking levels* grouping select and the same Sort
+popover, in batches of 50. It shares the Usage by user dialog's stylesheet partial
+(`_telemetry-usage-dialog.scss`, the `tl-mu-*` classes; its own ids are `tl-um-*`) and its recorded
+exception: no `CardListState`, for the same reasons.
 
 **A metrics grid gets a definite track count.** `repeat(auto-fill, …)` inside a grid item that sits
 in an `auto` (content-sized) track repeats only once, because the item has no definite width, so
@@ -2386,18 +2418,22 @@ nor selects; it holds tens of groups at most. Its eleven sort fields would not f
 one column, so the panel is `min(28rem, 100vw − 32px)` wide with *Sort by* in two column-major columns
 (one below 20 rem of the panel, a container query) and *Order* as a segmented pair of native radios in a
 `role="radiogroup"` on one footer row with *Reset sorting* — `admin/telemetry-tab/_telemetry-sort.scss`,
-shared with the Usage by user dialog; the model pickers' own Sort popover keeps one column. Its *Roles* checkboxes, thinking-level *Group together* /
+shared with the Users view and, through `_telemetry-usage-dialog.scss`, both usage dialogs; the model pickers' own Sort popover keeps one column. Its *Roles* checkboxes, thinking-level *Group together* /
 *Show separately* select, sort, provider toggles and the collapsed state of the tab's Date Range / Keys
 bar are **view settings** stored in the tab's view record (`overseer.admin.telemetry.breakdown`: `roles`,
 `separateThinkingLevels`, `keys`, `sort`, `providers`, `toolbarCollapsed`); the search is not stored. The
 `model-picker-*` classes it reuses are global, so a rename there must update it. The ninth, the AI
-Telemetry Users view, uses it
-with **server-side paging** (`idPrefix: 'tl-users'`, batch 20, `overseer.admin.telemetry.users.view`;
-search and Sort by refetch page 1, *Show N more* fetches the next page, a `userId` filter set by the
-Security tab's *Usage* action shows one user with a *Clear* button). The tenth, the Security tab's events
+Telemetry Users view, does **not** use it either since 2026-10-21 (nor `TableState`), a recorded
+exception like the breakdown's: it has the breakdown's search and Sort popover, no facets, and a sort
+that is a field and a direction rather than a named order, kept by pure functions in
+`users/telemetry-users-view.ts` (`overseer.admin.telemetry.users.view` = `{ version: 2, sort: { field,
+direction } }`; a version 1 record, `{ version: 1, sort: '<id>' }` as `CardListState` wrote it, reads as
+that field, highest first). It still pages on the server (batch 20): the search (debounced 200 ms) and
+the sort refetch page 1, *Show N more* fetches the next page, and a `userId` filter set by the Security
+tab's *Usage* action shows one user with a *Clear* button. The tenth, the Security tab's events
 (`idPrefix: 'sec'`, `overseer.admin.security.events.view`, a *Kind* facet whose options come from the
 summary), and the eleventh, the deletion requests (`idPrefix: 'del'`, `overseer.admin.users.deletions.view`,
-a single-select *Status* facet defaulting to *Pending*), page on the server the same way. So do the
+a single-select *Status* facet defaulting to *Pending*), page on the server through `CardListState`. So do the
 twelfth, the users, whose `CardListState` lives inside `app-user-criteria-bar` (`idPrefix` from the host,
 `au-criteria` in the list and `bw-criteria` in the wizard, `overseer.admin.users.view`), and the
 thirteenth, the admin log (`idPrefix: 'aul'`, batch 20, `overseer.admin.users.log.view`). **A further card list that filters uses it too, rather than
