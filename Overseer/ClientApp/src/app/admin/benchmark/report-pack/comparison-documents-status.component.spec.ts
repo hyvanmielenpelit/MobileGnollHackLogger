@@ -15,6 +15,7 @@ import type { PdfViewerRequest } from '../../../shared/pdf-viewer/pdf-viewer-dia
 import { BenchmarkShellBridge, LauncherSetupPrefill } from '../state/benchmark-shell-bridge.service';
 import { recommendedRun } from './root-cause.testing';
 import {
+  ComparisonDocumentRow,
   ComparisonDocumentsStatusComponent,
   ComparisonDocumentsViewInput,
   chartsPhrase,
@@ -142,19 +143,20 @@ function input(overrides: Partial<ComparisonDocumentsViewInput> = {}): Compariso
 }
 
 describe('comparisonDocumentsView', () => {
-  it('lists the chosen set\'s two documents, written ones unchecked and the rest checked, then the other sets', () => {
+  it('lists the chosen set\'s two documents, the Root Cause Analysis first, written ones unchecked and the rest checked, then the other sets', () => {
     const view = comparisonDocumentsView(input());
 
     expect(view.state).toBe('ready');
     expect(view.groups.length).toBe(1);
     const rows = view.groups[0].rows;
     expect(rows.map(row => [row.key, row.document?.documentId ?? null, row.checked, row.checkable])).toEqual([
-      [`comparison|${ExecutiveSummary}`, 41, false, true],
-      [`comparison|${RootCauseAnalysis}`, null, true, true]
+      [`comparison|${RootCauseAnalysis}`, null, true, true],
+      [`comparison|${ExecutiveSummary}`, 41, false, true]
     ]);
-    expect(rows.map(row => row.name)).toEqual(['Executive Summary', 'Root Cause Analysis']);
-    expect(rows[0].listItem?.id).toBe(41);
-    expect(rows[0].entryKey).toBeNull();
+    expect(rows.map(row => row.name)).toEqual(['Root Cause Analysis', 'Executive Summary']);
+    expect(rows[1].listItem?.id).toBe(41);
+    expect(rows[1].entryKey).toBeNull();
+    expect(rows.every(row => row.blockedReason === null && row.blockedFix === null)).toBe(true);
 
     expect(view.otherSets.length).toBe(1);
     const other = view.otherSets[0];
@@ -168,15 +170,20 @@ describe('comparisonDocumentsView', () => {
     const view = comparisonDocumentsView(input({
       preview: preview({ writtenDocuments: [written(2 as BenchmarkReportAudience, 42), written(3 as BenchmarkReportAudience, 43)] })
     }));
-    expect(view.groups[0].rows.map(row => row.audience)).toEqual([ExecutiveSummary, RootCauseAnalysis]);
+    expect(view.groups[0].rows.map(row => row.audience)).toEqual([RootCauseAnalysis, ExecutiveSummary]);
     expect(view.groups[0].rows.every(row => row.document === null)).toBe(true);
   });
 
   it('follows the admin\'s Write and Rewrite choices', () => {
     const view = comparisonDocumentsView(input({
-      checks: new Map([[`comparison|${ExecutiveSummary}`, true], [`comparison|${RootCauseAnalysis}`, false]])
+      checks: new Map([[`comparison|${ExecutiveSummary}`, true], [`comparison|${RootCauseAnalysis}`, true]])
     }));
-    expect(view.groups[0].rows.map(row => row.checked)).toEqual([true, false]);
+    expect(view.groups[0].rows.map(row => row.checked)).toEqual([true, true]);
+
+    const none = comparisonDocumentsView(input({
+      checks: new Map([[`comparison|${ExecutiveSummary}`, false], [`comparison|${RootCauseAnalysis}`, false]])
+    }));
+    expect(none.groups[0].rows.map(row => row.checked)).toEqual([false, false]);
   });
 
   it('refuses to choose another set whose model is Excluded now', () => {
@@ -190,8 +197,8 @@ describe('comparisonDocumentsView', () => {
     expect(view.otherSets).toEqual([]);
     expect(view.groups.map(group => group.heading)).toEqual(['GPT-6.1 Sol (medium)', 'GPT-5.6 Luna (max)']);
     expect(view.groups[0].rows.map(row => [row.key, row.document?.documentId ?? null, row.checked])).toEqual([
-      [`run:1|${ExecutiveSummary}`, null, true],
-      [`run:1|${RootCauseAnalysis}`, 51, false]
+      [`run:1|${RootCauseAnalysis}`, 51, false],
+      [`run:1|${ExecutiveSummary}`, null, true]
     ]);
     expect(view.groups[1].rows.every(row => row.entryKey === 'run:2' && row.document === null)).toBe(true);
   });
@@ -212,16 +219,16 @@ describe('comparisonDocumentsView', () => {
     expect(view.state).toBe('ready');
     expect(view.message).toBeNull();
     expect(view.groups[0].rows.map(row => [row.key, row.document?.documentId ?? null, row.checked])).toEqual([
-      [`comparison|${ExecutiveSummary}`, 41, false],
-      [`comparison|${RootCauseAnalysis}`, null, true]
+      [`comparison|${RootCauseAnalysis}`, null, true],
+      [`comparison|${ExecutiveSummary}`, 41, false]
     ]);
-    expect(view.groups[0].rows[0].listItem?.id).toBe(41);
+    expect(view.groups[0].rows[1].listItem?.id).toBe(41);
     // Without the preview, a set's size is out of the models offered.
     expect(view.otherSets.map(set => set.label)).toEqual(['GPT-6.1 Sol (medium), GPT-5.6 Luna (max) — 2 of 4 models']);
 
     const perModel = comparisonDocumentsView(input({ mode: 'model', chosenKeys: ['run:1', 'run:2'], preview: null, documents: listed }));
     expect(perModel.state).toBe('ready');
-    expect(perModel.groups.map(group => group.rows.map(row => row.document?.documentId ?? null))).toEqual([[null, 51], [null, null]]);
+    expect(perModel.groups.map(group => group.rows.map(row => row.document?.documentId ?? null))).toEqual([[51, null], [null, null]]);
   });
 
   it('takes the stored documents\' lists over the preview\'s', () => {
@@ -229,8 +236,93 @@ describe('comparisonDocumentsView', () => {
       documents: documentsOf(preview({ writtenDocuments: [written(RootCauseAnalysis, 45)], otherModelSets: [] }))
     }));
 
-    expect(view.groups[0].rows.map(row => row.document?.documentId ?? null)).toEqual([null, 45]);
+    expect(view.groups[0].rows.map(row => row.document?.documentId ?? null)).toEqual([45, null]);
     expect(view.otherSets).toEqual([]);
+  });
+
+  describe('the Executive Summary and its Root Cause Analysis', () => {
+    const summaryOf = (view: ReturnType<typeof comparisonDocumentsView>, group = 0): ComparisonDocumentRow =>
+      view.groups[group].rows.find(row => row.audience === ExecutiveSummary)!;
+    const unchecked = (key: string): Map<string, boolean> => new Map([[key, false]]);
+
+    it('blocks the summary while its Root Cause Analysis is neither checked nor written, by scope, keeping the admin\'s choice', () => {
+      const comparison = comparisonDocumentsView(input({
+        preview: preview({ writtenDocuments: [] }),
+        checks: new Map([[`comparison|${RootCauseAnalysis}`, false], [`comparison|${ExecutiveSummary}`, true]])
+      }));
+      expect(summaryOf(comparison)).toEqual(expect.objectContaining({
+        checked: false,
+        blockedReason: 'Needs this comparison\'s Root Cause Analysis: check Write on the Root Cause Analysis above.',
+        blockedFix: 'checkRootCause'
+      }));
+      // The Root Cause Analysis row itself is never blocked.
+      expect(comparison.groups[0].rows[0].blockedReason).toBeNull();
+
+      const perModel = comparisonDocumentsView(input({
+        mode: 'model', chosenKeys: ['run:2'], checks: unchecked(`run:2|${RootCauseAnalysis}`)
+      }));
+      expect(summaryOf(perModel)).toEqual(expect.objectContaining({
+        checked: false,
+        blockedReason: 'Needs this model\'s Root Cause Analysis: check Write on the Root Cause Analysis above.',
+        blockedFix: 'checkRootCause'
+      }));
+
+      // Checked again, the summary takes back the admin's own choice.
+      const again = comparisonDocumentsView(input({
+        preview: preview({ writtenDocuments: [] }),
+        checks: new Map([[`comparison|${RootCauseAnalysis}`, true], [`comparison|${ExecutiveSummary}`, true]])
+      }));
+      expect(summaryOf(again)).toEqual(expect.objectContaining({ checked: true, blockedReason: null, blockedFix: null }));
+    });
+
+    it('blocks the summary on a written Root Cause Analysis written from different data until Rewrite is checked on it', () => {
+      const outdated = preview({
+        writtenDocuments: [written(RootCauseAnalysis, 42, { summaryReadiness: 'outdated', summaryReadinessMessage: 'Different data.' })]
+      });
+      const view = comparisonDocumentsView(input({ preview: outdated }));
+      expect(summaryOf(view)).toEqual(expect.objectContaining({
+        checked: false,
+        blockedReason: 'Root Cause Analysis #42 was written from different data. Check Rewrite on it to write both.',
+        blockedFix: 'checkRootCauseRewrite'
+      }));
+
+      const rewrite = comparisonDocumentsView(input({ preview: outdated, checks: new Map([[`comparison|${RootCauseAnalysis}`, true]]) }));
+      expect(summaryOf(rewrite)).toEqual(expect.objectContaining({ checked: true, blockedReason: null }));
+
+      // Per model, the readiness comes from the model's own documents.
+      const perModel = comparisonDocumentsView(input({
+        mode: 'model',
+        chosenKeys: ['run:1'],
+        preview: preview({
+          subjectDocuments: [{ subjectKey: 'run:1', subjectLabel: 'GPT-6.1 Sol (medium)', documents: [written(RootCauseAnalysis, 51, { summaryReadiness: 'outdated' })] }]
+        })
+      }));
+      expect(summaryOf(perModel).blockedReason)
+        .toBe('Root Cause Analysis #51 was written from different data. Check Rewrite on it to write both.');
+    });
+
+    it('leaves the summary free on a written Root Cause Analysis the preview finds usable or says nothing about', () => {
+      const usable = comparisonDocumentsView(input({
+        preview: preview({ writtenDocuments: [written(RootCauseAnalysis, 42, { summaryReadiness: 'usable' })] })
+      }));
+      expect(summaryOf(usable)).toEqual(expect.objectContaining({ checked: true, blockedReason: null, blockedFix: null }));
+
+      const silent = comparisonDocumentsView(input({ preview: preview({ writtenDocuments: [written(RootCauseAnalysis, 42)] }) }));
+      expect(summaryOf(silent).blockedReason).toBeNull();
+    });
+
+    it('says the stored Root Cause Analysis is being checked while the preview is awaited, and when it failed', () => {
+      const listed = documentsOf(preview({ writtenDocuments: [written(RootCauseAnalysis, 42)] }));
+      const pending = comparisonDocumentsView(input({ preview: null, documents: listed }));
+      expect(summaryOf(pending)).toEqual(expect.objectContaining({
+        checked: false, blockedReason: 'Checking the stored Root Cause Analysis…', blockedFix: null
+      }));
+
+      const failed = comparisonDocumentsView(input({ preview: null, documents: listed, error: 'Down.' }));
+      expect(summaryOf(failed)).toEqual(expect.objectContaining({
+        checked: false, blockedReason: 'The stored Root Cause Analysis could not be checked.', blockedFix: null
+      }));
+    });
   });
 
   it('names the writer with its provider and thinking level, and counts figures', () => {
@@ -307,9 +399,9 @@ describe('ComparisonDocumentsStatusComponent', () => {
     expect(hints()).toEqual([both]);
     expect(q('.cds-order-hint')!.classList).toContain('form-hint');
 
+    // The Executive Summary without its Root Cause Analysis is blocked, and its row says why: no line.
     show({ checks: new Map([[`comparison|${ExecutiveSummary}`, true], [`comparison|${RootCauseAnalysis}`, false]]) });
-    expect(hints()).toEqual(['The Executive Summary is written from this comparison\'s stored Root Cause Analysis when that was '
-      + 'written from the same data; otherwise it is written without one and says so.']);
+    expect(hints()).toEqual([]);
 
     // The Root Cause Analysis alone: no line.
     show();
@@ -317,11 +409,103 @@ describe('ComparisonDocumentsStatusComponent', () => {
 
     // Per model: run:1 has its Root Cause Analysis, so only its Executive Summary is checked; run:2 writes both.
     show({ mode: 'model', chosenKeys: ['run:1', 'run:2'] });
-    expect(hints()).toEqual([
-      'The Executive Summary is written from each model\'s stored Root Cause Analysis when that was written from the same data; '
-        + 'otherwise it is written without one and says so.',
-      both
-    ]);
+    expect(hints()).toEqual([both]);
+  });
+
+  it('lists the Root Cause Analysis first in every group', () => {
+    show();
+    // The chosen set's list comes first; the other sets follow in their disclosure.
+    const chosen = host.querySelector('ul.cds-list')!;
+    expect(Array.from(chosen.querySelectorAll('.cds-row')).map(item => item.getAttribute('data-audience')))
+      .toEqual([String(RootCauseAnalysis), String(ExecutiveSummary)]);
+
+    show({ mode: 'model', chosenKeys: ['run:1', 'run:2'] });
+    for (const list of Array.from(host.querySelectorAll('ul.cds-list'))) {
+      expect(Array.from(list.querySelectorAll('.cds-row')).map(item => item.getAttribute('data-audience')))
+        .toEqual([String(RootCauseAnalysis), String(ExecutiveSummary)]);
+    }
+  });
+
+  describe('a blocked Executive Summary', () => {
+    const blockedInput = (): Partial<ComparisonDocumentsViewInput> => ({
+      preview: preview({ writtenDocuments: [] }),
+      checks: new Map([[`comparison|${RootCauseAnalysis}`, false]])
+    });
+    const summaryCheck = (): HTMLInputElement =>
+      row(`comparison|${ExecutiveSummary}`).querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+
+    it('is aria-disabled, unchecked and described by its visible reason line, its label muted', () => {
+      show(blockedInput());
+      const check = summaryCheck();
+      expect(check.checked).toBe(false);
+      expect(check.disabled).toBe(false);
+      expect(check.getAttribute('aria-disabled')).toBe('true');
+      const reason = q(`#${check.getAttribute('aria-describedby')}`)!;
+      expect(reason.classList).toContain('cds-blocked-reason');
+      expect(text(reason)).toBe('Needs this comparison\'s Root Cause Analysis: check Write on the Root Cause Analysis above.');
+      expect(check.closest('label')!.classList).toContain('is-blocked');
+      expect(q('.cds-blocked-error')).toBeNull();
+
+      // The Root Cause Analysis row is never blocked.
+      const rca = row(`comparison|${RootCauseAnalysis}`).querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+      expect(rca.hasAttribute('aria-disabled')).toBe(false);
+      expect(rca.hasAttribute('aria-describedby')).toBe(false);
+    });
+
+    it('refuses a click, shows the inline error with its fix, and the fix checks both and focuses the summary', () => {
+      show(blockedInput());
+      const changes: { key: string; checked: boolean }[] = [];
+      component.checkChange.subscribe(change => changes.push(change));
+
+      summaryCheck().click();
+      fixture.detectChanges();
+      expect(summaryCheck().checked).toBe(false);
+      expect(changes).toEqual([]);
+      const error = q('.cds-blocked-error')!;
+      expect(error.classList).toContain('gh-field-error');
+      expect(error.getAttribute('role')).toBe('alert');
+      expect(error.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+      expect(text(error)).toContain('The Executive Summary is written from the Root Cause Analysis, so it cannot be written alone here.');
+      expect(summaryCheck().getAttribute('aria-describedby')).toBe(`${error.id.replace(/-error$/, '-reason')} ${error.id}`);
+
+      const fix = error.querySelector<HTMLButtonElement>('button.cds-blocked-fix')!;
+      expect(fix.getAttribute('type')).toBe('button');
+      expect(fix.classList).toContain('btn-link');
+      expect(text(fix)).toContain('Check the Root Cause Analysis');
+      fix.click();
+      expect(changes).toEqual([
+        { key: `comparison|${RootCauseAnalysis}`, checked: true },
+        { key: `comparison|${ExecutiveSummary}`, checked: true }
+      ]);
+      expect(document.activeElement).toBe(summaryCheck());
+
+      // The host's next view, with both checked, has no error and no reason.
+      show({ preview: preview({ writtenDocuments: [] }), checks: new Map([[`comparison|${RootCauseAnalysis}`, true]]) });
+      expect(q('.cds-blocked-error')).toBeNull();
+      expect(q('.cds-blocked-reason')).toBeNull();
+      expect(summaryCheck().hasAttribute('aria-disabled')).toBe(false);
+      expect(summaryCheck().checked).toBe(true);
+    });
+
+    it('offers Rewrite on an outdated Root Cause Analysis as the fix, and sends nothing for a Space press on the summary', () => {
+      show({ preview: preview({ writtenDocuments: [written(RootCauseAnalysis, 42, { summaryReadiness: 'outdated' })] }) });
+      const changes: { key: string; checked: boolean }[] = [];
+      component.checkChange.subscribe(change => changes.push(change));
+
+      expect(text(q('.cds-blocked-reason')))
+        .toBe('Root Cause Analysis #42 was written from different data. Check Rewrite on it to write both.');
+      // A Space press arrives as a click.
+      summaryCheck().dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+      expect(changes).toEqual([]);
+      const fix = q<HTMLButtonElement>('.cds-blocked-fix')!;
+      expect(text(fix)).toContain('Check Rewrite on the Root Cause Analysis');
+      fix.click();
+      expect(changes).toEqual([
+        { key: `comparison|${RootCauseAnalysis}`, checked: true },
+        { key: `comparison|${ExecutiveSummary}`, checked: true }
+      ]);
+    });
   });
 
   it('reads Write for a document not written and Rewrite for a written one, and reports each change', () => {

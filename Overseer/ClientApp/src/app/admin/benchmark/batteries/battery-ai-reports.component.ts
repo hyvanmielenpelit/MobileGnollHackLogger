@@ -9,6 +9,7 @@ import {
   ViewChild,
   inject
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { map } from 'rxjs';
 
 import {
@@ -92,6 +93,7 @@ let nextInstanceId = 0;
   selector: 'app-battery-ai-reports',
   standalone: true,
   imports: [
+    NgTemplateOutlet,
     ModelPickerComponent,
     InfoTipComponent,
     RunReportWritingDialogComponent,
@@ -156,7 +158,8 @@ export class BatteryAiReportsComponent extends ReportDocumentsTabBase<BenchmarkB
       const subjectKey = `battery:${batteryRunId}`;
       return this.benchmarkService.listReportDocuments({ subject: subjectKey, origin: 'batteryCompletion' }).pipe(
         map(documents => completionDocumentsOf(documents, subjectKey, BATTERY_COMPLETION_ORIGIN)));
-    }
+    },
+    summaryReadiness: batteryRunId => this.benchmarkService.getBatterySummaryReadiness(batteryRunId)
   };
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -169,7 +172,7 @@ export class BatteryAiReportsComponent extends ReportDocumentsTabBase<BenchmarkB
       } else if (!previous || previous.id !== run.id) {
         this.reset();
         this.setSnapshot(this.snapshotOf(run));
-        this.writerConfigId = this.defaultWriterId(run);
+        this.applyDefaultWriter(run);
         this.loadDocuments();
       } else {
         this.setSnapshot(this.snapshotOf(run));
@@ -274,10 +277,18 @@ export class BatteryAiReportsComponent extends ReportDocumentsTabBase<BenchmarkB
     return [run.batteryName, run.testedModelLabel].filter(part => !!part).join(' · ');
   }
 
-  /** The battery run's own writer, when it is one of the picker's configurations. */
+  /**
+   * The battery run's own writer, when it is one of the picker's configurations; else the writer used last
+   * in this browser, when it needs neither a refusal nor a warning for the battery run's candidate.
+   */
   protected override defaultWriterId(run: BenchmarkBatteryRunDto): number | null {
     const own = run.reportWriterModelConfigurationId ?? null;
-    return own != null && this.configs.some(config => config.id === own) ? own : null;
+    if (own != null && this.configs.some(config => config.id === own)) {
+      return own;
+    }
+    return this.rememberedWriterFor({
+      id: run.testedModelConfigurationId ?? null, provider: run.testedProvider ?? null, modelId: run.testedModelId ?? null
+    });
   }
 
   protected override snapshotOf(run: BenchmarkBatteryRunDto): ReportStatusSnapshot {

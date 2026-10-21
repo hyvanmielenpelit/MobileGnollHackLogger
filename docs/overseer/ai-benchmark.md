@@ -7985,6 +7985,22 @@ until a harness-57 run records its own).
 
 No answer flag is added, and the grading and synthesis prompts are unchanged.
 
+### Harness Version 58 Updates
+
+GnollBench run 124 round (2026-10-21). `HarnessVersion` moves to **"58"**; `ScoringMethodVersion` stays
+**14**. `HarnessImpactLedger` classifies 58 as `CandidateInput` alone.
+
+- **Role-relative helpers reverted (T1).** The *Accuracy About Tool Use* sentence of harness 57 on a C
+  helper or macro named for a kind of thing is removed from `_policy.md`, because its pre-declared rollback
+  fired on run 124. `Overseer/ToolGuides` is again byte-identical to harness 56, so `ToolGuidesSha256`
+  returns to `639ba74661d9` (run 123's value) and `CandidateSystemPromptSha256` to `ce36c4b4…`. A run stamped
+  57 is the only one graded with that sentence.
+- **`_policy.md` is inlined into the prompt.** `ChatService` builds the candidate system prompt with
+  `ToolRegistry.GetPolicyText()`, so any edit to `_policy.md` moves `CandidateSystemPromptSha256` and the
+  frozen-segment cache as well as `ToolGuidesSha256`.
+
+No answer flag is added, and the grading and synthesis prompts are unchanged.
+
 ---
 
 ## 3. Assessor Strategy

@@ -83,7 +83,10 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
     /// a requested document already written and not replaced (409), or with none requested, every one
     /// written and none replaced (409); an unusable writer or the
     /// model under test (400); a writer of the candidate's provider, unacknowledged (409 with the
-    /// warning); a refused endpoint (400); the spend cap (429). A request the client aborts is a 499.
+    /// warning); a refused endpoint (400); the spend cap (429); the Executive Summary without the Root
+    /// Cause Analysis, neither written nor replaced, when the stored one is not usable (409
+    /// <c>{ error, code, rootCauseDocumentId }</c>, <see cref="BenchmarkRootCauseReadiness"/>). A request
+    /// the client aborts is a 499.
     /// </summary>
     [HttpPost]
     public async Task<IActionResult> Write(long batteryRunId, [FromBody] WriteRunReportDocumentsRequest request, CancellationToken ct)
@@ -150,6 +153,15 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
 
             var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync(ct: ct);
             if (!canSpend) return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+
+            if (BenchmarkRootCauseReadiness.AsksSummaryAlone(toWrite))
+            {
+                var readiness = await SummaryReadinessAsync(batteryRunId, source, prep: null, ct);
+                if (readiness.State != BenchmarkRootCauseReadiness.Usable)
+                {
+                    return Conflict(AdminBenchmarkReportPacksController.RootCauseConflictBody(readiness));
+                }
+            }
 
             batteryRun.ReportWriterModelConfigurationId = writer.Id;
             batteryRun.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Pending;
@@ -311,12 +323,72 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
             bool priced = estimate.Estimates.Count > 0 && estimate.Estimates.All(e => e.EstimatedCostUsd != null);
             estimate.EstimatedTotalCostUsd = priced ? estimate.Estimates.Sum(e => e.EstimatedCostUsd!.Value) : null;
             estimate.EstimatedTotalCostWithRepairUsd = priced ? estimate.Estimates.Sum(e => e.EstimatedCostWithRepairUsd!.Value) : null;
+            if (estimate.Refusal == null && BenchmarkRootCauseReadiness.AsksSummaryAlone(audiences))
+            {
+                var readiness = await SummaryReadinessAsync(batteryRunId, source, prep, ct);
+                if (readiness.State != BenchmarkRootCauseReadiness.Usable) estimate.Refusal = readiness.Message;
+            }
             return Ok(estimate);
         }
         catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
+    }
+
+    /// <summary>
+    /// Whether the battery run's Executive Summary may be written without writing its Root Cause Analysis
+    /// (<see cref="BenchmarkRootCauseReadiness"/>): 200 with <c>missing</c> when no battery-completion Root Cause Analysis
+    /// is stored, else <c>usable</c> or <c>outdated</c> against the battery run as the estimate prepares it; a battery run
+    /// that cannot be prepared is <c>outdated</c> with the refusal as its message and no code. Makes no model call. 404 for
+    /// an unknown battery run; 499 when the client aborts.
+    /// </summary>
+    [HttpGet("summary-readiness")]
+    public async Task<IActionResult> GetSummaryReadiness(long batteryRunId, CancellationToken ct)
+    {
+        try
+        {
+            var source = await BenchmarkBatteryReportDocumentService.LoadSourceAsync(_db, batteryRunId, ct);
+            if (source == null) return NotFound();
+
+            return Ok(await SummaryReadinessAsync(batteryRunId, source, prep: null, ct));
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>
+    /// Whether an Executive Summary of the battery run may be written from its newest stored battery-completion Root
+    /// Cause Analysis: <c>missing</c> when none is stored, with nothing prepared; else judged against
+    /// <paramref name="prep"/>, or against the battery run prepared now as the estimate prepares it. A battery run that
+    /// cannot be written about, or prepared, is <c>outdated</c> with the refusal (<see cref="BenchmarkRootCauseReadiness.Unprepared"/>).
+    /// </summary>
+    private async Task<BenchmarkRootCauseReadinessDto> SummaryReadinessAsync(
+        long batteryRunId, BenchmarkBatteryComparisonSource source, BenchmarkReportPackPreparation? prep, CancellationToken ct)
+    {
+        const BenchmarkReportDocumentOrigin origin = BenchmarkReportDocumentOrigin.BatteryCompletion;
+        var newest = await BenchmarkRootCauseReadiness.NewestAsync(
+            _db, origin, BenchmarkReportScope.Model, BenchmarkBatteryReportDocumentService.SubjectKeyOf(batteryRunId), ct);
+        if (newest == null) return BenchmarkRootCauseReadiness.MissingFor(origin, label: null);
+
+        if (prep == null)
+        {
+            if (BenchmarkBatteryReportDocumentService.SubjectRefusal(source) is string subjectRefusal)
+            {
+                return BenchmarkRootCauseReadiness.Unprepared(newest.Id, subjectRefusal);
+            }
+
+            string? refusal;
+            (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(
+                _db, _comparisonService,
+                BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, new[] { BenchmarkReportAudience.ExecutiveSummary }, 0),
+                BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration), ct, _configuration);
+            if (prep == null) return BenchmarkRootCauseReadiness.Unprepared(newest.Id, refusal ?? "The reports could not be prepared.");
+        }
+
+        return BenchmarkRootCauseReadiness.Evaluate(newest, BenchmarkRootCauseDigest.FactsSha256(prep.Sheet), origin, label: null).Readiness;
     }
 
     /// <summary>

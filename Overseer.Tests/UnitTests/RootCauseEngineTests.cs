@@ -826,9 +826,37 @@ public class RootCauseEngineTests
     }
 
     [Fact]
-    public void TheEngineVersion_IsThirteen()
+    public void TheEngineVersion_IsFourteen()
     {
-        Assert.Equal(13, RootCauseEngine.Version);
+        Assert.Equal(14, RootCauseEngine.Version);
+    }
+
+    [Fact]
+    public void AKnownFact_AboutCacheReads_TakesAPluralVerb()
+    {
+        var input = Input(Controls());
+        // Cache reads lead the subject's cost per question.
+        foreach (var item in input.Models[0].Evidence.CostItems) item.Cost[1] = 0.03;
+
+        var result = RootCauseEngine.Compute(input);
+
+        var fact = Assert.Single(result.KnownFacts, f => f.Text.EndsWith("'s cost per question.", StringComparison.Ordinal));
+        Assert.StartsWith("Cache reads are ", fact.Text);
+        Assert.DoesNotContain(result.KnownFacts, f => f.Text.Contains("Cache reads is ", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("cache reads", " are ")]
+    [InlineData("cache writes", " are ")]
+    [InlineData("own waits and retries", " are ")]
+    [InlineData("output tokens", " are ")]
+    [InlineData("visible output", " is ")]
+    [InlineData("uncached input", " is ")]
+    [InlineData("wait before output", " is ")]
+    [InlineData("number of model calls", " is ")]
+    public void AComponentLabel_TakesTheVerbOfItsNumber(string label, string verb)
+    {
+        Assert.Equal(verb, RootCauseKnownFacts.Verb(label, " is ", " are "));
     }
 
     [Fact]

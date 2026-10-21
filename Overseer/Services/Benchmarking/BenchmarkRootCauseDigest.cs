@@ -116,7 +116,13 @@ public sealed class BenchmarkRootCauseDigest
 
         var facts = new Dictionary<string, BenchmarkReportFact>(StringComparer.Ordinal);
         foreach (var fact in sheet.Facts ?? new List<BenchmarkReportFact>()) facts.TryAdd(fact.Key, fact);
-        string Resolve(string? text) => ResolveTokens(text, facts);
+        // A model-scope digest names its subject by the model's display name, which carries no parenthesis; a comparison
+        // has no single subject.
+        string? subject = sheet.IsComparison ? null
+            : !string.IsNullOrWhiteSpace(sheet.SubjectDisplayName) ? sheet.SubjectDisplayName.Trim()
+            : !string.IsNullOrWhiteSpace(sheet.SubjectLabel) ? sheet.SubjectLabel.Trim()
+            : null;
+        string Resolve(string? text) => ResolveTokens(text, facts, subject);
 
         var digest = new List<BenchmarkReportFact>();
         void Add(string key, JsonNode? value, string display)
@@ -167,14 +173,14 @@ public sealed class BenchmarkRootCauseDigest
             string prefix = RootCauseClaimSupport.RunPrefix + Inv(run.Number) + ".";
             string summary = facts.TryGetValue(prefix + "summary", out var s) && s.Available ? s.Display : RootCauseNextRuns.Summary(run);
             string purpose = facts.TryGetValue(prefix + "purpose", out var p) && p.Available ? p.Display : RootCausePurposes.Text(run.Purpose);
-            Add(NextRunPrefix + Inv(run.Number), JsonValue.Create(run.Number), Trim(summary) + " (purpose " + purpose + ")");
+            Add(NextRunPrefix + Inv(run.Number), JsonValue.Create(run.Number), WithPeriod(Trim(summary) + ", for purpose " + Trim(purpose)));
         }
 
         foreach (var check in result.Checks.OrderBy(c => c.Number).Take(MaxChecks))
         {
             string key = "rca.check." + Inv(check.Number) + ".summary";
             string summary = facts.TryGetValue(key, out var s) && s.Available ? s.Display : RootCauseNextRuns.Summary(check);
-            Add(CheckPrefix + Inv(check.Number), JsonValue.Create(check.Number), Trim(summary));
+            Add(CheckPrefix + Inv(check.Number), JsonValue.Create(check.Number), WithPeriod(Trim(summary)));
         }
 
         Add(LimitsKey, null, LimitsSentence(result, facts));
@@ -232,16 +238,16 @@ public sealed class BenchmarkRootCauseDigest
 
     /// <summary>
     /// <paramref name="text"/> with every token resolved: a fact token to its display (<c>not available</c> without one),
-    /// <c>{{subject}}</c> to <c>the model under test</c>, <c>{{peer:X}}</c> and <c>{{model:X}}</c> to <c>Model X</c>; the
-    /// first letter capitalized.
+    /// <c>{{subject}}</c> to <paramref name="subject"/> (<c>the model under test</c> when null), <c>{{peer:X}}</c> and
+    /// <c>{{model:X}}</c> to <c>Model X</c>; the first letter capitalized.
     /// </summary>
-    internal static string ResolveTokens(string? text, IReadOnlyDictionary<string, BenchmarkReportFact> facts)
+    internal static string ResolveTokens(string? text, IReadOnlyDictionary<string, BenchmarkReportFact> facts, string? subject = null)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
         string resolved = TokenRegex.Replace(text, m =>
         {
             string key = m.Groups[1].Value.Trim();
-            if (key == "subject") return "the model under test";
+            if (key == "subject") return string.IsNullOrWhiteSpace(subject) ? "the model under test" : subject;
             if (key.StartsWith("peer:", StringComparison.Ordinal)) return "Model " + key[5..].Trim();
             if (key.StartsWith("model:", StringComparison.Ordinal)) return "Model " + key[6..].Trim();
             return facts.TryGetValue(key, out var fact) && fact.Available ? fact.Display : BenchmarkReportFacts.NotAvailable;

@@ -34,6 +34,7 @@ import {
   ReportChartSelection
 } from './report-charts';
 import { reportPackIo } from './report-pack-diagnostics';
+import { REPORT_WRITER_MEMORY_KEY, rememberReportWriterId } from '../run-ai-reports/report-writer-memory';
 import {
   REPORT_PACK_ALL_WRITTEN_REASON,
   REPORT_PACK_JOB_RUNNING_REASON,
@@ -44,6 +45,7 @@ import {
   REPORT_PACK_POLL_MS,
   REPORT_PACK_PREVIEW_DEBOUNCE_MS,
   REPORT_PACK_STORAGE_KEY,
+  REPORT_PACK_SUMMARY_NEEDS_ROOT_CAUSE_REASON,
   REPORT_PACK_UNEVEN_MODELS_REASON,
   ReportPackContext,
   ReportPackPanelComponent,
@@ -52,7 +54,8 @@ import {
 } from './report-pack-panel.component';
 
 const { ExecutiveSummary, RootCauseAnalysis } = BenchmarkReportAudience;
-const ALL_AUDIENCES = [ExecutiveSummary, RootCauseAnalysis];
+/** Every document type of a scope, in write order: the Executive Summary is written from the Root Cause Analysis. */
+const ALL_AUDIENCES = [RootCauseAnalysis, ExecutiveSummary];
 
 const SYSTEM_CONFIGS_URL = '/api/admin/systemconfigs';
 const DOCUMENTS_URL = '/api/admin/benchmark/report-documents';
@@ -268,6 +271,7 @@ describe('ReportPackPanelComponent', () => {
 
   beforeEach(async () => {
     localStorage.removeItem(REPORT_PACK_STORAGE_KEY);
+    localStorage.removeItem(REPORT_WRITER_MEMORY_KEY);
     await TestBed.configureTestingModule({
       imports: [ReportPackPanelComponent],
       providers: [provideHttpClient(), provideHttpClientTesting()]
@@ -289,6 +293,7 @@ describe('ReportPackPanelComponent', () => {
     });
     fixture.destroy();
     localStorage.removeItem(REPORT_PACK_STORAGE_KEY);
+    localStorage.removeItem(REPORT_WRITER_MEMORY_KEY);
   });
 
   const q = <T extends HTMLElement = HTMLElement>(selector: string): T | null => host.querySelector<T>(selector);
@@ -940,19 +945,19 @@ describe('ReportPackPanelComponent', () => {
     chooseWriter(7, modelPreview(['run:1', 'group:4']));
 
     // Every document of GPT Sol group unchecked: the job is about Gemini Flash alone.
-    for (const audience of ALL_AUDIENCES) {
+    for (const audience of [ExecutiveSummary, RootCauseAnalysis]) {
       docCheck(`group:4|${audience}`).click();
       fixture.detectChanges();
     }
     expect(generateButton().disabled).toBe(false);
 
     // One of them checked again: not the same documents as Gemini Flash's.
-    docCheck(`group:4|${ExecutiveSummary}`).click();
+    docCheck(`group:4|${RootCauseAnalysis}`).click();
     fixture.detectChanges();
     expect(text('#rp-generate-blocked')).toBe(REPORT_PACK_UNEVEN_MODELS_REASON);
     expect(generateButton().disabled).toBe(true);
 
-    docCheck(`group:4|${ExecutiveSummary}`).click();
+    docCheck(`group:4|${RootCauseAnalysis}`).click();
     fixture.detectChanges();
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
     http.expectNone(PREVIEW_URL);
@@ -1166,6 +1171,111 @@ describe('ReportPackPanelComponent', () => {
     fixture.destroy();
   }));
 
+  it('preselects the report writer remembered in an AI Reports tab, before the one the wizard stored itself', fakeAsync(() => {
+    localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ writerConfigId: 8 }));
+    rememberReportWriterId(7);
+    openPanel();
+
+    expect(component.writerId).toBe(7);
+    expect(answerPreview().request.body.writerModelConfigurationId).toBe(7);
+    fixture.destroy();
+  }));
+
+  // -------------------------------------------------------------------------------------------
+  // The Executive Summary and its Root Cause Analysis
+  // -------------------------------------------------------------------------------------------
+
+  it('unchecks the Executive Summary with its Root Cause Analysis, says so, and restores it when the analysis is checked again', fakeAsync(() => {
+    openPanel();
+    chooseWriter(7);
+    const summary = `comparison|${ExecutiveSummary}`;
+    const rootCause = `comparison|${RootCauseAnalysis}`;
+    const live = q('.rp-documents-status')!;
+    expect(live.getAttribute('role')).toBe('status');
+    expect(live.classList).toContain('visually-hidden');
+    expect(text('.rp-documents-status')).toBe('');
+    expect(docCheck(summary).checked).toBe(true);
+
+    docCheck(rootCause).click();
+    fixture.detectChanges();
+    expect(docCheck(summary).checked).toBe(false);
+    expect(docCheck(summary).getAttribute('aria-disabled')).toBe('true');
+    expect(text('.rp-documents-status'))
+      .toBe('The Executive Summary of this comparison was unchecked: it is written from the Root Cause Analysis.');
+    expect(component.checkedRows).toEqual([]);
+    expect(text('#rp-generate-blocked')).toBe('Choose at least one document.');
+
+    docCheck(rootCause).click();
+    fixture.detectChanges();
+    expect(docCheck(summary).checked).toBe(true);
+    expect(text('.rp-documents-status')).toBe('');
+
+    // An Executive Summary the admin unchecked stays unchecked when its analysis comes back.
+    docCheck(summary).click();
+    fixture.detectChanges();
+    docCheck(rootCause).click();
+    fixture.detectChanges();
+    docCheck(rootCause).click();
+    fixture.detectChanges();
+    expect(docCheck(summary).checked).toBe(false);
+    fixture.destroy();
+  }));
+
+  it('names the model whose Executive Summary was unchecked, One model at a time', fakeAsync(() => {
+    openPanel();
+    selectScope('model');
+    chooseWriter(7, modelPreview(['run:1']));
+
+    docCheck(`run:1|${RootCauseAnalysis}`).click();
+    fixture.detectChanges();
+    expect(text('.rp-documents-status'))
+      .toBe('The Executive Summary of Gemini Flash (medium) was unchecked: it is written from the Root Cause Analysis.');
+    fixture.destroy();
+  }));
+
+  it('holds Generate back when an Executive Summary is checked without its Root Cause Analysis', fakeAsync(() => {
+    openPanel();
+    chooseWriter(7);
+    // The list never offers such a set; one that slips past it is still refused here.
+    const group = component.documentsView.groups[0];
+    const rows = group.rows.map(row => ({ ...row, checked: row.audience === ExecutiveSummary, blockedReason: null, blockedFix: null }));
+    component.documentsView = { ...component.documentsView, groups: [{ ...group, rows }] };
+
+    expect(component.generateBlockedReason).toBe(REPORT_PACK_SUMMARY_NEEDS_ROOT_CAUSE_REASON);
+    expect(REPORT_PACK_SUMMARY_NEEDS_ROOT_CAUSE_REASON)
+      .toBe('An Executive Summary needs its Root Cause Analysis: check it too, or uncheck the Executive Summary.');
+    fixture.destroy();
+  }));
+
+  it('shows the server\'s refusal of an Executive Summary without a usable Root Cause Analysis, and checks the analysis again', fakeAsync(() => {
+    openPanel();
+    http.expectOne(PACK_DOCUMENTS_URL).flush(storedDocuments({ writtenDocuments: [writtenDoc(RootCauseAnalysis, 42)] }));
+    fixture.detectChanges();
+    chooseWriter(7, comparisonPreview({ writtenDocuments: [{ ...writtenDoc(RootCauseAnalysis, 42), summaryReadiness: 'usable' }] }));
+    expect(docCheck(`comparison|${ExecutiveSummary}`).checked).toBe(true);
+
+    generateButton().click();
+    const start = http.expectOne(START_URL);
+    expect(start.request.body.audiences).toEqual([ExecutiveSummary]);
+    const message = 'The stored Root Cause Analysis (#42) was written from different data than this comparison has now, so the '
+      + 'Executive Summary cannot be written from it. Rewrite the Root Cause Analysis with it: check Root Cause Analysis — rewrite.';
+    start.flush({ error: message, code: 'rootCauseOutdated', rootCauseDocumentId: 42 }, { status: 409, statusText: 'Conflict' });
+    fixture.detectChanges();
+
+    expect(confirmDialog().open).toBe(false);
+    expect(q('.rp-start-error')!.getAttribute('role')).toBe('alert');
+    expect(text('.rp-start-error')).toBe(message);
+    expect(component.activeJobId).toBeNull();
+
+    // The stored documents and the preview, which carries the readiness, are asked for again.
+    http.expectOne(PACK_DOCUMENTS_URL);
+    answerPreview(comparisonPreview({ writtenDocuments: [{ ...writtenDoc(RootCauseAnalysis, 42), summaryReadiness: 'outdated' }] }));
+    expect(docCheck(`comparison|${ExecutiveSummary}`).checked).toBe(false);
+    expect(text(`.cds-row[data-row="comparison|${ExecutiveSummary}"] .cds-blocked-reason`))
+      .toBe('Root Cause Analysis #42 was written from different data. Check Rewrite on it to write both.');
+    fixture.destroy();
+  }));
+
   // -------------------------------------------------------------------------------------------
   // The comparison changes
   // -------------------------------------------------------------------------------------------
@@ -1240,8 +1350,8 @@ describe('ReportPackPanelComponent', () => {
     const parts = Array.from(panel.querySelectorAll('.gh-estimate-parts > div'))
       .map(part => [part.querySelector('dt')!.textContent!.trim(), part.querySelector('dd')!.textContent!.trim()]);
     expect(parts).toEqual([
-      ['Executive Summary', '$0.05'],
-      ['Root Cause Analysis', '$0.16']
+      ['Root Cause Analysis', '$0.16'],
+      ['Executive Summary', '$0.05']
     ]);
     expect(text('#rp-estimate .gh-estimate-note')).toContain('For 3 models, compared as equals.');
     expect(text('#rp-estimate .gh-estimate-note')).toContain('A revision turn can roughly double a document’s cost.');
@@ -1262,7 +1372,7 @@ describe('ReportPackPanelComponent', () => {
     expect(text('#rp-estimate .gh-estimate-total')).toBe('about $1.04 to $2.10');
     const parts = Array.from(host.querySelectorAll('#rp-estimate .gh-estimate-parts > div'))
       .map(part => part.querySelector('dd')!.textContent!.trim());
-    expect(parts).toEqual(['$0.34 to $0.69', '$0.70 to $1.41']);
+    expect(parts).toEqual(['$0.70 to $1.41', '$0.34 to $0.69']);
     expect(text('#rp-estimate .gh-estimate-note')).toContain('From the first call alone to one revision turn per document.');
 
     // One document without a repair-inclusive figure: the first-call total alone.
@@ -1378,11 +1488,11 @@ describe('ReportPackPanelComponent', () => {
 
   it('refuses a checked document too large for the writer, and nothing for an unchecked one', fakeAsync(() => {
     openPanel();
-    const tooLarge = { ...estimate(RootCauseAnalysis, 0.16, 'comparison:12', 0.934), estimatedInputTokens: 186800 };
-    chooseWriter(7, comparisonPreview({ estimates: [estimate(ExecutiveSummary, 0.05), tooLarge] }));
+    const tooLarge = { ...estimate(ExecutiveSummary, 0.05, 'comparison:12', 0.934), estimatedInputTokens: 186800 };
+    chooseWriter(7, comparisonPreview({ estimates: [tooLarge, estimate(RootCauseAnalysis, 0.16)] }));
 
     // Checked: refused here in the server's words, as a server refusal is.
-    const refusal = 'The Root Cause Analysis prompt is about 186,800 tokens, 93 % of the context window of Claude Opus writer; '
+    const refusal = 'The Executive Summary prompt is about 186,800 tokens, 93 % of the context window of Claude Opus writer; '
       + 'above 90 % it is not written. Cover fewer models, or choose a writer with a larger context window.';
     expect(reportPackContextWindowRefusal(tooLarge, 'Claude Opus writer')).toBe(refusal);
     expect(text('.rp-refusal')).toBe(refusal);
@@ -1395,16 +1505,16 @@ describe('ReportPackPanelComponent', () => {
     http.expectNone(START_URL);
 
     // Unchecked: nothing is refused, and Generate writes the rest without asking the server again.
-    docCheck(`comparison|${RootCauseAnalysis}`).click();
+    docCheck(`comparison|${ExecutiveSummary}`).click();
     fixture.detectChanges();
     expect(q('.rp-refusal')).toBeNull();
-    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.05');
+    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.16');
     expect(generateButton().disabled).toBe(false);
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
     http.expectNone(PREVIEW_URL);
 
     // Checked again: refused again.
-    docCheck(`comparison|${RootCauseAnalysis}`).click();
+    docCheck(`comparison|${ExecutiveSummary}`).click();
     fixture.detectChanges();
     expect(text('.rp-refusal')).toBe(refusal);
     expect(generateButton().disabled).toBe(true);
@@ -1461,7 +1571,9 @@ describe('ReportPackPanelComponent', () => {
     expect(start.request.method).toBe('POST');
     expect(start.request.body.acknowledgeSameProvider).toBe(true);
     expect(start.request.body.writerModelConfigurationId).toBe(7);
-    expect(JSON.parse(localStorage.getItem(REPORT_PACK_STORAGE_KEY)!)).toEqual({ writerConfigId: 7 });
+    // The writer is remembered in the memory the AI Reports tabs share, not in the wizard's own record.
+    expect(JSON.parse(localStorage.getItem(REPORT_WRITER_MEMORY_KEY)!)).toEqual({ version: 1, writerConfigId: 7 });
+    expect(localStorage.getItem(REPORT_PACK_STORAGE_KEY)).toBeNull();
 
     start.flush({ jobId: 'job-1' });
     http.expectOne(jobUrl('job-1')).flush(jobDto());
@@ -2508,8 +2620,8 @@ describe('ReportPackPanelComponent', () => {
       const labels = Array.from(menu.querySelectorAll('.gh-action-popover-item > span:first-child'))
         .map(span => (span.textContent ?? '').replace(/\s+/g, ' ').trim());
       expect(labels).toEqual([
-        'Executive Summary · 2 charts',
-        `${component.audienceLabel(RootCauseAnalysis)} · 0 charts`
+        `${component.audienceLabel(RootCauseAnalysis)} · 0 charts`,
+        'Executive Summary · 2 charts'
       ]);
 
       const held = previewItem(RootCauseAnalysis);
@@ -2710,7 +2822,7 @@ describe('ReportPackPanelComponent', () => {
       expect(text('#rp-written-references-title')).toBe('Reference of the written documents');
       const rows = Array.from(host.querySelectorAll('.rp-written-reference'));
       expect(rows.map(row => row.querySelector('dt')!.textContent!.trim()))
-        .toEqual(['Executive Summary', 'Root Cause Analysis']);
+        .toEqual(['Root Cause Analysis', 'Executive Summary']);
       expect(text(`.rp-written-reference[data-row="comparison|${ExecutiveSummary}"] dd`)).toBe('GPT Sol group (medium) (baseline model)');
       expect(text(`.rp-written-reference[data-row="comparison|${RootCauseAnalysis}"] dd`))
         .toBe('Highest Intelligence Index · not the one chosen');

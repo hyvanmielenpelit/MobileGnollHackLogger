@@ -27,6 +27,7 @@ import { AdminAlertService, SystemAlert } from '../../../services/admin-alert.se
 import { BenchmarkReportPackDocumentProgressDto, ProviderAvailabilityDto } from '../../../services/admin-benchmark.service';
 import { REPORT_PACK_STORAGE_KEY, ReportPackPanelComponent } from '../report-pack/report-pack-panel.component';
 import { REPORT_CHART_STORAGE_KEY } from '../report-pack/report-charts';
+import { REPORT_WRITER_MEMORY_KEY } from '../run-ai-reports/report-writer-memory';
 
 // Spec helper for the ModelComparisonComponent spec files, which are split by area and share this
 // setup and these helpers. Imported by specs only.
@@ -391,7 +392,8 @@ export function cancelCompareButton(): HTMLButtonElement | null {
 /** Every key this wizard remembers per browser. */
 const STORED_KEYS = [
   FIGURE_STYLE_STORAGE_KEY, FIGURE_SIDEBAR_STORAGE_KEY, FIGURE_SIZE_STORAGE_KEY, TABLE_IMAGE_SIZE_STORAGE_KEY,
-  TABLE_COLUMNS_STORAGE_KEY, DOWNLOAD_SETTINGS_STORAGE_KEY, REPORT_CHART_STORAGE_KEY, REPORT_PACK_STORAGE_KEY
+  TABLE_COLUMNS_STORAGE_KEY, DOWNLOAD_SETTINGS_STORAGE_KEY, REPORT_CHART_STORAGE_KEY, REPORT_PACK_STORAGE_KEY,
+  REPORT_WRITER_MEMORY_KEY
 ];
 
 /**

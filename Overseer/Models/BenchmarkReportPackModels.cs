@@ -845,6 +845,10 @@ public static class BenchmarkRootCauseSources
 
     /// <summary>The note of an Executive Summary with no stored Root Cause Analysis from the same data.</summary>
     public const string NoMatchNote = "no Root Cause Analysis of this run was written from the same data";
+
+    /// <summary>The error of an Executive Summary not written because its job's Root Cause Analysis failed or was canceled.</summary>
+    public const string RootCauseFailedError =
+        "Not written: the Root Cause Analysis of this job failed, and the Executive Summary is written only from one. Write both again.";
 }
 
 /// <summary>
@@ -1648,6 +1652,16 @@ public class BenchmarkReportPackWrittenDocumentDto
     /// null for model scope and for a document stored before the reference was kept.
     /// </summary>
     public string? ReferenceEntryKey { get; set; }
+
+    /// <summary>
+    /// On a Root Cause Analysis listed by the preview, whether an Executive Summary may be written from it:
+    /// <c>usable</c> or <c>outdated</c> (<see cref="Overseer.Services.Benchmarking.BenchmarkRootCauseReadiness"/>); null
+    /// when not computed, on every other document and from the documents list.
+    /// </summary>
+    public string? SummaryReadiness { get; set; }
+
+    /// <summary>Why an Executive Summary cannot be written from this Root Cause Analysis; null unless <see cref="SummaryReadiness"/> is <c>outdated</c>.</summary>
+    public string? SummaryReadinessMessage { get; set; }
 }
 
 /// <summary>The comparison-scope documents of one covered set of a comparison.</summary>
@@ -2297,4 +2311,26 @@ public class BenchmarkRunReportEstimateDto
 
     /// <summary>Set when the writer shares the candidate's provider; writing then needs an acknowledgment.</summary>
     public SameProviderWarningDto? SameProviderWarning { get; set; }
+}
+
+/// <summary>
+/// Whether an Executive Summary may be written from the subject's newest stored Root Cause Analysis
+/// (<see cref="Overseer.Services.Benchmarking.BenchmarkRootCauseReadiness"/>).
+/// </summary>
+public class BenchmarkRootCauseReadinessDto
+{
+    /// <summary><c>missing</c>, <c>usable</c> or <c>outdated</c>.</summary>
+    public string State { get; set; } = Overseer.Services.Benchmarking.BenchmarkRootCauseReadiness.Missing;
+
+    /// <summary>The newest stored Root Cause Analysis; null when none is stored.</summary>
+    public long? RootCauseDocumentId { get; set; }
+
+    /// <summary>What the user is told, verbatim; null when <see cref="State"/> is <c>usable</c>.</summary>
+    public string? Message { get; set; }
+
+    /// <summary>
+    /// <c>rootCauseMissing</c> or <c>rootCauseOutdated</c>; null when usable, and for a subject that cannot be prepared,
+    /// whose <see cref="Message"/> is the preparation's refusal.
+    /// </summary>
+    public string? Code { get; set; }
 }

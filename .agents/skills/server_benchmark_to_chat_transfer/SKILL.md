@@ -224,7 +224,7 @@ A benchmark run executes the **production tool registry**, so a tool defect seen
 - **Whether arguments and results were stored is a version boundary — check the run's harness version before anything else.** For a run **before harness 17** they were not stored: `BenchmarkRunAnswer.ToolCallSummary` is a `name×count` string over *successful* calls only, `AgentRunRequest.ShowDebugLog` is hardcoded `false` at every benchmark call site, and a run creates no `ChatMessage` rows, so nothing equivalent to `ChatMessageToolCall.ArgsText` / `.Result` exists. For such a run, *"compare the parameters and results"* is **reconstruction and replay**, never transcript reading. **From harness 17** a run's `BenchmarkRunAnswer.ToolCalls` rows carry the real `ArgsText`, `Result`, `Error`, `Status`, emission order (`SortOrder`), tool round (`IterationIndex`), timings and the result size as `ToolExecutor` handed it over (`ResultLengthChars`) for **every attempted call**, read through `GET /api/admin/benchmark/runs/{id}/answers/{answerId}/tool-calls` (admin-authenticated). Reading those rows is **rung zero** — attempted before any reconstruction or replay (`server_benchmark_tool_diagnostics` § 2, § 7). A row whose payload the retention sweep pruned shows `ArgsText`/`Result` null beside a non-zero `ResultLengthChars`; that is the sweep, not an absent record.
 - **The count of failed tool calls is derived for a run before harness 17.** `ToolCallCount − Σ(ToolCallSummary counts) − ToolCallsBlocked` is the number of calls that errored technically. No report section surfaces it, and a non-zero value is direct evidence of a tool problem. Compute it first. A null `ToolCallsBlocked` means *not recorded*, never zero. **From harness 17 the figure is reported** as the answer's three-way outcome split, so read it rather than deriving what the record already states.
 - **From harness 16 a run fingerprints three of the five corpora** — knowledge base, GnollHack wiki, GnollHack source — by their Git HEAD, which says nothing about an uncommitted working tree. **From harness 48 it also records what each of the five indexes held** (`CorpusIndexFingerprintsJson`: a SHA-256 over the indexed text of every file, with a file count), the NetHack wiki and NetHack source included. All of these are **provenance, not comparability keys**: a difference is a fact to investigate, not an automatic tier drop.
-- **Version currency.** The bullets above were last checked against harness **57**, on 2026-10-20. `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
+- **Version currency.** The bullets above were last checked against harness **58**, on 2026-10-21. `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
 
 > 🛑 **Stop here.** Read the three tool-layer skills **now**, before dispatching any research about a tool, a corpus, or a tool count, and before writing the first finding. All three are read at this point; none is reached through the others.
 >
@@ -512,6 +512,7 @@ When an empirical chat-transferable finding clears the evidence bar, resolve it 
      | `Overseer/ToolGuides/spoiler_policy.md` | Spoiler-free policy text |
      | `Overseer/ToolGuides/_policy_parallel_disabled.md`, `_policy_parallel_on_request.md` | Parallel-mode overrides |
      | `Overseer/ToolGuides/<tool_name>.md` | Per-tool description, overriding the handler default |
+   - `_policy.md` is inlined into the candidate system prompt (`ToolRegistry.GetPolicyText()`), so editing it moves `CandidateSystemPromptSha256` and the frozen-segment cache as well as `ToolGuidesSha256`.
 4. **Limits Parity**:
    - Aligning session and iteration budgets between chat and benchmark bands per `docs/overseer/ai-benchmark.md` § 9.
 5. **Prompt Segmentation**:
@@ -653,7 +654,11 @@ chat change ledger, version boundaries into § 5, lessons into the method sectio
 cautions, verifier instances into the verifier ledger. Their registry rows are at
 `git show 94018d76:.agents/skills/server_benchmark_to_chat_transfer/SKILL.md`, § 11; an entry
 folded earlier is in this file's Git history before its folding round. Battery run 12 (runs 98, 99)
-was retired on 2026-10-20: chat changes in the ledger, open items in the bones-round entry below.
+was retired on 2026-10-20: chat changes in the ledger, open items in the bones-round entry. The
+bones quest-artifact round (2026-10-18, `bones_quest_artifact_trap/`) was retired on 2026-10-21: its
+W1 and W2 rows are in the ledger, its open items and battery run 12's in the run-124 entry's *Still
+outstanding*, and its lesson, a role-relative predicate read as absolute, in the run-122 and
+run-123 entries.
 Comparison #4 (battery runs 100–119, `comparison_4_rca_review/`) was retired on 2026-10-20: its T1
 routing row is in the ledger, its grader-family gap in § 6 *Reading a panel run*; its R1 replicate
 of all nine models was never made.
@@ -736,15 +741,6 @@ the plans repository.
   runs. Read [`references/registry_corrections.md`](references/registry_corrections.md) before using
   a figure from those runs or that period.
 
-### Bones quest-artifact trap (runs not identified): 2026-10-18, cheaper models (not identified)
-- **Candidates**: not read. The round started from the user's observation that every cheaper model answers "What quest artifacts can you find in bones files, if any?" wrongly. Nothing was exported (report, tool-call log, suite), so runs, models and thinking levels are unidentified, and the Stage 1 diagnosis (classes D1–D6) was not done.
-- **Prompt options, Grading regime, Quality, Speed, Cost**: not read or measured (no report).
-- **Instrument SHAs**: none from a report, so **this entry cannot serve as half of a reproduction**. Repository state during the round: `ChatService.cs` `53373897`, `Overseer/ToolGuides` `a3de3901`; GnollHack source HEAD `eb2f2a9e4d4f` (cited files unchanged since `5db1d790e7d2`); wiki HEAD `bc4ed286cd87` (`Bones Files.md`, `Quest Artifacts.md` unchanged since `33fb5526`). `ToolGuidesSha256`, KB HEAD and index fingerprints not read.
-- **Ground truth** (at `eb2f2a9e4d4f`): on loading bones, an artifact reverts to an ordinary item when it already exists in the game or is the **loading** hero's quest artifact (`src/bones.c:140-203`, `src/questpgr.c:196-200`); a non-generable base becomes the counterpart item or a random item of its class (`src/bones.c:146-183`); another role's quest artifact stays real, blasts the hero on touch and evades a hero whose alignment also differs or whose record is negative (`src/artifact.c:863-964`). The predicate reads as absolute and is relative to the current hero: T1's two-hop trap.
-- **Transfer Action**: `bones_quest_artifact_trap/implementation_plan_v2.md` — W1 rung 2 (`wiki_handoff_prompt_v2.md`); B1 the suite *GnollHack Trap Questions* (`agent-new-suite-gnollhack-trap-questions.yaml`: bones A1–A4, control A5, held-out B1–B3; B2 narrowed to a monster that vanishes from the game, the one route the source settles); S1 open (original rubric not checked, no export); T1, the rung-3 `_policy.md` sentence, deferred with precondition, criterion and rollback; M1 deferred to R2. No change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides/` or `RecommendedModels`.
-- **Verification Outcome**: W1 closes when R1 answers ≥ max(3, R0 + 2) of A1–A4 correctly in the report's outcome class and reaches `Bones Files` or `Quest Artifacts` on ≥ 3 (run 122 below).
-- **Still outstanding**: the Stage 1 diagnosis and the Stage 2 rubric check (waiting for exports). From battery run 12 (retired 2026-10-20): the suite 8 board refresh (format 8 while GnollHack writes 16), carrying the run-73 rubric repairs S1–S2; NetHack wiki converter E1; T4 `get_monster_stats` near names; B8 verifier coverage on long answers; R2 (Haiku at a lower thinking level); T6 and T3 are ledger rows; its H6 stays as recorded (2026-10-08).
-
 ### Run 122 — 2026-10-20: GPT-6 Luna (high), GnollHack Trap Questions
 - **Candidate**: GPT-6 Luna (`gpt-6-luna`) @ `high`, default tier, parallel mode 2, max output 128,000. The bones round's R1, without its R0.
 - **Prompt options**: mode 0, concise, tools on, no web search, no subagents, source refs **Disallowed**, spoiler-free off, no snapshot, no history, no pre-injected wiki context.
@@ -788,6 +784,24 @@ the plans repository.
 - **Verification Outcome**: W1 closed (criterion 1 met on the floor of 3, criterion 2 4 of 4); W2 closed (Q6 no critical error, states another role's quest artifact can be wished for; Q1, Q3 role correct). T1 precondition met on Q8 (runs 122, 123).
 - **Still outstanding**: T1 validation (R1); the deferred Pets article; T3, T4 logged; the items the bones-round entry carries from battery run 12.
 - **Analysis directory**: `hyvanmielenpelit/MobileGnollHackLogger/2026-10-20/benchmark_run_123_analysis/`
+
+### Run 124 — 2026-10-21: GPT-6 Luna (high), GnollHack Trap Questions (11)
+- **Candidate**: GPT-6 Luna (`gpt-6-luna`) @ `high`, default tier, parallel mode 2, max output 128,000. R1 of the run-123 round.
+- **Prompt options**: mode 0, concise, tools on, no web search, no subagents, source refs **Disallowed**, spoiler-free off, no snapshot, no history, no pre-injected wiki context.
+- **Grading regime**: harness 57, scoring 14, Standard profile (1). Panel A Claude 5 Opus @ `medium`, B GPT-5.6 Sol @ `medium` (the candidate's family); reference reader and claim verifier Gemini 3.8 Flash @ `medium`, every answer, blind. Writer Gemini 4 Argon @ `medium` (by hand afterwards), report format 25, engine 13.
+- **Instrument SHAs**:
+  - `ChatService.cs` `28408169` (a one-line exception filter after `53373897`; prompt text unchanged), `Overseer/ToolGuides` `4a047666` (T1), `appsettings.json` `53373897`
+  - Prompt `b0b468a200a2` (T1's `_policy.md` is inlined); ToolGuides `e8144c599e63`
+  - KB `d2af7241`; wiki `e82a48c1`; source `881ae951` (no game-code change from `1ba33370`)
+  - WIKI-IDX `d560bcf19f5b`, SRC-IDX `1d32997d83c9`, KB-IDX `1fd04d3e2f09`, NHW-IDX `e5dc755ab200`, NHS-IDX `c3929071a8d9`
+  - Suite 9, 11 items all r1
+- **Quality**: Index 71 ± 17 (A 73, B 74, reference reader 84), ICC 0.71, 3 disagreements. 2 confirmed critical errors (Q7, Q8), 1 overturned (Q11). Outcomes 5/4/2/0; Completeness 61.4 lowest. Claims 9 supported, 2 refuted; accused sentences 2 supported, 8 refuted. All verdicts checked were right.
+- **Speed**: median model time 15.9 s, P90 64.3 s, TTFT P50 2.44 s; 5.5 model calls per answer; source-family share r = 0.96 with model time (n = 11).
+- **Cost**: US$1.73 per run; candidate US$0.0027 per question; claim verifier 39 %; candidate cache-read share 93 %. 55 tool calls, 0 failed, 0 refused.
+- **Transfer Action**: `benchmark_run_124_analysis/implementation_plan_v2.md` — T1 reverted (rollback fired); W3 rung 2 (`wiki_handoff_prompt_v2.md`, ten pages); harness 58; report-writer fixes B1–B6; Tasks 2–3 (writer memory; the RCA first and required for the ES). No change to `ChatService.BuildSystemPrompt` or `RecommendedModels`.
+- **Verification Outcome**: T1 criteria (a), (c) and the side effect failed → reverted; (a) was confounded: Q9 and Q11 were answered from wrong or incomplete wiki pages. Lesson: a held-out question meant to need the source is checked for wiki text that hedges or misstates it, not only for absence.
+- **Still outstanding**: W3 (R1 of this round); T3 logged; from the bones round and battery run 12: suite 8 board refresh with run-73 repairs S1–S2, NetHack wiki converter E1, T4 `get_monster_stats` near names, B8 verifier coverage on long answers, R2 (Haiku at a lower thinking level).
+- **Analysis directory**: `hyvanmielenpelit/MobileGnollHackLogger/2026-10-21/benchmark_run_124_analysis/`
 ---
 
 ## 12. Cross-References

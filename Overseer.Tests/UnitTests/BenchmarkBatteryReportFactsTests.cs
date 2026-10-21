@@ -394,6 +394,20 @@ public class BenchmarkBatteryReportFactsTests
     }
 
     [Fact]
+    public async Task ABatterySheet_WritesTheChatConfigurationWithNoParenthesis()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        long id = await SeedThreeRoundsAsync(db);
+
+        var chat = Fact((await PrepareAsync(db, id)).Sheet, "config.chat");
+
+        Assert.DoesNotContain('(', chat.Display);
+        Assert.DoesNotContain(')', chat.Display);
+        Assert.Contains(" response style, verboseMode ", chat.Display);
+        Assert.Contains("; tools ", chat.Display);
+    }
+
+    [Fact]
     public async Task ABatterySheet_StatesTheBatteryRunsPooledAvailability_WhenItIsGiven()
     {
         await using var db = BenchmarkBatteryTestData.NewDb();

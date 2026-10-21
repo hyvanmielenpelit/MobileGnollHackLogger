@@ -625,9 +625,7 @@ public static partial class BenchmarkReportPackPrompt
         }
         foreach (var fact in facts)
         {
-            Line(sb, fact.Available
-                ? $"{fact.Key} = {OneLine(fact.Display)}"
-                : $"{fact.Key} = unavailable: {OneLine(string.IsNullOrWhiteSpace(fact.UnavailableReason) ? "no reason recorded" : fact.UnavailableReason)}");
+            Line(sb, FactLine(fact));
         }
         Line(sb);
 

@@ -265,7 +265,7 @@ public static class BenchmarkReportRuleCatalog
             "The text was kept, but the figure it writes in words was not checked against the data.",
             "Cite the figure's token instead of writing it in words."),
         R(BenchmarkReportPackValidator.ExecutiveCausalClaimRule, "Cause without a Root Cause Analysis item",
-            "In an Executive Summary written from the Root Cause Analysis, a causal word cites an axis, hypothesis or lead of its digest in the same sentence, hedged beside a lead or a Low grade, so every cause stated was found by the analysis.",
+            "In an Executive Summary written from the Root Cause Analysis, a causal word cites an axis, hypothesis or lead of its digest in the same sentence, hedged beside a lead or a Low grade, so every cause stated was found by the analysis; How reliable this result is, which speaks about the measurement, is not checked.",
             BenchmarkReportRuleSeverity.RemovesItem, Removed,
             "Use a causal word only in a sentence that says what the cause is and cites its rcaDigest axis, hypothesis or lead token after a colon, with may, possibly or consistent with beside a lead or a Low grade; otherwise leave the cause out."),
         R(BenchmarkReportPackValidator.ExecutiveNextStepRule, "Next step without a run or check",

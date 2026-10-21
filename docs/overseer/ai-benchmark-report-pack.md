@@ -5478,6 +5478,9 @@ migration was needed. The cost estimates and the battery prompt budget count the
 
 ### When there is no analysis to read
 
+> Superseded from report formats 26 and 30 (2026-10-21): an Executive Summary is written only from a
+> Root Cause Analysis, and this table no longer apply to new documents (§ 19).
+
 | Situation | Behavior |
 |---|---|
 | Both documents; the analysis is written | The summary reads its digest (`source` `thisJob`) |
@@ -5545,6 +5548,9 @@ of 5.5 or more), and in a panel run `question.Q<n>.memberA` / `.memberB` (*"95 /
 
 ### The write order in the UI
 
+> Superseded from report formats 26 and 30 (2026-10-21): an Executive Summary is written only from a
+> Root Cause Analysis, and these hints no longer apply to new documents (§ 19).
+
 - **AI Reports tab** (run and battery), *Write missing reports* → Documents: with both checked, *"Written in
   this order: the Root Cause Analysis first, then the Executive Summary, which is written from it."*; with
   the summary alone, *"The Executive Summary is written from this run's stored Root Cause Analysis when that
@@ -5573,3 +5579,150 @@ held job is gone: it is kept 6 hours, and until the run's next writing job), and
 diagnostics carry the wizard's sections — versions, preparation notes, every writer call, word counts,
 validation by turn, failed replies and why each document ended as it did — from the shared
 `report-job-diagnostics-sections.ts`.
+
+## 19. The Root Cause Analysis First and Required, and the Remembered Writer (2026-10-21)
+
+From **report format 26** (per-model and run documents) and **30** (comparison-wide), and **engine version
+14**, an Executive Summary is written **only from a Root Cause Analysis**: the one written earlier in the
+same job, or the newest stored analysis of the same subject when it was written from the same data. The AI
+Reports tab and the Model Comparison wizard's step 3 list the Root Cause Analysis first, and the report
+writer a user last chose is remembered. Chat consistency documents (Executive Summary and Provider Issue
+Report) are not affected. A stored document keeps its own format version and renders as before.
+
+### Writer repairs
+
+- **`config.chat` has no parenthesis.** `BenchmarkReportFacts.ChatConfigurationText` builds the fact, in
+  the run, battery and comparison sheets (`model.X.config.chat` copies it), as clauses: *"Gameplay Help;
+  concise response style, verboseMode false; tools enabled; web search disabled; subagents disabled; source
+  code references disallowed"* (*detailed response style, verboseMode true* for the detailed style).
+  `BenchmarkCandidatePromptOptions.Describe()` is unchanged. A sentence that sets the token in parentheses
+  no longer raises rule 31. The display moves every new fact sheet's `FactsSha256`, so no Root Cause Analysis
+  written before this round counts as *from the same data* for a later Executive Summary.
+- **Rule 47 does not read the reliability section.** `BenchmarkReportPackValidator.DigestClaimExemptSlots`
+  holds `confidence` (*How reliable this result is*) and the comparison's `reliability` (*How reliable this
+  is*); `CheckDigestClaims` skips them, and the digest rules in the system prompt say that section speaks
+  about the measurement, so a reason there that is a fact of the run's design (one run, no peer models, two
+  graders, the interval; in comparison scope the runs per model, two graders, the intervals) needs no Root
+  Cause Analysis item. The same sentence in *What this means* still raises rule 47. The rule catalog's
+  meaning names the exempt section.
+- **FACTS names the words a count prints.** `BenchmarkReportPackPrompt.FactLine` writes a fact whose
+  `BenchmarkReportFormat.CountQualifier` is not empty as
+  `key = <display>   [count: it already says "<qualifier>"; write no word of it beside the token]`, in the
+  run, Root Cause Analysis and comparison FACTS blocks. FACTS is in the user message, so
+  `WriterPromptSha256` does not move.
+- **The digest's items read as sentences.** `rcaDigest.nextRun.<n>` reads *"<summary>, for purpose
+  <purpose>."* and `rcaDigest.check.<n>` *"<summary>."*; in a model-scope digest `{{subject}}` resolves to
+  the model's display name, while a comparison digest keeps *the model under test*.
+- **Plural components take a plural verb.** `RootCauseKnownFacts.PluralComponentLabels` (cache reads,
+  cache writes, own waits and retries, output tokens) and `RootCauseKnownFacts.Verb` give *"Cache reads are
+  38% of …"* and *"Output tokens account for …"*, in the known facts and in the pair hypotheses' evidence.
+- **Spacing after a comma or semicolon.** `BenchmarkReportPackService.NormalizeSpacing` inserts one space
+  after `,` or `;` when a letter follows, outside `{{…}}` tokens, URLs and inline code, in every prose string
+  of a writer reply before the validator reads it. It is no rule, raises no note and costs no repair turn.
+
+### When an Executive Summary may be written
+
+`BenchmarkRootCauseReadiness` judges the **newest** stored Root Cause Analysis of the subject, origin and
+scope (by id; a model-scope Report Pack subject within its comparison's `ComparisonKey`), never an older one
+that happens to match:
+
+| State | When | Code | Message |
+|---|---|---|---|
+| `missing` | none is stored | `rootCauseMissing` | *"The Executive Summary is written from the Root Cause Analysis, and this run has none. Write both: check Root Cause Analysis too."* |
+| `usable` | its fact sheet's `FactsSha256` equals the new sheet's and `BenchmarkRootCauseDigest.From` returns a digest | — | — |
+| `outdated` | otherwise, an unreadable fact sheet or writer output included | `rootCauseOutdated` | *"The stored Root Cause Analysis (#77) was written from different data than this run has now, so the Executive Summary cannot be written from it. Rewrite the Root Cause Analysis with it: check Root Cause Analysis — rewrite."* |
+
+The battery messages read *battery run*. The Report Pack's name the model: *"The Executive Summary for
+{model} is written from the Root Cause Analysis, and there is none for {model} in this comparison. Write
+both: check Write on the Root Cause Analysis too."* and *"The stored Root Cause Analysis (#n) for {model} was
+written from different data than this comparison has now, so the Executive Summary cannot be written from
+it. Rewrite the Root Cause Analysis with it: check Rewrite on the Root Cause Analysis."*, with *these
+models* in comparison scope. A subject that cannot be prepared is `outdated` with the preparation's refusal
+as its message and no code.
+
+### Endpoints and refusals
+
+- `GET api/admin/benchmark/runs/{runId}/report-documents/summary-readiness` and
+  `GET api/admin/benchmark/batteries/runs/{batteryRunId}/report-documents/summary-readiness` answer
+  `{ state, rootCauseDocumentId, message, code }`; 404 for an unknown subject.
+- The run and battery **write** endpoints answer **409** `{ error, code, rootCauseDocumentId }` when the
+  Executive Summary is asked for without the Root Cause Analysis (neither written nor replaced) and the
+  readiness is not `usable`. Writing both, or replacing the stored analysis with the summary, passes.
+- The **estimate** endpoints set `refusal` to the same message for the same request.
+- `POST report-packs/preview` fills `summaryReadiness` (`usable` / `outdated`) and
+  `summaryReadinessMessage` on each Root Cause Analysis document of a prepared subject;
+  `POST report-packs/documents` leaves them null.
+- `POST report-packs` (Start) answers 409 with the same body for a model or the covered set whose summary is
+  asked for without its analysis and whose readiness is not `usable`.
+
+### Inside a job
+
+| Situation | Behavior |
+|---|---|
+| Both documents; the analysis is written (with or without warnings) | The summary reads its digest (`source` `thisJob`) |
+| Both documents; the analysis fails or is canceled | The summary is **not written**: its row ends *Failed* with *"Not written: the Root Cause Analysis of this job failed, and the Executive Summary is written only from one. Write both again."*, no model call is made for it, and the job log says so |
+| The summary alone; the newest stored analysis is `usable` | That analysis's digest (`stored`) |
+| The summary alone; otherwise (reachable only past the guards) | The summary fails with the readiness message |
+
+Rule 49 (*Written without the Root Cause Analysis*) stays in the catalog for documents stored before this
+round; no new document carries it.
+
+### Order and dependency in the UI
+
+`RUN_REPORT_AUDIENCE_OPTIONS`, `MODEL_REPORT_AUDIENCE_OPTIONS` and `COMPARISON_REPORT_AUDIENCE_OPTIONS`
+list the Root Cause Analysis first, so the AI Reports tab and the wizard's step 3 show it first. The
+Download Center (`REPORT_DOCUMENT_AUDIENCE_OPTIONS`), a ZIP's order and the chat consistency lists keep
+theirs.
+
+- **AI Reports tab** (run and battery, one template), *Write missing reports* → Documents: the Root Cause
+  Analysis first and the Executive Summary nested under it, its visible reason line (`${idPrefix}EsReason`)
+  the checkbox's `aria-describedby`. `executiveSummaryAvailability(...)` in `report-documents-list.ts`
+  decides its state from whether the analysis is checked and, when one is stored and not checked, the
+  readiness fetched from the endpoint above (when the list loads, after a delete or a finished job, and on
+  **Try again**):
+
+  | Situation | Executive Summary | Reason line |
+  |---|---|---|
+  | The analysis is checked (write or rewrite) | enabled | *Written from the Root Cause Analysis above, after it.* |
+  | Stored and `usable` | enabled | *Written from Root Cause Analysis #77, which was written from this run's current data.* |
+  | Not stored and not checked | `aria-disabled`, unchecked | *Needs the Root Cause Analysis: check Root Cause Analysis to write both.* |
+  | Stored and `outdated`, rewrite not checked | `aria-disabled`, unchecked | *Root Cause Analysis #77 was written from different data than this run has now. Check Root Cause Analysis — rewrite to write both.* |
+  | Readiness loading | `aria-disabled` | *Checking the stored Root Cause Analysis…* |
+  | Readiness failed | `aria-disabled` | *The stored Root Cause Analysis could not be checked.* and **Try again** |
+
+  In the outdated case the list offers **Root Cause Analysis — rewrite** (unchecked, *"Replaces Root
+  Cause Analysis #77, written from different data."*), which sends `replaceDocumentIds` and both
+  documents. A click or Space on a blocked summary is refused and shows a `gh-field-error` (`role="alert"`):
+  *"The Executive Summary is written from the Root Cause Analysis, so it cannot be written alone here."* with
+  **Check the Root Cause Analysis** (or **Check Root Cause Analysis — rewrite**), which checks both and
+  focuses the summary. Unchecking the analysis unchecks and blocks the summary and the polite status line
+  says *"The Executive Summary was unchecked: it is written from the Root Cause Analysis."*; checking it
+  again restores the user's last choice. A 409 shows the server's message and fetches the readiness again.
+  A written summary whose analysis was deleted reads *"Written from Root Cause Analysis #77, which no longer
+  exists"*. The write-order hint shows only when both are checked.
+- **Model Comparison, step 3** (`comparison-documents-status`): each group lists the Root Cause Analysis
+  first; `ComparisonDocumentRow.blockedReason` and `blockedFix` block a group's Executive Summary when its
+  analysis is not checked and not written-and-`usable` by the preview's `summaryReadiness`: *"Needs this
+  model's Root Cause Analysis: check Write on the Root Cause Analysis above."* (*this comparison's* in
+  comparison scope), *"Root Cause Analysis #n was written from different data. Check Rewrite on it to write
+  both."*, or *Checking the stored Root Cause Analysis…* while the preview is pending. The refused click,
+  the error and its fix (**Check the Root Cause Analysis** / **Check Rewrite on the Root Cause Analysis**)
+  work as in the tab. The panel unchecks a group's summary with its analysis, announcing *"The Executive
+  Summary of {subject} was unchecked: it is written from the Root Cause Analysis."*, restores the user's
+  choice when the analysis is checked again, lists *"An Executive Summary needs its Root Cause Analysis:
+  check it too, or uncheck the Executive Summary."* among Generate's reasons for an inconsistent set, and
+  shows a Start 409's message.
+- **Writing dialog**: a summary whose job's analysis failed shows its *Failed* state with the server's
+  error.
+
+### The remembered report writer
+
+`report-writer-memory.ts` keeps the last writer in `localStorage` under `overseer.benchmark.reportWriter`
+(`{ version: 1, writerConfigId }`), falling back on first read to the wizard's `writerConfigId` under
+`overseer.benchmark.reportPack`; storage that is unavailable remembers nothing. A writer chosen in the
+picker, and the writer of every successful write, rewrite included, is remembered; clearing the picker
+forgets nothing. The run and battery tabs start from the subject's own writer, else the remembered writer
+when it is one of the configurations and raises neither a refusal nor a same-provider warning for the
+subject's candidate, else (run tab) the launcher's writer under the same rule. Configurations that arrive
+after the subject apply the default again until the user has chosen. The wizard reads and writes the same
+memory.

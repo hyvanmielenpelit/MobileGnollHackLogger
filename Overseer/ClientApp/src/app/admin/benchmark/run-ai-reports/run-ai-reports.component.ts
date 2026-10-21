@@ -7,6 +7,7 @@ import {
   Output,
   SimpleChanges
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { map } from 'rxjs';
 
 import {
@@ -37,7 +38,7 @@ import {
   ReportDocumentsApi,
   ReportDocumentsTabBase
 } from './report-documents-tab.base';
-import { ReportWriterCandidate, reportWriterRefusal, reportWriterWarning } from './report-writer-policy';
+import { ReportWriterCandidate } from './report-writer-policy';
 import { RUN_REPORT_WRITER_ADVICE } from './report-writer-advice';
 import { RootCauseControlsComponent } from './root-cause-controls.component';
 import { RunReportWritingContext, RunReportWritingDialogComponent } from './run-report-writing-dialog.component';
@@ -50,7 +51,7 @@ export const RUN_REPORT_DOCUMENTS_POLL_MS = REPORT_DOCUMENTS_POLL_MS;
 /** The pause after the last change of writer or documents before the cost is estimated. */
 export const RUN_REPORT_ESTIMATE_DEBOUNCE_MS = REPORT_ESTIMATE_DEBOUNCE_MS;
 
-/** The two AI-written documents of a run, the Executive Summary and the Root Cause Analysis, in the order the tab lists them. */
+/** The two AI-written documents of a run, the Root Cause Analysis and the Executive Summary, in the order the tab lists them. */
 export const RUN_REPORT_AUDIENCES: readonly BenchmarkReportAudience[] = REPORT_DOCUMENT_AUDIENCES;
 
 /** The run's report fields as the tab last read them, for the host to keep its copy of the run current. */
@@ -117,6 +118,7 @@ function runCompletionDocumentsOf(
   selector: 'app-run-ai-reports',
   standalone: true,
   imports: [
+    NgTemplateOutlet,
     ModelPickerComponent,
     InfoTipComponent,
     RunReportWritingDialogComponent,
@@ -170,7 +172,8 @@ export class RunAiReportsComponent extends ReportDocumentsTabBase<BenchmarkRunDe
     getJob: runId => this.benchmarkService.getRunReportJob(runId),
     getStored: runId => this.benchmarkService.getRun(runId),
     listDocuments: runId => this.benchmarkService.listReportDocuments({ runId }).pipe(
-      map(documents => runCompletionDocumentsOf(documents, runId)))
+      map(documents => runCompletionDocumentsOf(documents, runId))),
+    summaryReadiness: runId => this.benchmarkService.getRunSummaryReadiness(runId)
   };
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -183,7 +186,7 @@ export class RunAiReportsComponent extends ReportDocumentsTabBase<BenchmarkRunDe
       } else if (!previous || previous.id !== run.id) {
         this.reset();
         this.setSnapshot(snapshotOfRun(run));
-        this.writerConfigId = this.defaultWriterId(run);
+        this.applyDefaultWriter(run);
         this.loadDocuments();
       } else {
         this.setSnapshot(snapshotOfRun(run));
@@ -287,17 +290,22 @@ export class RunAiReportsComponent extends ReportDocumentsTabBase<BenchmarkRunDe
     return 'rw';
   }
 
+  /**
+   * The run's own writer when it is one of the configurations; else the writer used last in this browser,
+   * else the launcher's, each only when it needs neither a refusal nor a warning for the run's candidate.
+   */
   protected override defaultWriterId(run: BenchmarkRunDetailDto): number | null {
     const own = run.reportWriterModelConfigurationId ?? null;
     if (own != null && this.writerConfigs.some(config => config.id === own)) {
       return own;
     }
-    const launcher = this.writerConfigs.find(config => config.id === this.launcherWriterConfigId);
     const candidate = { provider: run.testedModelProviderUsed, modelId: run.testedModelIdUsed };
-    // The launcher's writer starts the picker only when it needs neither a refusal nor a warning.
-    return launcher && !reportWriterRefusal(launcher, candidate) && !reportWriterWarning(launcher, candidate)
-      ? launcher.id
-      : null;
+    return this.rememberedWriterFor(candidate) ?? this.qualifiedWriterId(this.launcherWriterConfigId, candidate);
+  }
+
+  /** The launcher's writer is a default too, and its input can arrive after the run. */
+  protected override defaultWriterSourcesOf(): readonly unknown[] {
+    return [this.writerConfigs, this.launcherWriterConfigId];
   }
 
   protected override snapshotOf(run: BenchmarkRunDetailDto): ReportStatusSnapshot {

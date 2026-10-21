@@ -405,7 +405,8 @@ public static class BenchmarkReportPackValidator
     /// Rule 47, in an Executive Summary written from a Root Cause Analysis digest: a causal word
     /// (<see cref="RootCauseClaimSupport.CausalWords"/>) needs in its sentence a digest token of an axis, a hypothesis or a
     /// lead (<see cref="BenchmarkRootCauseDigest.IsCauseKey"/>), with a hedge word when every such token is a lead or a
-    /// hypothesis graded Low. Removes the paragraph or item, as rule 33 does in a Root Cause Analysis.
+    /// hypothesis graded Low. The reliability sections (<see cref="DigestClaimExemptSlots"/>) are not read. Removes the
+    /// paragraph or item, as rule 33 does in a Root Cause Analysis.
     /// </summary>
     public const int ExecutiveCausalClaimRule = 47;
 
@@ -1588,12 +1589,26 @@ public static class BenchmarkReportPackValidator
         CheckIntervalWidth(ctx, slot, paragraph, location, issues);
         CheckChatClaims(ctx, slot, paragraph, location, issues);
         CheckRootCauseClaims(ctx, slot, paragraph, location, issues);
-        CheckDigestClaims(ctx, paragraph, location, issues);
+        if (!DigestClaimExemptSlots.Contains(slot))
+        {
+            CheckDigestClaims(ctx, paragraph, location, issues);
+        }
         CheckNextStep(ctx, slot, paragraph, location, issues);
         CheckCodePrinted(ctx, slot, paragraph, location, issues);
         CheckNullsRestated(ctx, slot, paragraph, location, issues);
         return issues;
     }
+
+    /// <summary>
+    /// The Executive Summary slots rule 47 does not read: the reliability sections (How reliable this result is, and the
+    /// comparison's How reliable this is), which speak about the measurement, where a reason such as one run or two graders
+    /// is a fact of the run's design rather than a cause the Root Cause Analysis tested.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> DigestClaimExemptSlots = new HashSet<string>(StringComparer.Ordinal)
+    {
+        BenchmarkReportSlots.Confidence,
+        BenchmarkReportSlots.Reliability,
+    };
 
     /// <summary>
     /// Rule 47 on one prose string of an Executive Summary written from a digest, sentence by sentence: a causal word that

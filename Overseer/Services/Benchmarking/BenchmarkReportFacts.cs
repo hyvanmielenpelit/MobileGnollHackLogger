@@ -762,7 +762,7 @@ public static class BenchmarkReportFacts
         facts.Add("suite.questions", examItems, Inv(examItems));
 
         var options = BenchmarkCandidatePromptOptions.FromJson(subjectRuns[0].CandidatePromptOptionsJson);
-        string chat = options.Describe();
+        string chat = ChatConfigurationText(options);
         facts.Add("config.chat", chat, chat);
 
         facts.Add("comparison.models", eligibleCount, Inv(eligibleCount));
@@ -776,6 +776,24 @@ public static class BenchmarkReportFacts
         {
             facts.Add("comparison.signature", comparison.BaselineSignature, comparison.BaselineSignature);
         }
+    }
+
+    /// <summary>
+    /// The <c>config.chat</c> display: the chat configuration as clauses separated by semicolons,
+    /// with no parenthesis, so a sentence may wrap the token in parentheses of its own
+    /// (<c>Gameplay Help; concise response style, verboseMode false; tools enabled; …</c>).
+    /// </summary>
+    internal static string ChatConfigurationText(BenchmarkCandidatePromptOptions options)
+    {
+        string mode = options.OverseerMode == 0 ? "Gameplay Help" : "Mode " + Inv(options.OverseerMode);
+        string style = options.VerboseMode
+            ? "detailed response style, verboseMode true"
+            : "concise response style, verboseMode false";
+        return mode + "; " + style
+            + "; tools " + (options.EnableToolUse ? "enabled" : "disabled")
+            + "; web search " + (options.EnableWebSearch ? "enabled" : "disabled")
+            + "; subagents " + (options.EnableSubAgents ? "enabled" : "disabled")
+            + "; source code references " + (options.AllowSourceCodeReferences ? "allowed" : "disallowed");
     }
 
     /// <summary>

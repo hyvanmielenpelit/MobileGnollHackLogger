@@ -1288,6 +1288,25 @@ public class RootCauseValidatorTests
     }
 
     [Fact]
+    public void Rule31_TheChatConfiguration_InParentheses_IsNoParenthesisInsideAnother()
+    {
+        List<BenchmarkReportValidationNote> Notes(string display)
+        {
+            var sheet = ModelSheet();
+            sheet.Facts.Add(TextFact("config.chat", display));
+            var output = new BenchmarkReportWriterOutput { Headline = "The model differs on every axis." };
+            output.Sections[BenchmarkReportSlots.Limitations] = "The answers were graded under the production chat's concise response style ({{config.chat}}).";
+            return BenchmarkReportPackValidator.Validate(Rca, output, sheet, ReportPackWriterTestData.Content())
+                .Where(n => n.Rule == BenchmarkReportPackValidator.ComparisonTokenShapeRule)
+                .ToList();
+        }
+
+        Assert.Empty(Notes(BenchmarkReportFacts.ChatConfigurationText(new BenchmarkCandidatePromptOptions())));
+        Assert.Contains(Notes(new BenchmarkCandidatePromptOptions().Describe()),
+            n => n.Message.StartsWith("Puts a parenthesis inside another", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Rule39_AGraderRolePhrase_NeverRepeatsACount_ButTheWritersOwnPanelWordsDo()
     {
         Assert.Empty(ModelScopeNotes(BenchmarkReportPackValidator.CountRepetitionRule, "Panel member A scored Q3 higher; {{subject}} had {{panel.disagreements}}."));

@@ -268,6 +268,9 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- The Root Cause Analysis of this result was written first, from the same data. Its digest is listed under ROOT CAUSE ANALYSIS in the data: the key finding, each axis's status, the top hypotheses with their grades and loci, the writer's untested leads, the next runs, the checks and the limits of the analysis. Each item is a fact whose key starts with rcaDigest, cited as {{key}} like any other fact and valid as evidence.");
         Line(sb, "- State no cause, mechanism or next step that the digest does not contain.");
         Line(sb, $"- A causal word ({causal}) stands only in a sentence that cites an rcaDigest.axis, rcaDigest.hypothesis or rcaDigest.lead token after your own words for the cause; the token prints the cause's grade word. Beside a lead, or a hypothesis graded Low, the same sentence says may, possibly or consistent with, and a lead is called a lead.");
+        Line(sb, comparisonScope
+            ? $"- {BenchmarkReportSlots.Reliability} (\"How reliable this is\") speaks about the measurement: a reason there that is a fact of the comparison's design — the runs per model, two graders, the intervals — needs no Root Cause Analysis item."
+            : $"- {BenchmarkReportSlots.Confidence} (\"How reliable this result is\") speaks about the measurement: a reason there that is a fact of the run's design — one run, no peer models, two graders, the interval — needs no Root Cause Analysis item.");
         Line(sb, "- Every rcaDigest value is a full sentence: give it a sentence of its own, or write it after a colon, never inside your own sentence or in parentheses.");
         Line(sb, comparisonScope
             ? "- Where a point about a model's weakness is one a digest item explains, the point names that item: cite its token in the point's text and in its evidence."
@@ -593,9 +596,7 @@ public static partial class BenchmarkReportPackPrompt
         }
         foreach (var fact in facts)
         {
-            Line(sb, fact.Available
-                ? $"{fact.Key} = {OneLine(fact.Display)}"
-                : $"{fact.Key} = unavailable: {OneLine(string.IsNullOrWhiteSpace(fact.UnavailableReason) ? "no reason recorded" : fact.UnavailableReason)}");
+            Line(sb, FactLine(fact));
         }
         Line(sb);
 
@@ -1043,6 +1044,22 @@ public static partial class BenchmarkReportPackPrompt
 
     private static string OneLine(string? text)
         => (text ?? string.Empty).Replace("\r\n", " ").Replace('\n', ' ').Replace('\r', ' ').Trim();
+
+    /// <summary>
+    /// One FACTS line: <c>key = value</c>, or the reason a fact has no value. A count whose display says what it counts
+    /// (<see cref="BenchmarkReportFormat.CountQualifier"/>) is followed by a marker naming those words, which rule 39 reads.
+    /// </summary>
+    internal static string FactLine(BenchmarkReportFact fact)
+    {
+        if (!fact.Available)
+        {
+            return $"{fact.Key} = unavailable: {OneLine(string.IsNullOrWhiteSpace(fact.UnavailableReason) ? "no reason recorded" : fact.UnavailableReason)}";
+        }
+        string qualifier = BenchmarkReportFormat.CountQualifier((fact.Display ?? string.Empty).Trim());
+        return qualifier.Length == 0
+            ? $"{fact.Key} = {OneLine(fact.Display)}"
+            : $"{fact.Key} = {OneLine(fact.Display)}   [count: it already says \"{OneLine(qualifier)}\"; write no word of it beside the token]";
+    }
 
     private static void Block(StringBuilder sb, string? text)
     {

@@ -121,19 +121,19 @@ export const PROVIDER_ISSUE_REPORT_OPTION: ReportPackAudienceOption = {
  */
 export type ReportAudienceScope = 'comparison' | 'model' | 'run' | 'battery' | 'chatConsistency';
 
-/** The documents a comparison-scope Report Pack writes. */
-export const COMPARISON_REPORT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [EXECUTIVE_SUMMARY_OPTION, ROOT_CAUSE_ANALYSIS_OPTION];
+/** The documents a comparison-scope Report Pack writes, in write order: the Executive Summary is written from the Root Cause Analysis. */
+export const COMPARISON_REPORT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [ROOT_CAUSE_ANALYSIS_OPTION, EXECUTIVE_SUMMARY_OPTION];
 
-/** The documents a per-model Report Pack writes. */
-export const MODEL_REPORT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [EXECUTIVE_SUMMARY_OPTION, ROOT_CAUSE_ANALYSIS_OPTION];
+/** The documents a per-model Report Pack writes, in write order. */
+export const MODEL_REPORT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [ROOT_CAUSE_ANALYSIS_OPTION, EXECUTIVE_SUMMARY_OPTION];
 
-/** The documents a run's or a battery run's Report Writer writes. */
-export const RUN_REPORT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [EXECUTIVE_SUMMARY_OPTION, ROOT_CAUSE_ANALYSIS_OPTION];
+/** The documents a run's or a battery run's Report Writer writes, in write order. */
+export const RUN_REPORT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [ROOT_CAUSE_ANALYSIS_OPTION, EXECUTIVE_SUMMARY_OPTION];
 
 /** The documents a saved chat consistency analysis writes. */
 export const CHAT_CONSISTENCY_REPORT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [EXECUTIVE_SUMMARY_OPTION, PROVIDER_ISSUE_REPORT_OPTION];
 
-/** The documents a scope offers, in audience order. */
+/** The documents a scope offers, in the order its views list them. */
 export function reportAudiencesFor(scope: ReportAudienceScope): readonly ReportPackAudienceOption[] {
   switch (scope) {
     case 'comparison': return COMPARISON_REPORT_AUDIENCE_OPTIONS;

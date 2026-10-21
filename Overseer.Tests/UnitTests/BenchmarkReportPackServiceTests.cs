@@ -484,6 +484,9 @@ public class BenchmarkReportPackServiceTests
     /// <summary>The <c>error</c> of an anonymous <c>{ error }</c> body, unescaped.</summary>
     private static string? ErrorOf(object? body) => body?.GetType().GetProperty("error")?.GetValue(body) as string;
 
+    /// <summary>A property of an anonymous response body, by its name; null when it has none.</summary>
+    private static object? PropertyOf(object? body, string name) => body?.GetType().GetProperty(name)?.GetValue(body);
+
     [Fact]
     public async Task AProviderError_StoresNothing_AndFailsTheDocument()
     {
@@ -1531,11 +1534,121 @@ public class BenchmarkReportPackServiceTests
             await h.Controller().Preview(model, CancellationToken.None)).Value);
         var modelDocuments = DocumentsOf(await h.Controller().Documents(model, CancellationToken.None));
 
+        // The preview alone says whether an Executive Summary may be written from a stored Root Cause Analysis.
         Assert.Null(modelPreview.Refusal);
+        var previewed = modelPreview.SubjectDocuments.SelectMany(s => s.Documents).Single(d => d.Audience == BenchmarkReportAudience.RootCauseAnalysis);
+        Assert.Equal(BenchmarkRootCauseReadiness.Outdated, previewed.SummaryReadiness);
+        Assert.NotNull(previewed.SummaryReadinessMessage);
+        Assert.All(modelDocuments.SubjectDocuments.SelectMany(s => s.Documents), d =>
+        {
+            Assert.Null(d.SummaryReadiness);
+            Assert.Null(d.SummaryReadinessMessage);
+        });
+        foreach (var d in modelPreview.SubjectDocuments.SelectMany(s => s.Documents))
+        {
+            d.SummaryReadiness = null;
+            d.SummaryReadinessMessage = null;
+        }
         Assert.Equal(
             modelPreview.SubjectDocuments.Select(s => (s.SubjectKey, JsonSerializer.Serialize(s.Documents))),
             modelDocuments.SubjectDocuments.Select(s => (s.SubjectKey, JsonSerializer.Serialize(s.Documents))));
         Assert.Equal(2, modelDocuments.SubjectDocuments.Sum(s => s.Documents.Count));
+    }
+
+    [Fact]
+    public async Task Preview_SaysOnEachRootCauseAnalysisWhetherAnExecutiveSummaryMayBeWrittenFromIt()
+    {
+        await using var h = await Harness.CreateAsync();
+        var request = h.Request();
+        var prep = await h.PrepareAsync();
+        long rootCause = await h.StoreDocumentAsync(BenchmarkReportAudience.RootCauseAnalysis, request);
+
+        async Task<BenchmarkReportPackWrittenDocumentDto> PreviewedAsync()
+        {
+            var preview = Assert.IsType<BenchmarkReportPackPreviewDto>(Assert.IsType<OkObjectResult>(
+                await h.Controller().Preview(request, CancellationToken.None)).Value);
+            var written = Assert.Single(preview.WrittenDocuments, d => d.Audience == BenchmarkReportAudience.RootCauseAnalysis);
+            Assert.Equal(rootCause, written.DocumentId);
+            var listed = preview.SubjectDocuments.SelectMany(s => s.Documents).Single(d => d.Audience == BenchmarkReportAudience.RootCauseAnalysis);
+            Assert.Equal(written.SummaryReadiness, listed.SummaryReadiness);
+            return written;
+        }
+
+        // A fixture analysis, written from other facts, is outdated and named with the model.
+        var outdated = await PreviewedAsync();
+        Assert.Equal(BenchmarkRootCauseReadiness.Outdated, outdated.SummaryReadiness);
+        Assert.Equal(BenchmarkRootCauseReadiness.ReportPackOutdatedMessage(prep.Subject.Label, rootCause), outdated.SummaryReadinessMessage);
+
+        // The same analysis over this subject's facts is usable.
+        var stored = await h.Db.BenchmarkReportDocuments.SingleAsync(d => d.Id == rootCause, TestContext.Current.CancellationToken);
+        stored.FactsJson = BenchmarkReportJson.Serialize(prep.Sheet);
+        await h.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var usable = await PreviewedAsync();
+        Assert.Equal(BenchmarkRootCauseReadiness.Usable, usable.SummaryReadiness);
+        Assert.Null(usable.SummaryReadinessMessage);
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task Start_RefusesAnExecutiveSummaryAlone_WithoutAUsableRootCauseAnalysis_NamingTheModel()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        var request = h.Request(audiences: new[] { BenchmarkReportAudience.ExecutiveSummary });
+
+        var missing = Assert.IsType<ConflictObjectResult>(await h.Controller().Start(request, CancellationToken.None));
+        Assert.Equal(BenchmarkRootCauseReadiness.ReportPackMissingMessage(prep.Subject.Label), ErrorOf(missing.Value));
+        Assert.Equal(BenchmarkRootCauseReadiness.MissingCode, PropertyOf(missing.Value, "code"));
+        Assert.Null(PropertyOf(missing.Value, "rootCauseDocumentId"));
+
+        long rootCause = await h.StoreDocumentAsync(BenchmarkReportAudience.RootCauseAnalysis, request);
+        var outdated = Assert.IsType<ConflictObjectResult>(await h.Controller().Start(request, CancellationToken.None));
+        Assert.Equal(BenchmarkRootCauseReadiness.ReportPackOutdatedMessage(prep.Subject.Label, rootCause), ErrorOf(outdated.Value));
+        Assert.Contains(prep.Subject.Label, ErrorOf(outdated.Value));
+        Assert.Equal(BenchmarkRootCauseReadiness.OutdatedCode, PropertyOf(outdated.Value, "code"));
+        Assert.Equal(rootCause, PropertyOf(outdated.Value, "rootCauseDocumentId"));
+
+        Assert.Empty(await h.Db.BenchmarkComparisons.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    /// <remarks>
+    /// An accepted start launches its job on the controller's scope factory, which here holds no report-pack service, so
+    /// the job itself never writes; the test reads only the answer.
+    /// </remarks>
+    [Fact]
+    public async Task Start_AcceptsAnExecutiveSummaryWithItsRootCauseAnalysisRewritten_OrFromAUsableOne()
+    {
+        await using var h = await Harness.CreateAsync();
+        var both = h.Request(audiences: new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis });
+        long rootCause = await h.StoreDocumentAsync(BenchmarkReportAudience.RootCauseAnalysis, both);
+        both.ReplaceDocumentIds = new List<long> { rootCause };
+
+        Assert.IsType<AcceptedResult>(await h.Controller().Start(both, CancellationToken.None));
+
+        // A usable stored analysis lets the summary alone through.
+        await using var other = await Harness.CreateAsync();
+        var otherPrep = await other.PrepareAsync();
+        var alone = other.Request(audiences: new[] { BenchmarkReportAudience.ExecutiveSummary });
+        long usable = await other.StoreDocumentAsync(BenchmarkReportAudience.RootCauseAnalysis, alone);
+        var stored = await other.Db.BenchmarkReportDocuments.SingleAsync(d => d.Id == usable, TestContext.Current.CancellationToken);
+        stored.FactsJson = BenchmarkReportJson.Serialize(otherPrep.Sheet);
+        await other.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        Assert.IsType<AcceptedResult>(await other.Controller().Start(alone, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task StartComparison_RefusesAnExecutiveSummaryAlone_WithoutTheCoveredSetsRootCauseAnalysis()
+    {
+        await using var h = await Harness.CreateAsync();
+
+        var refused = Assert.IsType<ConflictObjectResult>(await h.Controller().Start(h.ComparisonRequest(), CancellationToken.None));
+
+        Assert.Equal(BenchmarkRootCauseReadiness.ReportPackMissingMessage(BenchmarkRootCauseReadiness.CoveredModelsLabel), ErrorOf(refused.Value));
+        Assert.Equal(BenchmarkRootCauseReadiness.MissingCode, PropertyOf(refused.Value, "code"));
+        Assert.Empty(await h.Db.BenchmarkComparisons.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, h.Provider.Calls);
     }
 
     [Fact]
@@ -2486,44 +2599,55 @@ public class BenchmarkReportPackServiceTests
     }
 
     [Fact]
-    public async Task BothDocuments_ARootCauseAnalysisThatFails_LeavesTheExecutiveSummaryWithoutADigest_CompletedWithWarnings()
+    public async Task BothDocuments_ARootCauseAnalysisThatFails_FailsTheExecutiveSummary_WithNoCallForIt()
     {
         await using var h = await Harness.CreateAsync();
+        h.SummaryWithoutRootCause = false;
         var prep = await h.PrepareAsync(standalone: true);
         h.Provider.Replies.Enqueue(WriterProvider.ProviderError);
         h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
 
         var job = await h.RunCompletionAsync(BenchmarkReportSlots.WriteOrder);
 
-        Assert.Equal(BenchmarkReportPackJobStatus.CompletedWithErrors, job.Status);
-        var es = Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(BenchmarkReportAudience.ExecutiveSummary, es.Audience);
-        Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, es.Status);
+        Assert.Equal(BenchmarkReportPackJobStatus.Failed, job.Status);
+        Assert.Empty(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Single(h.Provider.Replies);
 
-        var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(es.ValidationNotesJson);
-        var note = Assert.Single(notes, n => n.Rule == BenchmarkReportPackValidator.WrittenWithoutRootCauseRule);
-        Assert.Equal("headline", note.Location);
-        Assert.Equal("Written without the Root Cause Analysis, which failed.", note.Message);
-        Assert.False(note.Dropped);
-        Assert.Equal(BenchmarkReportRuleCatalog.WarningTextKeptSeverity, BenchmarkReportRuleCatalog.ToIssueDto(note).Severity);
+        var dto = job.ToDto();
+        var progress = Assert.Single(dto.Documents, d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
+        Assert.Equal(nameof(BenchmarkReportPackDocumentStatus.Failed), progress.Status);
+        Assert.Equal(BenchmarkRootCauseSources.RootCauseFailedError, progress.ErrorMessage);
+        Assert.Equal(
+            "Not written: the Root Cause Analysis of this job failed, and the Executive Summary is written only from one. Write both again.",
+            progress.ErrorMessage);
+        Assert.Equal(0, progress.ModelCalls);
+        Assert.Empty(progress.Calls);
+        Assert.Contains(dto.Log, l => l.Severity == "error" && l.Message.Contains("not written, because the Root Cause Analysis of this job failed", StringComparison.Ordinal));
+    }
 
-        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(es.FactsJson);
-        Assert.Equal(BenchmarkRootCauseSources.None, sheet.RootCauseDigest!.Source);
-        Assert.Null(sheet.RootCauseDigest.DocumentId);
-        Assert.Equal(BenchmarkRootCauseSources.FailedNote, sheet.RootCauseDigest.Note);
-        Assert.False(sheet.HasRootCauseDigest);
-        Assert.Equal(BenchmarkReportPackPrompt.PromptSha256(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportScope.Model), es.WriterPromptSha256);
+    [Fact]
+    public void OnlyARootCauseAnalysisThatStoredItsDocument_IsOneAnExecutiveSummaryIsWrittenFrom()
+    {
+        static BenchmarkReportPackDocumentProgress Row(BenchmarkReportPackDocumentStatus status, long? documentId) => new()
+        {
+            Audience = BenchmarkReportAudience.RootCauseAnalysis,
+            Status = status,
+            DocumentId = documentId
+        };
 
-        var progress = Assert.Single(job.ToDto().Documents, d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
-        Assert.Equal(BenchmarkRootCauseSources.None, progress.RootCauseSource);
-        Assert.Null(progress.RootCauseSourceDocumentId);
-        Assert.Equal("the Root Cause Analysis of this job failed", progress.RootCauseSourceNote);
+        Assert.True(BenchmarkReportPackService.StoredItsDocument(Row(BenchmarkReportPackDocumentStatus.Completed, 7)));
+        Assert.True(BenchmarkReportPackService.StoredItsDocument(Row(BenchmarkReportPackDocumentStatus.CompletedWithWarnings, 7)));
+        Assert.False(BenchmarkReportPackService.StoredItsDocument(Row(BenchmarkReportPackDocumentStatus.Failed, null)));
+        Assert.False(BenchmarkReportPackService.StoredItsDocument(Row(BenchmarkReportPackDocumentStatus.Canceled, null)));
+        Assert.False(BenchmarkReportPackService.StoredItsDocument(Row(BenchmarkReportPackDocumentStatus.Canceled, 7)));
+        Assert.False(BenchmarkReportPackService.StoredItsDocument(Row(BenchmarkReportPackDocumentStatus.Completed, null)));
     }
 
     [Fact]
     public async Task TheExecutiveSummaryAlone_IsWrittenFromAStoredRootCauseAnalysisOfTheSameData()
     {
         await using var h = await Harness.CreateAsync();
+        h.SummaryWithoutRootCause = false;
         var prep = await h.PrepareAsync(standalone: true);
         var (rcaReply, rcaWriter) = TwoTurnRootCauseReply(prep);
         h.Provider.Replies.Enqueue(rcaReply);
@@ -2548,42 +2672,139 @@ public class BenchmarkReportPackServiceTests
     }
 
     [Fact]
-    public async Task TheExecutiveSummaryAlone_WithoutAMatchingRootCauseAnalysis_IsWrittenAsBefore_AndARewrittenAnalysisLeavesIt()
+    public async Task TheExecutiveSummaryAlone_WithoutAStoredRootCauseAnalysis_FailsWithTheMissingMessage_AndNoCall()
     {
         await using var h = await Harness.CreateAsync();
+        h.SummaryWithoutRootCause = false;
         var prep = await h.PrepareAsync(standalone: true);
-        // A stored fixture analysis of the same run was written from other facts: it does not match.
-        await h.StoreDocumentAsync(BenchmarkReportAudience.RootCauseAnalysis, h.StandaloneRequest(),
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        var job = await h.RunCompletionAsync(BenchmarkReportAudience.ExecutiveSummary);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Failed, job.Status);
+        Assert.Equal(0, h.Provider.Calls);
+        Assert.Empty(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken));
+        var progress = Assert.Single(job.ToDto().Documents);
+        Assert.Equal(nameof(BenchmarkReportPackDocumentStatus.Failed), progress.Status);
+        Assert.Equal(BenchmarkRootCauseReadiness.MissingMessage("run"), progress.ErrorMessage);
+        Assert.Equal(0, progress.ModelCalls);
+        Assert.Contains(job.ToDto().Log, l => l.Severity == "error" && l.Message.Contains("no model call was made", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TheExecutiveSummaryAlone_IsNotWrittenFromAnOlderMatchingAnalysis_WhenTheNewestIsOutdated()
+    {
+        await using var h = await Harness.CreateAsync();
+        h.SummaryWithoutRootCause = false;
+        var prep = await h.PrepareAsync(standalone: true);
+        var (rcaReply, _) = TwoTurnRootCauseReply(prep);
+        h.Provider.Replies.Enqueue(rcaReply);
+        h.Provider.Replies.Enqueue(rcaReply);
+        await h.RunCompletionAsync(BenchmarkReportAudience.RootCauseAnalysis);
+        int calls = h.Provider.Calls;
+
+        // A newer fixture analysis of the same run was written from other facts; the older one, which matches, is not read.
+        long newer = await h.StoreDocumentAsync(BenchmarkReportAudience.RootCauseAnalysis, h.StandaloneRequest(),
             subjectKey: h.StandaloneRequest().SubjectKey, origin: BenchmarkReportDocumentOrigin.RunCompletion);
         h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
 
         var job = await h.RunCompletionAsync(BenchmarkReportAudience.ExecutiveSummary);
 
-        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
-        Assert.Equal(1, h.Provider.Calls);
-        var es = Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken),
+        Assert.Equal(BenchmarkReportPackJobStatus.Failed, job.Status);
+        Assert.Equal(calls, h.Provider.Calls);
+        Assert.DoesNotContain(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken),
             d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
-        Assert.Equal(BenchmarkReportDocumentStatus.Completed, es.Status);
-        var source = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(es.FactsJson).RootCauseDigest!;
-        Assert.Equal(BenchmarkRootCauseSources.None, source.Source);
-        Assert.Equal(BenchmarkRootCauseSources.NoMatchNote, source.Note);
         var progress = Assert.Single(job.ToDto().Documents);
-        Assert.Equal(BenchmarkRootCauseSources.None, progress.RootCauseSource);
-        Assert.Equal("no Root Cause Analysis of this run was written from the same data", progress.RootCauseSourceNote);
-        var line = Assert.Single(job.ToDto().Log, l => l.Message.Contains("no Root Cause Analysis of this subject was written from the same data", StringComparison.Ordinal));
-        Assert.Equal("info", line.Severity);
+        Assert.Equal(BenchmarkRootCauseReadiness.OutdatedMessage("run", newer), progress.ErrorMessage);
+        Assert.Null(progress.RootCauseSource);
+    }
 
-        // Writing the Root Cause Analysis alone afterwards does not write the summary again.
-        var (rcaReply, _) = TwoTurnRootCauseReply(prep);
-        h.Provider.Replies.Enqueue(rcaReply);
-        h.Provider.Replies.Enqueue(rcaReply);
-        await h.RunCompletionAsync(BenchmarkReportAudience.RootCauseAnalysis);
+    [Fact]
+    public async Task AComparisonExecutiveSummaryAlone_WithoutAStoredRootCauseAnalysis_FailsNamingTheCoveredModels()
+    {
+        await using var h = await Harness.CreateAsync();
+        h.SummaryWithoutRootCause = false;
 
-        var after = Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken),
-            d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
-        Assert.Equal(es.Id, after.Id);
-        Assert.Equal(es.FactsJson, after.FactsJson);
-        Assert.Equal(es.WriterOutputJson, after.WriterOutputJson);
+        var job = await h.RunComparisonAsync(h.ComparisonRequest());
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Failed, job.Status);
+        Assert.Equal(0, h.Provider.Calls);
+        Assert.Equal(BenchmarkRootCauseReadiness.ReportPackMissingMessage(BenchmarkRootCauseReadiness.CoveredModelsLabel),
+            Assert.Single(job.ToDto().Documents).ErrorMessage);
+    }
+
+    // --- Spacing of the writer's prose --------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("In addition,Completeness was high.", "In addition, Completeness was high.")]
+    [InlineData("Fast;cheap;clear.", "Fast; cheap; clear.")]
+    [InlineData("It cost 1,000 tokens.", "It cost 1,000 tokens.")]
+    [InlineData("Read {{a,b}} and {{c;d}}.", "Read {{a,b}} and {{c;d}}.")]
+    [InlineData("See https://example.org/a,b;c for it.", "See https://example.org/a,b;c for it.")]
+    [InlineData("Already, spaced; here.", "Already, spaced; here.")]
+    [InlineData("A list,{{subject}},then more.", "A list,{{subject}}, then more.")]
+    [InlineData("", "")]
+    public void NormalizeSpacing_SpacesACommaOrSemicolonBeforeALetter_OutsideTokensAndUrls(string text, string expected)
+        => Assert.Equal(expected, BenchmarkReportPackService.NormalizeSpacing(text));
+
+    [Fact]
+    public void NormalizeSpacing_SpacesEveryProseStringOfAReply_AndLeavesEvidenceKeysAlone()
+    {
+        var output = new BenchmarkReportWriterOutput
+        {
+            Headline = "Good,fast.",
+            Sections = new Dictionary<string, string> { [BenchmarkReportSlots.Meaning] = "In addition,Completeness was high." },
+            Strengths = new List<BenchmarkReportWriterItem> { new() { Text = "Clear,short.", Evidence = new List<string> { "a,b" } } },
+            Weaknesses = new List<BenchmarkReportWriterItem> { new() { Text = "Slow;costly." } },
+            QuestionTopics = new List<BenchmarkReportQuestionTopic> { new() { Question = 1, Topic = "Pets,food" } },
+            Models = new List<BenchmarkReportModelPoints> { new() { Model = "A", Points = new List<BenchmarkReportWriterItem> { new() { Text = "Quick,clear." } } } },
+            Observations = new List<BenchmarkReportWriterItem> { new() { Text = "Seen,twice." } },
+            WriterHypotheses = new List<BenchmarkReportWriterHypothesis>
+            {
+                new()
+                {
+                    Locus = "model,chat",
+                    Statement = "It guessed,then checked.",
+                    For = new List<string> { "Q1,Q2 agree" },
+                    Against = new List<string> { "none;so far" },
+                    RefutedIf = "A rerun,with tools."
+                }
+            }
+        };
+
+        BenchmarkReportPackService.NormalizeSpacing(output);
+
+        Assert.Equal("Good, fast.", output.Headline);
+        Assert.Equal("In addition, Completeness was high.", output.Sections[BenchmarkReportSlots.Meaning]);
+        Assert.Equal("Clear, short.", output.Strengths[0].Text);
+        Assert.Equal("a,b", output.Strengths[0].Evidence[0]);
+        Assert.Equal("Slow; costly.", output.Weaknesses[0].Text);
+        Assert.Equal("Pets, food", output.QuestionTopics[0].Topic);
+        Assert.Equal("Quick, clear.", output.Models[0].Points[0].Text);
+        Assert.Equal("Seen, twice.", output.Observations[0].Text);
+        var hypothesis = output.WriterHypotheses[0];
+        Assert.Equal("model,chat", hypothesis.Locus);
+        Assert.Equal("It guessed, then checked.", hypothesis.Statement);
+        Assert.Equal("Q1, Q2 agree", hypothesis.For[0]);
+        Assert.Equal("none; so far", hypothesis.Against[0]);
+        Assert.Equal("A rerun, with tools.", hypothesis.RefutedIf);
+    }
+
+    [Fact]
+    public async Task AReplyWithAMissingSpaceAfterAComma_IsStoredSpaced_WithNoNoteForIt()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        string reply = ExecutiveReply(prep, meaning: "{{subject}} would serve players well as a game assistant,and it stayed clear.");
+        h.Provider.Replies.Enqueue(reply);
+        h.Provider.Replies.Enqueue(reply);
+
+        await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        string meaning = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson).Sections[BenchmarkReportSlots.Meaning];
+        Assert.Contains("assistant, and it stayed clear.", meaning, StringComparison.Ordinal);
+        Assert.DoesNotContain(",and", meaning, StringComparison.Ordinal);
     }
 
     // --- Phases, calls and the repair loop's records ------------------------------------------------------
@@ -2978,6 +3199,12 @@ public class BenchmarkReportPackServiceTests
         public CryptoService Crypto { get; private init; } = default!;
         public BenchmarkReportPackJobManager Jobs { get; } = new();
         public WriterProvider Provider { get; } = new();
+
+        /// <summary>
+        /// The service's <see cref="BenchmarkReportPackService.SummaryWithoutRootCause"/>: on, an Executive Summary alone is
+        /// written without a usable stored Root Cause Analysis, as the tests of the writing loop need; off, as in production.
+        /// </summary>
+        public bool SummaryWithoutRootCause { get; set; } = true;
 
         /// <summary>Another family than the subject's (OpenAI): the recommended kind of writer.</summary>
         public SystemAiApiConfiguration Writer { get; private set; } = default!;
@@ -3409,7 +3636,10 @@ public class BenchmarkReportPackServiceTests
                 Jobs,
                 Configuration,
                 NullLogger<BenchmarkReportPackService>.Instance,
-                charts);
+                charts)
+            {
+                SummaryWithoutRootCause = SummaryWithoutRootCause
+            };
         }
 
         public async ValueTask DisposeAsync()

@@ -873,7 +873,8 @@ public static class BenchmarkBatteryReportFacts
         int examItems = subject.Quality?.ExamItemCount ?? sheet.Questions.Count;
         facts.Add("suite.questions", examItems, Inv(examItems));
 
-        string chat = BenchmarkCandidatePromptOptions.FromJson(subjectRuns[0].CandidatePromptOptionsJson).Describe();
+        string chat = BenchmarkReportFacts.ChatConfigurationText(
+            BenchmarkCandidatePromptOptions.FromJson(subjectRuns[0].CandidatePromptOptionsJson));
         facts.Add("config.chat", chat, chat);
 
         facts.Add("comparison.models", eligibleCount, Inv(eligibleCount));

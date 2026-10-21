@@ -74,7 +74,7 @@ describe('ReportChartPickerComponent', () => {
   };
   const text = (element: Element | null): string => element!.textContent!.replace(/\s+/g, ' ').trim();
 
-  it('is a captioned group with one segment per document type', () => {
+  it('is a captioned group with one segment per document type, the Root Cause Analysis first', () => {
     const group = q('.rcp')!;
     expect(group.getAttribute('role')).toBe('group');
     expect(group.getAttribute('aria-labelledby')).toBe('rcp-caption');
@@ -82,26 +82,27 @@ describe('ReportChartPickerComponent', () => {
     expect(q('table')).toBeNull();
 
     const tabs = Array.from(host.querySelectorAll<HTMLElement>('[role="tablist"] [role="tab"]'));
-    expect(tabs.map(t => text(t.querySelector('.rcp-tab-name')))).toEqual(['Executive', 'Root Cause']);
+    expect(tabs.map(t => text(t.querySelector('.rcp-tab-name')))).toEqual(['Root Cause', 'Executive']);
     expect(tabs.map(t => t.getAttribute('aria-selected'))).toEqual(['true', 'false']);
     expect(tabs.map(t => t.getAttribute('tabindex'))).toEqual(['0', '-1']);
-    expect(tabs[0].getAttribute('aria-controls')).toBe(`rcp-panel-${ExecutiveSummary}`);
+    expect(tabs[0].getAttribute('aria-controls')).toBe(`rcp-panel-${RootCauseAnalysis}`);
 
     const panel = q('[role="tabpanel"]')!;
-    expect(panel.id).toBe(`rcp-panel-${ExecutiveSummary}`);
-    expect(panel.getAttribute('aria-labelledby')).toBe(`rcp-tab-${ExecutiveSummary}`);
+    expect(panel.id).toBe(`rcp-panel-${RootCauseAnalysis}`);
+    expect(panel.getAttribute('aria-labelledby')).toBe(`rcp-tab-${RootCauseAnalysis}`);
     expect(panel.getAttribute('tabindex')).toBe('0');
-    expect(text(panel.querySelector('.rcp-panel-title'))).toBe('Executive Summary');
+    expect(text(panel.querySelector('.rcp-panel-title'))).toBe('Root Cause Analysis');
 
     const boxes = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
     expect(boxes.length).toBe(8);
-    expect(boxes.every(box => box.id.startsWith(`rcp-${ExecutiveSummary}-`))).toBe(true);
+    expect(boxes.every(box => box.id.startsWith(`rcp-${RootCauseAnalysis}-`))).toBe(true);
     expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(8);
     const titles = Array.from(panel.querySelectorAll('.rcp-figure-title')).map(title => text(title));
     expect(titles).toEqual(REPORT_CHART_FIGURES.map(figure => figure.title));
   });
 
   it('names every checkbox for its figure and document, with the target section beneath it', () => {
+    select(ExecutiveSummary);
     const exec = cell(ExecutiveSummary, 'p1a-quality');
     expect(exec.getAttribute('aria-label')).toBe('Include Intelligence in the Executive Summary');
     const placement = q(`#${exec.getAttribute('aria-describedby')}`)!;
@@ -121,6 +122,7 @@ describe('ReportChartPickerComponent', () => {
   });
 
   it('notes the Root Cause Analysis\' four server-drawn charts under its figures, and nowhere else', () => {
+    select(ExecutiveSummary);
     expect(q('.rcp-server-note')).toBeNull();
 
     select(RootCauseAnalysis);
@@ -132,6 +134,7 @@ describe('ReportChartPickerComponent', () => {
   });
 
   it('emits the normalized selection when a checkbox changes', () => {
+    select(ExecutiveSummary);
     cell(ExecutiveSummary, 'p1c-cost').click();
     fixture.detectChanges();
 
@@ -146,6 +149,7 @@ describe('ReportChartPickerComponent', () => {
   });
 
   it('offers All and None per document, each named for its document', () => {
+    select(ExecutiveSummary);
     expect(text(button('all', ExecutiveSummary))).toBe('All charts in the Executive Summary');
 
     select(RootCauseAnalysis);
@@ -164,22 +168,23 @@ describe('ReportChartPickerComponent', () => {
   });
 
   it('switches documents by click and by the keyboard', () => {
-    select(RootCauseAnalysis);
-    expect(selectedTab()).toBe(String(RootCauseAnalysis));
-    expect(q('[role="tabpanel"]')!.id).toBe(`rcp-panel-${RootCauseAnalysis}`);
-    expect(text(q('.rcp-panel-title'))).toBe('Root Cause Analysis');
-    expect(tab(RootCauseAnalysis).getAttribute('tabindex')).toBe('0');
-    expect(tab(ExecutiveSummary).getAttribute('tabindex')).toBe('-1');
+    select(ExecutiveSummary);
+    expect(selectedTab()).toBe(String(ExecutiveSummary));
+    expect(q('[role="tabpanel"]')!.id).toBe(`rcp-panel-${ExecutiveSummary}`);
+    expect(text(q('.rcp-panel-title'))).toBe('Executive Summary');
+    expect(tab(ExecutiveSummary).getAttribute('tabindex')).toBe('0');
+    expect(tab(RootCauseAnalysis).getAttribute('tabindex')).toBe('-1');
 
+    // The tabs read Root Cause Analysis, then Executive Summary.
     const steps: [string, BenchmarkReportAudience][] = [
-      ['ArrowRight', ExecutiveSummary],
-      ['ArrowLeft', RootCauseAnalysis],
-      ['Home', ExecutiveSummary],
-      ['End', RootCauseAnalysis],
+      ['ArrowRight', RootCauseAnalysis],
       ['ArrowLeft', ExecutiveSummary],
-      ['ArrowRight', RootCauseAnalysis]
+      ['Home', RootCauseAnalysis],
+      ['End', ExecutiveSummary],
+      ['ArrowLeft', RootCauseAnalysis],
+      ['ArrowRight', ExecutiveSummary]
     ];
-    tab(RootCauseAnalysis).focus();
+    tab(ExecutiveSummary).focus();
     for (const [key, expected] of steps) {
       const event = press(document.activeElement as HTMLElement, key);
       expect(event.defaultPrevented, key).toBe(true);
@@ -188,22 +193,23 @@ describe('ReportChartPickerComponent', () => {
       expect(q('[role="tabpanel"]')!.id, key).toBe(`rcp-panel-${expected}`);
     }
 
-    const other = press(tab(RootCauseAnalysis), 'Enter');
+    const other = press(tab(ExecutiveSummary), 'Enter');
     expect(other.defaultPrevented).toBe(false);
-    expect(selectedTab()).toBe(String(RootCauseAnalysis));
+    expect(selectedTab()).toBe(String(ExecutiveSummary));
     expect(emitted).toEqual([]);
   });
 
   it('counts the selection on each segment', () => {
     const counts = (): string[] => Array.from(host.querySelectorAll('.rcp-tab-count')).map(count => text(count));
-    expect(counts()).toEqual(['2', '5']);
+    expect(counts()).toEqual(['5', '2']);
     expect(q('.rcp-tab-count')!.getAttribute('aria-hidden')).toBe('true');
     expect(text(tab(ExecutiveSummary).querySelector('.visually-hidden'))).toBe(', 2 of 8 charts');
     expect(text(tab(RootCauseAnalysis).querySelector('.visually-hidden'))).toBe(', 5 of 5 charts');
 
+    select(ExecutiveSummary);
     cell(ExecutiveSummary, 'p1c-cost').click();
     fixture.detectChanges();
-    expect(counts()).toEqual(['3', '5']);
+    expect(counts()).toEqual(['5', '3']);
     expect(text(tab(ExecutiveSummary).querySelector('.visually-hidden'))).toBe(', 3 of 8 charts');
   });
 
@@ -305,6 +311,7 @@ describe('ReportChartPickerComponent', () => {
   it('never touches localStorage; the host stores the selection', () => {
     const setItem = vi.spyOn(localStorage, 'setItem');
     const getItem = vi.spyOn(localStorage, 'getItem');
+    select(ExecutiveSummary);
     cell(ExecutiveSummary, 'p1c-cost').click();
     select(RootCauseAnalysis);
     button('none', RootCauseAnalysis).click();
@@ -338,6 +345,7 @@ describe('ReportChartPickerComponent', () => {
     fixture.componentRef.setInput('scope', 'comparison');
     fixture.detectChanges();
     expect(fixture.componentInstance.audienceOptions).toBe(COMPARISON_REPORT_AUDIENCE_OPTIONS);
+    select(ExecutiveSummary);
     expect(text(q(`#rcp-${ExecutiveSummary}-p1a-quality-placement`))).toBe('How they compare');
     select(RootCauseAnalysis);
     // The comparison-scope Root Cause Analysis places no Intelligence bars: neither offered nor selected.
@@ -354,6 +362,7 @@ describe('ReportChartPickerComponent', () => {
     fixture.componentRef.setInput('scope', 'comparison');
     fixture.componentRef.setInput('selection', { ...DEFAULT_CHART_SELECTION, [ExecutiveSummary]: ['p1a-quality', 'a1-availability'] });
     fixture.detectChanges();
+    select(ExecutiveSummary);
 
     const a1 = cell(ExecutiveSummary, 'a1-availability');
     expect(a1.checked).toBe(false);
@@ -377,6 +386,7 @@ describe('ReportChartPickerComponent', () => {
   it('gives A1 its own reason when the comparison cannot draw it', () => {
     fixture.componentRef.setInput('available', ALL_KEYS.filter(key => key !== 'a1-availability'));
     fixture.detectChanges();
+    select(ExecutiveSummary);
     expect(text(q('#rcp-row-a1-availability-reason'))).toBe('needs two or more models, one with provider errors recorded');
   });
 
@@ -388,6 +398,7 @@ describe('ReportChartPickerComponent', () => {
       fixture.componentInstance.layoutChange.subscribe(layout => layouts.push(layout));
       fixture.componentRef.setInput('layout', DEFAULT_CHART_LAYOUT_SETTINGS);
       fixture.detectChanges();
+      select(ExecutiveSummary);
     });
 
     const width = (audience: BenchmarkReportAudience, key: string): HTMLSelectElement =>
@@ -592,11 +603,11 @@ describe('ReportChartPickerComponent', () => {
     expect(picker.figures).toBe(REPORT_PACK_PICKER_FIGURES);
     expect(picker.figures.map(figure => figure.key)).toEqual(ALL_KEYS);
     expect(picker.audienceOptions).toBe(MODEL_REPORT_AUDIENCE_OPTIONS);
-    expect(picker.audiences).toEqual([ExecutiveSummary, RootCauseAnalysis]);
+    expect(picker.audiences).toEqual([RootCauseAnalysis, ExecutiveSummary]);
     expect(picker.columnDisabledReason).toBe(REPORT_CHART_COLUMN_DISABLED_REASON);
     expect(picker.layoutFields).toEqual(REPORT_CHART_LAYOUT_FIELDS);
     expect(picker.notes).toEqual({});
-    expect(q('.rcp-note')).toBeNull();
+    expect(q('.rcp-note:not(.rcp-server-note)')).toBeNull();
   });
 
   describe('with figures and document types of its own', () => {

@@ -639,6 +639,29 @@ internal sealed class BatteryReportHarness : IAsyncDisposable
         return document.Id;
     }
 
+    /// <summary>
+    /// Gives the battery run's newest stored Root Cause Analysis the fact sheet the battery run is prepared with now, as
+    /// the estimate prepares it, so an Executive Summary may be written from it.
+    /// </summary>
+    public async Task MakeRootCauseUsableAsync()
+    {
+        await using var db = new ApplicationDbContext(Options);
+        var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(
+            db, new BenchmarkModelComparisonService(db),
+            BenchmarkReportPackPreparation.BatteryRequest(BatteryRunId, new[] { BenchmarkReportAudience.ExecutiveSummary }, 0),
+            BenchmarkReportPackPreparation.AnswerExcerptChars(Configuration), Ct, Configuration);
+        Assert.True(prep != null, refusal);
+        Assert.NotNull(prep!.Sheet.RootCause);
+
+        string subjectKey = BenchmarkBatteryReportDocumentService.SubjectKeyOf(BatteryRunId);
+        var rootCause = await db.BenchmarkReportDocuments
+            .Where(d => d.SubjectKey == subjectKey && d.Audience == BenchmarkReportAudience.RootCauseAnalysis)
+            .OrderByDescending(d => d.Id)
+            .FirstAsync(Ct);
+        rootCause.FactsJson = BenchmarkReportJson.Serialize(prep.Sheet);
+        await db.SaveChangesAsync(Ct);
+    }
+
     public async Task<long> AddConfigAsync(string provider, string modelId, string name)
     {
         await using var db = new ApplicationDbContext(Options);

@@ -5,7 +5,7 @@
  *
  * Layout and component-local presentation only. .btn-gh and its variants, .btn-ghost, .action-btn,
  * .gh-tooltip, .gh-tag, .gh-fieldset, .gh-choice, .checkbox-label, .gh-field-row, .gh-field-error,
- * .gh-estimate-panel, .alert and .gh-dialog come from styles.scss and are never redefined here.
+ * .gh-estimate-panel, .btn-link, .alert and .gh-dialog come from styles.scss and are never redefined here.
  */
 
 :host {
@@ -152,6 +152,44 @@
   .rr-ai-written-hint {
     margin: 4px 0 0;
   }
+}
+
+/* The document checkboxes, the Executive Summary nested under the Root Cause Analysis it is written from. */
+.rr-ai-choices {
+  display: grid;
+  flex-basis: 100%;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rr-ai-choices-nested {
+  margin-block-start: 6px;
+  padding-inline-start: 30px;
+}
+
+.rr-ai-choice-note,
+.rr-ai-es-reason,
+.rr-ai-es-error {
+  margin: 4px 0 0 30px;
+}
+
+/* A blocked Executive Summary: a muted label, and the reason line under it says why. */
+.rr-ai-es-choice.is-blocked {
+  color: var(--nav-color);
+  cursor: not-allowed;
+
+  input[type="checkbox"] {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+}
+
+.rr-ai-es-reason .btn-link,
+.rr-ai-es-error .btn-link {
+  margin-inline-start: 4px;
+  font-size: inherit;
 }
 
 .rr-ai-writer > label {

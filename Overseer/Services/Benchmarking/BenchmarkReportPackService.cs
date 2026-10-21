@@ -1172,14 +1172,20 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                     }
 
                     // The Executive Summary is written from its subject's Root Cause Analysis digest: the sheet carries the
-                    // digest's facts and source while it is written, and gets its own facts back after.
+                    // digest's facts and source while it is written, and gets its own facts back after. Without one it
+                    // fails with no model call.
                     var facts = prep.Sheet.Facts;
                     var source = prep.Sheet.RootCauseDigest;
                     try
                     {
-                        bool withoutRootCause = await ApplyRootCauseDigestAsync(job, row, rows, origin, prep, state, ct);
-                        bool ok = await WriteDocumentAsync(job, row, origin, prep, state, config, endpoint, apiKey, pricing, excerptChars, maxOutputTokens, ct,
-                            withoutRootCause);
+                        string? notWritten = await ApplyRootCauseDigestAsync(job, row, rows, origin, prep, state, ct);
+                        if (notWritten != null)
+                        {
+                            job.SetDocumentStatus(row, BenchmarkReportPackDocumentStatus.Failed, notWritten);
+                            failed++;
+                            continue;
+                        }
+                        bool ok = await WriteDocumentAsync(job, row, origin, prep, state, config, endpoint, apiKey, pricing, excerptChars, maxOutputTokens, ct);
                         if (ok) completed++; else failed++;
                     }
                     finally
@@ -1223,31 +1229,38 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         }
     }
 
-    /// <summary>How many stored Root Cause Analyses of a subject, newest first, an Executive Summary alone is matched against.</summary>
-    internal const int StoredRootCauseCandidates = 5;
+    /// <summary>
+    /// When set, an Executive Summary whose subject has no usable stored Root Cause Analysis is written without a digest
+    /// (<see cref="BenchmarkRootCauseSources.NoMatchNote"/>) instead of failing. Only the writing loop's unit tests set it.
+    /// </summary>
+    internal bool SummaryWithoutRootCause { get; init; }
+
+    /// <summary>A Root Cause Analysis row of this job that stored its document, Completed or with warnings.</summary>
+    internal static bool StoredItsDocument(BenchmarkReportPackDocumentProgress rootCause)
+        => rootCause.DocumentId != null
+           && rootCause.Status is BenchmarkReportPackDocumentStatus.Completed or BenchmarkReportPackDocumentStatus.CompletedWithWarnings;
 
     /// <summary>
     /// Sets <paramref name="prep"/>'s sheet up for the Executive Summary of <paramref name="row"/> and records its source on
     /// the row (<see cref="BenchmarkReportPackJob.SetRootCauseSource"/>): when the subject's <paramref name="rows"/> hold a
-    /// Root Cause Analysis, the digest of the one this job stored (<c>thisJob</c>), or, when it failed or was canceled, no
-    /// digest with <see cref="BenchmarkRootCauseSources.FailedNote"/>; when they hold none, the digest of the newest stored
-    /// Root Cause Analysis of the same subject and origin whose facts hash to the sheet's (<c>stored</c>), else no digest with
-    /// <see cref="BenchmarkRootCauseSources.NoMatchNote"/> and an info line in the log. A chat consistency sheet is left as it is.
-    /// True when the summary is written without the Root Cause Analysis its job was to write first.
+    /// Root Cause Analysis, the digest of the one this job stored (<c>thisJob</c>); when they hold none, the digest of the
+    /// subject's newest stored Root Cause Analysis when it is usable (<see cref="BenchmarkRootCauseReadiness"/>, <c>stored</c>).
+    /// Returns why the summary is not written otherwise, logged as an error: <see cref="BenchmarkRootCauseSources.RootCauseFailedError"/>
+    /// when this job's Root Cause Analysis failed or was canceled, else the readiness message. A chat consistency sheet is
+    /// left as it is. Null when the summary is written.
     /// </summary>
-    private async Task<bool> ApplyRootCauseDigestAsync(
+    private async Task<string?> ApplyRootCauseDigestAsync(
         BenchmarkReportPackJob job, BenchmarkReportPackDocumentProgress row, IReadOnlyList<BenchmarkReportPackDocumentProgress> rows,
         BenchmarkReportDocumentOrigin origin, BenchmarkReportPackPreparation prep, JobState state, CancellationToken ct)
     {
         var sheet = prep.Sheet;
-        if (sheet.IsChatConsistency) return false;
+        if (sheet.IsChatConsistency) return null;
         string name = BenchmarkReportRenderService.AudienceName(row.Audience) + (state.SeveralSubjects ? " about " + sheet.SubjectLabel : string.Empty);
 
         var rootCause = rows.FirstOrDefault(r => r.Audience == BenchmarkReportAudience.RootCauseAnalysis);
         if (rootCause != null)
         {
-            if (rootCause.DocumentId is long id
-                && rootCause.Status is BenchmarkReportPackDocumentStatus.Completed or BenchmarkReportPackDocumentStatus.CompletedWithWarnings)
+            if (StoredItsDocument(rootCause) && rootCause.DocumentId is long id)
             {
                 var stored = await _db.BenchmarkReportDocuments.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(d => d.Id == id, ct);
                 if (stored != null && BenchmarkRootCauseDigest.From(stored) is { } digest)
@@ -1255,67 +1268,39 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                     digest.ApplyTo(sheet, BenchmarkRootCauseSources.ThisJob);
                     job.SetRootCauseSource(row, BenchmarkRootCauseSources.ThisJob, id, null);
                     job.AddLog($"{name}: written from the digest of the Root Cause Analysis, document #{id.ToString(System.Globalization.CultureInfo.InvariantCulture)}.");
-                    return false;
+                    return null;
                 }
             }
 
-            BenchmarkRootCauseDigest.ApplyNone(sheet, BenchmarkRootCauseSources.FailedNote);
-            job.SetRootCauseSource(row, BenchmarkRootCauseSources.None, null, BenchmarkRootCauseSources.FailedNote);
-            job.AddLog($"{name}: written without the Root Cause Analysis, which failed.", "warning");
-            return true;
+            job.AddLog($"{name}: not written, because the Root Cause Analysis of this job failed; no model call was made for it.", "error");
+            return BenchmarkRootCauseSources.RootCauseFailedError;
         }
 
-        if (sheet.RootCause != null && await StoredRootCauseAsync(origin, prep, ct) is { } match)
+        var (scope, subjectKey) = BenchmarkRootCauseReadiness.SubjectOf(origin, prep);
+        string? comparisonKey = origin == BenchmarkReportDocumentOrigin.ReportPack && scope == BenchmarkReportScope.Model
+            ? BenchmarkReportComparisonKey.From(job.Request.RunIds ?? new List<long>(), job.Request.GroupIds ?? new List<long>(), job.Request.BatteryRunIds)
+            : null;
+        var (readiness, match) = await BenchmarkRootCauseReadiness.EvaluateAsync(_db, origin, scope, subjectKey, prep, ct, comparisonKey);
+        if (match != null)
         {
             match.ApplyTo(sheet, BenchmarkRootCauseSources.Stored);
             job.SetRootCauseSource(row, BenchmarkRootCauseSources.Stored, match.DocumentId, null);
             job.AddLog($"{name}: written from the digest of the stored Root Cause Analysis, document #{match.DocumentId.ToString(System.Globalization.CultureInfo.InvariantCulture)}, "
                 + "written from the same data.");
-            return false;
+            return null;
         }
 
-        BenchmarkRootCauseDigest.ApplyNone(sheet, BenchmarkRootCauseSources.NoMatchNote);
-        job.SetRootCauseSource(row, BenchmarkRootCauseSources.None, null, BenchmarkRootCauseSources.NoMatchNote);
-        job.AddLog($"{name}: no Root Cause Analysis of this subject was written from the same data, so it is written without one.");
-        return false;
-    }
-
-    /// <summary>
-    /// The digest of the newest stored Root Cause Analysis of the preparation's subject, of <paramref name="origin"/> and its
-    /// scope, among the newest <see cref="StoredRootCauseCandidates"/>, whose fact sheet's facts hash to the preparation's
-    /// (<see cref="BenchmarkRootCauseDigest.FactsSha256"/>); null when none does.
-    /// </summary>
-    private async Task<BenchmarkRootCauseDigest?> StoredRootCauseAsync(
-        BenchmarkReportDocumentOrigin origin, BenchmarkReportPackPreparation prep, CancellationToken ct)
-    {
-        bool comparisonScope = prep.Scope == BenchmarkReportScope.Comparison;
-        string subjectKey = comparisonScope ? prep.Sheet.SubjectKey : prep.Subject.Key;
-        var scope = origin == BenchmarkReportDocumentOrigin.ReportPack ? prep.Scope : BenchmarkReportScope.Model;
-        var candidates = await _db.BenchmarkReportDocuments
-            .AsNoTracking()
-            .IgnoreAutoIncludes()
-            .Where(d => d.SubjectKey == subjectKey && d.Audience == BenchmarkReportAudience.RootCauseAnalysis
-                        && d.Origin == origin && d.Scope == scope)
-            .OrderByDescending(d => d.Id)
-            .Take(StoredRootCauseCandidates)
-            .ToListAsync(ct);
-        if (candidates.Count == 0) return null;
-
-        string hash = BenchmarkRootCauseDigest.FactsSha256(prep.Sheet);
-        foreach (var candidate in candidates)
+        if (SummaryWithoutRootCause)
         {
-            try
-            {
-                var stored = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(candidate.FactsJson);
-                if (!string.Equals(BenchmarkRootCauseDigest.FactsSha256(stored), hash, StringComparison.Ordinal)) continue;
-                if (BenchmarkRootCauseDigest.From(candidate) is { } digest) return digest;
-            }
-            catch (System.Text.Json.JsonException ex)
-            {
-                _logger.LogWarning(ex, "The fact sheet of Root Cause Analysis {DocumentId} could not be read.", candidate.Id);
-            }
+            BenchmarkRootCauseDigest.ApplyNone(sheet, BenchmarkRootCauseSources.NoMatchNote);
+            job.SetRootCauseSource(row, BenchmarkRootCauseSources.None, null, BenchmarkRootCauseSources.NoMatchNote);
+            job.AddLog($"{name}: no Root Cause Analysis of this subject was written from the same data, so it is written without one.");
+            return null;
         }
-        return null;
+
+        string message = readiness.Message ?? BenchmarkRootCauseReadiness.MissingMessage(BenchmarkRootCauseReadiness.SubjectNounOf(origin));
+        job.AddLog($"{name}: not written; no model call was made for it. {message}", "error");
+        return message;
     }
 
     /// <summary>
@@ -1495,8 +1480,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     /// or <see cref="BenchmarkReportPackCallKinds.Headline"/> for the headline alone); its reply is used only when
     /// it leaves no more blocking issues and nothing fatal. Every ending records the first-turn, revision and final
     /// issues and the word counts on the progress row, and a failure its last reply. A stored Root Cause Analysis
-    /// then gets its server-drawn charts. An Executive Summary written <paramref name="withoutRootCause"/>, the Root Cause
-    /// Analysis its job wrote first having failed, carries a rule-49 note on its headline and completes with warnings.
+    /// then gets its server-drawn charts.
     /// </summary>
     private async Task<bool> WriteDocumentAsync(
         BenchmarkReportPackJob job,
@@ -1510,8 +1494,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         ModelPricing? pricing,
         int excerptChars,
         int maxOutputTokens,
-        CancellationToken ct,
-        bool withoutRootCause = false)
+        CancellationToken ct)
     {
         var audience = progress.Audience;
         bool comparisonScope = prep.Scope == BenchmarkReportScope.Comparison;
@@ -1581,16 +1564,6 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
 
         BenchmarkReportWriterOutput output;
         var notes = new List<BenchmarkReportValidationNote>(prep.Notes);
-        if (withoutRootCause)
-        {
-            notes.Add(new BenchmarkReportValidationNote
-            {
-                Rule = BenchmarkReportPackValidator.WrittenWithoutRootCauseRule,
-                Location = "headline",
-                Message = WrittenWithoutRootCauseMessage,
-                Dropped = false
-            });
-        }
         try
         {
             var first = await RunTurnAsync(job, progress, runRequest, config, pricing, BenchmarkReportPackCallKinds.Draft, ct);
@@ -1757,7 +1730,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                     job.SetDocumentPhase(progress, BenchmarkReportPackPhases.CheckingRevision);
                     CutOffAt(finalTurn);
 
-                    var reply = finalTurn.Error == null ? BenchmarkReportPackParser.Parse(finalTurn.FinalText) : null;
+                    var reply = finalTurn.Error == null ? ParseReply(finalTurn.FinalText) : null;
                     IReadOnlyList<BenchmarkReportValidationNote> turnHeadlineIssues = Array.Empty<BenchmarkReportValidationNote>();
                     string? turnFailure;
                     if (finalTurn.Error != null)
@@ -1904,7 +1877,6 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         // note (C6 or C7 recorded against the kept text).
         bool chatConsistency = prep.Scope == BenchmarkReportScope.ChatConsistency;
         var status = notes.Any(n => n.Dropped || BenchmarkReportPackValidator.IsWarningRule(n.Rule) || IsKeptWordCapNote(n)
-                                    || n.Rule == BenchmarkReportPackValidator.WrittenWithoutRootCauseRule
                                     || (chatConsistency && IsChatConsistencyDocumentNote(n)))
             ? BenchmarkReportDocumentStatus.CompletedWithWarnings
             : BenchmarkReportDocumentStatus.Completed;
@@ -2166,9 +2138,6 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     /// <summary>The Markdown italics that open a conclusions paragraph Overseer wrote in place of a removed one.</summary>
     public const string AddedByOverseer = "*Added by Overseer, because the writer's paragraph on this axis was removed:*";
 
-    /// <summary>The rule-49 note of an Executive Summary whose job's Root Cause Analysis failed or was canceled before it.</summary>
-    public const string WrittenWithoutRootCauseMessage = "Written without the Root Cause Analysis, which failed.";
-
     /// <summary>
     /// The documents of <c>ReplaceDocumentIds</c> this new document replaces, always of its audience:
     /// for a Report Pack document, Report Pack documents of the same comparison and of the same covered
@@ -2342,6 +2311,83 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         }
     }
 
+    /// <summary>The spans whose commas and semicolons are left alone: a <c>{{…}}</c> token, a URL and inline code.</summary>
+    private static readonly System.Text.RegularExpressions.Regex SpacingProtectedRegex = new(
+        @"\{\{[^{}]*\}\}|https?://\S+|`[^`]*`",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>The place after a comma or a semicolon that a letter follows at once.</summary>
+    private static readonly System.Text.RegularExpressions.Regex MissingSpaceRegex = new(
+        @"(?<=[,;])(?=\p{L})",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>The writer's reply parsed (<see cref="BenchmarkReportPackParser.Parse"/>), its prose spaced (<see cref="NormalizeSpacing(BenchmarkReportWriterOutput)"/>).</summary>
+    private static BenchmarkReportParseResult ParseReply(string? rawText)
+    {
+        var parsed = BenchmarkReportPackParser.Parse(rawText);
+        if (parsed.Output != null) NormalizeSpacing(parsed.Output);
+        return parsed;
+    }
+
+    /// <summary>
+    /// <paramref name="text"/> with one space after each comma or semicolon that a letter follows at once, outside
+    /// <c>{{…}}</c> tokens, URLs and inline code: <c>In addition,Completeness</c> reads <c>In addition, Completeness</c>,
+    /// while <c>1,000</c> and <c>{{a,b}}</c> are kept.
+    /// </summary>
+    internal static string NormalizeSpacing(string text)
+    {
+        if (string.IsNullOrEmpty(text) || text.IndexOfAny(new[] { ',', ';' }) < 0) return text;
+
+        var result = new System.Text.StringBuilder(text.Length + 8);
+        int at = 0;
+        foreach (System.Text.RegularExpressions.Match span in SpacingProtectedRegex.Matches(text))
+        {
+            result.Append(MissingSpaceRegex.Replace(text.Substring(at, span.Index - at), " "));
+            result.Append(span.Value);
+            at = span.Index + span.Length;
+        }
+        result.Append(MissingSpaceRegex.Replace(text.Substring(at), " "));
+        return result.ToString();
+    }
+
+    /// <summary>
+    /// Every prose string of a writer reply spaced by <see cref="NormalizeSpacing(string)"/>: the headline, the sections,
+    /// the items of every list, the question topics and the writer's hypotheses. Evidence keys, letters and loci are left
+    /// alone. Raises no note.
+    /// </summary>
+    internal static void NormalizeSpacing(BenchmarkReportWriterOutput output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        output.Headline = NormalizeSpacing(output.Headline);
+        if (output.Sections != null)
+        {
+            foreach (string slot in output.Sections.Keys.ToList())
+            {
+                output.Sections[slot] = NormalizeSpacing(output.Sections[slot]);
+            }
+        }
+
+        var items = (output.Strengths ?? new List<BenchmarkReportWriterItem>())
+            .Concat(output.Weaknesses ?? new List<BenchmarkReportWriterItem>())
+            .Concat(output.Observations ?? new List<BenchmarkReportWriterItem>())
+            .Concat((output.Models ?? new List<BenchmarkReportModelPoints>()).SelectMany(m => m.Points ?? new List<BenchmarkReportWriterItem>()));
+        foreach (var item in items)
+        {
+            item.Text = NormalizeSpacing(item.Text);
+        }
+        foreach (var topic in output.QuestionTopics ?? new List<BenchmarkReportQuestionTopic>())
+        {
+            topic.Topic = NormalizeSpacing(topic.Topic);
+        }
+        foreach (var hypothesis in output.WriterHypotheses ?? new List<BenchmarkReportWriterHypothesis>())
+        {
+            hypothesis.Statement = NormalizeSpacing(hypothesis.Statement);
+            hypothesis.RefutedIf = NormalizeSpacing(hypothesis.RefutedIf);
+            hypothesis.For = (hypothesis.For ?? new List<string>()).Select(s => NormalizeSpacing(s)).ToList();
+            hypothesis.Against = (hypothesis.Against ?? new List<string>()).Select(s => NormalizeSpacing(s)).ToList();
+        }
+    }
+
     /// <summary>
     /// The parsed output (null when unparseable) and every validation issue, a parse failure included. The parse failure
     /// of a reply that stopped at the output limit (<paramref name="cutOffAtTokens"/>) says so. Question topics of a
@@ -2351,7 +2397,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     private (BenchmarkReportWriterOutput? Output, IReadOnlyList<BenchmarkReportValidationNote> Issues) ParseAndValidate(
         BenchmarkReportAudience audience, string? rawText, BenchmarkReportPackPreparation prep, int? cutOffAtTokens = null)
     {
-        var parsed = BenchmarkReportPackParser.Parse(rawText);
+        var parsed = ParseReply(rawText);
         if (!parsed.Success || parsed.Output == null)
         {
             string error = parsed.Error ?? "The reply is not a JSON object.";

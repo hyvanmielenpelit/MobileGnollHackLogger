@@ -486,9 +486,7 @@ public static partial class BenchmarkReportPackPrompt
                      .Where(f => !BenchmarkRootCauseDigest.IsDigestKey(f.Key))
                      .OrderBy(f => f.Key, StringComparer.Ordinal))
         {
-            Line(sb, fact.Available
-                ? $"{fact.Key} = {OneLine(fact.Display)}"
-                : $"{fact.Key} = unavailable: {OneLine(string.IsNullOrWhiteSpace(fact.UnavailableReason) ? "no reason recorded" : fact.UnavailableReason)}");
+            Line(sb, FactLine(fact));
         }
         Line(sb);
 

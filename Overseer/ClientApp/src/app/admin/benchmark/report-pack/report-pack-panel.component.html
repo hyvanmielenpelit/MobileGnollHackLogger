@@ -126,6 +126,7 @@
                                        (checkChange)="onDocumentCheck($event)"
                                        (chooseModels)="chooseModels($event)"
                                        (documentDeleted)="onDocumentDeleted($event)"></app-comparison-documents-status>
+      <p class="visually-hidden rp-documents-status" role="status" aria-live="polite">{{ documentsAnnouncement }}</p>
     </div>
 
     <fieldset class="gh-fieldset rp-charts-choice">

@@ -136,15 +136,73 @@
         <p class="form-hint bai-not-writable" [id]="notWritableId">{{ notWritableReason }}</p>
       }
 
+      <!-- The Root Cause Analysis first, the Executive Summary nested under it: the summary is written
+           from it. A blocked summary is aria-disabled, not disabled: focusable, its click refused, and
+           described by its reason line. -->
       <fieldset class="gh-choice rr-ai-audiences">
         <legend>Documents</legend>
-        @for (audience of missingAudiences; track audience) {
-          <label class="checkbox-label">
-            <input type="checkbox" [id]="audienceId(audience)" [attr.data-audience]="audience"
-                   [checked]="isChecked(audience)" (change)="toggleAudience(audience, $event)">
-            {{ audienceLabel(audience) }}
-          </label>
+        @if (rootCauseMissing || rootCauseRewriteOffered) {
+          <ul class="rr-ai-choices" role="list">
+            <li class="rr-ai-choice">
+              @if (rootCauseMissing) {
+                <label class="checkbox-label">
+                  <input type="checkbox" [id]="audienceId(rootCauseAudience)" [attr.data-audience]="rootCauseAudience"
+                         [checked]="isChecked(rootCauseAudience)" (change)="toggleAudience(rootCauseAudience, $event)">
+                  {{ audienceLabel(rootCauseAudience) }}
+                </label>
+              } @else {
+                <label class="checkbox-label">
+                  <input type="checkbox" class="rr-ai-rca-rewrite" [id]="rootCauseRewriteId"
+                         [attr.aria-describedby]="rootCauseRewriteNoteId"
+                         [checked]="rootCauseRewriteChecked" (change)="toggleRootCauseRewrite($event)">
+                  Root Cause Analysis — rewrite
+                </label>
+                <p class="form-hint rr-ai-choice-note" [id]="rootCauseRewriteNoteId">Replaces Root Cause Analysis #{{ storedRootCauseId }}, written from different data.</p>
+              }
+              @if (summaryMissing) {
+                <ul class="rr-ai-choices rr-ai-choices-nested" role="list">
+                  <li class="rr-ai-choice">
+                    <ng-container [ngTemplateOutlet]="summaryChoice"></ng-container>
+                  </li>
+                </ul>
+              }
+            </li>
+          </ul>
+        } @else if (summaryMissing) {
+          <ul class="rr-ai-choices" role="list">
+            <li class="rr-ai-choice">
+              <ng-container [ngTemplateOutlet]="summaryChoice"></ng-container>
+            </li>
+          </ul>
         }
+        <ng-template #summaryChoice>
+          @let summary = summaryAvailability;
+          <label class="checkbox-label rr-ai-es-choice" [class.is-blocked]="!summary.available">
+            <input type="checkbox" [id]="audienceId(summaryAudience)" [attr.data-audience]="summaryAudience"
+                   [attr.aria-disabled]="summary.available ? null : 'true'"
+                   [attr.aria-describedby]="summaryDescribedBy"
+                   [checked]="isChecked(summaryAudience)"
+                   (click)="onSummaryClick($event)" (change)="toggleAudience(summaryAudience, $event)">
+            {{ audienceLabel(summaryAudience) }}
+          </label>
+          <p class="form-hint rr-ai-es-reason" [id]="summaryReasonId" [class.is-blocked]="!summary.available">
+            {{ summary.reason }}
+            @if (summary.retry) {
+              <button type="button" class="btn-link rr-ai-es-retry" (click)="loadSummaryReadiness()">Try again</button>
+            }
+          </p>
+          @if (summaryErrorShown) {
+            <p class="gh-field-error rr-ai-es-error" [id]="summaryErrorId" role="alert">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>
+                {{ summaryBlockedError }}
+                @if (summaryFixLabel) {
+                  <button type="button" class="btn-link rr-ai-es-fix" (click)="applySummaryFix()">{{ summaryFixLabel }}</button>
+                }
+              </span>
+            </p>
+          }
+        </ng-template>
         @if (writeOrderHint) {
           <p class="form-hint rr-ai-order-hint">{{ writeOrderHint }}</p>
         }

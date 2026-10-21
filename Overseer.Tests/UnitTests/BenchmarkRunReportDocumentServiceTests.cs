@@ -39,8 +39,11 @@ public class BenchmarkRunReportDocumentServiceTests
         BenchmarkReportAudience.RootCauseAnalysis
     };
 
-    /// <summary>The run-completion documents whose prompt can be built and estimated today.</summary>
-    private static readonly List<BenchmarkReportAudience> EstimableAudiences = new() { BenchmarkReportAudience.ExecutiveSummary };
+    /// <summary>
+    /// The run-completion documents an estimate prices: both, since the Executive Summary alone needs a usable stored
+    /// Root Cause Analysis and is refused without one.
+    /// </summary>
+    private static readonly List<BenchmarkReportAudience> EstimableAudiences = AllAudiences.ToList();
 
     // --- Scheduling ----------------------------------------------------------------------------------
 
@@ -484,11 +487,10 @@ public class BenchmarkRunReportDocumentServiceTests
         Assert.Equal(2, (await h.DocumentsAsync()).Count);
     }
 
-    [Theory]
-    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.RootCauseAnalysis)]
-    public async Task WriteNow_WritesOnlyTheRequestedDocument_AndLeavesTheOthersMissing(BenchmarkReportAudience audience)
+    [Fact]
+    public async Task WriteNow_WritesOnlyTheRequestedDocument_AndLeavesTheOthersMissing()
     {
+        const BenchmarkReportAudience audience = BenchmarkReportAudience.RootCauseAnalysis;
         await using var h = await Harness.CreateAsync(withWriter: false);
 
         var accepted = Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(h.RunId, new WriteRunReportDocumentsRequest
@@ -584,17 +586,19 @@ public class BenchmarkRunReportDocumentServiceTests
             await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
         }
 
-        await WriteAsync(h.WriterConfig.Id, BenchmarkReportAudience.ExecutiveSummary);
-        await WriteAsync(secondWriterId, BenchmarkReportAudience.RootCauseAnalysis);
+        // The Executive Summary alone is written from the stored Root Cause Analysis, so that one comes first.
+        await WriteAsync(h.WriterConfig.Id, BenchmarkReportAudience.RootCauseAnalysis);
+        await h.MakeRootCauseUsableAsync();
+        await WriteAsync(secondWriterId, BenchmarkReportAudience.ExecutiveSummary);
 
         var documents = await h.DocumentsAsync();
         Assert.Equal(2, documents.Count);
         var executive = documents.Single(d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
         var rootCause = documents.Single(d => d.Audience == BenchmarkReportAudience.RootCauseAnalysis);
-        Assert.Equal(h.WriterConfig.Id, executive.WriterConfigId);
-        Assert.Equal("Claude Opus 5.5", executive.WriterDisplayName);
-        Assert.Equal(secondWriterId, rootCause.WriterConfigId);
-        Assert.Equal("Gemini 3.7 Pro", rootCause.WriterDisplayName);
+        Assert.Equal(h.WriterConfig.Id, rootCause.WriterConfigId);
+        Assert.Equal("Claude Opus 5.5", rootCause.WriterDisplayName);
+        Assert.Equal(secondWriterId, executive.WriterConfigId);
+        Assert.Equal("Gemini 3.7 Pro", executive.WriterDisplayName);
         Assert.Equal(2, h.Writer.JobCalls);
 
         var run = await h.RunAsync();
@@ -603,9 +607,164 @@ public class BenchmarkRunReportDocumentServiceTests
 
         // The second round's job replaced the first in the job view.
         var view = h.Service.TryGetJob(h.RunId)!;
-        Assert.Equal(new[] { BenchmarkReportAudience.RootCauseAnalysis }, view.Audiences);
+        Assert.Equal(new[] { BenchmarkReportAudience.ExecutiveSummary }, view.Audiences);
         Assert.Equal(secondWriterId, view.WriterConfigId);
         Assert.Equal("Google", view.WriterProvider);
+    }
+
+    // --- The Executive Summary needs its Root Cause Analysis -------------------------------------------
+
+    /// <summary>A 409 body's <c>error</c>, <c>code</c> and <c>rootCauseDocumentId</c>, read from its JSON.</summary>
+    private static (string? Error, string? Code, long? RootCauseDocumentId) RootCauseConflictOf(IActionResult result)
+    {
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(conflict.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        var root = json.RootElement;
+        var id = root.GetProperty("rootCauseDocumentId");
+        return (root.GetProperty("error").GetString(), root.GetProperty("code").GetString(),
+            id.ValueKind == JsonValueKind.Null ? null : id.GetInt64());
+    }
+
+    [Fact]
+    public async Task WriteNow_RefusesTheExecutiveSummaryAlone_UntilTheStoredRootCauseAnalysisIsUsable()
+    {
+        await using var h = await Harness.CreateAsync(withWriter: false);
+        var executiveOnly = new WriteRunReportDocumentsRequest
+        {
+            WriterModelConfigurationId = h.WriterConfig.Id,
+            Audiences = new List<BenchmarkReportAudience> { BenchmarkReportAudience.ExecutiveSummary }
+        };
+
+        var missing = RootCauseConflictOf(await h.Controller().WriteRunReportDocuments(h.RunId, executiveOnly, Ct));
+        Assert.Equal(
+            "The Executive Summary is written from the Root Cause Analysis, and this run has none. Write both: check Root Cause Analysis too.",
+            missing.Error);
+        Assert.Equal("rootCauseMissing", missing.Code);
+        Assert.Null(missing.RootCauseDocumentId);
+        Assert.Equal(0, h.Writer.JobCalls);
+        var untouched = await h.RunAsync();
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.NotRequested, untouched.ReportDocumentsStatus);
+        Assert.Null(untouched.ReportWriterModelConfigurationId);
+
+        // A Root Cause Analysis written from other data than the run has now is outdated.
+        Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(h.RunId, new WriteRunReportDocumentsRequest
+        {
+            WriterModelConfigurationId = h.WriterConfig.Id,
+            Audiences = new List<BenchmarkReportAudience> { BenchmarkReportAudience.RootCauseAnalysis }
+        }, Ct));
+        await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
+        long rootCauseId = Assert.Single(await h.DocumentsAsync()).Id;
+
+        var outdated = RootCauseConflictOf(await h.Controller().WriteRunReportDocuments(h.RunId, executiveOnly, Ct));
+        Assert.Equal(
+            $"The stored Root Cause Analysis (#{rootCauseId}) was written from different data than this run has now, so the Executive Summary "
+            + "cannot be written from it. Rewrite the Root Cause Analysis with it: check Root Cause Analysis — rewrite.",
+            outdated.Error);
+        Assert.Equal("rootCauseOutdated", outdated.Code);
+        Assert.Equal(rootCauseId, outdated.RootCauseDocumentId);
+        Assert.Equal(1, h.Writer.JobCalls);
+
+        // Written from the run's current data, it lets the summary alone through.
+        await h.MakeRootCauseUsableAsync();
+        var accepted = Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(h.RunId, executiveOnly, Ct));
+        Assert.Equal(new[] { BenchmarkReportAudience.ExecutiveSummary }, Assert.IsType<WriteRunReportDocumentsResponse>(accepted.Value).Audiences);
+        await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
+    }
+
+    [Fact]
+    public async Task WriteNow_AcceptsTheExecutiveSummaryWithItsOutdatedRootCauseAnalysisReplaced()
+    {
+        await using var h = await Harness.CreateAsync(withWriter: false);
+        Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(h.RunId, new WriteRunReportDocumentsRequest
+        {
+            WriterModelConfigurationId = h.WriterConfig.Id,
+            Audiences = new List<BenchmarkReportAudience> { BenchmarkReportAudience.RootCauseAnalysis }
+        }, Ct));
+        await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
+        long rootCauseId = Assert.Single(await h.DocumentsAsync()).Id;
+
+        var accepted = Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(h.RunId, new WriteRunReportDocumentsRequest
+        {
+            WriterModelConfigurationId = h.WriterConfig.Id,
+            Audiences = AllAudiences.ToList(),
+            ReplaceDocumentIds = new List<long> { rootCauseId }
+        }, Ct));
+
+        Assert.Equal(AllAudiences, Assert.IsType<WriteRunReportDocumentsResponse>(accepted.Value).Audiences);
+        await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
+        Assert.Equal(BenchmarkReportSlots.WriteOrder, h.Writer.LastAudiences);
+    }
+
+    [Fact]
+    public async Task SummaryReadiness_IsMissingUsableOrOutdated_AndNotFoundForAnUnknownRun()
+    {
+        await using var h = await Harness.CreateAsync(withWriter: false);
+
+        async Task<BenchmarkRootCauseReadinessDto> ReadinessAsync()
+            => Assert.IsType<BenchmarkRootCauseReadinessDto>(Assert.IsType<OkObjectResult>(
+                await h.Controller().GetRunSummaryReadiness(h.RunId, Ct)).Value);
+
+        Assert.IsType<NotFoundResult>(await h.Controller().GetRunSummaryReadiness(999999, Ct));
+
+        var missing = await ReadinessAsync();
+        Assert.Equal("missing", missing.State);
+        Assert.Null(missing.RootCauseDocumentId);
+        Assert.Equal("rootCauseMissing", missing.Code);
+        Assert.Equal(BenchmarkRootCauseReadiness.MissingMessage("run"), missing.Message);
+
+        Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(h.RunId, new WriteRunReportDocumentsRequest
+        {
+            WriterModelConfigurationId = h.WriterConfig.Id,
+            Audiences = new List<BenchmarkReportAudience> { BenchmarkReportAudience.RootCauseAnalysis }
+        }, Ct));
+        await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
+        long rootCauseId = Assert.Single(await h.DocumentsAsync()).Id;
+
+        var outdated = await ReadinessAsync();
+        Assert.Equal("outdated", outdated.State);
+        Assert.Equal(rootCauseId, outdated.RootCauseDocumentId);
+        Assert.Equal("rootCauseOutdated", outdated.Code);
+        Assert.Equal(BenchmarkRootCauseReadiness.OutdatedMessage("run", rootCauseId), outdated.Message);
+
+        await h.MakeRootCauseUsableAsync();
+        var usable = await ReadinessAsync();
+        Assert.Equal("usable", usable.State);
+        Assert.Equal(rootCauseId, usable.RootCauseDocumentId);
+        Assert.Null(usable.Message);
+        Assert.Null(usable.Code);
+
+        // A run that cannot be prepared is outdated with the refusal and no code.
+        await h.UpdateRunAsync(r => r.AssessmentJson = null);
+        var unprepared = await ReadinessAsync();
+        Assert.Equal("outdated", unprepared.State);
+        Assert.Equal(rootCauseId, unprepared.RootCauseDocumentId);
+        Assert.Null(unprepared.Code);
+        Assert.Contains("final synthesis", unprepared.Message);
+
+        Assert.Equal(1, h.Writer.JobCalls);
+    }
+
+    [Fact]
+    public async Task Estimate_OfTheExecutiveSummaryAlone_CarriesTheRefusalTheWriteAnswersWith()
+    {
+        await using var h = await Harness.CreateAsync(withWriter: false);
+
+        async Task<BenchmarkRunReportEstimateDto> EstimateAsync(params BenchmarkReportAudience[] audiences)
+            => Assert.IsType<BenchmarkRunReportEstimateDto>(Assert.IsType<OkObjectResult>(
+                await h.Controller().EstimateRunReportDocuments(h.RunId, new BenchmarkRunReportEstimateRequest
+                {
+                    WriterModelConfigurationId = h.WriterConfig.Id,
+                    Audiences = audiences.ToList()
+                }, Ct)).Value);
+
+        var alone = await EstimateAsync(BenchmarkReportAudience.ExecutiveSummary);
+        Assert.Equal(BenchmarkRootCauseReadiness.MissingMessage("run"), alone.Refusal);
+        Assert.Single(alone.Estimates);
+
+        Assert.Null((await EstimateAsync(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis)).Refusal);
+        Assert.Null((await EstimateAsync(BenchmarkReportAudience.RootCauseAnalysis)).Refusal);
+        Assert.Equal(0, h.Writer.JobCalls);
     }
 
     [Fact]
@@ -1081,7 +1240,7 @@ public class BenchmarkRunReportDocumentServiceTests
         Assert.Null(sameProvider.Refusal);
         Assert.Equal("reportWriter", sameProvider.SameProviderWarning?.Role);
         Assert.Equal("GPT Sol", sameProvider.SameProviderWarning?.AssessorModelDisplayName);
-        Assert.Single(sameProvider.Estimates);
+        Assert.Equal(EstimableAudiences.Count, sameProvider.Estimates.Count);
 
         var sameModel = await EstimateAsync(sameModelId, EstimableAudiences);
         Assert.Equal(BenchmarkRunReportDocumentService.ModelUnderTestMessage, sameModel.Refusal);
@@ -1430,6 +1589,28 @@ public class BenchmarkRunReportDocumentServiceTests
         {
             await using var db = new ApplicationDbContext(Options);
             return await db.BenchmarkReportDocuments.AsNoTracking().IgnoreAutoIncludes().OrderBy(d => d.Id).ToListAsync();
+        }
+
+        /// <summary>
+        /// Gives the run's newest stored Root Cause Analysis the fact sheet the run is prepared with now, as the estimate
+        /// prepares it, so an Executive Summary may be written from it.
+        /// </summary>
+        public async Task MakeRootCauseUsableAsync()
+        {
+            await using var db = new ApplicationDbContext(Options);
+            var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(
+                db, new BenchmarkModelComparisonService(db),
+                BenchmarkRunReportDocumentService.RunRequest(RunId, new[] { BenchmarkReportAudience.ExecutiveSummary }, 0),
+                BenchmarkReportPackPreparation.AnswerExcerptChars(Configuration), Ct, Configuration);
+            Assert.True(prep != null, refusal);
+            Assert.NotNull(prep!.Sheet.RootCause);
+
+            var rootCause = await db.BenchmarkReportDocuments
+                .Where(d => d.SubjectKey == BenchmarkRunReportDocumentService.SubjectKeyOf(RunId) && d.Audience == BenchmarkReportAudience.RootCauseAnalysis)
+                .OrderByDescending(d => d.Id)
+                .FirstAsync();
+            rootCause.FactsJson = BenchmarkReportJson.Serialize(prep.Sheet);
+            await db.SaveChangesAsync();
         }
 
         public async ValueTask DisposeAsync() => await _provider.DisposeAsync();

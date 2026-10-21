@@ -224,11 +224,11 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFiftySeven()
+    public void HarnessVersion_IsFiftyEight()
     {
-        // Harness 57: wiki title equality ignores one leading "The" on either side, and the tool
-        // policy asks for a role-relative helper's definition before stating what it covers.
-        Assert.Equal("57", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 58: the harness-57 tool-policy sentence on role-relative helpers is removed, so
+        // the tool guides and the candidate system prompt hash as they did under harness 56.
+        Assert.Equal("58", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]

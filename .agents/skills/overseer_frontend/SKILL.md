@@ -1590,8 +1590,11 @@ To find specific popups, look in the corresponding component's `.html` template:
     when the dialog closes. When a document is written, an `alert-info` *Downloads* notice holds **Open
     Download Center** (*file-with-arrow*), and focus returns to that button when the Download Center
     closes. When the finished run lacks a document, the *Write missing reports* fieldset holds a
-    checkbox per missing document, the **Report writer** picker — preselected with the run's own
-    writer, else the launcher's when it needs neither a refusal nor a warning for the run's candidate —
+    checkbox per missing document (the Root Cause Analysis first, the Executive Summary nested under it
+    and `aria-disabled` with a reason line while it has no Root Cause Analysis to be written from), the
+    **Report writer** picker — preselected with the run's own writer, else the writer remembered in
+    `localStorage` (`report-writer-memory.ts`), else the launcher's, each only when it needs neither a
+    refusal nor a warning for the run's candidate —
     with a dialog-mode info tip (*Choosing a report writer*) of per-document advice, **Write Report** /
     **Write Reports** (*zap*) vertically centered beside the picker, a live cost estimate (debounced,
     from the estimate endpoint) shown as the `#rrWriteEstimate` *Estimated cost* panel — a quiet
@@ -2286,7 +2289,8 @@ To find specific popups, look in the corresponding component's `.html` template:
       picker's `aria-describedby`.
     - **Documents of this comparison**: `app-comparison-documents-status`
       (`report-pack/comparison-documents-status.component.*`, view built by `comparisonDocumentsView`):
-      whole comparison, two rows (Executive Summary, Root Cause Analysis) for the chosen set, a written
+      whole comparison, two rows (Root Cause Analysis, Executive Summary; the summary's checkbox
+      `aria-disabled` with `blockedReason` while it has no Root Cause Analysis to be written from) for the chosen set, a written
       Root Cause Analysis row adding **Redraw charts** and hosting `app-root-cause-runs`, and a closed `details.gh-disclosure` *Other model
       sets (n)* (each set's label, rows, and a **Choose these models** `.btn-link`, `aria-disabled` with
       its reason when a model of it is Excluded now or it is outside 2 to 12); one model at a time, a

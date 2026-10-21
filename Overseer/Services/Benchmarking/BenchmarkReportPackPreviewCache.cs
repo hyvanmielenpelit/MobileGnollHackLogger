@@ -55,6 +55,9 @@ public sealed class BenchmarkReportPackPreviewEntry
 
     /// <summary>Each offered document's system prompt plus user message length, in characters.</summary>
     public IReadOnlyDictionary<BenchmarkReportAudience, int> PromptChars { get; init; } = new Dictionary<BenchmarkReportAudience, int>();
+
+    /// <summary>The sheet's <see cref="BenchmarkRootCauseDigest.FactsSha256"/>, which a stored Root Cause Analysis is matched against.</summary>
+    public string FactsSha256 { get; init; } = string.Empty;
 }
 
 /// <summary>

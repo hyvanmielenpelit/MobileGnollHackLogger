@@ -42,6 +42,28 @@ public class BenchmarkReportFactsTests
     }
 
     [Fact]
+    public void TheChatConfiguration_IsWrittenInClauses_WithNoParenthesis()
+    {
+        Assert.Equal("Gameplay Help; concise response style, verboseMode false; tools enabled; web search disabled; subagents disabled; source code references disallowed",
+            BenchmarkReportFacts.ChatConfigurationText(new BenchmarkCandidatePromptOptions { AllowSourceCodeReferences = false }));
+        Assert.Equal("Mode 2; detailed response style, verboseMode true; tools disabled; web search enabled; subagents enabled; source code references allowed",
+            BenchmarkReportFacts.ChatConfigurationText(new BenchmarkCandidatePromptOptions
+            {
+                OverseerMode = 2, VerboseMode = true, EnableToolUse = false, EnableWebSearch = true, EnableSubAgents = true
+            }));
+
+        var comparison = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80));
+        var sheet = BuildSheet(Input(comparison, "run:1", SimpleRun(1, "OpenAI")));
+
+        var chat = FactOf(sheet, "config.chat");
+        Assert.DoesNotContain('(', chat.Display);
+        Assert.DoesNotContain(')', chat.Display);
+        Assert.Equal(BenchmarkReportFacts.ChatConfigurationText(BenchmarkCandidatePromptOptions.FromJson(null)), chat.Display);
+        // The one-line summary other report text uses keeps its own form.
+        Assert.Contains("(verboseMode: false)", new BenchmarkCandidatePromptOptions().Describe());
+    }
+
+    [Fact]
     public void AnExcludedSubject_IsRefused_WithTheComparisonsOwnExplanation()
     {
         var comparison = Comparison(

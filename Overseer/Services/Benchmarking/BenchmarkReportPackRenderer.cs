@@ -143,8 +143,11 @@ public static partial class BenchmarkReportPackRenderer
     /// names that source, and a summary with a digest ends in What to look at next. A ruled-out hypothesis is never an axis's
     /// best: the Root Cause Analysis' Conclusions print such an axis's best hypothesis as none. The PDF layout, the Word
     /// layout and the chart layout did not change with version 25.
+    /// From version 26 the digest names the subject by its display name, a next run reads "…, for purpose …." and a check ends in a
+    /// period, the chat configuration fact holds no parenthesis, and a known fact about a plural cost or time component
+    /// takes a plural verb. The PDF layout, the Word layout and the chart layout did not change with version 26.
     /// </summary>
-    public const int ReportFormatVersion = 25;
+    public const int ReportFormatVersion = 26;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
@@ -199,8 +202,11 @@ public static partial class BenchmarkReportPackRenderer
     /// model-scope version 25: its header names the digest's source and a summary with a digest ends in What to look at next.
     /// A ruled-out hypothesis is never an axis's best. The PDF layout, the Word layout and the chart layout did not change
     /// with version 29.
+    /// From version 30 a digest's next run reads "…, for purpose …." and a check ends in a period, the per-model chat
+    /// configuration fact holds no parenthesis, and a known fact about a plural cost or time component takes a plural verb.
+    /// The PDF layout, the Word layout and the chart layout did not change with version 30.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 29;
+    public const int ComparisonReportFormatVersion = 30;
 
     /// <summary>The comparison format version whose answer excerpts were first allotted in rounds across the questions.</summary>
     private const int RoundExcerptsFormatVersion = 20;

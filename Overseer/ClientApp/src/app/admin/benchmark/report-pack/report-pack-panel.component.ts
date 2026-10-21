@@ -26,6 +26,7 @@ import {
   BenchmarkReportPackPricingBasis,
   BenchmarkReportPackRequest,
   BenchmarkReportScope,
+  BenchmarkRootCauseRefusalDto,
   SameProviderWarningDto
 } from '../../../services/admin-benchmark.service';
 import { AdminService, SystemAiConfigDto } from '../../../services/admin.service';
@@ -41,6 +42,11 @@ import { rovingTabIndex } from '../../../utils/roving-tab.util';
 import { rememberedPdfPaper } from '../download-center/download-center-panel.component';
 import { RunReportFrameComponent } from '../run-report-frame/run-report-frame.component';
 import { REPORT_PACK_WRITER_ADVICE, REPORT_WRITER_ADVICE_LEAD } from '../run-ai-reports/report-writer-advice';
+import {
+  REPORT_PACK_STORAGE_KEY,
+  rememberReportWriterId,
+  rememberedReportWriterId
+} from '../run-ai-reports/report-writer-memory';
 import type { ClientPollError } from '../run-ai-reports/run-report-writing-diagnostics';
 import { formatUtcSeconds } from '../run-ai-reports/run-report-writing-diagnostics';
 import type {
@@ -183,8 +189,12 @@ export const REPORT_PACK_POLL_MS = 2000;
 /** The longest wait between progress requests after repeated failures. */
 export const REPORT_PACK_POLL_MAX_BACKOFF_MS = 30000;
 
-/** The per-viewer memory of the last writer used, the document scope and the sidebar's width. */
-export const REPORT_PACK_STORAGE_KEY = 'overseer.benchmark.reportPack';
+/**
+ * The per-viewer memory of the document scope and the sidebar's width. The last writer used is the
+ * shared report writer memory (`report-writer-memory.ts`), which falls back to this record's older
+ * `writerConfigId`.
+ */
+export { REPORT_PACK_STORAGE_KEY };
 
 /** The estimate warns from this share of the writer's context window; the server refuses from 0.9. */
 export const REPORT_PACK_CONTEXT_WARNING_SHARE = 0.7;
@@ -240,6 +250,10 @@ export const REPORT_PACK_ALL_WRITTEN_REASON =
 export const REPORT_PACK_UNEVEN_MODELS_REASON =
   'One job writes the same documents for every model it covers. Check the same documents for each model, or write them in separate jobs.';
 
+/** Why Generate is unavailable when an Executive Summary is checked without the Root Cause Analysis it is written from. */
+export const REPORT_PACK_SUMMARY_NEEDS_ROOT_CAUSE_REASON =
+  'An Executive Summary needs its Root Cause Analysis: check it too, or uncheck the Executive Summary.';
+
 /** Why Generate is unavailable while a job is starting or running; the main area shows the job. */
 export const REPORT_PACK_JOB_RUNNING_REASON = 'A report pack is being written. Wait for it to finish, or cancel it.';
 
@@ -286,6 +300,16 @@ function isSameProviderWarning(body: unknown): body is SameProviderWarningDto {
   return !!body && typeof body === 'object' && typeof (body as SameProviderWarningDto).message === 'string';
 }
 
+/** A 409 that refuses an Executive Summary without a Root Cause Analysis it may be written from. */
+function isRootCauseRefusal(body: unknown): body is BenchmarkRootCauseRefusalDto {
+  if (!body || typeof body !== 'object') {
+    return false;
+  }
+  const refusal = body as Partial<BenchmarkRootCauseRefusalDto>;
+  return typeof refusal.error === 'string' && refusal.error.trim() !== ''
+    && (refusal.code === 'rootCauseMissing' || refusal.code === 'rootCauseOutdated');
+}
+
 /** The `{ error }` or plain-string message of a refused request, or null. */
 function serverMessage(error: HttpErrorResponse): string | null {
   const body = error.error;
@@ -301,8 +325,9 @@ function serverMessage(error: HttpErrorResponse): string | null {
   return null;
 }
 
-/** The panel's stored record: the last writer used, the document scope and the sidebar's width. */
+/** The panel's stored record: the document scope and the sidebar's width, kept beside an older writer choice. */
 export interface StoredReportPackSettings {
+  /** A writer stored here before the shared report writer memory, which reads it as its fallback; kept as it is. */
   writerConfigId?: number;
   sidebarWidth?: number;
   documentScope?: ReportDocumentScopeMode;
@@ -676,6 +701,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
 
   starting = false;
   startError: string | null = null;
+  /** The documents' polite status line: an Executive Summary unchecked with its Root Cause Analysis. */
+  documentsAnnouncement = '';
 
   /** The job this panel follows, and its last known state. */
   activeJobId: string | null = null;
@@ -841,6 +868,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.layoutPreviewNote = '';
     this.starting = false;
     this.startError = null;
+    this.documentsAnnouncement = '';
     this.activeJobId = null;
     this.job = null;
     this.jobEstimateUsd = null;
@@ -1160,12 +1188,33 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   // The documents of this comparison
   // -------------------------------------------------------------------------------------------
 
-  /** The preview estimates every document, so a check recomputes the total, the warning and the refusal here. */
+  /**
+   * The preview estimates every document, so a check recomputes the total, the warning and the refusal
+   * here. Unchecking a Root Cause Analysis unchecks its group's Executive Summary in the same change, which
+   * the documents status line announces; checking it again restores the admin's own choice for it.
+   */
   onDocumentCheck(change: { key: string; checked: boolean }): void {
+    const summariesBefore = new Map(this.summaryRows().map(row => [row.key, row.checked] as const));
     this.checks.set(change.key, change.checked);
     this.startError = null;
     this.refreshDocumentsView();
+    const unchecked = this.summaryRows()
+      .filter(row => row.key !== change.key && summariesBefore.get(row.key) === true && !row.checked && row.blockedReason !== null);
+    if (unchecked.length > 0) {
+      const subject = this.scopeMode === 'comparison' ? 'this comparison' : unchecked[0].subjectLabel;
+      this.documentsAnnouncement =
+        `The Executive Summary of ${subject} was unchecked: it is written from the Root Cause Analysis.`;
+    } else if (this.summaryRows().some(row => row.key !== change.key && summariesBefore.get(row.key) === false && row.checked)) {
+      this.documentsAnnouncement = '';
+    }
     this.cdr.markForCheck();
+  }
+
+  /** The Executive Summary rows of the chosen models' groups. */
+  private summaryRows(): ComparisonDocumentRow[] {
+    return this.documentsView.groups
+      .flatMap(group => group.rows)
+      .filter(row => row.audience === BenchmarkReportAudience.ExecutiveSummary);
   }
 
   onDocumentDeleted(documentId: number): void {
@@ -1732,6 +1781,18 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
       && rows.every(row => row.document !== null) && this.checkedRows.length === 0;
   }
 
+  /**
+   * A group's Executive Summary is checked while its Root Cause Analysis is neither checked nor written.
+   * The list blocks such a row, so this guards only a set that slips past it.
+   */
+  private get summaryWithoutRootCause(): boolean {
+    return this.documentsView.groups.some(group => {
+      const rootCause = group.rows.find(row => row.audience === BenchmarkReportAudience.RootCauseAnalysis);
+      return !!rootCause && !rootCause.checked && rootCause.document === null && group.rows.some(row =>
+        row.audience === BenchmarkReportAudience.ExecutiveSummary && row.checkable && row.checked);
+    });
+  }
+
   /** In per-model scope, the checked documents are the same for every model checked. */
   private get checksEven(): boolean {
     if (this.scopeMode !== 'model') {
@@ -1771,6 +1832,9 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
       }
       if (this.checkedRows.length === 0) {
         return 'Choose at least one document.';
+      }
+      if (this.summaryWithoutRootCause) {
+        return REPORT_PACK_SUMMARY_NEEDS_ROOT_CAUSE_REASON;
       }
       if (!this.checksEven) {
         return REPORT_PACK_UNEVEN_MODELS_REASON;
@@ -1863,7 +1927,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.pollError = null;
     this.syncRunning();
     const estimateUsd = this.estimateTotalUsd;
-    writeStoredSettings({ writerConfigId: request.writerModelConfigurationId });
+    rememberReportWriterId(request.writerModelConfigurationId);
     const generation = this.generation;
     this.subscriptions['start'] = this.benchmarkService.startReportPack(request).subscribe({
       next: response => {
@@ -1932,6 +1996,12 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (error.status === 409 && isSameProviderWarning(body)) {
       this.serverWarning = body.message;
       return body.message;
+    }
+    if (error.status === 409 && isRootCauseRefusal(body)) {
+      // The stored Root Cause Analysis moved on since the preview: the list asks for its readiness again.
+      this.scheduleDocuments();
+      this.schedulePreview();
+      return body.error;
     }
     if (error.status === 429) {
       return serverMessage(error) ?? 'The benchmark spend cap does not allow this report pack now.';
@@ -2440,12 +2510,12 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** The last writer used, while it still qualifies and no writer is chosen. */
+  /** The report writer used last in this browser, here or in an AI Reports tab, while it still qualifies and no writer is chosen. */
   private applyRememberedWriter(): void {
     if (!this.writersLoaded || this.writerId !== null || this.currentContext === null) {
       return;
     }
-    const remembered = readStoredSettings().writerConfigId ?? null;
+    const remembered = rememberedReportWriterId();
     if (remembered !== null && this.writers.some(w => w.id === remembered)) {
       this.selectWriter(remembered);
     }

@@ -46,9 +46,9 @@ describe('report-document-format', () => {
     expect(audienceLabel(99 as BenchmarkReportAudience)).toBe('Report document');
   });
 
-  it('offers each scope its own two documents', () => {
+  it('offers each scope its own two documents, the Root Cause Analysis first where it writes one', () => {
     const audiences = (scope: ReportAudienceScope) => reportAudiencesFor(scope).map(option => option.audience);
-    const both = [BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis];
+    const both = [BenchmarkReportAudience.RootCauseAnalysis, BenchmarkReportAudience.ExecutiveSummary];
     expect(audiences('comparison')).toEqual(both);
     expect(audiences('model')).toEqual(both);
     expect(audiences('run')).toEqual(both);

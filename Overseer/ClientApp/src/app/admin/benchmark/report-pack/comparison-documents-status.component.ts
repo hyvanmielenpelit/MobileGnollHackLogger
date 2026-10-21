@@ -34,7 +34,7 @@ import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { rememberedPdfPaper, reportDocumentFileStem } from '../download-center/download-center-panel.component';
 import { reportDisclosureInfo } from '../report-disclosure-guide';
-import { reportWriteOrderHint } from '../run-ai-reports/report-documents-list';
+import { EXECUTIVE_SUMMARY_BLOCKED_ERROR, reportWriteOrderHint } from '../run-ai-reports/report-documents-list';
 import {
   MAX_COMPARISON_DOCUMENT_ENTRIES,
   MIN_COMPARISON_DOCUMENT_ENTRIES
@@ -77,7 +77,15 @@ export interface ComparisonDocumentRow {
   readonly listItem: BenchmarkReportDocumentListItemDto | null;
   /** The row has a Write or Rewrite checkbox. */
   readonly checkable: boolean;
+  /** The next job writes the row: the admin's choice, and for a blocked Executive Summary never. */
   readonly checked: boolean;
+  /**
+   * Why an Executive Summary row cannot be checked: its group's Root Cause Analysis is neither checked
+   * nor written from the data the models have now. Null when it can, and on every other row.
+   */
+  readonly blockedReason: string | null;
+  /** What the inline error's fix checks on the Root Cause Analysis row; null without a fix in the list. */
+  readonly blockedFix: 'checkRootCause' | 'checkRootCauseRewrite' | null;
 }
 
 /** The rows of one model, or of the chosen set (no heading). */
@@ -154,8 +162,72 @@ function rowOf(
     document,
     listItem: document ? input.listItems.get(document.documentId) ?? null : null,
     checkable,
-    checked: checkable && (input.checks.get(key) ?? defaultRowChecked(document !== null))
+    checked: checkable && (input.checks.get(key) ?? defaultRowChecked(document !== null)),
+    blockedReason: null,
+    blockedFix: null
   };
+}
+
+/** The reason line of an Executive Summary row whose stored Root Cause Analysis is being checked. */
+export const COMPARISON_SUMMARY_CHECKING_REASON = 'Checking the stored Root Cause Analysis…';
+
+/**
+ * Whether an Executive Summary may be written from a written Root Cause Analysis, from the preview:
+ * `pending` while the preview is awaited, `failed` when it failed, `unknown` when it did not say (the
+ * server's start decides then).
+ */
+function writtenRootCauseReadiness(
+  doc: BenchmarkReportPackWrittenDocumentDto,
+  input: ComparisonDocumentsViewInput
+): 'usable' | 'outdated' | 'pending' | 'failed' | 'unknown' {
+  const preview = input.preview;
+  if (!preview) {
+    return input.error ? 'failed' : 'pending';
+  }
+  const answered = [...(preview.writtenDocuments ?? []), ...(preview.subjectDocuments ?? []).flatMap(subject => subject.documents ?? [])]
+    .find(candidate => candidate.documentId === doc.documentId);
+  return answered?.summaryReadiness ?? doc.summaryReadiness ?? 'unknown';
+}
+
+/**
+ * Blocks a group's Executive Summary row when its Root Cause Analysis row is not checked and the Root
+ * Cause Analysis is not written from the data the models have now: the summary is written only from
+ * one. A blocked row reads unchecked; the admin's own choice stays in `checks` and returns with it.
+ */
+function withRootCauseDependency(
+  rows: ComparisonDocumentRow[],
+  input: ComparisonDocumentsViewInput
+): ComparisonDocumentRow[] {
+  const rootCause = rows.find(row => row.audience === BenchmarkReportAudience.RootCauseAnalysis);
+  if (!rootCause || rootCause.checked) {
+    return rows;
+  }
+  const owner = input.mode === 'comparison' ? 'this comparison' : 'this model';
+  let reason: string | null = null;
+  let fix: ComparisonDocumentRow['blockedFix'] = null;
+  const doc = rootCause.document;
+  if (!doc) {
+    reason = `Needs ${owner}'s Root Cause Analysis: check Write on the Root Cause Analysis above.`;
+    fix = 'checkRootCause';
+  } else {
+    switch (writtenRootCauseReadiness(doc, input)) {
+      case 'outdated':
+        reason = `Root Cause Analysis #${doc.documentId} was written from different data. Check Rewrite on it to write both.`;
+        fix = 'checkRootCauseRewrite';
+        break;
+      case 'pending':
+        reason = COMPARISON_SUMMARY_CHECKING_REASON;
+        break;
+      case 'failed':
+        reason = 'The stored Root Cause Analysis could not be checked.';
+        break;
+      default:
+        return rows;
+    }
+  }
+  return rows.map(row => row.audience === BenchmarkReportAudience.ExecutiveSummary && row.checkable
+    ? { ...row, checked: false, blockedReason: reason, blockedFix: fix }
+    : row);
 }
 
 /** `2 of 5 models`, or `all 5 models` for a set written over every model. */
@@ -169,7 +241,9 @@ function setSizeText(count: number, of: number | undefined, all: boolean): strin
 /**
  * The list for the current mode and models. Comparison scope: one row per document type for the chosen
  * set, then every other set that has documents. Per-model scope: one group per chosen model, one row
- * per document type. The documents come from `documents` when it is in, else from the preview.
+ * per document type. Rows are in write order, the Root Cause Analysis first, and a group's Executive
+ * Summary row depends on its Root Cause Analysis row. The documents come from `documents` when it is
+ * in, else from the preview; a written Root Cause Analysis's readiness comes from the preview.
  */
 export function comparisonDocumentsView(input: ComparisonDocumentsViewInput): ComparisonDocumentsView {
   const preview = input.preview;
@@ -189,8 +263,8 @@ export function comparisonDocumentsView(input: ComparisonDocumentsViewInput): Co
     // The entries that are not Excluded, the same count the preview gives.
     const entryCount = preview ? preview.comparisonEntryCount : input.offeredKeys.length;
     const label = input.chosenKeys.map(key => input.labelOf(key)).join(', ');
-    const rows = audiences.map(audience => rowOf(
-      `comparison|${audience}`, audience, label, null, written.find(doc => doc.audience === audience) ?? null, input, true));
+    const rows = withRootCauseDependency(audiences.map(audience => rowOf(
+      `comparison|${audience}`, audience, label, null, written.find(doc => doc.audience === audience) ?? null, input, true)), input);
     const offered = new Set(input.offeredKeys);
     const otherSets = ((stored ? stored.otherModelSets : preview?.otherModelSets) ?? [])
       .filter(set => (set.documents ?? []).length > 0)
@@ -226,8 +300,8 @@ export function comparisonDocumentsView(input: ComparisonDocumentsViewInput): Co
     return {
       key: entryKey,
       heading,
-      rows: audiences.map(audience => rowOf(
-        `${entryKey}|${audience}`, audience, heading, entryKey, documents.find(doc => doc.audience === audience) ?? null, input, true))
+      rows: withRootCauseDependency(audiences.map(audience => rowOf(
+        `${entryKey}|${audience}`, audience, heading, entryKey, documents.find(doc => doc.audience === audience) ?? null, input, true)), input)
     };
   });
   return { mode: 'model', state: 'ready', message: null, groups, otherSets: [] };
@@ -279,7 +353,9 @@ function serverMessage(error: HttpErrorResponse): string | null {
  * document written with warnings has an (i) button beside its status whose dialog says what was removed
  * and what was kept, read from the stored document when it is first opened. In
  * comparison scope, the other covered sets with documents follow in a closed disclosure, each with
- * **Choose these models**.
+ * **Choose these models**. A blocked Executive Summary row's checkbox is `aria-disabled` and described
+ * by its reason line; a click on it shows an inline error with a button that checks the Root Cause
+ * Analysis and the summary together.
  *
  * The host owns the rows and the checks; this component owns the viewer, the delete and the redraw.
  */
@@ -356,19 +432,45 @@ export class ComparisonDocumentsStatusComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * The write order of the checked rows, under the lists: one line for a group with both documents
-   * checked and one for a group with the Executive Summary alone, each at most once.
+   * The write order of the checked rows, under the lists: one line, at most once, while a group has
+   * both documents checked. An Executive Summary row says on its own what it is written from.
    */
   get writeOrderHints(): string[] {
     const view = this.view;
     if (!view || view.state !== 'ready') {
       return [];
     }
-    const owner = view.mode === 'comparison' ? 'this comparison\'s' : 'each model\'s';
     const hints = view.groups
-      .map(group => reportWriteOrderHint(group.rows.filter(row => row.checked).map(row => row.audience), owner))
+      .map(group => reportWriteOrderHint(group.rows.filter(row => row.checked).map(row => row.audience)))
       .filter(hint => hint !== '');
     return [...new Set(hints)];
+  }
+
+  /** The blocked Executive Summary row whose click was refused; its inline error shows while it stays blocked. */
+  refusedRowKey: string | null = null;
+
+  /** The inline error under a blocked Executive Summary row that was clicked. */
+  readonly summaryBlockedError = EXECUTIVE_SUMMARY_BLOCKED_ERROR;
+
+  /** The row's inline error shows: its click was refused, and it is still blocked. */
+  showsBlockedError(row: ComparisonDocumentRow): boolean {
+    return this.refusedRowKey === row.key && row.blockedReason !== null;
+  }
+
+  /** A checkbox's description: a blocked row's reason line, then its inline error while it shows. */
+  checkDescribedBy(row: ComparisonDocumentRow): string | null {
+    if (row.blockedReason === null) {
+      return null;
+    }
+    const rid = this.rowId(row);
+    return this.showsBlockedError(row) ? `${rid}-reason ${rid}-error` : `${rid}-reason`;
+  }
+
+  /** The fix button's label: what it checks on the Root Cause Analysis row. */
+  fixLabel(row: ComparisonDocumentRow): string {
+    return row.blockedFix === 'checkRootCauseRewrite'
+      ? 'Check Rewrite on the Root Cause Analysis'
+      : 'Check the Root Cause Analysis';
   }
 
   ngOnInit(): void {
@@ -435,11 +537,46 @@ export class ComparisonDocumentsStatusComponent implements OnInit, OnDestroy {
 
   onCheck(row: ComparisonDocumentRow, event: Event): void {
     const input = event.target as HTMLInputElement;
-    if (this.busy || !row.checkable) {
+    if (this.busy || !row.checkable || row.blockedReason !== null) {
       input.checked = row.checked;
       return;
     }
+    this.refusedRowKey = null;
     this.checkChange.emit({ key: row.key, checked: input.checked });
+  }
+
+  /**
+   * A click on a blocked Executive Summary row is refused: the checkbox stays unchecked and the inline
+   * error says why. A Space press arrives as a click too.
+   */
+  onCheckClick(row: ComparisonDocumentRow, event: Event): void {
+    if (row.blockedReason === null || this.busy) {
+      return;
+    }
+    event.preventDefault();
+    (event.target as HTMLInputElement).checked = false;
+    this.refusedRowKey = row.key;
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * The inline error's fix: checks the Root Cause Analysis row of the Executive Summary's group (Write or
+   * Rewrite), then the Executive Summary row, which takes focus.
+   */
+  applyFix(row: ComparisonDocumentRow): void {
+    if (this.busy || row.blockedFix === null) {
+      return;
+    }
+    const group = this.view?.groups.find(candidate => candidate.rows.some(other => other.key === row.key));
+    const rootCause = group?.rows.find(other => other.audience === BenchmarkReportAudience.RootCauseAnalysis);
+    if (!rootCause) {
+      return;
+    }
+    this.refusedRowKey = null;
+    this.checkChange.emit({ key: rootCause.key, checked: true });
+    this.checkChange.emit({ key: row.key, checked: true });
+    this.cdr.markForCheck();
+    this.host.nativeElement.querySelector<HTMLInputElement>(`[id="${this.rowId(row)}-check"]`)?.focus();
   }
 
   chooseSet(set: ComparisonOtherModelSet): void {

@@ -3268,6 +3268,34 @@ export interface WriteRunReportDocumentsResponse {
   audiences?: BenchmarkReportAudience[];
 }
 
+/**
+ * Whether an Executive Summary may be written from the subject's newest stored Root Cause Analysis:
+ * `missing` (none is stored), `usable` (it was written from the data the subject has now) or
+ * `outdated` (written from other data, or its fact sheet is unreadable).
+ */
+export type BenchmarkRootCauseReadinessState = 'missing' | 'usable' | 'outdated';
+
+/** Why an Executive Summary cannot be written alone: the code of a readiness and of a write's 409. */
+export type BenchmarkRootCauseRefusalCode = 'rootCauseMissing' | 'rootCauseOutdated';
+
+/** `GET …/report-documents/summary-readiness` of a run or a battery run. */
+export interface BenchmarkRootCauseReadinessDto {
+  state: BenchmarkRootCauseReadinessState;
+  /** The newest stored Root Cause Analysis; null when none is stored. */
+  rootCauseDocumentId: number | null;
+  /** The user-facing sentence of a state that is not `usable`; null for `usable`. */
+  message: string | null;
+  /** Null for `usable`. */
+  code: BenchmarkRootCauseRefusalCode | null;
+}
+
+/** The 409 body of a write or a report pack start that asks for an Executive Summary without its Root Cause Analysis. */
+export interface BenchmarkRootCauseRefusalDto {
+  error: string;
+  code: BenchmarkRootCauseRefusalCode;
+  rootCauseDocumentId: number | null;
+}
+
 /** `Queued`, `Preparing`, `Writing` or `Finished`. */
 export type BenchmarkRunReportJobPhase = 'Queued' | 'Preparing' | 'Writing' | 'Finished';
 
@@ -3475,6 +3503,13 @@ export interface BenchmarkReportPackWrittenDocumentDto {
   costUsd?: number | null;
   /** Comparison scope: the reference model's entry key; null, or absent from an older document, is the highest Intelligence Index. */
   referenceEntryKey?: string | null;
+  /**
+   * A Root Cause Analysis in a preview: whether an Executive Summary may be written from it (`usable`)
+   * or not (`outdated`). Null or absent when not computed, as in the documents list.
+   */
+  summaryReadiness?: 'usable' | 'outdated' | null;
+  /** The user-facing sentence of an `outdated` readiness; null otherwise. */
+  summaryReadinessMessage?: string | null;
 }
 
 /** The comparison-scope documents of one covered set of a comparison. */
@@ -4965,8 +5000,9 @@ export class AdminBenchmarkService {
 
   /**
    * 202 with the job id. Refusals: 400 `{ error }`, 429 a plain string, 409 a
-   * `SameProviderWarningDto` (unacknowledged same provider) or a `BenchmarkReportPackJobDto`
-   * (a job already running).
+   * `SameProviderWarningDto` (unacknowledged same provider), a `BenchmarkReportPackJobDto`
+   * (a job already running) or a `BenchmarkRootCauseRefusalDto` (an Executive Summary without a Root
+   * Cause Analysis it may be written from).
    */
   startReportPack(request: BenchmarkReportPackRequest): Observable<BenchmarkReportPackStartResponse> {
     return this.http.post<BenchmarkReportPackStartResponse>('/api/admin/benchmark/report-packs', request);
@@ -5082,8 +5118,9 @@ export class AdminBenchmarkService {
    * Writes a finished run's missing AI-written documents (all of them, or the requested ones) with
    * the given writer, which becomes the run's report writer. 202 once queued. Refusals: 400
    * `{ error }` (no final synthesis, the writer refused, or an audience that is not a run
-   * document), 404, 409 `{ error }` (the documents exist, or a job is pending or writing) or a
-   * `SameProviderWarningDto` (a same-provider writer not acknowledged), 429 a plain string.
+   * document), 404, 409 `{ error }` (the documents exist, or a job is pending or writing), a
+   * `BenchmarkRootCauseRefusalDto` (an Executive Summary without a Root Cause Analysis it may be
+   * written from) or a `SameProviderWarningDto` (a same-provider writer not acknowledged), 429 a plain string.
    */
   writeRunReportDocuments(runId: number, request: WriteRunReportDocumentsRequest): Observable<WriteRunReportDocumentsResponse> {
     return this.http.post<WriteRunReportDocumentsResponse>(`/api/admin/benchmark/runs/${runId}/report-documents`, request);
@@ -5110,6 +5147,11 @@ export class AdminBenchmarkService {
   /** What writing the run's documents with this writer would cost, and whether it is refused or warned. No model call. */
   estimateRunReports(runId: number, request: BenchmarkRunReportEstimateRequest): Observable<BenchmarkRunReportEstimateDto> {
     return this.http.post<BenchmarkRunReportEstimateDto>(`/api/admin/benchmark/runs/${runId}/report-documents/estimate`, request);
+  }
+
+  /** Whether an Executive Summary of the run may be written from its newest stored Root Cause Analysis. No model call. */
+  getRunSummaryReadiness(runId: number): Observable<BenchmarkRootCauseReadinessDto> {
+    return this.http.get<BenchmarkRootCauseReadinessDto>(`/api/admin/benchmark/runs/${runId}/report-documents/summary-readiness`);
   }
 
   /** The controls a Root Cause Analysis of this run would use now, and the control run to make when too few qualify. */
@@ -5152,6 +5194,11 @@ export class AdminBenchmarkService {
   /** What writing the battery run's documents with this writer would cost, and whether it is refused or warned. No model call. */
   estimateBatteryReports(batteryRunId: number, request: BenchmarkRunReportEstimateRequest): Observable<BenchmarkRunReportEstimateDto> {
     return this.http.post<BenchmarkRunReportEstimateDto>(`${BATTERIES_ENDPOINT}/runs/${batteryRunId}/report-documents/estimate`, request);
+  }
+
+  /** Whether an Executive Summary of the battery run may be written from its newest stored Root Cause Analysis. No model call. */
+  getBatterySummaryReadiness(batteryRunId: number): Observable<BenchmarkRootCauseReadinessDto> {
+    return this.http.get<BenchmarkRootCauseReadinessDto>(`${BATTERIES_ENDPOINT}/runs/${batteryRunId}/report-documents/summary-readiness`);
   }
 
   /** The controls a Root Cause Analysis of this battery run would use now, and the control run to make when too few qualify. */

@@ -70,7 +70,7 @@ This analysis describes run 31 of Orion Max on its own. Other models enter only 
 ### Setup and method
 
 - **Suite:** GnollHack Core Suite, 1 questions.
-- **Chat configuration under test:** Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed
+- **Chat configuration under test:** Gameplay Help; concise response style, verboseMode false; tools enabled; web search disabled; subagents disabled; source code references allowed
 - **Model under test:** Orion Max (Northwind, orion-max), thinking level not set; 1 run.
 - **Grading:** Each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. Each dimension is graded on behaviorally anchored levels (fixed grade steps, each described by the answer behavior that earns it) scored 1, 15, 35, 55, 72, 87, 100. A critical error (a mistake serious enough to cap the answer's score) caps the answer's quality at 25.
 - **Graders:**
@@ -728,9 +728,9 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed",
+      "display": "Gameplay Help; concise response style, verboseMode false; tools enabled; web search disabled; subagents disabled; source code references allowed",
       "key": "config.chat",
-      "value": "Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed"
+      "value": "Gameplay Help; concise response style, verboseMode false; tools enabled; web search disabled; subagents disabled; source code references allowed"
     },
     {
       "available": true,
@@ -2349,7 +2349,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 13,
+    "engineVersion": 14,
     "evidence": [
       {
         "atRisk": [
@@ -2963,6 +2963,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 131 · format version 25 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 131 · format version 26 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

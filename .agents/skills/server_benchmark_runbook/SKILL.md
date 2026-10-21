@@ -780,6 +780,7 @@ Labels drift; these are the files to grep, with the state verified on 2026-09-19
 | What is read only at startup | `Overseer/Services/Tools/ToolRegistry.cs`, `Overseer/Services/NetHackWikiService.cs` |
 | What re-checks git every 10 minutes | `Overseer/Services/WikiService.cs`, `SourceCodeService.cs`, `KnowledgeBaseService.cs` |
 | The host serves the Angular client from `Overseer/wwwroot`, so a Visual Studio start does not rebuild it; `npm run build` in `Overseer/ClientApp/` does | `Overseer/Properties/launchSettings.json` (no SPA proxy), `Overseer/ClientApp/angular.json` (`outputPath`) |
+| The AI Reports tab and the Model Comparison wizard's step 3 list the Root Cause Analysis first; an Executive Summary needs a Root Cause Analysis written in the same job or stored from the same data (from 2026-10-21) | `admin/benchmark/run-ai-reports/run-ai-reports.component.html`, `admin/benchmark/report-pack/comparison-documents-status.component.html` |
 
 ## 9. Cross-References
 

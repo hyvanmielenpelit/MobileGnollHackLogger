@@ -326,7 +326,7 @@ internal static class BenchmarkReportPackFixture
             Fact("comparison.pricingBasis", "Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent."),
             Fact("comparison.pricingBasisKind", BenchmarkReportFacts.PricingBasisCatalog),
             Fact("comparison.signature", "sig-7f3a91"),
-            Fact("config.chat", "Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed"),
+            Fact("config.chat", "Gameplay Help; concise response style, verboseMode false; tools enabled; web search disabled; subagents disabled; source code references allowed"),
             Fact("cost.perQuestion", "$0.036"),
             Fact("cost.perRun", "$0.144"),
             Fact("cost.pricingAsOf", "2026-09-01"),

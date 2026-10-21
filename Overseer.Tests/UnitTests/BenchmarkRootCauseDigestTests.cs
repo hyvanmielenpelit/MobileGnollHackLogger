@@ -130,8 +130,8 @@ public class BenchmarkRootCauseDigestTests
             facts["rcaDigest.hypothesis.2"]);
         Assert.Equal("Speed: tool rounds multiply the model's time per question — graded Moderate, locus chat.", facts["rcaDigest.hypothesis.3"]);
         Assert.Equal("An untested lead (Low), from the graders' comments: the model under test may have misread the board on Q2.", facts["rcaDigest.lead.1"]);
-        Assert.Equal("Run 1, a replicate of the model's run (purpose C, the Overseer chat)", facts["rcaDigest.nextRun.1"]);
-        Assert.Equal("Check 1, a review of the rubric of Q2", facts["rcaDigest.check.1"]);
+        Assert.Equal("Run 1, a replicate of the model's run, for purpose C, the Overseer chat.", facts["rcaDigest.nextRun.1"]);
+        Assert.Equal("Check 1, a review of the rubric of Q2.", facts["rcaDigest.check.1"]);
         Assert.Equal("Control limit: capped at Low; replicate limit: the grades are capped at Moderate: the model has one run per suite.", facts["rcaDigest.limits"]);
 
         Assert.Equal(new[]
@@ -430,6 +430,58 @@ public class BenchmarkRootCauseDigestTests
     }
 
     [Fact]
+    public void Rule47_DoesNotReadTheReliabilitySection_WhichSpeaksAboutTheMeasurement()
+    {
+        var sheet = DigestSheet();
+        const string design = "Because this report covers a single run, the graders' agreement is the main check on the result.";
+
+        var reliability = DigestOutput();
+        reliability.Sections[BenchmarkReportSlots.Confidence] = design;
+        Assert.DoesNotContain(Validate(reliability, sheet), n => n.Rule == BenchmarkReportPackValidator.ExecutiveCausalClaimRule);
+
+        // The same sentence about the model's use still needs a Root Cause Analysis item.
+        var meaning = DigestOutput();
+        meaning.Sections[BenchmarkReportSlots.Meaning] = design;
+        Assert.Contains(Validate(meaning, sheet), n => n.Rule == BenchmarkReportPackValidator.ExecutiveCausalClaimRule
+                                                       && n.Location.StartsWith("sections." + BenchmarkReportSlots.Meaning, StringComparison.Ordinal));
+
+        // The comparison's reliability section is exempt too, and the catalog and both prompts say so.
+        Assert.Equal(new[] { BenchmarkReportSlots.Confidence, BenchmarkReportSlots.Reliability }.OrderBy(s => s, StringComparer.Ordinal),
+            BenchmarkReportPackValidator.DigestClaimExemptSlots.OrderBy(s => s, StringComparer.Ordinal));
+        Assert.Contains("How reliable this result is", BenchmarkReportRuleCatalog.Get(BenchmarkReportPackValidator.ExecutiveCausalClaimRule).Meaning);
+        Assert.Contains("- " + BenchmarkReportSlots.Confidence + " (\"How reliable this result is\") speaks about the measurement: a reason there that is a fact of the run's design",
+            BenchmarkReportPackPrompt.BuildSystemPrompt(Es, rootCauseDigest: true));
+        Assert.Contains("- " + BenchmarkReportSlots.Reliability + " (\"How reliable this is\") speaks about the measurement",
+            BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(Es, rootCauseDigest: true));
+        Assert.DoesNotContain("speaks about the measurement", BenchmarkReportPackPrompt.BuildSystemPrompt(Es));
+    }
+
+    [Fact]
+    public void TheDigestOfAModelScopeAnalysis_NamesItsSubject_AndItsNextRunHoldsOneParenthesis()
+    {
+        var (sheet, writer) = RootCauseAnalysis();
+        sheet.SubjectLabel = "GPT-6 Luna (high)";
+        sheet.SubjectDisplayName = "GPT-6 Luna";
+        sheet.Facts.Single(f => f.Key == "rca.run.1.summary").Display = "Run 1, a replicate of GPT-6 Luna (about $5.20 and 27 minutes over 3 launches)";
+
+        var facts = BenchmarkRootCauseDigest.From(RootCauseDocumentId, sheet, writer)!.Facts.ToDictionary(f => f.Key, f => f.Display);
+
+        Assert.Equal("GPT-6 Luna lost points on Q2; speed: Probable cause.", facts["rcaDigest.keyFinding"]);
+        Assert.Equal("An untested lead (Low), from the graders' comments: GPT-6 Luna may have misread the board on Q2.", facts["rcaDigest.lead.1"]);
+        string next = facts["rcaDigest.nextRun.1"];
+        Assert.Equal("Run 1, a replicate of GPT-6 Luna (about $5.20 and 27 minutes over 3 launches), for purpose C, the Overseer chat.", next);
+        Assert.EndsWith(".", next);
+        Assert.Equal(1, next.Count(c => c == '('));
+        Assert.Equal(1, next.Count(c => c == ')'));
+        Assert.EndsWith(".", facts["rcaDigest.check.1"]);
+
+        // A comparison has no single subject.
+        sheet.Scope = BenchmarkReportFactSheet.ComparisonScopeValue;
+        Assert.StartsWith("The model under test lost points",
+            BenchmarkRootCauseDigest.From(RootCauseDocumentId, sheet, writer)!.Facts.Single(f => f.Key == BenchmarkRootCauseDigest.KeyFindingKey).Display);
+    }
+
+    [Fact]
     public void Rule48_EachItemOfWhatToLookAtNext_CitesADigestRunOrCheck_AndThereAreAtMostThree()
     {
         var sheet = DigestSheet();
@@ -530,7 +582,7 @@ public class BenchmarkRootCauseDigestTests
         int reliable = text.IndexOf("## How reliable this result is", StringComparison.Ordinal);
         int next = text.IndexOf("## What to look at next", StringComparison.Ordinal);
         Assert.True(reliable >= 0 && next > reliable);
-        Assert.Contains("Make this run first to settle the open question: Run 1, a replicate of the model's run (purpose C, the Overseer chat)", text);
+        Assert.Contains("Make this run first to settle the open question: Run 1, a replicate of the model's run, for purpose C, the Overseer chat", text);
 
         var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, FullNamed, BenchmarkPdfPaper.A4);
         var labels = info.Facts.Select(f => f.Label).ToList();

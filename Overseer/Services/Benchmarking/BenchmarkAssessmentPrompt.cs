@@ -825,8 +825,12 @@ public static class BenchmarkAssessmentPrompt
     ///     "The" on either side (T2); _policy.md asks for a role-relative helper's definition before
     ///     stating what it covers (T1). ScoringMethodVersion stays 14; ToolGuidesSha256 moves,
     ///     CandidateSystemPromptSha256 does not.
+    /// v58: the harness-57 _policy.md sentence on role-relative helpers is removed (T1 reverted), so
+    ///     ToolGuidesSha256 and CandidateSystemPromptSha256 return to their harness-56 values;
+    ///     _policy.md is inlined into the candidate system prompt, so both hashes move with it.
+    ///     ScoringMethodVersion stays 14.
     /// </summary>
-    public const string HarnessVersion = "57";
+    public const string HarnessVersion = "58";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

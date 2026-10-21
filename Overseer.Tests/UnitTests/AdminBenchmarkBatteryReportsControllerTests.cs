@@ -31,8 +31,11 @@ public class AdminBenchmarkBatteryReportsControllerTests
         BenchmarkReportAudience.RootCauseAnalysis
     };
 
-    /// <summary>The battery-completion documents whose prompt can be built and estimated today.</summary>
-    private static readonly List<BenchmarkReportAudience> EstimableAudiences = new() { BenchmarkReportAudience.ExecutiveSummary };
+    /// <summary>
+    /// The battery-completion documents an estimate prices: both, since the Executive Summary alone needs a usable stored
+    /// Root Cause Analysis and is refused without one.
+    /// </summary>
+    private static readonly List<BenchmarkReportAudience> EstimableAudiences = AllAudiences.ToList();
 
     private static WriteRunReportDocumentsRequest Request(long writerId, params BenchmarkReportAudience[] audiences) => new()
     {
@@ -90,6 +93,8 @@ public class AdminBenchmarkBatteryReportsControllerTests
             "The Root Cause Analysis is already written. Delete it first to write it again.",
             JsonSerializer.Serialize(written.Value));
 
+        // The missing Executive Summary is written from the stored Root Cause Analysis once that one is usable.
+        await h.MakeRootCauseUsableAsync();
         Assert.IsType<AcceptedResult>(await h.Controller().Write(h.BatteryRunId, Request(h.WriterConfig.Id), Ct));
         await BatteryReportHarness.WaitUntilAsync(() => !h.Service.IsActive(h.BatteryRunId));
         Assert.Equal(2, (await h.DocumentsAsync()).Count);
@@ -207,6 +212,138 @@ public class AdminBenchmarkBatteryReportsControllerTests
         Assert.Equal(StatusCodes.Status429TooManyRequests, result.StatusCode);
         Assert.IsType<string>(result.Value);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.NotRequested, await h.StatusAsync());
+    }
+
+    // --- The Executive Summary needs its Root Cause Analysis -------------------------------------------
+
+    /// <summary>A 409 body's <c>error</c>, <c>code</c> and <c>rootCauseDocumentId</c>, read from its JSON.</summary>
+    private static (string? Error, string? Code, long? RootCauseDocumentId) RootCauseConflictOf(IActionResult result)
+    {
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(conflict.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        var root = json.RootElement;
+        var id = root.GetProperty("rootCauseDocumentId");
+        return (root.GetProperty("error").GetString(), root.GetProperty("code").GetString(),
+            id.ValueKind == JsonValueKind.Null ? null : id.GetInt64());
+    }
+
+    [Fact]
+    public async Task Write_RefusesTheExecutiveSummaryAlone_UntilTheStoredRootCauseAnalysisIsUsable()
+    {
+        await using var h = await BatteryReportHarness.CreateAsync(withWriter: false);
+
+        var missing = RootCauseConflictOf(await h.Controller().Write(
+            h.BatteryRunId, Request(h.WriterConfig.Id, BenchmarkReportAudience.ExecutiveSummary), Ct));
+        Assert.Equal(
+            "The Executive Summary is written from the Root Cause Analysis, and this battery run has none. Write both: check Root Cause Analysis too.",
+            missing.Error);
+        Assert.Equal("rootCauseMissing", missing.Code);
+        Assert.Null(missing.RootCauseDocumentId);
+        Assert.Equal(0, h.Writer.JobCalls);
+        Assert.Null((await h.BatteryRunAsync()).ReportWriterModelConfigurationId);
+
+        Assert.IsType<AcceptedResult>(await h.Controller().Write(
+            h.BatteryRunId, Request(h.WriterConfig.Id, BenchmarkReportAudience.RootCauseAnalysis), Ct));
+        await BatteryReportHarness.WaitUntilAsync(() => !h.Service.IsActive(h.BatteryRunId));
+        long rootCauseId = Assert.Single(await h.DocumentsAsync()).Id;
+
+        // Every missing document, here the Executive Summary alone, meets the same refusal.
+        var outdated = RootCauseConflictOf(await h.Controller().Write(h.BatteryRunId, Request(h.WriterConfig.Id), Ct));
+        Assert.Equal(BenchmarkRootCauseReadiness.OutdatedMessage("battery run", rootCauseId), outdated.Error);
+        Assert.Contains("than this battery run has now", outdated.Error);
+        Assert.Equal("rootCauseOutdated", outdated.Code);
+        Assert.Equal(rootCauseId, outdated.RootCauseDocumentId);
+        Assert.Equal(1, h.Writer.JobCalls);
+
+        await h.MakeRootCauseUsableAsync();
+        Assert.IsType<AcceptedResult>(await h.Controller().Write(
+            h.BatteryRunId, Request(h.WriterConfig.Id, BenchmarkReportAudience.ExecutiveSummary), Ct));
+        await BatteryReportHarness.WaitUntilAsync(() => !h.Service.IsActive(h.BatteryRunId));
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
+    }
+
+    [Fact]
+    public async Task Write_AcceptsTheExecutiveSummaryWithItsRootCauseAnalysisReplaced()
+    {
+        await using var h = await BatteryReportHarness.CreateAsync(withWriter: false);
+        long rootCauseId = await h.AddDocumentAsync(h.BatteryRunId, BenchmarkReportAudience.RootCauseAnalysis);
+
+        var request = Request(h.WriterConfig.Id, AllAudiences);
+        request.ReplaceDocumentIds = new List<long> { rootCauseId };
+        var accepted = Assert.IsType<AcceptedResult>(await h.Controller().Write(h.BatteryRunId, request, Ct));
+
+        Assert.Equal(AllAudiences, Assert.IsType<WriteRunReportDocumentsResponse>(accepted.Value).Audiences);
+        await BatteryReportHarness.WaitUntilAsync(() => !h.Service.IsActive(h.BatteryRunId));
+        Assert.Equal(BenchmarkReportSlots.WriteOrder, h.Writer.LastAudiences);
+    }
+
+    [Fact]
+    public async Task SummaryReadiness_IsMissingUsableOrOutdated_AndNotFoundForAnUnknownBatteryRun()
+    {
+        await using var h = await BatteryReportHarness.CreateAsync(withWriter: false);
+
+        async Task<BenchmarkRootCauseReadinessDto> ReadinessAsync()
+            => Assert.IsType<BenchmarkRootCauseReadinessDto>(Assert.IsType<OkObjectResult>(
+                await h.Controller().GetSummaryReadiness(h.BatteryRunId, Ct)).Value);
+
+        Assert.IsType<NotFoundResult>(await h.Controller().GetSummaryReadiness(999999, Ct));
+
+        var missing = await ReadinessAsync();
+        Assert.Equal("missing", missing.State);
+        Assert.Equal("rootCauseMissing", missing.Code);
+        Assert.Equal(BenchmarkRootCauseReadiness.MissingMessage("battery run"), missing.Message);
+
+        long rootCauseId = await h.AddDocumentAsync(h.BatteryRunId, BenchmarkReportAudience.RootCauseAnalysis);
+        var outdated = await ReadinessAsync();
+        Assert.Equal("outdated", outdated.State);
+        Assert.Equal(rootCauseId, outdated.RootCauseDocumentId);
+        Assert.Equal("rootCauseOutdated", outdated.Code);
+
+        await h.MakeRootCauseUsableAsync();
+        var usable = await ReadinessAsync();
+        Assert.Equal("usable", usable.State);
+        Assert.Equal(rootCauseId, usable.RootCauseDocumentId);
+        Assert.Null(usable.Message);
+        Assert.Null(usable.Code);
+
+        // A battery run that cannot be written about is outdated with the refusal and no code.
+        await h.UpdateBatteryRunAsync(b => b.Status = BenchmarkRunSeriesStatus.Running);
+        var unprepared = await ReadinessAsync();
+        Assert.Equal("outdated", unprepared.State);
+        Assert.Equal(BenchmarkBatteryReportDocumentService.NotFinishedMessage, unprepared.Message);
+        Assert.Null(unprepared.Code);
+        Assert.Equal(0, h.Writer.JobCalls);
+    }
+
+    [Fact]
+    public void TheSummaryReadinessEndpoint_IsAGetUnderTheReportDocumentsRoute()
+    {
+        var method = typeof(AdminBenchmarkBatteryReportsController).GetMethod(nameof(AdminBenchmarkBatteryReportsController.GetSummaryReadiness))!;
+        Assert.Equal("summary-readiness", Assert.Single(method.GetCustomAttributes(typeof(HttpGetAttribute), false).Cast<HttpGetAttribute>()).Template);
+
+        var run = typeof(AdminBenchmarkReportPacksController).GetMethod(nameof(AdminBenchmarkReportPacksController.GetRunSummaryReadiness))!;
+        Assert.Equal("runs/{runId:long}/report-documents/summary-readiness",
+            Assert.Single(run.GetCustomAttributes(typeof(HttpGetAttribute), false).Cast<HttpGetAttribute>()).Template);
+    }
+
+    [Fact]
+    public async Task Estimate_OfTheExecutiveSummaryAlone_CarriesTheRefusalTheWriteAnswersWith()
+    {
+        await using var h = await BatteryReportHarness.CreateAsync(withWriter: false);
+
+        async Task<BenchmarkRunReportEstimateDto> EstimateAsync(params BenchmarkReportAudience[] audiences)
+            => Assert.IsType<BenchmarkRunReportEstimateDto>(Assert.IsType<OkObjectResult>(
+                await h.Controller().Estimate(h.BatteryRunId, new BenchmarkRunReportEstimateRequest
+                {
+                    WriterModelConfigurationId = h.WriterConfig.Id,
+                    Audiences = audiences.ToList()
+                }, Ct)).Value);
+
+        var alone = await EstimateAsync(BenchmarkReportAudience.ExecutiveSummary);
+        Assert.Equal(BenchmarkRootCauseReadiness.MissingMessage("battery run"), alone.Refusal);
+        Assert.Single(alone.Estimates);
+        Assert.Null((await EstimateAsync(AllAudiences)).Refusal);
+        Assert.Equal(0, h.Writer.JobCalls);
     }
 
     // --- Job and cancel ------------------------------------------------------------------------------
@@ -343,7 +480,7 @@ public class AdminBenchmarkBatteryReportsControllerTests
         var sameProvider = await EstimateAsync(sameProviderId, EstimableAudiences);
         Assert.Null(sameProvider.Refusal);
         Assert.Equal("reportWriter", sameProvider.SameProviderWarning?.Role);
-        Assert.Single(sameProvider.Estimates);
+        Assert.Equal(EstimableAudiences.Count, sameProvider.Estimates.Count);
 
         var sameModel = await EstimateAsync(sameModelId, EstimableAudiences);
         Assert.Equal(BenchmarkRunReportDocumentService.ModelUnderTestMessage, sameModel.Refusal);

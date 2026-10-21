@@ -218,9 +218,10 @@ public static class RootCauseEngine
     /// robustness check when most of the model's visible text arrived in one burst, the summed time to first output is
     /// the wait before output, each share has a <c>.shareOf</c> fact, WQ4 and HQ6 need the profile's minimum of answers,
     /// and a time-of-day run is one pass launched once per time of day. From version 13 a ruled-out hypothesis is never
-    /// an axis's best: an axis whose every hypothesis was ruled out has none.
+    /// an axis's best: an axis whose every hypothesis was ruled out has none. From version 14 a known fact about a
+    /// component whose label is plural (<see cref="RootCauseKnownFacts.PluralComponentLabels"/>) takes a plural verb.
     /// </summary>
-    public const int Version = 13;
+    public const int Version = 14;
 
     /// <summary>The list output price ratio from which two models of one provider are in different price tiers.</summary>
     public const double TierPriceRatio = 1.5;

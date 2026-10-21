@@ -6,6 +6,7 @@ import { Subject, of, throwError } from 'rxjs';
 
 import {
   AdminBenchmarkService,
+  BenchmarkRootCauseReadinessDto,
   BenchmarkRunReportEstimateDto,
   BenchmarkRunReportJobDto
 } from '../../../services/admin-benchmark.service';
@@ -24,6 +25,12 @@ import {
   RunReportStatusChange
 } from './run-ai-reports.component';
 import { RunReportWritingContext, RunReportWritingDialogComponent } from './run-report-writing-dialog.component';
+import {
+  REPORT_PACK_STORAGE_KEY,
+  REPORT_WRITER_MEMORY_KEY,
+  rememberReportWriterId,
+  rememberedReportWriterId
+} from './report-writer-memory';
 
 function config(id: number, displayName: string, provider: string, modelId: string): SystemAiConfigDto {
   return {
@@ -77,6 +84,17 @@ function jobView(status: number, overrides: Partial<BenchmarkRunReportJobDto> = 
   };
 }
 
+/** The summary readiness of run 55's stored Root Cause Analysis #72. */
+function readiness(state: BenchmarkRootCauseReadinessDto['state'], overrides: Partial<BenchmarkRootCauseReadinessDto> = {}): BenchmarkRootCauseReadinessDto {
+  return {
+    state,
+    rootCauseDocumentId: state === 'missing' ? null : 72,
+    message: state === 'usable' ? null : `The server says the Root Cause Analysis is ${state}.`,
+    code: state === 'usable' ? null : state === 'missing' ? 'rootCauseMissing' : 'rootCauseOutdated',
+    ...overrides
+  };
+}
+
 function estimateDto(overrides: Partial<BenchmarkRunReportEstimateDto> = {}): BenchmarkRunReportEstimateDto {
   return {
     estimates: [
@@ -98,8 +116,11 @@ describe('RunAiReportsComponent', () => {
   let viewerOpen: Mock;
 
   beforeEach(async () => {
+    localStorage.removeItem(REPORT_WRITER_MEMORY_KEY);
+    localStorage.removeItem(REPORT_PACK_STORAGE_KEY);
     service = {
       listReportDocuments: vi.fn().mockName("AdminBenchmarkService.listReportDocuments"),
+      getRunSummaryReadiness: vi.fn().mockName("AdminBenchmarkService.getRunSummaryReadiness"),
       writeRunReportDocuments: vi.fn().mockName("AdminBenchmarkService.writeRunReportDocuments"),
       getReportDocumentPdf: vi.fn().mockName("AdminBenchmarkService.getReportDocumentPdf"),
       reportDocumentPdfUrl: vi.fn().mockName("AdminBenchmarkService.reportDocumentPdfUrl"),
@@ -113,6 +134,7 @@ describe('RunAiReportsComponent', () => {
       redrawReportDocumentCharts: vi.fn().mockName("AdminBenchmarkService.redrawReportDocumentCharts")
     } as unknown as MockedObject<AdminBenchmarkService>;
     service.listReportDocuments.mockReturnValue(of([]));
+    service.getRunSummaryReadiness.mockReturnValue(of(readiness('usable')));
     service.getRunReportJob.mockReturnValue(of(null));
     service.getRunRootCauseControls.mockReturnValue(of(rootCauseControls({ controlRun: null })));
     service.getReportDocument.mockReturnValue(of({ controls: [], recommendedRuns: [], checks: [] } as any));
@@ -142,6 +164,8 @@ describe('RunAiReportsComponent', () => {
     for (const dialog of Array.from(document.querySelectorAll('dialog[open]')) as HTMLDialogElement[]) {
       dialog.close();
     }
+    localStorage.removeItem(REPORT_WRITER_MEMORY_KEY);
+    localStorage.removeItem(REPORT_PACK_STORAGE_KEY);
   });
 
   function setUp(launcherWriterConfigId: number | null = null): void {
@@ -215,7 +239,7 @@ describe('RunAiReportsComponent', () => {
     expect(service.listReportDocuments).toHaveBeenCalledWith({ runId: 55 });
     expect(status()).toBe('');
     expect(rows().map(row => rowText(row, '.rr-ai-doc-name')))
-      .toEqual(['Executive Summary', 'Root Cause Analysis']);
+      .toEqual(['Root Cause Analysis', 'Executive Summary']);
     for (const row of rows()) {
       expect(rowText(row, '.rr-ai-doc-status.is-missing')).toBe('Not written');
       expect(row.querySelector('button')).toBeNull();
@@ -238,7 +262,7 @@ describe('RunAiReportsComponent', () => {
 
     pending.next([aiDoc(71, 1)]);
     fixture.detectChanges();
-    expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Not written']);
+    expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Not written', 'Written']);
   });
 
   it('should preselect the run\'s own writer over the launcher\'s', () => {
@@ -283,7 +307,7 @@ describe('RunAiReportsComponent', () => {
 
     expect(service.writeRunReportDocuments).toHaveBeenCalledTimes(1);
 
-    expect(service.writeRunReportDocuments).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [1, 5] });
+    expect(service.writeRunReportDocuments).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [5, 1] });
     expect(status()).toBe('Waiting for the report writer');
     expect(writeButton().disabled).toBe(true);
     expect(section().querySelector('#rrReportWriterBlocked')).toBeNull();
@@ -328,23 +352,23 @@ describe('RunAiReportsComponent', () => {
     expect(status()).toBe('');
     const list = rows();
     expect(list.map(row => rowText(row, '.rr-ai-doc-name')))
-      .toEqual(['Executive Summary', 'Root Cause Analysis']);
-    expect(list.map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Written with warnings']);
-    expect(list[1].querySelector('.rr-ai-doc-status')?.classList).toContain('is-warning');
+      .toEqual(['Root Cause Analysis', 'Executive Summary']);
+    expect(list.map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written with warnings', 'Written']);
+    expect(list[0].querySelector('.rr-ai-doc-status')?.classList).toContain('is-warning');
     expect(list.map(row => rowText(row, '.rr-ai-doc-meta'))).toEqual([
-      'by Test Model on 2026-09-28 10:15 UTC',
-      'by Writer B on 2026-09-28 11:00 UTC · 1 min 12 s · $0.08 · same provider, acknowledged'
+      'by Writer B on 2026-09-28 11:00 UTC · 1 min 12 s · $0.08 · same provider, acknowledged',
+      'by Test Model on 2026-09-28 10:15 UTC'
     ]);
     const views = list.map(row => row.querySelector('button.rr-ai-doc-view') as HTMLButtonElement);
     expect(views.map(button => button.getAttribute('aria-label')))
-      .toEqual(['View the Executive Summary', 'View the Root Cause Analysis']);
+      .toEqual(['View the Root Cause Analysis', 'View the Executive Summary']);
     for (const button of views) {
       expect(button.classList).toContain('btn-gh');
       expect(button.classList).toContain('btn-gh-small');
     }
     const deletes = list.map(row => row.querySelector('button.rr-ai-doc-delete') as HTMLButtonElement);
     expect(deletes.map(button => button.getAttribute('aria-label')))
-      .toEqual(['Delete the Executive Summary', 'Delete the Root Cause Analysis']);
+      .toEqual(['Delete the Root Cause Analysis', 'Delete the Executive Summary']);
     for (const button of deletes) {
       expect(button.classList).toContain('action-btn');
       expect(button.classList).toContain('action-btn-danger');
@@ -356,8 +380,8 @@ describe('RunAiReportsComponent', () => {
       expect(button.getAttribute('style')).toContain('anchor-name: --' + button.getAttribute('interestfor'));
       expect(tip.getAttribute('style')).toContain('position-anchor: --' + button.getAttribute('interestfor'));
     }
-    expect(list[0].querySelector('.gh-tag-changed')).toBeNull();
-    expect(list[1].querySelector('.gh-tag-changed')?.textContent?.trim()).toBe('Run changed since this document was written');
+    expect(list[1].querySelector('.gh-tag-changed')).toBeNull();
+    expect(list[0].querySelector('.gh-tag-changed')?.textContent?.trim()).toBe('Run changed since this document was written');
     expect(section().querySelector('.rr-ai-write')).toBeNull();
     expect(section().querySelector('.rr-ai-download-notice')).not.toBeNull();
   });
@@ -369,9 +393,9 @@ describe('RunAiReportsComponent', () => {
 
     expect(status()).toBe('Failed: The writer returned no usable text.');
     const list = rows();
-    expect(list.map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Not written']);
-    expect(list[0].querySelector('.rr-ai-doc-view')).not.toBeNull();
-    expect(list[1].querySelector('button')).toBeNull();
+    expect(list.map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Not written', 'Written']);
+    expect(list[1].querySelector('.rr-ai-doc-view')).not.toBeNull();
+    expect(list[0].querySelector('button')).toBeNull();
     const write = section().querySelector('.rr-ai-write') as HTMLElement;
     expect(write).not.toBeNull();
     expect(section().querySelector('.rr-ai-doc-list')!.compareDocumentPosition(write) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -576,14 +600,14 @@ describe('RunAiReportsComponent', () => {
     expect(section().querySelector('.rr-ai-audiences .rr-ai-order-hint')?.classList).toContain('form-hint');
     expect(hint()).toBe('Written in this order: the Root Cause Analysis first, then the Executive Summary, which is written from it.');
 
-    // The Executive Summary alone: from the run's stored Root Cause Analysis.
+    // The Root Cause Analysis unchecked: the Executive Summary cannot be written alone, so there is no line.
     checkbox(5).click();
     fixture.detectChanges();
-    expect(hint()).toBe('The Executive Summary is written from this run\'s stored Root Cause Analysis when that was written '
-      + 'from the same data; otherwise it is written without one and says so.');
+    expect(section().querySelector('.rr-ai-order-hint')).toBeNull();
 
     // The Root Cause Analysis alone: no line.
     checkbox(5).click();
+    fixture.detectChanges();
     checkbox(1).click();
     fixture.detectChanges();
     expect(section().querySelector('.rr-ai-order-hint')).toBeNull();
@@ -593,15 +617,22 @@ describe('RunAiReportsComponent', () => {
     service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1, { rootCauseSourceDocumentId: 72 }), aiDoc(72, 5)]));
     setUp();
     load(reportRun({ assessmentJson: '{}' }));
-    expect(rows().map(row => rowText(row, '.rr-ai-doc-source'))).toEqual(['Written from Root Cause Analysis #72', undefined]);
+    expect(rows().map(row => rowText(row, '.rr-ai-doc-source'))).toEqual([undefined, 'Written from Root Cause Analysis #72']);
   });
 
   it('should say when a stored Executive Summary was written from an earlier Root Cause Analysis', () => {
     service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1, { rootCauseSourceDocumentId: 70 }), aiDoc(72, 5)]));
     setUp();
     load(reportRun({ assessmentJson: '{}' }));
-    expect(rowText(rows()[0], '.rr-ai-doc-source'))
+    expect(rowText(rows()[1], '.rr-ai-doc-source'))
       .toBe('Written from an earlier Root Cause Analysis (#70); rewrite it to include the newest');
+  });
+
+  it('should say when the Root Cause Analysis a stored Executive Summary was written from no longer exists', () => {
+    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1, { rootCauseSourceDocumentId: 72 })]));
+    setUp();
+    load(reportRun({ assessmentJson: '{}' }));
+    expect(rowText(rows()[1], '.rr-ai-doc-source')).toBe('Written from Root Cause Analysis #72, which no longer exists');
   });
 
   it('should add nothing for a stored Executive Summary that records no Root Cause Analysis', () => {
@@ -652,7 +683,7 @@ describe('RunAiReportsComponent', () => {
     fixture.detectChanges();
     tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
     expect(service.estimateRunReports).toHaveBeenCalledTimes(1);
-    expect(service.estimateRunReports).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [1, 5] });
+    expect(service.estimateRunReports).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [5, 1] });
     expect(estimateLine()).toBe('Estimating…');
 
     pending.next(estimateDto());
@@ -764,7 +795,7 @@ describe('RunAiReportsComponent', () => {
       tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
 
       expect(service.estimateRunReports).toHaveBeenCalledTimes(1);
-      expect(service.estimateRunReports).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [1, 5] });
+      expect(service.estimateRunReports).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [5, 1] });
       flush();
       discardPeriodicTasks();
     }));
@@ -802,7 +833,7 @@ describe('RunAiReportsComponent', () => {
       setActive(true);
       tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
       expect(service.estimateRunReports).toHaveBeenCalledTimes(2);
-      expect(service.estimateRunReports).toHaveBeenLastCalledWith(56, { writerModelConfigurationId: 1, audiences: [1, 5] });
+      expect(service.estimateRunReports).toHaveBeenLastCalledWith(56, { writerModelConfigurationId: 1, audiences: [5, 1] });
       flush();
       discardPeriodicTasks();
     }));
@@ -895,7 +926,7 @@ describe('RunAiReportsComponent', () => {
     anyway.click();
     expect(service.writeRunReportDocuments).toHaveBeenCalledTimes(1);
     expect(service.writeRunReportDocuments).toHaveBeenCalledWith(55, {
-      writerModelConfigurationId: 9, audiences: [1, 5], acknowledgeSameProvider: true
+      writerModelConfigurationId: 9, audiences: [5, 1], acknowledgeSameProvider: true
     });
     expect(confirm.open).toBe(false);
   });
@@ -974,7 +1005,7 @@ describe('RunAiReportsComponent', () => {
     component.writingDialog!.finished.emit(jobView(3));
     fixture.detectChanges();
 
-    expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Not written']);
+    expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Not written', 'Written']);
     expect(changes.map(change => change.status)).toEqual([3]);
 
     component.writingDialog!.viewRequested.emit(71);
@@ -1128,7 +1159,7 @@ describe('RunAiReportsComponent', () => {
       const alert = confirm.querySelector('.alert.alert-danger[role="alert"]') as HTMLElement;
       expect(alert.textContent?.trim()).toBe('The Executive Summary could not be deleted: The reports are being written.');
       expect(status()).toBe('');
-      expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Not written']);
+      expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Not written', 'Written']);
     });
   });
 
@@ -1162,8 +1193,8 @@ describe('RunAiReportsComponent', () => {
       setUp();
       load(reportRun({ assessmentJson: '{}' }));
 
-      expect(rows()[0].querySelector('.rr-ai-doc-redraw')).toBeNull();
-      const redraw = rows()[1].querySelector('.rr-ai-doc-redraw') as HTMLButtonElement;
+      expect(rows()[1].querySelector('.rr-ai-doc-redraw')).toBeNull();
+      const redraw = rows()[0].querySelector('.rr-ai-doc-redraw') as HTMLButtonElement;
       expect(redraw.classList).toContain('action-btn');
       expect(redraw.getAttribute('aria-label')).toBe('Redraw the charts of the Root Cause Analysis');
       expect(redraw.hasAttribute('title')).toBe(false);
@@ -1180,7 +1211,7 @@ describe('RunAiReportsComponent', () => {
       setUp();
       load(reportRun({ assessmentJson: '{}' }));
 
-      (rows()[1].querySelector('.rr-ai-doc-redraw') as HTMLButtonElement).click();
+      (rows()[0].querySelector('.rr-ai-doc-redraw') as HTMLButtonElement).click();
       fixture.detectChanges();
 
       expect(section().querySelector('.rr-ai-redraw-error')?.textContent?.trim())
@@ -1193,12 +1224,12 @@ describe('RunAiReportsComponent', () => {
       setUp();
       load(reportRun({ assessmentJson: '{}' }));
 
-      expect(rows()[0].querySelector('app-root-cause-runs')).toBeNull();
-      const details = rows()[1].querySelector('app-root-cause-runs details') as HTMLDetailsElement;
+      expect(rows()[1].querySelector('app-root-cause-runs')).toBeNull();
+      const details = rows()[0].querySelector('app-root-cause-runs details') as HTMLDetailsElement;
       details.open = true;
       details.dispatchEvent(new Event('toggle'));
       fixture.detectChanges();
-      (rows()[1].querySelector('.rcr-set-up') as HTMLButtonElement).click();
+      (rows()[0].querySelector('.rcr-set-up') as HTMLButtonElement).click();
 
       expect(service.getReportDocument).toHaveBeenCalledWith(72);
       expect(prefills.map(prefill => prefill.sourceLabel)).toEqual(['Set up from Root Cause Analysis #72, run 1']);
@@ -1214,7 +1245,7 @@ describe('RunAiReportsComponent', () => {
       setUp();
       load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
 
-      const row = rows()[1];
+      const row = rows()[0];
       expect(row.querySelector('.rcc-new')?.textContent).toContain('New controls available since this document was written (run #812)');
       (row.querySelector('.rcc-rewrite') as HTMLButtonElement).click();
       fixture.detectChanges();
@@ -1236,6 +1267,285 @@ describe('RunAiReportsComponent', () => {
       });
       expect(confirm.open).toBe(false);
       expect(writingOpen).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('the remembered report writer', () => {
+    it('opens a run without its own writer on the writer used last, before the launcher\'s', () => {
+      rememberReportWriterId(8);
+      setUp(1);
+      load(reportRun({ assessmentJson: '{}' }));
+
+      expect(component.writerConfigId).toBe(8);
+      expect(writeButton().disabled).toBe(false);
+    });
+
+    it('keeps the run\'s own writer over the remembered one', () => {
+      rememberReportWriterId(8);
+      setUp();
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+
+      expect(component.writerConfigId).toBe(1);
+    });
+
+    it('never preselects a remembered writer that would be warned about or refused for the run\'s candidate', () => {
+      // GPT Writer shares the candidate's provider: the launcher's writer is next.
+      rememberReportWriterId(9);
+      setUp(1);
+      load(reportRun({ assessmentJson: '{}' }));
+      expect(component.writerConfigId).toBe(1);
+
+      // The candidate's own model is refused, and nothing else qualifies.
+      rememberReportWriterId(10);
+      setUp(null);
+      load(reportRun({ assessmentJson: '{}' }));
+      expect(component.writerConfigId).toBeNull();
+      expect(section().querySelector('#rrReportWriterBlocked')).toBeNull();
+    });
+
+    it('remembers a writer chosen in the picker and the writer of a write; clearing the picker forgets nothing', () => {
+      service.writeRunReportDocuments.mockReturnValue(of({ runId: 55, status: 1 }));
+      setUp();
+      load(reportRun({ assessmentJson: '{}' }));
+
+      component.selectWriter(CONFIGS[1]);
+      expect(rememberedReportWriterId()).toBe(8);
+      expect(JSON.parse(localStorage.getItem(REPORT_WRITER_MEMORY_KEY)!)).toEqual({ version: 1, writerConfigId: 8 });
+
+      component.selectWriter(null);
+      expect(rememberedReportWriterId()).toBe(8);
+
+      component.selectWriter(CONFIGS[0]);
+      localStorage.removeItem(REPORT_WRITER_MEMORY_KEY);
+      fixture.detectChanges();
+      writeButton().click();
+      expect(service.writeRunReportDocuments).toHaveBeenCalledTimes(1);
+      expect(rememberedReportWriterId()).toBe(1);
+    });
+
+    it('chooses the default again when the configurations arrive after the run, but never over the user\'s choice', () => {
+      setUp();
+      fixture.componentRef.setInput('writerConfigs', []);
+      fixture.componentRef.setInput('pickerOptions', []);
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+      expect(component.writerConfigId).toBeNull();
+
+      fixture.componentRef.setInput('writerConfigs', CONFIGS);
+      fixture.componentRef.setInput('pickerOptions', OPTIONS);
+      fixture.detectChanges();
+      expect(component.writerConfigId).toBe(1);
+      expect(writeButton().disabled).toBe(false);
+
+      // Chosen before the rest arrive: the choice stands.
+      setUp();
+      fixture.componentRef.setInput('writerConfigs', [CONFIGS[1]]);
+      fixture.componentRef.setInput('pickerOptions', toModelPickerOptions([CONFIGS[1]]));
+      load(reportRun({ id: 56, assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+      expect(component.writerConfigId).toBeNull();
+      component.selectWriter(CONFIGS[1]);
+      fixture.componentRef.setInput('writerConfigs', CONFIGS);
+      fixture.componentRef.setInput('pickerOptions', OPTIONS);
+      fixture.detectChanges();
+      expect(component.writerConfigId).toBe(8);
+    });
+  });
+
+  describe('the Executive Summary and its Root Cause Analysis', () => {
+    const summaryReason = (): string | undefined => rowText(section(), '#rrEsReason');
+    const rewriteBox = (): HTMLInputElement | null => section().querySelector<HTMLInputElement>('#rrRootCauseRewrite');
+
+    it('lists the Root Cause Analysis first, the Executive Summary nested under it and described by its reason line', () => {
+      setUp();
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+
+      const boxes = Array.from(section().querySelectorAll<HTMLInputElement>('.rr-ai-audiences input[type="checkbox"]'));
+      expect(boxes.map(box => box.id)).toEqual(['rrAudience5', 'rrAudience1']);
+      expect(checkbox(1).closest('.rr-ai-choices-nested')?.closest('li')?.contains(checkbox(5))).toBe(true);
+      expect(checkbox(1).getAttribute('aria-describedby')).toBe('rrEsReason');
+      expect(checkbox(1).hasAttribute('aria-disabled')).toBe(false);
+      expect(summaryReason()).toBe('Written from the Root Cause Analysis above, after it.');
+      expect(rewriteBox()).toBeNull();
+      expect(service.getRunSummaryReadiness).not.toHaveBeenCalled();
+    });
+
+    it('blocks the Executive Summary while the Root Cause Analysis is unchecked, says so, and restores it when it is checked again', () => {
+      setUp();
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+      expect(checkbox(1).checked).toBe(true);
+
+      checkbox(5).click();
+      fixture.detectChanges();
+      expect(checkbox(1).checked).toBe(false);
+      expect(checkbox(1).disabled).toBe(false);
+      expect(checkbox(1).getAttribute('aria-disabled')).toBe('true');
+      expect(checkbox(1).closest('label')?.classList).toContain('is-blocked');
+      expect(summaryReason()).toBe('Needs the Root Cause Analysis: check Root Cause Analysis to write both.');
+      expect(status()).toBe('The Executive Summary was unchecked: it is written from the Root Cause Analysis.');
+      expect(writeButton().disabled).toBe(true);
+
+      checkbox(5).click();
+      fixture.detectChanges();
+      expect(checkbox(1).checked).toBe(true);
+      expect(checkbox(1).hasAttribute('aria-disabled')).toBe(false);
+      expect(status()).toBe('');
+
+      // An Executive Summary the user unchecked stays unchecked, and nothing is announced.
+      checkbox(1).click();
+      fixture.detectChanges();
+      checkbox(5).click();
+      fixture.detectChanges();
+      expect(status()).toBe('');
+      checkbox(5).click();
+      fixture.detectChanges();
+      expect(checkbox(1).checked).toBe(false);
+    });
+
+    it('refuses a click on the blocked Executive Summary with an inline error whose fix checks both and focuses it', () => {
+      service.writeRunReportDocuments.mockReturnValue(of({ runId: 55, status: 1 }));
+      setUp();
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+      checkbox(5).click();
+      fixture.detectChanges();
+
+      checkbox(1).click();
+      fixture.detectChanges();
+      expect(checkbox(1).checked).toBe(false);
+      const error = section().querySelector('#rrEsError') as HTMLElement;
+      expect(error.classList).toContain('gh-field-error');
+      expect(error.getAttribute('role')).toBe('alert');
+      expect(error.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+      expect(rowText(section(), '#rrEsError'))
+        .toContain('The Executive Summary is written from the Root Cause Analysis, so it cannot be written alone here.');
+      expect(checkbox(1).getAttribute('aria-describedby')).toBe('rrEsReason rrEsError');
+      // Space arrives as a click: refused the same way.
+      checkbox(1).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+      expect(checkbox(1).checked).toBe(false);
+
+      const fix = error.querySelector('button.rr-ai-es-fix') as HTMLButtonElement;
+      expect(fix.getAttribute('type')).toBe('button');
+      expect(fix.classList).toContain('btn-link');
+      expect(fix.textContent?.trim()).toBe('Check the Root Cause Analysis');
+      fix.click();
+      fixture.detectChanges();
+      expect(checkbox(5).checked).toBe(true);
+      expect(checkbox(1).checked).toBe(true);
+      expect(document.activeElement).toBe(checkbox(1));
+      expect(section().querySelector('#rrEsError')).toBeNull();
+
+      writeButton().click();
+      expect(service.writeRunReportDocuments).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [5, 1] });
+    });
+
+    it('writes the Executive Summary alone from a stored Root Cause Analysis written from the run\'s current data', () => {
+      service.listReportDocuments.mockReturnValue(of([aiDoc(72, 5)]));
+      service.writeRunReportDocuments.mockReturnValue(of({ runId: 55, status: 1 }));
+      setUp();
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+
+      expect(service.getRunSummaryReadiness).toHaveBeenCalledWith(55);
+      expect(checkbox(5)).toBeNull();
+      expect(rewriteBox()).toBeNull();
+      expect(checkbox(1).checked).toBe(true);
+      expect(checkbox(1).hasAttribute('aria-disabled')).toBe(false);
+      expect(summaryReason()).toBe('Written from Root Cause Analysis #72, which was written from this run\'s current data.');
+      expect(section().querySelector('.rr-ai-order-hint')).toBeNull();
+      expect(rowText(section(), '.rr-ai-written-hint')).toBe('Root Cause Analysis is already written. Delete it to write it again.');
+
+      writeButton().click();
+      expect(service.writeRunReportDocuments).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [1] });
+    });
+
+    it('offers Root Cause Analysis — rewrite for an outdated stored analysis, and writes both, replacing it', () => {
+      service.listReportDocuments.mockReturnValue(of([aiDoc(72, 5)]));
+      service.getRunSummaryReadiness.mockReturnValue(of(readiness('outdated')));
+      service.writeRunReportDocuments.mockReturnValue(of({ runId: 55, status: 1 }));
+      setUp();
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+
+      const rewrite = rewriteBox()!;
+      expect(rewrite.checked).toBe(false);
+      expect(rewrite.closest('label')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Root Cause Analysis — rewrite');
+      expect(rowText(section(), `#${rewrite.getAttribute('aria-describedby')}`))
+        .toBe('Replaces Root Cause Analysis #72, written from different data.');
+      expect(checkbox(1).closest('.rr-ai-choices-nested')?.closest('li')?.contains(rewrite)).toBe(true);
+      expect(checkbox(1).checked).toBe(false);
+      expect(checkbox(1).getAttribute('aria-disabled')).toBe('true');
+      expect(summaryReason()).toBe('Root Cause Analysis #72 was written from different data than this run has now. '
+        + 'Check Root Cause Analysis — rewrite to write both.');
+      expect(writeButton().disabled).toBe(true);
+      // Offered for rewriting, it is not listed as written and not writable.
+      expect(section().querySelector('.rr-ai-written-hint')).toBeNull();
+
+      // The fix offered on a refused click is the rewrite.
+      checkbox(1).click();
+      fixture.detectChanges();
+      const fix = section().querySelector('#rrEsError button.rr-ai-es-fix') as HTMLButtonElement;
+      expect(fix.textContent?.trim()).toBe('Check Root Cause Analysis — rewrite');
+      fix.click();
+      fixture.detectChanges();
+      expect(rewriteBox()!.checked).toBe(true);
+      expect(checkbox(1).checked).toBe(true);
+      expect(summaryReason()).toBe('Written from the Root Cause Analysis above, after it.');
+      expect(rowText(section(), '.rr-ai-order-hint'))
+        .toBe('Written in this order: the Root Cause Analysis first, then the Executive Summary, which is written from it.');
+
+      writeButton().click();
+      expect(service.writeRunReportDocuments).toHaveBeenCalledWith(55, {
+        writerModelConfigurationId: 1, audiences: [5, 1], replaceDocumentIds: [72]
+      });
+    });
+
+    it('says the stored analysis is being checked, and offers Try again when the check failed', () => {
+      const pending = new Subject<BenchmarkRootCauseReadinessDto>();
+      service.listReportDocuments.mockReturnValue(of([aiDoc(72, 5)]));
+      service.getRunSummaryReadiness.mockReturnValue(pending.asObservable());
+      setUp();
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+
+      expect(checkbox(1).getAttribute('aria-disabled')).toBe('true');
+      expect(summaryReason()).toBe('Checking the stored Root Cause Analysis…');
+      expect(section().querySelector('.rr-ai-es-retry')).toBeNull();
+
+      pending.error({ status: 500 });
+      fixture.detectChanges();
+      expect(checkbox(1).getAttribute('aria-disabled')).toBe('true');
+      expect(summaryReason()).toContain('The stored Root Cause Analysis could not be checked.');
+      const retry = section().querySelector('.rr-ai-es-retry') as HTMLButtonElement;
+      expect(retry.getAttribute('type')).toBe('button');
+      expect(retry.classList).toContain('btn-link');
+      expect(retry.textContent?.trim()).toBe('Try again');
+
+      service.getRunSummaryReadiness.mockReturnValue(of(readiness('usable')));
+      retry.click();
+      fixture.detectChanges();
+      expect(service.getRunSummaryReadiness).toHaveBeenCalledTimes(2);
+      expect(checkbox(1).hasAttribute('aria-disabled')).toBe(false);
+      expect(checkbox(1).checked).toBe(true);
+    });
+
+    it('shows the server\'s refusal of an Executive Summary written alone, and checks the stored analysis again', () => {
+      service.listReportDocuments.mockReturnValue(of([aiDoc(72, 5)]));
+      const message = 'The stored Root Cause Analysis (#72) was written from different data than this run has now, so the '
+        + 'Executive Summary cannot be written from it. Rewrite the Root Cause Analysis with it: check Root Cause Analysis — rewrite.';
+      service.writeRunReportDocuments.mockReturnValue(throwError(() => ({
+        status: 409, error: { error: message, code: 'rootCauseOutdated', rootCauseDocumentId: 72 }
+      })));
+      setUp();
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+      expect(service.getRunSummaryReadiness).toHaveBeenCalledTimes(1);
+
+      service.getRunSummaryReadiness.mockReturnValue(of(readiness('outdated')));
+      writeButton().click();
+      fixture.detectChanges();
+
+      const alert = section().querySelector('.rr-ai-write [role="alert"]') as HTMLElement;
+      expect(alert.textContent?.trim()).toBe(message);
+      expect(service.listReportDocuments).toHaveBeenCalledTimes(2);
+      expect(service.getRunSummaryReadiness).toHaveBeenCalledTimes(2);
+      expect(checkbox(1).getAttribute('aria-disabled')).toBe('true');
+      expect(rewriteBox()).not.toBeNull();
+      expect(writingOpen).not.toHaveBeenCalled();
     });
   });
 });

@@ -316,6 +316,8 @@ public static class HarnessImpactLedger
                 "Provider attempt ledger and failure attribution; answers ended by our time budget, governor or network are Failed, which the synthesis lists as excluded like ProviderError and which never carry text to grade."),
             new("57", CI,
                 "Wiki title equality ignores one leading 'The' in wiki_view, item_lookup and monster_lookup; _policy.md asks for a role-relative helper's definition."),
+            new("58", CI,
+                "The harness-57 _policy.md sentence on role-relative helpers is removed; the tool guides and the candidate system prompt hash as under harness 56."),
         };
 
         return table.OrderBy(e => e.Number).ToList();

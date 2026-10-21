@@ -5,6 +5,7 @@ import {
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportDocumentOrigin,
+  BenchmarkRootCauseReadinessDto,
   BenchmarkRunReportDocumentsStatus,
   BenchmarkRunReportEstimateDto,
   BenchmarkRunReportJobDto,
@@ -27,7 +28,10 @@ import {
  * its tag and meta line, the job status line, and the cost estimate block.
  */
 
-/** The two AI-written completion documents of a run or a battery run, in the order the panels list them. */
+/**
+ * The two AI-written completion documents of a run or a battery run, in the order the panels list them:
+ * the order they are written in, the Root Cause Analysis first.
+ */
 export const REPORT_DOCUMENT_AUDIENCES: readonly BenchmarkReportAudience[] =
   RUN_REPORT_AUDIENCE_OPTIONS.map(option => option.audience);
 
@@ -145,26 +149,20 @@ export const REPORT_WRITE_ORDER_BOTH_HINT =
 
 /**
  * The write order of the checked documents, under their checkboxes: both checked, the Root Cause Analysis
- * first and the Executive Summary from it; the Executive Summary alone, from `owner`'s stored Root Cause
- * Analysis (*this run's*, *each model's*) when that was written from the same data; '' otherwise.
+ * first and the Executive Summary from it; '' otherwise, where the Executive Summary's own reason line
+ * says what it is written from.
  */
-export function reportWriteOrderHint(audiences: readonly BenchmarkReportAudience[], owner: string): string {
-  const summary = audiences.includes(BenchmarkReportAudience.ExecutiveSummary);
-  const rootCause = audiences.includes(BenchmarkReportAudience.RootCauseAnalysis);
-  if (summary && rootCause) {
-    return REPORT_WRITE_ORDER_BOTH_HINT;
-  }
-  if (summary) {
-    return `The Executive Summary is written from ${owner} stored Root Cause Analysis when that was written from the same data; `
-      + 'otherwise it is written without one and says so.';
-  }
-  return '';
+export function reportWriteOrderHint(audiences: readonly BenchmarkReportAudience[]): string {
+  return audiences.includes(BenchmarkReportAudience.ExecutiveSummary) && audiences.includes(BenchmarkReportAudience.RootCauseAnalysis)
+    ? REPORT_WRITE_ORDER_BOTH_HINT
+    : '';
 }
 
 /**
- * A stored Executive Summary's Root Cause Analysis: *Written from Root Cause Analysis #12*, or, when
+ * A stored Executive Summary's Root Cause Analysis: *Written from Root Cause Analysis #12*; when
  * `documents` (the subject's list) holds a later Root Cause Analysis of the same subject, that it was
- * written from an earlier one. '' for another audience and for an Executive Summary that records none.
+ * written from an earlier one; when it holds neither that one nor a later one, that it no longer
+ * exists. '' for another audience and for an Executive Summary that records none.
  */
 export function reportRootCauseSourceLine(
   doc: BenchmarkReportDocumentListItemDto,
@@ -174,12 +172,119 @@ export function reportRootCauseSourceLine(
   if (doc.audience !== BenchmarkReportAudience.ExecutiveSummary || sourceId === null || sourceId === undefined) {
     return '';
   }
+  const analyses = documents.filter(other => other.audience === BenchmarkReportAudience.RootCauseAnalysis
+    && other.subjectKey === doc.subjectKey);
   // Document ids grow with every document stored, so a larger one is a later Root Cause Analysis.
-  const newer = documents.some(other => other.audience === BenchmarkReportAudience.RootCauseAnalysis
-    && other.subjectKey === doc.subjectKey && other.id > sourceId);
-  return newer
-    ? `Written from an earlier Root Cause Analysis (#${sourceId}); rewrite it to include the newest`
-    : `Written from Root Cause Analysis #${sourceId}`;
+  if (analyses.some(other => other.id > sourceId)) {
+    return `Written from an earlier Root Cause Analysis (#${sourceId}); rewrite it to include the newest`;
+  }
+  return analyses.some(other => other.id === sourceId)
+    ? `Written from Root Cause Analysis #${sourceId}`
+    : `Written from Root Cause Analysis #${sourceId}, which no longer exists`;
+}
+
+/**
+ * What the tab knows of the stored Root Cause Analysis's readiness for an Executive Summary written from
+ * it: the request is out, it failed, or the server answered.
+ */
+export type ReportRootCauseReadiness =
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'failed' }
+  | { readonly kind: 'answered'; readonly readiness: BenchmarkRootCauseReadinessDto };
+
+/** What the inline error's fix button checks: the Root Cause Analysis, or its rewrite. */
+export type ExecutiveSummaryFix = 'checkRootCause' | 'checkRootCauseRewrite';
+
+/** The Executive Summary checkbox of a write panel: whether it may be checked, and the reason line under it. */
+export interface ExecutiveSummaryAvailability {
+  /** The Executive Summary may be checked; otherwise its checkbox is `aria-disabled` and unchecked. */
+  readonly available: boolean;
+  /** The visible reason line under the checkbox, its `aria-describedby`. */
+  readonly reason: string;
+  /** What the inline error's fix button checks; null when the panel has no fix to offer. */
+  readonly fix: ExecutiveSummaryFix | null;
+  /** The readiness could not be read: the reason line offers Try again. */
+  readonly retry: boolean;
+}
+
+/** What `executiveSummaryAvailability` decides from. */
+export interface ExecutiveSummaryAvailabilityInput {
+  /** The Root Cause Analysis is checked in the panel: written, or rewritten in place of the stored one. */
+  readonly rootCauseChecked: boolean;
+  /** The stored Root Cause Analysis's id; null when none is stored. */
+  readonly storedRootCauseId: number | null;
+  /** The stored analysis's readiness; null while it has not been asked. */
+  readonly readiness: ReportRootCauseReadiness | null;
+  /** The subject's noun: *run*, *battery run*. */
+  readonly subjectNoun: string;
+}
+
+/** The inline error under an Executive Summary checked while it is blocked. */
+export const EXECUTIVE_SUMMARY_BLOCKED_ERROR =
+  'The Executive Summary is written from the Root Cause Analysis, so it cannot be written alone here.';
+
+/** The polite status line after unchecking the Root Cause Analysis unchecked the Executive Summary. */
+export const EXECUTIVE_SUMMARY_UNCHECKED_ANNOUNCEMENT =
+  'The Executive Summary was unchecked: it is written from the Root Cause Analysis.';
+
+/** The fix button's label for each fix. */
+export function executiveSummaryFixLabel(fix: ExecutiveSummaryFix): string {
+  return fix === 'checkRootCauseRewrite' ? 'Check Root Cause Analysis — rewrite' : 'Check the Root Cause Analysis';
+}
+
+/**
+ * Whether the stored Root Cause Analysis's readiness offers the **Root Cause Analysis — rewrite**
+ * checkbox: the server answered that it was written from other data. A subject the server could not
+ * prepare answers `outdated` with a message and no code, which a rewrite would not cure.
+ */
+export function rootCauseRewriteOffered(readiness: ReportRootCauseReadiness | null): boolean {
+  if (readiness === null || readiness.kind !== 'answered') {
+    return false;
+  }
+  const answer = readiness.readiness;
+  return answer.state === 'outdated' && (answer.code === 'rootCauseOutdated' || !answer.message);
+}
+
+/**
+ * The Executive Summary checkbox's state in a run's or a battery run's write panel. An Executive Summary
+ * is written only from a Root Cause Analysis: the one checked beside it, or the stored one when it was
+ * written from the subject's current data.
+ */
+export function executiveSummaryAvailability(input: ExecutiveSummaryAvailabilityInput): ExecutiveSummaryAvailability {
+  const blocked = (reason: string, fix: ExecutiveSummaryFix | null = null, retry = false): ExecutiveSummaryAvailability =>
+    ({ available: false, reason, fix, retry });
+  if (input.rootCauseChecked) {
+    return { available: true, reason: 'Written from the Root Cause Analysis above, after it.', fix: null, retry: false };
+  }
+  if (input.storedRootCauseId === null) {
+    return blocked('Needs the Root Cause Analysis: check Root Cause Analysis to write both.', 'checkRootCause');
+  }
+  const readiness = input.readiness;
+  if (readiness === null || readiness.kind === 'loading') {
+    return blocked('Checking the stored Root Cause Analysis…');
+  }
+  if (readiness.kind === 'failed') {
+    return blocked('The stored Root Cause Analysis could not be checked.', null, true);
+  }
+  const answer = readiness.readiness;
+  const id = answer.rootCauseDocumentId ?? input.storedRootCauseId;
+  switch (answer.state) {
+    case 'usable':
+      return {
+        available: true,
+        reason: `Written from Root Cause Analysis #${id}, which was written from this ${input.subjectNoun}'s current data.`,
+        fix: null,
+        retry: false
+      };
+    case 'outdated':
+      return rootCauseRewriteOffered(readiness)
+        ? blocked(`Root Cause Analysis #${id} was written from different data than this ${input.subjectNoun} has now. `
+          + 'Check Root Cause Analysis — rewrite to write both.', 'checkRootCauseRewrite')
+        : blocked(answer.message ?? 'The stored Root Cause Analysis could not be checked.');
+    default:
+      // The list holds an analysis the server no longer finds.
+      return blocked(answer.message?.trim() || 'Needs the Root Cause Analysis: check Root Cause Analysis to write both.');
+  }
 }
 
 /** The job state as the status line words it, or '' when the document rows already say everything. */

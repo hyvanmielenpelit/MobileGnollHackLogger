@@ -67,7 +67,7 @@ public static class RootCauseKnownFacts
             var lead = pair.Components.Where(c => c.Share.HasValue).OrderByDescending(c => c.Share!.Value).FirstOrDefault();
             if (lead == null) continue;
             Add(KindDecomposition,
-                RootCauseHypotheses.Capitalize(lead.Label) + " accounts for " + RootCauseHypotheses.SharePct(lead) + " of the per-question time difference between "
+                RootCauseHypotheses.Capitalize(lead.Label) + Verb(lead.Label, " accounts for ", " account for ") + RootCauseHypotheses.SharePct(lead) + " of the per-question time difference between "
                 + ctx.Name(pair.First) + " and " + ctx.Name(pair.Second) + ".",
                 "rca.speed." + pair.First + "." + pair.Second + "." + lead.Key + ".share");
         }
@@ -76,7 +76,7 @@ public static class RootCauseKnownFacts
             var lead = pair.Components.Where(c => c.Key != "all" && c.Share.HasValue).OrderByDescending(c => c.Share!.Value).FirstOrDefault();
             if (lead == null) continue;
             Add(KindDecomposition,
-                RootCauseHypotheses.Capitalize(lead.Label) + " accounts for " + RootCauseHypotheses.SharePct(lead) + " of the per-question cost difference between "
+                RootCauseHypotheses.Capitalize(lead.Label) + Verb(lead.Label, " accounts for ", " account for ") + RootCauseHypotheses.SharePct(lead) + " of the per-question cost difference between "
                 + ctx.Name(pair.First) + " and " + ctx.Name(pair.Second) + ".",
                 "rca.cost." + pair.First + "." + pair.Second + "." + lead.Key + "." + lead.Effect + ".share");
         }
@@ -148,14 +148,14 @@ public static class RootCauseKnownFacts
             var timeLead = summary.Time.OrderByDescending(s => s.Value).FirstOrDefault();
             if (timeLead != null && timeTotal > 0)
             {
-                Add(KindDecomposition, RootCauseHypotheses.Capitalize(timeLead.Label) + " is " + RootCauseHypotheses.Pct(timeLead.Value / timeTotal)
+                Add(KindDecomposition, RootCauseHypotheses.Capitalize(timeLead.Label) + Verb(timeLead.Label, " is ", " are ") + RootCauseHypotheses.Pct(timeLead.Value / timeTotal)
                     + " of " + name + "'s time per question.", "rca.within." + summary.Token + ".time." + timeLead.Key + ".share");
             }
             double costTotal = summary.Cost.Sum(s => s.Value);
             var costLead = summary.Cost.OrderByDescending(s => s.Value).FirstOrDefault();
             if (costLead != null && costTotal > 0)
             {
-                Add(KindDecomposition, RootCauseHypotheses.Capitalize(costLead.Label) + " is " + RootCauseHypotheses.Pct(costLead.Value / costTotal)
+                Add(KindDecomposition, RootCauseHypotheses.Capitalize(costLead.Label) + Verb(costLead.Label, " is ", " are ") + RootCauseHypotheses.Pct(costLead.Value / costTotal)
                     + " of " + name + "'s cost per question.", "rca.within." + summary.Token + ".cost." + costLead.Key + ".share");
             }
         }
@@ -183,6 +183,22 @@ public static class RootCauseKnownFacts
         for (int n = 0; n < facts.Count; n++) facts[n].Number = n + 1;
         return facts;
     }
+
+    /// <summary>
+    /// The decomposition component labels that take a plural verb: the time and cost segments and the speed components
+    /// whose head noun is plural. Any other label takes a singular verb.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> PluralComponentLabels = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        RootCauseSegments.Label(RootCauseSegments.CacheRead),
+        RootCauseSegments.Label(RootCauseSegments.CacheWrite),
+        RootCauseSegments.Label(RootCauseSegments.OwnWaits),
+        RootCauseDecomposition.SpeedComponentLabel("outputTokens"),
+    };
+
+    /// <summary><paramref name="singular"/>, or <paramref name="plural"/> when <paramref name="label"/> is one of <see cref="PluralComponentLabels"/>.</summary>
+    internal static string Verb(string? label, string singular, string plural)
+        => label != null && PluralComponentLabels.Contains(label.Trim()) ? plural : singular;
 
     private static string Ratio(double value) => Math.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
 

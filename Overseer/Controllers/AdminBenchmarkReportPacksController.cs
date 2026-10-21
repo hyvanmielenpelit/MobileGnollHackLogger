@@ -138,7 +138,9 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// estimated cost, prompt size and share of the writer's context window, flagged when it is above
     /// <see cref="ContextWindowRefusalShare"/> (the client refuses from the checked documents; Start
     /// refuses over the requested ones), the totals over the requested documents, the same-provider
-    /// warning and any other refusal. Computes the fact sheets and the prompts, or reads them from
+    /// warning and any other refusal. Each listed Root Cause Analysis of a prepared subject or covered set carries
+    /// whether an Executive Summary may be written from it (<see cref="BenchmarkReportPackWrittenDocumentDto.SummaryReadiness"/>);
+    /// another covered set's do not. Computes the fact sheets and the prompts, or reads them from
     /// <see cref="BenchmarkReportPackPreviewCache"/>; a comparison-scope preparation runs once per cache
     /// key in a scope of its own, joined by any identical preview while it runs, and goes on to fill the
     /// cache when the request that started it is aborted, up to
@@ -447,6 +449,15 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         lists.Restart();
         preview.SubjectDocuments = await SubjectDocumentsAsync(
             numbered?.Id, ComparisonKeyOf(request), entries.Select(e => (e.Subject.Key, e.Subject.Label)).ToList(), ct);
+        foreach (var subjectEntry in entries)
+        {
+            var rows = preview.SubjectDocuments
+                .Where(s => s.SubjectKey == subjectEntry.Subject.Key)
+                .SelectMany(s => s.Documents)
+                .Concat(subjectEntry == entry ? preview.WrittenDocuments : Enumerable.Empty<BenchmarkReportPackWrittenDocumentDto>());
+            await SetSummaryReadinessAsync(rows, BenchmarkReportScope.Model, subjectEntry.Subject.Key, subjectEntry.FactsSha256,
+                subjectEntry.Subject.Label, ComparisonKeyOf(request), ct);
+        }
         timings.ListsMs += lists.ElapsedMilliseconds;
 
         SystemAiApiConfiguration? writer = null;
@@ -568,6 +579,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         preview.OtherModelSets = await CoveredSetsAsync(numbered?.Id, comparisonKey, entry.CoveredSetKey, ct);
         preview.SubjectDocuments = await SubjectDocumentsAsync(
             numbered?.Id, comparisonKey, entry.Covered.Select(e => (e.Key, e.Label)).ToList(), ct);
+        await SetSummaryReadinessAsync(preview.WrittenDocuments, BenchmarkReportScope.Comparison, entry.SheetSubjectKey, entry.FactsSha256,
+            BenchmarkRootCauseReadiness.CoveredModelsLabel, comparisonKey: null, ct);
         timings.ListsMs = stage.ElapsedMilliseconds;
 
         SystemAiApiConfiguration? writer = null;
@@ -799,7 +812,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
     /// <summary>
     /// What the preview and Start's pre-flight read from a preparation, with each offered document's
-    /// prompt length; <paramref name="timings"/>, when given, receives the prompt builds' milliseconds.
+    /// prompt length and the sheet's facts hash; <paramref name="timings"/>, when given, receives the prompt builds' milliseconds.
     /// </summary>
     private static BenchmarkReportPackPreviewEntry PreviewEntryOf(BenchmarkReportPackPreparation prep, BenchmarkReportPackPrepareTimings? timings = null)
     {
@@ -828,7 +841,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             ComparisonEntryCount = prep.ComparisonEntryCount,
             ComparableEntryCount = prep.Comparison.Entries.Count(e => !e.Excluded),
             ReferenceEntryKey = prep.ReferenceEntryKey,
-            PromptChars = promptChars
+            PromptChars = promptChars,
+            FactsSha256 = BenchmarkRootCauseDigest.FactsSha256(prep.Sheet)
         };
     }
 
@@ -863,7 +877,9 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// <c>replaceDocumentIds</c> that this job does not write again (400); a requested document already
     /// written for this comparison and subject and not named in <c>replaceDocumentIds</c> (409); spend
     /// cap (429); same provider, unacknowledged (409 with the warning); a job already running (409 with
-    /// its state). Comparison scope: see <see cref="StartComparisonAsync"/>. The comparison is numbered
+    /// its state); the Executive Summary without the Root Cause Analysis while a subject's newest stored one of this
+    /// comparison is not usable (409 <c>{ error, code, rootCauseDocumentId }</c> naming the model,
+    /// <see cref="BenchmarkRootCauseReadiness"/>). Comparison scope: see <see cref="StartComparisonAsync"/>. The comparison is numbered
     /// before the job starts, so every document it writes belongs to it. A request the client aborts is
     /// a 499.
     /// </summary>
@@ -957,6 +973,22 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 return StatusCode(StatusCodes.Status409Conflict, running.ToDto());
             }
 
+            if (BenchmarkRootCauseReadiness.AsksSummaryAlone(audiences))
+            {
+                int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
+                var timings = new PreviewTimings();
+                foreach (var subject in subjects)
+                {
+                    var (entry, prepRefusal, _) = await ModelEntryAsync(request, subject.Key, excerptChars, comparison, timings, ct);
+                    if (entry == null) return BadRequest(new { error = prepRefusal });
+                    var newest = await BenchmarkRootCauseReadiness.NewestAsync(
+                        _db, BenchmarkReportDocumentOrigin.ReportPack, BenchmarkReportScope.Model, subject.Key, ct, comparisonKey);
+                    var (readiness, _) = BenchmarkRootCauseReadiness.Evaluate(
+                        newest, entry.FactsSha256, BenchmarkReportDocumentOrigin.ReportPack, subject.Label);
+                    if (readiness.State != BenchmarkRootCauseReadiness.Usable) return Conflict(RootCauseConflictBody(readiness));
+                }
+            }
+
             string startedByUserId = User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
             var (numbered, identityError) = await _comparisonIdentity.EnsureAsync(
                 request.RunIds, request.GroupIds, request.BatteryRunIds, string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId, ct);
@@ -996,7 +1028,9 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// writer's context window (400); a document named in <c>replaceDocumentIds</c> that this job does not
     /// write again (400); a requested document already written for this covered set and not named in
     /// <c>replaceDocumentIds</c> (409); spend cap (429); a writer sharing a covered model's provider,
-    /// unacknowledged (409 with the warning naming those models); a job already running (409).
+    /// unacknowledged (409 with the warning naming those models); a job already running (409); the Executive Summary
+    /// without the Root Cause Analysis while the covered set's newest stored one is not usable (409
+    /// <c>{ error, code, rootCauseDocumentId }</c>, <see cref="BenchmarkRootCauseReadiness"/>).
     /// </summary>
     private async Task<IActionResult> StartComparisonAsync(BenchmarkReportPackRequest request, CancellationToken ct)
     {
@@ -1067,6 +1101,15 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         if (running != null && running.Status == BenchmarkReportPackJobStatus.Running)
         {
             return StatusCode(StatusCodes.Status409Conflict, running.ToDto());
+        }
+
+        if (BenchmarkRootCauseReadiness.AsksSummaryAlone(audiences))
+        {
+            var newest = await BenchmarkRootCauseReadiness.NewestAsync(
+                _db, BenchmarkReportDocumentOrigin.ReportPack, BenchmarkReportScope.Comparison, prep.SheetSubjectKey, ct);
+            var (readiness, _) = BenchmarkRootCauseReadiness.Evaluate(
+                newest, prep.FactsSha256, BenchmarkReportDocumentOrigin.ReportPack, BenchmarkRootCauseReadiness.CoveredModelsLabel);
+            if (readiness.State != BenchmarkRootCauseReadiness.Usable) return Conflict(RootCauseConflictBody(readiness));
         }
 
         string startedByUserId = User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
@@ -1151,7 +1194,9 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// audience (400); a requested document already written and not replaced (409), or with none
     /// requested, every one written and none replaced (409); an unusable writer or
     /// the model under test (400); a writer of the candidate's provider, unacknowledged (409 with the
-    /// warning); a refused endpoint (400); the spend cap (429). A request the client aborts is a 499.
+    /// warning); a refused endpoint (400); the spend cap (429); the Executive Summary without the Root Cause Analysis,
+    /// neither written nor replaced, when the stored one is not usable (409 <c>{ error, code, rootCauseDocumentId }</c>,
+    /// <see cref="BenchmarkRootCauseReadiness"/>). A request the client aborts is a 499.
     /// </summary>
     [HttpPost("runs/{runId:long}/report-documents")]
     public async Task<IActionResult> WriteRunReportDocuments(long runId, [FromBody] WriteRunReportDocumentsRequest request, CancellationToken ct)
@@ -1220,6 +1265,12 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
             var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync(ct: ct);
             if (!canSpend) return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+
+            if (BenchmarkRootCauseReadiness.AsksSummaryAlone(toWrite))
+            {
+                var readiness = await RunSummaryReadinessAsync(run, prep: null, ct);
+                if (readiness.State != BenchmarkRootCauseReadiness.Usable) return Conflict(RootCauseConflictBody(readiness));
+            }
 
             run.ReportWriterModelConfigurationId = writer.Id;
             run.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Pending;
@@ -1299,9 +1350,10 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
     /// <summary>
     /// What writing the run's documents with the writer would cost, by the preview's arithmetic, with
-    /// the writer's refusal or same-provider warning. Computes the fact sheet and the prompts; makes no
-    /// model call. 404 for an unknown run; a document that is not a run-completion document is a 400; a
-    /// request the client aborts is a 499.
+    /// the writer's refusal or same-provider warning, else the refusal the write would answer with 409 for an
+    /// Executive Summary without the Root Cause Analysis (<see cref="BenchmarkRootCauseReadiness"/>). Computes the fact
+    /// sheet and the prompts; makes no model call. 404 for an unknown run; a document that is not a run-completion
+    /// document is a 400; a request the client aborts is a 499.
     /// </summary>
     [HttpPost("runs/{runId:long}/report-documents/estimate")]
     public async Task<IActionResult> EstimateRunReportDocuments(long runId, [FromBody] BenchmarkRunReportEstimateRequest request, CancellationToken ct)
@@ -1354,7 +1406,35 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             estimate.Estimates.AddRange(EstimateAudiences(prep, writer, audiences));
             estimate.EstimatedTotalCostUsd = TotalCost(estimate.Estimates);
             estimate.EstimatedTotalCostWithRepairUsd = TotalCostWithRepair(estimate.Estimates);
+            if (estimate.Refusal == null && BenchmarkRootCauseReadiness.AsksSummaryAlone(audiences))
+            {
+                var readiness = await RunSummaryReadinessAsync(run, prep, ct);
+                if (readiness.State != BenchmarkRootCauseReadiness.Usable) estimate.Refusal = readiness.Message;
+            }
             return Ok(estimate);
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>
+    /// Whether the run's Executive Summary may be written without writing its Root Cause Analysis
+    /// (<see cref="BenchmarkRootCauseReadiness"/>): 200 with <c>missing</c> when no run-completion Root Cause Analysis is
+    /// stored, else <c>usable</c> or <c>outdated</c> against the run as the estimate prepares it; a run that cannot be
+    /// prepared is <c>outdated</c> with the refusal as its message and no code. Makes no model call. 404 for an unknown
+    /// run; 499 when the client aborts.
+    /// </summary>
+    [HttpGet("runs/{runId:long}/report-documents/summary-readiness")]
+    public async Task<IActionResult> GetRunSummaryReadiness(long runId, CancellationToken ct)
+    {
+        try
+        {
+            var run = await _db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
+            if (run == null) return NotFound();
+
+            return Ok(await RunSummaryReadinessAsync(run, prep: null, ct));
         }
         catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
@@ -1866,6 +1946,63 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 Documents = NewestPerAudience(stored.Where(d => d.SubjectKey == s.Key))
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// Fills <see cref="BenchmarkReportPackWrittenDocumentDto.SummaryReadiness"/> and its message on the Root Cause Analyses
+    /// of <paramref name="rows"/> with the subject's readiness (<see cref="BenchmarkRootCauseReadiness"/>) against a sheet
+    /// whose facts hash to <paramref name="factsSha256"/>; reads nothing when the rows hold no Root Cause Analysis.
+    /// </summary>
+    private async Task SetSummaryReadinessAsync(
+        IEnumerable<BenchmarkReportPackWrittenDocumentDto> rows, BenchmarkReportScope scope, string subjectKey, string factsSha256,
+        string label, string? comparisonKey, CancellationToken ct)
+    {
+        var rootCauses = rows.Where(d => d.Audience == BenchmarkReportAudience.RootCauseAnalysis).ToList();
+        if (rootCauses.Count == 0) return;
+
+        var newest = await BenchmarkRootCauseReadiness.NewestAsync(_db, BenchmarkReportDocumentOrigin.ReportPack, scope, subjectKey, ct, comparisonKey);
+        var (readiness, _) = BenchmarkRootCauseReadiness.Evaluate(newest, factsSha256, BenchmarkReportDocumentOrigin.ReportPack, label);
+        foreach (var row in rootCauses)
+        {
+            row.SummaryReadiness = readiness.State;
+            row.SummaryReadinessMessage = readiness.Message;
+        }
+    }
+
+    /// <summary>The 409 body of an Executive Summary asked for without a usable Root Cause Analysis: <c>{ error, code, rootCauseDocumentId }</c>.</summary>
+    internal static object RootCauseConflictBody(BenchmarkRootCauseReadinessDto readiness)
+    {
+        ArgumentNullException.ThrowIfNull(readiness);
+        return new { error = readiness.Message, code = readiness.Code, rootCauseDocumentId = readiness.RootCauseDocumentId };
+    }
+
+    /// <summary>
+    /// Whether an Executive Summary of the run may be written from its newest stored run-completion Root Cause Analysis:
+    /// <c>missing</c> when none is stored, with nothing prepared; else judged against <paramref name="prep"/>, or against the
+    /// run prepared now as the estimate prepares it. A run without a final synthesis, or one that cannot be prepared, is
+    /// <c>outdated</c> with the refusal (<see cref="BenchmarkRootCauseReadiness.Unprepared"/>).
+    /// </summary>
+    private async Task<BenchmarkRootCauseReadinessDto> RunSummaryReadinessAsync(
+        BenchmarkRun run, BenchmarkReportPackPreparation? prep, CancellationToken ct)
+    {
+        const BenchmarkReportDocumentOrigin origin = BenchmarkReportDocumentOrigin.RunCompletion;
+        var newest = await BenchmarkRootCauseReadiness.NewestAsync(
+            _db, origin, BenchmarkReportScope.Model, BenchmarkRunReportDocumentService.SubjectKeyOf(run.Id), ct);
+        if (newest == null) return BenchmarkRootCauseReadiness.MissingFor(origin, label: null);
+
+        if (prep == null)
+        {
+            if (!BenchmarkRunReportDocumentService.IsFinishedWithSynthesis(run)) return BenchmarkRootCauseReadiness.Unprepared(newest.Id, NoSynthesisMessage);
+
+            string? refusal;
+            (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(
+                _db, _comparisonService,
+                BenchmarkRunReportDocumentService.RunRequest(run.Id, new[] { BenchmarkReportAudience.ExecutiveSummary }, 0),
+                BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration), ct, _configuration);
+            if (prep == null) return BenchmarkRootCauseReadiness.Unprepared(newest.Id, refusal ?? "The reports could not be prepared.");
+        }
+
+        return BenchmarkRootCauseReadiness.Evaluate(newest, BenchmarkRootCauseDigest.FactsSha256(prep.Sheet), origin, label: null).Readiness;
     }
 
     /// <summary>The run's job view with the run's persisted status and message, or null when this process knows no job for it.</summary>

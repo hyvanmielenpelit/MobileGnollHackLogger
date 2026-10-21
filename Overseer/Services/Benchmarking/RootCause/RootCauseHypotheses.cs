@@ -995,7 +995,7 @@ public static class RootCauseHypotheses
                 d.Share = component.Share;
                 d.ShareLower = component.ShareLower;
                 d.ShareUpper = component.ShareUpper;
-                d.For.Add(Capitalize(component.Label) + " accounts for " + SharePct(component) + " of the " + total + " per-question difference in model time.");
+                d.For.Add(Capitalize(component.Label) + " " + RootCauseKnownFacts.Verb(component.Label, "accounts for", "account for") + " " + SharePct(component) + " of the " + total + " per-question difference in model time.");
                 d.Established = component.ShareLower is double lo && component.ShareUpper is double hi && (lo > 0 || hi < 0);
                 d.EstablishedText = ShareIntervalReason;
                 d.Robustness.Add(ctx.LeaveOneOutSpeed(pair, component.Key));
@@ -1136,7 +1136,7 @@ public static class RootCauseHypotheses
                 d.Share = component.Share;
                 d.ShareLower = component.ShareLower;
                 d.ShareUpper = component.ShareUpper;
-                d.For.Add(Capitalize(component.Label) + " accounts for " + SharePct(component) + " of the " + total + " per-question cost difference.");
+                d.For.Add(Capitalize(component.Label) + " " + RootCauseKnownFacts.Verb(component.Label, "accounts for", "account for") + " " + SharePct(component) + " of the " + total + " per-question cost difference.");
                 d.Established = component.ShareLower is double lo && component.ShareUpper is double hi && (lo > 0 || hi < 0);
                 d.EstablishedText = ShareIntervalReason;
                 d.Robustness.Add(ctx.LeaveOneOutCost(pair, component.Key, component.Effect));

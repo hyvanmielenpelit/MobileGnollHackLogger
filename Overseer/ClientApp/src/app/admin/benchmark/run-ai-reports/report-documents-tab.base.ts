@@ -1,6 +1,7 @@
 import {
   ChangeDetectorRef,
   Directive,
+  DoCheck,
   ElementRef,
   EventEmitter,
   OnDestroy,
@@ -15,6 +16,7 @@ import {
   BenchmarkReportAudience,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportPeerNaming,
+  BenchmarkRootCauseReadinessDto,
   BenchmarkRunReportDocumentsStatus,
   BenchmarkRunReportEstimateDto,
   BenchmarkRunReportEstimateRequest,
@@ -32,10 +34,16 @@ import { rememberedPdfPaper } from '../download-center/benchmark-download-center
 import { reportDisclosureInfo } from '../report-disclosure-guide';
 import { audienceLabel, disclosureLabel } from '../report-pack/report-document-format';
 import {
+  EXECUTIVE_SUMMARY_BLOCKED_ERROR,
+  EXECUTIVE_SUMMARY_UNCHECKED_ANNOUNCEMENT,
+  ExecutiveSummaryAvailability,
   ReportDocumentRow,
   ReportDocumentsStatusKind,
   ReportEstimateView,
+  ReportRootCauseReadiness,
   ReportStatusSnapshot,
+  executiveSummaryAvailability,
+  executiveSummaryFixLabel,
   isReportWriterSameProviderWarning,
   missingReportAudiences,
   reportDateUtc,
@@ -54,9 +62,11 @@ import {
   reportServerErrorText,
   reportStatusSnapshotOfJob,
   reportWriteOrderHint,
+  rootCauseRewriteOffered,
   writtenReportLabels
 } from './report-documents-list';
 import { ReportWriterAdviceEntry } from './report-writer-advice';
+import { rememberReportWriterId, rememberedReportWriterId } from './report-writer-memory';
 import { RootCauseControlsSubjectKind, RootCauseRewriteRequest } from './root-cause-controls.component';
 import {
   ReportWriterCandidate,
@@ -83,6 +93,8 @@ export interface ReportDocumentsApi<TSubject> {
   getStored(subjectId: number): Observable<TSubject>;
   /** The subject's completion documents, the newest one per audience, in audience order. */
   listDocuments(subjectId: number): Observable<BenchmarkReportDocumentListItemDto[]>;
+  /** Whether an Executive Summary may be written from the subject's newest stored Root Cause Analysis. */
+  summaryReadiness(subjectId: number): Observable<BenchmarkRootCauseReadinessDto>;
 }
 
 interface EstimateRequest {
@@ -115,9 +127,14 @@ interface RootCauseRewriteSend {
  * It owns its own polling, estimate and dialogs: the progress dialog, the PDF viewer and two
  * confirmations. The confirmations sit inside the host's report dialog, so their close and cancel
  * events stop here.
+ *
+ * The Executive Summary is written only from a Root Cause Analysis: the one checked above it, or the
+ * stored one when the server finds it written from the subject's current data. Otherwise its checkbox
+ * is `aria-disabled` and unchecked, with the reason under it; the user's own choice for it is kept
+ * apart and returns once it may be checked again.
  */
 @Directive()
-export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> implements OnInit, OnDestroy {
+export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> implements OnInit, DoCheck, OnDestroy {
   protected readonly benchmarkService = inject(AdminBenchmarkService);
   protected readonly cdr = inject(ChangeDetectorRef);
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
@@ -155,6 +172,10 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
 
   /** The Root Cause Analysis, for the template. */
   readonly rootCauseAudience = BenchmarkReportAudience.RootCauseAnalysis;
+  /** The Executive Summary, for the template. */
+  readonly summaryAudience = BenchmarkReportAudience.ExecutiveSummary;
+  /** The inline error under a blocked Executive Summary that was clicked. */
+  readonly summaryBlockedError = EXECUTIVE_SUMMARY_BLOCKED_ERROR;
 
   /**
    * The subject's AI-written (completion) documents, one per audience, from the document list.
@@ -167,6 +188,10 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
 
   /** The writer Write Reports sends; see `defaultWriterId` for where it starts. */
   writerConfigId: number | null = null;
+  /** The user chose a writer for this subject, so a default applied later never replaces it. */
+  private writerChosen = false;
+  /** What the default writer was last chosen from: the configurations and the subclass's other sources. */
+  private defaultWriterSources: readonly unknown[] | null = null;
   /** Why the picker was cleared, after a delete. */
   writerNote = '';
   writeSubmitting = false;
@@ -217,7 +242,23 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
   /** Where focus returns when the tab's own Download Center closes. */
   protected downloadsReturnFocus: HTMLElement | null = null;
 
-  /** Missing documents unchecked in the write panel; every other missing one is checked. */
+  /**
+   * The stored Root Cause Analysis's readiness for an Executive Summary written from it, asked while the
+   * panel offers the Executive Summary beside a stored analysis; null otherwise.
+   */
+  summaryReadiness: ReportRootCauseReadiness | null = null;
+  /** **Root Cause Analysis — rewrite** is checked: the outdated stored analysis is written again, replaced. */
+  rootCauseRewriteChecked = false;
+  /** A click on the blocked Executive Summary was refused; its inline error shows until it may be checked. */
+  summaryRefused = false;
+  /** The stored Root Cause Analysis the readiness was asked about. */
+  private readinessRootCauseId: number | null = null;
+  private readinessSub: Subscription | null = null;
+
+  /**
+   * Missing documents the user unchecked in the write panel; every other missing one is the user's to
+   * write. A blocked Executive Summary stays out of the write without being added here.
+   */
   private readonly deselected = new Set<BenchmarkReportAudience>();
   private readonly estimateRequests = new Subject<EstimateRequest | null>();
   private readonly estimateSub: Subscription;
@@ -266,6 +307,23 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
     this.estimateSub.unsubscribe();
   }
 
+  /**
+   * The configurations can arrive after the subject: while the user has not chosen a writer for it, the
+   * default writer is chosen again whenever what it is chosen from changes.
+   */
+  ngDoCheck(): void {
+    const subject = this.subject;
+    if (!subject || this.writerChosen) {
+      return;
+    }
+    const sources = this.defaultWriterSourcesOf();
+    const previous = this.defaultWriterSources;
+    if (previous && previous.length === sources.length && previous.every((item, i) => item === sources[i])) {
+      return;
+    }
+    this.applyDefaultWriter(subject);
+  }
+
   // --- What differs between subjects ---
 
   /** The run or battery run the tab shows. */
@@ -296,7 +354,7 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
   protected abstract subjectName(subjectId: number): string;
   /** The stem of a file about the subject: `run-42`, `battery-run-7`. */
   protected abstract fileStem(subjectId: number): string;
-  /** The writer the tab starts with on a newly shown subject. */
+  /** The writer the tab starts with on a newly shown subject, and again while the user has chosen none. */
   protected abstract defaultWriterId(subject: TSubject): number | null;
   /** The subject's report status as stored with it. */
   protected abstract snapshotOf(subject: TSubject): ReportStatusSnapshot;
@@ -304,6 +362,37 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
   protected abstract progressRequest(subject: TSubject, estimateUsd: number | null): RunReportWritingContext;
   /** The status line before a writer named with the subject has written anything, or '' when it does not apply. */
   protected abstract notWrittenYetText(writerName: string): string;
+
+  /** What the default writer depends on besides the subject; a subclass adds its own sources. */
+  protected defaultWriterSourcesOf(): readonly unknown[] {
+    return [this.configs];
+  }
+
+  /** Chooses the default writer for the subject: on a newly shown one, and again while the user has chosen none. */
+  protected applyDefaultWriter(subject: TSubject): void {
+    this.defaultWriterSources = this.defaultWriterSourcesOf();
+    const id = this.defaultWriterId(subject);
+    if (id === this.writerConfigId) {
+      return;
+    }
+    this.writerConfigId = id;
+    this.queueEstimate();
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * `id` when it is one of the configurations and needs neither a refusal nor a same-provider warning for
+   * `candidate`, else null: a writer the tab may start with although the subject did not name it.
+   */
+  protected qualifiedWriterId(id: number | null, candidate: ReportWriterCandidate | null): number | null {
+    const writer = id != null ? this.configs.find(config => config.id === id) : undefined;
+    return writer && !reportWriterRefusal(writer, candidate) && !reportWriterWarning(writer, candidate) ? writer.id : null;
+  }
+
+  /** The report writer used last in this browser, when it qualifies for `candidate`. */
+  protected rememberedWriterFor(candidate: ReportWriterCandidate | null): number | null {
+    return this.qualifiedWriterId(rememberedReportWriterId(), candidate);
+  }
 
   // --- Element ids ---
 
@@ -376,6 +465,26 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
     return `${this.idPrefix}Audience${audience}`;
   }
 
+  /** The Executive Summary checkbox's reason line. */
+  get summaryReasonId(): string {
+    return `${this.idPrefix}EsReason`;
+  }
+
+  /** The inline error under a refused click on the blocked Executive Summary. */
+  get summaryErrorId(): string {
+    return `${this.idPrefix}EsError`;
+  }
+
+  /** The **Root Cause Analysis — rewrite** checkbox. */
+  get rootCauseRewriteId(): string {
+    return `${this.idPrefix}RootCauseRewrite`;
+  }
+
+  /** The line under **Root Cause Analysis — rewrite** naming the analysis it replaces. */
+  get rootCauseRewriteNoteId(): string {
+    return `${this.idPrefix}RootCauseRewriteNote`;
+  }
+
   // --- What is shown ---
 
   /** A job for the subject's documents is queued or writing. */
@@ -418,9 +527,15 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
     return missingReportAudiences(this.documents);
   }
 
-  /** The written documents, whose names the write panel lists as not writable. */
+  /**
+   * The written documents, whose names the write panel lists as not writable; not the outdated Root
+   * Cause Analysis while **Root Cause Analysis — rewrite** offers it.
+   */
   get writtenLabels(): string[] {
-    return writtenReportLabels(this.documents);
+    const labels = writtenReportLabels(this.documents);
+    return this.rootCauseRewriteOffered
+      ? labels.filter(label => label !== audienceLabel(BenchmarkReportAudience.RootCauseAnalysis))
+      : labels;
   }
 
   /** The subject lacks a document, so the tab offers the write panel, with its reason while it cannot write. */
@@ -444,22 +559,88 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
     return this.subject?.id ?? null;
   }
 
+  /** The write panel offers the Executive Summary. */
+  get summaryMissing(): boolean {
+    return this.documentsMissing && this.missingAudiences.includes(BenchmarkReportAudience.ExecutiveSummary);
+  }
+
+  /** The stored Root Cause Analysis's id; null when none is stored. */
+  get storedRootCauseId(): number | null {
+    return this.rootCauseDocument?.id ?? null;
+  }
+
+  /**
+   * The write panel offers **Root Cause Analysis — rewrite**: the Executive Summary is missing and the
+   * stored Root Cause Analysis was written from different data than the subject has now.
+   */
+  get rootCauseRewriteOffered(): boolean {
+    return this.summaryMissing && !this.rootCauseMissing && this.storedRootCauseId !== null
+      && rootCauseRewriteOffered(this.summaryReadiness);
+  }
+
+  /** A Root Cause Analysis is checked in the panel: written, or rewritten in place of the stored one. */
+  get rootCauseChecked(): boolean {
+    if (this.rootCauseMissing) {
+      return !this.deselected.has(BenchmarkReportAudience.RootCauseAnalysis);
+    }
+    return this.rootCauseRewriteOffered && this.rootCauseRewriteChecked;
+  }
+
+  /** Whether the Executive Summary may be checked, and the reason line under it. */
+  get summaryAvailability(): ExecutiveSummaryAvailability {
+    return executiveSummaryAvailability({
+      rootCauseChecked: this.rootCauseChecked,
+      storedRootCauseId: this.storedRootCauseId,
+      readiness: this.summaryReadiness,
+      subjectNoun: this.subjectNoun
+    });
+  }
+
+  /** The inline error under the Executive Summary shows: a click on it was refused, and it is still blocked. */
+  get summaryErrorShown(): boolean {
+    return this.summaryRefused && !this.summaryAvailability.available;
+  }
+
+  /** The Executive Summary checkbox's description: its reason line, then the inline error while it shows. */
+  get summaryDescribedBy(): string {
+    return this.summaryErrorShown ? `${this.summaryReasonId} ${this.summaryErrorId}` : this.summaryReasonId;
+  }
+
+  /** The inline error's fix button's label, or '' when the panel has no fix to offer. */
+  get summaryFixLabel(): string {
+    const fix = this.summaryAvailability.fix;
+    return fix ? executiveSummaryFixLabel(fix) : '';
+  }
+
   audienceLabel(audience: BenchmarkReportAudience): string {
     return audienceLabel(audience);
   }
 
+  /** The checkbox's state: the user's choice, and for the Executive Summary only while it may be checked. */
   isChecked(audience: BenchmarkReportAudience): boolean {
-    return !this.deselected.has(audience);
+    if (this.deselected.has(audience)) {
+      return false;
+    }
+    return audience !== BenchmarkReportAudience.ExecutiveSummary || this.summaryAvailability.available;
   }
 
-  /** The missing documents Write Reports sends. */
+  /** The documents Write Reports sends, in write order: the Root Cause Analysis (written or rewritten) first. */
   get checkedAudiences(): BenchmarkReportAudience[] {
-    return this.missingAudiences.filter(audience => !this.deselected.has(audience));
+    const checked = this.missingAudiences.filter(audience => this.isChecked(audience));
+    return this.rootCauseMissing || !this.rootCauseChecked
+      ? checked
+      : [BenchmarkReportAudience.RootCauseAnalysis, ...checked];
   }
 
-  /** The write order of the checked documents, under the checkboxes; '' when only the Root Cause Analysis is checked. */
+  /** The stored documents the write replaces: the outdated Root Cause Analysis while its rewrite is checked. */
+  private get replacedDocumentIds(): number[] {
+    const id = this.storedRootCauseId;
+    return !this.rootCauseMissing && this.rootCauseChecked && id !== null ? [id] : [];
+  }
+
+  /** The write order of the checked documents, under the checkboxes; '' unless both are checked. */
   get writeOrderHint(): string {
-    return reportWriteOrderHint(this.checkedAudiences, `this ${this.subjectNoun}'s`);
+    return reportWriteOrderHint(this.checkedAudiences);
   }
 
   get writeLabel(): string {
@@ -545,21 +726,85 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
 
   // --- Choices ---
 
+  /** The picker's choice is the user's for this subject; a writer chosen is remembered, clearing it forgets nothing. */
   selectWriter(config: SystemAiConfigDto | null): void {
     this.writerConfigId = config?.id ?? null;
+    this.writerChosen = true;
     this.writeError = null;
     if (this.writerConfigId != null) {
       this.writerNote = '';
+      rememberReportWriterId(this.writerConfigId);
     }
     this.queueEstimate();
     this.cdr.markForCheck();
   }
 
   toggleAudience(audience: BenchmarkReportAudience, event: Event): void {
-    if ((event.target as HTMLInputElement).checked) {
+    const input = event.target as HTMLInputElement;
+    if (audience === BenchmarkReportAudience.ExecutiveSummary && !this.summaryAvailability.available) {
+      input.checked = false;
+      return;
+    }
+    const summaryWasChecked = this.summaryMissing && this.isChecked(BenchmarkReportAudience.ExecutiveSummary);
+    if (input.checked) {
       this.deselected.delete(audience);
     } else {
       this.deselected.add(audience);
+    }
+    this.afterDocumentChoice(summaryWasChecked);
+  }
+
+  /** **Root Cause Analysis — rewrite**: the outdated stored analysis is written again, and the Executive Summary from it. */
+  toggleRootCauseRewrite(event: Event): void {
+    const summaryWasChecked = this.summaryMissing && this.isChecked(BenchmarkReportAudience.ExecutiveSummary);
+    this.rootCauseRewriteChecked = (event.target as HTMLInputElement).checked;
+    this.afterDocumentChoice(summaryWasChecked);
+  }
+
+  /**
+   * A click on the blocked Executive Summary is refused: the checkbox stays unchecked and the inline
+   * error says why. A Space press arrives as a click too.
+   */
+  onSummaryClick(event: Event): void {
+    if (this.summaryAvailability.available) {
+      return;
+    }
+    event.preventDefault();
+    (event.target as HTMLInputElement).checked = false;
+    this.summaryRefused = true;
+    this.cdr.markForCheck();
+  }
+
+  /** The inline error's fix: checks the Root Cause Analysis (or its rewrite) and with it the Executive Summary, which takes focus. */
+  applySummaryFix(): void {
+    const fix = this.summaryAvailability.fix;
+    if (fix === null) {
+      return;
+    }
+    if (fix === 'checkRootCause') {
+      this.deselected.delete(BenchmarkReportAudience.RootCauseAnalysis);
+    } else {
+      this.rootCauseRewriteChecked = true;
+    }
+    this.deselected.delete(BenchmarkReportAudience.ExecutiveSummary);
+    this.afterDocumentChoice(false);
+    this.cdr.detectChanges();
+    this.focusAudience(BenchmarkReportAudience.ExecutiveSummary);
+  }
+
+  /**
+   * After a document checkbox changed: the Executive Summary unchecked by its Root Cause Analysis is
+   * announced in the status line, and its error clears once it may be checked again.
+   */
+  private afterDocumentChoice(summaryWasChecked: boolean): void {
+    const available = this.summaryAvailability.available;
+    if (available) {
+      this.summaryRefused = false;
+      if (this.announcement === EXECUTIVE_SUMMARY_UNCHECKED_ANNOUNCEMENT) {
+        this.announcement = '';
+      }
+    } else if (summaryWasChecked) {
+      this.announcement = EXECUTIVE_SUMMARY_UNCHECKED_ANNOUNCEMENT;
     }
     this.queueEstimate();
     this.cdr.markForCheck();
@@ -603,11 +848,12 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
     const writerId = rewrite ? rewrite.writerId : this.writerConfigId;
     if (!subject || writerId == null || this.writeSubmitting) return;
     const subjectId = subject.id;
+    const replaceDocumentIds = rewrite ? [rewrite.documentId] : this.replacedDocumentIds;
     const request: WriteRunReportDocumentsRequest = {
       writerModelConfigurationId: writerId,
       audiences: rewrite ? [BenchmarkReportAudience.RootCauseAnalysis] : this.checkedAudiences,
       ...(acknowledgeSameProvider ? { acknowledgeSameProvider: true } : {}),
-      ...(rewrite ? { replaceDocumentIds: [rewrite.documentId] } : {})
+      ...(replaceDocumentIds.length > 0 ? { replaceDocumentIds } : {})
     };
     const estimateUsd = rewrite ? rewrite.estimateUsd : (this.estimate?.estimatedTotalCostUsd ?? null);
     this.writeSubmitting = true;
@@ -626,6 +872,7 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
           this.rewriteDialog?.nativeElement.close();
           this.rewriteTarget = null;
         }
+        rememberReportWriterId(writerId);
         const writer = this.configs.find(config => config.id === writerId);
         this.setSnapshot({
           status: reportDocumentsStatusOf(response?.status ?? BenchmarkRunReportDocumentsStatus.Pending),
@@ -664,7 +911,8 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
           return;
         }
         this.writeError = this.writeErrorOf(err, subjectId);
-        // A 409 means the list or the status moved on elsewhere; show where they stand now.
+        // A 409 means the list, the status or the stored Root Cause Analysis moved on elsewhere; listing the
+        // documents again asks for the analysis's readiness again too.
         if (err?.status === 409) {
           this.loadDocuments();
         }
@@ -974,6 +1222,7 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
         if (writer && isSameProvider(writer.provider, doc.writerProvider) &&
           (writer.modelId ?? '').trim().toLowerCase() === (doc.writerModelId ?? '').trim().toLowerCase()) {
           this.writerConfigId = null;
+          this.writerChosen = true;
           this.writerNote = `Choose a report writer. The deleted document was written by ${doc.writerDisplayName || 'that model'}.`;
         }
         this.queueEstimate();
@@ -1031,6 +1280,7 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
         this.documents = documents;
         this.documentsLoaded = true;
         this.documentsError = null;
+        this.loadSummaryReadiness();
         this.queueEstimate();
         this.cdr.markForCheck();
         if (after) {
@@ -1043,10 +1293,61 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
         console.warn(`Failed to list the ${this.subjectNoun}'s AI-written reports`, err);
         this.documentsLoaded = true;
         this.documentsError = 'The AI-written reports could not be listed.';
+        this.loadSummaryReadiness();
         this.queueEstimate();
         this.cdr.markForCheck();
       }
     });
+  }
+
+  /**
+   * Asks whether an Executive Summary may be written from the stored Root Cause Analysis, while the
+   * write panel offers the Executive Summary beside a stored analysis: when the documents are listed
+   * (on opening, after a delete, a finished job or a refused write) and on **Try again**. Otherwise
+   * nothing is asked and the readiness is forgotten.
+   */
+  loadSummaryReadiness(): void {
+    this.readinessSub?.unsubscribe();
+    this.readinessSub = null;
+    const subject = this.subject;
+    const rootCauseId = this.storedRootCauseId;
+    if (!subject || !this.summaryMissing || this.rootCauseMissing || rootCauseId === null) {
+      this.summaryReadiness = null;
+      this.readinessRootCauseId = null;
+      this.rootCauseRewriteChecked = false;
+      return;
+    }
+    if (rootCauseId !== this.readinessRootCauseId) {
+      this.rootCauseRewriteChecked = false;
+    }
+    const subjectId = subject.id;
+    this.readinessRootCauseId = rootCauseId;
+    this.summaryReadiness = { kind: 'loading' };
+    this.cdr.markForCheck();
+    this.readinessSub = this.api.summaryReadiness(subjectId).subscribe({
+      next: readiness => {
+        if (this.subject?.id !== subjectId) return;
+        this.summaryReadiness = readiness ? { kind: 'answered', readiness } : { kind: 'failed' };
+        this.afterReadiness();
+      },
+      error: err => {
+        if (this.subject?.id !== subjectId) return;
+        console.warn(`Failed to check the ${this.subjectNoun}'s stored Root Cause Analysis`, err);
+        this.summaryReadiness = { kind: 'failed' };
+        this.afterReadiness();
+      }
+    });
+  }
+
+  private afterReadiness(): void {
+    if (!this.rootCauseRewriteOffered) {
+      this.rootCauseRewriteChecked = false;
+    }
+    if (this.summaryAvailability.available) {
+      this.summaryRefused = false;
+    }
+    this.queueEstimate();
+    this.cdr.markForCheck();
   }
 
   /** The job's view of the status while this server process knows the job, else the subject's own. */
@@ -1129,10 +1430,17 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
 
   protected reset(): void {
     this.stopPoll();
-    for (const sub of [this.documentsSub, this.writeSub, this.deleteSub, this.finishSub, this.redrawSub, this.rewriteEstimateSub]) {
+    for (const sub of [
+      this.documentsSub, this.writeSub, this.deleteSub, this.finishSub, this.redrawSub, this.rewriteEstimateSub, this.readinessSub
+    ]) {
       sub?.unsubscribe();
     }
     this.documentsSub = this.writeSub = this.deleteSub = this.finishSub = this.redrawSub = this.rewriteEstimateSub = null;
+    this.readinessSub = null;
+    this.summaryReadiness = null;
+    this.readinessRootCauseId = null;
+    this.rootCauseRewriteChecked = false;
+    this.summaryRefused = false;
     this.redrawingDocumentId = null;
     this.redrawError = null;
     this.rewriteTarget = null;
@@ -1147,6 +1455,8 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
     this.documentsLoaded = false;
     this.documentsError = null;
     this.writerConfigId = null;
+    this.writerChosen = false;
+    this.defaultWriterSources = null;
     this.writerNote = '';
     this.writeSubmitting = false;
     this.writeError = null;

@@ -883,6 +883,36 @@ public class BenchmarkReportPackPromptTests
     }
 
     [Fact]
+    public void AFactsLine_OfACountThatSaysWhatItCounts_NamesThoseWords()
+    {
+        const string noTool = "3 of 11 answers without a tool call";
+        const string disagreements = "2 of 11 answers on which the panel members disagreed";
+        Assert.Equal("without a tool call", BenchmarkReportFormat.CountQualifier(noTool));
+        Assert.Equal("on which the panel members disagreed", BenchmarkReportFormat.CountQualifier(disagreements));
+
+        // The Root Cause Analysis lists both counts, each with the words the validator reads beside it.
+        var sheet = RootCauseReportFixture.ModelPackSheet();
+        sheet.Facts.RemoveAll(f => f.Key is "profile.noToolAnswers" or "panel.disagreements");
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "profile.noToolAnswers", Value = System.Text.Json.Nodes.JsonValue.Create(3), Display = noTool });
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "panel.disagreements", Value = System.Text.Json.Nodes.JsonValue.Create(2), Display = disagreements });
+        string rca = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, new BenchmarkReportContentSnapshot()).UserMessage;
+
+        Assert.Contains("\nprofile.noToolAnswers = " + noTool + "   [count: it already says \"without a tool call\"; write no word of it beside the token]\n", rca);
+        Assert.Contains("\npanel.disagreements = " + disagreements + "   [count: it already says \"on which the panel members disagreed\"; write no word of it beside the token]\n", rca);
+
+        // The Executive Summary marks its counts the same way; a bare count and any other figure carry no marker.
+        var es = ReportPackWriterTestData.Sheet();
+        es.Facts.Add(new BenchmarkReportFact { Key = "panel.disagreements", Value = System.Text.Json.Nodes.JsonValue.Create(2), Display = disagreements });
+        es.Facts.Add(new BenchmarkReportFact { Key = "errors.critical", Value = System.Text.Json.Nodes.JsonValue.Create(1), Display = "1 of 4 answers" });
+        string message = Build(BenchmarkReportAudience.ExecutiveSummary, es).UserMessage;
+
+        Assert.Contains("\npanel.disagreements = " + disagreements + "   [count: it already says \"on which the panel members disagreed\"; write no word of it beside the token]\n", message);
+        Assert.Contains("\nerrors.critical = 1 of 4 answers\n", message);
+        Assert.Contains("\nquality.index = 80 ± 3 / 100\n", message);
+        Assert.Contains("\nspeed.p50Ms = unavailable: the speed axis is degraded\n", message);
+    }
+
+    [Fact]
     public void FindingRows_ListTheSharedAndEachMembersOwnQuestions()
     {
         var sheet = ReportPackWriterTestData.Sheet();

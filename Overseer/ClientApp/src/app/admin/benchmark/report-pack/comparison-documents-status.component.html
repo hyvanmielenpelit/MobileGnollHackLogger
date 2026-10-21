@@ -1,8 +1,10 @@
 <!--
   STEP 3: DOCUMENTS OF THIS COMPARISON
 
-  One row per document the chosen models can have, written or not. A row's checkbox says what the
-  next job does with it: Write, or Rewrite (which replaces the current document). View and Delete are
+  One row per document the chosen models can have, written or not, the Root Cause Analysis first. A
+  row's checkbox says what the next job does with it: Write, or Rewrite (which replaces the current
+  document). An Executive Summary is written only from its group's Root Cause Analysis, so its row says
+  why while it cannot be checked. View and Delete are
   icon-only; Delete asks first. A written Root Cause Analysis adds Redraw charts and its next runs. The confirmation and the PDF viewer are nested in the wizard's dialog
   and stop their own close and cancel events.
 -->
@@ -48,8 +50,13 @@
     @if (row.checkable || row.document) {
       <div class="cds-row-foot">
         @if (row.checkable) {
-          <label class="checkbox-label cds-check">
+          <!-- A blocked Executive Summary is aria-disabled, not disabled: focusable, its click refused,
+               and described by its reason line. -->
+          <label class="checkbox-label cds-check" [class.is-blocked]="row.blockedReason !== null">
             <input type="checkbox" [id]="rid + '-check'" [checked]="row.checked" [disabled]="busy"
+                   [attr.aria-disabled]="row.blockedReason !== null ? 'true' : null"
+                   [attr.aria-describedby]="checkDescribedBy(row)"
+                   (click)="onCheckClick(row, $event)"
                    (change)="onCheck(row, $event)">
             <span>{{ checkLabel(row) }}<span class="visually-hidden">: {{ rowName(row) }}</span></span>
           </label>
@@ -91,6 +98,20 @@
           </div>
         }
       </div>
+    }
+    @if (row.blockedReason !== null) {
+      <p class="form-hint cds-blocked-reason" [id]="rid + '-reason'">{{ row.blockedReason }}</p>
+      @if (showsBlockedError(row)) {
+        <p class="gh-field-error cds-blocked-error" [id]="rid + '-error'" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>
+            {{ summaryBlockedError }}
+            @if (row.blockedFix !== null) {
+              <button type="button" class="btn-link cds-blocked-fix" (click)="applyFix(row)">{{ fixLabel(row) }}<span class="visually-hidden">: {{ rowName(row) }}</span></button>
+            }
+          </span>
+        </p>
+      }
     }
     @if (row.document && row.audience === rootCauseAudience) {
       <app-root-cause-runs class="cds-rca-runs" [documentId]="row.document.documentId"></app-root-cause-runs>

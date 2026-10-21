@@ -103,7 +103,7 @@ This analysis sets Orion Max against 4 peers of the same comparison.
 ### Setup and method
 
 - **Suite:** GnollHack Core Suite, 1 questions.
-- **Chat configuration under test:** Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed
+- **Chat configuration under test:** Gameplay Help; concise response style, verboseMode false; tools enabled; web search disabled; subagents disabled; source code references allowed
 - **Model under test:** Orion Max (Northwind, orion-max), thinking level not set; 1 run.
 - **Grading:** Each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. Each dimension is graded on behaviorally anchored levels (fixed grade steps, each described by the answer behavior that earns it) scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
 - **Graders:**
@@ -151,7 +151,7 @@ One run per suite on each side limits what this design can decide; the next runs
 - The grader recorded a comment on this answer.
   - *Evidence:* Q1 (92 / 100)
 
-The first known fact: Output tokens accounts for 55% (53–56%) of the per-question time difference between Orion Max and Model B.
+The first known fact: Output tokens account for 55% (53–56%) of the per-question time difference between Orion Max and Model B.
 
 ## Evidence: speed
 
@@ -564,11 +564,11 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
 | HS3.3 | Lyra Mini vs Orion Max | 55% (53–56%) | Probable (Moderate) | Run 1 |
 
 - **HS3.1**
-  - *For:* Output tokens accounts for 55% (54–56%) of the 6.0 s per-question difference in model time. Zeta Prime's reasoning share of output is 39%, Orion Max's 31%.
+  - *For:* Output tokens account for 55% (54–56%) of the 6.0 s per-question difference in model time. Zeta Prime's reasoning share of output is 39%, Orion Max's 31%.
 - **HS3.2**
-  - *For:* Output tokens accounts for 55% (35–127%) of the 4.6 s per-question difference in model time. Nova Lite's reasoning share of output is 38%, Orion Max's 31%.
+  - *For:* Output tokens account for 55% (35–127%) of the 4.6 s per-question difference in model time. Nova Lite's reasoning share of output is 38%, Orion Max's 31%.
 - **HS3.3**
-  - *For:* Output tokens accounts for 55% (53–56%) of the 3.0 s per-question difference in model time. Lyra Mini's reasoning share of output is 36%, Orion Max's 31%.
+  - *For:* Output tokens account for 55% (53–56%) of the 3.0 s per-question difference in model time. Lyra Mini's reasoning share of output is 36%, Orion Max's 31%.
 
 - **WS3.1: Orion Max's time spent on tool rounds** (Orion Max; locus model / chat; Probable (Moderate))
   - *For:* Across Orion Max's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).
@@ -1221,9 +1221,9 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed",
+      "display": "Gameplay Help; concise response style, verboseMode false; tools enabled; web search disabled; subagents disabled; source code references allowed",
       "key": "config.chat",
-      "value": "Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed"
+      "value": "Gameplay Help; concise response style, verboseMode false; tools enabled; web search disabled; subagents disabled; source code references allowed"
     },
     {
       "available": true,
@@ -4233,7 +4233,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "Output tokens accounts for 55% (54–56%) of the 6.0 s per-question difference in model time. Model D's reasoning share of output is 39%, Orion Max's 31%.",
+      "display": "Output tokens account for 55% (54–56%) of the 6.0 s per-question difference in model time. Model D's reasoning share of output is 39%, Orion Max's 31%.",
       "key": "rca.hypothesis.HS3.1.for"
     },
     {
@@ -4311,7 +4311,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "Output tokens accounts for 55% (35–127%) of the 4.6 s per-question difference in model time. Model C's reasoning share of output is 38%, Orion Max's 31%.",
+      "display": "Output tokens account for 55% (35–127%) of the 4.6 s per-question difference in model time. Model C's reasoning share of output is 38%, Orion Max's 31%.",
       "key": "rca.hypothesis.HS3.2.for"
     },
     {
@@ -4389,7 +4389,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "Output tokens accounts for 55% (53–56%) of the 3.0 s per-question difference in model time. Model B's reasoning share of output is 36%, Orion Max's 31%.",
+      "display": "Output tokens account for 55% (53–56%) of the 3.0 s per-question difference in model time. Model B's reasoning share of output is 36%, Orion Max's 31%.",
       "key": "rca.hypothesis.HS3.3.for"
     },
     {
@@ -4658,7 +4658,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "Output tokens accounts for 55% (53–56%) of the per-question time difference between Orion Max and Model B.",
+      "display": "Output tokens account for 55% (53–56%) of the per-question time difference between Orion Max and Model B.",
       "key": "rca.known.1"
     },
     {
@@ -4683,12 +4683,12 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "Output tokens accounts for 55% (35–127%) of the per-question time difference between Orion Max and Model C.",
+      "display": "Output tokens account for 55% (35–127%) of the per-question time difference between Orion Max and Model C.",
       "key": "rca.known.2"
     },
     {
       "available": true,
-      "display": "Output tokens accounts for 55% (54–56%) of the per-question time difference between Orion Max and Model D.",
+      "display": "Output tokens account for 55% (54–56%) of the per-question time difference between Orion Max and Model D.",
       "key": "rca.known.3"
     },
     {
@@ -7236,7 +7236,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 13,
+    "engineVersion": 14,
     "evidence": [
       {
         "atRisk": [
@@ -8177,7 +8177,7 @@ The counts and the configuration facts the analysis states, each numbered as the
           "rca.speed.subject.D.total"
         ],
         "for": [
-          "Output tokens accounts for 55% (54–56%) of the 6.0 s per-question difference in model time.",
+          "Output tokens account for 55% (54–56%) of the 6.0 s per-question difference in model time.",
           "Model D's reasoning share of output is 39%, Orion Max's 31%."
         ],
         "grade": "Moderate",
@@ -8234,7 +8234,7 @@ The counts and the configuration facts the analysis states, each numbered as the
           "rca.speed.subject.C.total"
         ],
         "for": [
-          "Output tokens accounts for 55% (35–127%) of the 4.6 s per-question difference in model time.",
+          "Output tokens account for 55% (35–127%) of the 4.6 s per-question difference in model time.",
           "Model C's reasoning share of output is 38%, Orion Max's 31%."
         ],
         "grade": "Moderate",
@@ -8291,7 +8291,7 @@ The counts and the configuration facts the analysis states, each numbered as the
           "rca.speed.subject.B.total"
         ],
         "for": [
-          "Output tokens accounts for 55% (53–56%) of the 3.0 s per-question difference in model time.",
+          "Output tokens account for 55% (53–56%) of the 3.0 s per-question difference in model time.",
           "Model B's reasoning share of output is 36%, Orion Max's 31%."
         ],
         "grade": "Moderate",
@@ -9037,7 +9037,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "kind": "decomposition",
         "number": 1,
-        "text": "Output tokens accounts for 55% (53–56%) of the per-question time difference between Orion Max and Model B."
+        "text": "Output tokens account for 55% (53–56%) of the per-question time difference between Orion Max and Model B."
       },
       {
         "factKeys": [
@@ -9045,7 +9045,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "kind": "decomposition",
         "number": 2,
-        "text": "Output tokens accounts for 55% (35–127%) of the per-question time difference between Orion Max and Model C."
+        "text": "Output tokens account for 55% (35–127%) of the per-question time difference between Orion Max and Model C."
       },
       {
         "factKeys": [
@@ -9053,7 +9053,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "kind": "decomposition",
         "number": 3,
-        "text": "Output tokens accounts for 55% (54–56%) of the per-question time difference between Orion Max and Model D."
+        "text": "Output tokens account for 55% (54–56%) of the per-question time difference between Orion Max and Model D."
       },
       {
         "factKeys": [
@@ -10237,6 +10237,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 131 · format version 25 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 131 · format version 26 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*
