@@ -131,6 +131,7 @@ $setup-two-columns: 72rem;
 .setup-group-test,
 .setup-group-grading {
   display: grid;
+  align-content: start;
   align-items: start;
   gap: 1rem 1.25rem;
 
