@@ -2,7 +2,7 @@ import { ParamMap, UrlMatchResult, UrlSegment } from '@angular/router';
 import type { BenchmarkSubTab } from './benchmark/state/benchmark-shell-bridge.service';
 
 /** The admin dashboard's top-level tabs, in display order. */
-export type AdminTabId = 'users' | 'configs' | 'database' | 'telemetry' | 'security' | 'benchmark' | 'devtools';
+export type AdminTabId = 'users' | 'configs' | 'database' | 'telemetry' | 'security' | 'benchmark' | 'devtools' | 'feedback';
 
 /** One sub-tab: its code id and its URL slug. The default sub-tab's slug is empty. */
 export type AdminSubTabSlug = readonly [id: string, slug: string];
@@ -15,7 +15,8 @@ export const ADMIN_TAB_SLUGS: Readonly<Record<AdminTabId, string>> = {
   telemetry: 'telemetry',
   security: 'security',
   benchmark: 'gnollbench',
-  devtools: 'services'
+  devtools: 'services',
+  feedback: 'feedback'
 };
 
 /**
@@ -23,6 +24,16 @@ export const ADMIN_TAB_SLUGS: Readonly<Record<AdminTabId, string>> = {
  * accepted and replaced by the canonical one; a retired slug is never reused for another tab.
  */
 export const RETIRED_ADMIN_TAB_SLUGS: Readonly<Record<string, AdminTabId>> = { devtools: 'devtools' };
+
+/** Sub-tab slugs that became top-level tabs; the old path opens the tab. Never reused as a sub-tab slug. */
+export const RETIRED_ADMIN_SUBTABS: Readonly<Partial<Record<AdminTabId, Readonly<Record<string, AdminTabId>>>>> =
+  { telemetry: { feedback: 'feedback' } };
+
+/** The tab a retired sub-tab slug of `tab` became, or undefined; never an inherited property. */
+function retiredSubTabTarget(tab: AdminTabId, subSlug: string | null): AdminTabId | undefined {
+  const retired = RETIRED_ADMIN_SUBTABS[tab];
+  return retired && subSlug != null && Object.hasOwn(retired, subSlug) ? retired[subSlug] : undefined;
+}
 
 /** Every GnollBench sub-tab needs a slug; a new `BenchmarkSubTab` without one fails to compile. */
 const BENCHMARK_SUBTAB_SLUGS: Readonly<Record<BenchmarkSubTab, string>> = {
@@ -40,7 +51,7 @@ const BENCHMARK_SUBTAB_SLUGS: Readonly<Record<BenchmarkSubTab, string>> = {
 export const ADMIN_SUBTAB_SLUGS: Readonly<Partial<Record<AdminTabId, readonly AdminSubTabSlug[]>>> = {
   users: [['users', ''], ['groups', 'groups'], ['deletions', 'deletions'], ['log', 'log']],
   configs: [['', ''], ['api-keys', 'api-keys']],
-  telemetry: [['summary', ''], ['models', 'models'], ['users', 'users'], ['groups', 'groups'], ['feedback', 'feedback']],
+  telemetry: [['summary', ''], ['models', 'models'], ['users', 'users'], ['groups', 'groups']],
   benchmark: Object.entries(BENCHMARK_SUBTAB_SLUGS) as [BenchmarkSubTab, string][],
   devtools: [['source', ''], ['gnollhack-wiki', 'gnollhack-wiki'], ['nethack-wiki', 'nethack-wiki'],
              ['knowledge-base', 'knowledge-base'], ['config-health', 'config-health'], ['sentry', 'developer-tools']]
@@ -79,13 +90,18 @@ export function adminCommands(tab: AdminTabId, subTab?: string | null): string[]
 
 /**
  * The tab and sub-tab a path names, and its canonical commands. A tab is found by its slug or by a
- * retired slug; an unknown tab is Users, an unknown sub-tab is the tab's default, and a sub-tab named
- * by its id (`users/users`, `services/sentry`) is accepted.
+ * retired slug; an unknown tab is Users, an unknown sub-tab is the tab's default, a sub-tab named
+ * by its id (`users/users`, `services/sentry`) is accepted, and a retired sub-tab opens the tab it became.
  */
 export function parseAdminPath(tabSlug: string | null, subSlug: string | null):
   { tab: AdminTabId; subTab: string | null; canonical: string[]; isCanonical: boolean } {
   const tab = TAB_IDS.find(id => ADMIN_TAB_SLUGS[id] === tabSlug) ??
     (tabSlug != null && Object.hasOwn(RETIRED_ADMIN_TAB_SLUGS, tabSlug) ? RETIRED_ADMIN_TAB_SLUGS[tabSlug] : undefined) ?? 'users';
+  const promoted = retiredSubTabTarget(tab, subSlug);
+  if (promoted) {
+    const subTab = defaultAdminSubTab(promoted);
+    return { tab: promoted, subTab, canonical: adminCommands(promoted, subTab), isCanonical: false };
+  }
   const entries = ADMIN_SUBTAB_SLUGS[tab];
   let subTab: string | null = null;
   if (entries) {
@@ -117,7 +133,8 @@ export function adminQueryList(values: readonly string[]): string | null {
 
 /**
  * The path an old `/admin?tab=…&subtab=…` link names, or null when it carries no `tab`. The retired
- * `groups` and `apikeys` tabs map to Users → Groups and System Configs → API Keys.
+ * `groups` and `apikeys` tabs map to Users → Groups and System Configs → API Keys, and a retired
+ * sub-tab to the tab it became.
  */
 export function legacyAdminPath(query: ParamMap): string[] | null {
   const tab = query.get('tab');
@@ -125,5 +142,7 @@ export function legacyAdminPath(query: ParamMap): string[] | null {
   if (tab === 'groups') return adminCommands('users', 'groups');
   if (tab === 'apikeys') return adminCommands('configs', 'api-keys');
   if (!isAdminTabId(tab)) return adminCommands('users');
+  const promoted = retiredSubTabTarget(tab, query.get('subtab'));
+  if (promoted) return adminCommands(promoted);
   return adminCommands(tab, query.get('subtab'));
 }

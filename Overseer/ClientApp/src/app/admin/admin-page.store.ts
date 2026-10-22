@@ -4,6 +4,7 @@ import { Observable, Subject } from 'rxjs';
 import { map, switchMap, tap } from 'rxjs/operators';
 import { AdminService, DefaultApiKeyStatus, GroupDto, SystemAiConfigDto } from '../services/admin.service';
 import { AdminUserActionKind, AdminUserCriteria, AdminUserSort } from '../services/admin-users.service';
+import { AdminFeedbackCounts, AdminFeedbackService } from '../services/admin-feedback.service';
 import { DefaultKeyInfo } from '../shared/ai-model-form/ai-model-form.component';
 import { readStoredUserSort } from './users-tab/user-criteria/user-criteria';
 import { ADMIN_SUBTAB_SLUGS, AdminTabId, adminCommands, defaultAdminSubTab, isAdminTabId } from './admin-url';
@@ -31,7 +32,7 @@ export type AdminUsersSubTab = 'users' | 'groups' | 'deletions' | 'log';
 export type AdminDevtoolsSubTab = 'source' | 'gnollhack-wiki' | 'nethack-wiki' | 'knowledge-base' | 'config-health' | 'sentry';
 
 /** The AI Telemetry tab's sub-tabs. */
-export type AdminTelemetrySubTab = 'summary' | 'models' | 'users' | 'groups' | 'feedback';
+export type AdminTelemetrySubTab = 'summary' | 'models' | 'users' | 'groups';
 
 /** How a store navigation treats the browser history: a new entry, or the current one replaced. */
 export type AdminHistoryMode = 'push' | 'replace';
@@ -63,6 +64,15 @@ export interface AdminTelemetryRange {
   end: string;
 }
 
+export type FeedbackTimeSpan = 'all' | '7d' | '30d' | '90d' | '1y' | 'custom';
+
+/** The Feedback tab's date range, kept while the tab is closed. Empty dates mean no bound. */
+export interface AdminFeedbackRange {
+  timeSpan: FeedbackTimeSpan;
+  start: string;
+  end: string;
+}
+
 /**
  * State the Admin page's tabs share, or keep across a tab switch. Provided by AdminComponent, so it
  * lives exactly as long as the page.
@@ -70,6 +80,7 @@ export interface AdminTelemetryRange {
 @Injectable()
 export class AdminPageStore {
   private adminService = inject(AdminService);
+  private feedbackService = inject(AdminFeedbackService);
   private router = inject(Router);
 
   groups: GroupDto[] = [];
@@ -101,6 +112,14 @@ export class AdminPageStore {
   readonly bulkWizardRequested$ = new Subject<void>();
 
   telemetryRange: AdminTelemetryRange = { timeSpan: '30d', start: '', end: '' };
+
+  feedbackRange: AdminFeedbackRange = { timeSpan: 'all', start: '', end: '' };
+
+  /** Feedback issue counts per status over all dates; null until they arrive, or when they fail. */
+  feedbackCounts: AdminFeedbackCounts | null = null;
+
+  /** Emits after `feedbackCounts` is replaced. */
+  readonly feedbackCountsChanged$ = new Subject<void>();
 
   /** Set while a maintenance request is outstanding, so a re-entered Database tab still refuses a second one. */
   maintenanceInFlight = false;
@@ -184,6 +203,19 @@ export class AdminPageStore {
       next: (c) => this.setConfigs(c),
       error: () => {}
     });
+  }
+
+  /** Fetches the feedback counts; a failure leaves null, so the tab shows no pill. */
+  loadFeedbackCounts(): void {
+    this.feedbackService.getCounts().subscribe({
+      next: (counts) => this.setFeedbackCounts(counts),
+      error: () => this.setFeedbackCounts(null)
+    });
+  }
+
+  private setFeedbackCounts(counts: AdminFeedbackCounts | null): void {
+    this.feedbackCounts = counts;
+    this.feedbackCountsChanged$.next();
   }
 
   setConfigs(configs: SystemAiConfigDto[]): void {

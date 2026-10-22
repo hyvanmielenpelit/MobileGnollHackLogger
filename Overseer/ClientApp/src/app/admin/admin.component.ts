@@ -19,6 +19,7 @@ import { AdminDatabaseTabComponent } from './database-tab/admin-database-tab.com
 import { AdminTelemetryTabComponent } from './telemetry-tab/admin-telemetry-tab.component';
 import { AdminDevtoolsTabComponent } from './devtools-tab/admin-devtools-tab.component';
 import { AdminSecurityTabComponent } from './security-tab/admin-security-tab.component';
+import { AdminFeedbackTabComponent } from './feedback-tab/admin-feedback-tab.component';
 
 /** One string per address: the path's tab and sub-tab and every query parameter. */
 function addressKey(snapshot: ActivatedRouteSnapshot): string {
@@ -35,7 +36,7 @@ function addressKey(snapshot: ActivatedRouteSnapshot): string {
     imports: [
       CommonModule, RouterModule, AdminBenchmarkComponent,
       AdminUsersTabComponent, AdminConfigsTabComponent, AdminDatabaseTabComponent,
-      AdminTelemetryTabComponent, AdminSecurityTabComponent, AdminDevtoolsTabComponent
+      AdminTelemetryTabComponent, AdminSecurityTabComponent, AdminDevtoolsTabComponent, AdminFeedbackTabComponent
     ],
     templateUrl: './admin.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
@@ -60,9 +61,23 @@ export class AdminComponent implements OnInit, OnDestroy {
     { id: 'telemetry', label: 'AI Telemetry' },
     { id: 'security',  label: 'Security' },
     { id: 'benchmark', label: 'GnollBench' },
-    { id: 'devtools',  label: 'Services' }
+    { id: 'devtools',  label: 'Services' },
+    { id: 'feedback',  label: 'Feedback' }
   ];
   loading = false;
+
+  /** New plus regressed issues, for the Feedback tab's pill; 0 while unknown. */
+  get openFeedbackCount(): number {
+    const counts = this.store.feedbackCounts;
+    return counts ? counts.new + counts.regressed : 0;
+  }
+
+  /** `: 3 new, 1 regressed` for the tab's accessible name; empty when the pill is absent. */
+  get feedbackTabCountText(): string {
+    const counts = this.store.feedbackCounts;
+    if (!counts || this.openFeedbackCount === 0) return '';
+    return `: ${counts.new} new, ${counts.regressed} regressed`;
+  }
 
   @ViewChild('adminToast') adminToast?: ElementRef<HTMLElement>;
 
@@ -220,10 +235,14 @@ export class AdminComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** The default keys, groups and configurations every tab reads; the tab content waits for them. */
+  /**
+   * The default keys, groups and configurations every tab reads, and the feedback counts the tab row
+   * shows; the tab content waits for the groups and configurations.
+   */
   loadData() {
     this.loading = true;
     this.store.loadDefaultApiKeys();
+    this.store.loadFeedbackCounts();
     this.store.loadInitial().subscribe({
       next: () => {
         this.loading = false;

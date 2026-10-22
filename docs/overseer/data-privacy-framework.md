@@ -1901,7 +1901,7 @@ A report's text is **content**: model-written text derived from the conversation
 
 | Stored | Where | How long | Shared with |
 |---|---|---|---|
-| The occurrence: category, subject, summary and the optional fields, scrubbed; the session and user-message ids; the provider, model and application version; the user id | `OverseerFeedbackReports`, one row per report | Until the conversation is permanently purged (the purge deletes its occurrences explicitly) or the account is erased (the user foreign key cascades); an administrator's issue delete also removes them | Overseer administrators, on Admin → AI Telemetry → Feedback |
+| The occurrence: category, subject, summary and the optional fields, scrubbed; the session and user-message ids; the provider, model and application version; the user id | `OverseerFeedbackReports`, one row per report | Until the conversation is permanently purged (the purge deletes its occurrences explicitly) or the account is erased (the user foreign key cascades); an administrator's issue delete also removes them | Overseer administrators, on Admin → Feedback |
 | The issue: the category, the first occurrence's subject and summary, first and last seen, counts, status and triage note | `OverseerFeedbackIssues`, one row per distinct problem | Until an administrator deletes it. It **outlives its occurrences**: a purge or an erasure leaves it, with nothing that points at a conversation or a user, and its occurrence count stays historical | Overseer administrators |
 | The same text, unscrubbed, as the call's arguments and result | `ChatMessageToolCall.ArgsText` / `Result` of the turn | With the conversation, under the existing tool-call payload pruning | As every tool call |
 

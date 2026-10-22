@@ -19,11 +19,6 @@ import {
   ChatProviderAvailabilityDto,
   OverseerActivityDto
 } from '../../services/admin.service';
-import {
-  AdminFeedbackCounts,
-  AdminFeedbackIssuePage,
-  AdminFeedbackService
-} from '../../services/admin-feedback.service';
 import { AdminPageStore, AdminTelemetrySubTab } from '../admin-page.store';
 import { spyAdminService } from '../admin.component.testing';
 import { AdminTelemetryTabComponent } from './admin-telemetry-tab.component';
@@ -112,13 +107,6 @@ const groupsDto = (groups: AiTelemetryGroupRowDto[] = []): AiTelemetryGroupsDto 
   keySource: 'system', groups, securityEventsAvailable: true
 });
 
-const feedbackCounts = (overrides: Partial<AdminFeedbackCounts> = {}): AdminFeedbackCounts => ({
-  new: 0, acknowledged: 0, resolved: 0, regressed: 0, dismissed: 0,
-  ...overrides
-});
-
-const emptyIssuePage = (): AdminFeedbackIssuePage => ({ totalCount: 0, rows: [] });
-
 describe('AdminTelemetryTabComponent', () => {
   let component: AdminTelemetryTabComponent;
   let fixture: ComponentFixture<AdminTelemetryTabComponent>;
@@ -126,9 +114,6 @@ describe('AdminTelemetryTabComponent', () => {
   let store: AdminPageStore;
   let usersSpy: Mock;
   let groupsSpy: Mock;
-  let feedbackService: AdminFeedbackService;
-  let countsSpy: Mock;
-  let issuesSpy: Mock;
 
   beforeEach(async () => {
     localStorage.removeItem(TELEMETRY_BREAKDOWN_STORAGE_KEY);
@@ -148,13 +133,6 @@ describe('AdminTelemetryTabComponent', () => {
     spyAdminService(adminService);
     usersSpy = vi.spyOn(adminService, 'getAiTelemetryUsers').mockReturnValue(of(usersPage()));
     groupsSpy = vi.spyOn(adminService, 'getAiTelemetryGroups').mockReturnValue(of(groupsDto()));
-    feedbackService = TestBed.inject(AdminFeedbackService);
-    countsSpy = vi.spyOn(feedbackService, 'getCounts').mockReturnValue(of(feedbackCounts()));
-    issuesSpy = vi.spyOn(feedbackService, 'getIssues').mockReturnValue(of(emptyIssuePage()));
-    vi.spyOn(feedbackService, 'getSwitches').mockReturnValue(of({
-      chat: { enabled: true, setAtUtc: null, setByUserName: null, seeded: true }
-    }));
-    vi.spyOn(feedbackService, 'getModels').mockReturnValue(of([]));
     store = TestBed.inject(AdminPageStore);
 
     fixture = TestBed.createComponent(AdminTelemetryTabComponent);
@@ -393,15 +371,16 @@ describe('AdminTelemetryTabComponent', () => {
     const subTabButtons = (): HTMLButtonElement[] =>
       Array.from(host().querySelectorAll<HTMLButtonElement>('.tl-subtabs [role="tab"]'));
 
-    it('is a named tablist of Summary, Models, Users, Groups and Feedback, each tab paired with its panel', () => {
+    it('is a named tablist of Summary, Models, Users and Groups, each tab paired with its panel', () => {
       openTab();
 
       const tablist = host().querySelector('.tl-subtabs') as HTMLElement;
       expect(tablist.getAttribute('role')).toBe('tablist');
       expect(tablist.getAttribute('aria-label')).toBe('AI Telemetry sections');
-      expect(subTabButtons().map(b => b.textContent?.trim())).toEqual(['Summary', 'Models', 'Users', 'Groups', 'Feedback']);
-      expect(subTabButtons().map(b => b.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false', 'false']);
-      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1', '-1']);
+      expect(subTabButtons().map(b => b.textContent?.trim())).toEqual(['Summary', 'Models', 'Users', 'Groups']);
+      expect(subTabButtons().map(b => b.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
+      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1']);
+      expect(host().querySelector('#tl-subpanel-feedback')).toBeNull();
       for (const tab of subTabButtons()) {
         expect(tab.getAttribute('type')).toBe('button');
         const panel = host().querySelector('#' + tab.getAttribute('aria-controls')) as HTMLElement;
@@ -430,7 +409,7 @@ describe('AdminTelemetryTabComponent', () => {
       fixture.detectChanges();
       expect(goTo).toHaveBeenLastCalledWith('telemetry', 'users', 'replace');
       expect(document.activeElement).toBe(host().querySelector('#tl-subtab-users'));
-      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['-1', '-1', '0', '-1', '-1']);
+      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['-1', '-1', '0', '-1']);
     });
 
     it('puts Date range and Keys in the header, named by visually hidden labels', () => {
@@ -713,113 +692,6 @@ describe('AdminTelemetryTabComponent', () => {
       expect(usersSpy).toHaveBeenCalledTimes(1);
       expect(usersSpy).toHaveBeenCalledWith(expect.objectContaining({ userId: 'u-5' }));
       expect(host().querySelector('.tl-users-status')?.textContent?.trim()).toBe('Showing 1 user — eve');
-    });
-
-    // --- Feedback view ---
-
-    it('mounts the Feedback panel on first selection, at /admin/telemetry/feedback, with the range and without Keys', () => {
-      openTab();
-      const goTo = vi.spyOn(store, 'goTo');
-      expect(host().querySelector('#tl-subpanel-feedback app-telemetry-feedback')).toBeNull();
-      expect(issuesSpy).not.toHaveBeenCalled();
-
-      subTabButtons()[4].click();
-      fixture.detectChanges();
-
-      expect(goTo).toHaveBeenLastCalledWith('telemetry', 'feedback', 'push');
-      expect(subTabButtons()[4].getAttribute('aria-selected')).toBe('true');
-      const panel = host().querySelector('#tl-subpanel-feedback') as HTMLElement;
-      expect(panel.hidden).toBe(false);
-      expect(panel.getAttribute('aria-labelledby')).toBe('tl-subtab-feedback');
-      expect(panel.querySelector('app-telemetry-feedback')).not.toBeNull();
-      expect((component.feedbackView as unknown as Record<string, unknown>)['keys']).toBeUndefined();
-      expect(issuesSpy).toHaveBeenCalled();
-      const query = issuesSpy.mock.calls[0][0];
-      expect(query).toEqual(expect.objectContaining({
-        startDate: component.telemetryStartDate, endDate: component.telemetryEndDate, statuses: ['new', 'regressed'], skip: 0
-      }));
-      expect(Object.keys(query)).not.toContain('keys');
-    });
-
-    it('refetches the Feedback view for a new date range, and not for a new Keys filter', () => {
-      openTab('feedback');
-      issuesSpy.mockClear();
-
-      const keys = host().querySelector('#telemetryKeysSelect') as HTMLSelectElement;
-      keys.value = 'both';
-      keys.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-      expect(issuesSpy).not.toHaveBeenCalled();
-
-      const span = host().querySelector('#telemetryTimeSpanSelect') as HTMLSelectElement;
-      span.value = '7d';
-      span.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-
-      expect(issuesSpy).toHaveBeenCalledWith(expect.objectContaining({
-        startDate: component.telemetryStartDate, endDate: component.telemetryEndDate, skip: 0
-      }));
-    });
-
-    it('labels Feedback with its new and regressed counts, and the other sub-tabs as before', () => {
-      openTab();
-      const label = () => subTabButtons()[4].textContent?.trim();
-      expect(countsSpy).toHaveBeenCalledTimes(1);
-      expect(label()).toBe('Feedback');
-
-      component.feedbackCounts = feedbackCounts({ new: 3, regressed: 1, resolved: 4 });
-      fixture.detectChanges();
-      expect(label()).toBe('Feedback (3 new, 1 regressed)');
-      expect(component.subTabLabel('feedback')).toBe('Feedback (3 new, 1 regressed)');
-
-      component.feedbackCounts = feedbackCounts({ new: 3 });
-      expect(component.subTabLabel('feedback')).toBe('Feedback (3 new)');
-
-      component.feedbackCounts = feedbackCounts({ regressed: 1 });
-      expect(component.subTabLabel('feedback')).toBe('Feedback (1 regressed)');
-
-      component.feedbackCounts = feedbackCounts({ acknowledged: 2, dismissed: 5 });
-      expect(component.subTabLabel('feedback')).toBe('Feedback');
-
-      component.feedbackCounts = null;
-      expect(component.subTabLabel('feedback')).toBe('Feedback');
-
-      expect(['summary', 'models', 'users', 'groups'].map(tab => component.subTabLabel(tab as AdminTelemetrySubTab)))
-        .toEqual(['Summary', 'Models', 'Users', 'Groups']);
-    });
-
-    it('takes the counts on init and again when the Feedback view reports a change, and passes them down', () => {
-      countsSpy.mockReturnValue(of(feedbackCounts({ new: 2 })));
-      openTab('feedback');
-      expect(subTabButtons()[4].textContent?.trim()).toBe('Feedback (2 new)');
-
-      countsSpy.mockClear();
-      countsSpy.mockReturnValue(of(feedbackCounts({ new: 1, regressed: 2 })));
-      component.feedbackView!.countsChange.emit();
-      fixture.detectChanges();
-
-      expect(countsSpy).toHaveBeenCalledTimes(1);
-      expect(subTabButtons()[4].textContent?.trim()).toBe('Feedback (1 new, 2 regressed)');
-      expect(component.feedbackView!.counts()).toEqual(feedbackCounts({ new: 1, regressed: 2 }));
-    });
-
-    it('keeps the plain Feedback label when the counts fail', () => {
-      countsSpy.mockReturnValue(throwError(() => new Error('down')));
-      vi.spyOn(console, 'error').mockImplementation(() => undefined);
-      openTab();
-
-      expect(subTabButtons()[4].textContent?.trim()).toBe('Feedback');
-    });
-
-    it('reloads the Feedback view and the counts on Refresh once the view is mounted', () => {
-      openTab('feedback');
-      const reload = vi.spyOn(component.feedbackView!, 'reload');
-      countsSpy.mockClear();
-
-      component.refreshFromHeader();
-
-      expect(reload).toHaveBeenCalledTimes(1);
-      expect(countsSpy).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -6,6 +6,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of } from 'rxjs';
 import { AdminService, SystemAiConfigDto } from '../services/admin.service';
 import { AdminUsersService } from '../services/admin-users.service';
+import { AdminFeedbackCounts, AdminFeedbackService } from '../services/admin-feedback.service';
 import {
   AdminDevtoolsService, CORPUS_KIND_BY_SLUG, ConfigHealthReport, CorpusIndexInfo, CorpusIndexJob,
   CorpusIndexStatus, CorpusKind, CorpusKindSlug, CorpusProbeResult, CorpusStatusBySlug, CorpusToolUsage,
@@ -286,9 +287,16 @@ export function spyAdminService(adminService: AdminService): void {
   }));
 }
 
+/** Feedback issue counts of zero in every status, or `overrides`, for the Admin tab row and the Feedback tab. */
+export function spyAdminFeedbackCounts(service: AdminFeedbackService, overrides: Partial<AdminFeedbackCounts> = {}) {
+  return vi.spyOn(service, 'getCounts').mockReturnValue(of({
+    new: 0, acknowledged: 0, resolved: 0, regressed: 0, dismissed: 0, ...overrides
+  }));
+}
+
 /**
  * Configures the TestBed for one Admin tab or dialog component with a page store of its own, and
- * installs the default AdminService, AdminUsersService and AdminDevtoolsService spies.
+ * installs the default AdminService, AdminUsersService, AdminDevtoolsService and feedback count spies.
  */
 export async function configureAdminTestBed(component: Type<unknown>): Promise<{
   adminService: AdminService;
@@ -312,5 +320,6 @@ export async function configureAdminTestBed(component: Type<unknown>): Promise<{
   spyAdminUsersService(usersService);
   const devtoolsService = TestBed.inject(AdminDevtoolsService);
   spyAdminDevtoolsService(devtoolsService);
+  spyAdminFeedbackCounts(TestBed.inject(AdminFeedbackService));
   return { adminService, store: TestBed.inject(AdminPageStore), usersService, devtoolsService };
 }

@@ -17,7 +17,7 @@
           [attr.aria-selected]="activeTab === tab.id"
           [attr.tabindex]="activeTab === tab.id ? 0 : -1"
           (keydown)="onTabKeydown($event, i)"
-          (click)="selectTab(tab.id)">{{ tab.label }}</button>
+          (click)="selectTab(tab.id)">{{ tab.label }}@if (tab.id === 'feedback' && openFeedbackCount > 0) {<span class="admin-tab-count" aria-hidden="true">{{ openFeedbackCount }}</span><span class="visually-hidden">{{ feedbackTabCountText }}</span>}</button>
       }
       <div class="indicator-right" aria-hidden="true"></div>
     </div>
@@ -75,6 +75,13 @@
             <app-admin-benchmark [systemConfigs]="store.configs" [openRunId]="pendingRunId" (openRunHandled)="pendingRunId = null"
                                  [navigation]="pendingBenchmarkNavigation" (navigationHandled)="pendingBenchmarkNavigation = null"
                                  (subTabChange)="onBenchmarkSubTabChange($event)"></app-admin-benchmark>
+          </div>
+        }
+
+        <!-- FEEDBACK TAB -->
+        @if (activeTab === 'feedback') {
+          <div role="tabpanel" id="admin-panel-feedback" aria-labelledby="admin-tab-feedback" tabindex="0">
+            <app-admin-feedback-tab></app-admin-feedback-tab>
           </div>
         }
       </div>

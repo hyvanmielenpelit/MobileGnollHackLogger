@@ -1,7 +1,9 @@
-/* The filter bar, the status line, Load more, `.gh-switch`, `.gh-disclosure`, `.gh-tag`, `.status-badge`
-   and `.gh-field-error` are global in styles.scss. The card surface, the title and the sticky clearance
-   come from _telemetry-cards.scss; the metric columns are fixed, as Run History's are. */
-@use '../telemetry-cards' as cards;
+/* The filter bar, the status line, Load more, `.gh-switch`, `.gh-disclosure`, `.gh-tag`, `.status-badge`,
+   `.gh-section-title` and `.gh-field-error` are global in styles.scss. The sticky header comes from
+   _admin-shared.scss; the card surface, the title and the sticky clearance from _telemetry-cards.scss;
+   the metric columns are fixed, as Run History's are. */
+@use '../admin-shared' as shared;
+@use '../telemetry-tab/telemetry-cards' as cards;
 
 :host {
   display: flex;
@@ -9,6 +11,7 @@
   gap: 0.75rem;
 }
 
+@include shared.tab-header-row;
 @include cards.sticky-clearance;
 
 .tl-fb-sep {
@@ -25,23 +28,75 @@ time {
   overflow-wrap: anywhere;
 }
 
+/* --- The header -------------------------------------------------------------------------------- */
+
+/* The range, then Refresh, at the header's end; they wrap under the title when narrow. */
+.fb-head {
+  margin-bottom: 0.25rem;
+}
+
+.fb-header-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem 1rem;
+  min-inline-size: 0;
+
+  .action-btn {
+    margin-left: 0;
+  }
+}
+
+.fb-range {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-inline-size: 0;
+
+  select.gh-input {
+    flex: 0 1 auto;
+    min-inline-size: 10rem;
+  }
+
+  input[type='date'] {
+    inline-size: auto;
+  }
+}
+
+.fb-range-dash {
+  color: #a1a1aa;
+}
+
 /* --- The switch card ------------------------------------------------------------------------- */
 
-/* The title, then one row per switch, each under a hairline. */
+/* The title and its (i), then one row per switch, each under a hairline. */
 .tl-fb-switch-card {
   @include cards.card-surface;
 
   grid-template-columns: minmax(0, 1fr);
   gap: var(--tl-row-gap);
+  container: tl-fb-switch / inline-size;
 }
 
+.tl-fb-switch-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  .gh-section-title {
+    margin: 0;
+    padding: 0;
+    border-bottom: 0;
+  }
+}
+
+/* The text at the start, the state word and the switch at the end of the label line's row. */
 .tl-fb-switch-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
-    "text   switch"
-    "status status"
-    "error  error";
+    "text  state"
+    "error error";
   align-items: center;
   gap: 0.5rem var(--tl-zone-gap);
   padding-block-start: var(--tl-row-gap);
@@ -56,44 +111,50 @@ time {
   min-inline-size: 0;
 }
 
-.tl-fb-switch-title {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: #f4f4f5;
-}
-
 .tl-fb-switch-label {
+  font-size: var(--text-body);
   font-weight: 600;
   color: #f4f4f5;
 }
 
-.tl-fb-switch-state {
+.tl-fb-switch-desc {
   margin: 0;
-  color: #e4e4e7;
+  font-size: var(--text-body);
+  color: #d4d4d8;
 }
 
-.tl-fb-switch-note {
+.tl-fb-switch-meta {
   margin: 0;
   font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
   color: #a1a1aa;
-}
-
-.tl-fb-switch {
-  grid-area: switch;
-  justify-self: end;
-  margin: 0;
-}
-
-.tl-fb-switch-status {
-  grid-area: status;
-  margin: 0;
-  font-size: var(--text-secondary);
-  color: var(--nav-color);
 
   &:empty {
     display: none;
   }
+}
+
+.tl-fb-switch-control {
+  grid-area: state;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-self: end;
+}
+
+.tl-fb-switch-word {
+  min-inline-size: 1.75rem;
+  font-weight: 600;
+  text-align: end;
+  color: #a1a1aa;
+
+  &[data-state='on'] {
+    color: var(--primary-color);
+  }
+}
+
+.tl-fb-switch {
+  margin: 0;
 }
 
 .tl-fb-switch-error {
@@ -105,8 +166,12 @@ time {
   margin: 0;
 }
 
-.tl-fb-note {
-  margin: 0;
+/* A narrow card keeps the switch on the label line instead of centering it against the text. */
+@container tl-fb-switch (inline-size < 30rem) {
+  .tl-fb-switch-row {
+    align-items: start;
+    column-gap: 1rem;
+  }
 }
 
 /* --- The issue list -------------------------------------------------------------------------- */
@@ -117,11 +182,21 @@ time {
   gap: 0.75rem;
 }
 
+/* The heading at the start, the list's count at the end, over one rule. */
+.tl-fb-issues-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  padding-block-end: 6px;
+  border-bottom: 1px solid var(--border-glass);
+}
+
 .tl-fb-issues-title {
   margin: 0;
-  font-size: 1.0625rem;
-  font-weight: 700;
-  color: #f4f4f5;
+  padding: 0;
+  border-bottom: 0;
 
   &:focus {
     outline: none;
@@ -131,6 +206,17 @@ time {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
     border-radius: 4px;
+  }
+}
+
+.tl-fb-status {
+  margin: 0;
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  color: #a1a1aa;
+
+  &:empty {
+    display: none;
   }
 }
 
@@ -158,17 +244,38 @@ time {
   }
 }
 
-.tl-fb-status:empty {
-  display: none;
-}
-
-.tl-fb-empty,
 .tl-fb-error {
   margin: 0;
 }
 
+/* One dashed card for either empty state: a glyph, a title and one line or the Clear filters button. */
 .tl-fb-empty {
-  color: var(--nav-color);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 2rem 1rem;
+  border: 1px dashed var(--border-glass);
+  border-radius: 10px;
+  text-align: center;
+
+  p {
+    margin: 0;
+  }
+}
+
+.tl-fb-empty-icon {
+  margin-block-end: 0.25rem;
+  color: #a1a1aa;
+}
+
+.tl-fb-empty-title {
+  font-weight: 600;
+  color: #f4f4f5;
+}
+
+.tl-fb-empty-text {
+  color: #a1a1aa;
 }
 
 .tl-fb-cards {
@@ -270,6 +377,7 @@ time {
   border-inline-start: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* A term and its value share one size and differ by color and weight, as the other telemetry cards' do. */
 .tl-fb-metric {
   display: flex;
   flex-direction: column;
@@ -277,11 +385,8 @@ time {
   min-inline-size: 0;
 
   dt {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #888;
+    font-weight: 500;
+    color: #a1a1aa;
   }
 
   dd {
@@ -455,10 +560,13 @@ time {
     margin: 0;
     font-weight: 600;
   }
+}
 
-  .form-hint {
-    margin: 0;
-  }
+/* A label followed by its (i) button. */
+.tl-fb-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .tl-fb-note-input {

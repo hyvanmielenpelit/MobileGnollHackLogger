@@ -672,6 +672,11 @@ an icon-only `.action-btn` named for its group with an `interestfor` tooltip, in
 `.btn-ghost` **Clear selection** with* x *and the chips' `.action-btn`* x *(§8i), a `.btn-ghost`
 **Retry** with* rotate*, and the shared `app-telemetry-sort-popover` trigger with* arrow-down-up*.*
 
+*Changed 2026-10-22 (Admin Feedback tab): no glyph or class of button is new. The Feedback tab's header
+has an icon-only `.action-btn` **Refresh feedback** that reuses* rotate *with an `interestfor` tooltip
+*Refresh*, like the AI Telemetry header's. Its two empty states carry a 32 px decorative,
+`aria-hidden` glyph (*inbox*, *filter*) that is not a control.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -1779,9 +1784,11 @@ one rule). Keep the scrolling row for long or open-ended sets, where a
 wrapped block of tabs would push the panel down by several lines. Render the row from one `@for` over
 the component's tab array, so the wrapped order is always the array's order.
 
-Every Admin sub-tab row (Users, AI Telemetry, GnollBench, Services) is
+Every Admin sub-tab row (Users, AI Telemetry, GnollBench, Services; Feedback has none) is
 `gh-tabs gh-tabs-secondary gh-tabs-wrap` inside a `.gh-subtab-head`, text-only. A filter or action
-that scopes a whole tab goes in its header card, never on the sub-tab row.
+that scopes a whole tab goes in its header card, never on the sub-tab row. A count on a tab is a small
+`aria-hidden` pill with the counts in a visually hidden span (the top-level *Feedback* tab's open
+issues), never a long label such as *Feedback (3 new, 1 regressed)*.
 
 *Changed 2026-10-08: the figure-workspace sidebars of Model Comparison and the Chat Consistency
 Timeline joined the GnollBench sub-tab row as `.gh-tabs-wrap` users, because at their default and
@@ -2337,19 +2344,25 @@ mixins, with *No group* as a card of its own. It has the Users view's recorded e
 `CardListState`, and runs its search, sort and batches of 20 **in the browser**, because the server
 returns every group unpaged (groups are administrator-made and few).
 
-The **AI Telemetry Feedback issues** (`app-telemetry-feedback`, `admin/telemetry-tab/feedback/`,
-2026-10-21) are the twenty-second: one full-width `article[aria-labelledby="tl-fb-{id}-title"]` per
+The **Admin Feedback issues** (`app-admin-feedback-tab`, `admin/feedback-tab/`, 2026-10-21, an Admin
+tab of its own at `/admin/feedback` since 2026-10-22) are the twenty-second. The tab has a sticky
+`.tab-header-row` of its own (the title, its own date range with an (i), an icon-only *Refresh*), and
+the *Reported issues* section title carries the list's count at the end of its row. The list is
+one full-width `article[aria-labelledby="tl-fb-{id}-title"]` per
 feedback issue, in Run History's layout — a kicker (category badge, status badge with *Regressed N×*,
 the models), the subject as `h4` title and the summary, a metrics row of four **fixed-width** columns
 with visible qualifier lines (*Occurrences* with *N retained*, *Users*, *First seen*, *Last seen*;
 two per row below about 40 rem), a `dl` of the latest facts, a `details.gh-disclosure` of occurrences
 loaded on first open with *Show 10 more*, and, under a hairline, the triage form (a labeled *Status*
-select whose help text states the recurrence rule, a `gh-textarea-autosize` *Note*, a *Save* `.btn-gh`,
+select whose (i) beside the label states the recurrence rule and also describes the select through
+`aria-describedby`, a `gh-textarea-autosize` *Note*, a *Save* `.btn-gh`,
 an icon-only *Delete issue* with a confirm). It is **server-paged** like the Security tab's events
 (`TableState.setRemoteTotal`, *Show N more* in batches of 25), with the full §8h filter bar: a debounced
 search, *Sort by* (remembered in `localStorage`), *Status*, *Category* and *Model* facets, and chips. The
-facet values and the search live in the address (`status`, `category`, `model`, `q`). Model-written text
-is plain text only. See `docs/overseer/ai-feedback-reports.md` § 10.
+facet values and the search live in the address (`status`, `category`, `model`, `q`). Either empty
+state is one dashed `.tl-fb-empty` card: a 32 px `aria-hidden` glyph, a title and one line, or the
+*Clear filters* button. Model-written text is plain text only. See
+`docs/overseer/ai-feedback-reports.md` § 10.
 
 The **charts dialog's Models, Users and Groups tabs** (`app-telemetry-chart-{models,users,groups}`,
 `admin/telemetry-tab/charts/selection/`, 2026-10-21) are a recorded exception too: checkbox lists under a
@@ -2876,21 +2889,30 @@ and the AI Telemetry *Manage limits*, *… for group {group}* from the Groups su
 *Manage Groups for {user}* (`users-tab/user-list/`, `#manageGroupsDialog`) uses the same frame at
 36 rem, not full height, with the same switch-first cards (title only, no badges) and **Done**.
 
-**The Feedback switch card** (2026-10-21, first in the AI Telemetry Feedback panel) is the reference for
-**the switches that govern one feature**, one row per surface. A full-width
-`<section aria-labelledby="tl-fb-switch-title">` whose `h3#tl-fb-switch-title` *Feedback tool* names the
-section, then one row per surface (today one, *Enabled in Overseer chat*, followed by a `.tl-fb-switch-note`
-pointing GnollBench to its per-run launcher setting). Each row has, on
-the left, its own label, a sentence of state from the server (*On since {time} by {user}. …*, *Off since
-{time} by {user}. …*, or the seeded forms *On by configuration default. …*, *Off by configuration
-default. …*) and any quieter note the surface needs; on the right its switch; and below,
-its own `role="status"` line and `.gh-field-error` line. The switch is the global `gh-switch` with the size
-modifier **`gh-switch-lg`** (`styles.scss`, beside `.gh-switch`: about 64 × 34 pixels, the knob scaled to
-match), so it reads as the row's one big control. Like the access switches above, each commits at once
-with no confirmation (the change is reversible and destroys nothing): its checkbox is named by **its row's
-label** through `aria-labelledby`, not by the section title, is disabled while its own request runs and
-reverts on an error, and after a success its state sentence is refetched so it is the server's, not the
-client's. **One row's request never disables another row.** Use `gh-switch-lg` only for such a
+**The Feedback switch card** (2026-10-21; first under the Feedback tab's header since 2026-10-22) is
+the reference for **the switches that govern one feature**, one row per surface. A full-width
+`<section aria-labelledby="tl-fb-switch-title">` whose head row holds the section title
+`h3#tl-fb-switch-title.gh-section-title` *Feedback tool* and a click-mode `app-info-tip` saying where the
+switch applies and what it does not govern (*Applies to the Overseer chat only. GnollBench runs choose it
+per run: …*), so that scope text is not a gray line on the card. Then one row per surface (today one).
+Each row has, on the left, **a label naming the surface** (*Overseer chat*, never *Enabled in …*), a
+readable description of what *On* does (`--text-body`, `#d4d4d8`, not a faint note), and a short meta line
+from the server (*On · Changed {time} by {user}*, *Off · Changed {time}*, *On · Configuration default*;
+`--text-secondary`, tabular figures); on the right a **state word** (*On* in the primary color, *Off* in
+gray, `aria-hidden` because the switch announces its own state) beside the switch, so the state is a word
+and not only a knob position; and below, a **visually hidden** `role="status"` line, which announces the
+change without repeating the meta line on screen, and a visible `.gh-field-error` line. The switch is the
+global `gh-switch` with the size modifier **`gh-switch-lg`** (`styles.scss`, beside `.gh-switch`: about
+64 × 34 pixels, the knob scaled to match), so it reads as the row's one big control, and **every
+`gh-switch-lg` checkbox carries `role="switch"`**, so assistive technology announces *switch, on/off*
+rather than *checkbox, checked* (valid ARIA on a checkbox, which maps `checked`; the native `switch`
+attribute is Safari-only, so it is not used and no polyfill is added). Like the access switches above,
+each commits at once with no confirmation (the change is reversible and destroys nothing): its checkbox
+is named by **the section title and its row's label** through `aria-labelledby` (*Feedback tool Overseer
+chat*) and described by the description and the meta line, is disabled while its own request runs and
+reverts on an error, and after a success its meta line is refetched so it is the server's, not the
+client's. **One row's request never disables another row.** Below 30 rem of the card (a container query
+on the section) the switch stays at the end of the label line. Use `gh-switch-lg` only for such a
 feature-level switch; a switch in a list row stays the plain `gh-switch`.
 
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,

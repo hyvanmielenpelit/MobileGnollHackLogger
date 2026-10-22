@@ -15,7 +15,10 @@ import { AdminPageStore } from './admin-page.store';
 import { AdminService, GroupDto, SystemAiConfigDto } from '../services/admin.service';
 import { AdminUsersService } from '../services/admin-users.service';
 import { AdminDevtoolsService } from '../services/admin-devtools.service';
-import { adminTestRoutes, buildSystemConfig, spyAdminDevtoolsService, spyAdminService } from './admin.component.testing';
+import { AdminFeedbackService } from '../services/admin-feedback.service';
+import {
+  adminTestRoutes, buildSystemConfig, spyAdminDevtoolsService, spyAdminFeedbackCounts, spyAdminService
+} from './admin.component.testing';
 import { AdminUsersTabComponent } from './users-tab/admin-users-tab.component';
 import { AdminUserListComponent } from './users-tab/user-list/admin-user-list.component';
 import { buildAdminUser, buildUsersPage, spyAdminUsersService } from './users-tab/admin-users.testing';
@@ -31,6 +34,8 @@ describe('AdminComponent', () => {
   let fixture: ComponentFixture<AdminComponent>;
   let adminService: AdminService;
   let usersService: AdminUsersService;
+  let feedbackService: AdminFeedbackService;
+  let countsSpy: Mock;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -48,6 +53,8 @@ describe('AdminComponent', () => {
     usersService = TestBed.inject(AdminUsersService);
     spyAdminUsersService(usersService);
     spyAdminDevtoolsService(TestBed.inject(AdminDevtoolsService));
+    feedbackService = TestBed.inject(AdminFeedbackService);
+    countsSpy = spyAdminFeedbackCounts(feedbackService) as unknown as Mock;
 
     fixture = TestBed.createComponent(AdminComponent);
     component = fixture.componentInstance;
@@ -129,13 +136,13 @@ describe('AdminComponent', () => {
       expect(mainTabs().length).toBe(component.tabs.length);
     });
 
-    it('should list the seven sections in order', () => {
+    it('should list the eight sections in order', () => {
       expect(mainTabs().map(t => t.id)).toEqual([
         'admin-tab-users', 'admin-tab-configs', 'admin-tab-database', 'admin-tab-telemetry',
-        'admin-tab-security', 'admin-tab-benchmark', 'admin-tab-devtools'
+        'admin-tab-security', 'admin-tab-benchmark', 'admin-tab-devtools', 'admin-tab-feedback'
       ]);
       expect(mainTabs().map(t => t.textContent?.trim())).toEqual([
-        'Users', 'System Configs', 'Database', 'AI Telemetry', 'Security', 'GnollBench', 'Services'
+        'Users', 'System Configs', 'Database', 'AI Telemetry', 'Security', 'GnollBench', 'Services', 'Feedback'
       ]);
     });
 
@@ -183,7 +190,7 @@ describe('AdminComponent', () => {
       const ids = component.tabs.map(t => t.id);
       expect(ids.indexOf('security')).toBe(ids.indexOf('telemetry') + 1);
       expect(component.tabs.find(t => t.id === 'security')!.label).toBe('Security');
-      expect(component.tabs.length).toBe(7);
+      expect(component.tabs.length).toBe(8);
     });
 
     it('renders the Security tab panel when the tab is chosen', () => {
@@ -195,6 +202,76 @@ describe('AdminComponent', () => {
       expect(panel.getAttribute('role')).toBe('tabpanel');
       expect(panel.getAttribute('aria-labelledby')).toBe('admin-tab-security');
       expect(panel.querySelector('app-admin-security-tab')).not.toBeNull();
+    });
+  });
+
+  describe('Feedback tab', () => {
+    const feedbackTab = () => fixture.nativeElement.querySelector('#admin-tab-feedback') as HTMLButtonElement;
+
+    beforeEach(() => {
+      vi.spyOn(feedbackService, 'getIssues').mockReturnValue(of({ totalCount: 0, rows: [] }));
+      vi.spyOn(feedbackService, 'getSwitches').mockReturnValue(of({
+        chat: { enabled: true, setAtUtc: null, setByUserName: null, seeded: true }
+      }));
+      vi.spyOn(feedbackService, 'getModels').mockReturnValue(of([]));
+    });
+
+    it('comes last, after Services', () => {
+      expect(component.tabs.map(t => t.id).slice(-2)).toEqual(['devtools', 'feedback']);
+      expect(component.tabs.find(t => t.id === 'feedback')!.label).toBe('Feedback');
+    });
+
+    it('loads the counts once, with the page', () => {
+      fixture.detectChanges();
+
+      expect(countsSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows New plus Regressed as a pill, with the counts in the accessible name', () => {
+      countsSpy.mockReturnValue(of({ new: 3, acknowledged: 2, resolved: 5, regressed: 1, dismissed: 4 }));
+      fixture.detectChanges();
+
+      const pill = feedbackTab().querySelector('.admin-tab-count')!;
+      expect(pill.textContent?.trim()).toBe('4');
+      expect(pill.getAttribute('aria-hidden')).toBe('true');
+      expect(feedbackTab().querySelector('.visually-hidden')?.textContent).toBe(': 3 new, 1 regressed');
+      expect(feedbackTab().textContent?.replace(/\s+/g, ' ').trim()).toBe('Feedback4: 3 new, 1 regressed');
+      expect(fixture.nativeElement.querySelectorAll('.admin-tab-count').length).toBe(1);
+    });
+
+    it('shows no pill while nothing is new or regressed, or when the counts fail', () => {
+      countsSpy.mockReturnValue(of({ new: 0, acknowledged: 2, resolved: 5, regressed: 0, dismissed: 4 }));
+      fixture.detectChanges();
+      expect(feedbackTab().querySelector('.admin-tab-count')).toBeNull();
+      expect(feedbackTab().textContent?.trim()).toBe('Feedback');
+
+      countsSpy.mockReturnValue(throwError(() => new Error('down')));
+      component.store.loadFeedbackCounts();
+      fixture.detectChanges();
+      expect(component.store.feedbackCounts).toBeNull();
+      expect(feedbackTab().querySelector('.admin-tab-count')).toBeNull();
+    });
+
+    it('follows the counts when the Feedback tab refetches them', () => {
+      fixture.detectChanges();
+      expect(feedbackTab().querySelector('.admin-tab-count')).toBeNull();
+
+      countsSpy.mockReturnValue(of({ new: 1, acknowledged: 0, resolved: 0, regressed: 0, dismissed: 0 }));
+      component.store.loadFeedbackCounts();
+      fixture.detectChanges();
+
+      expect(feedbackTab().querySelector('.admin-tab-count')?.textContent?.trim()).toBe('1');
+    });
+
+    it('renders the Feedback tab panel when the tab is chosen', () => {
+      fixture.detectChanges();
+      feedbackTab().click();
+      fixture.detectChanges();
+
+      const panel = fixture.nativeElement.querySelector('#admin-panel-feedback') as HTMLElement;
+      expect(panel.getAttribute('role')).toBe('tabpanel');
+      expect(panel.getAttribute('aria-labelledby')).toBe('admin-tab-feedback');
+      expect(panel.querySelector('app-admin-feedback-tab')).not.toBeNull();
     });
   });
 
@@ -544,6 +621,33 @@ describe('AdminComponent', () => {
 
       expect(router.url).toBe('/admin/users/groups?sessionId=s1');
       expect(host().querySelector('#users-subpanel-groups')).toBeTruthy();
+    });
+
+    it('replaces the retired /admin/telemetry/feedback path with /admin/feedback, keeping its filters', async () => {
+      vi.spyOn(feedbackService, 'getIssues').mockReturnValue(of({ totalCount: 0, rows: [] }));
+      vi.spyOn(feedbackService, 'getSwitches').mockReturnValue(of({
+        chat: { enabled: true, setAtUtc: null, setByUserName: null, seeded: true }
+      }));
+      vi.spyOn(feedbackService, 'getModels').mockReturnValue(of([]));
+      const page = await harness.navigateByUrl('/admin/telemetry/feedback?status=all&q=crystal', AdminComponent);
+      await settle();
+
+      expect(router.url).toBe('/admin/feedback?status=all&q=crystal');
+      expect(page.activeTab).toBe('feedback');
+      expect(host().querySelector('#admin-panel-feedback app-admin-feedback-tab')).toBeTruthy();
+    });
+
+    it('replaces an old ?tab=telemetry&subtab=feedback link with /admin/feedback', async () => {
+      vi.spyOn(feedbackService, 'getIssues').mockReturnValue(of({ totalCount: 0, rows: [] }));
+      vi.spyOn(feedbackService, 'getSwitches').mockReturnValue(of({
+        chat: { enabled: true, setAtUtc: null, setByUserName: null, seeded: true }
+      }));
+      vi.spyOn(feedbackService, 'getModels').mockReturnValue(of([]));
+      const page = await harness.navigateByUrl('/admin?tab=telemetry&subtab=feedback&status=resolved', AdminComponent);
+      await settle();
+
+      expect(router.url).toBe('/admin/feedback?status=resolved');
+      expect(page.activeTab).toBe('feedback');
     });
 
     it('replaces an old ?tab=users&subtab=deletions link with /admin/users/deletions', async () => {

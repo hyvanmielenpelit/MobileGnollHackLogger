@@ -8146,7 +8146,7 @@ No answer flag is added, and the grading and synthesis prompts are unchanged.
 
 GnollBench → Run Benchmark holds a **Feedback Tool** field in the *Experiment settings* part of Test Setup,
 after Experimental Changes: *Offered — default* or *Withheld — the AI cannot report problems*. The chat's
-own switch stays on Admin → AI Telemetry → Feedback ([`ai-feedback-reports.md`](ai-feedback-reports.md)
+own switch stays on Admin → Feedback ([`ai-feedback-reports.md`](ai-feedback-reports.md)
 § 3), which points here; until 2026-10-22 that card also held a global GnollBench switch, now retired.
 
 - **Chosen at launch.** The start request carries the choice as `withholdFeedbackTool` (null and false both

@@ -13,9 +13,10 @@ that knows the scheme is `Overseer/ClientApp/src/app/admin/admin-url.ts`, pinned
 | `/admin/users` · `/admin/users/groups` · `/admin/users/deletions` · `/admin/users/log` | Users and its sub-tabs *Users*, *Groups*, *Deletion requests*, *Admin log* |
 | `/admin/configs` · `/admin/configs/api-keys` | System Configs; the second with the **API Keys** dialog (*Default API Keys*) open |
 | `/admin/database` · `/admin/security` | Database, Security (no sub-tabs) |
-| `/admin/telemetry` · `/admin/telemetry/models` · `/admin/telemetry/users` · `/admin/telemetry/groups` · `/admin/telemetry/feedback` | AI Telemetry: *Summary*, *Models*, *Users*, *Groups*, *Feedback* |
+| `/admin/telemetry` · `/admin/telemetry/models` · `/admin/telemetry/users` · `/admin/telemetry/groups` | AI Telemetry: *Summary*, *Models*, *Users*, *Groups* |
 | `/admin/gnollbench` · `/admin/gnollbench/history` · `…/multi-run` · `…/multi-suite` · `…/suites` · `…/profiles` · `…/model-comparison` · `…/chat-consistency` | GnollBench: *Run Benchmark*, *Run History*, *Multi-Run Analysis*, *Batteries*, *Manage Suites*, *Scoring Profiles*, *Model Comparison*, *Chat Consistency* |
 | `/admin/services` · `/admin/services/gnollhack-wiki` · `…/nethack-wiki` · `…/knowledge-base` · `…/config-health` · `…/developer-tools` | Services: *GnollHack Source*, *GnollHack Wiki*, *NetHack Wiki*, *Knowledge Base*, *Configuration Health*, *Developer Tools* |
+| `/admin/feedback` | Feedback (no sub-tabs): the assistant's feedback tool and the issues it reported |
 
 - **The first sub-tab is the default and has no segment.** `/admin/users/users`,
   `/admin/telemetry/summary` and `/admin/services/source`, which name the default by its id, are
@@ -38,6 +39,10 @@ that knows the scheme is `Overseer/ClientApp/src/app/admin/admin-url.ts`, pinned
   mapped to the tab it named, and **a retired slug is never reused** for another tab. A sub-tab's old
   slug needs no such list when it was the sub-tab's code id, because a sub-tab is also accepted by its
   id: that is how `/admin/services/sentry` still opens *Developer Tools*.
+- **A sub-tab promoted to a tab keeps its old path.** `RETIRED_ADMIN_SUBTABS` maps a tab's former
+  sub-tab slug to the tab it became: `/admin/telemetry/feedback` opens `/admin/feedback`, the Feedback
+  tab since 2026-10-22. Such a slug is never reused as a sub-tab slug of that tab, or the redirect
+  would shadow it.
 
 ## 2. Query parameters
 
@@ -51,7 +56,7 @@ that knows the scheme is `Overseer/ClientApp/src/app/admin/admin-url.ts`, pinned
 
 A valid `resolveConfig` on any other path is moved to `/admin/configs`, keeping it.
 
-**Filter state on the Feedback sub-tab stays in the query.** `/admin/telemetry/feedback` keeps its facet
+**Filter state on the Feedback tab stays in the query.** `/admin/feedback` keeps its facet
 values as query parameters, so a filtered view can be reloaded and shared among administrators:
 
 | Parameter | Holds |
@@ -62,7 +67,8 @@ values as query parameters, so a filtered view can be reloaded and shared among 
 | `q` | The search text |
 
 They are view state, not one-shot actions, so they are not removed. The sort is a `localStorage`
-preference and never in the address. See `ai-feedback-reports.md` and `ai-telemetry.md` § 12b.
+preference and the date range is kept in the page store; neither is in the address. See
+`ai-feedback-reports.md` § 10.
 
 **Every other query parameter is kept.** The chat's *Admin* link carries the chat's `sessionId` into
 `/admin` with `queryParamsHandling="preserve"`, and the Admin page's *Back* link carries it back the
@@ -84,21 +90,24 @@ other parameter (so `suiteId` and `resolveConfig` still work):
 | `?tab=benchmark&subtab=suites&suiteId=7` | `/admin/gnollbench/suites?suiteId=7` |
 | `?tab=configs&resolveConfig=7` | `/admin/configs?resolveConfig=7` |
 | `?tab=telemetry&subtab=users` | `/admin/telemetry/users` |
+| `?tab=telemetry&subtab=feedback` | `/admin/feedback` |
 | `?tab=` an unknown tab | `/admin/users` |
 
 `legacyAdminPath()` does the mapping. The legacy redirect runs before any other correction, in the
 same handler, so an old query on a non-canonical path issues one navigation.
 
-A path with a retired tab slug (§ 1) is corrected like any other non-canonical path, keeping every
-query parameter:
+A path with a retired tab slug, or with a sub-tab that became a tab (§ 1), is corrected like any other
+non-canonical path, keeping every query parameter:
 
 | Old | New |
 |---|---|
 | `/admin/devtools` | `/admin/services` |
 | `/admin/devtools/config-health` | `/admin/services/config-health` |
 | `/admin/devtools/sentry` | `/admin/services/developer-tools` |
+| `/admin/telemetry/feedback?status=all&q=x` | `/admin/feedback?status=all&q=x` |
 
-`parseAdminPath()` reads the retired slug. An old query link, `?tab=devtools`, names the code id and
+`parseAdminPath()` reads the retired slug, and the promoted sub-tab through `RETIRED_ADMIN_SUBTABS`,
+which `legacyAdminPath()` also reads for `?tab=telemetry&subtab=feedback`. An old query link, `?tab=devtools`, names the code id and
 maps through `legacyAdminPath()` to `/admin/services`.
 
 The server's own links use the path form: the system alerts (`/admin/configs`,
@@ -162,3 +171,5 @@ in through that input. Pressing Back is an explicit user action, so this is acce
    `frontend_ui_controls` § 5 describes.
 5. Extend `admin-url.spec.ts`, which reads every tab and sub-tab from its canonical path and checks the
    legacy mapping and that every GnollBench sub-tab has a slug.
+6. A sub-tab promoted to a tab keeps its old path working through `RETIRED_ADMIN_SUBTABS`: add its
+   slug under the tab it left, mapped to the new tab, and drop it from `ADMIN_SUBTAB_SLUGS`.

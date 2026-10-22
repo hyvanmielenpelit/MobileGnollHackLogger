@@ -1,8 +1,47 @@
-<!-- The tab's Feedback sub-tab panel holds this view; the date range is the tab's, the Keys filter does not apply. -->
+<!-- The header, with the tab's own date range and Refresh, stays at the top while the tab scrolls. -->
+<div class="tab-header-row fb-head" #fbHead>
+  <h3 class="m-0" id="fb-tab-title">Feedback</h3>
+  <div class="fb-header-tools">
+    <div class="gh-field-row fb-range" role="group" aria-label="Date range">
+      <label for="fb-range-select" class="visually-hidden">Date range</label>
+      <select id="fb-range-select" class="gh-input" aria-describedby="fb-range-tip" (change)="onTimeSpanChange($event)">
+        @for (span of timeSpans; track span) {
+          <option [value]="span" [selected]="timeSpan === span">{{ timeSpanLabels[span] }}</option>
+        }
+      </select>
+      @if (timeSpan === 'custom') {
+        <label for="fb-range-start" class="visually-hidden">Start date</label>
+        <input id="fb-range-start" type="date" class="gh-input" [value]="startDate" [max]="todayDate"
+               (change)="onCustomDateChange('start', $event)">
+        <span class="fb-range-dash" aria-hidden="true">–</span>
+        <label for="fb-range-end" class="visually-hidden">End date</label>
+        <input id="fb-range-end" type="date" class="gh-input" [value]="endDate" [min]="startDate" [max]="todayDate"
+               (change)="onCustomDateChange('end', $event)">
+      }
+      <app-info-tip tipId="fb-range-tip" subject="Date range">Shows the issues reported at least once in this range. The counts on the tab are over all dates.</app-info-tip>
+    </div>
+    <!-- aria-disabled while the first page loads, so the button keeps its focus and its tooltip. -->
+    <button type="button" class="action-btn fb-refresh-btn" id="fb-refresh-btn"
+            aria-label="Refresh feedback"
+            [attr.aria-disabled]="loading() ? 'true' : null"
+            interestfor="fb-refresh-tip" style="anchor-name: --fb-refresh-btn"
+            (click)="refresh()">
+      @if (loading()) {
+        <span class="gh-spinner-small" aria-hidden="true"></span>
+      } @else {
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+      }
+    </button>
+    <div popover="hint" class="gh-tooltip" id="fb-refresh-tip" style="position-anchor: --fb-refresh-btn">Refresh</div>
+  </div>
+</div>
 
 <!-- The switch of this card, committed at once. -->
 <section class="tl-fb-switch-card" aria-labelledby="tl-fb-switch-title">
-  <h3 class="tl-fb-switch-title" id="tl-fb-switch-title">Feedback tool</h3>
+  <div class="tl-fb-switch-head">
+    <h3 class="gh-section-title tl-fb-switch-title" id="tl-fb-switch-title">Feedback tool</h3>
+    <app-info-tip trigger="click" tipId="tl-fb-switch-scope-tip" subject="the feedback tool">Applies to the Overseer chat only. GnollBench runs choose it per run: GnollBench → Run Benchmark → Feedback Tool.</app-info-tip>
+  </div>
   @if (switchLoadError(); as message) {
     <p class="gh-field-error tl-fb-switch-load-error" id="tl-fb-switch-load-error">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
@@ -10,29 +49,33 @@
     </p>
   }
   @for (row of switchRows; track row.target) {
+    @let state = switchOf(row.target);
     <div class="tl-fb-switch-row">
       <div class="tl-fb-switch-text">
         <span class="tl-fb-switch-label" [id]="'tl-fb-switch-' + row.target + '-label'">{{ row.label }}</span>
-        <p class="tl-fb-switch-state" [id]="'tl-fb-switch-' + row.target + '-state'">{{ switchSentence(row.target) }}</p>
-        @if (row.note) {
-          <p class="tl-fb-switch-note">{{ row.note }}</p>
-        }
+        <p class="tl-fb-switch-desc" [id]="'tl-fb-switch-' + row.target + '-desc'">{{ row.description }}</p>
+        <p class="tl-fb-switch-meta" [id]="'tl-fb-switch-' + row.target + '-state'">{{ switchSentence(row.target) }}</p>
       </div>
-      <label class="gh-switch-wrapper tl-fb-switch">
-        <span class="gh-switch gh-switch-lg">
-          <input type="checkbox" [id]="'tl-fb-switch-' + row.target + '-toggle'"
-                 [attr.aria-labelledby]="'tl-fb-switch-' + row.target + '-label'"
-                 [attr.aria-describedby]="switchError[row.target]()
-                   ? 'tl-fb-switch-' + row.target + '-state tl-fb-switch-' + row.target + '-error'
-                   : 'tl-fb-switch-' + row.target + '-state'"
-                 [checked]="switchOf(row.target)?.enabled ?? false"
-                 [disabled]="switchPending[row.target]() || !switchOf(row.target)"
-                 [attr.aria-busy]="switchPending[row.target]() ? 'true' : null"
-                 (change)="onSwitchChange(row.target, $event)">
-          <span class="gh-slider"></span>
-        </span>
-      </label>
-      <p class="tl-fb-switch-status" [id]="'tl-fb-switch-' + row.target + '-status'" role="status">{{ switchMessage[row.target]() }}</p>
+      <div class="tl-fb-switch-control">
+        <!-- The switch announces its own state; the word is for the eye. -->
+        @if (state) {
+          <span class="tl-fb-switch-word" aria-hidden="true" [attr.data-state]="state.enabled ? 'on' : 'off'">{{ state.enabled ? 'On' : 'Off' }}</span>
+        }
+        <label class="gh-switch-wrapper tl-fb-switch">
+          <span class="gh-switch gh-switch-lg">
+            <input type="checkbox" role="switch" [id]="'tl-fb-switch-' + row.target + '-toggle'"
+                   [attr.aria-labelledby]="'tl-fb-switch-title tl-fb-switch-' + row.target + '-label'"
+                   [attr.aria-describedby]="'tl-fb-switch-' + row.target + '-desc tl-fb-switch-' + row.target + '-state'
+                     + (switchError[row.target]() ? ' tl-fb-switch-' + row.target + '-error' : '')"
+                   [checked]="state?.enabled ?? false"
+                   [disabled]="switchPending[row.target]() || !state"
+                   [attr.aria-busy]="switchPending[row.target]() ? 'true' : null"
+                   (change)="onSwitchChange(row.target, $event)">
+            <span class="gh-slider"></span>
+          </span>
+        </label>
+      </div>
+      <p class="visually-hidden tl-fb-switch-status" [id]="'tl-fb-switch-' + row.target + '-status'" role="status">{{ switchMessage[row.target]() }}</p>
       @if (switchError[row.target](); as message) {
         <p class="gh-field-error tl-fb-switch-error" [id]="'tl-fb-switch-' + row.target + '-error'">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
@@ -41,15 +84,14 @@
       }
     </div>
   }
-  <p class="tl-fb-switch-note" id="tl-fb-switch-gnollbench-pointer">GnollBench runs choose this per run: GnollBench → Run Benchmark → Feedback Tool.</p>
 </section>
-
-<p class="gh-dash-note tl-fb-note">Issues active in the selected date range. The Keys filter does not apply.</p>
 
 <section class="tl-fb-issues" aria-labelledby="tl-fb-issues-title">
   <div class="tl-fb-issues-head">
     <!-- Focused after the last card is deleted. -->
-    <h3 class="tl-fb-issues-title" id="tl-fb-issues-title" tabindex="-1">Reported issues</h3>
+    <h3 class="gh-section-title tl-fb-issues-title" id="tl-fb-issues-title" tabindex="-1">Reported issues</h3>
+    <!-- The list's one polite live region. -->
+    <p class="gh-list-status tl-fb-status" id="tl-fb-status" role="status">{{ listStatus }}</p>
   </div>
 
   <!-- Search, Sort by, the Status, Category and Model facets, and the active filters; every change refetches. -->
@@ -106,9 +148,6 @@
     }
   </div>
 
-  <!-- The list's one polite live region. -->
-  <p class="gh-list-status tl-fb-status" id="tl-fb-status" role="status">{{ listStatus }}</p>
-
   @if (error(); as message) {
     <p class="gh-field-error tl-fb-error" role="alert">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
@@ -116,11 +155,17 @@
     </p>
   } @else if (loaded() && rows().length === 0) {
     @if (emptyKind === 'range') {
-      <p class="tl-fb-empty tl-fb-empty-range">No feedback issues in this date range.</p>
+      <div class="tl-fb-empty tl-fb-empty-range">
+        <svg class="tl-fb-empty-icon" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+        <p class="tl-fb-empty-title">No feedback issues</p>
+        <p class="tl-fb-empty-text">The assistant has not reported an issue in this date range.</p>
+      </div>
     } @else if (emptyKind === 'filters') {
-      <p class="tl-fb-empty tl-fb-empty-filters">No issues match these filters.
+      <div class="tl-fb-empty tl-fb-empty-filters">
+        <svg class="tl-fb-empty-icon" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+        <p class="tl-fb-empty-title">No issues match these filters</p>
         <button type="button" class="gh-filter-clear tl-fb-empty-clear" (click)="clearFilters()">Clear filters</button>
-      </p>
+      </div>
     }
   } @else if (rows().length > 0) {
     <ul class="tl-fb-cards" role="list" aria-labelledby="tl-fb-issues-title">
@@ -286,7 +331,10 @@
             <!-- The triage form, under a hairline. -->
             <div class="tl-fb-triage" role="group" [attr.aria-label]="'Triage of ' + issue.subject">
               <div class="tl-fb-field tl-fb-field-status">
-                <label [for]="'tl-fb-' + issue.id + '-status'">Status</label>
+                <div class="tl-fb-label-row">
+                  <label [for]="'tl-fb-' + issue.id + '-status'">Status</label>
+                  <app-info-tip [tipId]="'tl-fb-' + issue.id + '-status-help'" subject="Status">A resolved issue that recurs becomes Regressed; a dismissed one stays dismissed.</app-info-tip>
+                </div>
                 <select class="gh-input tl-fb-status-select" [id]="'tl-fb-' + issue.id + '-status'"
                         [attr.aria-describedby]="'tl-fb-' + issue.id + '-status-help'"
                         (change)="onDraftStatus(issue, $event)">
@@ -297,7 +345,6 @@
                     <option [value]="status" [selected]="form.status === status">{{ statusLabel(status) }}</option>
                   }
                 </select>
-                <p class="form-hint tl-fb-status-help" [id]="'tl-fb-' + issue.id + '-status-help'">A resolved issue that recurs becomes Regressed; a dismissed one stays dismissed.</p>
               </div>
               <div class="tl-fb-field tl-fb-field-note">
                 <label [for]="'tl-fb-' + issue.id + '-note'">Note</label>

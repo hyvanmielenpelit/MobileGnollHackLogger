@@ -432,10 +432,11 @@ The Angular application's routes are defined in `app.routes.ts`. The primary pag
   rendered inside the Settings page, with no page chrome of their own.
 - `/admin`, `/admin/:tab` and `/admin/:tab/:subtab` (`admin.component`): System administration
   (groups, configs, rate limits). Tabs, in order: Users, System Configs, Database, AI Telemetry,
-  Security, GnollBench, Services. *Groups* is a sub-tab of Users (*Users · Groups · Deletion
+  Security, GnollBench, Services, Feedback. *Groups* is a sub-tab of Users (*Users · Groups · Deletion
   requests · Admin log*); AI Telemetry's sub-tabs are *Summary · Models · Users · Groups*, one
   component each (`summary/`, `models/`, `users/`, `groups/` under `admin/telemetry-tab/`) under a
-  parent that keeps the header, the fetch and the dialogs; **API Keys** (`app-admin-api-keys`, the per-provider default keys) is a
+  parent that keeps the header, the fetch and the dialogs; Feedback (`admin/feedback-tab/`, the
+  assistant's feedback issues) has no sub-tabs and its own date range; **API Keys** (`app-admin-api-keys`, the per-provider default keys) is a
   dialog of System Configs at `/admin/configs/api-keys`. One route with `matcher: adminUrlMatcher`
   serves all three shapes, so a tab change reuses the page; the slugs, the legacy `?tab=` redirect
   and the history rules are in `admin/admin-url.ts` and `docs/overseer/admin-page-urls.md`.

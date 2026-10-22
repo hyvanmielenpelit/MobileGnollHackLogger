@@ -2,14 +2,14 @@
 
 The Overseer chat assistant can send a short report to the development team when something in a
 conversation went wrong in a way the developers can fix. The tool is `report_feedback`; administrators
-read and triage the reports on **Admin → AI Telemetry → Feedback** (`/admin/telemetry/feedback`), where
-they also turn the tool on and off, separately for the Overseer chat and for GnollBench. GnollBench offers
-the same tool to its candidates and stores their calls in a table of its own (§ 11).
+read and triage the reports on **Admin → Feedback** (`/admin/feedback`), where they also turn the tool on
+and off for the Overseer chat. GnollBench offers the same tool to its candidates, chosen per run in the
+launcher, and stores their calls in a table of its own (§ 11).
 
 The pieces are `ReportFeedbackTool` (`Overseer/Services/Tools/`), the services in
 `Overseer/Services/Feedback/` (`ReportFeedbackArguments`, `FeedbackFingerprint`, `FeedbackRedaction`,
-`FeedbackSettings`, `FeedbackSwitchService`), `AdminFeedbackController`, and the client panel
-`admin/telemetry-tab/feedback/`. The model's description of the tool is
+`FeedbackSettings`, `FeedbackSwitchService`), `AdminFeedbackController`, and the client tab
+`admin/feedback-tab/`. The model's description of the tool is
 `Overseer/ToolGuides/report_feedback.md`.
 
 ## 1. Purpose and categories
@@ -85,17 +85,17 @@ removes the issue and, by cascade, its occurrences.
 ## 3. The feedback switch and the GnollBench setting
 
 An administrator turns the tool on and off for the production chat at runtime, from the card at the top of
-the Feedback sub-tab, without a restart or a configuration edit. The card holds one switch, **Enabled in
-Overseer chat**, and a pointer: *GnollBench runs choose this per run: GnollBench → Run Benchmark → Feedback
-Tool.*
+the Feedback tab, without a restart or a configuration edit. The card *Feedback tool* holds one switch,
+on the row **Overseer chat**, and an (i) that says it applies to the Overseer chat only and that GnollBench
+runs choose it per run: *GnollBench → Run Benchmark → Feedback Tool* (§ 10).
 
 - **Storage.** `OverseerFeedbackSetting` is append-only, like `BenchmarkBaselineModelSetting`: rows are
   never updated or deleted, and each click appends one (`Target`, `Enabled`, `SetAtUtc`, `SetByUserId`),
   even when it sets the value the switch already has. `Target` is an `OverseerFeedbackSwitchTarget`
   (`Chat = 0`, `GnollBench = 1`; the column defaults to 0, so a row without one is a chat row), and the
   switch's state is the newest chat row, read through the `(Target, Id)` index. **The table is the
-  switch's history**, and the card shows its newest entry (*Off since 21 Oct 2026 14:02 by {user name}.
-  …*); no admin-log entry is written.
+  switch's history**, and the card shows its newest entry (*Off · Changed 21 Oct 2026 14:02 by {user
+  name}*); no admin-log entry is written.
 - **The retired GnollBench target.** Until 2026-10-22 the card also held an *Enabled in GnollBench* switch,
   stored as rows of `Target = GnollBench`. Those rows are kept as history and are never read again; the
   enum value stays so they still load. GnollBench now takes the value from each run's launcher setting
@@ -280,33 +280,60 @@ user can steer: they are rendered as plain text only, and no model reads them ba
 
 ## 10. The admin view
 
-**Admin → AI Telemetry → Feedback**, `/admin/telemetry/feedback`. The panel's contract with the tab's
-header (the date range applies to an issue's active span, *Keys* does not apply, the sub-tab label's counts
-are not date-limited) is in [`ai-telemetry.md`](ai-telemetry.md) § 12b; the query parameters (`status`,
-`category`, `model`, `q`) are in [`admin-page-urls.md`](admin-page-urls.md) § 2.
+**Admin → Feedback**, `/admin/feedback` (`admin/feedback-tab/`, `app-admin-feedback-tab`), the last Admin
+tab, after *Services*; it has no sub-tabs. Until 2026-10-22 it was the AI Telemetry tab's fifth sub-tab, and
+`/admin/telemetry/feedback` still opens it, keeping the query ([`admin-page-urls.md`](admin-page-urls.md)
+§ 3). The query parameters (`status`, `category`, `model`, `q`) are in `admin-page-urls.md` § 2.
 
-- **The switch card** comes first: the title *Feedback tool* names the section, and one row follows. The
-  row has its label (*Enabled in Overseer chat*), which its switch references through `aria-labelledby`; a
-  sentence of state with when and by whom it was last set; one large switch (`gh-switch gh-switch-lg`); a
-  `role="status"` line; and an error line. The sentence of state reads *On by configuration default. The
-  assistant may file reports in ordinary chats.*, *On since {time} by {name}. The assistant may file
-  reports in ordinary chats.*, *Off by configuration default. The assistant is not offered the tool.*, or
-  *Off since {time} by {name}. The assistant is not offered the tool.* Under the row, a note points to the
-  launcher: *GnollBench runs choose this per run: GnollBench → Run Benchmark → Feedback Tool.*
+- **The tab's pill.** The *Feedback* tab in the Admin tab row shows the open issues, New plus Regressed, as
+  a small gold pill (*Feedback 4*); its accessible name is *Feedback: 3 new, 1 regressed*. The pill is
+  absent at zero and when the counts fail. The counts come from `GET api/admin/feedback/counts`, over **all
+  dates**: the tab's date range does not limit them. `AdminPageStore.loadFeedbackCounts()` fetches them when
+  the Admin page loads and again after a status change, a delete or a Refresh in the tab; the tab row and
+  the *Status* facet both read `store.feedbackCounts`.
+- **The header** is sticky, like the other Admin tabs': the title *Feedback*, the **date range** and a
+  **Refresh** icon button (*Refresh feedback*, tooltip *Refresh*). The range is the tab's own, kept in the
+  page store for the life of the page (not in the address or `localStorage`): *All time* (the default),
+  *Last 7 days*, *Last 30 days*, *Last 90 days*, *Last year* or *Custom date range* (two date inputs, up to
+  today; an end before the start is moved to the start). Its (i) reads *Shows the issues reported at least
+  once in this range. The counts on the tab are over all dates.* An issue is listed when its **active
+  span** overlaps the range (`FirstSeenUtc <= end` and `LastSeenUtc >= start`), so an issue first seen in
+  August and last seen today is listed for an August range, and the answer does not depend on occurrence
+  rows a purge may have removed; *All time* sends no dates. Issues have no key source, so there is no
+  *Keys* filter. Refresh reloads the switch, the models, the first page of issues and the counts, and is
+  `aria-disabled` while the first page loads.
+- **The switch card** comes next. Its head is the section title *Feedback tool* (`gh-section-title`) and a
+  click (i), *About the feedback tool*: *Applies to the Overseer chat only. GnollBench runs choose it per
+  run: GnollBench → Run Benchmark → Feedback Tool.* One row follows: the label **Overseer chat**, the
+  surface the switch governs; the description *Lets the chat assistant report missing information, tool
+  problems and its own mistakes to administrators.*; a meta line; and, at the row's end, the state word
+  *On* (gold) or *Off* (gray) beside one large switch (`gh-switch gh-switch-lg`). The switch is a checkbox
+  with `role="switch"`, so assistive technology announces a switch, on or off; its accessible name is
+  *Feedback tool Overseer chat* (`aria-labelledby` the title and the row label), and it is described by the
+  description and the meta line. The meta line reads *On · Changed {time} by {name}*, *On · Changed {time}*
+  without a name, *On · Configuration default* while the switch is seeded (and the same with *Off*),
+  *Loading…* until the state arrives, and nothing after a load error, which an error line states.
 
-  The switch commits at once, is disabled while its request runs, reverts on an error and refetches. The
-  status line reads *Overseer chat: the feedback tool is on.* (or *off*).
+  The switch commits at once, is disabled while its request runs, reverts on an error and refetches. A
+  visually hidden `role="status"` line announces *Overseer chat: the feedback tool is on.* (or *off*);
+  the meta line and the state word show the same on screen.
+- **Reported issues**: the section title, with the list's count (*Showing 25 of 40 issues*, a polite
+  live region) at the end of its row.
 - **The filter bar**: a search over the issue's subject and summary; *Sort by* *Last seen* (the default),
   *First seen* or *Most occurrences*; the *Status* facet (defaulting to **New and Regressed**, the open
   work), the *Category* facet and the *Model* facet (the models that filed any occurrence); and removable
   chips. Every change refetches.
+- **The empty states** are one dashed card each, with a glyph that assistive technology skips: *No
+  feedback issues* — *The assistant has not reported an issue in this date range.* when the range holds
+  none, and *No issues match these filters* with a *Clear filters* button when the filters leave none.
 - **The cards** are a server-paged list, in batches of 25. Each issue card shows its category and status
   badges (*Regressed 2×* when it regressed more than once) and the models that reported it; the subject as
   its title and the summary under it; four aligned metrics — *Occurrences* (with *N retained* when fewer
   remain), *Users*, *First seen*, *Last seen*; the latest expected location, related tools, *Model's
   suspected cause (hypothesis)* and version; an *Occurrences* disclosure that loads the occurrences newest
-  first, ten at a time; and the triage form — a *Status* select without *Regressed*, whose help text reads
-  *A resolved issue that recurs becomes Regressed; a dismissed one stays dismissed*, a *Note*, *Save*, and
+  first, ten at a time; and the triage form — a *Status* select without *Regressed*, whose (i) beside the
+  label, which also describes the select, reads *A resolved issue that recurs becomes Regressed; a
+  dismissed one stays dismissed*, a *Note*, *Save*, and
   *Delete issue*, whose confirmation says the occurrences go with it.
 - **An occurrence** shows its time, user, provider and model, version, the session and message ids as text,
   what was searched for, the expected location, how the mistake was noticed, the cause note, the details,
@@ -372,7 +399,8 @@ crystal*). The guide allows the model one sentence saying that it reported the i
 `RemainingBudget`, no parameter dump), `ChatRetentionServiceTests` and `AccountErasureTests` (occurrences
 removed and counted, issues kept), `BenchmarkToolCallRecorderTests`, `BenchmarkReportBuilderTests` and
 `BenchmarkServiceTests`. On the client: `admin-feedback.service.spec.ts`,
-`telemetry-feedback.component.spec.ts`, and additions to the telemetry tab's and the chat's specs.
+`admin-feedback-tab.component.spec.ts`, the Feedback tab and its pill in `admin.component.spec.ts`, the
+paths and the retired sub-tab in `admin-url.spec.ts`, and additions to the chat's specs.
 
 The switch and the GnollBench setting have their own cases:
 
@@ -392,7 +420,7 @@ The switch and the GnollBench setting have their own cases:
   withheld setting and not when only one does. `BenchmarkReportBuilderTests`: the Self-Reports section of a
   withheld run says the run's Feedback Tool setting withheld the tool.
   `BenchmarkChatConsistencyReportFactsTests`: the change reads *feedback tool withheld: not set → on*.
-- **The client.** The switch card and its pointer in `telemetry-feedback.component.spec.ts`, the route in
+- **The client.** The switch card and its scope (i) in `admin-feedback-tab.component.spec.ts`, the route in
   `admin-feedback.service.spec.ts`, the Feedback Tool field in `benchmark.component.launcher.spec.ts`, its
   request, remembered value, repeated setup and recommended-run reset in `benchmark-launcher.state.spec.ts`,
   and the *feedback tool withheld* tag in `run-facts.spec.ts`.

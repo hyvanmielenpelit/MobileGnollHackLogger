@@ -1,15 +1,12 @@
 import {
+  AfterViewInit,
   ChangeDetectorRef,
   Component,
   ElementRef,
-  OnChanges,
   OnDestroy,
   OnInit,
-  SimpleChanges,
   ViewChild,
   inject,
-  input,
-  output,
   signal
 } from '@angular/core';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
@@ -29,34 +26,68 @@ import {
   AdminFeedbackSwitchTarget,
   AdminFeedbackSwitches,
   AdminFeedbackTriageStatus
-} from '../../../services/admin-feedback.service';
-import { adminApiError } from '../../../services/admin-users.service';
-import { CardListChip, CardListSort, CardListState } from '../../../shared/data-table/card-list-state';
-import { FilterFacetComponent, FilterFacetOption } from '../../../shared/data-table/filter-facet.component';
-import { TableState, anyOfFilter, customFilter } from '../../../shared/data-table/table-state';
-import { parseServerUtcDate } from '../../../utils/date.util';
-import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
-import { AdminConfirmDialogComponent } from '../../admin-dialogs/admin-confirm-dialog.component';
-import { adminQueryList, readAdminQueryList } from '../../admin-url';
-import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
+} from '../../services/admin-feedback.service';
+import { adminApiError } from '../../services/admin-users.service';
+import { CardListChip, CardListSort, CardListState } from '../../shared/data-table/card-list-state';
+import { FilterFacetComponent, FilterFacetOption } from '../../shared/data-table/filter-facet.component';
+import { TableState, anyOfFilter, customFilter } from '../../shared/data-table/table-state';
+import { InfoTipComponent } from '../../shared/info-tip/info-tip.component';
+import { parseServerUtcDate } from '../../utils/date.util';
+import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
+import { AdminConfirmDialogComponent } from '../admin-dialogs/admin-confirm-dialog.component';
+import { AdminPageStore, FeedbackTimeSpan } from '../admin-page.store';
+import { adminQueryList, readAdminQueryList } from '../admin-url';
+import { formatInteger } from '../benchmark/shared/provider-availability/provider-availability';
 
-/** Where the issue list's Sort by is kept, per browser. */
-export const TELEMETRY_FEEDBACK_VIEW_STORAGE_KEY = 'overseer.admin.telemetry.feedback.view';
+/** Where the issue list's Sort by is kept, per browser; the value predates the Feedback tab and is kept. */
+export const FEEDBACK_VIEW_STORAGE_KEY = 'overseer.admin.telemetry.feedback.view';
 
 /** The issues the list fetches at first, and how many more Show more fetches. */
-export const TELEMETRY_FEEDBACK_BATCH = 25;
+export const FEEDBACK_BATCH = 25;
 
 /** The occurrences an issue's disclosure fetches at first, and how many more Show more fetches. */
-export const TELEMETRY_FEEDBACK_OCCURRENCE_BATCH = 10;
+export const FEEDBACK_OCCURRENCE_BATCH = 10;
 
 /** The longest triage note the server keeps. */
-export const TELEMETRY_FEEDBACK_NOTE_MAX = 1000;
+export const FEEDBACK_NOTE_MAX = 1000;
 
 /** The Status facet's selection while the address names none: the open work. */
 export const DEFAULT_FEEDBACK_STATUSES: readonly AdminFeedbackStatus[] = ['new', 'regressed'];
 
 /** The `status` query value for no status filter; an absent parameter means the default. */
 export const FEEDBACK_STATUS_QUERY_ALL = 'all';
+
+/** The Date range select's options, in order. */
+export const FEEDBACK_TIME_SPAN_LABELS: Readonly<Record<FeedbackTimeSpan, string>> = {
+  all: 'All time',
+  '7d': 'Last 7 days',
+  '30d': 'Last 30 days',
+  '90d': 'Last 90 days',
+  '1y': 'Last year',
+  custom: 'Custom date range'
+};
+
+const TIME_SPANS = Object.keys(FEEDBACK_TIME_SPAN_LABELS) as FeedbackTimeSpan[];
+
+/** A local day as "YYYY-MM-DD". */
+function localDay(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * A preset's dates, "YYYY-MM-DD", ending `today`: both empty for All time, which bounds nothing;
+ * the last 30 days for Custom, as its starting point.
+ */
+export function feedbackRangeDates(span: FeedbackTimeSpan, today: Date): { start: string; end: string } {
+  if (span === 'all') return { start: '', end: '' };
+  const start = new Date(today);
+  if (span === '7d') start.setDate(today.getDate() - 7);
+  else if (span === '90d') start.setDate(today.getDate() - 90);
+  else if (span === '1y') start.setFullYear(today.getFullYear() - 1);
+  else start.setDate(today.getDate() - 30);
+  return { start: localDay(start), end: localDay(today) };
+}
 
 /** Details longer than this many lines, or characters, start collapsed. */
 const DETAILS_COLLAPSED_LINES = 6;
@@ -167,59 +198,64 @@ interface TriageResult {
   error: string | null;
 }
 
-/** One row of the switch card: its switch, its label, the name its messages use and a note under its state. */
+/** One row of the switch card: its switch, the surface it governs, the name its messages use and what On does. */
 interface SwitchRow {
   target: AdminFeedbackSwitchTarget;
   label: string;
   name: string;
-  note: string | null;
+  description: string;
 }
 
 const SWITCH_ROWS: readonly SwitchRow[] = [
-  { target: 'chat', label: 'Enabled in Overseer chat', name: 'Overseer chat', note: null }
+  {
+    target: 'chat', label: 'Overseer chat', name: 'Overseer chat',
+    description: 'Lets the chat assistant report missing information, tool problems and its own mistakes to administrators.'
+  }
 ];
 
 /**
- * The AI Telemetry tab's Feedback view: the switch that offers the assistant's `report_feedback` tool in
- * the Overseer chat (GnollBench runs choose it per run in the launcher), and the issues it has reported in the tab's date range
- * as a server-paged card list with a search, Sort by, Status, Category and Model facets kept in the
- * address, each issue with
- * its figures, latest facts, occurrences on demand and a triage form. Report text is model output and
+ * The Admin page's Feedback tab: a sticky header with its own date range and Refresh; the switch that
+ * offers the assistant's `report_feedback` tool in the Overseer chat (GnollBench runs choose it per run
+ * in the launcher); and the issues it has reported in the range as a server-paged card list with a
+ * search, Sort by, Status, Category and Model facets kept in the address, each issue with its figures,
+ * latest facts, occurrences on demand and a triage form. The range lives in the page store and the
+ * counts per status, which the Admin tab row also shows, come from it. Report text is model output and
  * is rendered as plain text only.
  */
 @Component({
-  selector: 'app-telemetry-feedback',
-  imports: [FilterFacetComponent, AdminConfirmDialogComponent],
-  templateUrl: './telemetry-feedback.component.html',
-  styleUrl: './telemetry-feedback.component.scss'
+  selector: 'app-admin-feedback-tab',
+  imports: [FilterFacetComponent, AdminConfirmDialogComponent, InfoTipComponent],
+  templateUrl: './admin-feedback-tab.component.html',
+  styleUrl: './admin-feedback-tab.component.scss'
 })
-export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy {
+export class AdminFeedbackTabComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly feedback = inject(AdminFeedbackService);
+  private readonly store = inject(AdminPageStore);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
   private readonly cdr = inject(ChangeDetectorRef);
 
   @ViewChild(AdminConfirmDialogComponent, { static: true }) confirmDialog!: AdminConfirmDialogComponent;
-
-  /** The tab's date range, "YYYY-MM-DD"; empty for no bound. */
-  readonly startDate = input<string>('');
-  readonly endDate = input<string>('');
-  /** Issue counts per status over all dates, which the tab fetches for its sub-tab label. */
-  readonly counts = input<AdminFeedbackCounts | null>(null);
-
-  /** An issue was triaged or deleted, so the counts per status may have changed. */
-  readonly countsChange = output<void>();
+  @ViewChild('fbHead') private fbHead?: ElementRef<HTMLElement>;
 
   readonly sorts = FEEDBACK_SORTS;
+  readonly timeSpans = TIME_SPANS;
+  readonly timeSpanLabels = FEEDBACK_TIME_SPAN_LABELS;
   readonly triageStatuses = ADMIN_FEEDBACK_TRIAGE_STATUSES;
-  readonly noteMax = TELEMETRY_FEEDBACK_NOTE_MAX;
+  readonly noteMax = FEEDBACK_NOTE_MAX;
   readonly statusLabel = feedbackStatusLabel;
   readonly categoryLabel = feedbackCategoryLabel;
   readonly causeLabel = feedbackCauseLabel;
   readonly dateText = feedbackDateText;
   readonly dateTimeText = feedbackDateTimeText;
   readonly formatInteger = formatInteger;
+
+  /** Today as "YYYY-MM-DD", the custom range's last selectable day. */
+  todayDate = '';
+
+  /** Issue counts per status over all dates, as the page store last fetched them. */
+  readonly counts = signal<AdminFeedbackCounts | null>(null);
 
   // --- Switch ---
 
@@ -277,10 +313,10 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
   /** The search, Sort by, the facets' selections and the chips; every change refetches the first page. */
   readonly list = new CardListState<AdminFeedbackIssue>(this.table, {
     idPrefix: 'tl-fb',
-    batch: TELEMETRY_FEEDBACK_BATCH,
+    batch: FEEDBACK_BATCH,
     sorts: FEEDBACK_SORTS,
     defaultSort: 'lastSeen',
-    storageKey: TELEMETRY_FEEDBACK_VIEW_STORAGE_KEY,
+    storageKey: FEEDBACK_VIEW_STORAGE_KEY,
     facets: [{ column: 'status', label: 'Status', values: i => i.status, order: ADMIN_FEEDBACK_STATUSES, labelOf: feedbackStatusLabel }],
     singleFacets: [
       {
@@ -302,7 +338,9 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
   private probeSub: Subscription | null = null;
   private modelsSub: Subscription | null = null;
   private querySub: Subscription | null = null;
+  private countsSub: Subscription | null = null;
   private readonly occurrenceSubs = new Map<number, Subscription>();
+  private headObserver?: ResizeObserver;
   private initialized = false;
 
   private statusOptionsMemo: { counts: AdminFeedbackCounts | null; options: FilterFacetOption[] } | null = null;
@@ -310,8 +348,26 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
   private modelOptionsMemo: { rows: AdminFeedbackIssue[]; models: string[]; selected: string; options: FilterFacetOption[] } | null = null;
   private singleSelectionMemo: Record<string, { value: string; selected: readonly string[] }> = {};
 
+  // --- Date range ---
+
+  /** The range lives in the page store, so it survives a tab switch. */
+  get timeSpan(): FeedbackTimeSpan {
+    return this.store.feedbackRange.timeSpan;
+  }
+
+  get startDate(): string {
+    return this.store.feedbackRange.start;
+  }
+
+  get endDate(): string {
+    return this.store.feedbackRange.end;
+  }
+
   ngOnInit(): void {
     ensureOverlayPolyfills();
+    this.todayDate = localDay(new Date());
+    this.counts.set(this.store.feedbackCounts);
+    this.countsSub = this.store.feedbackCountsChanged$.subscribe(() => this.counts.set(this.store.feedbackCounts));
     this.table.setRemoteTotal(0);
     // Emits the current address at once, so the first fetch already carries its filters.
     this.querySub = this.route.queryParamMap.subscribe(query => this.applyQuery(query));
@@ -321,20 +377,28 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
     this.reloadIssues();
   }
 
-  ngOnChanges(changes: SimpleChanges): void {
-    const changed = (name: string) => !!changes[name] && !changes[name].firstChange;
-    if (this.initialized && (changed('startDate') || changed('endDate'))) {
-      this.reloadIssues();
+  /** Focused or scrolled-to elements stop below the sticky head: its height, plus a gap, as `--tl-sticky-clearance`. */
+  ngAfterViewInit(): void {
+    const head = this.fbHead?.nativeElement;
+    if (!head || typeof ResizeObserver === 'undefined') {
+      return;
     }
+    this.headObserver = new ResizeObserver(() => {
+      const height = head.getBoundingClientRect().height;
+      this.host.nativeElement.style.setProperty('--tl-sticky-clearance', `${Math.ceil(height) + 8}px`);
+    });
+    this.headObserver.observe(head);
   }
 
   ngOnDestroy(): void {
     this.list.dispose();
+    this.headObserver?.disconnect();
     this.switchSub?.unsubscribe();
     this.listSub?.unsubscribe();
     this.probeSub?.unsubscribe();
     this.modelsSub?.unsubscribe();
     this.querySub?.unsubscribe();
+    this.countsSub?.unsubscribe();
     this.occurrenceSubs.forEach(sub => sub.unsubscribe());
   }
 
@@ -348,6 +412,45 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
     this.reloadIssues();
   }
 
+  /** Header Refresh: everything `reload` fetches, and the counts; refused while the first page loads. */
+  refresh(): void {
+    if (this.loading()) return;
+    this.reload();
+    this.store.loadFeedbackCounts();
+  }
+
+  // --- Date range ---
+
+  /** A preset sets both dates; Custom keeps the dates it finds, or starts from the last 30 days. */
+  onTimeSpanChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value as FeedbackTimeSpan;
+    if (!TIME_SPANS.includes(value)) return;
+    const range = this.store.feedbackRange;
+    range.timeSpan = value;
+    if (value !== 'custom' || !range.start || !range.end) {
+      const dates = feedbackRangeDates(value, new Date());
+      range.start = dates.start;
+      range.end = dates.end;
+    }
+    this.onRangeChange();
+  }
+
+  /** A custom date; an end before the start is moved to the start. */
+  onCustomDateChange(which: 'start' | 'end', event: Event): void {
+    const range = this.store.feedbackRange;
+    range[which] = (event.target as HTMLInputElement).value;
+    if (range.start && range.end && range.end < range.start) {
+      range.end = range.start;
+    }
+    this.onRangeChange();
+  }
+
+  /** The range changed: the first page is fetched again. */
+  onRangeChange(): void {
+    this.reloadIssues();
+    this.cdr.markForCheck();
+  }
+
   // --- Switch ---
 
   /** The switch's state as the server last sent it; null until loaded. */
@@ -355,18 +458,15 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
     return this.switches()?.[target] ?? null;
   }
 
-  /** A row's sentence of state; the date and name are the server's. */
+  /** A row's meta line: `On · Changed 21 Oct 2026 22:54 by tommi`; the date and name are the server's. */
   switchSentence(target: AdminFeedbackSwitchTarget): string {
     const state = this.switchOf(target);
     if (!state) return this.switchLoadError() ? '' : 'Loading…';
-    const effect = state.enabled
-      ? 'The assistant may file reports in ordinary chats.'
-      : 'The assistant is not offered the tool.';
     const word = state.enabled ? 'On' : 'Off';
-    if (state.seeded) return `${word} by configuration default. ${effect}`;
-    const since = state.setAtUtc ? ` since ${feedbackDateTimeText(state.setAtUtc)}` : '';
+    if (state.seeded) return `${word} · Configuration default`;
+    if (!state.setAtUtc) return word;
     const by = state.setByUserName ? ` by ${state.setByUserName}` : '';
-    return `${word}${since}${by}. ${effect}`;
+    return `${word} · Changed ${feedbackDateTimeText(state.setAtUtc)}${by}`;
   }
 
   loadSwitches(): void {
@@ -589,8 +689,8 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
 
   /** Takes the filters an address names; after the first load, a change refetches. */
   private applyQuery(query: ParamMap): void {
-    const next = TelemetryFeedbackComponent.filtersFromQuery(query);
-    if (this.initialized && TelemetryFeedbackComponent.sameFilters(next, this.filterState())) {
+    const next = AdminFeedbackTabComponent.filtersFromQuery(query);
+    if (this.initialized && AdminFeedbackTabComponent.sameFilters(next, this.filterState())) {
       return;
     }
     this.table.setFilterValues('status', next.statuses);
@@ -666,8 +766,8 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
   private currentQuery(): AdminFeedbackIssuesQuery {
     const state = this.filterState();
     return {
-      startDate: this.startDate() || undefined,
-      endDate: this.endDate() || undefined,
+      startDate: this.startDate || undefined,
+      endDate: this.endDate || undefined,
       statuses: state.statuses.length > 0 ? [...state.statuses] : undefined,
       category: state.category || undefined,
       modelId: state.model || undefined,
@@ -680,7 +780,7 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
     const query: AdminFeedbackIssuesQuery = {
       ...this.currentQuery(),
       skip: append ? this.rows().length : 0,
-      take: TELEMETRY_FEEDBACK_BATCH
+      take: FEEDBACK_BATCH
     };
     if (!append) {
       this.loaded.set(false);
@@ -701,7 +801,7 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
           this.rows.set(page.rows);
         }
         for (const issue of page.rows) {
-          if (!this.drafts[issue.id]) this.drafts[issue.id] = TelemetryFeedbackComponent.draftOf(issue);
+          if (!this.drafts[issue.id]) this.drafts[issue.id] = AdminFeedbackTabComponent.draftOf(issue);
         }
         this.totalCount.set(page.totalCount);
         this.table.setRemoteTotal(page.totalCount);
@@ -730,8 +830,8 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
   private countRange(): void {
     this.probeSub?.unsubscribe();
     this.probeSub = this.feedback.getIssues({
-      startDate: this.startDate() || undefined,
-      endDate: this.endDate() || undefined,
+      startDate: this.startDate || undefined,
+      endDate: this.endDate || undefined,
       take: 1
     }).subscribe({
       next: page => this.rangeTotal.set(page.totalCount),
@@ -816,7 +916,7 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
   }
 
   nextOccurrenceBatch(issueId: number): number {
-    return Math.min(TELEMETRY_FEEDBACK_OCCURRENCE_BATCH, this.remainingOccurrences(issueId));
+    return Math.min(FEEDBACK_OCCURRENCE_BATCH, this.remainingOccurrences(issueId));
   }
 
   private fetchOccurrences(issueId: number, append: boolean): void {
@@ -824,7 +924,7 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
     const rows = append && previous ? previous.rows : [];
     this.setOccurrenceState(issueId, { rows, total: previous?.total ?? 0, loading: true, loaded: previous?.loaded ?? false, error: null });
     this.occurrenceSubs.get(issueId)?.unsubscribe();
-    const sub = this.feedback.getOccurrences(issueId, rows.length, TELEMETRY_FEEDBACK_OCCURRENCE_BATCH).subscribe({
+    const sub = this.feedback.getOccurrences(issueId, rows.length, FEEDBACK_OCCURRENCE_BATCH).subscribe({
       next: page => {
         const known = new Set(rows.map(o => o.id));
         const merged = [...rows, ...page.rows.filter(o => !known.has(o.id))];
@@ -899,7 +999,7 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
   // --- Triage ---
 
   draft(issue: AdminFeedbackIssue): TriageDraft {
-    return this.drafts[issue.id] ??= TelemetryFeedbackComponent.draftOf(issue);
+    return this.drafts[issue.id] ??= AdminFeedbackTabComponent.draftOf(issue);
   }
 
   triageResult(issueId: number): TriageResult | undefined {
@@ -924,7 +1024,7 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
       return;
     }
     const status = draft.status;
-    const note = draft.note.trim().slice(0, TELEMETRY_FEEDBACK_NOTE_MAX);
+    const note = draft.note.trim().slice(0, FEEDBACK_NOTE_MAX);
     this.savingId.set(issue.id);
     this.setTriageResult(issue.id, { message: '', error: null });
     this.feedback.updateStatus(issue.id, status, note).subscribe({
@@ -934,10 +1034,10 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
           ? updated
           : { ...issue, status, triageNote: note || null, triagedUtc: new Date().toISOString() };
         this.rows.set(this.rows().map(i => i.id === issue.id ? saved : i));
-        this.drafts[issue.id] = TelemetryFeedbackComponent.draftOf(saved);
+        this.drafts[issue.id] = AdminFeedbackTabComponent.draftOf(saved);
         this.list.invalidate();
         this.setTriageResult(issue.id, { message: `Saved. The issue is ${feedbackStatusLabel(saved.status)}.`, error: null });
-        this.countsChange.emit();
+        this.store.loadFeedbackCounts();
       },
       error: err => {
         this.savingId.set(null);
@@ -973,7 +1073,7 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
         this.table.setRemoteTotal(this.totalCount());
         this.list.invalidate();
         this.notice.set(`Deleted the issue “${issue.subject}”.`);
-        this.countsChange.emit();
+        this.store.loadFeedbackCounts();
         const next = after[index] ?? after[index - 1];
         this.focusAfterRender(next ? `#tl-fb-${next.id}-title` : '#tl-fb-issues-title');
       },

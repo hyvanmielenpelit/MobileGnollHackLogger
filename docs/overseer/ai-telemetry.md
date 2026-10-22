@@ -5,11 +5,11 @@ and consume, how available the providers were to the chat, how many people use O
 user uses the system AI configurations and their own keys. The server side is `AiTelemetrySummaryService`
 (`Overseer/Services/Telemetry/`); the client is `admin/telemetry-tab/`.
 
-The tab has five sub-tabs, each a place in the URL (`admin-page-urls.md`): **Summary**
+The tab has four sub-tabs, each a place in the URL (`admin-page-urls.md`): **Summary**
 (`/admin/telemetry`, the default: the summary cards and the *Rate Limit Partitions* table), **Models**
 (`/admin/telemetry/models`: the breakdown, § 7), **Users** (`/admin/telemetry/users`: the Users view,
-§ 12), **Groups** (`/admin/telemetry/groups`: the Groups view, § 12a) and **Feedback**
-(`/admin/telemetry/feedback`: the assistant's feedback issues, § 12b). A panel is mounted when its sub-tab is first selected and then kept, hidden, so the Users list is
+§ 12) and **Groups** (`/admin/telemetry/groups`: the Groups view, § 12a). The assistant's feedback
+issues are an Admin tab of their own (§ 12b). A panel is mounted when its sub-tab is first selected and then kept, hidden, so the Users list is
 not fetched until it is first shown, and each list keeps its state across switches.
 
 ## 1. Sources
@@ -381,34 +381,10 @@ the charts dialog equal no filter.
 - **Storage:** `overseer.admin.telemetry.groups.view` = `{ version: 1, sort: { field, direction } }`; the
   search is not stored.
 
-## 12b. The Feedback view: the assistant's reports to the developers
+## 12b. Feedback
 
-The **Feedback** sub-tab (`/admin/telemetry/feedback`, `feedback/telemetry-feedback.component.ts`) lists
-the issues the chat assistant reported with `report_feedback`, one card per issue, and holds the switch
-that turns the tool on and off for the Overseer chat, with a note that GnollBench runs choose it per run
-in the Run Benchmark launcher's Feedback Tool field. What the tool records,
-how reports group into issues and what each status means are in
-[`ai-feedback-reports.md`](ai-feedback-reports.md); this section is the panel's contract with the tab's
-header.
-
-- **Date range.** The panel takes the header's start and end dates, like the Users and Groups panels, and
-  refetches when they change. An issue is listed when its **active span** overlaps the range
-  (`FirstSeenUtc <= end` and `LastSeenUtc >= start`), so an issue first seen in August and last seen
-  today is listed for an August range, and the answer does not depend on occurrence rows a purge may have
-  removed.
-- **Keys does not apply.** Issues have no key source, so the shell does not pass the *Keys* filter to this
-  panel, and the panel says so under the header: *Issues active in the selected date range. The Keys
-  filter does not apply.*
-- **Refresh.** The header's *Refresh telemetry* reloads the panel through the same mechanism as the Users
-  and Groups panels.
-- **The sub-tab label** reads *Feedback (3 new, 1 regressed)*, *Feedback (3 new)* or *Feedback (1
-  regressed)* while either count is above zero, and *Feedback* otherwise. Its counts come from
-  `GET api/admin/feedback/counts`, over **all dates**: the date range does not limit them. They are
-  fetched when the tab loads and again after a status change or a delete in the panel. The other four
-  labels are unchanged.
-- **Facets in the address.** The *Status*, *Category*, *Model* and search values are kept in the query
-  string (`status`, `category`, `model`, `q`; `admin-page-urls.md` § 2); the sort is a `localStorage`
-  preference.
+Feedback is its own Admin tab since 2026-10-22 (`/admin/feedback`, with its own date range):
+[`ai-feedback-reports.md`](ai-feedback-reports.md) § 10.
 
 ## 13. The charts dialog
 
@@ -497,8 +473,7 @@ sources, order, the name sort, own-key lines, the controller's pass-through), `A
 wiring), the Summary panel (`summary/telemetry-summary.component.spec.ts`), the Models panel
 (`models/telemetry-models.component.spec.ts`), the Users view (`telemetry-users-view.spec.ts`,
 `telemetry-users.component.spec.ts`), the Groups view (`groups/telemetry-groups-view.spec.ts`,
-`groups/telemetry-groups.component.spec.ts`), the Feedback view
-(`feedback/telemetry-feedback.component.spec.ts`; its server side is in `ai-feedback-reports.md`), the shared Sort popover
+`groups/telemetry-groups.component.spec.ts`), the shared Sort popover
 (`sort-popover/telemetry-sort-popover.component.spec.ts`), the charts dialog and its three lists
 (`charts/selection/telemetry-chart-filters.spec.ts`, `telemetry-chart-{models,users,groups}.component.spec.ts`),
 the Usage by user dialog (`telemetry-model-users.spec.ts`,

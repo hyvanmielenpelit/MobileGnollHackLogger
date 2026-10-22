@@ -1,6 +1,6 @@
 import { UrlSegment, convertToParamMap } from '@angular/router';
 import {
-  ADMIN_SUBTAB_SLUGS, ADMIN_TAB_SLUGS, AdminTabId, RETIRED_ADMIN_TAB_SLUGS, adminCommands, adminUrlMatcher, defaultAdminSubTab,
+  ADMIN_SUBTAB_SLUGS, ADMIN_TAB_SLUGS, AdminTabId, RETIRED_ADMIN_SUBTABS, RETIRED_ADMIN_TAB_SLUGS, adminCommands, adminUrlMatcher, defaultAdminSubTab,
   isAdminTabId, legacyAdminPath, parseAdminPath
 } from './admin-url';
 import type { BenchmarkSubTab } from './benchmark/state/benchmark-shell-bridge.service';
@@ -133,6 +133,25 @@ describe('admin URL scheme', () => {
       expect(adminCommands('telemetry', 'groups')).toEqual(['/admin', 'telemetry', 'groups']);
     });
 
+    it('has four AI Telemetry sub-tabs and Feedback as a tab of its own at /admin/feedback', () => {
+      expect(ADMIN_SUBTAB_SLUGS.telemetry!.map(([id]) => id)).toEqual(['summary', 'models', 'users', 'groups']);
+      expect(ADMIN_SUBTAB_SLUGS.feedback).toBeUndefined();
+      expect(adminCommands('feedback')).toEqual(['/admin', 'feedback']);
+      expect(parseAdminPath('feedback', null)).toEqual(
+        { tab: 'feedback', subTab: null, canonical: ['/admin', 'feedback'], isCanonical: true });
+    });
+
+    it('opens the retired /admin/telemetry/feedback path as the Feedback tab and replaces it', () => {
+      expect(RETIRED_ADMIN_SUBTABS.telemetry).toEqual({ feedback: 'feedback' });
+      expect(parseAdminPath('telemetry', 'feedback')).toEqual(
+        { tab: 'feedback', subTab: null, canonical: ['/admin', 'feedback'], isCanonical: false });
+    });
+
+    it('does not read an inherited property name as a retired sub-tab', () => {
+      expect(parseAdminPath('telemetry', 'constructor')).toEqual(
+        { tab: 'telemetry', subTab: 'summary', canonical: ['/admin', 'telemetry'], isCanonical: false });
+    });
+
     it('round-trips the AI Telemetry Groups sub-tab through its path', () => {
       const commands = adminCommands('telemetry', 'groups');
       const parsed = parseAdminPath(commands[1], commands[2] ?? null);
@@ -190,6 +209,11 @@ describe('admin URL scheme', () => {
       expect(legacy({ tab: 'telemetry', subtab: 'models' })).toEqual(['/admin', 'telemetry', 'models']);
       expect(legacy({ tab: 'telemetry', subtab: 'groups' })).toEqual(['/admin', 'telemetry', 'groups']);
       expect(legacy({ tab: 'telemetry', subtab: 'bogus' })).toEqual(['/admin', 'telemetry']);
+    });
+
+    it('maps the old Feedback sub-tab and the Feedback tab to /admin/feedback', () => {
+      expect(legacy({ tab: 'telemetry', subtab: 'feedback' })).toEqual(['/admin', 'feedback']);
+      expect(legacy({ tab: 'feedback' })).toEqual(['/admin', 'feedback']);
     });
 
     it('maps every GnollBench sub-tab by its code id', () => {

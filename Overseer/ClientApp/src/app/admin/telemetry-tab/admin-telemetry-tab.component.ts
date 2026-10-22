@@ -25,16 +25,13 @@ import {
 } from './telemetry-breakdown';
 import { TelemetryUserModelsRef, TelemetryUserRef, TelemetryUsersComponent } from './users/telemetry-users.component';
 import { TelemetryGroupModelsRef, TelemetryGroupRef, TelemetryGroupsComponent } from './groups/telemetry-groups.component';
-import { TelemetryFeedbackComponent } from './feedback/telemetry-feedback.component';
-import { AdminFeedbackCounts, AdminFeedbackService } from '../../services/admin-feedback.service';
 
-/** The sub-tabs' visible labels, in tab order; `subTabLabel` adds Feedback's counts. */
+/** The sub-tabs' visible labels, in tab order. */
 export const TELEMETRY_SUBTAB_LABELS: Readonly<Record<AdminTelemetrySubTab, string>> = {
   summary: 'Summary',
   models: 'Models',
   users: 'Users',
-  groups: 'Groups',
-  feedback: 'Feedback'
+  groups: 'Groups'
 };
 
 /** The Date Range select's options, also the collapsed bar's summary. */
@@ -51,20 +48,18 @@ export const TELEMETRY_TIME_SPAN_LABELS: Readonly<Record<TelemetryTimeSpan, stri
 const TIME_SPANS = Object.keys(TELEMETRY_TIME_SPAN_LABELS) as TelemetryTimeSpan[];
 
 /**
- * The Admin page's AI Telemetry tab, in five sub-tabs that share one date range and, but for
- * Feedback, one key source: Summary (usage, cost, provider availability, Overseer activity and the
- * request governor's partitions), Models (the breakdown by model and role), Users (the usage by
- * user), Groups (the usage by group, each counting its current members) and Feedback (the
- * assistant's feedback tool and the issues it reported). The tab
- * fetches the summary and the governor status for Summary and Models, and the feedback counts for
- * Feedback's label, and is the only owner and writer of the stored view record, which holds the
- * Keys filter and the breakdown's settings.
+ * The Admin page's AI Telemetry tab, in four sub-tabs that share one date range and one key source:
+ * Summary (usage, cost, provider availability, Overseer activity and the request governor's
+ * partitions), Models (the breakdown by model and role), Users (the usage by user) and Groups (the
+ * usage by group, each counting its current members). The tab fetches the summary and the governor
+ * status for Summary and Models, and is the only owner and writer of the stored view record, which
+ * holds the Keys filter and the breakdown's settings.
  */
 @Component({
   selector: 'app-admin-telemetry-tab',
   imports: [
     FormsModule, TelemetrySummaryComponent, TelemetryModelsComponent, TelemetryUsersComponent, TelemetryGroupsComponent,
-    TelemetryFeedbackComponent, TelemetryChartsDialogComponent, TelemetryModelUsersDialogComponent, TelemetryUserModelsDialogComponent
+    TelemetryChartsDialogComponent, TelemetryModelUsersDialogComponent, TelemetryUserModelsDialogComponent
   ],
   templateUrl: './admin-telemetry-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
@@ -72,7 +67,6 @@ const TIME_SPANS = Object.keys(TELEMETRY_TIME_SPAN_LABELS) as TelemetryTimeSpan[
 })
 export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDestroy {
   private adminService = inject(AdminService);
-  private feedbackService = inject(AdminFeedbackService);
   private store = inject(AdminPageStore);
   private host = inject<ElementRef<HTMLElement>>(ElementRef);
 
@@ -81,10 +75,9 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
   @ViewChild('userModelsDialog') userModelsDialog?: TelemetryUserModelsDialogComponent;
   @ViewChild(TelemetryUsersComponent) usersView?: TelemetryUsersComponent;
   @ViewChild(TelemetryGroupsComponent) groupsView?: TelemetryGroupsComponent;
-  @ViewChild(TelemetryFeedbackComponent) feedbackView?: TelemetryFeedbackComponent;
   @ViewChild('tlHead') private tlHead?: ElementRef<HTMLElement>;
 
-  readonly subTabs: readonly AdminTelemetrySubTab[] = ['summary', 'models', 'users', 'groups', 'feedback'];
+  readonly subTabs: readonly AdminTelemetrySubTab[] = ['summary', 'models', 'users', 'groups'];
   readonly subTabLabels = TELEMETRY_SUBTAB_LABELS;
   readonly keySources = KEY_SOURCES;
   readonly keySourceLabels = KEY_SOURCE_LABELS;
@@ -96,9 +89,6 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
   telemetryLoading = false;
   governorLoading = false;
   todayDate: string = '';
-
-  /** Feedback issue counts per status over all dates; null until they arrive, or when they fail. */
-  feedbackCounts: AdminFeedbackCounts | null = null;
 
   /** The Keys filter and the breakdown's view settings, remembered per browser. */
   view: TelemetryBreakdownView = readBreakdownView();
@@ -146,34 +136,9 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
       this.applyTelemetryPreset(this.telemetryTimeSpan, false);
     }
     this.refreshTelemetryTab();
-    this.loadFeedbackCounts();
   }
 
   // --- Sub-tabs ---
-
-  /** The tab's label: `Feedback (3 new, 1 regressed)` while either count is above zero; the others unchanged. */
-  subTabLabel(tab: AdminTelemetrySubTab): string {
-    const label = TELEMETRY_SUBTAB_LABELS[tab];
-    if (tab !== 'feedback') {
-      return label;
-    }
-    const parts: string[] = [];
-    const counts = this.feedbackCounts;
-    if (counts && counts.new > 0) parts.push(`${counts.new} new`);
-    if (counts && counts.regressed > 0) parts.push(`${counts.regressed} regressed`);
-    return parts.length > 0 ? `${label} (${parts.join(', ')})` : label;
-  }
-
-  /** Fetches the feedback counts over all dates; a failure leaves the plain label. */
-  loadFeedbackCounts() {
-    this.feedbackService.getCounts().subscribe({
-      next: counts => this.feedbackCounts = counts,
-      error: err => {
-        console.error('Failed to load feedback counts', err);
-        this.feedbackCounts = null;
-      }
-    });
-  }
 
   /** Moves the address to a sub-tab; the selected one is left alone. */
   selectSubTab(tab: AdminTelemetrySubTab, mode: AdminHistoryMode = 'push') {
@@ -310,8 +275,7 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
   }
 
   /**
-   * Reloads the summary and the governor status together, and the users, groups and feedback views and the feedback counts once
-   * they exist. Each request settles on its own, so one failure still shows the other's data; the feedback is a single toast
+   * Reloads the summary and the governor status together, and the users and groups views once they exist. Each request settles on its own, so one failure still shows the other's data; the feedback is a single toast
    * either way.
    */
   refreshTelemetryTab(showFeedback = false) {
@@ -329,8 +293,6 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
     if (showFeedback) {
       this.usersView?.reload();
       this.groupsView?.reload();
-      this.feedbackView?.reload();
-      this.loadFeedbackCounts();
     }
 
     forkJoin({
