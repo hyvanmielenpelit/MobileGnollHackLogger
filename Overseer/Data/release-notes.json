@@ -1,36 +1,5 @@
 [
   {
-    "version": "1.3.1",
-    "date": "2026-10-18T18:04:59Z",
-    "summary": "Gnoll Overseer now has its own Terms of Service, which every user is asked to accept once, and the Privacy page now says who runs the Overseer and how to reach them. Your spoiler and response style choices also apply the same way in every chat.",
-    "changes": [
-      {
-        "type": "feature",
-        "text": "Gnoll Overseer now has Terms of Service. Every user, including everyone who already has an account, is asked once to read and accept them before chatting, and is asked again only when the Terms change in an important way. You accept them in the chat, including when the Overseer opens from the GnollHack game."
-      },
-      {
-        "type": "improvement",
-        "text": "If you choose Not now when asked to accept the Terms, you can still read your chats, and a banner with a Review Terms button lets you accept them whenever you are ready."
-      },
-      {
-        "type": "improvement",
-        "text": "You can read the Terms of Service at any time: from the Terms link in the chat sidebar, from the sign-in page, under Legal in Settings, or at /terms without signing in."
-      },
-      {
-        "type": "improvement",
-        "text": "The Privacy page's Operator statements section now says who runs the Overseer, where to send questions about your data, where your data is stored, how long error reports are kept, and how a data breach would be handled."
-      },
-      {
-        "type": "improvement",
-        "text": "Your personal data download now also lists the Terms of Service versions you have accepted and when."
-      },
-      {
-        "type": "improvement",
-        "text": "Spoiler-free mode and response style are now account settings only: the choices you make in Settings apply to every chat, including chats started from the GnollHack game."
-      }
-    ]
-  },
-  {
     "version": "1.3.0",
     "date": "2026-10-17T19:15:57Z",
     "summary": "A release focused on fair use, clearer costs and smoother model management: usage limits now explain themselves, every response shows what it really cost, and a model that is retired no longer leaves your chat stuck. Models and API keys have moved into Settings, and the Overseer loads faster.",
