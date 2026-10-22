@@ -1,9 +1,21 @@
 ---
 name: overseer_changelog
-description: Instructions and guidelines for autonomously generating and appending a changelog entry to the Overseer/Data/release-notes.json file. Triggered when requested to "update the changelog", "add release notes", "generate changelog entry", or similar for the Overseer project.
+description: Only when the developer explicitly asks for a changelog entry, in a session of its own after every change of the release has landed — never as part of a batch of changes or a plan. Instructions and guidelines for autonomously generating and appending a changelog entry to the Overseer/Data/release-notes.json file. Triggered when requested to "update the changelog", "add release notes", "generate changelog entry", or similar for the Overseer project.
 ---
 
 # Overseer Changelog Generation Guide
+
+> [!IMPORTANT]
+> **Use this skill only when the developer explicitly asks for a changelog entry.** An explicit
+> request names the changelog, the release notes or `release-notes.json` as the task itself, as in
+> "generate a changelog entry for Overseer 1.4.0". A plan, a fix, a feature or a version bump is not
+> such a request, and an entry is never added "while we are at it".
+>
+> **The entry is written in a session of its own, after every change of the release has landed** —
+> never as part of a batch of changes. Written earlier, it describes a release that is not finished
+> and has to be removed again.
+>
+> If you were asked to implement a change, fix or plan, stop here: this skill does not apply.
 
 > [!WARNING]
 > **CRITICAL PROHIBITION:** You must **never** create Git tags (`git tag`) or push to the repository (`git push`) yourself. Your job is only to generate the `release-notes.json` entry and remind the developer to perform the tagging and pushing (as described in Step 9).

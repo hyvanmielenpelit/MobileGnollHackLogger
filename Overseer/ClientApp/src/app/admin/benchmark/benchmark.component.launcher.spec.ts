@@ -5,7 +5,7 @@ import { of, throwError } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
 import {
-  AdminBenchmarkSpecContext, clearStoredState, createAdminBenchmarkFixture, RUN_SETTINGS_KEY
+  AdminBenchmarkSpecContext, buildBattery, clearStoredState, createAdminBenchmarkFixture, RUN_SETTINGS_KEY
 } from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
@@ -44,7 +44,7 @@ describe('AdminBenchmarkComponent', () => {
       ) as HTMLElement[];
       expect(groups.length).toBe(3);
       expect(groups.map(g => g.querySelector('legend')?.textContent?.trim()))
-        .toEqual(['Test Setup', 'Grading', 'Execution']);
+        .toEqual(['Execution', 'Test Setup', 'Grading']);
     });
 
     it('should hold the Test Setup fields in order', () => {
@@ -72,16 +72,19 @@ describe('AdminBenchmarkComponent', () => {
       expect(children.indexOf(toolAccess)).toBe(children.indexOf(caption) + 1);
     });
 
-    it('should lift the Model Under Test into a primary field above the setup groups', () => {
+    it('should lift the Model Under Test into a primary field before the setup groups', () => {
       component.activeSubTab = 'run';
       fixture.detectChanges();
 
       const card = fixture.nativeElement.querySelector('.setup-card') as HTMLElement;
       const primary = card.querySelector('.setup-primary-field') as HTMLElement;
-      const groups = card.querySelector('.setup-groups-container') as HTMLElement;
+      const groups = card.querySelector('.setup-groups') as HTMLElement;
       expect(primary).toBeTruthy();
       expect(groups).toBeTruthy();
-      expect(primary.compareDocumentPosition(groups) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(groups.firstElementChild).toBe(primary);
+      for (const fieldset of Array.from(groups.querySelectorAll('fieldset.setup-group'))) {
+        expect(primary.compareDocumentPosition(fieldset) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
       expect(primary.closest('fieldset')).toBeNull();
       expect(primary.querySelector('#bmTestedModelLabel')?.textContent?.trim()).toBe('Model Under Test');
       expect(primary.querySelector('.tested-model-selector')).toBeTruthy();
@@ -443,6 +446,63 @@ describe('AdminBenchmarkComponent', () => {
       // The regression this wording exists to prevent: "exactly as before" described the
       // pre-multi-run implementation, which tells an operator nothing about the field.
       expect(text).not.toContain('as before');
+    });
+  });
+
+  describe('launch layout', () => {
+    function card(): HTMLElement {
+      return fixture.nativeElement.querySelector('.setup-card') as HTMLElement;
+    }
+
+    beforeEach(() => {
+      component.activeSubTab = 'run';
+    });
+
+    it('holds the models panel, Execution, Test Setup and Grading as the four cells of one grid', () => {
+      fixture.detectChanges();
+
+      const cells = Array.from(card().querySelector('.setup-groups')!.children) as HTMLElement[];
+      expect(cells.length).toBe(4);
+      expect(cells[0].classList).toContain('setup-primary-field');
+      expect(cells[1].classList).toContain('setup-group-exec');
+      expect(cells[2].classList).toContain('setup-group-test');
+      expect(cells[3].classList).toContain('setup-group-grading');
+    });
+
+    it('puts the Series Projection in the launch summary, not in Execution', () => {
+      ctx.launcher.runCount = 2;
+      ctx.refresh();
+
+      const projection = card().querySelector('#seriesProjectionLegend')!.closest('fieldset') as HTMLElement;
+      expect(projection.parentElement!.classList).toContain('launch-summary');
+      expect(card().querySelector('.setup-group-exec .series-projection-fieldset')).toBeNull();
+      const bar = card().querySelector('.launch-bar') as HTMLElement;
+      expect(projection.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('puts the Battery Projection in the launch summary, not in Execution', () => {
+      benchmarkServiceMock.getBatteries.mockReturnValue(of([buildBattery()]));
+      ctx.workspace.loadRunLimits();
+      ctx.workspace.loadBatteries();
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 1;
+      ctx.refresh();
+      (card().querySelector('#runTargetBattery') as HTMLInputElement).click();
+      fixture.detectChanges();
+
+      const projection = card().querySelector('fieldset.battery-projection') as HTMLElement;
+      expect(projection).toBeTruthy();
+      expect(projection.parentElement!.classList).toContain('launch-summary');
+      expect(card().querySelector('.setup-group-exec .series-projection-fieldset')).toBeNull();
+    });
+
+    it('keeps Start in a sticky bar at the end of the card', () => {
+      fixture.detectChanges();
+
+      const bar = card().querySelector('.form-actions.launch-bar') as HTMLElement;
+      expect(bar.parentElement).toBe(card());
+      expect(getComputedStyle(bar).position).toBe('sticky');
+      expect(bar.querySelector('.btn-gh')?.textContent?.trim()).toBe('Start Benchmark');
     });
   });
 

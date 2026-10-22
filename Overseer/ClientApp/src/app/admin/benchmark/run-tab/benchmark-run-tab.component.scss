@@ -15,8 +15,13 @@
 
 @include shared.shared-4;
 
+// The width from which the launcher sets its groups in two columns: two model pickers with a name and
+// three badges side by side without wrapping.
+$setup-two-columns: 72rem;
+
 // The New Benchmark Run card: a glass card over the admin page's glass container.
 .benchmark-card.setup-card {
+  --launch-bar-height: 4.5rem;
   border: 1px solid var(--border-glass);
   border-radius: 12px;
   background:
@@ -33,9 +38,15 @@
   flex-wrap: wrap;
 }
 
-// Launcher: the models under test, in a glass panel with a gold start edge above the fieldsets.
+// Focus is never hidden under the sticky Start bar.
+.setup-card :is(input, select, textarea, button, a[href], [tabindex]) {
+  scroll-margin-block-end: calc(var(--launch-bar-height) + 1rem);
+}
+
+// Launcher: the models under test, in a glass panel with a gold start edge, the first cell of the groups.
 .form-group.setup-primary-field {
-  margin-block-end: 1.25rem;
+  grid-area: models;
+  margin: 0;
   padding: 0.875rem 1rem 1rem;
   border: 1px solid var(--border-glass);
   border-inline-start: 3px solid var(--primary-color);
@@ -54,8 +65,11 @@
     color: var(--primary-color);
   }
 
-  > .gh-field-row {
-    max-inline-size: min(100%, 44rem);
+  // One column: the panel spans the card, so its field keeps a readable width.
+  @container setup (inline-size < #{$setup-two-columns}) {
+    > .gh-field-row {
+      max-inline-size: min(100%, 44rem);
+    }
   }
 
   // The Models radios above the field: read as option text, not as the gold field caption.
@@ -83,7 +97,8 @@
   }
 }
 
-// Launcher: three fieldsets on named areas, reflowed by the card's own width.
+// Launcher: the models panel and three fieldsets on named areas, reflowed by the card's own width.
+// One column below $setup-two-columns, two from it; the DOM order is the reading order in both.
 .setup-groups-container {
   container: setup / inline-size;
 }
@@ -91,8 +106,15 @@
 .setup-groups {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "test" "grading" "exec";
+  grid-template-areas: "models" "exec" "test" "grading";
   gap: 1.25rem;
+}
+
+@container setup (inline-size >= #{$setup-two-columns}) {
+  .setup-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: "models exec" "test grading";
+  }
 }
 
 .setup-group-test    { grid-area: test; }
@@ -103,6 +125,28 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+// Test Setup and Grading pair their fields when the group is wide enough; the legend stays out of the grid.
+.setup-group-test,
+.setup-group-grading {
+  display: grid;
+  align-items: start;
+  gap: 1rem 1.25rem;
+
+  > .run-target-choice,
+  > .setup-experiments-caption,
+  > .grader-guide-row {
+    grid-column: 1 / -1;
+  }
+}
+
+.setup-group-test {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+}
+
+.setup-group-grading {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 36rem), 1fr));
 }
 
 // Test Setup: the caption over Tool Access and Experimental Changes, which most runs leave at their defaults.
@@ -164,7 +208,13 @@
   overflow-wrap: anywhere;
 }
 
-.exec-fields,
+.exec-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  align-items: start;
+  gap: 1.5rem;
+}
+
 .exec-runs {
   display: flex;
   flex-direction: column;
@@ -188,30 +238,6 @@
   > legend {
     margin-block-end: 0.5rem;
     padding: 0;
-  }
-}
-
-@container setup (inline-size >= 50rem) {
-  .setup-groups {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas: "test grading" "exec exec";
-  }
-
-  .exec-fields {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
-    align-items: start;
-  }
-}
-
-@container setup (inline-size >= 90rem) {
-  .setup-groups {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-areas: "test grading exec";
-  }
-
-  .exec-fields {
-    display: flex;
   }
 }
 
@@ -290,16 +316,21 @@
   gap: 0.375rem;
 }
 
-.completion-signals .btn-gh-small {
-  align-self: flex-start;
-}
-
-// Test sound and Test failure sound, side by side, wrapping in a narrow column.
-.completion-signals-actions {
+// Play a sound, followed by its icon-only Test sound and Test failure sound.
+.completion-sound-row,
+.completion-sound-tests {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  align-self: flex-start;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.completion-sound-tests {
+  margin-inline-start: 0.25rem;
+
+  > .action-btn {
+    margin: 0;
+  }
 }
 
 // A model batch's As listed order hangs under the Model order radios.
@@ -318,9 +349,54 @@
   color: #a1a1aa;
 }
 
-// The Batch Readiness card sits directly above Start Model Batch.
-.model-batch-actions .model-batch-readiness {
-  margin-block-end: 1rem;
+// The launch area under the groups: the projections, then Batch Readiness, then the Start bar.
+.launch-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  > * {
+    max-inline-size: 60rem;
+  }
+
+  > :first-child {
+    margin-block-start: 1.25rem;
+  }
+}
+
+// The Batch Readiness card sits in the flow directly above the Start Model Batch bar.
+.model-batch-readiness {
+  display: block;
+  margin-block-start: 1.25rem;
+}
+
+// Start and the reason it is unavailable, stuck to the bottom of the scroll area while the card is in
+// view and settled flush with the card's bottom edge.
+.form-actions.launch-bar {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 1.25rem -20px -20px;
+  padding: 0.75rem 20px;
+  border-block-start: 1px solid var(--border-glass);
+  border-radius: 0 0 11px 11px;
+  background: rgba(17, 17, 17, 0.92);
+  backdrop-filter: blur(6px);
+}
+
+.launch-bar-hint {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+}
+
+@media (forced-colors: active) {
+  .form-actions.launch-bar {
+    border-block-start-color: CanvasText;
+  }
 }
 
 // The launch form's completion-signal status line. Always in the DOM so a message is announced,
@@ -337,7 +413,8 @@
 @include shared.shared-6;
 
 // Launcher field labels and group captions share one heading style; option text stays lighter.
-.setup-groups {
+// Scoped to the fieldsets, so the models panel keeps its gold caption.
+.setup-group {
   .form-group > label:not(.checkbox-label),
   .label-with-action > label,
   .field-caption {
@@ -576,7 +653,6 @@
 @include shared.shared-26;
 
 @include shared.shared-27;
-.mt-20 { margin-top: 20px; }
 
 // The model batch confirmation: a summary of the plan, wide enough not to scroll on a desktop screen.
 // Must stay after shared-13's .benchmark-form-dialog, whose 640px and 85dvh it overrides.

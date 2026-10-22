@@ -242,6 +242,8 @@ you already read the label, it is noise; drop it.
 | bar-chart-2 (Feather: three vertical lines of different heights) | **Charts** (icon-only `.action-btn`, the AI Telemetry tab's header, named *Telemetry charts*, `aria-haspopup="dialog"`; opens the charts dialog), **Usage charts** (icon-only, each card of the AI Telemetry Users view; the dialog for that user), **Usage analytics of {name}** (icon-only, each System Configs card; opens the configuration's analytics dialog) | "Show it over time as charts" |
 | sliders (Feather *sliders*: three vertical lines with a knob each) | **Manage limits** (icon-only, each card of the AI Telemetry Users view; opens the user's *AI configuration access* dialog in the Users tab), **Rate limits of {name}** (icon-only, each System Configs card; opens the configuration's rate-limits dialog) | "Adjust settings" — the limits are tuned there, not here |
 | key (Feather *key*) | **API Keys** (`.btn-ghost`, the Admin System Configs header, `aria-haspopup="dialog"`; opens the *Default API Keys* dialog) | "Credentials": the stored keys the configurations sign in with |
+| volume-2 (Feather: a speaker with two waves, `<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5">`, `<path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07">`) | **Test sound** (icon-only `.action-btn`, after *Play a sound* in the Run Benchmark launcher's *Completion Alerts*, with an `interestfor` tooltip *Test sound*) | "Plays the sound here" — the completion chime, so the browser allows audio before a run ends |
+| volume-alert (Feather *volume* plus the exclamation of *alert-circle*: `<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5">`, `<line x1="18" y1="8" x2="18" y2="13">`, `<line x1="18" y1="17" x2="18.01" y2="17">`) | **Test failure sound** (icon-only `.action-btn`, beside **Test sound**, with an `interestfor` tooltip *Test failure sound*) | "Plays the warning sound" — the speaker says *sound*, the exclamation says *something went wrong*. A speaker with an ✕ was rejected: it reads as *mute* |
 | pie-chart (Feather *pie-chart*: `<path d="M21.21 15.89A10 10 0 1 1 8 2.83">`, `<path d="M22 12A10 10 0 0 0 12 2v10z">`) | **Usage by user** (icon-only `.action-btn`, each model card of the AI Telemetry breakdown, `aria-haspopup="dialog"`; opens the full-screen *Usage by user* dialog), **Usage by model** (icon-only `.action-btn`, first among the actions of each card of the AI Telemetry Users view, `aria-haspopup="dialog"`; opens the full-screen *Usage by model* dialog) | "Break a whole into shares: what accounts for how much" — the users of one model, or the models of one user. Not *users*, which already means **Manage groups** on the Admin Users cards (see the 2026-10-13 note) |
 
 *Changed 2026-09-12 (harness 24 round): Import Default Suite(s) moved from `upload` to `download` —
@@ -676,6 +678,12 @@ an icon-only `.action-btn` named for its group with an `interestfor` tooltip, in
 has an icon-only `.action-btn` **Refresh feedback** that reuses* rotate *with an `interestfor` tooltip
 *Refresh*, like the AI Telemetry header's. Its two empty states carry a 32 px decorative,
 `aria-hidden` glyph (*inbox*, *filter*) that is not a control.*
+
+*Changed 2026-10-22 (Run Benchmark launcher): two glyphs are new,* volume-2 *and* volume-alert*. The
+launcher's* Completion Alerts *replace the `btn-gh-small` image buttons **Test sound** and **Test
+failure sound** with icon-only `.action-btn`s after *Play a sound*, in a `role="group"` *Test the
+completion sounds*; each keeps its words as its `aria-label` and `interestfor` tooltip, so the status
+message *press Test sound once* and the documentation stay true.*
 
 **Leave the icon off when the label is already the whole message:**
 

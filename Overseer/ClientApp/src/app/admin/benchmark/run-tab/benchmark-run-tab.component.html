@@ -242,58 +242,6 @@
     </div>
   }
 
-  <div class="form-group setup-primary-field">
-    <fieldset class="gh-choice run-mode-choice" role="radiogroup"
-              aria-labelledby="runModeLabel" aria-describedby="runModeHint">
-      <legend>
-        <span id="runModeLabel">Models</span>
-        <app-info-tip trigger="click" tipId="runModeHint" subject="Models">
-          Run several models one after another under the same graders and settings, for a fair comparison.
-        </app-info-tip>
-      </legend>
-      <label class="gh-radio">
-        <input type="radio" id="runModeSingle" name="runMode" value="single"
-               [checked]="launcher.runMode === 'single'" (change)="setRunMode('single')">
-        <span>One model</span>
-      </label>
-      <label class="gh-radio">
-        <input type="radio" id="runModeBatch" name="runMode" value="batch"
-               [checked]="launcher.runMode === 'batch'" (change)="setRunMode('batch')">
-        <span>Model batch</span>
-      </label>
-    </fieldset>
-
-    @if (launcher.isModelBatch) {
-      <label id="bmBatchModelsLabel">Models Under Test</label>
-      <app-model-multi-picker class="batch-models-picker"
-                              viewStateKey="benchmark.run.modelsUnderTest"
-                              labelledBy="bmBatchModelsLabel"
-                              [describedBy]="describedWithBatchLine('bmBatchModelsHint', 'models')"
-                              placeholder="Choose models" chipStyle="card"
-                              [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
-                              [max]="workspace.runLimits?.maxModelsPerBatch ?? launcher.maxModelsPerBatch" [maxChips]="12"
-                              [options]="batchPickerOptions" [selectedKeys]="launcher.batchModelKeys"
-                              [status]="batchModelsStatus"
-                              (selectionChange)="onBatchModelsChange($event.keys)"></app-model-multi-picker>
-      <span id="bmBatchModelsHint" class="form-hint">{{ batchModelsHintText }}</span>
-      <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'models' }"></ng-container>
-    } @else {
-      <label id="bmTestedModelLabel">Model Under Test</label>
-      <div class="gh-field-row">
-        <app-model-picker class="tested-model-selector"
-                          viewStateKey="benchmark.run.modelUnderTest"
-                          labelledBy="bmTestedModelLabel" [describedBy]="describedWithAvailability('bmTestedModelHint', 'tested')"
-                          [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
-                          [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.testedConfigId"
-                          (selectionChange)="selectTestedModel($event.model)"></app-model-picker>
-        <app-info-tip trigger="click" tipId="bmTestedModelHint" subject="Model Under Test">
-          Answers every question. Speed Index is only comparable at the same thinking level.
-        </app-info-tip>
-      </div>
-      <ng-container *ngTemplateOutlet="availabilityLine; context: { $implicit: 'tested' }"></ng-container>
-    }
-  </div>
-
   <!-- A model batch finding about one field: its blocker or warning, one line under the field. -->
   <ng-template #batchLine let-field>
     @if (batchFieldLine(field); as line) {
@@ -339,6 +287,281 @@
 
   <div class="setup-groups-container">
     <div class="setup-groups">
+      <div class="form-group setup-primary-field">
+        <fieldset class="gh-choice run-mode-choice" role="radiogroup"
+                  aria-labelledby="runModeLabel" aria-describedby="runModeHint">
+          <legend>
+            <span id="runModeLabel">Models</span>
+            <app-info-tip trigger="click" tipId="runModeHint" subject="Models">
+              Run several models one after another under the same graders and settings, for a fair comparison.
+            </app-info-tip>
+          </legend>
+          <label class="gh-radio">
+            <input type="radio" id="runModeSingle" name="runMode" value="single"
+                   [checked]="launcher.runMode === 'single'" (change)="setRunMode('single')">
+            <span>One model</span>
+          </label>
+          <label class="gh-radio">
+            <input type="radio" id="runModeBatch" name="runMode" value="batch"
+                   [checked]="launcher.runMode === 'batch'" (change)="setRunMode('batch')">
+            <span>Model batch</span>
+          </label>
+        </fieldset>
+
+        @if (launcher.isModelBatch) {
+          <label id="bmBatchModelsLabel">Models Under Test</label>
+          <app-model-multi-picker class="batch-models-picker"
+                                  viewStateKey="benchmark.run.modelsUnderTest"
+                                  labelledBy="bmBatchModelsLabel"
+                                  [describedBy]="describedWithBatchLine('bmBatchModelsHint', 'models')"
+                                  placeholder="Choose models" chipStyle="card"
+                                  [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
+                                  [max]="workspace.runLimits?.maxModelsPerBatch ?? launcher.maxModelsPerBatch" [maxChips]="12"
+                                  [options]="batchPickerOptions" [selectedKeys]="launcher.batchModelKeys"
+                                  [status]="batchModelsStatus"
+                                  (selectionChange)="onBatchModelsChange($event.keys)"></app-model-multi-picker>
+          <span id="bmBatchModelsHint" class="form-hint">{{ batchModelsHintText }}</span>
+          <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'models' }"></ng-container>
+        } @else {
+          <label id="bmTestedModelLabel">Model Under Test</label>
+          <div class="gh-field-row">
+            <app-model-picker class="tested-model-selector"
+                              viewStateKey="benchmark.run.modelUnderTest"
+                              labelledBy="bmTestedModelLabel" [describedBy]="describedWithAvailability('bmTestedModelHint', 'tested')"
+                              [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
+                              [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.testedConfigId"
+                              (selectionChange)="selectTestedModel($event.model)"></app-model-picker>
+            <app-info-tip trigger="click" tipId="bmTestedModelHint" subject="Model Under Test">
+              Answers every question. Speed Index is only comparable at the same thinking level.
+            </app-info-tip>
+          </div>
+          <ng-container *ngTemplateOutlet="availabilityLine; context: { $implicit: 'tested' }"></ng-container>
+        }
+      </div>
+
+      <fieldset class="gh-fieldset setup-group setup-group-exec">
+        <legend>Execution</legend>
+
+        <div class="exec-fields">
+          <!--
+            Number of runs. The max is bound to the live configured MaxRunsPerDay from
+            GET runs/limits and never to a literal, so raising the cap raises this field with it —
+            and a series can never become a way around the spend guard, which is the point of
+            coupling the two. The server re-checks against the same guard; this bound is a courtesy.
+            For a battery the same field is Runs per Suite, bounded by maxMembersPerBattery over the
+            battery's suite count.
+          -->
+          <div class="exec-runs">
+            @if (launcher.isModelBatch && !launcher.isBatteryTarget) {
+              <!-- Runs per model: R = 1 runs each model once, R ≥ 2 a replicate series per model. -->
+              <div class="form-group">
+                <label for="batchRunsPerModelInput">Runs per model</label>
+                <div class="gh-field-row">
+                  <input id="batchRunsPerModelInput" type="number" class="gh-input run-count-input"
+                         min="1"
+                         [attr.max]="launcher.maxRunCountPerSeries"
+                         [(ngModel)]="launcher.batchRunsPerModel" (ngModelChange)="onBatchSettingsChanged()"
+                         [attr.aria-describedby]="describedWithBatchLine('batchRunsPerModelHint', 'runs')">
+                  <app-info-tip trigger="click" tipId="batchRunsPerModelHint" subject="Runs per model">
+                    <p>Each model runs the suite this many times before the next model starts: once as a single run,
+                      two or more times as a replicate series.</p>
+                    <p>One run is one sample. To rank close models, use two or three runs per model.</p>
+                  </app-info-tip>
+                </div>
+                <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'runs' }"></ng-container>
+              </div>
+            } @else {
+            <div class="form-group">
+              <label for="runCountInput">{{ launcher.isBatteryTarget ? 'Runs per Suite' : 'Number of Runs' }}</label>
+              <div class="gh-field-row">
+                <input id="runCountInput" type="number" class="gh-input run-count-input"
+                       min="1"
+                       [attr.max]="launcher.runCountMax"
+                       [(ngModel)]="launcher.runCount" (ngModelChange)="onReuseInputsChanged()"
+                       [attr.aria-describedby]="describedWithBatchLine('runCountHint', 'runs')">
+                @if (launcher.isBatteryTarget) {
+                  <app-info-tip trigger="click" tipId="runCountHint" subject="Runs per Suite">
+                    <p>Every suite of the battery runs this many times, round by round: all suites once, then all
+                      suites again. The battery has a result after the first round; more rounds narrow its interval.</p>
+                    @if (launcher.maxRunsPerSuite != null) {
+                      <p>Up to {{ launcher.maxRunsPerSuite }} for this battery, because one battery run plans at most
+                        {{ workspace.runLimits?.maxMembersPerBattery }} runs.</p>
+                    }
+                  </app-info-tip>
+                } @else {
+                <app-info-tip trigger="click" tipId="runCountHint" subject="Number of Runs">
+                  <p>Answers vary from run to run, so the scores of a single run include run-to-run noise.</p>
+                  <dl>
+                    <div>
+                      <dt><span class="gh-info-term">One run</span><span class="gh-info-badge">Default</span></dt>
+                      <dd>For a first look at a model, a check that a change works, or the lowest cost. Treat a small
+                        difference between two single runs with caution: it may be noise.</dd>
+                    </div>
+                    <div>
+                      <dt><span class="gh-info-term">Two or more runs</span></dt>
+                      <dd>
+                        @if (launcher.maxRunCountPerSeries != null) {
+                          Up to {{ launcher.maxRunCountPerSeries }}, run one at a time as a replicate set.
+                        } @else {
+                          Run one at a time as a replicate set; the daily run cap limits the count.
+                        }
+                        Multi-Run Analysis reports their mean and, from three runs, a reproducibility interval. Use
+                        it when the difference you are looking for is small, such as between two close models.
+                      </dd>
+                    </div>
+                  </dl>
+                  <p>Cost and duration grow with each run; the Series Projection estimates both once two or more
+                    runs are set.</p>
+                </app-info-tip>
+                }
+              </div>
+              @if (launcher.isModelBatch) {
+                <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'runs' }"></ng-container>
+              }
+            </div>
+            }
+
+            @if (launcher.isModelBatch) {
+              <fieldset class="gh-choice batch-order-choice" role="radiogroup"
+                        aria-labelledby="batchOrderLabel"
+                        [attr.aria-describedby]="describedWithBatchLine('batchOrderHint', 'order')">
+                <legend>
+                  <span id="batchOrderLabel">Model order</span>
+                  <app-info-tip trigger="click" tipId="batchOrderHint" subject="Model order">
+                    <dl>
+                      <div>
+                        <dt><span class="gh-info-term">Randomized</span><span class="gh-info-badge">Recommended</span></dt>
+                        <dd>The order is drawn when the batch starts, and its seed is stored, so no model always gets the
+                          same hours of the day.</dd>
+                      </div>
+                      <div>
+                        <dt><span class="gh-info-term">As listed</span></dt>
+                        <dd>The models run in the order you set below.</dd>
+                      </div>
+                    </dl>
+                  </app-info-tip>
+                </legend>
+                <label class="gh-radio">
+                  <input type="radio" id="batchOrderRandomized" name="batchOrder" value="randomized"
+                         [checked]="launcher.batchOrder === 'randomized'" (change)="setBatchOrder('randomized')">
+                  <span>Randomized (recommended)</span>
+                </label>
+                <label class="gh-radio">
+                  <input type="radio" id="batchOrderAsListed" name="batchOrder" value="asListed"
+                         [checked]="launcher.batchOrder === 'asListed'" (change)="setBatchOrder('asListed')">
+                  <span>As listed</span>
+                </label>
+              </fieldset>
+              <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'order' }"></ng-container>
+              @if (launcher.batchOrder === 'asListed' && batchOrderItems.length > 0) {
+                <app-reorderable-list class="batch-order-list" [items]="batchOrderItems" idPrefix="mb-order"
+                                      listLabel="Models in run order" itemNoun="model"
+                                      (orderChange)="onBatchOrderListChange($event)"></app-reorderable-list>
+              }
+            }
+
+            @if (isMultiRunRequested || launcher.isBatteryTarget || launcher.isModelBatch) {
+              <fieldset class="exec-options">
+                <legend class="field-caption" id="execOptionsCaption">
+                  {{ launcher.isModelBatch ? 'Batch Options' : launcher.isBatteryTarget ? 'Battery Options' : 'Series Options' }}
+                </legend>
+                <div class="checkbox-with-tip">
+                  <label class="checkbox-label" for="allowCapWaitInput">
+                    <input id="allowCapWaitInput" type="checkbox" [(ngModel)]="launcher.allowCapWait"
+                           (ngModelChange)="onAllowCapWaitChanged()"
+                           [attr.aria-describedby]="describedWithBatchLine('allowCapWaitHint', 'allowCapWait')">
+                    <span>Wait when the run cap blocks the next run</span>
+                  </label>
+                  <app-info-tip trigger="click" tipId="allowCapWaitHint" subject="Wait at the run cap">
+                    Otherwise the {{ launcher.isModelBatch ? 'batch' : launcher.isBatteryTarget ? 'battery' : 'series' }} stops at the cap and can be continued; finished runs are always kept.
+                    @if (launcher.isModelBatch) {
+                      A batch larger than the daily cap needs this.
+                    } @else if (launcher.isBatteryTarget) {
+                      A battery larger than the daily cap needs this.
+                    }
+                  </app-info-tip>
+                </div>
+                <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'allowCapWait' }"></ng-container>
+                @if (launcher.isModelBatch && launcher.isBatteryTarget) {
+                  <p class="form-hint batch-reuse-note">Reuse earlier runs: not available for a model batch.</p>
+                } @else if (launcher.isBatteryTarget) {
+                  <div class="checkbox-with-tip">
+                    <label class="checkbox-label" for="reuseEarlierRunsInput">
+                      <input id="reuseEarlierRunsInput" type="checkbox" [checked]="launcher.reuseEarlierRuns"
+                             aria-describedby="reuseEarlierRunsHint"
+                             (change)="onReuseEarlierRunsChange($any($event.target).checked)">
+                      <span>Reuse earlier runs</span>
+                    </label>
+                    <app-info-tip trigger="click" tipId="reuseEarlierRunsHint" subject="Reuse earlier runs">
+                      Fills a slot with the newest earlier run of the same suite and model under test that still matches the
+                      current instrument and the other runs, so only the remaining slots are launched. The Battery Projection
+                      lists the runs reused. Chosen for each start; never remembered.
+                    </app-info-tip>
+                  </div>
+                }
+              </fieldset>
+            }
+          </div>
+
+          <div class="form-group completion-signals" role="group" aria-labelledby="completionSignalsCaption">
+            <div class="exec-heading-row">
+              <span class="field-caption" id="completionSignalsCaption">Completion Alerts</span>
+              <app-info-tip trigger="click" tipId="completionSignalsHint" subject="Completion Alerts">
+                <dl>
+                  <div>
+                    <dt><span class="gh-info-term">Sound</span></dt>
+                    <dd>Plays a short chime. If the browser blocks audio, press Test sound once to allow it. A run,
+                      series, battery run or model batch that fails, stops or completes with errors plays a different
+                      sound.</dd>
+                  </div>
+                  <div>
+                    <dt><span class="gh-info-term">Desktop notification</span></dt>
+                    <dd>Names the run and its final status. The browser asks for permission when you select it.</dd>
+                  </div>
+                  <div>
+                    <dt><span class="gh-info-term">Timing</span></dt>
+                    <dd>Alerts come from this page, so keep its tab open. A series, a battery or a model batch alerts
+                      once, after its last run. In a background tab an alert can arrive up to a minute late.</dd>
+                  </div>
+                </dl>
+              </app-info-tip>
+            </div>
+            <div class="completion-sound-row">
+              <label class="checkbox-label" for="completionSoundInput">
+                <input id="completionSoundInput" type="checkbox" [(ngModel)]="launcher.completionSound"
+                       (ngModelChange)="onCompletionSoundChanged()"
+                       aria-describedby="completionSignalsHint">
+                <span>Play a sound</span>
+              </label>
+              <div class="completion-sound-tests" role="group" aria-label="Test the completion sounds">
+                <button type="button" class="action-btn test-completion-sound" aria-label="Test sound"
+                        interestfor="testSoundTip" [attr.style]="'anchor-name: --testSoundTip'"
+                        (click)="testCompletionSound()">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                </button>
+                <div popover="hint" id="testSoundTip" class="gh-tooltip"
+                     [attr.style]="'position-anchor: --testSoundTip'">Test sound</div>
+                <button type="button" class="action-btn test-failure-sound" aria-label="Test failure sound"
+                        interestfor="testFailureSoundTip" [attr.style]="'anchor-name: --testFailureSoundTip'"
+                        (click)="testFailureSound()">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="18" y1="8" x2="18" y2="13"></line><line x1="18" y1="17" x2="18.01" y2="17"></line></svg>
+                </button>
+                <div popover="hint" id="testFailureSoundTip" class="gh-tooltip"
+                     [attr.style]="'position-anchor: --testFailureSoundTip'">Test failure sound</div>
+              </div>
+            </div>
+            <label class="checkbox-label" for="completionNotificationInput">
+              <input id="completionNotificationInput" type="checkbox" [checked]="launcher.completionNotification"
+                     aria-describedby="completionSignalsHint"
+                     (change)="monitor.onCompletionNotificationChange($any($event.target).checked)">
+              <span>Show a desktop notification</span>
+            </label>
+            <p class="text-muted completion-signals-status" role="status" aria-live="polite"
+               [class.is-empty]="!completionSignalsStatusText">{{ completionSignalsStatusText }}</p>
+          </div>
+        </div>
+      </fieldset>
+
       <fieldset class="gh-fieldset setup-group setup-group-test">
         <legend>Test Setup</legend>
 
@@ -970,507 +1193,300 @@
           }
         </div>
       </fieldset>
-
-      <fieldset class="gh-fieldset setup-group setup-group-exec">
-        <legend>Execution</legend>
-
-        <div class="exec-fields">
-          <!--
-            Number of runs. The max is bound to the live configured MaxRunsPerDay from
-            GET runs/limits and never to a literal, so raising the cap raises this field with it —
-            and a series can never become a way around the spend guard, which is the point of
-            coupling the two. The server re-checks against the same guard; this bound is a courtesy.
-            For a battery the same field is Runs per Suite, bounded by maxMembersPerBattery over the
-            battery's suite count.
-          -->
-          <div class="exec-runs">
-            @if (launcher.isModelBatch && !launcher.isBatteryTarget) {
-              <!-- Runs per model: R = 1 runs each model once, R ≥ 2 a replicate series per model. -->
-              <div class="form-group">
-                <label for="batchRunsPerModelInput">Runs per model</label>
-                <div class="gh-field-row">
-                  <input id="batchRunsPerModelInput" type="number" class="gh-input run-count-input"
-                         min="1"
-                         [attr.max]="launcher.maxRunCountPerSeries"
-                         [(ngModel)]="launcher.batchRunsPerModel" (ngModelChange)="onBatchSettingsChanged()"
-                         [attr.aria-describedby]="describedWithBatchLine('batchRunsPerModelHint', 'runs')">
-                  <app-info-tip trigger="click" tipId="batchRunsPerModelHint" subject="Runs per model">
-                    <p>Each model runs the suite this many times before the next model starts: once as a single run,
-                      two or more times as a replicate series.</p>
-                    <p>One run is one sample. To rank close models, use two or three runs per model.</p>
-                  </app-info-tip>
-                </div>
-                <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'runs' }"></ng-container>
-              </div>
-            } @else {
-            <div class="form-group">
-              <label for="runCountInput">{{ launcher.isBatteryTarget ? 'Runs per Suite' : 'Number of Runs' }}</label>
-              <div class="gh-field-row">
-                <input id="runCountInput" type="number" class="gh-input run-count-input"
-                       min="1"
-                       [attr.max]="launcher.runCountMax"
-                       [(ngModel)]="launcher.runCount" (ngModelChange)="onReuseInputsChanged()"
-                       [attr.aria-describedby]="describedWithBatchLine('runCountHint', 'runs')">
-                @if (launcher.isBatteryTarget) {
-                  <app-info-tip trigger="click" tipId="runCountHint" subject="Runs per Suite">
-                    <p>Every suite of the battery runs this many times, round by round: all suites once, then all
-                      suites again. The battery has a result after the first round; more rounds narrow its interval.</p>
-                    @if (launcher.maxRunsPerSuite != null) {
-                      <p>Up to {{ launcher.maxRunsPerSuite }} for this battery, because one battery run plans at most
-                        {{ workspace.runLimits?.maxMembersPerBattery }} runs.</p>
-                    }
-                  </app-info-tip>
-                } @else {
-                <app-info-tip trigger="click" tipId="runCountHint" subject="Number of Runs">
-                  <p>Answers vary from run to run, so the scores of a single run include run-to-run noise.</p>
-                  <dl>
-                    <div>
-                      <dt><span class="gh-info-term">One run</span><span class="gh-info-badge">Default</span></dt>
-                      <dd>For a first look at a model, a check that a change works, or the lowest cost. Treat a small
-                        difference between two single runs with caution: it may be noise.</dd>
-                    </div>
-                    <div>
-                      <dt><span class="gh-info-term">Two or more runs</span></dt>
-                      <dd>
-                        @if (launcher.maxRunCountPerSeries != null) {
-                          Up to {{ launcher.maxRunCountPerSeries }}, run one at a time as a replicate set.
-                        } @else {
-                          Run one at a time as a replicate set; the daily run cap limits the count.
-                        }
-                        Multi-Run Analysis reports their mean and, from three runs, a reproducibility interval. Use
-                        it when the difference you are looking for is small, such as between two close models.
-                      </dd>
-                    </div>
-                  </dl>
-                  <p>Cost and duration grow with each run; the Series Projection estimates both once two or more
-                    runs are set.</p>
-                </app-info-tip>
-                }
-              </div>
-              @if (launcher.isModelBatch) {
-                <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'runs' }"></ng-container>
-              }
-            </div>
-            }
-
-            @if (launcher.isModelBatch) {
-              <fieldset class="gh-choice batch-order-choice" role="radiogroup"
-                        aria-labelledby="batchOrderLabel"
-                        [attr.aria-describedby]="describedWithBatchLine('batchOrderHint', 'order')">
-                <legend>
-                  <span id="batchOrderLabel">Model order</span>
-                  <app-info-tip trigger="click" tipId="batchOrderHint" subject="Model order">
-                    <dl>
-                      <div>
-                        <dt><span class="gh-info-term">Randomized</span><span class="gh-info-badge">Recommended</span></dt>
-                        <dd>The order is drawn when the batch starts, and its seed is stored, so no model always gets the
-                          same hours of the day.</dd>
-                      </div>
-                      <div>
-                        <dt><span class="gh-info-term">As listed</span></dt>
-                        <dd>The models run in the order you set below.</dd>
-                      </div>
-                    </dl>
-                  </app-info-tip>
-                </legend>
-                <label class="gh-radio">
-                  <input type="radio" id="batchOrderRandomized" name="batchOrder" value="randomized"
-                         [checked]="launcher.batchOrder === 'randomized'" (change)="setBatchOrder('randomized')">
-                  <span>Randomized (recommended)</span>
-                </label>
-                <label class="gh-radio">
-                  <input type="radio" id="batchOrderAsListed" name="batchOrder" value="asListed"
-                         [checked]="launcher.batchOrder === 'asListed'" (change)="setBatchOrder('asListed')">
-                  <span>As listed</span>
-                </label>
-              </fieldset>
-              <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'order' }"></ng-container>
-              @if (launcher.batchOrder === 'asListed' && batchOrderItems.length > 0) {
-                <app-reorderable-list class="batch-order-list" [items]="batchOrderItems" idPrefix="mb-order"
-                                      listLabel="Models in run order" itemNoun="model"
-                                      (orderChange)="onBatchOrderListChange($event)"></app-reorderable-list>
-              }
-            }
-
-            @if (isMultiRunRequested || launcher.isBatteryTarget || launcher.isModelBatch) {
-              <fieldset class="exec-options">
-                <legend class="field-caption" id="execOptionsCaption">
-                  {{ launcher.isModelBatch ? 'Batch Options' : launcher.isBatteryTarget ? 'Battery Options' : 'Series Options' }}
-                </legend>
-                <div class="checkbox-with-tip">
-                  <label class="checkbox-label" for="allowCapWaitInput">
-                    <input id="allowCapWaitInput" type="checkbox" [(ngModel)]="launcher.allowCapWait"
-                           (ngModelChange)="onAllowCapWaitChanged()"
-                           [attr.aria-describedby]="describedWithBatchLine('allowCapWaitHint', 'allowCapWait')">
-                    <span>Wait when the run cap blocks the next run</span>
-                  </label>
-                  <app-info-tip trigger="click" tipId="allowCapWaitHint" subject="Wait at the run cap">
-                    Otherwise the {{ launcher.isModelBatch ? 'batch' : launcher.isBatteryTarget ? 'battery' : 'series' }} stops at the cap and can be continued; finished runs are always kept.
-                    @if (launcher.isModelBatch) {
-                      A batch larger than the daily cap needs this.
-                    } @else if (launcher.isBatteryTarget) {
-                      A battery larger than the daily cap needs this.
-                    }
-                  </app-info-tip>
-                </div>
-                <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'allowCapWait' }"></ng-container>
-                @if (launcher.isModelBatch && launcher.isBatteryTarget) {
-                  <p class="form-hint batch-reuse-note">Reuse earlier runs: not available for a model batch.</p>
-                } @else if (launcher.isBatteryTarget) {
-                  <div class="checkbox-with-tip">
-                    <label class="checkbox-label" for="reuseEarlierRunsInput">
-                      <input id="reuseEarlierRunsInput" type="checkbox" [checked]="launcher.reuseEarlierRuns"
-                             aria-describedby="reuseEarlierRunsHint"
-                             (change)="onReuseEarlierRunsChange($any($event.target).checked)">
-                      <span>Reuse earlier runs</span>
-                    </label>
-                    <app-info-tip trigger="click" tipId="reuseEarlierRunsHint" subject="Reuse earlier runs">
-                      Fills a slot with the newest earlier run of the same suite and model under test that still matches the
-                      current instrument and the other runs, so only the remaining slots are launched. The Battery Projection
-                      lists the runs reused. Chosen for each start; never remembered.
-                    </app-info-tip>
-                  </div>
-                }
-              </fieldset>
-            }
-          </div>
-
-          <div class="form-group completion-signals" role="group" aria-labelledby="completionSignalsCaption">
-            <div class="exec-heading-row">
-              <span class="field-caption" id="completionSignalsCaption">Completion Alerts</span>
-              <app-info-tip trigger="click" tipId="completionSignalsHint" subject="Completion Alerts">
-                <dl>
-                  <div>
-                    <dt><span class="gh-info-term">Sound</span></dt>
-                    <dd>Plays a short chime. If the browser blocks audio, press Test sound once to allow it. A run,
-                      series, battery run or model batch that fails, stops or completes with errors plays a different
-                      sound.</dd>
-                  </div>
-                  <div>
-                    <dt><span class="gh-info-term">Desktop notification</span></dt>
-                    <dd>Names the run and its final status. The browser asks for permission when you select it.</dd>
-                  </div>
-                  <div>
-                    <dt><span class="gh-info-term">Timing</span></dt>
-                    <dd>Alerts come from this page, so keep its tab open. A series, a battery or a model batch alerts
-                      once, after its last run. In a background tab an alert can arrive up to a minute late.</dd>
-                  </div>
-                </dl>
-              </app-info-tip>
-            </div>
-            <label class="checkbox-label" for="completionSoundInput">
-              <input id="completionSoundInput" type="checkbox" [(ngModel)]="launcher.completionSound"
-                     (ngModelChange)="onCompletionSoundChanged()"
-                     aria-describedby="completionSignalsHint">
-              <span>Play a sound</span>
-            </label>
-            <label class="checkbox-label" for="completionNotificationInput">
-              <input id="completionNotificationInput" type="checkbox" [checked]="launcher.completionNotification"
-                     aria-describedby="completionSignalsHint"
-                     (change)="monitor.onCompletionNotificationChange($any($event.target).checked)">
-              <span>Show a desktop notification</span>
-            </label>
-            <p class="text-muted completion-signals-status" role="status" aria-live="polite"
-               [class.is-empty]="!completionSignalsStatusText">{{ completionSignalsStatusText }}</p>
-            <div class="completion-signals-actions">
-              <button type="button" class="btn-gh btn-gh-small" (click)="testCompletionSound()">Test sound</button>
-              <button type="button" class="btn-gh btn-gh-small test-failure-sound" (click)="testFailureSound()">Test failure sound</button>
-            </div>
-          </div>
-
-          @if (isMultiRunRequested) {
-            <fieldset class="series-projection-fieldset" role="region" aria-labelledby="seriesProjectionLegend">
-              <legend id="seriesProjectionLegend" class="series-projection-legend">
-                <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
-                </svg>
-                <span>Series Projection</span>
-              </legend>
-
-              <div class="projection-grid" role="list">
-                <div class="projection-row series-planned-runs-row" role="listitem">
-                  <span class="projection-label">Planned runs:</span>
-                  <span class="projection-value"><strong>{{ launcher.effectiveRunCount }}</strong></span>
-                </div>
-
-                <div class="projection-row" role="listitem">
-                  <span class="projection-label">Projected wall time:</span>
-                  @if (projectedSeriesDurationLabel) {
-                    <span class="projection-value"><strong>{{ projectedSeriesDurationLabel }}</strong></span>
-                    <span class="projection-note text-muted">({{ launcher.effectiveRunCount }} × this suite's recent mean run duration)</span>
-                  } @else {
-                    <span class="projection-empty text-muted">no completed run of this suite to project from</span>
-                  }
-                </div>
-
-                <div class="projection-row" role="listitem">
-                  <span class="projection-label">Projected cost:</span>
-                  @if (projectedSeriesCostLabel) {
-                    <span class="projection-value"><strong>{{ projectedSeriesCostLabel }}</strong></span>
-                    <span class="projection-note text-muted">({{ launcher.effectiveRunCount }} × this suite's recent mean run cost)</span>
-                  } @else {
-                    <span class="projection-empty text-muted">no priced run of this suite to project from</span>
-                  }
-                </div>
-
-                @if (workspace.runLimits) {
-                  <div class="projection-row" role="listitem">
-                    <span class="projection-label">Remaining daily headroom:</span>
-                    <span class="projection-value"><strong>{{ workspace.runLimits.remainingDailyHeadroom }}</strong> of {{ workspace.runLimits.maxRunsPerDay }}</span>
-                    <span class="projection-note text-muted">({{ workspace.runLimits.runsInLast24Hours }} run(s) in the last 24 hours, {{ workspace.runLimits.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
-                  </div>
-                }
-              </div>
-
-              @if (seriesExceedsDailyHeadroom) {
-                <div class="alert alert-warning mt-10" role="alert">
-                  <div class="alert-content">
-                    <div class="alert-body">
-                      This series asks for more runs than the rolling 24-hour window currently allows.
-                      @if (launcher.allowCapWait) {
-                        It will pause at the cap and continue when the window frees up.
-                      } @else {
-                        It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
-                        completed run and offering a Continue button.
-                      }
-                    </div>
-                  </div>
-                </div>
-              }
-            </fieldset>
-          }
-
-          @if (launcher.isModelBatch && launcher.batchModelKeys.length > 0) {
-            <fieldset class="series-projection-fieldset batch-projection" role="region" aria-labelledby="batchProjectionLegend">
-              <legend id="batchProjectionLegend" class="series-projection-legend">
-                <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
-                </svg>
-                <span>Batch Projection</span>
-              </legend>
-
-              <div class="projection-grid" role="list">
-                <div class="projection-row batch-planned-runs-row" role="listitem">
-                  <span class="projection-label">Planned runs:</span>
-                  <span class="projection-value"><strong>{{ batchPlannedRunCount }}</strong></span>
-                  <span class="projection-note text-muted">({{ batchPlanText }})</span>
-                </div>
-
-                <div class="projection-row" role="listitem">
-                  <span class="projection-label">Projected wall time:</span>
-                  @if (projectedBatchWallLabel) {
-                    <span class="projection-value"><strong>{{ projectedBatchWallLabel }}</strong></span>
-                    <span class="projection-note text-muted">(each model at its recent mean run duration on this target)</span>
-                  } @else if (launcher.preflightLoading) {
-                    <span class="projection-empty text-muted">projecting…</span>
-                  } @else {
-                    <span class="projection-empty text-muted">not every model has a completed run to project from</span>
-                  }
-                </div>
-
-                <div class="projection-row" role="listitem">
-                  <span class="projection-label">Projected cost:</span>
-                  @if (projectedBatchCostLabel) {
-                    <span class="projection-value"><strong>{{ projectedBatchCostLabel }}</strong></span>
-                    <span class="projection-note text-muted">(each model at its recent mean run cost on this target)</span>
-                  } @else if (launcher.preflightLoading) {
-                    <span class="projection-empty text-muted">projecting…</span>
-                  } @else {
-                    <span class="projection-empty text-muted">not every model has a priced run to project from</span>
-                  }
-                </div>
-
-                @if (batchWindow; as caps) {
-                  <div class="projection-row" role="listitem">
-                    <span class="projection-label">Remaining daily headroom:</span>
-                    <span class="projection-value"><strong>{{ caps.remainingDailyHeadroom }}</strong> of {{ caps.maxRunsPerDay }}</span>
-                    <span class="projection-note text-muted">({{ caps.runsInLast24Hours }} run(s) in the last 24 hours, {{ caps.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
-                  </div>
-                }
-
-                @if (batchDaySpan != null) {
-                  <div class="projection-row batch-day-span-row" role="listitem">
-                    <span class="projection-label">Day span:</span>
-                    <span class="projection-value"><strong>at least {{ batchDaySpan }}</strong> rolling 24-hour windows</span>
-                    @if (batchMinimumWallLabel) {
-                      <span class="projection-note text-muted">(at least {{ batchMinimumWallLabel }})</span>
-                    }
-                  </div>
-                }
-              </div>
-
-              @if (batchProjectionMembers.length > 0) {
-                <details class="gh-disclosure batch-projection-basis">
-                  <summary>Per-model basis</summary>
-                  <div class="gh-disclosure-body">
-                    <ul class="batch-projection-members" role="list">
-                      @for (member of batchProjectionMembers; track $index) {
-                        <li>
-                          <span class="batch-projection-model">{{ member.name }}:</span>
-                          {{ member.wall ?? 'no wall-time basis' }}, {{ member.cost ?? 'no cost basis' }} — {{ member.basis }}
-                        </li>
-                      }
-                    </ul>
-                  </div>
-                </details>
-              }
-
-              @if (batchExceedsDailyCap) {
-                <div class="alert alert-warning mt-10 batch-cap-warning" role="alert">
-                  <div class="alert-content">
-                    <div class="alert-body">
-                      {{ batchPlannedRunCount }} runs exceed the daily cap of {{ batchWindow?.maxRunsPerDay }}, so this batch
-                      spans at least {{ batchDaySpan }} days.
-                      @if (launcher.allowCapWait) {
-                        It will pause at the cap and continue as the rolling window frees up.
-                      } @else {
-                        Select <strong>Wait when the run cap blocks the next run</strong> to start it.
-                      }
-                    </div>
-                  </div>
-                </div>
-              } @else if (batchExceedsDailyHeadroom) {
-                <div class="alert alert-warning mt-10 batch-headroom-warning" role="alert">
-                  <div class="alert-content">
-                    <div class="alert-body">
-                      This batch asks for more runs ({{ batchPlannedRunCount }}) than the rolling 24-hour window currently
-                      allows ({{ batchWindow?.remainingDailyHeadroom }} of {{ batchWindow?.maxRunsPerDay }}).
-                      @if (launcher.allowCapWait) {
-                        It will pause at the cap and continue when the window frees up.
-                      } @else {
-                        It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
-                        completed run and offering a Continue button.
-                      }
-                    </div>
-                  </div>
-                </div>
-              }
-              @if (batchHourlyCapRisk) {
-                <div class="alert alert-warning mt-10 batch-hourly-warning" role="alert">
-                  <div class="alert-content">
-                    <div class="alert-body">
-                      Runs may launch faster than the hourly cap of {{ batchWindow?.maxRunsPerHour }} allows; the batch
-                      will pause until the hour frees up.
-                    </div>
-                  </div>
-                </div>
-              }
-            </fieldset>
-          }
-
-          @if (!launcher.isModelBatch && launcher.isBatteryTarget && launcher.selectedBattery) {
-            <fieldset class="series-projection-fieldset battery-projection" role="region" aria-labelledby="batteryProjectionLegend">
-              <legend id="batteryProjectionLegend" class="series-projection-legend">
-                <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
-                </svg>
-                <span>Battery Projection</span>
-              </legend>
-
-              <div class="projection-grid" role="list">
-                <div class="projection-row battery-planned-runs-row" role="listitem">
-                  <span class="projection-label">Planned runs:</span>
-                  <span class="projection-value"><strong>{{ batteryLaunchCount }}</strong></span>
-                  <span class="projection-note text-muted">({{ batteryPlanText }})</span>
-                </div>
-
-                <div class="projection-row" role="listitem">
-                  <span class="projection-label">Projected wall time:</span>
-                  @if (projectedBatteryDurationLabel) {
-                    <span class="projection-value"><strong>{{ projectedBatteryDurationLabel }}</strong></span>
-                    @if (launcher.activeReusePreview) {
-                      <span class="projection-note text-muted">(each launched run at its suite's recent mean run duration)</span>
-                    } @else {
-                      <span class="projection-note text-muted">({{ launcher.effectiveRunCount }} × the sum of each suite's recent mean run duration)</span>
-                    }
-                  } @else {
-                    <span class="projection-empty text-muted">not every suite has a completed run to project from</span>
-                  }
-                </div>
-
-                <div class="projection-row" role="listitem">
-                  <span class="projection-label">Projected cost:</span>
-                  @if (projectedBatteryCostLabel) {
-                    <span class="projection-value"><strong>{{ projectedBatteryCostLabel }}</strong></span>
-                    @if (launcher.activeReusePreview) {
-                      <span class="projection-note text-muted">(each launched run at its suite's recent mean run cost)</span>
-                    } @else {
-                      <span class="projection-note text-muted">({{ launcher.effectiveRunCount }} × the sum of each suite's recent mean run cost)</span>
-                    }
-                  } @else {
-                    <span class="projection-empty text-muted">not every suite has a priced run to project from</span>
-                  }
-                </div>
-
-                @if (launcher.reuseEarlierRuns) {
-                  <div class="projection-row battery-reuse-row" role="listitem">
-                    <span class="projection-label">Earlier runs:</span>
-                    <span class="projection-value battery-reuse-summary" role="status" aria-live="polite">{{ reuseProjectionText }}</span>
-                  </div>
-                }
-
-                @if (workspace.runLimits) {
-                  <div class="projection-row" role="listitem">
-                    <span class="projection-label">Remaining daily headroom:</span>
-                    <span class="projection-value"><strong>{{ workspace.runLimits.remainingDailyHeadroom }}</strong> of {{ workspace.runLimits.maxRunsPerDay }}</span>
-                    <span class="projection-note text-muted">({{ workspace.runLimits.runsInLast24Hours }} run(s) in the last 24 hours, {{ workspace.runLimits.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
-                  </div>
-                }
-              </div>
-
-              @if (reuseUnfilledSlots.length > 0) {
-                <ul class="battery-reuse-reasons" aria-label="Slots no earlier run fills">
-                  @for (slot of reuseUnfilledSlots; track $index) {
-                    <li><span class="battery-reuse-slot">{{ slot.suiteName }}, round {{ slot.round }}:</span> {{ slot.reason }}</li>
-                  }
-                </ul>
-              }
-
-              @if (batteryExceedsDailyCap) {
-                <div class="alert alert-warning mt-10 battery-cap-warning" role="alert">
-                  <div class="alert-content">
-                    <div class="alert-body">
-                      {{ batteryRunsToLaunch }} runs exceed the daily cap of {{ workspace.runLimits?.maxRunsPerDay }}, so this battery
-                      spans at least {{ batteryDaySpan }} days.
-                      @if (launcher.allowCapWait) {
-                        It will pause at the cap and continue as the rolling window frees up.
-                      } @else {
-                        Select <strong>Wait when the run cap blocks the next run</strong> to start it.
-                      }
-                    </div>
-                  </div>
-                </div>
-              } @else if (batteryExceedsDailyHeadroom) {
-                <div class="alert alert-warning mt-10 battery-headroom-warning" role="alert">
-                  <div class="alert-content">
-                    <div class="alert-body">
-                      This battery asks for more runs than the rolling 24-hour window currently allows.
-                      @if (launcher.allowCapWait) {
-                        It will pause at the cap and continue when the window frees up.
-                      } @else {
-                        It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
-                        completed run and offering a Continue button.
-                      }
-                    </div>
-                  </div>
-                </div>
-              }
-            </fieldset>
-          }
-        </div>
-      </fieldset>
     </div>
   </div>
 
+  <div class="launch-summary">
+    @if (isMultiRunRequested) {
+      <fieldset class="series-projection-fieldset" role="region" aria-labelledby="seriesProjectionLegend">
+        <legend id="seriesProjectionLegend" class="series-projection-legend">
+          <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+          </svg>
+          <span>Series Projection</span>
+        </legend>
+
+        <div class="projection-grid" role="list">
+          <div class="projection-row series-planned-runs-row" role="listitem">
+            <span class="projection-label">Planned runs:</span>
+            <span class="projection-value"><strong>{{ launcher.effectiveRunCount }}</strong></span>
+          </div>
+
+          <div class="projection-row" role="listitem">
+            <span class="projection-label">Projected wall time:</span>
+            @if (projectedSeriesDurationLabel) {
+              <span class="projection-value"><strong>{{ projectedSeriesDurationLabel }}</strong></span>
+              <span class="projection-note text-muted">({{ launcher.effectiveRunCount }} × this suite's recent mean run duration)</span>
+            } @else {
+              <span class="projection-empty text-muted">no completed run of this suite to project from</span>
+            }
+          </div>
+
+          <div class="projection-row" role="listitem">
+            <span class="projection-label">Projected cost:</span>
+            @if (projectedSeriesCostLabel) {
+              <span class="projection-value"><strong>{{ projectedSeriesCostLabel }}</strong></span>
+              <span class="projection-note text-muted">({{ launcher.effectiveRunCount }} × this suite's recent mean run cost)</span>
+            } @else {
+              <span class="projection-empty text-muted">no priced run of this suite to project from</span>
+            }
+          </div>
+
+          @if (workspace.runLimits) {
+            <div class="projection-row" role="listitem">
+              <span class="projection-label">Remaining daily headroom:</span>
+              <span class="projection-value"><strong>{{ workspace.runLimits.remainingDailyHeadroom }}</strong> of {{ workspace.runLimits.maxRunsPerDay }}</span>
+              <span class="projection-note text-muted">({{ workspace.runLimits.runsInLast24Hours }} run(s) in the last 24 hours, {{ workspace.runLimits.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
+            </div>
+          }
+        </div>
+
+        @if (seriesExceedsDailyHeadroom) {
+          <div class="alert alert-warning mt-10" role="alert">
+            <div class="alert-content">
+              <div class="alert-body">
+                This series asks for more runs than the rolling 24-hour window currently allows.
+                @if (launcher.allowCapWait) {
+                  It will pause at the cap and continue when the window frees up.
+                } @else {
+                  It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
+                  completed run and offering a Continue button.
+                }
+              </div>
+            </div>
+          </div>
+        }
+      </fieldset>
+    }
+
+    @if (launcher.isModelBatch && launcher.batchModelKeys.length > 0) {
+      <fieldset class="series-projection-fieldset batch-projection" role="region" aria-labelledby="batchProjectionLegend">
+        <legend id="batchProjectionLegend" class="series-projection-legend">
+          <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+          </svg>
+          <span>Batch Projection</span>
+        </legend>
+
+        <div class="projection-grid" role="list">
+          <div class="projection-row batch-planned-runs-row" role="listitem">
+            <span class="projection-label">Planned runs:</span>
+            <span class="projection-value"><strong>{{ batchPlannedRunCount }}</strong></span>
+            <span class="projection-note text-muted">({{ batchPlanText }})</span>
+          </div>
+
+          <div class="projection-row" role="listitem">
+            <span class="projection-label">Projected wall time:</span>
+            @if (projectedBatchWallLabel) {
+              <span class="projection-value"><strong>{{ projectedBatchWallLabel }}</strong></span>
+              <span class="projection-note text-muted">(each model at its recent mean run duration on this target)</span>
+            } @else if (launcher.preflightLoading) {
+              <span class="projection-empty text-muted">projecting…</span>
+            } @else {
+              <span class="projection-empty text-muted">not every model has a completed run to project from</span>
+            }
+          </div>
+
+          <div class="projection-row" role="listitem">
+            <span class="projection-label">Projected cost:</span>
+            @if (projectedBatchCostLabel) {
+              <span class="projection-value"><strong>{{ projectedBatchCostLabel }}</strong></span>
+              <span class="projection-note text-muted">(each model at its recent mean run cost on this target)</span>
+            } @else if (launcher.preflightLoading) {
+              <span class="projection-empty text-muted">projecting…</span>
+            } @else {
+              <span class="projection-empty text-muted">not every model has a priced run to project from</span>
+            }
+          </div>
+
+          @if (batchWindow; as caps) {
+            <div class="projection-row" role="listitem">
+              <span class="projection-label">Remaining daily headroom:</span>
+              <span class="projection-value"><strong>{{ caps.remainingDailyHeadroom }}</strong> of {{ caps.maxRunsPerDay }}</span>
+              <span class="projection-note text-muted">({{ caps.runsInLast24Hours }} run(s) in the last 24 hours, {{ caps.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
+            </div>
+          }
+
+          @if (batchDaySpan != null) {
+            <div class="projection-row batch-day-span-row" role="listitem">
+              <span class="projection-label">Day span:</span>
+              <span class="projection-value"><strong>at least {{ batchDaySpan }}</strong> rolling 24-hour windows</span>
+              @if (batchMinimumWallLabel) {
+                <span class="projection-note text-muted">(at least {{ batchMinimumWallLabel }})</span>
+              }
+            </div>
+          }
+        </div>
+
+        @if (batchProjectionMembers.length > 0) {
+          <details class="gh-disclosure batch-projection-basis">
+            <summary>Per-model basis</summary>
+            <div class="gh-disclosure-body">
+              <ul class="batch-projection-members" role="list">
+                @for (member of batchProjectionMembers; track $index) {
+                  <li>
+                    <span class="batch-projection-model">{{ member.name }}:</span>
+                    {{ member.wall ?? 'no wall-time basis' }}, {{ member.cost ?? 'no cost basis' }} — {{ member.basis }}
+                  </li>
+                }
+              </ul>
+            </div>
+          </details>
+        }
+
+        @if (batchExceedsDailyCap) {
+          <div class="alert alert-warning mt-10 batch-cap-warning" role="alert">
+            <div class="alert-content">
+              <div class="alert-body">
+                {{ batchPlannedRunCount }} runs exceed the daily cap of {{ batchWindow?.maxRunsPerDay }}, so this batch
+                spans at least {{ batchDaySpan }} days.
+                @if (launcher.allowCapWait) {
+                  It will pause at the cap and continue as the rolling window frees up.
+                } @else {
+                  Select <strong>Wait when the run cap blocks the next run</strong> to start it.
+                }
+              </div>
+            </div>
+          </div>
+        } @else if (batchExceedsDailyHeadroom) {
+          <div class="alert alert-warning mt-10 batch-headroom-warning" role="alert">
+            <div class="alert-content">
+              <div class="alert-body">
+                This batch asks for more runs ({{ batchPlannedRunCount }}) than the rolling 24-hour window currently
+                allows ({{ batchWindow?.remainingDailyHeadroom }} of {{ batchWindow?.maxRunsPerDay }}).
+                @if (launcher.allowCapWait) {
+                  It will pause at the cap and continue when the window frees up.
+                } @else {
+                  It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
+                  completed run and offering a Continue button.
+                }
+              </div>
+            </div>
+          </div>
+        }
+        @if (batchHourlyCapRisk) {
+          <div class="alert alert-warning mt-10 batch-hourly-warning" role="alert">
+            <div class="alert-content">
+              <div class="alert-body">
+                Runs may launch faster than the hourly cap of {{ batchWindow?.maxRunsPerHour }} allows; the batch
+                will pause until the hour frees up.
+              </div>
+            </div>
+          </div>
+        }
+      </fieldset>
+    }
+
+    @if (!launcher.isModelBatch && launcher.isBatteryTarget && launcher.selectedBattery) {
+      <fieldset class="series-projection-fieldset battery-projection" role="region" aria-labelledby="batteryProjectionLegend">
+        <legend id="batteryProjectionLegend" class="series-projection-legend">
+          <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+          </svg>
+          <span>Battery Projection</span>
+        </legend>
+
+        <div class="projection-grid" role="list">
+          <div class="projection-row battery-planned-runs-row" role="listitem">
+            <span class="projection-label">Planned runs:</span>
+            <span class="projection-value"><strong>{{ batteryLaunchCount }}</strong></span>
+            <span class="projection-note text-muted">({{ batteryPlanText }})</span>
+          </div>
+
+          <div class="projection-row" role="listitem">
+            <span class="projection-label">Projected wall time:</span>
+            @if (projectedBatteryDurationLabel) {
+              <span class="projection-value"><strong>{{ projectedBatteryDurationLabel }}</strong></span>
+              @if (launcher.activeReusePreview) {
+                <span class="projection-note text-muted">(each launched run at its suite's recent mean run duration)</span>
+              } @else {
+                <span class="projection-note text-muted">({{ launcher.effectiveRunCount }} × the sum of each suite's recent mean run duration)</span>
+              }
+            } @else {
+              <span class="projection-empty text-muted">not every suite has a completed run to project from</span>
+            }
+          </div>
+
+          <div class="projection-row" role="listitem">
+            <span class="projection-label">Projected cost:</span>
+            @if (projectedBatteryCostLabel) {
+              <span class="projection-value"><strong>{{ projectedBatteryCostLabel }}</strong></span>
+              @if (launcher.activeReusePreview) {
+                <span class="projection-note text-muted">(each launched run at its suite's recent mean run cost)</span>
+              } @else {
+                <span class="projection-note text-muted">({{ launcher.effectiveRunCount }} × the sum of each suite's recent mean run cost)</span>
+              }
+            } @else {
+              <span class="projection-empty text-muted">not every suite has a priced run to project from</span>
+            }
+          </div>
+
+          @if (launcher.reuseEarlierRuns) {
+            <div class="projection-row battery-reuse-row" role="listitem">
+              <span class="projection-label">Earlier runs:</span>
+              <span class="projection-value battery-reuse-summary" role="status" aria-live="polite">{{ reuseProjectionText }}</span>
+            </div>
+          }
+
+          @if (workspace.runLimits) {
+            <div class="projection-row" role="listitem">
+              <span class="projection-label">Remaining daily headroom:</span>
+              <span class="projection-value"><strong>{{ workspace.runLimits.remainingDailyHeadroom }}</strong> of {{ workspace.runLimits.maxRunsPerDay }}</span>
+              <span class="projection-note text-muted">({{ workspace.runLimits.runsInLast24Hours }} run(s) in the last 24 hours, {{ workspace.runLimits.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
+            </div>
+          }
+        </div>
+
+        @if (reuseUnfilledSlots.length > 0) {
+          <ul class="battery-reuse-reasons" aria-label="Slots no earlier run fills">
+            @for (slot of reuseUnfilledSlots; track $index) {
+              <li><span class="battery-reuse-slot">{{ slot.suiteName }}, round {{ slot.round }}:</span> {{ slot.reason }}</li>
+            }
+          </ul>
+        }
+
+        @if (batteryExceedsDailyCap) {
+          <div class="alert alert-warning mt-10 battery-cap-warning" role="alert">
+            <div class="alert-content">
+              <div class="alert-body">
+                {{ batteryRunsToLaunch }} runs exceed the daily cap of {{ workspace.runLimits?.maxRunsPerDay }}, so this battery
+                spans at least {{ batteryDaySpan }} days.
+                @if (launcher.allowCapWait) {
+                  It will pause at the cap and continue as the rolling window frees up.
+                } @else {
+                  Select <strong>Wait when the run cap blocks the next run</strong> to start it.
+                }
+              </div>
+            </div>
+          </div>
+        } @else if (batteryExceedsDailyHeadroom) {
+          <div class="alert alert-warning mt-10 battery-headroom-warning" role="alert">
+            <div class="alert-content">
+              <div class="alert-body">
+                This battery asks for more runs than the rolling 24-hour window currently allows.
+                @if (launcher.allowCapWait) {
+                  It will pause at the cap and continue when the window frees up.
+                } @else {
+                  It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
+                  completed run and offering a Continue button.
+                }
+              </div>
+            </div>
+          </div>
+        }
+      </fieldset>
+    }
+  </div>
+
   @if (launcher.isModelBatch) {
-    <div class="form-actions mt-20 model-batch-actions">
-      @if (batchReadinessVisible) {
-        <app-model-batch-readiness class="model-batch-readiness"
-                                   [findings]="launcher.findings" [acknowledgedKeys]="launcher.acknowledgedFindingKeys"
-                                   [busy]="launcher.preflightLoading"
-                                   (acknowledgedChange)="onFindingAcknowledged($event)"
-                                   (focusField)="focusBatchField($event)"></app-model-batch-readiness>
-      }
+    @if (batchReadinessVisible) {
+      <app-model-batch-readiness class="model-batch-readiness"
+                                 [findings]="launcher.findings" [acknowledgedKeys]="launcher.acknowledgedFindingKeys"
+                                 [busy]="launcher.preflightLoading"
+                                 (acknowledgedChange)="onFindingAcknowledged($event)"
+                                 (focusField)="focusBatchField($event)"></app-model-batch-readiness>
+    }
+    <div class="form-actions launch-bar model-batch-actions">
       <button type="button"
         class="btn-gh start-model-batch"
         [attr.aria-disabled]="!canStartModelBatch"
@@ -1484,11 +1500,11 @@
         }
       </button>
       @if (startModelBatchHint) {
-        <div id="startModelBatchHint" class="text-muted mt-10">{{ startModelBatchHint }}</div>
+        <div id="startModelBatchHint" class="text-muted launch-bar-hint">{{ startModelBatchHint }}</div>
       }
     </div>
   } @else {
-  <div class="form-actions mt-20">
+  <div class="form-actions launch-bar">
     <button type="button"
       class="btn-gh"
       [attr.aria-disabled]="!canStartRun"
@@ -1502,7 +1518,7 @@
       }
     </button>
     @if (!canStartRun && startBenchmarkHint) {
-      <div id="startBenchmarkHint" class="text-muted mt-10">{{ startBenchmarkHint }}</div>
+      <div id="startBenchmarkHint" class="text-muted launch-bar-hint">{{ startBenchmarkHint }}</div>
     }
   </div>
   }

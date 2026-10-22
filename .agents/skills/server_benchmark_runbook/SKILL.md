@@ -523,6 +523,10 @@ to stop if the projection is more than about twice the estimate.
 | Launcher field | Set to | Versus run <R> |
 |---|---|---|
 | Model Under Test | <entry as the dropdown prints it, with its thinking-level badge> | same / CHANGED |
+| Number of Runs | 1 — Single suite only | |
+| Runs per Suite | 1 — Battery only | |
+| Wait when the run cap blocks the next run | checked / unchecked — Battery, or Number of Runs ≥ 2 | |
+| Reuse earlier runs | checked / unchecked — Battery only; name the runs the projection should list | |
 | Run Target | Single suite / Battery | same |
 | Benchmark Suite | <name as listed> (<n> questions) — Single suite only | same |
 | Battery | <name as listed> (<K> suites), revision <r>: <suite 1>, <suite 2>, … in run order — Battery only | same / CHANGED |
@@ -539,10 +543,6 @@ to stop if the projection is more than about twice the estimate.
 | Coverage | <option label>; in a panel run the fixed line "Every answer, blind — a third reading. Fixed in a panel run." | same |
 | Claim Verifier (optional) | ... or "None - no claim verification" | same |
 | Report Writer (optional) | <entry as the dropdown prints it> or "None — no AI-written reports" | same / CHANGED |
-| Number of Runs | 1 — Single suite only | |
-| Runs per Suite | 1 — Battery only | |
-| Wait when the run cap blocks the next run | checked / unchecked — Battery, or Number of Runs ≥ 2 | |
-| Reuse earlier runs | checked / unchecked — Battery only; name the runs the projection should list | |
 
 - Not in the launcher, and must also match: thinking level, service tier, reasoning mode and
   parallel mode (from the System AI Config behind each dropdown entry: check the badges);
@@ -770,7 +770,7 @@ Labels drift; these are the files to grep, with the state verified on 2026-09-19
 | Fact | Source |
 |---|---|
 | Admin tabs; benchmark sub-tabs `Run Benchmark`, `Run History`, `Multi-Run Analysis`, `Manage Suites`, `Scoring Profiles`, `Model Comparison` | `Overseer/ClientApp/src/app/admin/admin.component.ts`, `admin/benchmark/benchmark.component.html` (the sub-tab row); each sub-tab's panel is in `admin/benchmark/<name>-tab/` |
-| Launcher fields and the `Start Benchmark` button; `Series Projection`; the `Co-Assessor` field and its panel warnings (field order verified on 2026-09-27: Model Under Test first, above the three fieldsets) | `admin/benchmark/run-tab/benchmark-run-tab.component.html` |
+| Launcher fields and the `Start Benchmark` button; `Series Projection`; the `Co-Assessor` field and its panel warnings (field order: Model Under Test first, Execution beside it, then Test Setup and Grading (verified 2026-10-22)) | `admin/benchmark/run-tab/benchmark-run-tab.component.html` |
 | The `Models` radios, `Models Under Test`, `Model order`, `Runs per model`, the `Batch Projection` and the `Start Model Batch` confirmation (from 2026-10-10) | `admin/benchmark/run-tab/benchmark-run-tab.component.html` |
 | The Batch Readiness card's words and the guardrail titles | `admin/benchmark/run-tab/model-batch-readiness/`, `Overseer/Services/Benchmarking/BenchmarkModelBatchGuardrails.cs` |
 | The model batch progress dialog's resume options and their labels | `admin/benchmark/model-batch/`, `Overseer/Services/Benchmarking/BenchmarkModelBatchOrchestrator.cs` (`ResumeOptionsFor`) |

@@ -282,8 +282,10 @@ describe('AdminBenchmarkComponent: model batch launcher', () => {
       // Advice is never inline.
       expect(query('#mbLine-runs')).toBeNull();
 
-      const readiness = query('.model-batch-actions app-model-batch-readiness')!;
+      const readiness = query('app-model-batch-readiness')!;
       expect(readiness).toBeTruthy();
+      expect(readiness.closest('.model-batch-actions')).toBeNull();
+      expect(readiness.nextElementSibling).toBe(query('.model-batch-actions'));
       expect(readiness.compareDocumentPosition(startButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(text(readiness.querySelector('.gh-readiness-status'))).toBe('1 blocking');
       expect(startButton().getAttribute('aria-disabled')).toBe('true');
@@ -544,6 +546,8 @@ describe('AdminBenchmarkComponent: model batch launcher', () => {
       expect(text(basis)).toContain('its own recent runs on this target');
       expect(text(basis)).toContain("the target's mean over other models");
       expect(query('fieldset.battery-projection')).toBeNull();
+      expect(block.parentElement!.classList).toContain('launch-summary');
+      expect(query('.setup-group-exec .series-projection-fieldset')).toBeNull();
       finish();
     }));
 
@@ -764,9 +768,14 @@ describe('AdminBenchmarkComponent: model batch launcher', () => {
 
   describe('Completion Alerts', () => {
     it('offers Test failure sound beside Test sound, and says which ends play it', () => {
-      const buttons = Array.from(card().querySelectorAll('.completion-signals .completion-signals-actions button.btn-gh-small'))
-        .map(b => text(b));
-      expect(buttons).toEqual(['Test sound', 'Test failure sound']);
+      const buttons = Array.from(card().querySelectorAll<HTMLButtonElement>('.completion-signals .completion-sound-tests button.action-btn'));
+      expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual(['Test sound', 'Test failure sound']);
+      for (const button of buttons) {
+        expect(button.hasAttribute('title')).toBe(false);
+        const tip = card().querySelector(`#${button.getAttribute('interestfor')}`) as HTMLElement;
+        expect(tip.getAttribute('popover')).toBe('hint');
+        expect(text(tip)).toBe(button.getAttribute('aria-label'));
+      }
       expect(text(query('#completionSignalsHint')))
         .toContain('A run, series, battery run or model batch that fails, stops or completes with errors plays a different sound.');
     });
@@ -777,7 +786,7 @@ describe('AdminBenchmarkComponent: model batch launcher', () => {
       const primeSpy = vi.spyOn(soundService, 'prime').mockResolvedValue('played');
       ctx.launcher.completionSound = true;
 
-      card().querySelector<HTMLButtonElement>('.completion-signals-actions .test-failure-sound')!.click();
+      card().querySelector<HTMLButtonElement>('.completion-sound-tests .test-failure-sound')!.click();
 
       expect(armSpy).toHaveBeenCalled();
       expect(primeSpy).toHaveBeenCalledWith('failed');

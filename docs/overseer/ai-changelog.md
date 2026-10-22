@@ -19,6 +19,8 @@ The agent utilizes the dedicated `overseer_changelog` AI skill to analyze local 
    - `git push`
    - `git push origin overseer/v1.0.3`
 
+Generate the entry only once every change of the release has landed, in a separate agent session started for that purpose. Agents do not add changelog entries on their own: an agent implementing a change, a fix, a plan or a version bump leaves `release-notes.json` untouched unless you explicitly ask it for a changelog entry.
+
 ## Related Guides
 
 - [changelog-guide.md](changelog-guide.md) — Detailed instructions on the JSON schema, change types, and manual editing rules.

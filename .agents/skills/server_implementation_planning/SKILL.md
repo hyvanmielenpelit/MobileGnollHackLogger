@@ -27,7 +27,10 @@ This skill defines the repository-specific planning requirements and build bound
 > repository is not writable from this session, keep the plan in the chat instead. Never overwrite a
 > version -- increment. Print the path; **wait for explicit approval before editing any
 > file**; track progress in `task.md`; finish with `walkthrough.md`. **Never commit or
-> push in this repository.** Clone the plans repository from
+> push in this repository.** Never put `Overseer/Data/release-notes.json` or a changelog
+> step in a plan unless the developer explicitly asks for a changelog entry; that entry is
+> written in a session of its own after every change of the release has landed. Clone the
+> plans repository from
 > `https://github.com/hyvanmielenpelit/plans` and install the full guidance from
 > `https://github.com/hyvanmielenpelit/SharedAgentSkills` (`.\setup.ps1`).
 
@@ -137,6 +140,10 @@ When adding, moving, or renaming documentation files under `docs/` (e.g., `docs/
 ### Publishing
 
 **Never publish** (`dotnet publish` or equivalent) unless the user explicitly asks. A plan must not include a publish step on its own initiative.
+
+### Changelog
+
+A plan never lists `Overseer/Data/release-notes.json` in Affected Files and never includes a changelog step, unless the developer explicitly asked for a changelog entry. A version bump, a feature or a fix is not such a request. The entry is written in a session of its own, with the `overseer_changelog` skill, after every change of the release has landed — never as part of a batch of changes (`AGENTS.md` § *Overseer Changelog*).
 
 ---
 

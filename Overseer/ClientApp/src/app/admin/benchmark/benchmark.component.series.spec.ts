@@ -785,12 +785,15 @@ describe('AdminBenchmarkComponent', () => {
       expect(getComputedStyle(status).position).toBe('absolute');
       expect(getComputedStyle(status).marginTop).toBe('0px');
       const toggle = fixture.nativeElement.querySelector('label[for="completionNotificationInput"]') as HTMLElement;
-      const testSound = Array.from(fixture.nativeElement.querySelectorAll('.completion-signals button.btn-gh-small') as NodeListOf<HTMLElement>)
-        .find(b => b.textContent?.trim() === 'Test sound') as HTMLElement;
+      const soundLabel = fixture.nativeElement.querySelector('label[for="completionSoundInput"]') as HTMLElement;
+      const testSound = fixture.nativeElement.querySelector('.completion-sound-tests .test-completion-sound') as HTMLElement;
       expect(toggle.getBoundingClientRect().height).toBeGreaterThan(0);
       expect(testSound.getBoundingClientRect().height).toBeGreaterThan(0);
-      const gap = testSound.getBoundingClientRect().top - toggle.getBoundingClientRect().bottom;
-      expect(gap).toBeLessThanOrEqual(12);
+      const centerOf = (el: HTMLElement) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
+      expect(Math.abs(centerOf(testSound) - centerOf(soundLabel))).toBeLessThanOrEqual(4);
+      // The empty status line under the notification checkbox opens no blank band.
+      const group = fixture.nativeElement.querySelector('.completion-signals') as HTMLElement;
+      expect(group.getBoundingClientRect().bottom - toggle.getBoundingClientRect().bottom).toBeLessThanOrEqual(2);
 
       vi.spyOn(notificationService, 'requestPermission').mockResolvedValue('default');
       ctx.monitor.onCompletionNotificationChange(true);

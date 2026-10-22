@@ -204,6 +204,18 @@ A `UserPromptSubmit` hook in `.claude/settings.json` backs this rule up by injec
 
 - **Do NOT publish anything** (e.g., via `dotnet publish` or similar commands) unless explicitly requested by the user.
 
+## Overseer Changelog (`release-notes.json`)
+
+- **Never add, edit or remove an entry in `Overseer/Data/release-notes.json` unless the developer
+  explicitly asks for a changelog entry.** A plan, a fix, a feature or a version bump is not such a
+  request, and an entry is never added "while we are at it".
+- **The entry is written in a session of its own, after every change of the release has landed**,
+  with the `overseer_changelog` skill — never as part of a batch of changes. Written earlier, it
+  describes a release that is not finished and has to be removed again, as happened in
+  `53373897` / `523d518e`.
+- A plan never lists `release-notes.json` in its Affected Files, and a walkthrough never suggests a
+  changelog entry as a follow-up.
+
 ## Skill Naming
 
 Skills in this repository use the **`server_`** prefix. Canonical bodies live in
