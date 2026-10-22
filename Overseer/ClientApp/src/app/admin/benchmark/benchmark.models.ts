@@ -320,6 +320,8 @@ export interface BenchmarkRunSettings {
   informationCondition?: string | null;
   /** The instruction variant's name, or null for the production instructions. Absent restores none. */
   instructionVariant?: string | null;
+  /** True withholds report_feedback from the candidate. Absent restores Offered. */
+  withholdFeedbackTool?: boolean | null;
   runCount: number | null;
   /** Single suite or a battery of suites. Absent restores Single suite. */
   targetKind: 'suite' | 'battery' | null;

@@ -123,7 +123,7 @@ public sealed class ReportFeedbackTool : IToolHandler
         }
 
         // 4. The chat switch is read again here, so a turn already running when it was turned off records nothing.
-        if (!context.SessionId.IsPersistent || ConfidentialExecutionScope.IsConfidential || !_feedbackSwitch.IsEnabled(OverseerFeedbackSwitchTarget.Chat))
+        if (!context.SessionId.IsPersistent || ConfidentialExecutionScope.IsConfidential || !_feedbackSwitch.IsEnabled())
         {
             return NotAvailable();
         }

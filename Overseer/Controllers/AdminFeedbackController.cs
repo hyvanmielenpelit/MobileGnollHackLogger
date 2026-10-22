@@ -11,7 +11,7 @@ using Overseer.Services.Feedback;
 namespace Overseer.Controllers;
 
 /// <summary>
-/// The admin Feedback sub-tab: the two feedback switches, the issues the chat model reported with their occurrences,
+/// The admin Feedback sub-tab: the chat feedback switch, the issues the chat model reported with their occurrences,
 /// per-status counts, triage and deletion. Errors are <c>{ message }</c>: 400 for invalid input, 404 for an unknown
 /// issue. Reads answer 499 when the client aborts (<see cref="CancellationExceptionExtensions.IsCanceledBy"/>);
 /// actions that change state take no request token, so a dropped connection never stops one part-way.
@@ -59,15 +59,15 @@ public class AdminFeedbackController : ControllerBase
     }
 
     /// <summary>
-    /// Appends a setting row for the <paramref name="target"/> switch (<c>chat</c> or <c>gnollbench</c>), even
-    /// when the value is unchanged, and returns both switches.
+    /// Appends a setting row for the <paramref name="target"/> switch, <c>chat</c> (the only one), even when
+    /// the value is unchanged, and returns it.
     /// </summary>
     [HttpPost("switch/{target}")]
     public async Task<IActionResult> SetSwitch(string target, [FromBody] AdminFeedbackSwitchUpdateDto? request)
     {
-        if (!TryParseSwitchTarget(target, out var parsed)) return BadRequest(new { message = "Unknown switch." });
+        if (!IsChatSwitch(target)) return BadRequest(new { message = "Unknown switch." });
         if (request == null) return BadRequest(new { message = "The request body is required." });
-        await _switch.SetAsync(parsed, request.Enabled, CurrentUserId, CancellationToken.None);
+        await _switch.SetAsync(request.Enabled, CurrentUserId, CancellationToken.None);
         return Ok(await ToSwitchesDtoAsync(CancellationToken.None));
     }
 
@@ -293,23 +293,16 @@ public class AdminFeedbackController : ControllerBase
 
     // --- Helpers ---
 
-    private static bool TryParseSwitchTarget(string? target, out OverseerFeedbackSwitchTarget parsed)
-    {
-        if (string.Equals(target, "chat", StringComparison.OrdinalIgnoreCase)) { parsed = OverseerFeedbackSwitchTarget.Chat; return true; }
-        if (string.Equals(target, "gnollbench", StringComparison.OrdinalIgnoreCase)) { parsed = OverseerFeedbackSwitchTarget.GnollBench; return true; }
-        parsed = default;
-        return false;
-    }
+    private static bool IsChatSwitch(string? target)
+        => string.Equals(target, "chat", StringComparison.OrdinalIgnoreCase);
 
     private async Task<AdminFeedbackSwitchesDto> ToSwitchesDtoAsync(CancellationToken ct)
     {
-        var chat = await _switch.GetStateAsync(OverseerFeedbackSwitchTarget.Chat, ct);
-        var gnollBench = await _switch.GetStateAsync(OverseerFeedbackSwitchTarget.GnollBench, ct);
-        var names = await UserNamesAsync(new[] { chat.SetByUserId, gnollBench.SetByUserId }, ct);
+        var chat = await _switch.GetStateAsync(ct);
+        var names = await UserNamesAsync(new[] { chat.SetByUserId }, ct);
         return new AdminFeedbackSwitchesDto
         {
-            Chat = ToSwitchDto(chat, names),
-            GnollBench = ToSwitchDto(gnollBench, names)
+            Chat = ToSwitchDto(chat, names)
         };
     }
 

@@ -2879,10 +2879,11 @@ and the AI Telemetry *Manage limits*, *… for group {group}* from the Groups su
 **The Feedback switch card** (2026-10-21, first in the AI Telemetry Feedback panel) is the reference for
 **the switches that govern one feature**, one row per surface. A full-width
 `<section aria-labelledby="tl-fb-switch-title">` whose `h3#tl-fb-switch-title` *Feedback tool* names the
-section, then one row per surface (*Enabled in Overseer chat*, *Enabled in GnollBench*). Each row has, on
+section, then one row per surface (today one, *Enabled in Overseer chat*, followed by a `.tl-fb-switch-note`
+pointing GnollBench to its per-run launcher setting). Each row has, on
 the left, its own label, a sentence of state from the server (*On since {time} by {user}. …*, *Off since
 {time} by {user}. …*, or the seeded forms *On by configuration default. …*, *Off by configuration
-default. …*, *On by default. …*) and any quieter note the surface needs; on the right its switch; and below,
+default. …*) and any quieter note the surface needs; on the right its switch; and below,
 its own `role="status"` line and `.gh-field-error` line. The switch is the global `gh-switch` with the size
 modifier **`gh-switch-lg`** (`styles.scss`, beside `.gh-switch`: about 64 × 34 pixels, the knob scaled to
 match), so it reads as the row's one big control. Like the access switches above, each commits at once

@@ -332,20 +332,10 @@ public sealed class ReportFeedbackToolTests : IDisposable
     public async Task TheSwitchOff_IsRefused()
     {
         var (tool, feedbackSwitch) = CreateTool();
-        await feedbackSwitch.SetAsync(OverseerFeedbackSwitchTarget.Chat, false, "admin", Ct);
+        await feedbackSwitch.SetAsync(false, "admin", Ct);
 
         AssertNotAvailable(await tool.ExecuteAsync(Arguments(), Chat(), Ct));
         Assert.Empty(await ReportsAsync());
-    }
-
-    [Fact]
-    public async Task TheGnollBenchSwitchOff_DoesNotRefuseAChatCall()
-    {
-        var (tool, feedbackSwitch) = CreateTool();
-        await feedbackSwitch.SetAsync(OverseerFeedbackSwitchTarget.GnollBench, false, "admin", Ct);
-
-        AssertRecorded(await tool.ExecuteAsync(Arguments(), Chat(), Ct));
-        Assert.Single(await ReportsAsync());
     }
 
     [Fact]
@@ -380,9 +370,8 @@ public sealed class ReportFeedbackToolTests : IDisposable
     public async Task ABenchmarkCandidate_IsAcknowledged_WritesNoRow_AndCountsTowardTheCap()
     {
         var (tool, feedbackSwitch) = CreateTool();
-        // The switches do not govern a candidate's call; the run's recorded options decide whether it is declared.
-        await feedbackSwitch.SetAsync(OverseerFeedbackSwitchTarget.Chat, false, "admin", Ct);
-        await feedbackSwitch.SetAsync(OverseerFeedbackSwitchTarget.GnollBench, false, "admin", Ct);
+        // The switch does not govern a candidate's call; the run's recorded options decide whether it is declared.
+        await feedbackSwitch.SetAsync(false, "admin", Ct);
         var budget = new AgentRunBudget();
         var context = new ToolExecutionContext
         {
@@ -623,7 +612,7 @@ public sealed class ReportFeedbackToolTests : IDisposable
     public async Task AThrownDatabaseException_ReturnsNotAvailable_AndLogsNoText()
     {
         var (tool, feedbackSwitch) = CreateTool();
-        Assert.True(feedbackSwitch.IsEnabled(OverseerFeedbackSwitchTarget.Chat));
+        Assert.True(feedbackSwitch.IsEnabled());
         var budget = new AgentRunBudget();
         _failing.Armed = true;
 

@@ -717,7 +717,7 @@ public class BenchmarkRunLauncher
 
             await _benchmarkService.RunAsync(
                 runId, cts.Token, switches.VerboseMode, switches.AllowSourceCodeReferences,
-                switches.InformationCondition, switches.InstructionVariant);
+                switches.InformationCondition, switches.InstructionVariant, switches.WithholdFeedbackTool);
         });
 
         return BenchmarkRunLaunchResult.Ok(run.Id);
@@ -727,14 +727,16 @@ public class BenchmarkRunLauncher
     /// The request's candidate prompt switches as a run records them: a null
     /// <see cref="StartBenchmarkRunRequest.VerboseMode"/> is the concise style, a null
     /// <see cref="StartBenchmarkRunRequest.AllowSourceCodeReferences"/> is disallowed, a user's default,
-    /// a null information condition is Production and a null variant is production instructions.
+    /// a null information condition is Production, a null variant is production instructions and a
+    /// null Feedback Tool setting offers the tool.
     /// </summary>
     internal static BenchmarkPromptSwitches ResolvePromptSwitches(StartBenchmarkRunRequest request)
         => new(
             request.VerboseMode ?? false,
             request.AllowSourceCodeReferences ?? false,
             BenchmarkInformationConditions.FromWire(request.InformationCondition),
-            string.IsNullOrWhiteSpace(request.InstructionVariant) ? null : request.InstructionVariant.Trim());
+            string.IsNullOrWhiteSpace(request.InstructionVariant) ? null : request.InstructionVariant.Trim(),
+            request.WithholdFeedbackTool ?? false);
 
     /// <summary>
     /// The orchestrator claim a launch runs under: the series' for a series member, the battery
@@ -821,4 +823,5 @@ internal readonly record struct BenchmarkPromptSwitches(
     bool VerboseMode,
     bool AllowSourceCodeReferences,
     BenchmarkInformationCondition InformationCondition,
-    string? InstructionVariant);
+    string? InstructionVariant,
+    bool WithholdFeedbackTool);

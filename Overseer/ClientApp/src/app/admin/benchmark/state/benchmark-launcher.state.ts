@@ -222,6 +222,12 @@ export class BenchmarkLauncherState implements OnDestroy {
    */
   instructionVariant: string | null = null;
 
+  /**
+   * True withholds report_feedback from the candidate; false (the default) offers it. A withheld run
+   * is a test run.
+   */
+  withholdFeedbackTool = false;
+
   /** The instruction variant catalog, valid and invalid entries alike; empty until it arrives. */
   instructionVariants: BenchmarkInstructionVariantDto[] = [];
 
@@ -603,6 +609,7 @@ export class BenchmarkLauncherState implements OnDestroy {
       allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
       informationCondition: this.informationCondition,
       instructionVariant: this.instructionVariant,
+      withholdFeedbackTool: this.withholdFeedbackTool,
       runCount: this.effectiveRunCount,
       targetKind: this.runTargetKind,
       batteryId: this.selectedBatteryId,
@@ -676,6 +683,7 @@ export class BenchmarkLauncherState implements OnDestroy {
       informationCondition: BenchmarkLauncherState.informationConditionOf(raw.informationCondition),
       instructionVariant: typeof raw.instructionVariant === 'string' && raw.instructionVariant.trim() !== ''
         ? raw.instructionVariant.trim() : null,
+      withholdFeedbackTool: typeof raw.withholdFeedbackTool === 'boolean' ? raw.withholdFeedbackTool : null,
       runCount: num(raw.runCount),
       targetKind: raw.targetKind === 'battery' || raw.targetKind === 'suite' ? raw.targetKind : null,
       batteryId: num(raw.batteryId),
@@ -718,6 +726,10 @@ export class BenchmarkLauncherState implements OnDestroy {
     if (this.pendingRunSettings.instructionVariant) {
       this.instructionVariant = this.pendingRunSettings.instructionVariant;
       this.checkInstructionVariant();
+    }
+    // Absent (a blob predating this field) leaves Offered standing.
+    if (this.pendingRunSettings.withholdFeedbackTool != null) {
+      this.withholdFeedbackTool = this.pendingRunSettings.withholdFeedbackTool;
     }
     // Absent (a blob predating this field, or storage that threw) leaves the true default standing.
     if (this.pendingRunSettings.completionSound !== null) {
@@ -943,6 +955,8 @@ export class BenchmarkLauncherState implements OnDestroy {
     } else {
       notes.push(`Tool Access: the run used ${String(recordedCondition)}, which this launcher does not offer, so the current choice was kept.`);
     }
+    // The prompt options carry the flag only when the tool was withheld.
+    this.withholdFeedbackTool = options?.['feedbackToolWithheld'] === true;
 
     const variant = BenchmarkLauncherState.instructionVariantName(run.instructionVariant);
     const variantNote = this.instructionVariantNote(variant);
@@ -1050,9 +1064,10 @@ export class BenchmarkLauncherState implements OnDestroy {
     if (setup.allowSourceCodeReferences != null) {
       this.candidateAllowSourceCodeReferences = setup.allowSourceCodeReferences;
     }
-    // A recommended run is a production run without an instruction variant.
+    // A recommended run is a production run without an instruction variant, offered the feedback tool.
     this.informationCondition = BenchmarkLauncherState.informationConditionOf(setup.informationCondition ?? 'production') ?? 'production';
     this.instructionVariant = null;
+    this.withholdFeedbackTool = false;
 
     // A batch's runs are Runs per model (Runs per Suite on a battery); a single model's, Number of Runs (Runs per Suite).
     if (this.isModelBatch && !this.isBatteryTarget) {
@@ -1147,6 +1162,7 @@ export class BenchmarkLauncherState implements OnDestroy {
       allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
       informationCondition: this.informationCondition,
       instructionVariant: this.instructionVariant,
+      withholdFeedbackTool: this.withholdFeedbackTool,
       scoringProfileId: this.selectedScoringProfileId,
       acknowledgeSameProvider: this.launchAcknowledgments.assessor,
       // Only once acknowledged, so every other request carries the body it always has.

@@ -52,13 +52,14 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       const labels = groupLabels('test');
-      expect(labels.length).toBe(6);
+      expect(labels.length).toBe(7);
       expect(labels[0]).toMatch(/^Benchmark Suite/);
       expect(labels[1]).toMatch(/^Scoring Profile/);
       expect(labels[2]).toMatch(/^Response Style/);
       expect(labels[3]).toMatch(/^Source Code References/);
       expect(labels[4]).toMatch(/^Tool Access/);
       expect(labels[5]).toMatch(/^Experimental Changes/);
+      expect(labels[6]).toMatch(/^Feedback Tool/);
 
       // The Experiment settings caption sits between Source Code References and Tool Access.
       const fieldset = fixture.nativeElement.querySelector('.setup-group-test') as HTMLElement;
@@ -635,6 +636,36 @@ describe('AdminBenchmarkComponent', () => {
           + 'except for Tool Access, on the Paired Test tab of its report.');
       expect(card().querySelector('#candidateInformationCondition')!.getAttribute('aria-describedby'))
         .toBe('candidateInformationConditionHint candidateInformationConditionNote candidateInformationConditionWarning');
+    });
+
+    it('should offer the Feedback Tool, Offered by default, with a warning when it is withheld', () => {
+      fixture.detectChanges();
+
+      const select = card().querySelector('#candidateFeedbackTool') as HTMLSelectElement;
+      expect(select.closest('fieldset')).toBe(card().querySelector('#candidateInstructionVariant')!.closest('fieldset'));
+      expect((card().querySelector('label[for="candidateFeedbackTool"]')?.textContent || '').trim()).toBe('Feedback Tool');
+      expect(Array.from(select.options).map(o => o.textContent?.trim())).toEqual([
+        'Offered — default',
+        'Withheld — the AI cannot report problems'
+      ]);
+      expect(select.selectedIndex).toBe(0);
+      expect(ctx.launcher.withholdFeedbackTool).toBe(false);
+      expect(card().querySelector('#candidateFeedbackToolWarning')).toBeNull();
+      expect(select.getAttribute('aria-describedby')).toBe('candidateFeedbackToolHint');
+      expect(select.parentElement!.classList).toContain('gh-field-row');
+
+      const tip = card().querySelector('#candidateFeedbackToolHint') as HTMLElement;
+      expect(tip.closest('.gh-info-popup')?.getAttribute('popover')).toBe('auto');
+      expect(tip.textContent).toContain('Closed book has no tools');
+
+      select.selectedIndex = 1;
+      select.dispatchEvent(new Event('change'));
+      ctx.refresh();
+
+      expect(ctx.launcher.withholdFeedbackTool).toBe(true);
+      expect(card().querySelector('#candidateFeedbackToolWarning')?.textContent?.replace(/\s+/g, ' ').trim())
+        .toBe('Test run: not comparable with runs that offered the feedback tool. Compare it only with runs that also withheld it.');
+      expect(select.getAttribute('aria-describedby')).toBe('candidateFeedbackToolHint candidateFeedbackToolWarning');
     });
 
     it('should offer None and each valid Experimental Change, and say what the chosen one changes', () => {

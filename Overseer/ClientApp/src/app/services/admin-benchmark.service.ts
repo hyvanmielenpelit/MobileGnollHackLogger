@@ -854,6 +854,8 @@ export interface StartBenchmarkRunRequest {
   informationCondition?: string | null;
   /** A benchmark-only instruction variant's name; null runs the production instructions. */
   instructionVariant?: string | null;
+  /** True withholds report_feedback from the candidate; null and false offer it. */
+  withholdFeedbackTool?: boolean | null;
   /**
    * How many times to execute this identical request, strictly one at a time. 1 (the default)
    * is the single-run path exactly as before multi-run existed: no series row, no auto-created

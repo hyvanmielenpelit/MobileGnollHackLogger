@@ -159,6 +159,49 @@ public class BenchmarkRunLauncherTests
         Assert.Equal("source-tools-v1", switches.InstructionVariant);
     }
 
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    [InlineData(null, false)]
+    public void TheFeedbackToolSetting_ResolvesNullAsOffered(bool? requested, bool expectedWithheld)
+    {
+        var request = new StartBenchmarkRunRequest
+        {
+            SuiteId = 1,
+            TestedModelConfigurationId = 1,
+            AssessorModelConfigurationId = 2,
+            WithholdFeedbackTool = requested
+        };
+
+        Assert.Equal(expectedWithheld, BenchmarkRunLauncher.ResolvePromptSwitches(request).WithholdFeedbackTool);
+    }
+
+    [Fact]
+    public void AStoredStartRequest_KeepsItsFeedbackToolSetting()
+    {
+        var request = new StartBenchmarkRunRequest
+        {
+            SuiteId = 1,
+            TestedModelConfigurationId = 1,
+            AssessorModelConfigurationId = 2,
+            RunCount = 3,
+            WithholdFeedbackTool = true
+        };
+        var series = new BenchmarkRunSeries { StartRequestJson = JsonSerializer.Serialize(request) };
+
+        var stored = BenchmarkSeriesOrchestrator.DeserializeRequest(series);
+
+        Assert.NotNull(stored);
+        Assert.True(BenchmarkRunLauncher.ResolvePromptSwitches(stored!).WithholdFeedbackTool);
+
+        // A request stored before the setting existed offers the tool.
+        var legacySeries = new BenchmarkRunSeries { StartRequestJson = "{\"SuiteId\":1,\"TestedModelConfigurationId\":1,\"AssessorModelConfigurationId\":2,\"RunCount\":3}" };
+        var legacy = BenchmarkSeriesOrchestrator.DeserializeRequest(legacySeries);
+        Assert.NotNull(legacy);
+        Assert.Null(legacy!.WithholdFeedbackTool);
+        Assert.False(BenchmarkRunLauncher.ResolvePromptSwitches(legacy).WithholdFeedbackTool);
+    }
+
     [Fact]
     public void ARerun_RefusesAVariantWhoseHashNoLongerMatchesTheRunsStamp()
     {

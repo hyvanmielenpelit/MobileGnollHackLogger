@@ -1582,7 +1582,7 @@ public class ChatService
             EnableSubAgents = enableSubAgents,
             EnableClientTools = enableClientTools,
             EnableGameActions = enableGameActions,
-            EnableFeedbackTool = _feedbackSwitch?.IsEnabled(MobileGnollHackLogger.Data.OverseerFeedbackSwitchTarget.Chat) == true && !isEphemeralSession && !isConfidentialSession,
+            EnableFeedbackTool = _feedbackSwitch?.IsEnabled() == true && !isEphemeralSession && !isConfidentialSession,
             ToolExecutionContext = execContext,
             DlpVault = dlpVault,
             SystemModelId = systemModelId,

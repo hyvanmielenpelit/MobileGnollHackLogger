@@ -6,6 +6,9 @@ public enum OverseerFeedbackSwitchTarget
     /// <summary>The production Overseer chat.</summary>
     Chat = 0,
 
-    /// <summary>GnollBench candidates; each run records the value it launched with.</summary>
+    /// <summary>
+    /// Retired. GnollBench runs choose the feedback tool per run in the launcher; rows of this target
+    /// are history and are never read.
+    /// </summary>
     GnollBench = 1
 }

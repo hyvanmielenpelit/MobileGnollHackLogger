@@ -719,6 +719,13 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
       : 'candidateInstructionVariantHint candidateInstructionVariantSummary';
   }
 
+  /** The Feedback Tool select's `aria-describedby`. */
+  get feedbackToolDescribedBy(): string {
+    return this.launcher.withholdFeedbackTool
+      ? 'candidateFeedbackToolHint candidateFeedbackToolWarning'
+      : 'candidateFeedbackToolHint';
+  }
+
   /** A launcher field that shapes the battery request changed: Runs per Suite, the profile, the response style. */
   onReuseInputsChanged(): void {
     this.launcher.refreshReusePreview();

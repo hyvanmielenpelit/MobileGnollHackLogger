@@ -2047,8 +2047,8 @@ public static class BenchmarkReportBuilder
     /// <summary>
     /// The Self-Reports section closing § 2: the candidate's <c>report_feedback</c> calls, counted,
     /// listed by question and grouped by fingerprint. A run before harness 60, or with an
-    /// unparseable harness, a run without tools, and a run whose GnollBench feedback switch was off
-    /// were not offered the tool, and the section says so instead.
+    /// unparseable harness, a run without tools, and a run launched with the Feedback Tool setting
+    /// Withheld were not offered the tool, and the section says so instead.
     /// </summary>
     private static void AppendSelfReportsSection(StringBuilder sb, BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers)
     {
@@ -2072,7 +2072,7 @@ public static class BenchmarkReportBuilder
 
         if (options.FeedbackToolWithheld)
         {
-            sb.AppendLine("The feedback tool was not offered (withheld by the GnollBench feedback switch).");
+            sb.AppendLine("The feedback tool was not offered (withheld by the run's Feedback Tool setting).");
             sb.AppendLine();
             return;
         }

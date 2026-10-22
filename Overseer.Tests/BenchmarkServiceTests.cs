@@ -2353,7 +2353,7 @@ public class BenchmarkServiceTests
     [InlineData(BenchmarkInformationCondition.Production)]
     [InlineData(BenchmarkInformationCondition.SourceOnly)]
     [InlineData(BenchmarkInformationCondition.ClosedBook)]
-    public void CandidatePromptOptionsFor_RecordsTheSwitchUnderEveryCondition(BenchmarkInformationCondition condition)
+    public void CandidatePromptOptionsFor_RecordsTheSettingUnderEveryCondition(BenchmarkInformationCondition condition)
     {
         var withheld = BenchmarkService.CandidatePromptOptionsFor(false, true, false, condition, feedbackToolOffered: false);
         var offered = BenchmarkService.CandidatePromptOptionsFor(false, true, false, condition, feedbackToolOffered: true);

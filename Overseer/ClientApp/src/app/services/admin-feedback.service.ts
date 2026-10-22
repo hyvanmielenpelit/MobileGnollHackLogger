@@ -105,12 +105,11 @@ export interface AdminFeedbackSwitch {
 }
 
 /** Which feedback switch; the route segment of `POST switch/{target}`. */
-export type AdminFeedbackSwitchTarget = 'chat' | 'gnollbench';
+export type AdminFeedbackSwitchTarget = 'chat';
 
-/** Both feedback switches. */
+/** The feedback switch. */
 export interface AdminFeedbackSwitches {
   chat: AdminFeedbackSwitch;
-  gnollBench: AdminFeedbackSwitch;
 }
 
 /** One page of issues. Every field is optional; a missing one means any, or the server's default. */
@@ -152,7 +151,7 @@ export class AdminFeedbackService {
     return this.http.get<AdminFeedbackSwitches>(`${ADMIN_FEEDBACK_ENDPOINT}/switch`);
   }
 
-  /** Appends a setting row to one switch; the same value as now still records the click. Returns both switches. */
+  /** Appends a setting row to the switch; the same value as now still records the click. Returns the switch. */
   setSwitch(target: AdminFeedbackSwitchTarget, enabled: boolean): Observable<AdminFeedbackSwitches> {
     return this.http.post<AdminFeedbackSwitches>(`${ADMIN_FEEDBACK_ENDPOINT}/switch/${target}`, { enabled });
   }

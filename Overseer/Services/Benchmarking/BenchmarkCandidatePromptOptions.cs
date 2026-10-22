@@ -65,10 +65,10 @@ public sealed record BenchmarkCandidatePromptOptions
     public string? InformationCondition { get; init; }
 
     /// <summary>
-    /// True when the GnollBench feedback switch was off when the run launched, so <c>report_feedback</c>
+    /// True when the run was launched with the Feedback Tool setting Withheld, so <c>report_feedback</c>
     /// was not declared to a candidate with a tool loop. Recorded under every information condition, so
-    /// two runs launched under the same switch state pair across conditions. Omitted from the JSON when
-    /// false, so a run made with the switch on serializes as it did before the switch existed.
+    /// two runs launched with the same setting pair across conditions. Omitted from the JSON when
+    /// false, so a run offered the tool serializes as it did before the setting existed.
     /// </summary>
     [JsonPropertyName("feedbackToolWithheld")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

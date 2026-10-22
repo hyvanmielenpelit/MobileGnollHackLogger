@@ -539,7 +539,7 @@
         </div>
 
         <p class="setup-experiments-caption">
-          <strong>Experiment settings</strong> — Leave both at their defaults for a normal run. Change one
+          <strong>Experiment settings</strong> — Leave these at their defaults for a normal run. Change one
           only to test what the AI's tools or instructions contribute.
         </p>
 
@@ -625,6 +625,32 @@
                 <span>{{ conditionWarning }}</span>
               </p>
             }
+          }
+        </div>
+
+        <div class="form-group">
+          <label for="candidateFeedbackTool">Feedback Tool</label>
+          <div class="gh-field-row">
+            <select id="candidateFeedbackTool" class="gh-input"
+                    [(ngModel)]="launcher.withholdFeedbackTool" (ngModelChange)="onReuseInputsChanged()"
+                    [attr.aria-describedby]="feedbackToolDescribedBy">
+              <option [ngValue]="false">Offered — default</option>
+              <option [ngValue]="true">Withheld — the AI cannot report problems</option>
+            </select>
+            <app-info-tip trigger="click" tipId="candidateFeedbackToolHint" subject="Feedback Tool">
+              <p>Whether the AI may report a problem it ran into while answering — a tool error, missing or wrong
+                data, or its own mistake. In GnollBench a report is kept with the answer and listed under
+                Self-Reports in the run report; it never reaches the Feedback tab.</p>
+              <p>Offered matches the live chat while its feedback tool is on (Admin → AI Telemetry → Feedback).
+                Closed book has no tools, so there the choice changes nothing, but it is still recorded.</p>
+            </app-info-tip>
+          </div>
+          @if (launcher.withholdFeedbackTool) {
+            <p id="candidateFeedbackToolWarning" class="gh-field-warning">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <span>Test run: not comparable with runs that offered the feedback tool. Compare it only with runs
+                that also withheld it.</span>
+            </p>
           }
         </div>
       </fieldset>

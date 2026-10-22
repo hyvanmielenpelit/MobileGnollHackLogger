@@ -282,18 +282,12 @@ public sealed class AdminFeedbackControllerTests : IDisposable
         Assert.True(seeded.Chat.Seeded);
         Assert.Null(seeded.Chat.SetAtUtc);
         Assert.Null(seeded.Chat.SetByUserName);
-        Assert.True(seeded.GnollBench.Enabled);
-        Assert.True(seeded.GnollBench.Seeded);
-        Assert.Null(seeded.GnollBench.SetAtUtc);
-        Assert.Null(seeded.GnollBench.SetByUserName);
 
         var set = OkValue<AdminFeedbackSwitchesDto>(await _controller.SetSwitch("chat", new AdminFeedbackSwitchUpdateDto { Enabled = false }));
         Assert.False(set.Chat.Enabled);
         Assert.False(set.Chat.Seeded);
         Assert.NotNull(set.Chat.SetAtUtc);
         Assert.Equal(AdminName, set.Chat.SetByUserName);
-        Assert.True(set.GnollBench.Enabled);
-        Assert.True(set.GnollBench.Seeded);
 
         var again = OkValue<AdminFeedbackSwitchesDto>(await _controller.GetSwitch(ct));
         Assert.False(again.Chat.Enabled);
@@ -312,31 +306,8 @@ public sealed class AdminFeedbackControllerTests : IDisposable
         AssertBadRequest(await _controller.SetSwitch("chat", null));
     }
 
-    [Fact]
-    public async Task TheGnollBenchSwitch_IsSetOnItsOwnRoute_AndAttributed()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        await AddUserAsync(AdminId, AdminName);
-
-        var set = OkValue<AdminFeedbackSwitchesDto>(await _controller.SetSwitch("gnollbench", new AdminFeedbackSwitchUpdateDto { Enabled = false }));
-        Assert.False(set.GnollBench.Enabled);
-        Assert.False(set.GnollBench.Seeded);
-        Assert.NotNull(set.GnollBench.SetAtUtc);
-        Assert.Equal(AdminName, set.GnollBench.SetByUserName);
-        Assert.True(set.Chat.Enabled);
-        Assert.True(set.Chat.Seeded);
-
-        var again = OkValue<AdminFeedbackSwitchesDto>(await _controller.GetSwitch(ct));
-        Assert.False(again.GnollBench.Enabled);
-        Assert.Equal(AdminName, again.GnollBench.SetByUserName);
-        Assert.True(again.Chat.Seeded);
-
-        var row = Assert.Single(await _db.OverseerFeedbackSettings.ToListAsync(ct));
-        Assert.Equal(OverseerFeedbackSwitchTarget.GnollBench, row.Target);
-        Assert.Equal(AdminId, row.SetByUserId);
-    }
-
     [Theory]
+    [InlineData("gnollbench")]
     [InlineData("other")]
     [InlineData("")]
     [InlineData("1")]

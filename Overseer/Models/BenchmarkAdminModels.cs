@@ -365,6 +365,12 @@ public class StartBenchmarkRunRequest
     public string? InstructionVariant { get; set; }
 
     /// <summary>
+    /// Optional. True withholds <c>report_feedback</c> from the candidate; null and false offer it. Recorded in
+    /// the run's candidate prompt options as <c>feedbackToolWithheld</c>, so it is a comparability key.
+    /// </summary>
+    public bool? WithholdFeedbackTool { get; set; }
+
+    /// <summary>
     /// How many times to execute this identical request, strictly one at a time. <c>1</c> — the
     /// default — is the single-run path exactly as it behaved before multi-run existed: no series
     /// row and no auto-created group.

@@ -86,8 +86,10 @@ own requests keep reading `Benchmark:AllowedTools`: the verifier keeps the wiki.
 
 The launcher labels the field **Tool Access**; its info tip ends *"Reports call this the information
 condition."* It sits in the *Test Setup* fieldset of Run Benchmark, after **Source Code References**
-and an *Experiment settings* caption (*"Leave both at their defaults for a normal run. Change one only
-to test what the AI's tools or instructions contribute."*), above **Experimental Changes** (§ 6.4).
+and an *Experiment settings* caption (*"Leave these at their defaults for a normal run. Change one only
+to test what the AI's tools or instructions contribute."*), above **Experimental Changes** (§ 6.4). The
+*Experiment settings* part ends with **Feedback Tool**, after Experimental Changes, which offers or
+withholds `report_feedback` for the run ([`ai-feedback-reports.md`](ai-feedback-reports.md) § 3).
 Production is first and the default. The info tip lists the three conditions in plain words, Production
 with a *Default* badge (`BENCHMARK_INFORMATION_CONDITIONS` in `admin-benchmark.service.ts` holds the
 labels and the sentences). For the other two the condition's sentence shows under the select

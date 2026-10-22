@@ -82,50 +82,58 @@ conversation or a user. Their `OccurrenceCount` is historical and is never decre
 shows the retained count beside it (*12 occurrences, 9 retained*). Deleting an issue in the admin view
 removes the issue and, by cascade, its occurrences.
 
-## 3. The feedback switches
+## 3. The feedback switch and the GnollBench setting
 
-An administrator turns the tool on and off at runtime, from the card at the top of the Feedback sub-tab,
-without a restart or a configuration edit. The card holds two independent switches: **Enabled in Overseer
-chat** governs the production chat, and **Enabled in GnollBench** governs GnollBench candidates.
+An administrator turns the tool on and off for the production chat at runtime, from the card at the top of
+the Feedback sub-tab, without a restart or a configuration edit. The card holds one switch, **Enabled in
+Overseer chat**, and a pointer: *GnollBench runs choose this per run: GnollBench → Run Benchmark → Feedback
+Tool.*
 
 - **Storage.** `OverseerFeedbackSetting` is append-only, like `BenchmarkBaselineModelSetting`: rows are
   never updated or deleted, and each click appends one (`Target`, `Enabled`, `SetAtUtc`, `SetByUserId`),
   even when it sets the value the switch already has. `Target` is an `OverseerFeedbackSwitchTarget`
-  (`Chat = 0`, `GnollBench = 1`; the column defaults to 0, so a row without one is a chat row), and each
-  switch's state is the newest row of its target, read through the `(Target, Id)` index. A click appends a
-  row for one target only, so **the table is both switches' history**, each kept apart, and the card shows
-  each switch's newest entry (*Off since 21 Oct 2026 14:02 by {user name}. …*); no admin-log entry is
-  written.
-- **The seeds.** Until an administrator has set a switch once, the chat switch's state is
-  `Feedback:Enabled` from `Overseer/appsettings.json` (its row reads *Off by configuration default* in that
-  state), and the GnollBench switch is on, with no configuration key, because GnollBench runs only on the
-  development computer (*On by default*). Once a target has a row, its seed is not consulted again.
-- **The cache.** `FeedbackSwitchService.IsEnabled(target)` caches each target's state for 30 seconds;
-  `SetAsync` writes the cache through, so a change is immediate in the Overseer process. A read failure
-  returns `false` and caches nothing.
-- **The chat switch governs the production chat.** `ChatService` reads it when it builds the turn's
-  request, so the next turn after a change declares or withholds the tool, and the handler reads it again
-  before storing, so a turn that was already running when the tool was turned off records nothing. The
-  GnollBench switch plays no part in a chat turn.
-- **The GnollBench switch is read once, when a run launches**, and recorded in the run's candidate prompt
-  options (`CandidatePromptOptionsJson`) as `feedbackToolWithheld`. The field is written only when the
-  switch was off, and under every information condition (production, source only, closed book). Both
-  candidate paths read the run's recorded value, so a re-run of failed questions or of a single answer
-  offers or withholds the tool as the run did, even when the switch has been flipped since. A run recorded
-  before the field existed has none and is offered the tool.
-- **Flipping the GnollBench switch is a recorded instrument change, never a silent one.** A run made with
-  it on records exactly what a harness-60 run did, byte for byte, and stays fully comparable with one. A run
-  made with it off differs on the *CandidatePromptOptions* comparability key, so it is not comparable with
-  one made with it on: Multi-Run grouping reports the mixed set below Tier B, the battery comparability
-  guard refuses a mixed composite, and the cross-model comparability signature refuses a mixed comparison.
-  Off runs are comparable with each other, and two runs launched under the same state still pair across
-  information conditions. Chat Consistency shows a change as a *Prompt options* Overseer event.
-- **Change it between runs**, not during a battery, series or model batch. The orchestrators'
-  instrument-fingerprint guard compares the prompt and corpus hashes only, so the next member launched
-  after a flip records the new value; the mix is then refused or reported, but that member's cost is
-  already spent.
-- **No confirmation.** Turning the tool off is reversible in one click and destroys nothing, so each switch
+  (`Chat = 0`, `GnollBench = 1`; the column defaults to 0, so a row without one is a chat row), and the
+  switch's state is the newest chat row, read through the `(Target, Id)` index. **The table is the
+  switch's history**, and the card shows its newest entry (*Off since 21 Oct 2026 14:02 by {user name}.
+  …*); no admin-log entry is written.
+- **The retired GnollBench target.** Until 2026-10-22 the card also held an *Enabled in GnollBench* switch,
+  stored as rows of `Target = GnollBench`. Those rows are kept as history and are never read again; the
+  enum value stays so they still load. GnollBench now takes the value from each run's launcher setting
+  (below).
+- **The seed.** Until an administrator has set the switch once, its state is `Feedback:Enabled` from
+  `Overseer/appsettings.json` (the row reads *Off by configuration default* in that state). Once a chat row
+  exists, the seed is not consulted again.
+- **The cache.** `FeedbackSwitchService.IsEnabled()` caches the state for 30 seconds; `SetAsync` writes the
+  cache through, so a change is immediate in the Overseer process. A read failure returns `false` and
+  caches nothing.
+- **The switch governs the production chat.** `ChatService` reads it when it builds the turn's request, so
+  the next turn after a change declares or withholds the tool, and the handler reads it again before
+  storing, so a turn that was already running when the tool was turned off records nothing.
+- **No confirmation.** Turning the tool off is reversible in one click and destroys nothing, so the switch
   commits at once, as the System Configs access switches do, and announces the result in a status line.
+
+**GnollBench.** A run's value comes from the launcher's **Feedback Tool** field (GnollBench → Run Benchmark,
+*Experiment settings*, after Experimental Changes): *Offered — default* or *Withheld — the AI cannot report
+problems*. The launch request carries it as `withholdFeedbackTool` (null and false both offer the tool), and
+the run records it in its candidate prompt options (`CandidatePromptOptionsJson`) as `feedbackToolWithheld`.
+
+- **Recorded once, at launch.** The field is written only when the tool was withheld, and under every
+  information condition (production, source only, closed book). Both candidate paths read the run's
+  recorded value, so a re-run of failed questions or of a single answer offers or withholds the tool as the
+  run did. A run recorded before the field existed has none and is offered the tool.
+- **Withholding it is a recorded instrument change, never a silent one.** An offered run records exactly
+  what a harness-60 run did, byte for byte, and stays fully comparable with one. A withheld run differs on
+  the *CandidatePromptOptions* comparability key, so it is not comparable with an offered one: Multi-Run
+  grouping reports the mixed set below Tier B, the battery comparability guard refuses a mixed composite,
+  and the cross-model comparability signature refuses a mixed comparison. Withheld runs are comparable with
+  each other, and two runs launched with the same setting still pair across information conditions. Chat
+  Consistency shows a change as a *Prompt options* Overseer event.
+- **Orchestrated members inherit it.** A battery, series or model batch stores its start request as
+  `StartRequestJson` and launches every member from it, so all members carry the same setting. A request
+  stored before the field existed offers the tool.
+- **Repeat this run's setup** sets the field from the run's recorded `feedbackToolWithheld`; a run
+  recommended by Root Cause Analysis or the control-run suggestion resets it to *Offered*, as it resets
+  Tool Access and Experimental Changes. The launcher remembers the choice with its other settings.
 
 ## 4. The suspected cause is a hypothesis
 
@@ -182,8 +190,8 @@ default session reference (the Developer Tools handler probe), and when the chat
 returns *Feedback reports are not available in this conversation.*
 
 **The closed-book case.** A closed-book GnollBench candidate runs with `EnableToolUse = false` and an empty
-tool list, so the `enableToolUse` term withholds the feedback tool too, whatever the GnollBench switch
-recorded. That is intended: a closed-book run
+tool list, so the `enableToolUse` term withholds the feedback tool too, whatever the run's Feedback Tool
+setting recorded. That is intended: a closed-book run
 has no tool loop, and giving it one tool would make it a different condition. The run report says so
 (§ 11).
 
@@ -222,8 +230,8 @@ the not-available result, which it treats like any other tool failure.
 
 `FeedbackSettings.Read` parses each value from its trimmed string, never with `GetValue<T>`. An unparseable
 `Enabled` resolves to `false`; an unparseable or out-of-range daily cap resolves to 20, clamped to 1–200.
-`Enabled` is only the chat switch's seed (§ 3); the GnollBench switch has no configuration key. GnollBench
-ignores both values.
+`Enabled` is only the chat switch's seed (§ 3); the run's Feedback Tool setting has no configuration key.
+GnollBench ignores both values.
 
 ## 9. Storage and lifetimes
 
@@ -234,7 +242,7 @@ table's `Target` column and its `(Target, Id)` index.
 |---|---|---|---|
 | `OverseerFeedbackIssues` | distinct problem (fingerprint, unique) | nothing outside the feature | an administrator's delete, which cascades to its occurrences |
 | `OverseerFeedbackReports` | chat occurrence | its issue (`IssueId`, cascade); the user (`AspNetUserId`, cascade); `ChatSessionId` and `TurnUserMessageId` as plain columns | the conversation's permanent purge; the account's erasure; the issue's delete |
-| `OverseerFeedbackSettings` | change of either switch (`Target`: chat or GnollBench) | `SetByUserId` as a plain column | never: kept like any admin setting |
+| `OverseerFeedbackSettings` | change of the chat switch (`Target` chat; GnollBench rows are retired history) | `SetByUserId` as a plain column | never: kept like any admin setting |
 | `BenchmarkRunAnswerSelfReports` | GnollBench candidate call | its answer (cascade) | the answer, through run → answer → self-report |
 
 **Why the links are what they are.**
@@ -277,22 +285,17 @@ header (the date range applies to an issue's active span, *Keys* does not apply,
 are not date-limited) is in [`ai-telemetry.md`](ai-telemetry.md) § 12b; the query parameters (`status`,
 `category`, `model`, `q`) are in [`admin-page-urls.md`](admin-page-urls.md) § 2.
 
-- **The switch card** comes first: the title *Feedback tool* names the section, and two rows follow, one
-  per switch. Each row has its own label (*Enabled in Overseer chat*, *Enabled in GnollBench*), which its
-  switch references through `aria-labelledby`; a sentence of state with when and by whom it was last set;
-  one large switch (`gh-switch gh-switch-lg`); a `role="status"` line; and an error line.
-  - Chat: *On by configuration default. The assistant may file reports in ordinary chats.*, *On since
-    {time} by {name}. The assistant may file reports in ordinary chats.*, *Off by configuration default.
-    The assistant is not offered the tool.*, or *Off since {time} by {name}. The assistant is not offered
-    the tool.*
-  - GnollBench: *On by default. New runs offer the tool to candidates with tools.*, *On since {time} by
-    {name}. New runs offer the tool to candidates with tools.*, or *Off since {time} by {name}. New runs do
-    not offer the tool.* The row carries the note *Recorded on each run when it starts; re-runs keep the
-    run's value.*
+- **The switch card** comes first: the title *Feedback tool* names the section, and one row follows. The
+  row has its label (*Enabled in Overseer chat*), which its switch references through `aria-labelledby`; a
+  sentence of state with when and by whom it was last set; one large switch (`gh-switch gh-switch-lg`); a
+  `role="status"` line; and an error line. The sentence of state reads *On by configuration default. The
+  assistant may file reports in ordinary chats.*, *On since {time} by {name}. The assistant may file
+  reports in ordinary chats.*, *Off by configuration default. The assistant is not offered the tool.*, or
+  *Off since {time} by {name}. The assistant is not offered the tool.* Under the row, a note points to the
+  launcher: *GnollBench runs choose this per run: GnollBench → Run Benchmark → Feedback Tool.*
 
-  Each switch commits at once, is disabled while its own request runs, reverts on an error and refetches
-  on its own; one row's request never disables the other. The status lines read *Overseer chat: the
-  feedback tool is on.* (or *off*) and *GnollBench: the feedback tool is on.* (or *off*).
+  The switch commits at once, is disabled while its request runs, reverts on an error and refetches. The
+  status line reads *Overseer chat: the feedback tool is on.* (or *off*).
 - **The filter bar**: a search over the issue's subject and summary; *Sort by* *Last seen* (the default),
   *First seen* or *Most occurrences*; the *Status* facet (defaulting to **New and Regressed**, the open
   work), the *Category* facet and the *Model* facet (the models that filed any occurrence); and removable
@@ -314,7 +317,7 @@ are not date-limited) is in [`ai-telemetry.md`](ai-telemetry.md) § 12b; the que
 
 | Method and path | Purpose |
 |---|---|
-| `GET switch` · `POST switch/{target}` (`{ enabled }`) | Both switches' state, `{ chat, gnollBench }`, each `{ enabled, setAtUtc, setByUserName, seeded }`; appending a change to one switch, `target` `chat` or `gnollbench` (case-insensitive; anything else 400 *Unknown switch.*), which returns both |
+| `GET switch` · `POST switch/{target}` (`{ enabled }`) | The switch's state, `{ chat }`, as `{ enabled, setAtUtc, setByUserName, seeded }`; appending a change to it, `target` `chat` (case-insensitive; anything else, `gnollbench` included, 400 *Unknown switch.*), which returns it |
 | `GET issues?startDate&endDate&status&category&modelId&search&sort&skip&take` | A page of issues (`status` comma-separated; `sort` `lastSeen`, `firstSeen` or `count`; `take` 1–100; unknown values 400) |
 | `GET models` | Distinct model ids over all occurrences |
 | `GET issues/{id}/occurrences?skip&take` | A page of one issue's occurrences, newest first |
@@ -325,7 +328,7 @@ are not date-limited) is in [`ai-telemetry.md`](ai-telemetry.md) § 12b; the que
 ## 11. GnollBench
 
 From **harness 60** every GnollBench candidate with a tool loop is offered `report_feedback`, unless the run
-recorded `feedbackToolWithheld` because the GnollBench switch was off when it launched (§ 3); the closed-book
+recorded `feedbackToolWithheld` because it was launched with the Feedback Tool setting *Withheld* (§ 3); the closed-book
 candidate is not (§ 6). The chat switch and `Feedback:Enabled` do not apply, and there is no daily cap. The
 handler acknowledges a candidate's call without writing anything, after the parse and the per-turn cap,
 because the benchmark stores the call itself:
@@ -347,7 +350,7 @@ because the benchmark stores the call itself:
   the candidate's hypothesis; a table by question; and *Repeated issues*, one line per fingerprint that
   appears in more than one question. A run without any, a run before harness 60 and a closed-book run each
   say why the section is empty; a run with a tool loop that recorded `feedbackToolWithheld` says *The
-  feedback tool was not offered (withheld by the GnollBench feedback switch).* (a closed-book run keeps its
+  feedback tool was not offered (withheld by the run's Feedback Tool setting).* (a closed-book run keeps its
   own sentence, which takes precedence). Each question in § 3 of the report lists its self-reports under its call
   table. Report packs and the AI-written report documents do not show them.
 
@@ -371,23 +374,28 @@ removed and counted, issues kept), `BenchmarkToolCallRecorderTests`, `BenchmarkR
 `BenchmarkServiceTests`. On the client: `admin-feedback.service.spec.ts`,
 `telemetry-feedback.component.spec.ts`, and additions to the telemetry tab's and the chat's specs.
 
-The two switches and the GnollBench recording have their own cases:
+The switch and the GnollBench setting have their own cases:
 
-- **The switches.** `FeedbackSwitchServiceTests`: the GnollBench switch is seeded on whatever
-  `Feedback:Enabled` says, the two switches are independent, and a row without a target reads as the chat
-  switch. `AdminFeedbackControllerTests`: the GnollBench switch is set on its own route and attributed, and
-  an unknown switch is rejected. `ReportFeedbackToolTests`: the GnollBench switch off does not refuse a
-  chat call.
+- **The switch.** `FeedbackSwitchServiceTests`: a row without a target reads as the chat switch, and a
+  retired GnollBench row does not affect it (`ARetiredGnollBenchRow_DoesNotAffectTheChatSwitch`).
+  `AdminFeedbackControllerTests`: the chat switch is set and attributed, and an unknown switch, `gnollbench`
+  included, is rejected.
+- **The launch.** `BenchmarkRunLauncherTests`: `WithholdFeedbackTool` true resolves withheld, false and null
+  offered, and a stored start request keeps the setting, or offers the tool when it predates the field.
 - **The recording.** `BenchmarkCandidatePromptOptionsTests`: `FeedbackToolWithheld` false is omitted from
   the canonical JSON, true serializes and round-trips, and `Describe()` names a withheld tool.
-  `BenchmarkServiceTests`: the switch is recorded under every condition, a candidate path with a withheld
-  record does not offer the tool, and a re-execution keeps the run's recorded value.
+  `BenchmarkServiceTests`: the setting is recorded under every condition, a candidate path with a withheld
+  record does not offer the tool, and a re-execution keeps the run's recorded value. No test runs
+  `RunAsync` to completion, so the path from the launch request to the record is covered at these two
+  levels.
 - **The consequences.** `BenchmarkPairedTestsTests`: the condition contrast holds when both runs record the
-  withheld switch and not when only one does. `BenchmarkReportBuilderTests`: the Self-Reports section of a
-  withheld run says the switch withheld the tool. `BenchmarkChatConsistencyReportFactsTests`: the change
-  reads *feedback tool withheld: not set → on*.
-- **The client.** The switch card in `telemetry-feedback.component.spec.ts`, both routes in
-  `admin-feedback.service.spec.ts`, and the *feedback tool withheld* tag in `run-facts.spec.ts`.
+  withheld setting and not when only one does. `BenchmarkReportBuilderTests`: the Self-Reports section of a
+  withheld run says the run's Feedback Tool setting withheld the tool.
+  `BenchmarkChatConsistencyReportFactsTests`: the change reads *feedback tool withheld: not set → on*.
+- **The client.** The switch card and its pointer in `telemetry-feedback.component.spec.ts`, the route in
+  `admin-feedback.service.spec.ts`, the Feedback Tool field in `benchmark.component.launcher.spec.ts`, its
+  request, remembered value, repeated setup and recommended-run reset in `benchmark-launcher.state.spec.ts`,
+  and the *feedback tool withheld* tag in `run-facts.spec.ts`.
 
 ## 14. Deferred
 

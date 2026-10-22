@@ -8507,7 +8507,7 @@ public class BenchmarkReportBuilderTests
 
         string section = SelfReportsSection(BenchmarkReportBuilder.BuildMarkdownReport(run));
 
-        Assert.Contains("The feedback tool was not offered (withheld by the GnollBench feedback switch).", section);
+        Assert.Contains("The feedback tool was not offered (withheld by the run's Feedback Tool setting).", section);
         Assert.DoesNotContain("No self-reports in this run.", section);
         Assert.DoesNotContain("**Self-reports:**", section);
     }
@@ -8526,7 +8526,7 @@ public class BenchmarkReportBuilderTests
         string section = SelfReportsSection(BenchmarkReportBuilder.BuildMarkdownReport(run));
 
         Assert.Contains("The feedback tool was not offered (closed book: no tools).", section);
-        Assert.DoesNotContain("withheld by the GnollBench feedback switch", section);
+        Assert.DoesNotContain("withheld by the run's Feedback Tool setting", section);
     }
 
     [Fact]

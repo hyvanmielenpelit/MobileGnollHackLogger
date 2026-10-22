@@ -91,11 +91,10 @@ public sealed class AdminFeedbackSwitchDto
     public bool Seeded { get; set; }
 }
 
-/// <summary>Both feedback switches, as the card shows them.</summary>
+/// <summary>The feedback switch, as the card shows it.</summary>
 public sealed class AdminFeedbackSwitchesDto
 {
     public AdminFeedbackSwitchDto Chat { get; set; } = new();
-    public AdminFeedbackSwitchDto GnollBench { get; set; } = new();
 }
 
 public sealed class AdminFeedbackSwitchUpdateDto

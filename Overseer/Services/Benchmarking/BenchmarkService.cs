@@ -34,8 +34,6 @@ public class BenchmarkService
     private readonly EndpointPolicy _endpointPolicy;
     private readonly IConfiguration _configuration;
     private readonly ILogger<BenchmarkService> _logger;
-    // Null offers the feedback tool: a hand-built container without the registration.
-    private readonly Overseer.Services.Feedback.FeedbackSwitchService? _feedbackSwitch;
     private BenchmarkCitationLivenessCheck? _citationLivenessCheck;
 
     private readonly List<string> _defaultAllowedTools = new()
@@ -58,8 +56,7 @@ public class BenchmarkService
         BenchmarkScoringProfileService scoringProfileService,
         EndpointPolicy endpointPolicy,
         IConfiguration configuration,
-        ILogger<BenchmarkService> logger,
-        Overseer.Services.Feedback.FeedbackSwitchService? feedbackSwitch = null)
+        ILogger<BenchmarkService> logger)
     {
         _scopeFactory = scopeFactory;
         _chatService = chatService;
@@ -71,7 +68,6 @@ public class BenchmarkService
         _endpointPolicy = endpointPolicy;
         _configuration = configuration;
         _logger = logger;
-        _feedbackSwitch = feedbackSwitch;
     }
 
     public const string AbortedRunRefusal =
@@ -825,7 +821,8 @@ public class BenchmarkService
         bool verboseMode = false,
         bool allowSourceCodeReferences = false,
         BenchmarkInformationCondition informationCondition = BenchmarkInformationCondition.Production,
-        string? instructionVariant = null)
+        string? instructionVariant = null,
+        bool withholdFeedbackTool = false)
     {
         var runStopwatch = Stopwatch.StartNew();
         try
@@ -1009,7 +1006,7 @@ public class BenchmarkService
             run.InstructionVariant = variant?.Stamp;
 
             bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
-            bool feedbackToolOffered = _feedbackSwitch?.IsEnabled(OverseerFeedbackSwitchTarget.GnollBench) ?? true;
+            bool feedbackToolOffered = !withholdFeedbackTool;
             var promptOptions = CandidatePromptOptionsFor(
                 verboseMode, allowSourceCodeReferences, suiteHasBoard, informationCondition, feedbackToolOffered);
             run.CandidatePromptOptionsJson = promptOptions.ToCanonicalJson();
@@ -9647,8 +9644,8 @@ public class BenchmarkService
 
     /// <summary>
     /// The candidate prompt options a newly launched run records: the requested response style and
-    /// source-code-reference setting, whether the suite carries a board, and whether the GnollBench
-    /// feedback switch was off, recorded under every condition; every other option at its default.
+    /// source-code-reference setting, whether the suite carries a board, and whether the launch
+    /// withheld the feedback tool, recorded under every condition; every other option at its default.
     /// </summary>
     internal static BenchmarkCandidatePromptOptions CandidatePromptOptionsFor(
         bool verboseMode,

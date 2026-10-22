@@ -901,15 +901,17 @@ describe('BenchmarkLauncherState: prefillFromSetup', () => {
     expect(launcher.selectedSuiteId).toBe(2);
   });
 
-  it('sets the production condition and no instruction variant, as a recommended run has them', () => {
+  it('sets the production condition, no instruction variant and an offered feedback tool, as a recommended run has them', () => {
     loadPage();
     launcher.informationCondition = 'closedBook';
     launcher.instructionVariant = 'cite-first';
+    launcher.withholdFeedbackTool = true;
 
     launcher.prefillFromSetup(setup());
 
     expect(launcher.informationCondition).toBe('production');
     expect(launcher.instructionVariant).toBeNull();
+    expect(launcher.withholdFeedbackTool).toBe(false);
     expect(launcher.prefillResult!.notes).toEqual([]);
 
     const prefill = launcherSetupFromRecommendedRun({ kind: 'control', targetKind: 'Suite', runMode: 'Single' } as RecommendedRun, 'x');
@@ -1102,5 +1104,108 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
 
     expect(launcher.instructionVariant).toBeNull();
     expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Experimental Changes: gone is no longer available')]);
+  });
+});
+
+describe('BenchmarkLauncherState: feedback tool', () => {
+  let launcher: BenchmarkLauncherState;
+  let workspace: BenchmarkWorkspaceStore;
+
+  const stored = (): any => JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY) ?? 'null');
+
+  function loadPage(): void {
+    launcher.restoreRunSettings();
+    workspace.suitesLoaded$.next();
+    workspace.profilesLoaded$.next();
+    launcher.setDefaultModelSelections();
+    workspace.batteriesLoaded$.next(true);
+  }
+
+  beforeEach(() => {
+    clearRunSettings();
+    TestBed.configureTestingModule({
+      providers: [
+        BenchmarkLauncherState,
+        BenchmarkWorkspaceStore,
+        BenchmarkViewSync,
+        {
+          provide: AdminBenchmarkService,
+          useValue: {
+            getLastAssessor: vi.fn(() => of({})),
+            previewBatteryReuse: vi.fn(() => of(null)),
+            getInstructionVariants: vi.fn(() => of([]))
+          }
+        }
+      ]
+    });
+    launcher = TestBed.inject(BenchmarkLauncherState);
+    workspace = TestBed.inject(BenchmarkWorkspaceStore);
+    workspace.suites = [suite(1, 'Default Suite'), suite(2, 'Second Suite')];
+    workspace.scoringProfiles = [profile(1, 'Standard', true), profile(2, 'Strict')];
+    workspace.setSystemConfigs([
+      config(1, 'Model One'), config(2, 'Model Two', { provider: 'OpenAI' }), config(3, 'Model Three', { provider: 'Google' })
+    ]);
+  });
+
+  afterEach(clearRunSettings);
+
+  it('defaults to Offered, and the request carries the choice', () => {
+    expect(launcher.withholdFeedbackTool).toBe(false);
+    expect(launcher.buildRunRequest(1, 2, 1).withholdFeedbackTool).toBe(false);
+
+    launcher.withholdFeedbackTool = true;
+    expect(launcher.buildRunRequest(1, 2, 1).withholdFeedbackTool).toBe(true);
+  });
+
+  it('carries the choice into a model batch template', () => {
+    loadPage();
+    launcher.runMode = 'batch';
+    launcher.setBatchModels([2, 3]);
+    launcher.withholdFeedbackTool = true;
+
+    expect(launcher.buildModelBatchRequest()!.run.withholdFeedbackTool).toBe(true);
+  });
+
+  it('round-trips the choice through the remembered settings', () => {
+    loadPage();
+    launcher.withholdFeedbackTool = true;
+    launcher.persistRunSettings();
+    expect(stored()).toEqual(expect.objectContaining({ withholdFeedbackTool: true }));
+
+    launcher.withholdFeedbackTool = false;
+    launcher.restoreRunSettings();
+    expect(launcher.withholdFeedbackTool).toBe(true);
+  });
+
+  it('restores Offered from a blob that predates the field', () => {
+    localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1 }));
+
+    loadPage();
+
+    expect(launcher.withholdFeedbackTool).toBe(false);
+  });
+
+  it('restores Offered from a blob whose value is not a boolean', () => {
+    localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, withholdFeedbackTool: 'yes' }));
+    launcher.withholdFeedbackTool = false;
+
+    loadPage();
+
+    expect(launcher.withholdFeedbackTool).toBe(false);
+  });
+
+  it('repeats a run\'s recorded choice, and Offered for a run that recorded none', () => {
+    loadPage();
+
+    launcher.prefillFromRun(run({
+      candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true,"feedbackToolWithheld":true}'
+    }));
+    expect(launcher.withholdFeedbackTool).toBe(true);
+    expect(launcher.prefillResult!.notes).toEqual([]);
+    expect(stored()).toEqual(expect.objectContaining({ withholdFeedbackTool: true }));
+
+    launcher.prefillFromRun(run({ candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}' }));
+    expect(launcher.withholdFeedbackTool).toBe(false);
+    expect(launcher.prefillResult!.notes).toEqual([]);
   });
 });

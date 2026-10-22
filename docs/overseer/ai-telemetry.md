@@ -384,8 +384,9 @@ the charts dialog equal no filter.
 ## 12b. The Feedback view: the assistant's reports to the developers
 
 The **Feedback** sub-tab (`/admin/telemetry/feedback`, `feedback/telemetry-feedback.component.ts`) lists
-the issues the chat assistant reported with `report_feedback`, one card per issue, and holds the two
-switches that turn the tool on and off for the Overseer chat and for GnollBench. What the tool records,
+the issues the chat assistant reported with `report_feedback`, one card per issue, and holds the switch
+that turns the tool on and off for the Overseer chat, with a note that GnollBench runs choose it per run
+in the Run Benchmark launcher's Feedback Tool field. What the tool records,
 how reports group into issues and what each status means are in
 [`ai-feedback-reports.md`](ai-feedback-reports.md); this section is the panel's contract with the tab's
 header.

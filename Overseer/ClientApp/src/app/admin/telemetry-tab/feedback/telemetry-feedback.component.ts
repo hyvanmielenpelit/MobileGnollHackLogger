@@ -176,16 +176,12 @@ interface SwitchRow {
 }
 
 const SWITCH_ROWS: readonly SwitchRow[] = [
-  { target: 'chat', label: 'Enabled in Overseer chat', name: 'Overseer chat', note: null },
-  {
-    target: 'gnollbench', label: 'Enabled in GnollBench', name: 'GnollBench',
-    note: 'Recorded on each run when it starts; re-runs keep the run\'s value.'
-  }
+  { target: 'chat', label: 'Enabled in Overseer chat', name: 'Overseer chat', note: null }
 ];
 
 /**
- * The AI Telemetry tab's Feedback view: the two switches that offer the assistant's `report_feedback`
- * tool in the Overseer chat and in GnollBench, and the issues it has reported in the tab's date range
+ * The AI Telemetry tab's Feedback view: the switch that offers the assistant's `report_feedback` tool in
+ * the Overseer chat (GnollBench runs choose it per run in the launcher), and the issues it has reported in the tab's date range
  * as a server-paged card list with a search, Sort by, Status, Category and Model facets kept in the
  * address, each issue with
  * its figures, latest facts, occurrences on demand and a triage form. Report text is model output and
@@ -230,9 +226,9 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
   readonly switchRows = SWITCH_ROWS;
   readonly switches = signal<AdminFeedbackSwitches | null>(null);
   /** Per switch: its request is running, its last result, its last error. */
-  readonly switchPending = { chat: signal(false), gnollbench: signal(false) };
-  readonly switchMessage = { chat: signal(''), gnollbench: signal('') };
-  readonly switchError = { chat: signal<string | null>(null), gnollbench: signal<string | null>(null) };
+  readonly switchPending = { chat: signal(false) };
+  readonly switchMessage = { chat: signal('') };
+  readonly switchError = { chat: signal<string | null>(null) };
   readonly switchLoadError = signal<string | null>(null);
 
   // --- Issues ---
@@ -354,23 +350,20 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
 
   // --- Switch ---
 
-  /** One switch's state as the server last sent it; null until loaded. */
+  /** The switch's state as the server last sent it; null until loaded. */
   switchOf(target: AdminFeedbackSwitchTarget): AdminFeedbackSwitch | null {
-    const switches = this.switches();
-    if (!switches) return null;
-    return target === 'chat' ? switches.chat : switches.gnollBench;
+    return this.switches()?.[target] ?? null;
   }
 
   /** A row's sentence of state; the date and name are the server's. */
   switchSentence(target: AdminFeedbackSwitchTarget): string {
     const state = this.switchOf(target);
     if (!state) return this.switchLoadError() ? '' : 'Loading…';
-    const chat = target === 'chat';
     const effect = state.enabled
-      ? (chat ? 'The assistant may file reports in ordinary chats.' : 'New runs offer the tool to candidates with tools.')
-      : (chat ? 'The assistant is not offered the tool.' : 'New runs do not offer the tool.');
+      ? 'The assistant may file reports in ordinary chats.'
+      : 'The assistant is not offered the tool.';
     const word = state.enabled ? 'On' : 'Off';
-    if (state.seeded) return `${word} by ${chat ? 'configuration default' : 'default'}. ${effect}`;
+    if (state.seeded) return `${word} by configuration default. ${effect}`;
     const since = state.setAtUtc ? ` since ${feedbackDateTimeText(state.setAtUtc)}` : '';
     const by = state.setByUserName ? ` by ${state.setByUserName}` : '';
     return `${word}${since}${by}. ${effect}`;
@@ -391,7 +384,7 @@ export class TelemetryFeedbackComponent implements OnInit, OnChanges, OnDestroy 
 
   /**
    * Commits one switch at once; that switch alone is disabled while its request runs and reverts when
-   * it fails. A success refetches both.
+   * it fails. A success refetches it.
    */
   onSwitchChange(target: AdminFeedbackSwitchTarget, event: Event): void {
     const checkbox = event.target as HTMLInputElement;

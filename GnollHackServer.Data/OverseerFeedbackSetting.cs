@@ -4,13 +4,13 @@ using System;
 using System.ComponentModel.DataAnnotations;
 
 /// <summary>
-/// One setting of one of the two Overseer feedback switches, which offer or withhold
-/// <c>report_feedback</c> in the production chat and in GnollBench.
+/// One setting of the Overseer feedback switch, which offers or withholds <c>report_feedback</c> in
+/// the production chat. Rows of the retired <see cref="OverseerFeedbackSwitchTarget.GnollBench"/>
+/// target are kept as history and never read.
 ///
-/// <para>Append-only: the current state of a switch is the row of its <see cref="Target"/> with the
-/// highest <see cref="Id"/>. Rows are never updated or deleted, so each switch's history stays
-/// readable. With no row, <c>Feedback:Enabled</c> in the configuration seeds the chat switch and the
-/// GnollBench switch is on.</para>
+/// <para>Append-only: the current state of the switch is the chat row with the highest
+/// <see cref="Id"/>. Rows are never updated or deleted, so the history stays readable. With no chat
+/// row, <c>Feedback:Enabled</c> in the configuration seeds the switch.</para>
 /// </summary>
 public class OverseerFeedbackSetting
 {

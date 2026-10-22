@@ -151,8 +151,8 @@ Two tools reach a candidate without being on the list:
   `AgentRunRequest.EnableFeedbackTool` and `enableToolUse` **in place of** the allow-list check. Both
   candidate paths set the flag to `!FeedbackToolWithheld` of the run's recorded candidate prompt
   options, so every candidate with a tool loop is offered it, under every information condition, unless
-  the run recorded `feedbackToolWithheld` (the GnollBench feedback switch was off when the run
-  launched; re-runs keep the recorded value); a closed-book candidate (`EnableToolUse = false`) never
+  the run recorded `feedbackToolWithheld` (the run was launched with the run's Feedback Tool setting
+  *Withheld*; re-runs keep the recorded value); a closed-book candidate (`EnableToolUse = false`) never
   is. It is kept off `Benchmark:AllowedTools` on purpose: the same key feeds the grader's *Available
   tools* line, the claim verifier's tool set and lead filter, and the rubric-gap author, and listing it
   there would hand the tool to all three. It is also not in the run's recorded `CandidateAllowedTools`;
@@ -1273,8 +1273,7 @@ result never carries a `[Tool budget: …]` notice.
 
 **Failure modes.** *Not available* covers a sub-agent (`AgentDepth > 0`), an ephemeral or
 confidential session, a default `SessionRef` (the Developer Tools handler probe, which sets only
-`UserId` and `MaxResultLength`), the chat feedback switch turned off while the turn ran (the GnollBench
-switch never refuses a chat call), and **any storage
+`UserId` and `MaxResultLength`), the chat feedback switch turned off while the turn ran, and **any storage
 exception**: storage never fails the turn, and the exception is logged at Warning with the category
 only. A benchmark candidate (`IsBenchmarkCandidate`) is acknowledged without a write, after the parse
 and the per-turn cap, because the benchmark stores the call itself as a `BenchmarkRunAnswerSelfReport`
@@ -1283,7 +1282,7 @@ the handler branches before it reads it.
 
 **Where it is declared.** Production chat, when the chat feedback switch is on and the session is neither
 ephemeral nor confidential; every GnollBench candidate with a tool loop, unless the run's candidate
-prompt options record `feedbackToolWithheld` (§ 3); never a sub-agent,
+prompt options record `feedbackToolWithheld`, set by the run's Feedback Tool setting (§ 3); never a sub-agent,
 grader, claim verifier or rubric-gap author, and `AgentLoopRunner.IsDeclared` refuses the call from
 any of them even if a model names it. The application log never holds report text:
 `ToolExecutor` skips its parameter dump for `ToolCategory.Feedback`.
