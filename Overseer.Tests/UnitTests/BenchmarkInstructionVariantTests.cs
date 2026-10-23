@@ -463,4 +463,420 @@ public sealed class BenchmarkInstructionVariantTests : IDisposable
         Assert.False(dto.HasPromptAppendix);
         Assert.Empty(dto.RewordingsWithheldUnderSourceOnly);
     }
+
+    // -- Features --------------------------------------------------------------------------------
+
+    private static BenchmarkInstructionVariantCatalog ShippedCatalog()
+    {
+        string shipped = Path.Combine(AppContext.BaseDirectory, "BenchmarkVariants");
+        Assert.SkipUnless(Directory.Exists(shipped), "BenchmarkVariants is not copied to the test output.");
+        return new BenchmarkInstructionVariantCatalog(shipped, Handlers, NullLogger.Instance);
+    }
+
+    [Fact]
+    public void TheShippedVariants_DeriveTheirFeatures()
+    {
+        var catalog = ShippedCatalog();
+
+        var sourceTools = catalog.Find("source-tools-v1")!;
+        Assert.Equal(
+            new[]
+            {
+                "tool.get_character_info", "experiment.stats_referenced_by",
+                "guide.get_artifact_stats", "guide.get_item_stats", "guide.get_monster_stats"
+            },
+            sourceTools.Features.Select(f => f.Id));
+        Assert.All(sourceTools.Features, f => Assert.False(f.FromParent));
+
+        var askerProfile = catalog.Find("asker-profile-v1")!;
+        Assert.Equal(
+            new[]
+            {
+                "tool.get_character_info", "experiment.stats_referenced_by",
+                "guide.get_artifact_stats", "guide.get_item_stats", "guide.get_monster_stats",
+                "guide.wiki_search", "appendix.asker-profile-v1"
+            },
+            askerProfile.Features.Select(f => f.Id));
+        Assert.Equal(
+            new[] { true, true, true, true, true, false, false },
+            askerProfile.Features.Select(f => f.FromParent));
+        Assert.Equal(
+            new[]
+            {
+                BenchmarkVariantFeatureKind.ExperimentalTool, BenchmarkVariantFeatureKind.Experiment,
+                BenchmarkVariantFeatureKind.RewordedGuide, BenchmarkVariantFeatureKind.RewordedGuide,
+                BenchmarkVariantFeatureKind.RewordedGuide, BenchmarkVariantFeatureKind.RewordedGuide,
+                BenchmarkVariantFeatureKind.Appendix
+            },
+            askerProfile.Features.Select(f => f.Kind));
+        Assert.Equal(
+            new[] { "get_character_info", "stats_referenced_by", "get_artifact_stats", "get_item_stats", "get_monster_stats", "wiki_search", "asker-profile-v1" },
+            askerProfile.Features.Select(f => f.Target));
+
+        var tool = askerProfile.Features[0];
+        Assert.Equal(askerProfile.Context!.ToolGuides["get_character_info"], tool.Text);
+        Assert.Equal("get_character_info", tool.Handler!.ToolName);
+        Assert.Null(askerProfile.Features[1].Text);
+        Assert.Null(askerProfile.Features[1].Handler);
+        Assert.Equal(askerProfile.Context.Appendix, askerProfile.Features[6].Text);
+    }
+
+    [Fact]
+    public void TheShippedVariants_MentionsAreFoundMechanically()
+    {
+        var catalog = ShippedCatalog();
+        var askerProfile = catalog.Find("asker-profile-v1")!;
+        var mentions = askerProfile.Features.ToDictionary(f => f.Id, f => f.Mentions);
+
+        // Each reworded stats guide ends with a paragraph about referenced_by; the appendix names get_character_info.
+        Assert.Equal(new[] { "experiment.stats_referenced_by" }, mentions["guide.get_artifact_stats"]);
+        Assert.Equal(new[] { "experiment.stats_referenced_by" }, mentions["guide.get_item_stats"]);
+        Assert.Equal(new[] { "experiment.stats_referenced_by" }, mentions["guide.get_monster_stats"]);
+        Assert.Equal(new[] { "tool.get_character_info" }, mentions["appendix.asker-profile-v1"]);
+        Assert.Empty(mentions["tool.get_character_info"]);
+        Assert.Empty(mentions["experiment.stats_referenced_by"]);
+
+        var sourceTools = catalog.Find("source-tools-v1")!;
+        Assert.Equal(new[] { "experiment.stats_referenced_by" },
+            sourceTools.Features.Single(f => f.Id == "guide.get_item_stats").Mentions);
+    }
+
+    [Fact]
+    public void TheShippedVariants_FeaturesApplyUnderTheConditionsTheirToolsReach()
+    {
+        var askerProfile = ShippedCatalog().Find("asker-profile-v1")!;
+        var byId = askerProfile.Features.ToDictionary(f => f.Id);
+
+        Assert.All(askerProfile.Features, f => Assert.True(f.AppliesUnder(BenchmarkInformationCondition.Production)));
+        Assert.Equal(new[] { "appendix.asker-profile-v1" },
+            askerProfile.Features.Where(f => f.AppliesUnder(BenchmarkInformationCondition.ClosedBook)).Select(f => f.Id));
+        Assert.False(byId["guide.wiki_search"].AppliesUnder(BenchmarkInformationCondition.SourceOnly));
+        Assert.True(byId["guide.get_item_stats"].AppliesUnder(BenchmarkInformationCondition.SourceOnly));
+        Assert.True(byId["tool.get_character_info"].AppliesUnder(BenchmarkInformationCondition.SourceOnly));
+        Assert.True(byId["experiment.stats_referenced_by"].AppliesUnder(BenchmarkInformationCondition.SourceOnly));
+
+        var dto = BenchmarkInstructionVariantDto.From(askerProfile);
+        Assert.Equal(askerProfile.Features.Select(f => f.Id), dto.Features.Select(f => f.Id));
+        var wikiGuide = dto.Features.Single(f => f.Id == "guide.wiki_search");
+        Assert.Equal("rewordedGuide", wikiGuide.Kind);
+        Assert.Equal("wiki_search", wikiGuide.Target);
+        Assert.False(wikiGuide.FromParent);
+        Assert.True(wikiGuide.AppliesUnder.Production);
+        Assert.False(wikiGuide.AppliesUnder.SourceOnly);
+        Assert.False(wikiGuide.AppliesUnder.ClosedBook);
+        Assert.Equal(new[] { "tool.get_character_info" }, dto.Features.Single(f => f.Kind == "appendix").Mentions);
+        Assert.Equal("experimentalTool", dto.Features[0].Kind);
+        Assert.Equal("experiment", dto.Features[1].Kind);
+    }
+
+    [Fact]
+    public void AnInvalidVariant_HasNoFeatures()
+    {
+        WriteVariant("empty-folder", null);
+
+        var variant = Catalog().Find("empty-folder")!;
+
+        Assert.Empty(variant.Features);
+        Assert.Empty(BenchmarkInstructionVariantDto.From(variant).Features);
+    }
+
+    [Fact]
+    public void FindingAPlainName_ReturnsTodaysContext_ForBothShippedVariants()
+    {
+        string shipped = Path.Combine(AppContext.BaseDirectory, "BenchmarkVariants");
+        var catalog = ShippedCatalog();
+
+        string sourceFolder = Path.Combine(shipped, "source-tools-v1");
+        string askerFolder = Path.Combine(shipped, "asker-profile-v1");
+        string sourceHash = BenchmarkService.ComputeToolGuidesSha256(sourceFolder)!;
+        string askerOwnHash = BenchmarkService.ComputeToolGuidesSha256(askerFolder)!;
+        var sourceGuides = new Dictionary<string, string>
+        {
+            ["get_character_info"] = File.ReadAllText(Path.Combine(sourceFolder, "get_character_info.md")),
+            ["get_artifact_stats"] = File.ReadAllText(Path.Combine(sourceFolder, "get_artifact_stats.md")),
+            ["get_item_stats"] = File.ReadAllText(Path.Combine(sourceFolder, "get_item_stats.md")),
+            ["get_monster_stats"] = File.ReadAllText(Path.Combine(sourceFolder, "get_monster_stats.md"))
+        };
+        var askerGuides = new Dictionary<string, string>(sourceGuides)
+        {
+            ["wiki_search"] = File.ReadAllText(Path.Combine(askerFolder, "wiki_search.md"))
+        };
+
+        var source = catalog.Find("source-tools-v1")!;
+        Assert.Same(catalog.All.Single(v => v.Name == "source-tools-v1"), source);
+        Assert.Null(source.Ablation);
+        var sourceContext = source.Context!;
+        Assert.Equal("source-tools-v1", sourceContext.Name);
+        Assert.Equal(sourceHash, sourceContext.Hash);
+        Assert.Equal("source-tools-v1:" + sourceHash[..12], sourceContext.Stamp);
+        Assert.Null(sourceContext.Appendix);
+        Assert.Empty(sourceContext.AppendixParts);
+        Assert.Equal(sourceGuides.OrderBy(g => g.Key), sourceContext.ToolGuides.OrderBy(g => g.Key));
+        Assert.Equal(new[] { "get_character_info" }, sourceContext.ExperimentalTools);
+        Assert.Equal(new[] { BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment }, sourceContext.Experiments);
+
+        var asker = catalog.Find("asker-profile-v1")!;
+        Assert.Same(catalog.All.Single(v => v.Name == "asker-profile-v1"), asker);
+        var askerContext = asker.Context!;
+        string askerHash = Sha256($"parent:{sourceHash}\nself:{askerOwnHash}\n");
+        string appendix = File.ReadAllText(Path.Combine(askerFolder, "appendix.md")).Trim();
+        Assert.Equal("asker-profile-v1", askerContext.Name);
+        Assert.Equal(askerHash, askerContext.Hash);
+        Assert.Equal("asker-profile-v1:" + askerHash[..12], askerContext.Stamp);
+        Assert.Equal(appendix, askerContext.Appendix);
+        Assert.Equal(new[] { new BenchmarkVariantAppendixPart("asker-profile-v1", appendix) }, askerContext.AppendixParts);
+        Assert.Equal(askerGuides.OrderBy(g => g.Key), askerContext.ToolGuides.OrderBy(g => g.Key));
+        Assert.Equal(new[] { "get_character_info" }, askerContext.ExperimentalTools);
+        Assert.Equal(new[] { BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment }, askerContext.Experiments);
+    }
+
+    // -- Ablations -------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A parent with an appendix, a reworded item guide and an experiment, and a child that adds an
+    /// experimental tool with its guide, a reworded wiki guide and its own appendix.
+    /// </summary>
+    private BenchmarkInstructionVariantCatalog AblationCatalog()
+    {
+        WriteVariant("base-probe", """
+            {
+              "name": "base-probe",
+              "promptAppendix": "appendix.md",
+              "toolGuides": { "get_item_stats": "items.md" },
+              "experiments": ["stats_referenced_by"]
+            }
+            """,
+            ("appendix.md", "Parent appendix."),
+            ("items.md", "Item guide; referenced_by lists the functions."));
+        WriteVariant("child-probe", """
+            {
+              "name": "child-probe",
+              "extends": "base-probe",
+              "promptAppendix": "appendix.md",
+              "toolGuides": { "get_character_info": "character.md", "wiki_search": "wiki.md" },
+              "experimentalTools": ["get_character_info"]
+            }
+            """,
+            ("appendix.md", "Child appendix: read get_character_info first."),
+            ("character.md", "Character guide."),
+            ("wiki.md", "Wiki guide."));
+        WriteVariant("single", "{ \"name\": \"single\", \"promptAppendix\": \"appendix.md\" }",
+            ("appendix.md", "The only paragraph."));
+        WriteVariant("broken", null);
+        return Catalog();
+    }
+
+    [Fact]
+    public void AChildsFeatures_SeparateItsAndItsParentsAppendix()
+    {
+        var child = AblationCatalog().Find("child-probe")!;
+
+        Assert.Equal(
+            new[]
+            {
+                "tool.get_character_info", "experiment.stats_referenced_by", "guide.get_item_stats",
+                "guide.wiki_search", "appendix.base-probe", "appendix.child-probe"
+            },
+            child.Features.Select(f => f.Id));
+        Assert.Equal(new[] { false, true, true, false, true, false }, child.Features.Select(f => f.FromParent));
+        Assert.Equal(
+            new[] { new BenchmarkVariantAppendixPart("base-probe", "Parent appendix."), new BenchmarkVariantAppendixPart("child-probe", "Child appendix: read get_character_info first.") },
+            child.Context!.AppendixParts);
+        Assert.Equal("Parent appendix.\n\nChild appendix: read get_character_info first.", child.Context.Appendix);
+        Assert.Equal(new[] { "experiment.stats_referenced_by" }, child.Features.Single(f => f.Id == "guide.get_item_stats").Mentions);
+        Assert.Equal(new[] { "tool.get_character_info" }, child.Features.Single(f => f.Id == "appendix.child-probe").Mentions);
+        Assert.Empty(child.Features.Single(f => f.Id == "appendix.base-probe").Mentions);
+    }
+
+    public static TheoryData<string, string> Refusals => new()
+    {
+        { "missing/minus/tool.get_character_info", "Its base 'missing' is not a variant." },
+        { "broken/minus/tool.get_character_info", "Its base 'broken' is invalid: " },
+        { "child-probe/without/tool.get_character_info", "'without' is not an ablation mode; use 'minus' or 'only'." },
+        { "child-probe/minus/tool.wiki_search", "'tool.wiki_search' is not a feature of 'child-probe'; its features are " },
+        { "single/minus/appendix.single", "leaves nothing; choose None." },
+        { "single/only/appendix.single", "is the whole variant; choose it." },
+        { "child-probe/minus", "An ablation is written <variant>/minus/<feature> or <variant>/only/<feature>." },
+        { "child-probe//tool.get_character_info", "An ablation is written" }
+    };
+
+    [Theory]
+    [MemberData(nameof(Refusals))]
+    public void AnAblationSpec_IsRefused_AsAnInvalidEntryWithItsReason(string spec, string reason)
+    {
+        var catalog = AblationCatalog();
+
+        var entry = catalog.Find(spec);
+
+        Assert.NotNull(entry);
+        Assert.False(entry!.IsValid);
+        Assert.Null(entry.Context);
+        Assert.Empty(entry.Features);
+        Assert.Equal(spec, entry.Name);
+        Assert.Contains(reason, entry.InvalidReason);
+    }
+
+    [Fact]
+    public void AnUnknownNameWithoutASlash_IsStillNotFound()
+    {
+        var catalog = AblationCatalog();
+
+        Assert.Null(catalog.Find("child-probe-minus"));
+        Assert.Null(catalog.Find(null));
+    }
+
+    [Fact]
+    public void Minus_RemovesOneFeature_AndKeepsTheRest()
+    {
+        var catalog = AblationCatalog();
+        var whole = catalog.Find("child-probe")!.Context!;
+
+        var noTool = catalog.Find("child-probe/minus/tool.get_character_info")!;
+        Assert.True(noTool.IsValid, noTool.InvalidReason);
+        Assert.Empty(noTool.Context!.ExperimentalTools);
+        Assert.False(noTool.Context.ToolGuides.ContainsKey("get_character_info"));
+        Assert.Equal(new[] { "get_item_stats", "wiki_search" }, noTool.Context.ToolGuides.Keys.OrderBy(k => k, StringComparer.Ordinal));
+        Assert.Equal(whole.Experiments, noTool.Context.Experiments);
+        Assert.Equal(whole.Appendix, noTool.Context.Appendix);
+        Assert.Equal(whole.AppendixParts, noTool.Context.AppendixParts);
+
+        var noGuide = catalog.Find("child-probe/minus/guide.wiki_search")!.Context!;
+        Assert.False(noGuide.ToolGuides.ContainsKey("wiki_search"));
+        Assert.Equal("Character guide.", noGuide.ToolGuides["get_character_info"]);
+        Assert.Equal(whole.ExperimentalTools, noGuide.ExperimentalTools);
+
+        var noExperiment = catalog.Find("child-probe/minus/experiment.stats_referenced_by")!.Context!;
+        Assert.False(noExperiment.HasExperiment(BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment));
+        Assert.Equal(whole.ToolGuides.Count, noExperiment.ToolGuides.Count);
+
+        var noParentAppendix = catalog.Find("child-probe/minus/appendix.base-probe")!.Context!;
+        Assert.Equal("Child appendix: read get_character_info first.", noParentAppendix.Appendix);
+        Assert.Equal("child-probe", Assert.Single(noParentAppendix.AppendixParts).Variant);
+
+        var noOwnAppendix = catalog.Find("child-probe/minus/appendix.child-probe")!.Context!;
+        Assert.Equal("Parent appendix.", noOwnAppendix.Appendix);
+        Assert.Equal(whole.ToolGuides.Count, noOwnAppendix.ToolGuides.Count);
+    }
+
+    [Fact]
+    public void Only_KeepsOneFeature_AndNothingElse()
+    {
+        var catalog = AblationCatalog();
+
+        var tool = catalog.Find("child-probe/only/tool.get_character_info")!.Context!;
+        Assert.Equal(new[] { "get_character_info" }, tool.ExperimentalTools);
+        Assert.Equal("Character guide.", Assert.Single(tool.ToolGuides).Value);
+        Assert.Empty(tool.Experiments);
+        Assert.Null(tool.Appendix);
+        Assert.Empty(tool.AppendixParts);
+
+        var experiment = catalog.Find("child-probe/only/experiment.stats_referenced_by")!.Context!;
+        Assert.Equal(new[] { BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment }, experiment.Experiments);
+        Assert.Empty(experiment.ExperimentalTools);
+        Assert.Empty(experiment.ToolGuides);
+        Assert.Null(experiment.Appendix);
+
+        var guide = catalog.Find("child-probe/only/guide.get_item_stats")!.Context!;
+        Assert.Equal("get_item_stats", Assert.Single(guide.ToolGuides).Key);
+        Assert.Empty(guide.ExperimentalTools);
+        Assert.Empty(guide.Experiments);
+
+        var appendix = catalog.Find("child-probe/only/appendix.child-probe")!.Context!;
+        Assert.Equal("Child appendix: read get_character_info first.", appendix.Appendix);
+        Assert.Empty(appendix.ToolGuides);
+        Assert.Empty(appendix.ExperimentalTools);
+    }
+
+    [Fact]
+    public void AnAblation_IsNamedBySpec_AndHashedOverItsBase()
+    {
+        var catalog = AblationCatalog();
+        var whole = catalog.Find("child-probe")!;
+        const string Spec = "child-probe/minus/guide.wiki_search";
+
+        var ablation = catalog.Find(Spec)!;
+
+        Assert.Equal(Spec, ablation.Name);
+        Assert.Equal(Spec, ablation.Context!.Name);
+        Assert.Equal(whole.Description, ablation.Description);
+        Assert.Equal("base-probe", ablation.Extends);
+        Assert.Equal(Sha256($"base:{whole.Context!.Hash}\nminus:guide.wiki_search\n"), ablation.Context.Hash);
+        Assert.Equal(Spec + ":" + ablation.Context.Hash[..12], ablation.Context.Stamp);
+        Assert.Equal(Spec, BenchmarkInstructionVariantCatalog.NameOfStamp(ablation.Context.Stamp));
+        Assert.NotEqual(whole.Context.Hash, ablation.Context.Hash);
+        Assert.NotEqual(ablation.Context.Hash, catalog.Find("child-probe/only/guide.wiki_search")!.Context!.Hash);
+
+        Assert.Equal("child-probe", ablation.Ablation!.BaseName);
+        Assert.Equal(BenchmarkInstructionVariantCatalog.MinusMode, ablation.Ablation.Mode);
+        Assert.True(ablation.Ablation.IsMinus);
+        Assert.Equal("guide.wiki_search", ablation.Ablation.Feature.Id);
+        Assert.DoesNotContain(ablation.Features, f => f.Id == "guide.wiki_search");
+        Assert.Equal(5, ablation.Features.Count);
+    }
+
+    [Fact]
+    public void AnAblation_IsCached_AndNeverListed()
+    {
+        var catalog = AblationCatalog();
+        const string Spec = "child-probe/only/tool.get_character_info";
+
+        var first = catalog.Find(Spec);
+        var second = catalog.Find(Spec);
+
+        Assert.Same(first, second);
+        Assert.Equal(new[] { "base-probe", "broken", "child-probe", "single" }, catalog.All.Select(v => v.Name));
+    }
+
+    [Fact]
+    public void EditingTheBase_MovesTheAblationsHash()
+    {
+        const string Spec = "child-probe/minus/tool.get_character_info";
+        string before = AblationCatalog().Find(Spec)!.Context!.Stamp;
+
+        File.WriteAllText(Path.Combine(_root, "base-probe", "items.md"), "Item guide, edited.");
+        string after = Catalog().Find(Spec)!.Context!.Stamp;
+
+        Assert.NotEqual(before, after);
+        Assert.Equal(BenchmarkInstructionVariantCatalog.NameOfStamp(before), BenchmarkInstructionVariantCatalog.NameOfStamp(after));
+    }
+
+    [Fact]
+    public void TheLongestStamp_FitsTheColumn_AndALongerSpecIsRefused()
+    {
+        string name = new string('a', 64);
+        string fitting = new string('x', 70);
+        string tooLong = new string('y', 71);
+        var handlers = Handlers.Concat(new IToolHandler[] { new FakeToolHandler(fitting), new FakeToolHandler(tooLong) }).ToList();
+        WriteVariant(name, "{ \"name\": \"" + name + "\", \"promptAppendix\": \"appendix.md\", \"toolGuides\": { \""
+            + fitting + "\": \"x.md\", \"" + tooLong + "\": \"y.md\" } }",
+            ("appendix.md", "Paragraph."), ("x.md", "X guide."), ("y.md", "Y guide."));
+        var catalog = Catalog(handlers);
+        Assert.True(catalog.Find(name)!.IsValid, catalog.Find(name)!.InvalidReason);
+
+        var fits = catalog.Find($"{name}/minus/guide.{fitting}")!;
+        Assert.True(fits.IsValid, fits.InvalidReason);
+        Assert.Equal(BenchmarkInstructionVariantCatalog.MaxStampLength, fits.Context!.Stamp.Length);
+        Assert.Equal(160, BenchmarkInstructionVariantCatalog.MaxStampLength);
+
+        var refused = catalog.Find($"{name}/minus/guide.{tooLong}")!;
+        Assert.False(refused.IsValid);
+        Assert.Contains("161 characters, more than the 160", refused.InvalidReason);
+
+        Assert.True(catalog.Find($"{name}/only/guide.{tooLong}")!.IsValid);
+    }
+
+    [Fact]
+    public void DescribeAblation_NamesTheFeatureInWords_AndNothingForAPlainName()
+    {
+        Assert.Equal("asker-profile-v1, leaving out the reworded wiki_search description",
+            BenchmarkInstructionVariantCatalog.DescribeAblation("asker-profile-v1/minus/guide.wiki_search"));
+        Assert.Equal("asker-profile-v1, only the get_character_info tool",
+            BenchmarkInstructionVariantCatalog.DescribeAblation("asker-profile-v1/only/tool.get_character_info"));
+        Assert.Equal("source-tools-v1, leaving out the stats_referenced_by tool-output switch",
+            BenchmarkInstructionVariantCatalog.DescribeAblation("source-tools-v1/minus/experiment.stats_referenced_by"));
+        Assert.Equal("asker-profile-v1, only the asker-profile-v1 instruction paragraph",
+            BenchmarkInstructionVariantCatalog.DescribeAblation("asker-profile-v1/only/appendix.asker-profile-v1"));
+        Assert.Null(BenchmarkInstructionVariantCatalog.DescribeAblation("asker-profile-v1"));
+        Assert.Null(BenchmarkInstructionVariantCatalog.DescribeAblation("asker-profile-v1/sideways/tool.get_character_info"));
+    }
 }

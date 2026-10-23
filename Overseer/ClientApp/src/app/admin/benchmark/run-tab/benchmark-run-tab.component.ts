@@ -20,10 +20,13 @@ import {
 } from '../../../services/admin-benchmark.service';
 import {
   VariantSummarySegment,
+  ablationLabel,
   variantChangeLines,
   variantConditionWarning,
-  variantOptionSuffix
+  variantOptionSuffix,
+  variantReferenceLine
 } from './instruction-variant-summary';
+import { InstructionVariantDialogComponent } from './instruction-variant-dialog/instruction-variant-dialog.component';
 import { SystemAiConfigDto } from '../../../services/admin.service';
 import { BenchmarkCompletionSoundKind, BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
 import {
@@ -159,7 +162,7 @@ export interface LauncherAvailabilityLine {
   standalone: true,
   imports: [
     CommonModule, DecimalPipe, FormsModule, ModelPickerComponent, ModelMultiPickerComponent, ReorderableListComponent,
-    InfoTipComponent, ModelBatchReadinessComponent, ProviderBadgeComponent
+    InfoTipComponent, ModelBatchReadinessComponent, ProviderBadgeComponent, InstructionVariantDialogComponent
   ],
   templateUrl: './benchmark-run-tab.component.html',
   styleUrls: ['./benchmark-run-tab.component.scss']
@@ -684,22 +687,77 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
     return this.informationConditionOptions.find(c => c.value === this.launcher.informationCondition);
   }
 
-  /** The valid variant chosen now; null for None. */
+  /** The valid variant chosen now, the base of an ablation included; null for None. */
   get selectedVariant(): BenchmarkInstructionVariantDto | null {
-    const name = this.launcher.instructionVariant;
-    return name == null ? null : this.launcher.validInstructionVariants.find(v => v.name === name) ?? null;
+    return this.launcher.resolvedInstructionVariant?.variant ?? null;
   }
 
-  /** The lines of the *What <name> changes* box. */
+  /** The chosen spec while it resolves; null for None. */
+  private get selectedSpec(): string | null {
+    return this.launcher.resolvedInstructionVariant?.spec ?? null;
+  }
+
+  /** The choice in words, beside Choose…. */
+  get instructionVariantReadout(): string {
+    const resolved = this.launcher.resolvedInstructionVariant;
+    if (!resolved) {
+      // A remembered or repeated spec waits for the catalog, which keeps it or falls back to None.
+      const pending = this.launcher.instructionVariant;
+      return pending && !this.launcher.instructionVariantsLoaded ? `${pending} (checking…)` : 'None — same as the live chat';
+    }
+    if (resolved.mode !== null) return ablationLabel(resolved.spec, this.launcher.instructionVariants);
+    const label = this.instructionVariantLabel(resolved.variant);
+    return resolved.variant.hashPrefix ? `${label} · ${resolved.variant.hashPrefix}` : label;
+  }
+
+  /** The summary box's heading subject: the variant's name, or an ablation in words. */
+  get selectedVariantTitle(): string {
+    const spec = this.selectedSpec;
+    return spec ? ablationLabel(spec, this.launcher.instructionVariants) : '';
+  }
+
+  /** The lines of the *What <name> changes* box; an ablation's describe what the run keeps. */
   get selectedVariantLines(): VariantSummarySegment[][] {
     const variant = this.selectedVariant;
-    return variant ? variantChangeLines(variant) : [];
+    return variant ? variantChangeLines(variant, this.selectedSpec) : [];
   }
 
-  /** The line saying what the chosen Tool Access voids of the chosen variant; null when nothing. */
+  /** For an ablation, the run it is compared with; null for a whole variant, whose warning says it. */
+  get selectedVariantReference(): string | null {
+    const resolved = this.launcher.resolvedInstructionVariant;
+    return resolved?.mode ? variantReferenceLine(resolved.spec) : null;
+  }
+
+  /** The line saying what the chosen Tool Access voids of the chosen variant or ablation; null when nothing. */
   get selectedVariantConditionWarning(): string | null {
     const variant = this.selectedVariant;
-    return variant ? variantConditionWarning(variant, this.launcher.informationCondition) : null;
+    return variant ? variantConditionWarning(variant, this.launcher.informationCondition, this.selectedSpec) : null;
+  }
+
+  @ViewChild(InstructionVariantDialogComponent) instructionVariantDialog?: InstructionVariantDialogComponent;
+  @ViewChild('instructionVariantChoose') instructionVariantChoose?: ElementRef<HTMLButtonElement>;
+
+  /** Choose…: opens the Experimental Changes dialog on the current choice. */
+  openInstructionVariantDialog(): void {
+    this.instructionVariantDialog?.open(this.launcher.instructionVariant);
+  }
+
+  /** Use this: takes the dialog's spec, or None. */
+  onInstructionVariantChosen(spec: string | null): void {
+    this.launcher.instructionVariant = spec;
+    this.onReuseInputsChanged();
+    this.cdr.markForCheck();
+  }
+
+  /** However the dialog closed, focus returns to Choose…. */
+  onInstructionVariantDialogClosed(): void {
+    this.instructionVariantChoose?.nativeElement.focus();
+    this.cdr.markForCheck();
+  }
+
+  /** A run of the dialog's Runs that used it list: opens its report. */
+  onInstructionVariantRunReport(runId: number): void {
+    this.bridge.viewRunDetail(runId);
   }
 
   /** The Tool Access select's `aria-describedby`. */
@@ -709,14 +767,14 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
       : 'candidateInformationConditionHint';
   }
 
-  /** The Experimental Changes select's `aria-describedby`. */
+  /** The Experimental Changes Choose… button's `aria-describedby`: the read-out first. */
   get instructionVariantDescribedBy(): string {
     if (!this.selectedVariant) {
-      return 'candidateInstructionVariantHint';
+      return 'candidateInstructionVariantReadout candidateInstructionVariantHint';
     }
     return this.selectedVariantConditionWarning
-      ? 'candidateInstructionVariantHint candidateInstructionVariantSummary candidateInstructionVariantConditionWarning'
-      : 'candidateInstructionVariantHint candidateInstructionVariantSummary';
+      ? 'candidateInstructionVariantReadout candidateInstructionVariantHint candidateInstructionVariantSummary candidateInstructionVariantConditionWarning'
+      : 'candidateInstructionVariantReadout candidateInstructionVariantHint candidateInstructionVariantSummary';
   }
 
   /** The Feedback Tool select's `aria-describedby`. */

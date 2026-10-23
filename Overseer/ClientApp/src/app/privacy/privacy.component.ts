@@ -198,7 +198,7 @@ export class PrivacyComponent {
       what: 'Assistant feedback reports: short notes the assistant writes for the developers when it cannot find information, a tool misbehaves, or it corrects a mistake. Credentials, card and account numbers, e-mail addresses and phone numbers are removed before storage. The same text is also kept, unredacted, with the conversation’s tool calls. You can turn these reports off under Settings → AI Permissions.',
       storedWhere: 'Overseer database: one row per report, linked to the conversation and to you, and one row per issue (the problem itself, with a count of how often it was reported) that holds no reference to any conversation or user.',
       howLong: 'The report row: until the conversation is permanently deleted or the account is erased. The issue row: until an administrator deletes it.',
-      sharedWith: 'Overseer administrators. Nothing is sent to an AI provider beyond the conversation itself.'
+      sharedWith: 'Overseer administrators. Administrators may export the report text, without your name or any link to your conversation, to an AI coding assistant to help fix the problem it describes.'
     },
     {
       what: 'Provider safety identifier',

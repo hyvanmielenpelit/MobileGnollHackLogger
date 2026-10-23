@@ -22,8 +22,49 @@ export type AdminFeedbackCategory = 'missing_information' | 'tool_problem' | 'ow
 
 export const ADMIN_FEEDBACK_CATEGORIES: readonly AdminFeedbackCategory[] = ['missing_information', 'tool_problem', 'own_mistake'];
 
-/** The orders the issue list offers; `lastSeen` is the server's default. All are newest or largest first. */
-export type AdminFeedbackIssueSort = 'lastSeen' | 'firstSeen' | 'count';
+/** Where an occurrence's model came from: a system AI configuration, the user's own model, or not recorded. */
+export type AdminFeedbackModelSource = 'system' | 'user' | 'unknown';
+
+/** The Model source facet's values, in order. */
+export const ADMIN_FEEDBACK_MODEL_SOURCES: readonly AdminFeedbackModelSource[] = ['system', 'user', 'unknown'];
+
+/** Whether an issue has a written resolution. */
+export type AdminFeedbackResolutionFilter = 'with' | 'without';
+
+export const ADMIN_FEEDBACK_RESOLUTION_FILTERS: readonly AdminFeedbackResolutionFilter[] = ['with', 'without'];
+
+/** The `group` filter value for users in no group. */
+export const ADMIN_FEEDBACK_NO_GROUP = 'none';
+
+/**
+ * The orders the issue list offers; `lastSeen` is the server's default. All are newest or largest first,
+ * except `subject` (A–Z) and `triaged`, which puts untriaged issues last.
+ */
+export type AdminFeedbackIssueSort = 'lastSeen' | 'firstSeen' | 'count' | 'users' | 'regressions' | 'triaged' | 'subject';
+
+/** The longest triage note, resolution and fixed-in version the server keeps. */
+export const ADMIN_FEEDBACK_NOTE_MAX = 1000;
+export const ADMIN_FEEDBACK_RESOLUTION_MAX = 4000;
+export const ADMIN_FEEDBACK_FIXED_IN_VERSION_MAX = 64;
+
+/** What a fixed-in version may contain, as the server checks it. */
+export const ADMIN_FEEDBACK_FIXED_IN_VERSION_PATTERN = /^[0-9A-Za-z.+\-]{1,64}$/;
+
+/** The most issue ids one `ids` filter may carry. */
+export const ADMIN_FEEDBACK_IDS_MAX = 500;
+
+/** Occurrence counts per model source, over an issue's retained occurrences. */
+export interface AdminFeedbackModelSourceCounts {
+  system: number;
+  user: number;
+  unknown: number;
+}
+
+/** The GnollBench issue with the same fingerprint, when an accepted self-report has it. */
+export interface AdminFeedbackGnollBenchLink {
+  selfReportCount: number;
+  status: AdminFeedbackStatus;
+}
 
 /** One issue: a group of reports with the same fingerprint (`AdminFeedbackIssueDto`). Dates are UTC ISO strings. */
 export interface AdminFeedbackIssue {
@@ -40,6 +81,9 @@ export interface AdminFeedbackIssue {
   distinctUserCount: number;
   /** At most five model ids, then `+N`. */
   modelIds: string[];
+  /** The providers of the retained occurrences. */
+  providers: string[];
+  modelSources: AdminFeedbackModelSourceCounts;
   regressionCount: number;
   lastRegressionUtc: string | null;
   latestExpectedLocation: string | null;
@@ -51,6 +95,10 @@ export interface AdminFeedbackIssue {
   /** Null when the triager's account is gone, or nobody has triaged the issue. */
   triagedByUserName: string | null;
   triagedUtc: string | null;
+  /** What was done about the issue; null while none is written. */
+  resolution: string | null;
+  fixedInVersion: string | null;
+  alsoInGnollBench: AdminFeedbackGnollBenchLink | null;
 }
 
 /** One stored report of an issue (`AdminFeedbackOccurrenceDto`). */
@@ -75,6 +123,13 @@ export interface AdminFeedbackOccurrence {
   appVersion: string | null;
   /** Null once the account is erased. */
   userName: string | null;
+  /** Null while it is not recorded. */
+  modelSource: 'system' | 'user' | null;
+  systemConfigurationId: number | null;
+  /** Null for a configuration since deleted, or a turn on the user's own model. */
+  systemConfigurationName: string | null;
+  /** The reporting user's groups now; empty for a user in no group. */
+  groupNames: string[];
 }
 
 export interface AdminFeedbackIssuePage {
@@ -82,9 +137,42 @@ export interface AdminFeedbackIssuePage {
   rows: AdminFeedbackIssue[];
 }
 
+/** Every issue id matching a filter, at most 1,000; `truncated` when more match. */
+export interface AdminFeedbackIssueIds {
+  ids: number[];
+  totalCount: number;
+  truncated: boolean;
+}
+
 export interface AdminFeedbackOccurrencePage {
   totalCount: number;
   rows: AdminFeedbackOccurrence[];
+}
+
+/** One facet value and the number of issues it has in the range. */
+export interface AdminFeedbackFacetValue {
+  value: string;
+  count: number;
+}
+
+/** One facet entity (a user, a group, a configuration) with its display name and issue count. */
+export interface AdminFeedbackFacetEntity {
+  id: string;
+  name: string;
+  count: number;
+}
+
+/** The facet options present in a date range (`GET facets`). The group id `none` is No group. */
+export interface AdminFeedbackFacets {
+  categories: AdminFeedbackFacetValue[];
+  models: AdminFeedbackFacetValue[];
+  providers: AdminFeedbackFacetValue[];
+  sources: AdminFeedbackFacetValue[];
+  versions: AdminFeedbackFacetValue[];
+  tools: AdminFeedbackFacetValue[];
+  users: AdminFeedbackFacetEntity[];
+  groups: AdminFeedbackFacetEntity[];
+  configs: AdminFeedbackFacetEntity[];
 }
 
 /** Issue counts per status over all dates. */
@@ -112,18 +200,38 @@ export interface AdminFeedbackSwitches {
   chat: AdminFeedbackSwitch;
 }
 
-/** One page of issues. Every field is optional; a missing one means any, or the server's default. */
-export interface AdminFeedbackIssuesQuery {
+/**
+ * The issue filters every list request shares. Every field is optional and every list is sent
+ * comma-joined; a missing or empty one means any. The occurrence-level filters (model, provider, user,
+ * group, source, configuration, version, tool) match an issue when one retained occurrence matches them all.
+ */
+export interface AdminFeedbackIssueFilters {
   /** `YYYY-MM-DD`; an issue is in range when its first-to-last-seen span overlaps it. */
   startDate?: string;
   endDate?: string;
-  /** Any of these; sent comma-joined. */
   statuses?: readonly string[];
-  category?: string;
-  /** Issues with at least one occurrence by this model. */
-  modelId?: string;
-  /** Subject or summary, contains, case-insensitive. */
+  categories?: readonly string[];
+  /** Sent as `modelId`. */
+  modelIds?: readonly string[];
+  providers?: readonly string[];
+  /** Identity user ids. */
+  users?: readonly string[];
+  /** Group ids, and `none` for users in no group. */
+  groups?: readonly string[];
+  sources?: readonly string[];
+  /** System AI configuration ids. */
+  configs?: readonly string[];
+  versions?: readonly string[];
+  tools?: readonly string[];
+  resolution?: AdminFeedbackResolutionFilter;
+  /** At most 500 issue ids, for Show selected only. */
+  ids?: readonly number[];
+  /** Subject, summary and the occurrences' details, searched-for and expected location; contains, case-insensitive. */
   search?: string;
+}
+
+/** One page of issues. */
+export interface AdminFeedbackIssuesQuery extends AdminFeedbackIssueFilters {
   sort?: AdminFeedbackIssueSort;
   skip?: number;
   /** Clamped to 1–100 by the server. */
@@ -131,9 +239,43 @@ export interface AdminFeedbackIssuesQuery {
 }
 
 /**
+ * A triage change. A field left out, or null, keeps the stored value; an empty string clears it.
+ * Text is trimmed before it is sent.
+ */
+export interface AdminFeedbackTriageChanges {
+  note?: string | null;
+  resolution?: string | null;
+  fixedInVersion?: string | null;
+}
+
+/** The list filters as query parameters; blank values and empty lists are left out. */
+function filterParams(filters: AdminFeedbackIssueFilters, params = new HttpParams()): HttpParams {
+  const list = (name: string, values: readonly (string | number)[] | undefined): void => {
+    const parts = (values ?? []).map(v => String(v).trim()).filter(v => v !== '');
+    if (parts.length > 0) params = params.set(name, parts.join(','));
+  };
+  if (filters.startDate) params = params.set('startDate', filters.startDate);
+  if (filters.endDate) params = params.set('endDate', filters.endDate);
+  list('status', filters.statuses);
+  list('category', filters.categories);
+  list('modelId', filters.modelIds);
+  list('provider', filters.providers);
+  list('user', filters.users);
+  list('group', filters.groups);
+  list('source', filters.sources);
+  list('config', filters.configs);
+  list('version', filters.versions);
+  list('tool', filters.tools);
+  if (filters.resolution) params = params.set('resolution', filters.resolution);
+  list('ids', filters.ids);
+  if (filters.search?.trim()) params = params.set('search', filters.search.trim());
+  return params;
+}
+
+/**
  * The typed client of `AdminFeedbackController` (`api/admin/feedback`): the feedback switches, the issue
- * list with its Model facet values and the counts per status, one issue's occurrences, and an issue's
- * triage and deletion.
+ * list, its matching ids and facet options, the counts per status, one issue's occurrences, and an
+ * issue's triage and deletion.
  */
 @Injectable({
   providedIn: 'root'
@@ -158,43 +300,57 @@ export class AdminFeedbackService {
 
   // --- Issues ---
 
-  /** One page of issues; missing and blank fields are left out of the query. 400 on an unknown status, category or sort. */
+  /** One page of issues; missing and blank fields are left out of the query. 400 on an unknown filter value or sort. */
   getIssues(query: AdminFeedbackIssuesQuery = {}): Observable<AdminFeedbackIssuePage> {
-    let params = new HttpParams();
-    if (query.startDate) params = params.set('startDate', query.startDate);
-    if (query.endDate) params = params.set('endDate', query.endDate);
-    const statuses = (query.statuses ?? []).map(s => s.trim()).filter(s => s !== '');
-    if (statuses.length > 0) params = params.set('status', statuses.join(','));
-    if (query.category?.trim()) params = params.set('category', query.category.trim());
-    if (query.modelId?.trim()) params = params.set('modelId', query.modelId.trim());
-    if (query.search?.trim()) params = params.set('search', query.search.trim());
+    let params = filterParams(query);
     if (query.sort) params = params.set('sort', query.sort);
     if (query.skip && query.skip > 0) params = params.set('skip', String(query.skip));
     if (query.take != null) params = params.set('take', String(query.take));
     return this.http.get<AdminFeedbackIssuePage>(`${ADMIN_FEEDBACK_ENDPOINT}/issues`, { params });
   }
 
-  /** The distinct model ids over all occurrences, for the Model facet. */
-  getModels(): Observable<string[]> {
-    return this.http.get<string[]>(`${ADMIN_FEEDBACK_ENDPOINT}/models`);
+  /** Every issue id matching the filters, in the sort's order, at most 1,000; for Select all matching and Show selected only. */
+  getIssueIds(filters: AdminFeedbackIssueFilters = {}, sort?: AdminFeedbackIssueSort): Observable<AdminFeedbackIssueIds> {
+    let params = filterParams(filters);
+    if (sort) params = params.set('sort', sort);
+    return this.http.get<AdminFeedbackIssueIds>(`${ADMIN_FEEDBACK_ENDPOINT}/issues/ids`, { params });
   }
 
-  /** Issue counts per status over all dates, for the sub-tab label. */
+  /** The facet options present in the date range, each with its issue count. */
+  getFacets(startDate?: string, endDate?: string): Observable<AdminFeedbackFacets> {
+    let params = new HttpParams();
+    if (startDate) params = params.set('startDate', startDate);
+    if (endDate) params = params.set('endDate', endDate);
+    return this.http.get<AdminFeedbackFacets>(`${ADMIN_FEEDBACK_ENDPOINT}/facets`, { params });
+  }
+
+  /** Issue counts per status over all dates, for the tab's pill. */
   getCounts(): Observable<AdminFeedbackCounts> {
     return this.http.get<AdminFeedbackCounts>(`${ADMIN_FEEDBACK_ENDPOINT}/counts`);
   }
 
-  /** One page of an issue's occurrences, newest first. */
-  getOccurrences(issueId: number, skip: number, take: number): Observable<AdminFeedbackOccurrencePage> {
-    let params = new HttpParams().set('take', String(take));
+  /**
+   * One page of an issue's occurrences, newest first, narrowed by the filters' occurrence-level filters
+   * (the server ignores the issue-level ones); `all` ignores them all.
+   */
+  getOccurrences(issueId: number, skip: number, take: number, filters: AdminFeedbackIssueFilters = {}, all = false):
+    Observable<AdminFeedbackOccurrencePage> {
+    let params = filterParams(filters).set('take', String(take));
     if (skip > 0) params = params.set('skip', String(skip));
+    if (all) params = params.set('all', 'true');
     return this.http.get<AdminFeedbackOccurrencePage>(this.issueUrl(issueId, '/occurrences'), { params });
   }
 
-  /** Sets an issue's status and triage note; returns the updated issue. 404 for an unknown issue; 400 for an unknown status. */
-  updateStatus(issueId: number, status: AdminFeedbackTriageStatus, note: string | null): Observable<AdminFeedbackIssue> {
-    const trimmed = note?.trim() ?? '';
-    return this.http.post<AdminFeedbackIssue>(this.issueUrl(issueId, '/status'), { status, note: trimmed === '' ? null : trimmed });
+  /**
+   * Sets an issue's status and, for each field given, its triage note, resolution and fixed-in version;
+   * returns the updated issue. 404 for an unknown issue; 400 for an unknown status or a field too long.
+   */
+  updateStatus(issueId: number, status: AdminFeedbackTriageStatus, changes: AdminFeedbackTriageChanges = {}): Observable<AdminFeedbackIssue> {
+    const body: { status: AdminFeedbackTriageStatus; note?: string; resolution?: string; fixedInVersion?: string } = { status };
+    if (changes.note != null) body.note = changes.note.trim();
+    if (changes.resolution != null) body.resolution = changes.resolution.trim();
+    if (changes.fixedInVersion != null) body.fixedInVersion = changes.fixedInVersion.trim();
+    return this.http.post<AdminFeedbackIssue>(this.issueUrl(issueId, '/status'), body);
   }
 
   /** Deletes an issue and, with it, its occurrences; 204 with no body. */

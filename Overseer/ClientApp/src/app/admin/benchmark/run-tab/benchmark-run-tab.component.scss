@@ -165,7 +165,25 @@ $setup-two-columns: 72rem;
   }
 }
 
-// Experimental Changes: what the chosen variant changes, under its select.
+// Experimental Changes: the read-out of the choice, then Choose…, in the field row.
+.variant-readout {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.variant-choose {
+  flex: none;
+  white-space: nowrap;
+}
+
+// Experimental Changes: what the chosen variant changes, under the read-out.
 .variant-summary {
   display: flex;
   flex-direction: column;
@@ -206,6 +224,11 @@ $setup-two-columns: 72rem;
 
 .variant-summary-note {
   color: #aaa;
+  overflow-wrap: anywhere;
+}
+
+.variant-summary-reference {
+  color: #ccc;
   overflow-wrap: anywhere;
 }
 

@@ -288,6 +288,12 @@ public class BenchmarkRunLauncher
                     BenchmarkRunLaunchOutcome.Invalid,
                     $"The instruction variant '{variantName}' is invalid: {variant.InvalidReason}"), null);
             }
+
+            string? ablationRefusal = AblationConditionRefusal(variant, request.InformationCondition);
+            if (ablationRefusal != null)
+            {
+                return (BenchmarkRunLaunchResult.Fail(BenchmarkRunLaunchOutcome.Invalid, ablationRefusal), null);
+            }
         }
 
         int unassessedCount = suite.Questions.Count(q => q.AssessedDifficulty == null);
@@ -737,6 +743,29 @@ public class BenchmarkRunLauncher
             BenchmarkInformationConditions.FromWire(request.InformationCondition),
             string.IsNullOrWhiteSpace(request.InstructionVariant) ? null : request.InstructionVariant.Trim(),
             request.WithholdFeedbackTool ?? false);
+
+    /// <summary>
+    /// Why an ablation cannot run under the requested information condition, or null when it can (or
+    /// <paramref name="variant"/> is not an ablation). A feature that does not reach the candidate
+    /// under the condition makes the run identical to its reference: leaving it out equals the whole
+    /// variant, and keeping only it equals no variant.
+    /// </summary>
+    internal static string? AblationConditionRefusal(BenchmarkInstructionVariant variant, string? informationCondition)
+    {
+        var ablation = variant.Ablation;
+        if (ablation == null) return null;
+
+        BenchmarkInformationConditions.TryParse(informationCondition, out var condition);
+        var feature = ablation.Feature;
+        if (feature.AppliesUnder(condition)) return null;
+
+        string reference = ablation.IsMinus
+            ? $"a run of the whole {ablation.BaseName}"
+            : "a run without Experimental Changes";
+        return $"The instruction variant '{variant.Name}' cannot run under {condition.DisplayName()}: "
+            + $"{BenchmarkVariantFeature.Describe(feature.Id)} ({feature.Id}) does not apply there, "
+            + $"so the run would be identical to {reference}.";
+    }
 
     /// <summary>
     /// The orchestrator claim a launch runs under: the series' for a series member, the battery

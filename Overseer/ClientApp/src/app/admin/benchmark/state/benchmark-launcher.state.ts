@@ -27,6 +27,7 @@ import { parsePromptOptions, refusalText } from '../benchmark-run-format';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
 import type { LauncherSetupPrefill, ModelBatchPrefill } from './benchmark-shell-bridge.service';
+import { ResolvedVariantSpec, resolveVariantSpec } from '../run-tab/instruction-variant-summary';
 
 /**
  * A setup the launcher took over, and each setting it could not take over: a run's recorded setup
@@ -217,8 +218,9 @@ export class BenchmarkLauncherState implements OnDestroy {
   informationCondition: BenchmarkInformationCondition = 'production';
 
   /**
-   * A benchmark-only instruction variant's name, or null for the production instructions (the
-   * default). A run with one is analyzed as a variant contrast.
+   * A benchmark-only instruction variant's spec — its name, or `<name>/minus/<feature>` or
+   * `<name>/only/<feature>` for a single-feature ablation — or null for the production instructions
+   * (the default). A run with one is analyzed as a variant contrast.
    */
   instructionVariant: string | null = null;
 
@@ -241,17 +243,25 @@ export class BenchmarkLauncherState implements OnDestroy {
     return BENCHMARK_INFORMATION_CONDITIONS.find(c => c.value === value)?.value ?? null;
   }
 
-  /** A recorded instruction variant, `name:hash12`, as its name alone; null for none. */
+  /**
+   * A recorded instruction variant, `<spec>:hash12`, as its spec alone (a name, or an ablation spec);
+   * null for none. A spec contains no `:`, so the first one ends it.
+   */
   static instructionVariantName(recorded: string | null | undefined): string | null {
     const text = (recorded ?? '').trim();
     if (text === '') return null;
-    const colon = text.lastIndexOf(':');
+    const colon = text.indexOf(':');
     return colon > 0 ? text.slice(0, colon) : text;
   }
 
-  /** The variants the Instruction Variant select offers: the valid ones. */
+  /** The variants the Experimental Changes dialog offers: the valid ones. */
   get validInstructionVariants(): BenchmarkInstructionVariantDto[] {
     return this.instructionVariants.filter(v => v.isValid);
+  }
+
+  /** The chosen spec resolved against the catalog; null for None, or while it does not resolve. */
+  get resolvedInstructionVariant(): ResolvedVariantSpec | null {
+    return resolveVariantSpec(this.instructionVariant, this.validInstructionVariants);
   }
 
   /**
@@ -289,9 +299,13 @@ export class BenchmarkLauncherState implements OnDestroy {
     this.persistRunSettings();
   }
 
-  /** The note for a variant the loaded catalog does not list as valid; null when it is valid, none, or the catalog has not arrived. */
+  /**
+   * The note for a spec the loaded catalog does not back — a base it does not list as valid, or an
+   * ablation of a feature the base does not have; null when it resolves, is none, or the catalog has
+   * not arrived.
+   */
   private instructionVariantNote(name: string | null): string | null {
-    if (name == null || !this.instructionVariantsLoaded || this.validInstructionVariants.some(v => v.name === name)) {
+    if (name == null || !this.instructionVariantsLoaded || resolveVariantSpec(name, this.validInstructionVariants) !== null) {
       return null;
     }
     return `Experimental Changes: ${name} is no longer available, so None (the same as the live chat) was chosen.`;

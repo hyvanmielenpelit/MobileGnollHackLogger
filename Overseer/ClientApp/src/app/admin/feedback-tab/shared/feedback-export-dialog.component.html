@@ -1,0 +1,69 @@
+<!-- EXPORT
+     The selected issues as one Markdown file for an AI coding assistant. No closedby="any": a click beside the
+     dialog must not abandon an export in flight. -->
+<dialog #dialog class="gh-dialog feedback-transfer-dialog feedback-export-dialog"
+        [attr.aria-labelledby]="source + '-feedback-export-title'"
+        [attr.aria-busy]="exporting ? 'true' : null"
+        (cancel)="onCancel($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 [id]="source + '-feedback-export-title'">{{ title }}</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close feedback export" (click)="close()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      <p class="fx-intro">
+        The file holds each issue's facts and its newest reports, without user names or links to conversations,
+        and ends in a resolution template. An AI coding assistant works on it with the
+        <code>server-feedback-resolution</code> skill and writes a resolution file you import here.
+      </p>
+
+      <fieldset class="gh-choice fx-occurrences">
+        <legend>Occurrences per issue</legend>
+        @for (choice of occurrenceChoices; track choice) {
+          <label class="gh-radio">
+            <input type="radio" [name]="source + '-feedback-export-occurrences'" [attr.value]="choice"
+                   [checked]="occurrencesPerIssue === choice" (change)="setOccurrences(choice)">
+            <span>{{ choice }} newest</span>
+          </label>
+        }
+      </fieldset>
+
+      @if (isGnollBench) {
+        <label class="checkbox-label fx-question-text">
+          <input type="checkbox" [checked]="includeQuestionText" (change)="onIncludeQuestionTextChange($event)">
+          <span>Include the question text of each occurrence</span>
+        </label>
+      }
+
+      @if (error) {
+        <p class="gh-field-error fx-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ error }}</span>
+        </p>
+      }
+    </div>
+
+    <div class="dialog-footer">
+      @if (blockedReason && !exporting) {
+        <p class="gh-footer-note" [id]="source + '-feedback-export-reason'">
+          <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>{{ blockedReason }}</span>
+        </p>
+      }
+      <button type="button" class="btn-gh btn-gh-cancel" [attr.aria-disabled]="exporting ? 'true' : null" (click)="close()">Cancel</button>
+      <button type="button" class="btn-gh fx-export-btn"
+              [attr.aria-disabled]="blockedReason ? 'true' : null"
+              [attr.aria-busy]="exporting ? 'true' : null"
+              [attr.aria-describedby]="blockedReason && !exporting ? source + '-feedback-export-reason' : null"
+              (click)="runExport()">{{ exporting ? 'Exporting…' : 'Export' }}</button>
+    </div>
+  </div>
+</dialog>

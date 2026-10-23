@@ -1,6 +1,7 @@
 import { UrlSegment, convertToParamMap } from '@angular/router';
 import {
-  ADMIN_SUBTAB_SLUGS, ADMIN_TAB_SLUGS, AdminTabId, RETIRED_ADMIN_SUBTABS, RETIRED_ADMIN_TAB_SLUGS, adminCommands, adminUrlMatcher, defaultAdminSubTab,
+  ADMIN_SUBTAB_SLUGS, ADMIN_TAB_SLUGS, AdminTabId, FEEDBACK_FILTER_QUERY_PARAMS, RETIRED_ADMIN_SUBTABS, RETIRED_ADMIN_TAB_SLUGS, adminCommands,
+  adminUrlMatcher, clearedFeedbackQueryParams, defaultAdminSubTab,
   isAdminTabId, legacyAdminPath, parseAdminPath
 } from './admin-url';
 import type { BenchmarkSubTab } from './benchmark/state/benchmark-shell-bridge.service';
@@ -135,16 +136,43 @@ describe('admin URL scheme', () => {
 
     it('has four AI Telemetry sub-tabs and Feedback as a tab of its own at /admin/feedback', () => {
       expect(ADMIN_SUBTAB_SLUGS.telemetry!.map(([id]) => id)).toEqual(['summary', 'models', 'users', 'groups']);
-      expect(ADMIN_SUBTAB_SLUGS.feedback).toBeUndefined();
       expect(adminCommands('feedback')).toEqual(['/admin', 'feedback']);
       expect(parseAdminPath('feedback', null)).toEqual(
-        { tab: 'feedback', subTab: null, canonical: ['/admin', 'feedback'], isCanonical: true });
+        { tab: 'feedback', subTab: 'overseer', canonical: ['/admin', 'feedback'], isCanonical: true });
     });
 
-    it('opens the retired /admin/telemetry/feedback path as the Feedback tab and replaces it', () => {
+    it('reads the Feedback sub-tabs from their paths, Overseer by default', () => {
+      expect(ADMIN_SUBTAB_SLUGS.feedback).toEqual([['overseer', ''], ['gnollbench', 'gnollbench']]);
+      expect(defaultAdminSubTab('feedback')).toBe('overseer');
+      expect(adminCommands('feedback', 'overseer')).toEqual(['/admin', 'feedback']);
+      expect(adminCommands('feedback', 'gnollbench')).toEqual(['/admin', 'feedback', 'gnollbench']);
+      expect(parseAdminPath('feedback', 'gnollbench')).toEqual(
+        { tab: 'feedback', subTab: 'gnollbench', canonical: ['/admin', 'feedback', 'gnollbench'], isCanonical: true });
+      expect(parseAdminPath('feedback', 'overseer')).toEqual(
+        { tab: 'feedback', subTab: 'overseer', canonical: ['/admin', 'feedback'], isCanonical: false });
+      expect(parseAdminPath('feedback', 'bogus')).toEqual(
+        { tab: 'feedback', subTab: 'overseer', canonical: ['/admin', 'feedback'], isCanonical: false });
+    });
+
+    it('opens the retired /admin/telemetry/feedback path as the Feedback tab\'s Overseer sub-tab and replaces it', () => {
       expect(RETIRED_ADMIN_SUBTABS.telemetry).toEqual({ feedback: 'feedback' });
       expect(parseAdminPath('telemetry', 'feedback')).toEqual(
-        { tab: 'feedback', subTab: null, canonical: ['/admin', 'feedback'], isCanonical: false });
+        { tab: 'feedback', subTab: 'overseer', canonical: ['/admin', 'feedback'], isCanonical: false });
+    });
+
+    it('does not retire the GnollBench sub-tab slug', () => {
+      expect(Object.hasOwn(RETIRED_ADMIN_TAB_SLUGS, 'gnollbench')).toBe(false);
+      expect(Object.values(RETIRED_ADMIN_SUBTABS).some(retired => retired && Object.hasOwn(retired, 'gnollbench'))).toBe(false);
+    });
+
+    it('names every Feedback filter parameter, so a sub-tab switch can remove them', () => {
+      for (const name of ['status', 'category', 'model', 'provider', 'user', 'group', 'source', 'config', 'version', 'tool', 'resolution', 'ids', 'q']) {
+        expect(FEEDBACK_FILTER_QUERY_PARAMS).toContain(name);
+      }
+      const cleared = clearedFeedbackQueryParams();
+      expect(Object.keys(cleared)).toEqual([...FEEDBACK_FILTER_QUERY_PARAMS]);
+      expect(Object.values(cleared).every(value => value === null)).toBe(true);
+      expect(FEEDBACK_FILTER_QUERY_PARAMS).not.toContain('sessionId');
     });
 
     it('does not read an inherited property name as a retired sub-tab', () => {
@@ -214,6 +242,7 @@ describe('admin URL scheme', () => {
     it('maps the old Feedback sub-tab and the Feedback tab to /admin/feedback', () => {
       expect(legacy({ tab: 'telemetry', subtab: 'feedback' })).toEqual(['/admin', 'feedback']);
       expect(legacy({ tab: 'feedback' })).toEqual(['/admin', 'feedback']);
+      expect(legacy({ tab: 'feedback', subtab: 'gnollbench' })).toEqual(['/admin', 'feedback', 'gnollbench']);
     });
 
     it('maps every GnollBench sub-tab by its code id', () => {

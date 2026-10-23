@@ -64,14 +64,11 @@ export interface AdminTelemetryRange {
   end: string;
 }
 
+/** The Feedback tab's date range presets; each sub-tab remembers its own range in `localStorage`. */
 export type FeedbackTimeSpan = 'all' | '7d' | '30d' | '90d' | '1y' | 'custom';
 
-/** The Feedback tab's date range, kept while the tab is closed. Empty dates mean no bound. */
-export interface AdminFeedbackRange {
-  timeSpan: FeedbackTimeSpan;
-  start: string;
-  end: string;
-}
+/** The Feedback tab's sub-tabs: the Overseer chat's issues and GnollBench's self-reports. */
+export type FeedbackSubTab = 'overseer' | 'gnollbench';
 
 /**
  * State the Admin page's tabs share, or keep across a tab switch. Provided by AdminComponent, so it
@@ -113,8 +110,6 @@ export class AdminPageStore {
 
   telemetryRange: AdminTelemetryRange = { timeSpan: '30d', start: '', end: '' };
 
-  feedbackRange: AdminFeedbackRange = { timeSpan: 'all', start: '', end: '' };
-
   /** Feedback issue counts per status over all dates; null until they arrive, or when they fail. */
   feedbackCounts: AdminFeedbackCounts | null = null;
 
@@ -144,6 +139,9 @@ export class AdminPageStore {
 
   /** The GnollBench sub-tab last shown, kept while the tab is closed. */
   benchmarkSubTab: BenchmarkSubTab = 'run';
+
+  /** The Feedback tab's selected sub-tab, kept while the tab is closed. */
+  feedbackSubTab: FeedbackSubTab = 'overseer';
 
   /** True while the address is `/admin/configs/api-keys`, where System Configs shows its API Keys dialog. */
   apiKeysDialogOpen = false;
@@ -268,6 +266,8 @@ export class AdminPageStore {
       this.devtoolsSubTab = known as AdminDevtoolsSubTab;
     } else if (tab === 'benchmark') {
       this.benchmarkSubTab = known as BenchmarkSubTab;
+    } else if (tab === 'feedback') {
+      this.feedbackSubTab = known as FeedbackSubTab;
     }
     const dialogOpen = tab === 'configs' && known === 'api-keys';
     if (dialogOpen !== this.apiKeysDialogOpen) {
@@ -283,6 +283,7 @@ export class AdminPageStore {
       case 'telemetry': return this.telemetrySubTab;
       case 'devtools': return this.devtoolsSubTab;
       case 'benchmark': return this.benchmarkSubTab;
+      case 'feedback': return this.feedbackSubTab;
       default: return null;
     }
   }

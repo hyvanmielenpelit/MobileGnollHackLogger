@@ -15,7 +15,7 @@ import { AdminPageStore } from './admin-page.store';
 import { AdminService, GroupDto, SystemAiConfigDto } from '../services/admin.service';
 import { AdminUsersService } from '../services/admin-users.service';
 import { AdminDevtoolsService } from '../services/admin-devtools.service';
-import { AdminFeedbackService } from '../services/admin-feedback.service';
+import { AdminFeedbackFacets, AdminFeedbackService } from '../services/admin-feedback.service';
 import {
   adminTestRoutes, buildSystemConfig, spyAdminDevtoolsService, spyAdminFeedbackCounts, spyAdminService
 } from './admin.component.testing';
@@ -29,6 +29,19 @@ import { ModelResolutionDialogComponent } from '../shared/model-resolution-dialo
 /** A route's path or query parameters. */
 const pm = (params: Params = {}): ParamMap => convertToParamMap(params);
 
+/** The Feedback tab's facets with no option in them. */
+const EMPTY_FEEDBACK_FACETS: AdminFeedbackFacets = {
+  categories: [], models: [], providers: [], sources: [], versions: [], tools: [], users: [], groups: [], configs: []
+};
+
+/** What the Feedback tab remembers per browser, so no test opens on another's view or selection. */
+function clearFeedbackStorage(): void {
+  for (const key of ['overseer.admin.feedback.overseer.view', 'overseer.admin.feedback.gnollbench.view',
+    'overseer.admin.feedback.overseer.selection', 'overseer.admin.feedback.gnollbench.selection']) {
+    try { localStorage.removeItem(key); } catch { /* nothing stored */ }
+  }
+}
+
 describe('AdminComponent', () => {
   let component: AdminComponent;
   let fixture: ComponentFixture<AdminComponent>;
@@ -38,6 +51,7 @@ describe('AdminComponent', () => {
   let countsSpy: Mock;
 
   beforeEach(async () => {
+    clearFeedbackStorage();
     await TestBed.configureTestingModule({
       imports: [AdminComponent],
       providers: [
@@ -62,6 +76,7 @@ describe('AdminComponent', () => {
 
   afterEach(() => {
     document.querySelectorAll('dialog').forEach(d => { if (d.open) d.close(); });
+    clearFeedbackStorage();
   });
 
   it('provides the application\'s chart registrables to the admin page', () => {
@@ -213,7 +228,7 @@ describe('AdminComponent', () => {
       vi.spyOn(feedbackService, 'getSwitches').mockReturnValue(of({
         chat: { enabled: true, setAtUtc: null, setByUserName: null, seeded: true }
       }));
-      vi.spyOn(feedbackService, 'getModels').mockReturnValue(of([]));
+      vi.spyOn(feedbackService, 'getFacets').mockReturnValue(of(EMPTY_FEEDBACK_FACETS));
     });
 
     it('comes last, after Services', () => {
@@ -628,7 +643,7 @@ describe('AdminComponent', () => {
       vi.spyOn(feedbackService, 'getSwitches').mockReturnValue(of({
         chat: { enabled: true, setAtUtc: null, setByUserName: null, seeded: true }
       }));
-      vi.spyOn(feedbackService, 'getModels').mockReturnValue(of([]));
+      vi.spyOn(feedbackService, 'getFacets').mockReturnValue(of(EMPTY_FEEDBACK_FACETS));
       const page = await harness.navigateByUrl('/admin/telemetry/feedback?status=all&q=crystal', AdminComponent);
       await settle();
 
@@ -637,12 +652,34 @@ describe('AdminComponent', () => {
       expect(host().querySelector('#admin-panel-feedback app-admin-feedback-tab')).toBeTruthy();
     });
 
+    it('opens the Feedback tab\'s GnollBench sub-tab at /admin/feedback/gnollbench, and names the default sub-tab without a segment', async () => {
+      vi.spyOn(feedbackService, 'getIssues').mockReturnValue(of({ totalCount: 0, rows: [] }));
+      vi.spyOn(feedbackService, 'getSwitches').mockReturnValue(of({
+        chat: { enabled: true, setAtUtc: null, setByUserName: null, seeded: true }
+      }));
+      vi.spyOn(feedbackService, 'getFacets').mockReturnValue(of(EMPTY_FEEDBACK_FACETS));
+      const page = await harness.navigateByUrl('/admin/feedback/gnollbench', AdminComponent);
+      await settle();
+
+      expect(router.url).toBe('/admin/feedback/gnollbench');
+      expect(page.store.feedbackSubTab).toBe('gnollbench');
+      expect(host().querySelector('#admin-panel-feedback app-feedback-gnollbench-panel')).toBeTruthy();
+      expect(host().querySelector('#admin-panel-feedback app-feedback-overseer-panel')).toBeNull();
+
+      const second = await harness.navigateByUrl('/admin/feedback/overseer?status=all', AdminComponent);
+      await settle();
+
+      expect(router.url).toBe('/admin/feedback?status=all');
+      expect(second.store.feedbackSubTab).toBe('overseer');
+      expect(host().querySelector('#admin-panel-feedback app-feedback-overseer-panel')).toBeTruthy();
+    });
+
     it('replaces an old ?tab=telemetry&subtab=feedback link with /admin/feedback', async () => {
       vi.spyOn(feedbackService, 'getIssues').mockReturnValue(of({ totalCount: 0, rows: [] }));
       vi.spyOn(feedbackService, 'getSwitches').mockReturnValue(of({
         chat: { enabled: true, setAtUtc: null, setByUserName: null, seeded: true }
       }));
-      vi.spyOn(feedbackService, 'getModels').mockReturnValue(of([]));
+      vi.spyOn(feedbackService, 'getFacets').mockReturnValue(of(EMPTY_FEEDBACK_FACETS));
       const page = await harness.navigateByUrl('/admin?tab=telemetry&subtab=feedback&status=resolved', AdminComponent);
       await settle();
 

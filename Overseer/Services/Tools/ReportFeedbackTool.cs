@@ -302,6 +302,11 @@ public sealed class ReportFeedbackTool : IToolHandler
         Provider = Bounded(context.ActiveProvider, 64),
         ModelId = Bounded(context.ActiveModelId, 256),
         AppVersion = AppVersion.Value,
+        // From the context: the turn's messages and tool-call rows are saved only after the turn ends.
+        ModelSource = context.ActiveSystemModelId.HasValue ? FeedbackModelSources.System
+            : context.ActiveUserModelId.HasValue ? FeedbackModelSources.User
+            : null,
+        SystemAiConfigurationId = context.ActiveSystemModelId,
         AspNetUserId = userId
     };
 
@@ -329,6 +334,8 @@ public sealed class ReportFeedbackTool : IToolHandler
         Provider = r.Provider,
         ModelId = r.ModelId,
         AppVersion = r.AppVersion,
+        ModelSource = r.ModelSource,
+        SystemAiConfigurationId = r.SystemAiConfigurationId,
         AspNetUserId = r.AspNetUserId
     };
 

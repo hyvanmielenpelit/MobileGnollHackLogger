@@ -1,0 +1,238 @@
+<!-- IMPORT RESOLUTIONS
+     Provide the file, review what it changes, apply it. No closedby="any": a click beside the dialog would lose
+     pasted text. Every report field (the subject, notes, resolutions) is interpolated as plain text. -->
+<dialog #dialog class="gh-dialog feedback-transfer-dialog feedback-import-dialog"
+        [attr.aria-labelledby]="idPrefix + '-title'"
+        (cancel)="onCancel($event)"
+        (close)="onClosed()">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 [id]="idPrefix + '-title'">{{ title }}</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close resolution import" (click)="close()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      <ol class="gh-steps" aria-label="Import steps">
+        @for (s of steps; track s.id) {
+          <li [class.is-done]="step > s.id" [attr.aria-current]="step === s.id ? 'step' : null">
+            <span class="gh-step-number" aria-hidden="true">{{ s.id }}</span>
+            {{ s.label }}
+          </li>
+        }
+      </ol>
+
+      @if (step === 1) {
+        <h4 class="visually-hidden" #stepHeading tabindex="-1">Provide YAML</h4>
+        <p class="fi-intro">
+          Paste or choose the resolution file an AI coding assistant wrote from a feedback export
+          (<code>overseer-feedback-resolutions</code>, version 1). Only the issues it lists change, and you review
+          every change before it is applied.
+        </p>
+
+        <fieldset class="gh-fieldset fi-source">
+          <legend>Source</legend>
+          <div class="fi-source-options">
+            <label class="gh-radio">
+              <input type="radio" [attr.name]="idPrefix + '-input'" value="paste"
+                     [checked]="input === 'paste'" (change)="setInput('paste')">
+              <span>Paste YAML</span>
+            </label>
+            <label class="gh-radio">
+              <input type="radio" [attr.name]="idPrefix + '-input'" value="file"
+                     [checked]="input === 'file'" (change)="setInput('file')">
+              <span>Choose a file</span>
+            </label>
+          </div>
+
+          @if (input === 'paste') {
+            <div class="form-group">
+              <label [attr.for]="idPrefix + '-paste'">Resolution file</label>
+              <textarea [id]="idPrefix + '-paste'" class="gh-input gh-textarea-autosize fi-yaml-textarea"
+                        style="--autosize-min: 12lh; --autosize-max: 32lh"
+                        spellcheck="false" wrap="off" autocomplete="off"
+                        [ngModel]="pastedText" (ngModelChange)="onPastedTextChange($event)"></textarea>
+            </div>
+          } @else {
+            <div class="form-group">
+              <app-file-picker [inputId]="idPrefix + '-file'" label="Resolution file"
+                               accept=".yaml,.yml,application/yaml,text/yaml,text/plain"
+                               acceptHint=".yaml or .yml, up to 2 MB"
+                               [fileName]="fileText !== null ? fileName : null"
+                               [fileDetail]="fileText !== null ? fileSizeLabel : null"
+                               [error]="fileError"
+                               (fileSelected)="loadFile($event)" (cleared)="clearFile()" />
+            </div>
+          }
+        </fieldset>
+
+        @if (errors.length > 0) {
+          <ul class="error-message fi-errors" role="alert">
+            @for (e of errors; track $index) {
+              <li>{{ e.message }}</li>
+            }
+          </ul>
+        }
+        @if (validSummary) {
+          <div class="fi-valid" role="status">
+            <p class="fi-valid-summary">{{ validSummary }}</p>
+          </div>
+        }
+        @if (notices.length > 0) {
+          <ul class="fi-notices">
+            @for (n of notices; track $index) {
+              <li class="form-hint">{{ n }}</li>
+            }
+          </ul>
+        }
+      }
+
+      @if (step === 2 && preview) {
+        <h4 class="fi-step-heading" #stepHeading tabindex="-1">Review changes</h4>
+
+        <div class="fi-outcome" [attr.id]="idPrefix + '-outcome'">
+          <p>{{ outcomeText }}</p>
+          @if (preview.errorCount > 0) {
+            <p>{{ preview.errorCount }} {{ preview.errorCount === 1 ? 'issue cannot' : 'issues cannot' }} be applied; correct the file and import it again.</p>
+          }
+          @for (n of preview.notices; track $index) {
+            <p class="form-hint">{{ n }}</p>
+          }
+        </div>
+
+        @if (needsAcknowledgment) {
+          <div class="alert alert-warning fi-triaged-warning">
+            {{ preview.triagedSinceExportCount }} {{ preview.triagedSinceExportCount === 1 ? 'issue was' : 'issues were' }}
+            triaged after the export, so the file may undo someone's change. Review the cards marked
+            <strong>Triaged since export</strong>, then confirm below.
+          </div>
+        }
+
+        @if (conflicts) {
+          <div class="fi-conflicts" role="alert">
+            <p class="fi-conflicts-message">{{ conflictMessage }}</p>
+            <ul>
+              @for (c of conflicts; track c.index) {
+                <li>{{ conflictText(c) }}</li>
+              }
+            </ul>
+            <button type="button" class="btn-ghost fi-review-again"
+                    [attr.aria-disabled]="previewing ? 'true' : null"
+                    [attr.aria-busy]="previewing ? 'true' : null"
+                    (click)="reviewAgain()">Review again</button>
+          </div>
+        }
+
+        @if (applyErrors.length > 0) {
+          <ul class="error-message fi-errors" role="alert">
+            @for (e of applyErrors; track $index) {
+              <li>{{ e }}</li>
+            }
+          </ul>
+        }
+
+        <div class="fi-view-toggle" role="group" aria-label="Review view">
+          <button type="button" class="btn-ghost" [attr.aria-pressed]="view === 'side'" (click)="setView('side')">Side by side</button>
+          <button type="button" class="btn-ghost" [attr.aria-pressed]="view === 'diff'" (click)="setView('diff')">Diff</button>
+        </div>
+
+        @for (card of cards; track card.item.index) {
+          <section class="fi-card" [attr.aria-label]="card.heading" [attr.data-index]="card.item.index">
+            <div class="fi-card-header">
+              <h5>{{ card.heading }}</h5>
+              <div class="fi-badges">
+                @for (badge of card.badges; track $index) {
+                  <span [class]="badgeClass(badge)">{{ badge.text }}</span>
+                }
+              </div>
+            </div>
+            @if (card.item.subject) {
+              <p class="fi-subject">{{ card.item.subject }}</p>
+            }
+
+            @if (card.item.errors.length > 0) {
+              <ul class="error-message fi-item-errors">
+                @for (e of card.item.errors; track $index) {
+                  <li>{{ e }}</li>
+                }
+              </ul>
+            }
+            @for (n of card.item.notices; track $index) {
+              <p class="form-hint fi-item-notice">{{ n }}</p>
+            }
+
+            @if (card.item.current) {
+              <dl class="fi-fields">
+                <dt>Status</dt>
+                <dd class="fi-status-line">{{ card.statusLine }}</dd>
+                <dt>Fixed in version</dt>
+                <dd class="fi-version-line">{{ card.versionLine }}</dd>
+              </dl>
+              @if (card.showResolution) {
+                <p class="fi-field-label">Resolution</p>
+                <app-text-diff [diff]="card.resolutionDiff" [view]="view" beforeLabel="Current resolution" afterLabel="Imported resolution" />
+              }
+              @if (card.showNote) {
+                <p class="fi-field-label">Triage note</p>
+                <app-text-diff [diff]="card.noteDiff" [view]="view" beforeLabel="Current note" afterLabel="Imported note" />
+              }
+            }
+          </section>
+        }
+
+        @if (needsAcknowledgment) {
+          <div class="fi-confirm">
+            <label class="checkbox-label align-start" [attr.for]="idPrefix + '-acknowledge'">
+              <input [id]="idPrefix + '-acknowledge'" type="checkbox" required
+                     [checked]="acknowledged" (change)="onAcknowledgedChange($event)"
+                     [attr.aria-describedby]="idPrefix + '-outcome'">
+              <span>I have reviewed the issues changed since the export</span>
+            </label>
+          </div>
+        }
+      }
+
+      @if (step === 3) {
+        <h4 class="fi-step-heading" #stepHeading tabindex="-1">Done</h4>
+        <p class="fi-done" role="status">{{ doneSummary }}</p>
+      }
+    </div>
+
+    <div class="dialog-footer">
+      @if (step === 1) {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Cancel</button>
+        <button type="button" class="btn-gh fi-validate-btn"
+                [attr.aria-disabled]="canValidate ? null : 'true'"
+                [attr.aria-busy]="validating ? 'true' : null"
+                (click)="canValidate && validate()">Validate</button>
+        <button type="button" class="btn-gh fi-review-btn"
+                [attr.aria-disabled]="canValidate ? null : 'true'"
+                [attr.aria-busy]="previewing ? 'true' : null"
+                (click)="review()">{{ previewing ? 'Reviewing…' : 'Review changes' }}</button>
+      }
+      @if (step === 2) {
+        @if (applyBlockedReason && !applying) {
+          <p class="gh-footer-note" [id]="idPrefix + '-apply-reason'">
+            <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span>{{ applyBlockedReason }}</span>
+          </p>
+        }
+        <button type="button" class="btn-gh btn-gh-cancel" [attr.aria-disabled]="applying ? 'true' : null" (click)="back()">Back</button>
+        <button type="button" class="btn-gh fi-apply-btn"
+                [attr.aria-disabled]="applyBlockedReason ? 'true' : null"
+                [attr.aria-busy]="applying ? 'true' : null"
+                [attr.aria-describedby]="applyBlockedReason && !applying ? idPrefix + '-apply-reason' : null"
+                (click)="apply()">{{ applying ? 'Applying…' : applyLabel }}</button>
+      }
+      @if (step === 3) {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Close</button>
+      }
+    </div>
+  </div>
+</dialog>

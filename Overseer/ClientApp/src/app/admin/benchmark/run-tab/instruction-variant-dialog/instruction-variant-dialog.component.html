@@ -1,0 +1,371 @@
+<!--
+  EXPERIMENTAL CHANGES: choose no variant, a whole variant, or a single-feature ablation of one. Its close
+  event fires however it closes (Use this, Cancel, the close button, Escape, a run link), and the host
+  returns focus to Choose… from it.
+-->
+<dialog #ivDialog class="gh-dialog gh-dialog-fullscreen iv-dialog" id="instructionVariantDialog"
+        aria-labelledby="ivTitle" (close)="onDialogClosed()">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="ivTitle">Experimental Changes</h3>
+        <p class="dialog-subtitle">Test-only changes to the AI's tools and instructions. The live chat never uses them.</p>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close Experimental Changes"
+              interestfor="ivCloseTip" style="anchor-name: --iv-close-tip" (click)="cancel()">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="ivCloseTip" style="position-anchor: --iv-close-tip">Close without changing the choice</div>
+    </div>
+
+    <div class="dialog-body iv-body">
+      <details class="gh-disclosure iv-about" id="ivAbout" [open]="aboutOpen" (toggle)="onAboutToggle($event)">
+        <summary>About Experimental Changes</summary>
+        <div class="gh-disclosure-body">
+          <p>A <strong>variant</strong> is a named, test-only bundle of changes to the AI's tools and instructions: an
+            experimental tool, a tool-output switch, a reworded tool description, or extra instructions at the end of
+            the AI's instructions. It exists so that a proposed chat change can be measured before it reaches users.
+            Its files are hashed into the run, so a run always says exactly what it used.</p>
+          <ul>
+            <li><strong>Compare in pairs.</strong> A run with a variant is compared with a run that is identical except
+              for Experimental Changes, on the Paired Test tab of its report. <em>Leave one feature out</em> is compared
+              with a run of the whole variant; <em>Only one feature</em> with a run without Experimental Changes.</li>
+            <li><strong>Source code only first, then Production.</strong> The wiki cannot mask the effect under Source
+              code only; the Production pair shows the change does not hurt where the wiki helps.</li>
+            <li><strong>Declare the criteria before the runs,</strong> cost among them: input tokens and model time.
+              A change that adds tool rounds can win on quality and lose on cost.</li>
+            <li><strong>One ablation at a time, and confirm a winner on a second suite.</strong> Running every ablation
+              on one suite of about 11 questions and keeping the best is a multiple-comparisons trap: one of them will
+              look better by chance.</li>
+            <li><strong>Never compare a variant run with production runs in Model Comparison.</strong> Its scores
+              measure a different set of instructions.</li>
+          </ul>
+          <p class="iv-muted">The full description is in <code>{{ docPath }}</code>.</p>
+        </div>
+      </details>
+
+      <div class="iv-panes">
+        <!-- Left: the variant. -->
+        <fieldset class="iv-variant-pane">
+          <legend class="gh-section-title">Variant</legend>
+          <label class="iv-card" [class.is-checked]="variantName === null">
+            <input type="radio" name="ivVariant" [checked]="variantName === null" (change)="selectVariant(null)">
+            <span class="iv-card-body">
+              <span class="iv-card-name">None — same as the live chat</span>
+              <span class="iv-card-meta">The production tools and instructions. The default.</span>
+            </span>
+          </label>
+          @for (variant of validVariants; track variant.name) {
+            <label class="iv-card" [class.is-checked]="variantName === variant.name">
+              <input type="radio" name="ivVariant" [value]="variant.name" [checked]="variantName === variant.name"
+                     (change)="selectVariant(variant.name)">
+              <span class="iv-card-body">
+                <span class="iv-card-name">{{ variant.name }}</span>
+                @if (optionSuffix(variant); as suffix) {
+                  <span class="iv-card-suffix">{{ suffix }}</span>
+                }
+                <span class="iv-card-meta">
+                  @if (variant.hashPrefix) {<code>{{ variant.hashPrefix }}</code>}
+                  @if (variant.extends) {<span>Builds on {{ variant.extends }}</span>}
+                  @if (runCountText(variant.name); as runs) {<span>{{ runs }}</span>}
+                </span>
+              </span>
+            </label>
+          }
+          @for (variant of invalidVariants; track variant.name) {
+            <label class="iv-card is-disabled">
+              <input type="radio" name="ivVariant" disabled [attr.aria-describedby]="'ivInvalid-' + $index">
+              <span class="iv-card-body">
+                <span class="iv-card-name">{{ variant.name }}</span>
+                <span class="iv-card-meta" [id]="'ivInvalid-' + $index">Not available: {{ variant.invalidReason || 'the variant is invalid.' }}</span>
+              </span>
+            </label>
+          }
+        </fieldset>
+
+        <!-- Right: the checked variant. -->
+        <section class="iv-detail-pane" aria-labelledby="ivDetailTitle">
+          @if (checkedVariant; as variant) {
+            <h4 id="ivDetailTitle" class="iv-detail-title">{{ variant.name }}</h4>
+            @if (variant.extends) {
+              <p class="iv-muted">Builds on {{ variant.extends }}.</p>
+            }
+
+            @if (features.length >= 2) {
+              <fieldset class="gh-choice iv-mode" aria-describedby="ivModeHint">
+                <legend>How to run it</legend>
+                <label class="gh-radio">
+                  <input type="radio" name="ivMode" value="whole" [checked]="mode === 'whole'" (change)="selectMode('whole')">
+                  <span>The whole variant</span>
+                </label>
+                <label class="gh-radio">
+                  <input type="radio" name="ivMode" value="minus" [checked]="mode === 'minus'" (change)="selectMode('minus')">
+                  <span>Leave one feature out</span>
+                </label>
+                <label class="gh-radio">
+                  <input type="radio" name="ivMode" value="only" [checked]="mode === 'only'" (change)="selectMode('only')">
+                  <span>Only one feature</span>
+                </label>
+                <p id="ivModeHint" class="gh-fieldset-hint">
+                  One feature at a time: leaving one out is compared with the whole variant, keeping only one with no
+                  variant. Free combinations of several features are not offered, because with about 11 questions a
+                  suite many combinations find effects that are not there.
+                </p>
+              </fieldset>
+            }
+
+            <h5 class="gh-section-title">What it changes</h5>
+            @if (detailsLoading) {
+              <p class="iv-status" role="status">
+                <svg class="dc-ring dc-ring--inline" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+                  <circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle>
+                  <circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle>
+                </svg>
+                <span>Loading what {{ variant.name }} changes…</span>
+              </p>
+            }
+            @if (detailsError; as error) {
+              <p class="gh-field-error" role="alert">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span>{{ error }}</span>
+              </p>
+            }
+            @if (featureViews.length === 0 && !detailsLoading) {
+              <p class="iv-muted">The catalog lists no features for {{ variant.name }}.</p>
+            }
+
+            @if (ablating) {
+              <fieldset class="iv-features" aria-describedby="ivFeatureHint">
+                <legend class="visually-hidden">Feature</legend>
+                <p id="ivFeatureHint" class="gh-fieldset-hint">
+                  @if (mode === 'minus') {Choose the one feature to leave out.} @else {Choose the one feature to run alone.}
+                  A feature that does not apply under {{ conditionName }} cannot be chosen.
+                </p>
+                <ng-container [ngTemplateOutlet]="featureList" />
+              </fieldset>
+            } @else {
+              <div class="iv-features">
+                <ng-container [ngTemplateOutlet]="featureList" />
+              </div>
+            }
+
+            <ng-template #featureList>
+              @for (view of featureViews; track view.feature.id) {
+                <div class="iv-feature" [class.is-unavailable]="!!notApplying(view)" [attr.data-feature-id]="view.feature.id">
+                  @if (ablating) {
+                    <label class="gh-radio iv-feature-choice">
+                      <input type="radio" name="ivFeature" [value]="view.feature.id" [checked]="featureId === view.feature.id"
+                             [disabled]="!!notApplying(view)"
+                             [attr.aria-describedby]="notApplying(view) ? 'ivNotApplying-' + view.domId : null"
+                             (change)="selectFeature(view.feature.id)">
+                      <span>{{ mode === 'minus' ? 'Leave this out' : 'Run only this' }}<span class="visually-hidden">: {{ view.title }}</span></span>
+                    </label>
+                  }
+                  @if (notApplying(view); as reason) {
+                    <p class="form-hint iv-not-applying" [id]="'ivNotApplying-' + view.domId">{{ reason }}</p>
+                  }
+                  <details class="gh-disclosure iv-feature-details" [id]="'ivFeature-' + view.domId">
+                    <summary>
+                      <span class="iv-feature-title">{{ view.title }}</span>
+                      @if (view.feature.fromParent && variant.extends) {
+                        <span class="gh-tag iv-parent-tag">From {{ variant.extends }}</span>
+                      }
+                    </summary>
+                    <div class="gh-disclosure-body">
+                      @switch (view.feature.kind) {
+                        @case ('experimentalTool') {
+                          <p>A tool the live chat does not have. Its description, as the AI reads it:</p>
+                          @if (!view.textLoaded) {
+                            <p class="iv-muted">Loading…</p>
+                          } @else if (view.text) {
+                            <pre class="iv-text">{{ view.text }}</pre>
+                          }
+                          @if (view.parameters; as parameters) {
+                            <div class="iv-table-wrap" role="region" tabindex="0" [attr.aria-label]="'Parameters of ' + view.feature.target">
+                              <table class="gh-table iv-params">
+                                <caption class="visually-hidden">Parameters of {{ view.feature.target }}</caption>
+                                <thead>
+                                  <tr>
+                                    <th scope="col">Parameter</th>
+                                    <th scope="col">Type</th>
+                                    <th scope="col">Required</th>
+                                    <th scope="col">Description</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  @for (parameter of parameters; track parameter.name) {
+                                    <tr>
+                                      <td><code>{{ parameter.name }}</code></td>
+                                      <td>{{ parameter.type }}</td>
+                                      <td>{{ parameter.required ? 'Yes' : 'No' }}</td>
+                                      <td>{{ parameter.description }}</td>
+                                    </tr>
+                                  } @empty {
+                                    <tr><td colspan="4">The tool takes no parameters.</td></tr>
+                                  }
+                                </tbody>
+                              </table>
+                            </div>
+                          }
+                          @if (view.parametersUnreadable) {
+                            <p class="iv-muted">The tool's parameter schema could not be read.</p>
+                          }
+                        }
+                        @case ('experiment') {
+                          <p>{{ experimentText(view.feature.target) }}</p>
+                          @if (view.text) {
+                            <pre class="iv-text">{{ view.text }}</pre>
+                          }
+                        }
+                        @case ('rewordedGuide') {
+                          <p>Replaces the live description of <code>{{ view.feature.target }}</code> for this run.</p>
+                          @if (view.drifted) {
+                            <p class="gh-field-warning iv-drift">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                              <span>The live description has changed since this variant copied it; a -v2 should re-base on it.</span>
+                            </p>
+                          }
+                          @if (!view.textLoaded) {
+                            <p class="iv-muted">Loading…</p>
+                          } @else if (view.diff) {
+                            <fieldset class="gh-choice iv-diff-view">
+                              <legend>Show the change</legend>
+                              <label class="gh-radio">
+                                <input type="radio" [name]="'ivDiffView-' + view.domId" value="side"
+                                       [checked]="diffViewOf(view.feature.id) === 'side'" (change)="setDiffView(view.feature.id, 'side')">
+                                <span>Side by side</span>
+                              </label>
+                              <label class="gh-radio">
+                                <input type="radio" [name]="'ivDiffView-' + view.domId" value="diff"
+                                       [checked]="diffViewOf(view.feature.id) === 'diff'" (change)="setDiffView(view.feature.id, 'diff')">
+                                <span>Diff</span>
+                              </label>
+                            </fieldset>
+                            <p class="iv-muted">
+                              @if (diffViewOf(view.feature.id) === 'side') {Left: the live description. Right: this variant's.}
+                              @else {Removed lines are the live description's; added lines are this variant's.}
+                            </p>
+                            <app-text-diff [diff]="view.diff" [view]="diffViewOf(view.feature.id)" />
+                          } @else if (view.text) {
+                            <pre class="iv-text">{{ view.text }}</pre>
+                          }
+                        }
+                        @case ('appendix') {
+                          <p>Added to the end of the AI's instructions:</p>
+                          @if (!view.textLoaded) {
+                            <p class="iv-muted">Loading…</p>
+                          } @else if (view.text) {
+                            <pre class="iv-text">{{ view.text }}</pre>
+                          }
+                        }
+                      }
+                    </div>
+                  </details>
+                </div>
+              }
+            </ng-template>
+
+            <h5 class="gh-section-title">Under your Tool Access choice</h5>
+            <p class="iv-muted">Tool Access is {{ conditionName }}; change it in the launcher.</p>
+            @if (conditionRows.length > 0) {
+              <ul class="iv-condition-rows">
+                @for (row of conditionRows; track row.title) {
+                  <li>
+                    <span class="iv-condition-word" [class.is-off]="row.reason !== null">{{ row.reason === null ? 'Applies' : 'Does not apply' }}</span>
+                    <span>{{ row.title }}</span>
+                    @if (row.reason; as reason) {
+                      <span class="iv-muted">{{ reason }}</span>
+                    }
+                  </li>
+                }
+              </ul>
+            }
+
+            <h5 class="gh-section-title">The result</h5>
+            <dl class="iv-facts" id="ivResult">
+              <div><dt>Spec</dt><dd><code>{{ spec }}</code></dd></div>
+              <div><dt>In words</dt><dd>{{ specLabel }}</dd></div>
+              <div><dt>Compare with</dt><dd>{{ referenceLine }}</dd></div>
+            </dl>
+            @if (danglingLines.length > 0) {
+              <div class="iv-dangling" id="ivDangling">
+                @for (line of danglingLines; track $index) {
+                  <p class="gh-field-warning">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    <span>{{ line }}</span>
+                  </p>
+                }
+                <label class="checkbox-label align-start">
+                  <input type="checkbox" id="ivDanglingAck" [checked]="danglingAcknowledged" aria-describedby="ivDangling"
+                         (change)="onDanglingAcknowledged($event)">
+                  <span>I understand: this is a deliberate test of text that mentions something the run leaves out.</span>
+                </label>
+              </div>
+            }
+
+            <h5 class="gh-section-title">Technical</h5>
+            <dl class="iv-facts">
+              <div><dt>Stamp</dt><dd>
+                @if (stamp) {<code>{{ stamp }}</code>} @else {<span>Not known yet</span>}
+                @if (ablating) {<span class="iv-muted"> — an ablation's run is stamped <code>{{ spec }}:</code> and its own hash</span>}
+              </dd></div>
+              <div><dt>Folder</dt><dd><code>Overseer/BenchmarkVariants/{{ variant.name }}/</code></dd></div>
+              @if (variant.description?.trim()) {
+                <div><dt>Description</dt><dd>{{ variant.description }}</dd></div>
+              }
+            </dl>
+
+            <h5 class="gh-section-title">Runs that used it</h5>
+            @if (loadedDetails; as details) {
+              @if (details.runCount === 0) {
+                <p class="iv-muted">No run has used {{ variant.name }} or one of its ablations yet.</p>
+              } @else {
+                <p class="iv-muted" id="ivRunsSummary">{{ runsSummary(details) }}</p>
+                <ul class="iv-runs">
+                  @for (run of details.runs; track run.id) {
+                    <li>
+                      <button type="button" class="btn-link" [attr.aria-label]="'Open the report of run #' + run.id" (click)="openRun(run)">Run #{{ run.id }}</button>
+                      <span>{{ dateText(run.startedAtUtc) }}</span>
+                      <span>{{ run.suiteName || 'Unknown suite' }}</span>
+                      <span>{{ run.modelDisplayName || 'Unknown model' }}</span>
+                      <span>{{ conditionText(run.informationCondition) }}</span>
+                      <span>{{ statusText(run.status) }}</span>
+                      <span>{{ specText(run.spec) }}</span>
+                      @if (!run.hashMatchesCurrent) {
+                        <span class="gh-tag iv-older-tag">Older version</span>
+                      }
+                    </li>
+                  }
+                </ul>
+              }
+            } @else if (detailsLoading) {
+              <p class="iv-muted">Loading…</p>
+            }
+          } @else {
+            <h4 id="ivDetailTitle" class="iv-detail-title">None — same as the live chat</h4>
+            <p>The run uses the production tools, tool descriptions and instructions, exactly as the live chat does.
+              This is the choice for a normal run, and the reference run that a variant run, or a run with only one of
+              its features, is compared with.</p>
+          }
+        </section>
+      </div>
+    </div>
+
+    <div class="dialog-footer">
+      @if (useRefusal; as refusal) {
+        <p class="gh-footer-note" id="ivFooterNote">
+          <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>{{ refusal }}</span>
+        </p>
+      }
+      <button type="button" class="btn-gh btn-gh-cancel" id="ivCancel" (click)="cancel()">Cancel</button>
+      <button type="button" class="btn-gh" id="ivUseThis"
+              [attr.aria-disabled]="useRefusal ? 'true' : null"
+              [attr.aria-describedby]="useRefusal ? 'ivFooterNote' : null"
+              (click)="useThis()">Use this</button>
+    </div>
+  </div>
+</dialog>

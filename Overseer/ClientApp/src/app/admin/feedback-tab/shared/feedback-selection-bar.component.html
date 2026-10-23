@@ -1,0 +1,47 @@
+<!-- What is selected, shown or not; no select-all checkbox. Export and Import resolutions open their own dialogs. -->
+<div class="fsb" role="group" aria-label="Selection, export and import">
+  <div class="fsb-selection">
+    <p class="fsb-count">
+      {{ summary }}@if (count > 0 && notShownCount > 0) {<span class="fsb-not-shown"> — {{ formatCount(notShownCount) }} not shown</span>}
+    </p>
+    @if (count > 0 || showSelectedOnly) {
+      <button type="button" class="gh-filter-toggle fsb-show-selected"
+              [attr.aria-pressed]="showSelectedOnly" (click)="toggleShowSelectedOnly()">Show selected only</button>
+    }
+    @if (count > 0) {
+      <button type="button" class="btn-ghost fsb-clear" (click)="onClear()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+        Clear selection<span class="visually-hidden"> ({{ formatCount(count) }})</span>
+      </button>
+    }
+    @if (canSelectAllMatching) {
+      <button type="button" class="gh-filter-clear fsb-select-all" (click)="onSelectAllMatching()">{{ selectAllLabel }}</button>
+    }
+  </div>
+
+  <div class="fsb-actions">
+    <button type="button" class="btn-ghost fsb-export" aria-haspopup="dialog"
+            [attr.aria-disabled]="exportBlockedReason ? 'true' : null"
+            [attr.aria-describedby]="exportBlockedReason ? idPrefix + '-export-reason' : null"
+            (click)="openExport()">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+      Export…
+    </button>
+    <button type="button" class="btn-ghost fsb-import" aria-haspopup="dialog" (click)="openImport()">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+      Import resolutions…
+    </button>
+  </div>
+
+  @if (exportBlockedReason) {
+    <p class="form-hint fsb-export-reason" [id]="idPrefix + '-export-reason'">{{ exportBlockedReason }}</p>
+  }
+</div>
+<p class="fsb-status" role="status">{{ statusMessage }}</p>
+
+<app-feedback-export-dialog #exportDialog [source]="source" [ids]="selectedIds" [exportOptions]="exportOptions"
+                            (exported)="onExported($event)" />
+<app-feedback-import-dialog #importDialog [source]="source" (imported)="onImported()" />

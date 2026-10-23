@@ -1,0 +1,342 @@
+@use '../../benchmark-dialog-frame' as frame;
+
+/* Experimental Changes dialog: layout and component-local presentation only. The full-screen frame
+ * (.gh-dialog-fullscreen), the buttons, .gh-disclosure, .gh-choice / .gh-radio, .checkbox-label,
+ * .gh-table, .gh-tag, .gh-field-warning / .gh-field-error, .gh-footer-note, .gh-section-title,
+ * .btn-link, .dc-ring, .gh-tooltip and the diff classes of app-text-diff come from styles.scss. */
+
+.gh-dialog.gh-dialog-fullscreen.iv-dialog {
+  @include frame.frame($width: 100vw, $full-height: true);
+  /* The frame's header, body and footer, at the full-screen size rather than the frame's 94vw. */
+  width: calc(100vw - 16px);
+  max-width: calc(100vw - 16px);
+  background: rgba(16, 16, 16, 0.98);
+
+  @media (max-width: 600px) {
+    width: calc(100vw - 8px);
+    max-width: calc(100vw - 8px);
+  }
+}
+
+.iv-body {
+  container: iv / inline-size;
+  line-height: 1.5;
+  color: #ddd;
+}
+
+.iv-about {
+  margin-bottom: 20px;
+
+  ul {
+    margin: 0 0 10px;
+    padding-inline-start: 1.25rem;
+  }
+
+  li + li {
+    margin-top: 6px;
+  }
+
+  p {
+    margin: 0 0 10px;
+  }
+}
+
+.iv-muted {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+/* Two panes side by side; stacked in a narrow dialog. */
+.iv-panes {
+  display: grid;
+  grid-template-columns: minmax(15rem, 22rem) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@container iv (max-width: 48rem) {
+  .iv-panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.iv-variant-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+
+  > legend {
+    width: 100%;
+  }
+}
+
+/* One variant: a card that is the label of its radio. */
+.iv-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+
+  input[type="radio"] {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin: 0.2em 0 0;
+    accent-color: var(--primary-color);
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+  }
+
+  &.is-checked {
+    border-color: var(--primary-color);
+    background: rgba(224, 186, 109, 0.08);
+  }
+
+  &.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+}
+
+.iv-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.iv-card-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.iv-card-suffix {
+  font-size: var(--text-secondary);
+  color: #ccc;
+}
+
+.iv-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+.iv-detail-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+
+  .gh-section-title {
+    margin-top: 12px;
+    margin-bottom: 0;
+  }
+}
+
+.iv-detail-title {
+  margin: 0;
+  font-family: "Cinzel", serif;
+  color: var(--title-color);
+  overflow-wrap: anywhere;
+}
+
+.iv-mode {
+  padding: 10px 12px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+
+  .gh-fieldset-hint {
+    flex-basis: 100%;
+  }
+}
+
+.iv-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #ccc;
+}
+
+.iv-features {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.iv-feature {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+
+  &.is-unavailable .iv-feature-details {
+    opacity: 0.75;
+  }
+}
+
+.iv-feature-choice {
+  font-weight: 600;
+}
+
+.iv-not-applying {
+  margin: 0;
+}
+
+.iv-feature-details > summary {
+  flex-wrap: wrap;
+}
+
+.iv-feature-title {
+  overflow-wrap: anywhere;
+}
+
+.iv-parent-tag {
+  border-color: var(--border-glass);
+  color: #ccc;
+}
+
+.iv-older-tag {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+}
+
+/* Variant text is shown as written, wrapped, and scrolls past a cap. */
+.iv-text {
+  max-height: 22rem;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.iv-table-wrap {
+  overflow-x: auto;
+  margin: 0 0 10px;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  .gh-table {
+    min-width: 32rem;
+
+    th,
+    td {
+      vertical-align: top;
+    }
+  }
+}
+
+.iv-drift {
+  margin-bottom: 8px;
+}
+
+.iv-diff-view {
+  margin-bottom: 6px;
+}
+
+.iv-condition-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+}
+
+/* A word, not a color alone: Applies / Does not apply. */
+.iv-condition-word {
+  flex: none;
+  min-width: 7.5rem;
+  font-weight: 600;
+  color: var(--color-success);
+
+  &.is-off {
+    color: var(--color-warning);
+  }
+}
+
+.iv-facts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+
+  > div {
+    display: grid;
+    grid-template-columns: minmax(7rem, 9rem) minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  dt {
+    font-weight: 600;
+    color: #ccc;
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.iv-dangling {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: 8px;
+}
+
+.iv-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+    font-size: var(--text-secondary);
+  }
+
+  .btn-link {
+    font-size: inherit;
+  }
+}

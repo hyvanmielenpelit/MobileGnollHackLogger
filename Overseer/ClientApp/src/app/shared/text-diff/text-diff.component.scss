@@ -1,0 +1,24 @@
+/* Layout only; the diff lines are styled by the global .import-diff classes in styles.scss. */
+
+:host {
+  display: block;
+  min-inline-size: 0;
+}
+
+.text-diff-side {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.text-diff-column {
+  min-inline-size: 0;
+}
+
+.text-diff-empty {
+  font-style: italic;
+}
+
+.text-diff-truncated {
+  margin: 0 0 8px 0;
+}

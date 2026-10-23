@@ -16,11 +16,12 @@ that knows the scheme is `Overseer/ClientApp/src/app/admin/admin-url.ts`, pinned
 | `/admin/telemetry` · `/admin/telemetry/models` · `/admin/telemetry/users` · `/admin/telemetry/groups` | AI Telemetry: *Summary*, *Models*, *Users*, *Groups* |
 | `/admin/gnollbench` · `/admin/gnollbench/history` · `…/multi-run` · `…/multi-suite` · `…/suites` · `…/profiles` · `…/model-comparison` · `…/chat-consistency` | GnollBench: *Run Benchmark*, *Run History*, *Multi-Run Analysis*, *Batteries*, *Manage Suites*, *Scoring Profiles*, *Model Comparison*, *Chat Consistency* |
 | `/admin/services` · `/admin/services/gnollhack-wiki` · `…/nethack-wiki` · `…/knowledge-base` · `…/config-health` · `…/developer-tools` | Services: *GnollHack Source*, *GnollHack Wiki*, *NetHack Wiki*, *Knowledge Base*, *Configuration Health*, *Developer Tools* |
-| `/admin/feedback` | Feedback (no sub-tabs): the assistant's feedback tool and the issues it reported |
+| `/admin/feedback` · `/admin/feedback/gnollbench` | Feedback: *Overseer* (the default: the chat's feedback tool and the issues the chat assistant reported) and *GnollBench* (the issues GnollBench candidates reported, grouped by fingerprint) |
 
 - **The first sub-tab is the default and has no segment.** `/admin/users/users`,
   `/admin/telemetry/summary` and `/admin/services/source`, which name the default by its id, are
-  accepted and replaced by `/admin/users`, `/admin/telemetry` and `/admin/services`. A sub-tab named by a code id that differs from its slug
+  accepted and replaced by `/admin/users`, `/admin/telemetry` and `/admin/services` (and
+  `/admin/feedback/overseer` by `/admin/feedback`). A sub-tab named by a code id that differs from its slug
   (`/admin/gnollbench/multirun`, `/admin/services/sentry`) is replaced by its slug the same way. A
   tab is found by its slug, or by a retired slug in `RETIRED_ADMIN_TAB_SLUGS` (`devtools`, the
   Services tab's slug until 2026-10-18), which is then replaced by the current one;
@@ -56,18 +57,55 @@ that knows the scheme is `Overseer/ClientApp/src/app/admin/admin-url.ts`, pinned
 
 A valid `resolveConfig` on any other path is moved to `/admin/configs`, keeping it.
 
-**Filter state on the Feedback tab stays in the query.** `/admin/feedback` keeps its facet
-values as query parameters, so a filtered view can be reloaded and shared among administrators:
+**Filter state on the Feedback tab stays in the query.** Both Feedback sub-tabs keep their facet
+values as query parameters, so a filtered view can be reloaded and shared among administrators. Every
+list is comma-separated. An absent `status` means the default, *New* and *Regressed*; `status=all` means
+no status filter. Unknown values are dropped.
+
+`/admin/feedback` (the *Overseer* sub-tab):
 
 | Parameter | Holds |
 |---|---|
 | `status` | The *Status* facet's values (wire values such as `new`, `regressed`) |
 | `category` | The *Category* facet's values (`missing_information`, `tool_problem`, `own_mistake`) |
-| `model` | The *Model* facet's values (model ids) |
+| `model` | The *Model* facet's values (model ids; sent to the server as `modelId`) |
+| `provider` | The *Provider* facet's values |
+| `user` | The *User* facet's values (Identity user ids) |
+| `group` | The *Group* facet's values (group ids, and `none` for *No group*) |
+| `source` | The *Model source* facet's values (`system`, `user`, `unknown`) |
+| `config` | The *Configuration* facet's values (system configuration ids) |
+| `version` | The *Version* facet's values (Overseer versions) |
+| `tool` | The *Tool* facet's values (related tool names) |
+| `resolution` | *Has resolution*: `with` or `without` |
+| `ids` | Issue ids, at most 500 (chips *Issue: #42*); set by the GnollBench sub-tab's *Overseer issue* link, not by a facet |
 | `q` | The search text |
 
-They are view state, not one-shot actions, so they are not removed. The sort is a `localStorage`
-preference and the date range is kept in the page store; neither is in the address. See
+`/admin/feedback/gnollbench` (the *GnollBench* sub-tab):
+
+| Parameter | Holds |
+|---|---|
+| `status` | As on the Overseer sub-tab |
+| `category` | As on the Overseer sub-tab |
+| `model` | The *Model* facet's values (the tested model's id) |
+| `provider` | The *Provider* facet's values |
+| `run` · `series` · `group` · `battery` · `batch` | Run, run series, Multi-Run Analysis group, battery run and model batch ids |
+| `suite` · `question` | Suite and question ids |
+| `condition` | Information conditions (`production`, `sourceOnly`, `closedBook`) |
+| `corpus` | Corpus conditions (`live` for none) |
+| `variant` | Experimental Changes: a variant name or an ablation spec, without the hash, or `none` |
+| `harness` | Harness versions |
+| `accepted` | The *Self-reports* select: absent for accepted calls only, `all`, or `refused` |
+| `q` | The search text |
+
+The two sub-tabs share some names (`status`, `category`, `model`, `provider`, `group`, `q`), so a sub-tab
+switch removes every Feedback filter parameter (`FEEDBACK_FILTER_QUERY_PARAMS` in `admin-url.ts`) and
+keeps the others, such as `sessionId`. The entering sub-tab then applies the address when it carries
+any of its own filter parameters, and otherwise its remembered view, which it writes to the address with
+the history entry replaced.
+
+They are view state, not one-shot actions, so they are not removed. Each sub-tab also remembers its
+filters, sort, search and date range in `localStorage` (`overseer.admin.feedback.overseer.view`,
+`overseer.admin.feedback.gnollbench.view`); the sort and the date range are not in the address. See
 `ai-feedback-reports.md` § 10.
 
 **Every other query parameter is kept.** The chat's *Admin* link carries the chat's `sessionId` into

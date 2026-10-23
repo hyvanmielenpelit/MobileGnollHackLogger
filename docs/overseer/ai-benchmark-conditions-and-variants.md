@@ -353,6 +353,12 @@ others:
   and the only other Instrument key that may differ is `CandidateSystemPromptSha256` (moved by an
   appendix).
 
+**Ablation pairs are variant contrasts too** (§ 6.10). An ablation's stamp is its own `InstructionVariant`
+value, so the classification needs no new kind: a `<name>/minus/<feature>` run against a run of the whole
+`<name>`, and a `<name>/only/<feature>` run against a run without a variant, each differ in
+`InstructionVariant` and at most in `CandidateSystemPromptSha256`, and are `VariantContrast` pairs. An
+ablation is never pooled with its base, with no variant, or with another ablation.
+
 Both explanations end *"compare, never pool"*. A pair that differs in condition **and** variant is
 *NotComparable*. Neither kind is ever a Root Cause control (only Model comparison pairs are), and a
 condition or variant run never joins production runs in Model Comparison, because the keys it moves
@@ -455,8 +461,11 @@ benchmark question by itself is a wiki edit in disguise. The anti-overfitting ru
   '<name>' has changed since this run; re-run is not possible."*, when the variant is gone, invalid,
   or its hash no longer matches the stamp.
 - **The launcher.** The launcher labels the field **Experimental Changes**; its info tip ends *"Reports
-  call this the instruction variant."* It sits under **Tool Access** (§ 1.2): *None — same as the live
-  chat (default)*, then each valid variant as *<name> — <what it adds>*. The suffix and the summary
+  call this the instruction variant."* It sits under **Tool Access** (§ 1.2) and is a read-out line of the
+  choice with a **Choose…** button (`#candidateInstructionVariant`, `.btn-gh btn-gh-small`) that opens the
+  full-screen Experimental Changes dialog (§ 6.10). The read-out is *None — same as the live chat*, a
+  whole variant as *<name> — <what it adds> · <hash prefix>*, or an ablation in words (*asker-profile-v1
+  without the reworded wiki_search description*). The suffix and the summary
   are derived from what the variant contains (`run-tab/instruction-variant-summary.ts`), never written
   for it, so a new variant needs no launcher text and `variant.json` never has to change for the
   launcher's sake (editing it would move the variant's hash):
@@ -477,14 +486,29 @@ benchmark question by itself is a wiki edit in disguise. The anti-overfitting ru
   it. Compare this run only with a run that is identical except for Experimental Changes, on the Paired
   Test tab of its report."* When the Tool Access choice voids part of the variant, one more warning
   (`#candidateInstructionVariantConditionWarning`) says so: under Closed book only the appendix applies,
-  or nothing does; under Source code only a reworded guide of a withheld tool does not apply. *Repeat
-  this run's setup* strips the hash suffix and, when the catalog no longer lists the name as valid,
-  chooses None and says so.
+  or nothing does; under Source code only a reworded guide of a withheld tool does not apply. For an
+  ablation the summary lists what the run changes — the base's lines without the left-out feature, or the
+  one kept feature — and names its reference run (`#candidateInstructionVariantReference`). *Repeat
+  this run's setup* strips the hash suffix (splitting the stamp at its first `:`, so an ablation spec is
+  kept whole) and, when the catalog no longer lists the name as valid, or an ablation's base is invalid
+  or no longer has the feature, chooses None and says so. The launcher keeps the spec in
+  `instructionVariant` and remembers it under `overseer_admin_benchmark_run_settings`.
 - **The catalog endpoint.** Besides the name, description, parent, hash prefix, validity and reason,
   each entry carries `experimentalTools` and `experiments` (a parent's included), `rewordedTools` (the
   `toolGuides` keys that are not experimental tools), `hasPromptAppendix`, and
   `rewordingsWithheldUnderSourceOnly` (the reworded tools Source code only withholds), all from the
-  resolved variant (`BenchmarkInstructionVariantDto.From`); the lists are empty for an invalid one.
+  resolved variant (`BenchmarkInstructionVariantDto.From`); the lists are empty for an invalid one. Each
+  entry also carries `features` (§ 6.10): `{ id, kind, target, fromParent, appliesUnder: { production,
+  sourceOnly, closedBook }, mentions }`, so the launcher can validate and label a remembered ablation
+  without another call. `GET api/admin/benchmark/instruction-variants/{name}/details` returns one folder
+  variant for the dialog: `name`, `description`, `parent`, `stamp`, `isValid`, `invalidReason`, the
+  features with their `text` (an experimental tool's or a reworded description's variant guide, an
+  appendix part's text), `productionText` (a reworded description's startup production text, from
+  `Overseer/ToolGuides/`) and `parameterSchemaJson` (an experimental tool's parameter schema), and
+  `runs`: the ten newest runs whose stamp starts with `<name>:` or `<name>/` (the whole variant and its
+  ablations), each with its spec and whether its hash equals the current one, plus `runCount` and
+  `olderHashRunCount`. An invalid variant has no features and no stamp; an unknown name, or an ablation
+  spec, is 404.
 
 **Production never loads a variant.** `ToolExecutionContext.Variant` is null on every live-chat
 request and on every benchmark run whose variant is None, and such a request declares the same tools,
@@ -563,6 +587,125 @@ Measured against each other, `asker-profile-v1` isolates the instruction from th
   stamp and the run could not be re-run. Copy it to a new folder with the next suffix (`-v2`) and change
   that. When a production guide that a variant copied changes, the copy is stale; the hash records what
   was used, and the next version re-bases.
+
+### 6.10 Ablations
+
+A run can use a folder variant whole, the variant **with one feature left out**, or **only one** of its
+features. Both are single-factor ablations: they say which part of a variant made its effect. Free
+composition of several hand-picked features is deliberately not offered: with about 11 questions a
+suite, many ad-hoc combinations produce false discoveries and lose the attribution.
+
+**Features** are derived from the resolved variant (`BenchmarkInstructionVariantCatalog`, `DeriveFeatures`),
+never written in `variant.json`, so no folder and no hash changes:
+
+| Feature id | Kind (`kind` on the wire) | What it is |
+|---|---|---|
+| `tool.<name>` | experimental tool (`experimentalTool`) | The tool together with its variant guide |
+| `experiment.<name>` | tool-output switch (`experiment`) | For example `experiment.stats_referenced_by` |
+| `guide.<tool>` | reworded description (`rewordedGuide`) | A `toolGuides` entry for a tool that is not one of the variant's experimental tools |
+| `appendix.<variant>` | instruction paragraph (`appendix`) | The appendix of that variant folder; a child and its parent contribute one each, so they can be ablated separately |
+
+The order is experimental tools, experiments and reworded descriptions in ordinal order, then the
+appendices, parent first. A feature inherited from the parent has `fromParent`. The context keeps the
+appendices per folder in `BenchmarkVariantContext.AppendixParts`; `Appendix` stays their concatenation,
+which the prompt and the series fingerprint read. Feature ids contain no `:`.
+
+- `source-tools-v1`: `tool.get_character_info`, `experiment.stats_referenced_by`,
+  `guide.get_artifact_stats`, `guide.get_item_stats`, `guide.get_monster_stats`.
+- `asker-profile-v1`: those five, inherited, plus `guide.wiki_search` and `appendix.asker-profile-v1`.
+
+**The spec** is the string the launch request sends in `StartBenchmarkRunRequest.InstructionVariant`:
+
+| Spec | Meaning | Compare it with |
+|---|---|---|
+| `<name>` | The whole variant | A run without a variant |
+| `<name>/minus/<feature>` | The variant with that feature left out | A run of the whole `<name>` |
+| `<name>/only/<feature>` | Just that feature of the variant | A run without a variant |
+
+**Resolution.** `BenchmarkInstructionVariantCatalog.Find(spec)` resolves a plain name exactly as before. A
+spec containing `/` that is not a folder name is parsed (`TryParseSpec`) and resolved to a synthesized
+entry whose context is the base's with the feature removed (`minus`) or with only that feature kept
+(`only`):
+
+- a removed tool also removes its guide;
+- a removed appendix part leaves the other part;
+- a removed reworded guide falls back to the production description, as for any tool without a variant
+  guide.
+
+Its `Name` is the spec, and its hash is the SHA-256 of `base:<base hash>\n<mode>:<feature id>\n`, so the
+stamp `<spec>:<hash12>` changes whenever the base variant's files change. Valid synthesized entries are
+cached per spec; `All` lists folder variants only. Every consumer that resolves a variant goes through
+`Find`, so the launch, the stamp, the re-run check, the grader's tool list and the series resume guard
+handle an ablation unchanged. The sites that read the stamp as a string split it at the first `:`, which
+yields the spec. A plain variant records, receives and prints exactly what it did before ablations
+existed, so there is no `HarnessVersion` bump and `BenchmarkComparabilityKey.DefinitionVersion` stays 3.
+
+**Refusals.** `Find` returns an invalid entry, which the launcher reports as *"The instruction variant
+'<spec>' is invalid: <reason>"*, when:
+
+- the spec is not `<variant>/<mode>/<feature>`;
+- the base is not a variant, or is invalid;
+- the mode is not `minus` or `only`;
+- the feature is not one of the base's (the reason lists the base's features);
+- the base has one feature only: `minus` *leaves nothing; choose None*, and `only` *is the whole variant;
+  choose it*;
+- the stamp would be longer than the 160 characters `BenchmarkRun.InstructionVariant` holds.
+
+The launcher (`BenchmarkRunLauncher.AblationConditionRefusal`) also refuses an ablation whose feature
+**does not apply under the chosen Tool Access**, because the run would be identical to its reference and
+the contrast empty: under Closed book only an appendix applies, and under Source code only a reworded
+description of a withheld tool does not apply. The message names the feature, its id, the condition
+and the run it would equal.
+
+**Dangling references** are a warning, never a refusal. Each feature carries `mentions`, the other
+features its text names, found mechanically: an experimental tool's name, and `referenced_by` for
+`experiment.stats_referenced_by`. Each of the three reworded stats guides mentions the experiment, and
+`asker-profile-v1`'s appendix mentions `tool.get_character_info`. When an ablation keeps a text that
+mentions a feature it removes — `asker-profile-v1/minus/tool.get_character_info` keeps an appendix that
+names `get_character_info` — the dialog says the model will be told about a tool it does not have, and
+requires a checkbox before **Use this**. Such a run can be a deliberate test.
+
+**The report** prints an ablation in words in the condition manifest
+(`BenchmarkInstructionVariantCatalog.DescribeAblation`): *asker-profile-v1, leaving out the reworded
+wiki_search description (3fa2c91b0d1e) — benchmark-only instruction text and tools that production does
+not have*, or *…, only the get_character_info tool (…)*. A plain variant prints as before.
+
+**The dialog** (`run-tab/instruction-variant-dialog/`, opened by the launcher's **Choose…**) is a native
+full-screen `<dialog>`:
+
+- an **About** disclosure, open on first use and remembered in
+  `overseer.benchmark.instructionVariantDialog.view`, which explains variants, the pairing rule, *Source
+  code only first, then Production*, pre-declared criteria including cost, the one-at-a-time rule below,
+  and never comparing with production runs in Model Comparison;
+- on the left, a radio group of *None — same as the live chat*, each valid variant (name, suffix, hash,
+  parent, the number of runs that used it), and invalid variants disabled with their reason;
+- on the right, for the checked variant: *How to run it* (*The whole variant*, *Leave one feature out*,
+  *Only one feature*, shown when the variant has two or more features); *What it changes*, one section
+  per feature, marked *From <parent>* when inherited — an experimental tool's guide and its parameters, a
+  reworded description's diff against production with a *Side by side* / *Diff* toggle, an appendix's
+  text; in the two ablation modes a *Leave this out* or *Run only this* radio per feature, unavailable
+  with its reason when the feature does not apply under the current Tool Access; what applies under that
+  Tool Access; the result (the spec, its words, the run to compare it with, any dangling-reference
+  warning); the technical stamp; and the runs that used the variant or its ablations;
+- **Use this**, `aria-disabled` with a stated reason until the choice is complete and every warning is
+  acknowledged, and **Cancel** (Escape cancels).
+
+A reworded description shows *The live description has changed since this variant copied it; a -v2
+should re-base on it.* when a non-blank line of the live description is missing from the variant's copy.
+A variant that deliberately deletes a production line also triggers it.
+
+**Method.**
+
+- **One ablation at a time, and confirm a winner on a second suite.** Running every ablation on one
+  11-question suite and keeping the best is a multiple-comparisons trap.
+- Pre-declare the criteria per ablation, as for a variant (§ 6.9).
+- **Promotion** of an ablation result promotes the corresponding subset of the variant as a new `-vN`
+  folder, never the spec, so a promoted change is again an ordinary variant with its own hash.
+
+**A limit of the series resume guard.** The guard compares the instrument hashes, which see a variant
+only through its appendix. A base edit that touches only a guide file therefore does not block resuming
+a series, for a plain variant and an ablation alike; only a re-run's stamp check catches it. This
+predates ablations and is unchanged.
 
 ---
 

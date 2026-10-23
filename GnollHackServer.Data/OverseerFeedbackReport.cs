@@ -86,6 +86,13 @@ public class OverseerFeedbackReport
     [MaxLength(64)]
     public string? AppVersion { get; set; }
 
+    /// <summary><c>system</c> or <c>user</c>; null when unknown.</summary>
+    [MaxLength(16)]
+    public string? ModelSource { get; set; }
+
+    /// <summary>Plain column, like <see cref="ChatMessage.SystemAiConfigurationIdUsed"/>, so it survives the configuration's deletion.</summary>
+    public long? SystemAiConfigurationId { get; set; }
+
     [MaxLength(450)]
     public string? AspNetUserId { get; set; }
 }

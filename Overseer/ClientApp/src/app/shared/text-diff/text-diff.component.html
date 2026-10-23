@@ -1,0 +1,15 @@
+@if (view === 'side') {
+  <div class="text-diff-side">
+    <div class="text-diff-column" role="group" [attr.aria-label]="beforeLabel">
+      <pre class="import-diff text-diff-before">@for (line of beforeLines; track $index) {<span class="diff-line" [class.diff-removed]="line.kind === 'removed'" [class.diff-equal]="line.kind === 'equal'">{{ line.text }}</span>}@empty {<span class="diff-line diff-equal text-diff-empty">(empty)</span>}</pre>
+    </div>
+    <div class="text-diff-column" role="group" [attr.aria-label]="afterLabel">
+      <pre class="import-diff text-diff-after">@for (line of afterLines; track $index) {<span class="diff-line" [class.diff-added]="line.kind === 'added'" [class.diff-equal]="line.kind === 'equal'">{{ line.text }}</span>}@empty {<span class="diff-line diff-equal text-diff-empty">(empty)</span>}</pre>
+    </div>
+  </div>
+} @else {
+  <pre class="import-diff text-diff-unified">@for (line of lines; track $index) {<span class="diff-line" [class.diff-added]="line.kind === 'added'" [class.diff-removed]="line.kind === 'removed'" [class.diff-equal]="line.kind === 'equal'">{{ prefix(line) }}{{ line.text }}</span>}@empty {<span class="diff-line diff-equal text-diff-empty">(empty)</span>}</pre>
+}
+@if (diff.truncated) {
+  <p class="form-hint text-diff-truncated">The texts are too long to align line by line, so each is shown whole.</p>
+}

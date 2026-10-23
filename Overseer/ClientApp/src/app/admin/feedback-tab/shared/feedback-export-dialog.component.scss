@@ -1,0 +1,23 @@
+@use '../../benchmark/benchmark-dialog-frame' as frame;
+
+.gh-dialog.feedback-export-dialog {
+  @include frame.frame(560px);
+}
+
+.fx-intro {
+  margin: 0 0 16px 0;
+  line-height: 1.5;
+  color: #ccc;
+}
+
+.fx-occurrences {
+  margin-bottom: 14px;
+}
+
+.fx-question-text {
+  margin-bottom: 8px;
+}
+
+.fx-error {
+  margin: 12px 0 0 0;
+}

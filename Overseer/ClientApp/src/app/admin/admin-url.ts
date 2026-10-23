@@ -54,8 +54,23 @@ export const ADMIN_SUBTAB_SLUGS: Readonly<Partial<Record<AdminTabId, readonly Ad
   telemetry: [['summary', ''], ['models', 'models'], ['users', 'users'], ['groups', 'groups']],
   benchmark: Object.entries(BENCHMARK_SUBTAB_SLUGS) as [BenchmarkSubTab, string][],
   devtools: [['source', ''], ['gnollhack-wiki', 'gnollhack-wiki'], ['nethack-wiki', 'nethack-wiki'],
-             ['knowledge-base', 'knowledge-base'], ['config-health', 'config-health'], ['sentry', 'developer-tools']]
+             ['knowledge-base', 'knowledge-base'], ['config-health', 'config-health'], ['sentry', 'developer-tools']],
+  feedback: [['overseer', ''], ['gnollbench', 'gnollbench']]
 };
+
+/**
+ * Every filter parameter of the Feedback tab's sub-tabs, which share some names (`status`, `category`,
+ * `model`, `provider`, `group`, `q`). A sub-tab switch removes them all, so none leaks into the other sub-tab.
+ */
+export const FEEDBACK_FILTER_QUERY_PARAMS: readonly string[] = [
+  'status', 'category', 'model', 'provider', 'user', 'group', 'source', 'config', 'version', 'tool', 'resolution', 'ids', 'q',
+  'accepted', 'run', 'series', 'battery', 'batch', 'suite', 'question', 'condition', 'corpus', 'variant', 'harness', 'fingerprints'
+];
+
+/** Query parameters that remove every Feedback filter parameter, for a navigation with `queryParamsHandling: 'merge'`. */
+export function clearedFeedbackQueryParams(): Record<string, null> {
+  return Object.fromEntries(FEEDBACK_FILTER_QUERY_PARAMS.map(name => [name, null]));
+}
 
 const TAB_IDS = Object.keys(ADMIN_TAB_SLUGS) as AdminTabId[];
 

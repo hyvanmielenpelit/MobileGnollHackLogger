@@ -446,10 +446,15 @@ public static class BenchmarkReportBuilder
             : candidateTools == null
                 ? "not recorded"
                 : candidateTools.Count == 0 ? "none" : string.Join(", ", candidateTools);
-        string variant = string.IsNullOrWhiteSpace(run.InstructionVariant)
-            ? "none"
-            : $"{BenchmarkInstructionVariantCatalog.NameOfStamp(run.InstructionVariant)} "
-              + $"({run.InstructionVariant[(run.InstructionVariant.IndexOf(':') + 1)..]}) — benchmark-only instruction text and tools that production does not have";
+        string variant = "none";
+        if (!string.IsNullOrWhiteSpace(run.InstructionVariant))
+        {
+            string spec = BenchmarkInstructionVariantCatalog.NameOfStamp(run.InstructionVariant);
+            // An ablation spec is named in words; a plain name prints as it is.
+            string label = BenchmarkInstructionVariantCatalog.DescribeAblation(spec) ?? spec;
+            variant = $"{label} "
+                + $"({run.InstructionVariant[(run.InstructionVariant.IndexOf(':') + 1)..]}) — benchmark-only instruction text and tools that production does not have";
+        }
         return new[]
         {
             $"**Information condition:** {condition.DisplayName()}",

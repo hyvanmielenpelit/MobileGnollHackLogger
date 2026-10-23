@@ -71,6 +71,13 @@ public class OverseerFeedbackIssue
     [MaxLength(1000)]
     public string? TriageNote { get; set; }
 
+    /// <summary>What was done about the issue.</summary>
+    [MaxLength(4000)]
+    public string? Resolution { get; set; }
+
+    [MaxLength(64)]
+    public string? FixedInVersion { get; set; }
+
     [MaxLength(450)]
     public string? TriagedByUserId { get; set; }
 

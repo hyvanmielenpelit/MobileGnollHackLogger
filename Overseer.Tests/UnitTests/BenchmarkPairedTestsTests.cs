@@ -692,6 +692,32 @@ public class BenchmarkPairedTestsTests
         Assert.Contains("asker-profile-v1:0123456789ab", classification.Explanation);
     }
 
+    [Theory]
+    [InlineData("asker-profile-v1:0123456789ab", "asker-profile-v1/minus/guide.wiki_search:3fa2c91b0d1e", false)]
+    [InlineData("asker-profile-v1:0123456789ab", "asker-profile-v1/minus/appendix.asker-profile-v1:3fa2c91b0d1e", true)]
+    [InlineData(null, "asker-profile-v1/only/tool.get_character_info:3fa2c91b0d1e", false)]
+    [InlineData(null, "asker-profile-v1/only/appendix.asker-profile-v1:3fa2c91b0d1e", true)]
+    public void AnAblationPair_IsAVariantContrast_AgainstItsReference(string? referenceStamp, string ablationStamp, bool movePromptHash)
+    {
+        // Leave one out is compared with the whole variant, only one with no variant.
+        var baseline = Run(1, SixScores);
+        baseline.InstructionVariant = referenceStamp;
+        var treatment = Run(2, SixScores);
+        treatment.InstructionVariant = ablationStamp;
+        if (movePromptHash)
+        {
+            treatment.CandidateSystemPromptSha256 = OtherPromptSha;
+        }
+
+        var classification = BenchmarkPairedTests.ClassifyRunPair(baseline, treatment, repriced: false);
+
+        Assert.Equal(BenchmarkRunPairKind.VariantContrast, classification.Kind);
+        Assert.Contains(BenchmarkComparabilityKey.InstructionVariantKey, classification.ChangedKeys);
+        Assert.Equal(movePromptHash ? 2 : 1, classification.ChangedKeys.Count);
+        Assert.StartsWith("Variant contrast:", classification.Explanation);
+        Assert.Contains(ablationStamp, classification.Explanation);
+    }
+
     [Fact]
     public void AVariantPair_AlsoDifferingOnTheCondition_IsNotComparable()
     {

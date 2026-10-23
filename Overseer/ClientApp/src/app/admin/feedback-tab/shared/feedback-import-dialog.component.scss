@@ -1,0 +1,217 @@
+@use '../../benchmark/benchmark-dialog-frame' as frame;
+
+/* The frame of the dialog; the diff lines come from the global .import-diff classes through app-text-diff. */
+.gh-dialog.feedback-import-dialog {
+  @include frame.frame(920px);
+}
+
+.fi-intro {
+  margin: 0 0 14px 0;
+  line-height: 1.5;
+  color: #ccc;
+}
+
+.fi-source-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-bottom: 14px;
+}
+
+.fi-yaml-textarea {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 2;
+}
+
+.fi-errors {
+  display: block;
+  margin: 16px 0 0 0;
+  padding-inline-start: 28px;
+
+  li + li {
+    margin-top: 4px;
+  }
+}
+
+.fi-valid {
+  margin-top: 16px;
+
+  .fi-valid-summary {
+    margin: 0;
+    color: var(--color-success);
+    font-weight: 600;
+  }
+}
+
+.fi-notices {
+  margin: 8px 0 0 0;
+  padding-inline-start: 20px;
+
+  .form-hint {
+    margin: 2px 0;
+  }
+}
+
+.fi-step-heading {
+  margin: 0 0 12px 0;
+  font-family: "Cinzel", serif;
+  color: var(--primary-color);
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+  }
+}
+
+/* What the file does: a bordered callout, so it does not rely on color alone. */
+.fi-outcome {
+  margin: 0 0 14px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+  border-inline-start: 3px solid var(--primary-color);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+
+  p {
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  p + p {
+    margin-top: 4px;
+  }
+}
+
+.fi-triaged-warning {
+  margin: 0 0 14px 0;
+}
+
+.fi-conflicts {
+  margin: 0 0 14px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--color-error);
+  border-radius: 6px;
+  background: rgba(231, 76, 60, 0.08);
+
+  .fi-conflicts-message {
+    margin: 0 0 6px 0;
+    font-weight: 600;
+    color: var(--color-error-text);
+  }
+
+  ul {
+    margin: 0 0 10px 0;
+    padding-inline-start: 20px;
+    overflow-wrap: anywhere;
+  }
+}
+
+.fi-view-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+
+  .btn-ghost[aria-pressed="true"] {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+}
+
+.fi-card {
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: rgba(255, 255, 255, 0.02);
+
+  h5 {
+    margin: 0;
+    font-size: 14px;
+    color: #eee;
+  }
+}
+
+.fi-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.fi-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fi-badge-none {
+  background-color: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+}
+
+.fi-badge-change {
+  background-color: rgba(224, 186, 109, 0.16);
+  color: var(--primary-color);
+}
+
+.fi-badge-info {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+
+.fi-subject {
+  margin: 0 0 8px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #ddd;
+}
+
+.fi-item-errors {
+  display: block;
+  margin: 6px 0;
+  padding-inline-start: 22px;
+}
+
+.fi-item-notice {
+  margin: 4px 0;
+}
+
+.fi-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 8px 0;
+  font-size: 13px;
+
+  dt {
+    color: #999;
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.fi-field-label {
+  margin: 8px 0 4px 0;
+  font-size: 12px;
+  color: #999;
+}
+
+.fi-confirm {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+}
+
+.fi-done {
+  font-size: 15px;
+  color: #ddd;
+}

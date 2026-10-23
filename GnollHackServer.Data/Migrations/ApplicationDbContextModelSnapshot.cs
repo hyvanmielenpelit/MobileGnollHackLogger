@@ -986,6 +986,54 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("BenchmarkComparisons");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkFeedbackTriage", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("FixedInVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Resolution")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime?>("ResolvedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("TriageNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("TriagedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("TriagedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Fingerprint")
+                        .IsUnique();
+
+                    b.ToTable("BenchmarkFeedbackTriages");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkGameSnapshot", b =>
                 {
                     b.Property<long>("Id")
@@ -4666,6 +4714,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<DateTime>("FirstSeenUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("FixedInVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTime?>("LastRegressionUtc")
                         .HasColumnType("datetime2");
 
@@ -4677,6 +4729,10 @@ namespace GnollHackServer.Data.Migrations
 
                     b.Property<int>("RegressionCount")
                         .HasColumnType("int");
+
+                    b.Property<string>("Resolution")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -4767,6 +4823,10 @@ namespace GnollHackServer.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("ModelSource")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
                     b.Property<string>("NoticedVia")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
@@ -4803,6 +4863,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("SuspectedCauseNote")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<long?>("SystemAiConfigurationId")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("ToolCallId")
                         .HasMaxLength(128)

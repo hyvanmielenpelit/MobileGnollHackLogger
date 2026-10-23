@@ -1,0 +1,53 @@
+/* One wrapping line: the selection controls first, the transfer actions at the end. */
+
+/* Takes the whole row of a flex parent, so the transfer actions reach its end. */
+:host {
+  display: block;
+  flex: 1 1 100%;
+  min-inline-size: 0;
+}
+
+.fsb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.fsb-selection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-inline-size: 0;
+}
+
+.fsb-count {
+  margin: 0;
+  font-size: 13px;
+  color: #ccc;
+}
+
+.fsb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+
+.fsb-export-reason {
+  flex-basis: 100%;
+  margin: 0;
+  text-align: end;
+}
+
+/* The polite status line: always rendered, so a screen reader hears it fill; empty, it has no height. */
+.fsb-status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--primary-color);
+
+  &:not(:empty) {
+    margin-top: 6px;
+  }
+}

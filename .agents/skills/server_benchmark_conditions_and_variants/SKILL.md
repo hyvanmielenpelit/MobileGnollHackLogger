@@ -176,6 +176,23 @@ bundle that production never loads. The format is the doc's § 6.
   4. one confirming production run, because the appendix sat in the volatile segment and a
      `_policy.md` sentence sits in the frozen one, which can matter to the model and does matter to
      the prompt cache.
+- **Ablations** (the doc's § 6.10): a run of a variant with one feature left out
+  (`<name>/minus/<feature>`) or only one of its features (`<name>/only/<feature>`), chosen in the launcher's
+  Experimental Changes dialog.
+  - Use one when a variant won or lost and you need to know which feature did it.
+  - *Leave one out* is compared with the whole variant; *only one* with no variant. Both pairs are
+    variant contrasts on the Paired Test tab.
+  - Pre-declare the criteria per ablation, cost included, as for the variant.
+  - Do not run every ablation on one suite and keep the best: with about 11 questions that is a
+    multiple-comparisons trap. Run one at a time, and confirm a winner on a second suite.
+  - An ablation of a feature that does not apply under the run's Tool Access is refused, because the
+    pair would be empty: under Closed book only an appendix applies, and under Source code only a
+    reworded description of a withheld tool does not.
+  - A dangling-reference warning means the model is told about something it does not have (for example
+    `asker-profile-v1/minus/tool.get_character_info` keeps an appendix that names the tool). That is a
+    deliberate test or a mistake, so say which in the analysis.
+  - Promotion of an ablation result promotes the corresponding subset as a new `-vN` folder, never the
+    spec.
 - **A family-specific instruction is an interaction claim.** One base prompt stays; a variant scoped
   to a provider or model family needs a factorial (variant × family) and far more data than a main
   effect (research report § 11). Variants cannot be scoped to a family today.

@@ -421,6 +421,69 @@ export interface BenchmarkInstructionVariantDto {
   hasPromptAppendix?: boolean | null;
   /** The reworded tools that Source code only switches off. */
   rewordingsWithheldUnderSourceOnly?: string[] | null;
+  /** The variant's features, each of which a single-feature ablation can leave out or keep alone; empty when invalid. */
+  features?: BenchmarkInstructionVariantFeatureDto[] | null;
+}
+
+/** What a variant feature is: an experimental tool, a tool-output switch, a reworded tool description, or an appendix. */
+export type BenchmarkVariantFeatureKind = 'experimentalTool' | 'experiment' | 'rewordedGuide' | 'appendix';
+
+/** One feature of an instruction variant. */
+export interface BenchmarkInstructionVariantFeatureDto {
+  /** `tool.<name>`, `experiment.<name>`, `guide.<tool>` or `appendix.<variant>`; never contains `:` or `/`. */
+  id: string;
+  kind: BenchmarkVariantFeatureKind;
+  /** The tool, the experiment, or the variant folder whose appendix it is. */
+  target: string;
+  /** The feature comes from the variant this one extends. */
+  fromParent: boolean;
+  /** Under which information conditions the feature reaches the candidate. */
+  appliesUnder: { production: boolean; sourceOnly: boolean; closedBook: boolean };
+  /** The ids of the variant's other features that this feature's text names. */
+  mentions: string[];
+}
+
+/** A variant feature with its texts, as the Experimental Changes dialog shows it. */
+export interface BenchmarkInstructionVariantFeatureDetailsDto extends BenchmarkInstructionVariantFeatureDto {
+  /** An experimental tool's variant guide, a reworded description, or an appendix; null for an experiment. */
+  text?: string | null;
+  /** A reworded tool's production description; null otherwise. */
+  productionText?: string | null;
+  /** An experimental tool's parameter schema as JSON; null otherwise. */
+  parameterSchemaJson?: string | null;
+}
+
+/** One run that used a variant or one of its ablations. */
+export interface BenchmarkInstructionVariantRunDto {
+  id: number;
+  startedAtUtc: string;
+  suiteName?: string | null;
+  modelDisplayName?: string | null;
+  informationCondition: BenchmarkInformationCondition;
+  status: string;
+  /** The variant name or ablation spec of the run's stamp, without the hash. */
+  spec: string;
+  /** The run's stamp equals the stamp the spec resolves to now. */
+  hashMatchesCurrent: boolean;
+}
+
+/** Everything the Experimental Changes dialog shows about one variant folder. */
+export interface BenchmarkInstructionVariantDetailsDto {
+  name: string;
+  description?: string | null;
+  parent?: string | null;
+  /** The run stamp, `name:hash12`; null when invalid. */
+  stamp?: string | null;
+  isValid: boolean;
+  invalidReason?: string | null;
+  /** Empty when the variant is invalid. */
+  features: BenchmarkInstructionVariantFeatureDetailsDto[];
+  /** The newest runs of the variant and its ablations, newest first. */
+  runs: BenchmarkInstructionVariantRunDto[];
+  /** Every run of the variant and its ablations. */
+  runCount: number;
+  /** The runs whose stamp no longer matches the current hash of their spec. */
+  olderHashRunCount: number;
 }
 
 export interface BenchmarkGameSnapshotDto {
@@ -4762,6 +4825,12 @@ export class AdminBenchmarkService {
   /** The benchmark-only instruction variants the catalog lists, valid or not. */
   getInstructionVariants(): Observable<BenchmarkInstructionVariantDto[]> {
     return this.http.get<BenchmarkInstructionVariantDto[]>('/api/admin/benchmark/instruction-variants');
+  }
+
+  /** One variant folder's features with their texts, and the runs that used it or one of its ablations. */
+  getInstructionVariantDetails(name: string): Observable<BenchmarkInstructionVariantDetailsDto> {
+    return this.http.get<BenchmarkInstructionVariantDetailsDto>(
+      `/api/admin/benchmark/instruction-variants/${encodeURIComponent(name)}/details`);
   }
 
   startRunSeries(req: StartBenchmarkRunRequest): Observable<{ seriesId: number }> {

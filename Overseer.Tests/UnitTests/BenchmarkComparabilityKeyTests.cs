@@ -982,6 +982,27 @@ public class BenchmarkComparabilityKeyTests
         Assert.NotEqual(BenchmarkComparabilityKey.ComputeKeyHash(production), BenchmarkComparabilityKey.ComputeKeyHash(variant));
     }
 
+    [Theory]
+    [InlineData("asker-profile-v1/minus/guide.wiki_search:3fa2c91b0d1e", "asker-profile-v1:0123456789ab")]
+    [InlineData("asker-profile-v1/only/tool.get_character_info:3fa2c91b0d1e", null)]
+    [InlineData("asker-profile-v1/minus/guide.wiki_search:3fa2c91b0d1e", "asker-profile-v1/only/guide.wiki_search:abcdefabcdef")]
+    public void AnAblationStamp_MovesExactlyOneInstrumentKey(string ablationStamp, string? referenceStamp)
+    {
+        var reference = Run(13);
+        reference.InstructionVariant = referenceStamp;
+        var ablation = Run(14);
+        ablation.InstructionVariant = ablationStamp;
+
+        var referenceKeys = BenchmarkComparabilityKey.Extract(reference);
+        var ablationKeys = BenchmarkComparabilityKey.Extract(ablation).ToDictionary(k => k.Name);
+
+        var key = Assert.Single(referenceKeys, k => ablationKeys[k.Name].Value != k.Value);
+        Assert.Equal(BenchmarkComparabilityKey.InstructionVariantKey, key.Name);
+        Assert.Equal(BenchmarkComparabilityKeyKind.Instrument, key.Kind);
+        Assert.Equal(ablationStamp, ablationKeys[BenchmarkComparabilityKey.InstructionVariantKey].Value);
+        Assert.NotEqual(BenchmarkComparabilityKey.ComputeKeyHash(reference), BenchmarkComparabilityKey.ComputeKeyHash(ablation));
+    }
+
     [Fact]
     public void Describe_NamesBothNewKeys()
     {

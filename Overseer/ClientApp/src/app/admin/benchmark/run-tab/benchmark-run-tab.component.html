@@ -805,16 +805,15 @@
         </div>
 
         <div class="form-group">
-          <label for="candidateInstructionVariant">Experimental Changes</label>
+          <label id="candidateInstructionVariantLabel" for="candidateInstructionVariant">Experimental Changes</label>
           <div class="gh-field-row">
-            <select id="candidateInstructionVariant" class="gh-input"
-                    [(ngModel)]="launcher.instructionVariant" (ngModelChange)="onReuseInputsChanged()"
-                    [attr.aria-describedby]="instructionVariantDescribedBy">
-              <option [ngValue]="null">None — same as the live chat (default)</option>
-              @for (variant of launcher.validInstructionVariants; track variant.name) {
-                <option [ngValue]="variant.name">{{ instructionVariantLabel(variant) }}</option>
-              }
-            </select>
+            <!-- The read-out of the choice; Choose… opens the Experimental Changes dialog that makes it. -->
+            <p id="candidateInstructionVariantReadout" class="variant-readout">{{ instructionVariantReadout }}</p>
+            <button type="button" id="candidateInstructionVariant" class="btn-gh btn-gh-small variant-choose"
+                    #instructionVariantChoose aria-haspopup="dialog"
+                    aria-labelledby="candidateInstructionVariantChooseText candidateInstructionVariantLabel"
+                    [attr.aria-describedby]="instructionVariantDescribedBy"
+                    (click)="openInstructionVariantDialog()"><span id="candidateInstructionVariantChooseText">Choose…</span></button>
             <app-info-tip trigger="click" tipId="candidateInstructionVariantHint" subject="Experimental Changes">
               <p>A test-only change to the AI's tools or instructions, tried out before anyone decides to put
                 it into the live chat. The live chat never uses one. Choose None for a normal run; pick a
@@ -825,13 +824,16 @@
           @if (selectedVariant; as variant) {
             <div id="candidateInstructionVariantSummary" class="variant-summary" role="group"
                  aria-labelledby="candidateInstructionVariantSummaryTitle">
-              <p id="candidateInstructionVariantSummaryTitle" class="variant-summary-title">What {{ variant.name }} changes</p>
+              <p id="candidateInstructionVariantSummaryTitle" class="variant-summary-title">What {{ selectedVariantTitle }} changes</p>
               @if (selectedVariantLines.length > 0) {
                 <ul class="variant-summary-lines">
                   @for (line of selectedVariantLines; track $index) {
                     <li>@for (segment of line; track $index) {@if (segment.code) {<code>{{ segment.text }}</code>} @else {<span>{{ segment.text }}</span>}}</li>
                   }
                 </ul>
+              }
+              @if (selectedVariantReference; as reference) {
+                <p id="candidateInstructionVariantReference" class="variant-summary-reference">{{ reference }}</p>
               }
               @if (variant.description?.trim()) {
                 <p class="variant-summary-note"><em>Technical note:</em> {{ variant.description }}</p>
@@ -1826,3 +1828,7 @@
   }
 </dialog>
 
+<!-- Experimental Changes: the dialog behind the launcher's Choose…. -->
+<app-instruction-variant-dialog [variants]="launcher.instructionVariants" [informationCondition]="launcher.informationCondition"
+                                (chosen)="onInstructionVariantChosen($event)" (closed)="onInstructionVariantDialogClosed()"
+                                (openRunReport)="onInstructionVariantRunReport($event)" />

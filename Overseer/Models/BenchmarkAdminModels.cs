@@ -2491,6 +2491,8 @@ public class BenchmarkInstructionVariantDto
     public bool HasPromptAppendix { get; set; }
     /// <summary>The <see cref="RewordedTools"/> that Source code only withholds, so their rewording never reaches the candidate there.</summary>
     public List<string> RewordingsWithheldUnderSourceOnly { get; set; } = new();
+    /// <summary>The variant's features, each of which a single-feature ablation can leave out or keep alone.</summary>
+    public List<BenchmarkInstructionVariantFeatureDto> Features { get; set; } = new();
 
     /// <summary>The launcher's view of <paramref name="variant"/>; the content lists are empty when it is invalid.</summary>
     public static BenchmarkInstructionVariantDto From(BenchmarkInstructionVariant variant)
@@ -2530,7 +2532,136 @@ public class BenchmarkInstructionVariantDto
             Experiments = new List<string>(context?.Experiments ?? Array.Empty<string>()),
             RewordedTools = rewordedTools,
             HasPromptAppendix = !string.IsNullOrWhiteSpace(context?.Appendix),
-            RewordingsWithheldUnderSourceOnly = withheld
+            RewordingsWithheldUnderSourceOnly = withheld,
+            Features = context == null
+                ? new List<BenchmarkInstructionVariantFeatureDto>()
+                : variant.Features.Select(BenchmarkInstructionVariantFeatureDto.From).ToList()
         };
     }
+}
+
+/// <summary>Under which information conditions a variant feature reaches the candidate.</summary>
+public class BenchmarkVariantFeatureConditionsDto
+{
+    public bool Production { get; set; }
+    public bool SourceOnly { get; set; }
+    public bool ClosedBook { get; set; }
+}
+
+/// <summary>One feature of an instruction variant, as the launcher validates and labels an ablation spec.</summary>
+public class BenchmarkInstructionVariantFeatureDto
+{
+    /// <summary><c>tool.&lt;name&gt;</c>, <c>experiment.&lt;name&gt;</c>, <c>guide.&lt;tool&gt;</c> or <c>appendix.&lt;variant&gt;</c>.</summary>
+    public string Id { get; set; } = string.Empty;
+    /// <summary><c>experimentalTool</c>, <c>experiment</c>, <c>rewordedGuide</c> or <c>appendix</c>.</summary>
+    public string Kind { get; set; } = string.Empty;
+    /// <summary>The tool, the experiment, or the variant folder whose appendix it is.</summary>
+    public string Target { get; set; } = string.Empty;
+    /// <summary>The feature comes from the variant this one extends.</summary>
+    public bool FromParent { get; set; }
+    public BenchmarkVariantFeatureConditionsDto AppliesUnder { get; set; } = new();
+    /// <summary>The ids of the variant's other features that this feature's text names.</summary>
+    public List<string> Mentions { get; set; } = new();
+
+    public static BenchmarkInstructionVariantFeatureDto From(BenchmarkVariantFeature feature)
+        => Fill(new BenchmarkInstructionVariantFeatureDto(), feature);
+
+    protected static T Fill<T>(T dto, BenchmarkVariantFeature feature) where T : BenchmarkInstructionVariantFeatureDto
+    {
+        dto.Id = feature.Id;
+        dto.Kind = feature.KindName;
+        dto.Target = feature.Target;
+        dto.FromParent = feature.FromParent;
+        dto.AppliesUnder = new BenchmarkVariantFeatureConditionsDto
+        {
+            Production = feature.AppliesUnder(BenchmarkInformationCondition.Production),
+            SourceOnly = feature.AppliesUnder(BenchmarkInformationCondition.SourceOnly),
+            ClosedBook = feature.AppliesUnder(BenchmarkInformationCondition.ClosedBook)
+        };
+        dto.Mentions = new List<string>(feature.Mentions);
+        return dto;
+    }
+}
+
+/// <summary>A variant feature with its texts, as the Experimental Changes dialog shows it.</summary>
+public class BenchmarkInstructionVariantFeatureDetailsDto : BenchmarkInstructionVariantFeatureDto
+{
+    /// <summary>An experimental tool's variant guide, a reworded description, or an appendix; null for an experiment.</summary>
+    public string? Text { get; set; }
+    /// <summary>A reworded tool's production description, loaded from <c>ToolGuides/</c> at startup; null otherwise.</summary>
+    public string? ProductionText { get; set; }
+    /// <summary>An experimental tool's parameter schema as JSON; null otherwise.</summary>
+    public string? ParameterSchemaJson { get; set; }
+
+    public static new BenchmarkInstructionVariantFeatureDetailsDto From(BenchmarkVariantFeature feature)
+    {
+        var dto = Fill(new BenchmarkInstructionVariantFeatureDetailsDto(), feature);
+        dto.Text = feature.Text;
+        if (feature.Kind == BenchmarkVariantFeatureKind.RewordedGuide)
+        {
+            dto.ProductionText = feature.Handler?.Description;
+        }
+        if (feature.Kind == BenchmarkVariantFeatureKind.ExperimentalTool && feature.Handler != null)
+        {
+            dto.ParameterSchemaJson = feature.Handler.ParameterSchema.GetRawText();
+        }
+        return dto;
+    }
+}
+
+/// <summary>One run that used a variant or one of its ablations.</summary>
+public class BenchmarkInstructionVariantRunDto
+{
+    public long Id { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public string? SuiteName { get; set; }
+    public string? ModelDisplayName { get; set; }
+    /// <summary>The wire name: <c>production</c>, <c>sourceOnly</c> or <c>closedBook</c>.</summary>
+    public string InformationCondition { get; set; } = BenchmarkInformationConditions.ProductionWire;
+    public string Status { get; set; } = string.Empty;
+    /// <summary>The variant name or ablation spec of the run's stamp, without the hash.</summary>
+    public string Spec { get; set; } = string.Empty;
+    /// <summary>The run's stamp equals the stamp the spec resolves to now.</summary>
+    public bool HashMatchesCurrent { get; set; }
+}
+
+/// <summary>Everything the Experimental Changes dialog shows about one variant folder.</summary>
+public class BenchmarkInstructionVariantDetailsDto
+{
+    /// <summary>The newest runs <see cref="Runs"/> lists.</summary>
+    public const int RunListSize = 10;
+
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string? Parent { get; set; }
+    /// <summary>The run stamp, <c>name:hash12</c>; null when invalid.</summary>
+    public string? Stamp { get; set; }
+    public bool IsValid { get; set; }
+    public string? InvalidReason { get; set; }
+    /// <summary>Empty when the variant is invalid.</summary>
+    public List<BenchmarkInstructionVariantFeatureDetailsDto> Features { get; set; } = new();
+    /// <summary>The newest runs of the variant and its ablations, newest first.</summary>
+    public List<BenchmarkInstructionVariantRunDto> Runs { get; set; } = new();
+    /// <summary>Every run of the variant and its ablations.</summary>
+    public int RunCount { get; set; }
+    /// <summary>The runs whose stamp no longer matches the current hash of their spec.</summary>
+    public int OlderHashRunCount { get; set; }
+
+    public static BenchmarkInstructionVariantDetailsDto From(
+        BenchmarkInstructionVariant variant, List<BenchmarkInstructionVariantRunDto> runs, int runCount, int olderHashRunCount)
+        => new()
+        {
+            Name = variant.Name,
+            Description = variant.Description,
+            Parent = variant.Extends,
+            Stamp = variant.Context?.Stamp,
+            IsValid = variant.IsValid,
+            InvalidReason = variant.InvalidReason,
+            Features = variant.Context == null
+                ? new List<BenchmarkInstructionVariantFeatureDetailsDto>()
+                : variant.Features.Select(BenchmarkInstructionVariantFeatureDetailsDto.From).ToList(),
+            Runs = runs,
+            RunCount = runCount,
+            OlderHashRunCount = olderHashRunCount
+        };
 }

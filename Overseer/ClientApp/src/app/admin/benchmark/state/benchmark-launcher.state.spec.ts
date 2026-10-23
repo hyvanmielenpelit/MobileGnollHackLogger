@@ -1105,6 +1105,81 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
     expect(launcher.instructionVariant).toBeNull();
     expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Experimental Changes: gone is no longer available')]);
   });
+
+  describe('ablation specs', () => {
+    const featured = (): BenchmarkInstructionVariantDto => ({
+      ...variant('asker-profile-v1'),
+      features: [
+        {
+          id: 'tool.get_character_info', kind: 'experimentalTool', target: 'get_character_info', fromParent: true,
+          appliesUnder: { production: true, sourceOnly: true, closedBook: false }, mentions: []
+        },
+        {
+          id: 'guide.wiki_search', kind: 'rewordedGuide', target: 'wiki_search', fromParent: false,
+          appliesUnder: { production: true, sourceOnly: false, closedBook: false }, mentions: []
+        }
+      ]
+    });
+
+    beforeEach(() => {
+      variants.mockReturnValue(of([featured(), variant('broken', false)]));
+    });
+
+    it('keeps a spec whose base is valid and whose feature is the base\'s, and sends it as it is', () => {
+      loadPage();
+      launcher.loadInstructionVariants();
+      launcher.instructionVariant = 'asker-profile-v1/minus/guide.wiki_search';
+      launcher.persistRunSettings();
+
+      expect(launcher.resolvedInstructionVariant?.featureDto?.id).toBe('guide.wiki_search');
+      expect(launcher.buildRunRequest(1, 2, 1).instructionVariant).toBe('asker-profile-v1/minus/guide.wiki_search');
+      expect(stored().instructionVariant).toBe('asker-profile-v1/minus/guide.wiki_search');
+
+      launcher.instructionVariant = null;
+      launcher.restoreRunSettings();
+      expect(launcher.instructionVariant).toBe('asker-profile-v1/minus/guide.wiki_search');
+    });
+
+    it('falls back to None with the note for an ablation of a feature the base does not have', () => {
+      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, instructionVariant: 'asker-profile-v1/only/guide.gone' }));
+      loadPage();
+
+      launcher.loadInstructionVariants();
+
+      expect(launcher.instructionVariant).toBeNull();
+      expect(launcher.restoreNotes).toEqual([
+        'Experimental Changes: asker-profile-v1/only/guide.gone is no longer available, so None (the same as the live chat) was chosen.'
+      ]);
+    });
+
+    it('falls back to None for an ablation of an invalid base', () => {
+      loadPage();
+      launcher.loadInstructionVariants();
+
+      launcher.prefillFromRun(run({ instructionVariant: 'broken/minus/guide.wiki_search:0123456789ab' }));
+
+      expect(launcher.instructionVariant).toBeNull();
+      expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Experimental Changes: broken/minus/guide.wiki_search')]);
+    });
+
+    it('repeats a run\'s ablation, the spec without its hash', () => {
+      loadPage();
+      launcher.loadInstructionVariants();
+
+      launcher.prefillFromRun(run({ instructionVariant: 'asker-profile-v1/only/tool.get_character_info:ab12cd34ef56' }));
+
+      expect(launcher.instructionVariant).toBe('asker-profile-v1/only/tool.get_character_info');
+      expect(launcher.prefillResult!.notes).toEqual([]);
+    });
+
+    it('strips the hash at the first colon, so a spec keeps its slashes', () => {
+      expect(BenchmarkLauncherState.instructionVariantName('asker-profile-v1/minus/guide.wiki_search:ab12cd34ef56'))
+        .toBe('asker-profile-v1/minus/guide.wiki_search');
+      expect(BenchmarkLauncherState.instructionVariantName('cite-first:ab12cd34ef56')).toBe('cite-first');
+      expect(BenchmarkLauncherState.instructionVariantName('cite-first')).toBe('cite-first');
+      expect(BenchmarkLauncherState.instructionVariantName('  ')).toBeNull();
+    });
+  });
 });
 
 describe('BenchmarkLauncherState: feedback tool', () => {

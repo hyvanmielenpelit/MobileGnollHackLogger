@@ -1,0 +1,392 @@
+<section class="tl-gbfb-issues" aria-labelledby="tl-gbfb-issues-title">
+  <div class="tl-gbfb-issues-head">
+    <!-- Focused when nothing else can take focus. -->
+    <h3 class="gh-section-title tl-gbfb-issues-title" id="tl-gbfb-issues-title" tabindex="-1">Reported issues</h3>
+    <!-- The list's one polite live region. -->
+    <p class="gh-list-status tl-gbfb-status" id="tl-gbfb-status" role="status">{{ listStatus }}</p>
+  </div>
+
+  <!-- Search, Sort by and the base set; the facets; the active filters; the selection. Every filter change refetches. -->
+  <div class="gh-filter-bar tl-gbfb-filter-bar">
+    <div class="gh-filter-bar-row tl-gbfb-filters-row">
+      <div class="gh-search-field tl-gbfb-search">
+        <label class="visually-hidden" for="tl-gbfb-search">Search issues by subject, summary, details or question</label>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="search" class="gh-input" id="tl-gbfb-search" autocomplete="off"
+               autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done"
+               placeholder="Search subject, summary, details or question" [attr.maxlength]="searchMax"
+               [value]="list.searchText"
+               (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+      </div>
+      <div class="tl-gbfb-select-field tl-gbfb-sort">
+        <label for="tl-gbfb-sort">Sort by</label>
+        <select class="gh-input" id="tl-gbfb-sort" (change)="onSortChange($event)">
+          @for (sort of sorts; track sort.id) {
+            <option [value]="sort.id" [selected]="sortId() === sort.id">{{ sort.label }}</option>
+          }
+        </select>
+      </div>
+      <div class="tl-gbfb-select-field tl-gbfb-accepted">
+        <label for="tl-gbfb-accepted">Self-reports</label>
+        <select class="gh-input" id="tl-gbfb-accepted" aria-describedby="tl-gbfb-accepted-tip" (change)="onAcceptedChange($event)">
+          @for (scope of acceptedScopes; track scope) {
+            <option [value]="scope" [selected]="accepted() === scope">{{ acceptedLabels[scope] }}</option>
+          }
+        </select>
+        <app-info-tip trigger="click" tipId="tl-gbfb-accepted-tip" subject="Self-reports">A refused call (invalid arguments, or over the per-turn cap) is a sign of a tool-contract problem, not an issue to fix. The list counts accepted calls unless this says otherwise.</app-info-tip>
+      </div>
+    </div>
+
+    <div class="gh-filter-bar-row tl-gbfb-facets-row">
+      <div class="gh-facet-row tl-gbfb-facet-row">
+        @for (facet of facetViews(); track facet.key) {
+          <app-filter-facet [facetId]="facet.facetId" [label]="facet.label" noun="issues"
+                            [options]="facet.options" [selected]="facet.selected"
+                            (selectedChange)="onFacetChange(facet.key, $event)"></app-filter-facet>
+        }
+      </div>
+    </div>
+
+    @if (chips().length > 0) {
+      <div class="gh-filter-bar-row tl-gbfb-chips-row">
+        <ul class="gh-filter-chips tl-gbfb-chips" role="list" aria-label="Active filters">
+          @for (chip of chips(); track chip.key) {
+            <li>
+              <button type="button" class="gh-filter-chip"
+                      [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                      (click)="removeChip(chip)">
+                <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </li>
+          }
+        </ul>
+        <button type="button" class="gh-filter-clear tl-gbfb-clear" id="tl-gbfb-clear" (click)="clearFilters()">Clear filters</button>
+      </div>
+    }
+
+    <app-feedback-selection-bar source="gnollbench"
+                                [selectedIds]="selectedIds()"
+                                [matchingCount]="matchingCount()"
+                                [notShownCount]="notShownCount()"
+                                [showSelectedOnly]="showSelectedOnly()"
+                                [exportOptions]="exportOptions()"
+                                (showSelectedOnlyChange)="onShowSelectedOnlyChange($event)"
+                                (clear)="onClearSelection()"
+                                (selectAllMatching)="onSelectAllMatching()"
+                                (exported)="onExported($event)"
+                                (imported)="onImported()"></app-feedback-selection-bar>
+  </div>
+
+  @if (error(); as message) {
+    <p class="gh-field-error tl-gbfb-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ message }}</span>
+    </p>
+  } @else if (loaded() && rows().length === 0) {
+    @if (emptyKind === 'range') {
+      <div class="tl-gbfb-empty tl-gbfb-empty-range">
+        <svg class="tl-gbfb-empty-icon" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+        <p class="tl-gbfb-empty-title">No GnollBench feedback issues</p>
+        <p class="tl-gbfb-empty-text">No GnollBench candidate has reported an issue in this date range.</p>
+      </div>
+    } @else if (emptyKind === 'filters') {
+      <div class="tl-gbfb-empty tl-gbfb-empty-filters">
+        <svg class="tl-gbfb-empty-icon" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+        <p class="tl-gbfb-empty-title">No issues match these filters</p>
+        <button type="button" class="gh-filter-clear tl-gbfb-empty-clear" (click)="clearFilters(true)">Clear filters</button>
+      </div>
+    }
+  } @else if (rows().length > 0) {
+    <ul class="tl-gbfb-cards" role="list" aria-labelledby="tl-gbfb-issues-title">
+      @for (issue of rows(); track issue.fingerprint) {
+        @let cid = 'tl-gbfb-' + idOf(issue.fingerprint);
+        @let form = draft(issue);
+        @let result = triageResult(issue.fingerprint);
+        @let occ = occurrenceState(issue.fingerprint);
+        <li class="tl-gbfb-item">
+          <article class="tl-gbfb-card" [attr.data-fingerprint]="issue.fingerprint" [attr.data-status]="issue.status"
+                   [attr.aria-labelledby]="cid + '-title'">
+            <div class="tl-gbfb-select">
+              <input type="checkbox" class="tl-gbfb-check" [id]="cid + '-select'"
+                     [attr.aria-label]="'Select issue: ' + issue.subject"
+                     [checked]="isSelected(issue.fingerprint)"
+                     (change)="onSelectChange(issue, $event)">
+            </div>
+
+            <div class="tl-gbfb-head">
+              <!-- Every state is a word; a dot on screen between the parts, a comma for assistive technology. -->
+              <div class="tl-gbfb-kicker">
+                <span class="gh-tag tl-gbfb-category" [attr.data-category]="issue.category">{{ categoryLabel(issue.category) }}</span>
+                <span [class]="statusBadgeClass(issue.status) + ' tl-gbfb-status-badge'">{{ statusLabel(issue.status) }}</span>
+                @if (issue.models.length > 0) {
+                  <span class="tl-gbfb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="tl-gbfb-models"><span class="visually-hidden">Models: </span>{{ issue.models.join(', ') }}</span>
+                }
+              </div>
+              <!-- Focused after Show more. A click on the title selects the card. -->
+              <h4 class="tl-gbfb-title" [id]="cid + '-title'" tabindex="-1"><label [for]="cid + '-select'">{{ issue.subject }}</label></h4>
+              <p class="tl-gbfb-summary">{{ issue.summary }}</p>
+            </div>
+
+            <!-- Fixed-width columns that line up down the list. -->
+            <dl class="tl-gbfb-metrics">
+              <div class="tl-gbfb-metric tl-gbfb-metric-reports">
+                <dt>Self-reports</dt>
+                <dd>{{ formatInteger(issue.selfReportCount) }}</dd>
+                <dd class="tl-gbfb-metric-note">{{ runsText(issue) }}</dd>
+              </div>
+              <div class="tl-gbfb-metric tl-gbfb-metric-models">
+                <dt>Models</dt>
+                <dd>{{ formatInteger(issue.modelCount) }}</dd>
+              </div>
+              <div class="tl-gbfb-metric tl-gbfb-metric-first">
+                <dt>First seen</dt>
+                <dd><time [attr.datetime]="issue.firstSeenUtc">{{ dateText(issue.firstSeenUtc) }}</time></dd>
+              </div>
+              <div class="tl-gbfb-metric tl-gbfb-metric-last">
+                <dt>Last seen</dt>
+                <dd><time [attr.datetime]="issue.lastSeenUtc">{{ dateTimeText(issue.lastSeenUtc) }}</time></dd>
+              </div>
+            </dl>
+
+            <dl class="tl-gbfb-facts">
+              <div class="tl-gbfb-fact tl-gbfb-fact-providers">
+                <dt>Providers</dt>
+                <dd>{{ issue.providers.length > 0 ? issue.providers.join(', ') : 'Not recorded' }}</dd>
+              </div>
+              <div class="tl-gbfb-fact tl-gbfb-fact-suites">
+                <dt>Suites</dt>
+                <dd>{{ issue.suites.length > 0 ? issue.suites.join(', ') : 'Not recorded' }}</dd>
+              </div>
+              <div class="tl-gbfb-fact tl-gbfb-fact-fingerprint">
+                <dt>Fingerprint</dt>
+                <dd class="tl-gbfb-mono">{{ issue.fingerprint.slice(0, 12) }}</dd>
+              </div>
+              @if (issue.alsoInOverseer; as overseer) {
+                <div class="tl-gbfb-fact tl-gbfb-fact-overseer">
+                  <dt>Also reported in the Overseer chat</dt>
+                  <dd>
+                    <a class="tl-gbfb-overseer-link" routerLink="/admin/feedback" [queryParams]="overseerQuery(issue)">Overseer issue #{{ overseer.issueId }}</a>
+                    <span class="tl-gbfb-sep"><span aria-hidden="true"> &middot; </span><span class="visually-hidden">, </span></span>
+                    <span class="tl-gbfb-overseer-status">{{ statusLabel(overseer.status) }}</span>
+                  </dd>
+                </div>
+              }
+            </dl>
+
+            <details class="gh-disclosure tl-gbfb-occurrences" [attr.data-fingerprint]="issue.fingerprint" (toggle)="onOccurrencesToggle(issue, $event)">
+              <summary>Self-reports ({{ formatInteger(issue.selfReportCount) }})</summary>
+              <div class="gh-disclosure-body">
+                @if (hasOccurrenceFilters() && occ?.loaded) {
+                  <div class="tl-gbfb-occ-toolbar">
+                    <button type="button" class="gh-filter-toggle tl-gbfb-occ-all"
+                            [attr.aria-pressed]="occ?.all ? 'true' : 'false'"
+                            [attr.aria-busy]="occ?.loading ? 'true' : null"
+                            (click)="toggleAllOccurrences(issue.fingerprint)">Include self-reports outside the filters</button>
+                  </div>
+                }
+                @if (occ?.error; as occError) {
+                  <p class="gh-field-error tl-gbfb-occ-error">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <span>{{ occError }}</span>
+                  </p>
+                }
+                @if (occ && occ.rows.length > 0) {
+                  <ol class="tl-gbfb-occ-list" role="list" [attr.aria-label]="'Self-reports of ' + issue.subject + ', newest first'">
+                    @for (o of occ.rows; track o.id) {
+                      @let detailsKey = 'details-' + o.id;
+                      @let questionKey = 'question-' + o.id;
+                      <li class="tl-gbfb-occ" [attr.data-occurrence-id]="o.id">
+                        <h5 class="tl-gbfb-occ-time" [id]="'tl-gbfb-occ-' + o.id + '-time'" tabindex="-1">
+                          <time [attr.datetime]="o.occurredUtc">{{ dateTimeText(o.occurredUtc) }}</time>
+                        </h5>
+                        <ul class="tl-gbfb-occ-marks" role="list" aria-label="Marks">
+                          @if (o.accepted) {
+                            <li><span class="gh-tag tl-gbfb-mark-accepted">Accepted</span></li>
+                          } @else {
+                            <li><span class="gh-tag tl-gbfb-mark-refused">Refused</span></li>
+                          }
+                          @if (o.truncated) {
+                            <li><span class="gh-tag tl-gbfb-mark-truncated">Truncated</span></li>
+                          }
+                        </ul>
+                        <dl class="tl-gbfb-occ-facts">
+                          <div class="tl-gbfb-occ-run">
+                            <dt>Run</dt>
+                            <dd>
+                              <a [href]="runReportUrl(o.runId)" target="_blank" rel="noopener noreferrer">Run #{{ o.runId }}<span class="visually-hidden"> report, opens in a new tab</span></a>
+                              @if (o.seriesId != null) {
+                                <span class="tl-gbfb-occ-series"> · series #{{ o.seriesId }}</span>
+                              }
+                            </dd>
+                          </div>
+                          <div><dt>Suite</dt><dd>{{ o.suiteName || 'Not recorded' }}</dd></div>
+                          @if (modelText(o); as model) {
+                            <div><dt>Model and provider</dt><dd>{{ model }}</dd></div>
+                          }
+                          <div><dt>Information condition</dt><dd>{{ conditionLabel(o.condition) }}</dd></div>
+                          <div class="tl-gbfb-occ-variant">
+                            <dt>Experimental Changes</dt>
+                            <dd>
+                              {{ variantLabel(o.variantName ?? o.variant) }}
+                              @if (o.variant) {
+                                <span class="tl-gbfb-mono tl-gbfb-occ-stamp">{{ o.variant }}</span>
+                              }
+                            </dd>
+                          </div>
+                          <div><dt>Corpus</dt><dd>{{ corpusLabel(o.corpus) }}</dd></div>
+                          @if (o.harness) {
+                            <div><dt>Harness</dt><dd class="tl-gbfb-mono">{{ o.harness }}</dd></div>
+                          }
+                          @if (!o.accepted && o.error) {
+                            <div class="tl-gbfb-occ-wide tl-gbfb-occ-refusal"><dt>Refused because</dt><dd>{{ o.error }}</dd></div>
+                          }
+                          @if (o.questionText) {
+                            <div class="tl-gbfb-occ-wide tl-gbfb-occ-question">
+                              <dt>Question{{ o.questionId != null ? ' #' + o.questionId : '' }}</dt>
+                              <dd>
+                                <span class="tl-gbfb-occ-longtext" [id]="'tl-gbfb-occ-' + o.id + '-question'"
+                                      [class.is-collapsed]="isLongText(o.questionText) && !isExpanded(questionKey)">{{ o.questionText }}</span>
+                                @if (isLongText(o.questionText)) {
+                                  <button type="button" class="btn-link tl-gbfb-occ-expand"
+                                          [attr.aria-expanded]="isExpanded(questionKey)"
+                                          [attr.aria-controls]="'tl-gbfb-occ-' + o.id + '-question'"
+                                          (click)="toggleText(questionKey)">{{ isExpanded(questionKey) ? 'Show less' : 'Show the whole question' }}</button>
+                                }
+                              </dd>
+                            </div>
+                          }
+                          @if (o.subject && o.subject !== issue.subject) {
+                            <div class="tl-gbfb-occ-wide"><dt>Subject</dt><dd>{{ o.subject }}</dd></div>
+                          }
+                          @if (o.summary) {
+                            <div class="tl-gbfb-occ-wide"><dt>Summary</dt><dd>{{ o.summary }}</dd></div>
+                          }
+                          @if (o.searchedFor) {
+                            <div class="tl-gbfb-occ-wide"><dt>Searched for</dt><dd>{{ o.searchedFor }}</dd></div>
+                          }
+                          @if (o.expectedLocation) {
+                            <div class="tl-gbfb-occ-wide"><dt>Expected location</dt><dd>{{ o.expectedLocation }}</dd></div>
+                          }
+                          @if (o.relatedTools.length > 0) {
+                            <div><dt>Related tools</dt><dd class="tl-gbfb-mono">{{ o.relatedTools.join(', ') }}</dd></div>
+                          }
+                          @if (o.noticedVia) {
+                            <div><dt>Noticed via</dt><dd>{{ noticedViaText(o.noticedVia) }}</dd></div>
+                          }
+                          @if (o.suspectedCause || o.suspectedCauseNote) {
+                            <div class="tl-gbfb-occ-wide">
+                              <dt>Model's suspected cause (hypothesis)</dt>
+                              <dd>
+                                @if (o.suspectedCause) {
+                                  <span class="tl-gbfb-occ-cause">{{ causeLabel(o.suspectedCause) }}</span>
+                                }
+                                @if (o.suspectedCauseNote) {
+                                  <span class="tl-gbfb-occ-cause-note">{{ o.suspectedCauseNote }}</span>
+                                }
+                              </dd>
+                            </div>
+                          }
+                        </dl>
+                        @if (o.details) {
+                          <div class="tl-gbfb-occ-details-block">
+                            <p class="tl-gbfb-occ-details-label">Details</p>
+                            <p class="tl-gbfb-occ-details" [id]="'tl-gbfb-occ-' + o.id + '-details'"
+                               [class.is-collapsed]="isLongText(o.details) && !isExpanded(detailsKey)">{{ o.details }}</p>
+                            @if (isLongText(o.details)) {
+                              <button type="button" class="btn-link tl-gbfb-occ-expand"
+                                      [attr.aria-expanded]="isExpanded(detailsKey)"
+                                      [attr.aria-controls]="'tl-gbfb-occ-' + o.id + '-details'"
+                                      (click)="toggleText(detailsKey)">{{ isExpanded(detailsKey) ? 'Show less' : 'Show all details' }}</button>
+                            }
+                          </div>
+                        }
+                      </li>
+                    }
+                  </ol>
+                } @else if (occ?.loaded && !occ?.error) {
+                  <p class="tl-gbfb-occ-none">No self-report of this issue matches the filters.</p>
+                }
+                @if (occ?.loading) {
+                  <p class="tl-gbfb-occ-loading" role="status">Loading self-reports…</p>
+                }
+                @if (remainingOccurrences(issue.fingerprint) > 0) {
+                  <div class="gh-load-more tl-gbfb-occ-load-more">
+                    <button type="button" class="btn-ghost tl-gbfb-occ-more" [attr.aria-busy]="occ?.loading ? 'true' : null"
+                            (click)="showMoreOccurrences(issue.fingerprint)">Show {{ nextOccurrenceBatch(issue.fingerprint) }} more</button>
+                  </div>
+                }
+              </div>
+            </details>
+
+            <!-- The triage form, under a hairline. -->
+            <div class="tl-gbfb-triage" role="group" [attr.aria-label]="'Triage of ' + issue.subject">
+              <div class="tl-gbfb-field tl-gbfb-field-status">
+                <div class="tl-gbfb-label-row">
+                  <label [for]="cid + '-status'">Status</label>
+                  <app-info-tip [tipId]="cid + '-status-help'" subject="Status">A resolved issue that a run reports again becomes Regressed; a dismissed one stays dismissed.</app-info-tip>
+                </div>
+                <select class="gh-input tl-gbfb-status-select" [id]="cid + '-status'"
+                        [attr.aria-describedby]="cid + '-status-help'"
+                        (change)="onDraftStatus(issue, $event)">
+                  @if (form.status === '') {
+                    <option value="" disabled selected>Choose a status</option>
+                  }
+                  @for (status of triageStatuses; track status) {
+                    <option [value]="status" [selected]="form.status === status">{{ statusLabel(status) }}</option>
+                  }
+                </select>
+              </div>
+              <div class="tl-gbfb-field tl-gbfb-field-note">
+                <label [for]="cid + '-note'">Note</label>
+                <textarea class="gh-input gh-textarea-autosize tl-gbfb-note-input" rows="2" [id]="cid + '-note'"
+                          [attr.maxlength]="noteMax" [value]="form.note"
+                          (input)="onDraftText(issue, 'note', $event)"></textarea>
+              </div>
+              <div class="tl-gbfb-field tl-gbfb-field-version">
+                <label [for]="cid + '-version'">Fixed in version</label>
+                <input type="text" class="gh-input tl-gbfb-version-input" [id]="cid + '-version'"
+                       autocomplete="off" spellcheck="false" placeholder="1.4.1"
+                       [attr.maxlength]="versionMax" [value]="form.fixedInVersion"
+                       (input)="onDraftText(issue, 'fixedInVersion', $event)">
+              </div>
+              <div class="tl-gbfb-field tl-gbfb-field-resolution">
+                <label [for]="cid + '-resolution'">Resolution</label>
+                <textarea class="gh-input gh-textarea-autosize tl-gbfb-resolution-input" rows="2" [id]="cid + '-resolution'"
+                          [attr.maxlength]="resolutionMax" [value]="form.resolution"
+                          placeholder="What was changed, where, and how it was verified"
+                          (input)="onDraftText(issue, 'resolution', $event)"></textarea>
+              </div>
+              <div class="tl-gbfb-triage-actions">
+                <button type="button" class="btn-gh tl-gbfb-save"
+                        [disabled]="savingFingerprint() === issue.fingerprint"
+                        [attr.aria-busy]="savingFingerprint() === issue.fingerprint ? 'true' : null"
+                        [attr.aria-describedby]="result?.error ? cid + '-error' : null"
+                        (click)="save(issue)">Save</button>
+              </div>
+              @if (triagedText(issue); as triaged) {
+                <p class="tl-gbfb-triaged">{{ triaged }}</p>
+              }
+              <p class="tl-gbfb-result" [id]="cid + '-result'" role="status">{{ result?.message ?? '' }}</p>
+              @if (result?.error; as triageError) {
+                <p class="gh-field-error tl-gbfb-triage-error" [id]="cid + '-error'">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                  <span>{{ triageError }}</span>
+                </p>
+              }
+            </div>
+          </article>
+        </li>
+      }
+    </ul>
+
+    @if (remainingCount > 0) {
+      <div class="gh-load-more tl-gbfb-load-more">
+        <button type="button" class="btn-ghost tl-gbfb-show-more" [attr.aria-busy]="loading() ? 'true' : null"
+                (click)="showMore()">Show {{ nextBatchCount }} more</button>
+      </div>
+    }
+  }
+</section>

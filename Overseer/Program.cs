@@ -190,6 +190,10 @@ builder.Services.AddSingleton<Overseer.Services.Privacy.EphemeralSessionStore>()
    with the turn. */
 builder.Services.AddSingleton<Overseer.Services.Privacy.Dlp.DlpScannerService>();
 builder.Services.AddSingleton<Overseer.Services.Feedback.FeedbackSwitchService>();
+builder.Services.AddScoped<Overseer.Services.Feedback.OverseerFeedbackQuery>();
+builder.Services.AddScoped<Overseer.Services.Feedback.GnollBenchFeedbackQuery>();
+builder.Services.AddScoped<Overseer.Services.Feedback.FeedbackExportService>();
+builder.Services.AddScoped<Overseer.Services.Feedback.FeedbackResolutionService>();
 builder.Services.AddSingleton<Overseer.Services.Privacy.IAntiMalwareScanner>(sp =>
 {
     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();

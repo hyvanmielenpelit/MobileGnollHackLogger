@@ -469,6 +469,28 @@ public sealed class ReportFeedbackToolTests : IDisposable
         Assert.Equal("claude-test-model", report.ModelId);
         Assert.Equal(ExpectedAppVersion(), report.AppVersion);
         Assert.Equal(UserId, report.AspNetUserId);
+        Assert.Null(report.ModelSource);
+        Assert.Null(report.SystemAiConfigurationId);
+    }
+
+    [Theory]
+    [InlineData(12L, null, "system", 12L)]
+    [InlineData(12L, 34L, "system", 12L)]
+    [InlineData(null, 34L, "user", null)]
+    [InlineData(null, null, null, null)]
+    public async Task TheModelSource_AndTheSystemConfiguration_AreRecordedFromTheContext(
+        long? activeSystemModelId, long? activeUserModelId, string? expectedSource, long? expectedConfigurationId)
+    {
+        var (tool, _) = CreateTool();
+        var context = Chat();
+        context.ActiveSystemModelId = activeSystemModelId;
+        context.ActiveUserModelId = activeUserModelId;
+
+        AssertRecorded(await tool.ExecuteAsync(Arguments(), context, Ct));
+
+        var report = Assert.Single(await ReportsAsync());
+        Assert.Equal(expectedSource, report.ModelSource);
+        Assert.Equal(expectedConfigurationId, report.SystemAiConfigurationId);
     }
 
     [Fact]
@@ -712,7 +734,10 @@ public sealed class ReportFeedbackToolTests : IDisposable
             db.SaveChanges();
         };
 
-        AssertRecorded(await tool.ExecuteAsync(Arguments(), Chat(sessionId: 51), Ct));
+        var context = Chat(sessionId: 51);
+        context.ActiveSystemModelId = 77;
+
+        AssertRecorded(await tool.ExecuteAsync(Arguments(), context, Ct));
 
         Assert.True(_race.Fired);
         var issue = Assert.Single(await IssuesAsync());
@@ -720,6 +745,11 @@ public sealed class ReportFeedbackToolTests : IDisposable
         var reports = await ReportsAsync();
         Assert.Equal(new long[] { 50, 51 }, reports.Select(r => r.ChatSessionId).OrderBy(id => id));
         Assert.All(reports, r => Assert.Equal(issue.Id, r.IssueId));
+
+        // The retry's fresh copy keeps the attribution.
+        var retried = reports.Single(r => r.ChatSessionId == 51);
+        Assert.Equal("system", retried.ModelSource);
+        Assert.Equal(77L, retried.SystemAiConfigurationId);
     }
 
     [Fact]

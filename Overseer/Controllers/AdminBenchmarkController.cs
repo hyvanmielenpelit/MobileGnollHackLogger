@@ -205,6 +205,71 @@ public class AdminBenchmarkController : ControllerBase
         return Ok(dtos);
     }
 
+    /// <summary>
+    /// One variant folder with its features and texts, and the runs that used it or one of its
+    /// ablations (stamps starting <c>name:</c> or <c>name/</c>). 404 for a name the catalog does not list.
+    /// </summary>
+    [HttpGet("instruction-variants/{name}/details")]
+    public async Task<IActionResult> GetInstructionVariantDetails(string name, CancellationToken ct = default)
+    {
+        var variant = _benchmarkService.ListInstructionVariants()
+            .FirstOrDefault(v => string.Equals(v.Name, name, StringComparison.Ordinal));
+        if (variant == null)
+        {
+            return NotFound(new { error = $"Unknown instruction variant '{name}'." });
+        }
+
+        try
+        {
+            string wholePrefix = name + ":";
+            string ablationPrefix = name + BenchmarkInstructionVariantCatalog.SpecSeparator;
+            var matching = _dbContext.BenchmarkRuns
+                .AsNoTracking()
+                .Where(r => r.InstructionVariant != null
+                    && (r.InstructionVariant.StartsWith(wholePrefix) || r.InstructionVariant.StartsWith(ablationPrefix)));
+
+            var stamps = await matching.Select(r => r.InstructionVariant!).ToListAsync(ct);
+
+            var currentStamps = new Dictionary<string, string?>(StringComparer.Ordinal);
+            bool MatchesCurrent(string stamp)
+            {
+                string spec = BenchmarkInstructionVariantCatalog.NameOfStamp(stamp);
+                if (!currentStamps.TryGetValue(spec, out string? current))
+                {
+                    current = _benchmarkService.FindInstructionVariant(spec)?.Context?.Stamp;
+                    currentStamps[spec] = current;
+                }
+                return string.Equals(current, stamp, StringComparison.Ordinal);
+            }
+
+            int olderHashRunCount = stamps.Count(stamp => !MatchesCurrent(stamp));
+
+            var newest = await matching
+                .OrderByDescending(r => r.StartedAtUtc)
+                .ThenByDescending(r => r.Id)
+                .Take(BenchmarkInstructionVariantDetailsDto.RunListSize)
+                .ToListAsync(ct);
+
+            var runs = newest.Select(r => new BenchmarkInstructionVariantRunDto
+            {
+                Id = r.Id,
+                StartedAtUtc = r.StartedAtUtc,
+                SuiteName = r.SuiteName,
+                ModelDisplayName = r.TestedModelSnapshot.Label(),
+                InformationCondition = BenchmarkCandidatePromptOptions.FromJson(r.CandidatePromptOptionsJson).Condition.ToWire(),
+                Status = r.Status.ToString(),
+                Spec = BenchmarkInstructionVariantCatalog.NameOfStamp(r.InstructionVariant!),
+                HashMatchesCurrent = MatchesCurrent(r.InstructionVariant!)
+            }).ToList();
+
+            return Ok(BenchmarkInstructionVariantDetailsDto.From(variant, runs, stamps.Count, olderHashRunCount));
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
     // --- Scoring Profiles CRUD ---
 
     [HttpGet("scoring-profiles")]

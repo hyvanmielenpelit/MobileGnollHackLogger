@@ -8227,6 +8227,52 @@ public class BenchmarkReportBuilderTests
             lines);
     }
 
+    [Theory]
+    [InlineData("source-tools-v1:0123456789ab", "source-tools-v1 (0123456789ab)")]
+    [InlineData("asker-profile-v1:3fa2c91b0d1e", "asker-profile-v1 (3fa2c91b0d1e)")]
+    [InlineData("asker-profile-v1", "asker-profile-v1 (asker-profile-v1)")]
+    public void ConditionManifestLines_PrintAPlainVariantAsBefore(string stamp, string expectedPrefix)
+    {
+        var run = new BenchmarkRun { InstructionVariant = stamp };
+
+        var lines = BenchmarkReportBuilder.ConditionManifestLines(run, new BenchmarkCandidatePromptOptions(), null);
+
+        Assert.Equal(
+            "**Instruction variant:** " + expectedPrefix + " — benchmark-only instruction text and tools that production does not have",
+            lines[3]);
+    }
+
+    [Theory]
+    [InlineData("asker-profile-v1/minus/guide.wiki_search:3fa2c91b0d1e",
+        "asker-profile-v1, leaving out the reworded wiki_search description (3fa2c91b0d1e)")]
+    [InlineData("asker-profile-v1/only/tool.get_character_info:3fa2c91b0d1e",
+        "asker-profile-v1, only the get_character_info tool (3fa2c91b0d1e)")]
+    [InlineData("source-tools-v1/minus/experiment.stats_referenced_by:0123456789ab",
+        "source-tools-v1, leaving out the stats_referenced_by tool-output switch (0123456789ab)")]
+    [InlineData("asker-profile-v1/minus/appendix.asker-profile-v1:3fa2c91b0d1e",
+        "asker-profile-v1, leaving out the asker-profile-v1 instruction paragraph (3fa2c91b0d1e)")]
+    public void ConditionManifestLines_PrintAnAblationInWords(string stamp, string expectedPrefix)
+    {
+        var run = new BenchmarkRun { InstructionVariant = stamp };
+
+        var lines = BenchmarkReportBuilder.ConditionManifestLines(run, new BenchmarkCandidatePromptOptions(), null);
+
+        Assert.Equal(
+            "**Instruction variant:** " + expectedPrefix + " — benchmark-only instruction text and tools that production does not have",
+            lines[3]);
+    }
+
+    [Fact]
+    public void ConditionManifest_NamesAnAblationInTheReport()
+    {
+        var run = PromptOptionsRun(new BenchmarkCandidatePromptOptions());
+        run.InstructionVariant = "asker-profile-v1/minus/guide.wiki_search:3fa2c91b0d1e";
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **Instruction variant:** asker-profile-v1, leaving out the reworded wiki_search description (3fa2c91b0d1e) — benchmark-only instruction text and tools that production does not have" + Environment.NewLine, report);
+    }
+
     // -------------------------------------------------------------------------------------
     // Evidence Reach.
     // -------------------------------------------------------------------------------------

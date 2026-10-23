@@ -208,37 +208,6 @@
   overflow-wrap: anywhere;
 }
 
-.import-diff {
-  margin: 0 0 8px 0;
-  padding: 8px 0;
-  max-height: 40lh;
-  overflow: auto;
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 4px;
-  font-size: 12.5px;
-  line-height: 1.45;
-
-  .diff-line {
-    display: block;
-    padding: 0 10px;
-    white-space: pre;
-  }
-
-  .diff-added {
-    background: rgba(46, 204, 113, 0.14);
-    color: #a7f3c0;
-  }
-
-  .diff-removed {
-    background: rgba(231, 76, 60, 0.14);
-    color: #fca5a5;
-  }
-
-  .diff-equal {
-    color: #aaa;
-  }
-}
-
 .import-done {
   font-size: 15px;
   color: #ddd;

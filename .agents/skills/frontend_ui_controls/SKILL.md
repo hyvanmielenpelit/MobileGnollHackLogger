@@ -1796,7 +1796,8 @@ one rule). Keep the scrolling row for long or open-ended sets, where a
 wrapped block of tabs would push the panel down by several lines. Render the row from one `@for` over
 the component's tab array, so the wrapped order is always the array's order.
 
-Every Admin sub-tab row (Users, AI Telemetry, GnollBench, Services; Feedback has none) is
+Every Admin sub-tab row (Users, AI Telemetry, GnollBench, Services, and Feedback's *Overseer* and
+*GnollBench*, a `tablist` named *Feedback sources* in the tab's sticky header since 2026-10-23) is
 `gh-tabs gh-tabs-secondary gh-tabs-wrap` inside a `.gh-subtab-head`, text-only. A filter or action
 that scopes a whole tab goes in its header card, never on the sub-tab row. A count on a tab is a small
 `aria-hidden` pill with the counts in a visually hidden span (the top-level *Feedback* tab's open
@@ -2376,6 +2377,43 @@ facet values and the search live in the address (`status`, `category`, `model`, 
 state is one dashed `.tl-fb-empty` card: a 32 px `aria-hidden` glyph, a title and one line, or the
 *Clear filters* button. Model-written text is plain text only. See
 `docs/overseer/ai-feedback-reports.md` § 10.
+
+*Changed 2026-10-23 (Feedback sub-tabs):* the tab is a shell (`app-admin-feedback-tab`: the header, whose
+date range is the **active sub-tab's**, and the sub-tab row) over two panels, of which only the active one
+is mounted. The list above moved whole into the **Overseer** panel (`app-feedback-overseer-panel`,
+`feedback-tab/overseer/`, ids still `tl-fb-*`), which adds:
+
+- the facets *Provider*, *User*, *Group* (with *No group*), *Model source*, *Configuration*, *Version*,
+  *Tool* and a single-choice *Has resolution*, and the sorts *Most users*, *Most regressions*, *Recently
+  triaged* and *Subject (A–Z)*; the facet options come from the server for the range, with counts;
+- **the whole view remembered**: facets, search, sort, range and export options in one `localStorage`
+  record per sub-tab (`overseer.admin.feedback.<source>.view`, `shared/feedback-view-storage.ts`, every
+  access in `try/catch`), with the address winning when it carries a filter parameter and the remembered
+  view written to the address otherwise (`replaceUrl`). A sub-tab switch clears every Feedback filter
+  parameter (`FEEDBACK_FILTER_QUERY_PARAMS`), because the two panels share names such as `status`;
+- **selection by id** (§8f), at most 500, remembered across paging, filtering and reloads
+  (`overseer.admin.feedback.<source>.selection`): a checkbox top left on each card whose label is the
+  card's title, and a selection row under the chips, `app-feedback-selection-bar` (`feedback-tab/shared/`),
+  with the count, *Show selected only*, *Clear selection*, *Select all N matching* (which says *Selected the
+  first 500 of N* when a cap cuts it), **Export** and **Import resolutions**. *Show selected only* has its
+  own empty state, *No selected issue*;
+- in the triage form, *Fixed in version* (with an (i)) and *Resolution*; on the card, the providers, model
+  sources, resolution and fixed-in version as facts, and an *Open in GnollBench* cross-link;
+- an occurrences disclosure filtered by the occurrence-level facets, with a *Show all occurrences*
+  `aria-pressed` toggle.
+
+The **GnollBench feedback issues** (`app-feedback-gnollbench-panel`, `feedback-tab/gnollbench/`,
+2026-10-23) are the twenty-third: the same card layout and filter bar with `tl-gbfb-*` ids, one card per
+fingerprint (`article[aria-labelledby="tl-gbfb-<id>-title"]`) — a kicker (category, the derived status,
+the models), the subject and summary, four fixed-width metrics (*Self-reports* with the run count,
+*Models*, *First seen*, *Last seen*), a `dl` of providers, suites, the fingerprint prefix and *Also
+reported in the Overseer chat*, a *Self-reports* disclosure, and the triage form without a delete. Its
+filter bar adds a *Self-reports* select (*Accepted only* / *Accepted and refused* / *Refused only*) beside
+*Sort by*, because the base set is one choice of three, not a facet, and fourteen facets beside *Status*
+(*Category*, *Model*, *Provider*, *Run*, *Series*, *Analysis group*, *Battery run*, *Model batch*, *Suite*,
+*Question*, *Information condition*, *Corpus*, *Experimental Changes*, *Harness*). Its view and selection
+use the same storage and selection bar under the `gnollbench` source, keyed by fingerprint. See
+`docs/overseer/ai-feedback-reports.md` § 11 and § 12.
 
 The **charts dialog's Models, Users and Groups tabs** (`app-telemetry-chart-{models,users,groups}`,
 `admin/telemetry-tab/charts/selection/`, 2026-10-21) are a recorded exception too: checkbox lists under a
