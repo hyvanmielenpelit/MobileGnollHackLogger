@@ -1914,6 +1914,8 @@ A report's text is **content**: model-written text derived from the conversation
   record. The copy in `ChatMessageToolCall` is the model's original arguments and is not scrubbed.
 - **Not written for an ephemeral or a confidential session** (§7). The ephemeral promise of no rows in the
   four chat tables is unchanged, and no feedback row exists either.
+- **The user can turn it off.** Settings → AI Permissions withholds the tool from the user's chats whatever
+  the administrator's switch says; reports already stored are not deleted by it.
 - **Soft delete keeps the rows**, as it keeps the session's messages, until the permanent purge.
 - **Not a separate part of the personal-data export** (§8.2). The export carries the same text through
   the conversation's tool calls, which it includes.

@@ -507,6 +507,7 @@ public class ChatService
         bool enableSubAgents = false;
         bool enableClientTools = true;
         bool enableGameActions = false;
+        bool enableFeedbackTool = true;
         int? maxInputTokens = null;
         int? maxOutputTokens = null;
         int overseerMode = 0;
@@ -546,6 +547,7 @@ public class ChatService
                 enableSubAgents = settings.EnableSubAgents;
                 enableClientTools = settings.EnableClientTools;
                 enableGameActions = settings.EnableGameActions;
+                enableFeedbackTool = settings.EnableFeedbackTool;
                 showSourceCodeReferences = settings.ShowSourceCodeReferences;
                 userMaxResultLength = settings.MaxResultLength;
                 userMaxCallsPerSession = settings.MaxCallsPerSession;
@@ -1582,7 +1584,8 @@ public class ChatService
             EnableSubAgents = enableSubAgents,
             EnableClientTools = enableClientTools,
             EnableGameActions = enableGameActions,
-            EnableFeedbackTool = _feedbackSwitch?.IsEnabled() == true && !isEphemeralSession && !isConfidentialSession,
+            EnableFeedbackTool = Overseer.Services.Feedback.ChatFeedbackToolGate.IsOffered(
+                _feedbackSwitch?.IsEnabled() == true, enableFeedbackTool, isEphemeralSession, isConfidentialSession),
             ToolExecutionContext = execContext,
             DlpVault = dlpVault,
             SystemModelId = systemModelId,

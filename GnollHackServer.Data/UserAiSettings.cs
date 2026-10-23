@@ -29,6 +29,12 @@ public class UserAiSettings
     public bool EnableClientTools { get; set; } = true;
     public bool EnableGameActions { get; set; } = false;
 
+    /// <summary>
+    /// Whether the user allows the chat to offer report_feedback. It can only withhold the tool: the
+    /// administrator's chat switch must also be on.
+    /// </summary>
+    public bool EnableFeedbackTool { get; set; } = true;
+
     public long? TitleGenerationModelId { get; set; }
     public long? TitleGenerationSystemModelId { get; set; }
     public bool TitleGenerationDisabled { get; set; } = false;

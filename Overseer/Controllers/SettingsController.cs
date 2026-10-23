@@ -35,6 +35,7 @@ public class SettingsController : ControllerBase
     private ModelAvailabilityService? _modelAvailabilityService;
     private ModelResolutionService? _modelResolutionService;
     private ModelMetadataService? _fallbackMetadataService;
+    private readonly Overseer.Services.Feedback.FeedbackSwitchService? _feedbackSwitch;
 
     /// <param name="modelAvailabilityService">Built from <paramref name="modelMetadataService"/> on first use when null.</param>
     /// <param name="modelResolutionService">Built from <paramref name="modelMetadataService"/> on first use when null.</param>
@@ -53,7 +54,8 @@ public class SettingsController : ControllerBase
         IEnumerable<IAiProvider> aiProviders,
         ModelPricingService? modelPricingService = null,
         ModelAvailabilityService? modelAvailabilityService = null,
-        ModelResolutionService? modelResolutionService = null)
+        ModelResolutionService? modelResolutionService = null,
+        Overseer.Services.Feedback.FeedbackSwitchService? feedbackSwitch = null)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
@@ -70,6 +72,7 @@ public class SettingsController : ControllerBase
         _modelPricingService = modelPricingService;
         _modelAvailabilityService = modelAvailabilityService;
         _modelResolutionService = modelResolutionService;
+        _feedbackSwitch = feedbackSwitch;
     }
 
     private ModelMetadataService CatalogMetadata =>
@@ -149,6 +152,10 @@ public class SettingsController : ControllerBase
             enableSubAgents = settings?.EnableSubAgents ?? false,
             enableClientTools = settings?.EnableClientTools ?? true,
             enableGameActions = settings?.EnableGameActions ?? false,
+            enableFeedbackTool = settings?.EnableFeedbackTool ?? true,
+            /* The administrator's chat switch, so the page can say whether the user's setting has any
+               effect. Null when the switch service is not registered. */
+            feedbackToolAdminEnabled = _feedbackSwitch?.IsEnabled(),
             showThoughtsAndTools = settings?.ShowThoughtsAndTools ?? 0,
             showParallelBadge = settings?.ShowParallelBadge ?? true,
             showContextWindowUsage = settings?.ShowContextWindowUsage ?? true,
@@ -338,7 +345,7 @@ public class SettingsController : ControllerBase
                 return BadRequest($"RequestTimeout must be between {min} and {max}");
         }
 
-        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout, request.EnableSubAgents, request.ShowParallelBadge, request.ShowContextWindowUsage, request.ShowChatCost, verboseResponses: request.VerboseResponses);
+        await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout, request.EnableSubAgents, request.ShowParallelBadge, request.ShowContextWindowUsage, request.ShowChatCost, verboseResponses: request.VerboseResponses, enableFeedbackTool: request.EnableFeedbackTool);
 
         await _settingsService.SaveConfidentialSettingsAsync(
             userId,
@@ -1443,6 +1450,7 @@ public class UpdateSettingsRequest
     public bool? EnableSubAgents { get; set; }
     public bool? EnableClientTools { get; set; }
     public bool? EnableGameActions { get; set; }
+    public bool? EnableFeedbackTool { get; set; }
     public bool? ShowSourceCodeReferences { get; set; }
     public int? ShowThoughtsAndTools { get; set; }
     public bool? ShowParallelBadge { get; set; }

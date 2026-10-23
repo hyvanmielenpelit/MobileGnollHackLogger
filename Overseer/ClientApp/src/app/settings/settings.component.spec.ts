@@ -294,6 +294,168 @@ describe('SettingsComponent', () => {
       expect(component.requestTimeout).toBe(60);
       expect(saveSpy).toHaveBeenCalled();
     });
+
+    it('should default enableFeedbackTool to true and bind it to its checkbox', async () => {
+      expect(component.enableFeedbackTool).toBe(true);
+      showSection('permissions');
+
+      // ngModel writes the value to the DOM asynchronously, so let it settle first.
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const checkbox = (fixture.nativeElement as HTMLElement).querySelector('input[name="enableFeedbackTool"]') as HTMLInputElement;
+      expect(checkbox).toBeTruthy();
+      expect(checkbox.checked).toBe(true);
+    });
+
+    it('should forward enableFeedbackTool as the nineteenth saveSettings argument', fakeAsync(() => {
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
+
+      component.enableFeedbackTool = false;
+      component.onSettingChange();
+      tick();
+
+      expect(saveSpy).toHaveBeenCalled();
+      expect(vi.mocked(saveSpy).mock.lastCall![18]).toBe(false);
+    }));
+  });
+
+  describe('Feedback tool', () => {
+    function createWith(settings: Partial<UserAiSettings>) {
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({ hasApiKey: true, ...settings } as UserAiSettings));
+      fixture = TestBed.createComponent(SettingsComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+      showSection('permissions');
+    }
+
+    const host = () => fixture.nativeElement as HTMLElement;
+    const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+    const result = () => text(host().querySelector('.feedback-tool-result'));
+    const statusText = () => text(host().querySelector('#feedbackToolStatusText'));
+    const adminLine = () => text(host().querySelector('.feedback-tool-admin'));
+
+    it('should read enableFeedbackTool and feedbackToolAdminEnabled from getSettings', () => {
+      createWith({ enableFeedbackTool: false, feedbackToolAdminEnabled: true });
+
+      expect(component.enableFeedbackTool).toBe(false);
+      expect(component.feedbackToolAdminEnabled).toBe(true);
+    });
+
+    it('should keep feedbackToolAdminEnabled null when the server sends null', () => {
+      createWith({ feedbackToolAdminEnabled: null });
+
+      expect(component.feedbackToolAdminEnabled).toBeNull();
+      expect(component.feedbackToolState).toBe('unknown');
+    });
+
+    it('should report the tool available when the administrator and the user allow it', () => {
+      createWith({ enableFeedbackTool: true, enableToolUse: true, feedbackToolAdminEnabled: true });
+
+      expect(component.feedbackToolState).toBe('available');
+      expect(result()).toBe('Available in your chats.');
+      expect(statusText()).toContain('The AI can send feedback reports, except in confidential and incognito chats.');
+      expect(adminLine()).toBe('Administrator setting: enabled');
+      expect(host().querySelector('.feedback-tool-status')!.getAttribute('data-state')).toBe('available');
+    });
+
+    it('should report the tool unavailable when the user turned it off', () => {
+      createWith({ enableFeedbackTool: false, enableToolUse: true, feedbackToolAdminEnabled: true });
+
+      expect(component.feedbackToolState).toBe('user-off');
+      expect(result()).toBe('Not available in your chats.');
+      expect(statusText()).toContain('You have turned the feedback tool off.');
+      expect(adminLine()).toBe('Administrator setting: enabled');
+    });
+
+    for (const userOn of [true, false]) {
+      it(`should name the administrator as the reason when the switch is off (user setting ${userOn ? 'on' : 'off'})`, () => {
+        createWith({ enableFeedbackTool: userOn, enableToolUse: true, feedbackToolAdminEnabled: false });
+
+        expect(component.feedbackToolState).toBe('admin-off');
+        expect(result()).toBe('Not available in your chats.');
+        expect(statusText()).toContain('An administrator has turned the feedback tool off for everyone, so this setting does nothing until an administrator turns it on. Your choice is kept and applies from then on.');
+        expect(adminLine()).toBe('Administrator setting: disabled');
+      });
+    }
+
+    it('should name Enable Server Tools when it is off', () => {
+      createWith({ enableFeedbackTool: true, enableToolUse: false, feedbackToolAdminEnabled: true });
+
+      expect(component.feedbackToolState).toBe('server-tools-off');
+      expect(result()).toBe('Not available in your chats.');
+      expect(statusText()).toContain('Enable Server Tools is off, so the AI cannot use any server tool, this one included.');
+      expect(adminLine()).toBe('Administrator setting: enabled');
+    });
+
+    it('should say the administrator setting could not be read when it is unknown', () => {
+      createWith({ enableFeedbackTool: true, enableToolUse: true });
+
+      expect(component.feedbackToolState).toBe('unknown');
+      expect(result()).toBe('Not available in your chats.');
+      expect(statusText()).toContain('The administrator setting could not be read.');
+      expect(adminLine()).toBe('Administrator setting: unknown');
+    });
+
+    it('should update the result when the checkbox changes', async () => {
+      createWith({ enableFeedbackTool: true, enableToolUse: true, feedbackToolAdminEnabled: true });
+      vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
+      expect(result()).toBe('Available in your chats.');
+
+      // ngModel writes the value to the DOM asynchronously, so let it settle before clicking.
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const checkbox = host().querySelector('input[name="enableFeedbackTool"]') as HTMLInputElement;
+      checkbox.click();
+      fixture.detectChanges();
+
+      expect(component.enableFeedbackTool).toBe(false);
+      expect(result()).toBe('Not available in your chats.');
+      expect(statusText()).toContain('You have turned the feedback tool off.');
+    });
+
+    it('should show the administrator line in every state, outside the live region', () => {
+      const cases: Partial<UserAiSettings>[] = [
+        { enableFeedbackTool: true, enableToolUse: true, feedbackToolAdminEnabled: true },
+        { enableFeedbackTool: false, enableToolUse: true, feedbackToolAdminEnabled: true },
+        { enableFeedbackTool: true, enableToolUse: true, feedbackToolAdminEnabled: false },
+        { enableFeedbackTool: true, enableToolUse: false, feedbackToolAdminEnabled: true },
+        { enableFeedbackTool: true, enableToolUse: true, feedbackToolAdminEnabled: null }
+      ];
+      for (const settings of cases) {
+        createWith(settings);
+
+        const line = host().querySelector('.feedback-tool-admin');
+        expect(line).toBeTruthy();
+        expect(text(line)).toMatch(/^Administrator setting: (enabled|disabled|unknown)$/);
+        expect(line!.closest('[role="status"]')).toBeNull();
+        expect(host().querySelector('[role="status"]#feedbackToolStatusText')).toBeTruthy();
+        fixture.destroy();
+      }
+    });
+
+    it('should keep the feedback checkbox enabled while the administrator switch is off', () => {
+      createWith({ enableFeedbackTool: true, feedbackToolAdminEnabled: false });
+
+      const checkbox = host().querySelector('input[name="enableFeedbackTool"]') as HTMLInputElement;
+      expect(checkbox.disabled).toBe(false);
+    });
+
+    it('should render an (i) button named "About the feedback tool" with a dialog that names the administrator setting', () => {
+      createWith({ enableFeedbackTool: true, feedbackToolAdminEnabled: true });
+
+      const button = host().querySelector('.feedback-tool-row app-info-tip button[aria-haspopup="dialog"]') as HTMLButtonElement;
+      expect(button).toBeTruthy();
+      expect(button.getAttribute('aria-label')).toBe('About the feedback tool');
+      expect(button.closest('label')).toBeNull();
+
+      const dialog = host().querySelector('.feedback-tool-row app-info-tip dialog') as HTMLDialogElement;
+      expect(text(dialog.querySelector('#feedbackToolInfo-title'))).toBe('The feedback tool');
+      const body = dialog.querySelector('#feedbackToolInfo')!;
+      expect(text(body)).toContain('When you opened this page, the administrator\'s setting was enabled.');
+      expect(text(body.querySelector('.feedback-tool-admin-state'))).toBe('enabled');
+    });
   });
 
   describe('Chat Data Management', () => {

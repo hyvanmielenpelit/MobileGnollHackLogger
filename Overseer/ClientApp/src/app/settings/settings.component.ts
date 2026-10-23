@@ -38,6 +38,7 @@ import { formatCalendarDate, formatServerDate } from '../utils/date.util';
 import { AuthService, AuthUser, hasTermsStatus, needsTermsAcceptance } from '../services/auth.service';
 import { formatTermsVersion } from '../services/terms.service';
 import { TermsDialogComponent } from '../shared/terms-dialog/terms-dialog.component';
+import { InfoTipComponent } from '../shared/info-tip/info-tip.component';
 
 /** The data classes outbound masking can recognise, named as `POST /api/settings/dlp` accepts them. */
 export type DlpMaskClass = keyof DlpSettings;
@@ -55,6 +56,9 @@ export type SettingsSection = 'general' | 'api-keys' | 'models' | 'permissions' 
 /** The three states of a per-model confidential-trust decision, as the `<select>` carries them. */
 export type ProvidedModelTrustChoice = 'yes' | 'no' | 'undecided';
 
+/** Whether the chat offers the feedback tool, and the first reason when it does not. */
+export type FeedbackToolState = 'unknown' | 'admin-off' | 'user-off' | 'server-tools-off' | 'available';
+
 /** The administrator's floor drops the `dlpMask` prefix, so each switch carries its floor's name. */
 const DLP_FLOOR_KEYS: Record<DlpMaskClass, keyof DlpFloor> = {
   dlpMaskApiKeys: 'apiKeys',
@@ -70,7 +74,7 @@ const DLP_FLOOR_KEYS: Record<DlpMaskClass, keyof DlpFloor> = {
 
 @Component({
     selector: 'app-settings',
-    imports: [FormsModule, RouterModule, ChangelogComponent, TrashModalComponent, ApiKeysComponent, ModelsComponent, TermsDialogComponent],
+    imports: [FormsModule, RouterModule, ChangelogComponent, TrashModalComponent, ApiKeysComponent, ModelsComponent, TermsDialogComponent, InfoTipComponent],
     styleUrl: './settings.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './settings.component.html'
@@ -158,6 +162,24 @@ export class SettingsComponent implements OnInit, OnDestroy {
   enableSubAgents = false;
   enableClientTools = true;
   enableGameActions = false;
+  enableFeedbackTool = true;
+  /** The administrator's chat switch as of page load; null until known or when the server cannot say. */
+  feedbackToolAdminEnabled: boolean | null = null;
+
+  /* The administrator's state is named first, so a user whose setting cannot take effect is told
+     why before anything else. */
+  get feedbackToolState(): FeedbackToolState {
+    if (this.feedbackToolAdminEnabled === null) return 'unknown';
+    if (!this.feedbackToolAdminEnabled) return 'admin-off';
+    if (!this.enableFeedbackTool) return 'user-off';
+    if (!this.enableToolUse) return 'server-tools-off';
+    return 'available';
+  }
+
+  /** The administrator's chat switch in words, for the read-out under the result and the (i) dialog. */
+  get feedbackToolAdminLabel(): string {
+    return this.feedbackToolAdminEnabled === null ? 'unknown' : this.feedbackToolAdminEnabled ? 'enabled' : 'disabled';
+  }
 
   maxResultLength: number | null = null;
   maxResultLengthSelect: any = null;
@@ -303,7 +325,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private saveSubject = new Subject<{ immediate: boolean }>();
   private saveSubscription!: Subscription;
   private hasPendingChanges = false;
-  private isInitialized = false;
+  isInitialized = false;
 
   // Masking saves to its own endpoint, so it has its own pipeline and its own pending flag while
   // sharing the header's save indicator.
@@ -587,7 +609,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
           this.showContextWindowUsage,
           this.showChatCost,
           this.confidentialPayload,
-          this.verboseResponses
+          this.verboseResponses,
+          this.enableFeedbackTool
         ).pipe(
           tap(() => {
             this.hasPendingChanges = false;
@@ -669,6 +692,12 @@ export class SettingsComponent implements OnInit, OnDestroy {
           }
           if (s.enableGameActions !== undefined) {
             this.enableGameActions = s.enableGameActions;
+          }
+          if (s.enableFeedbackTool !== undefined) {
+            this.enableFeedbackTool = s.enableFeedbackTool;
+          }
+          if (s.feedbackToolAdminEnabled !== undefined) {
+            this.feedbackToolAdminEnabled = s.feedbackToolAdminEnabled ?? null;
           }
           if (s.showThoughtsAndTools !== undefined) {
             this.showThoughtsAndTools = Number(s.showThoughtsAndTools ?? 0);

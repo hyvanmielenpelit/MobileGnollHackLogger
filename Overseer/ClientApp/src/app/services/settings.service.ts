@@ -108,6 +108,9 @@ export interface UserAiSettings {
   enableSubAgents?: boolean;
   enableClientTools?: boolean;
   enableGameActions?: boolean;
+  enableFeedbackTool?: boolean;
+  /** The administrator's chat switch for the feedback tool; null when the server cannot say. */
+  feedbackToolAdminEnabled?: boolean | null;
   showDebugLog?: boolean;
   requestTimeout?: number;
   configuredProviders?: string[];
@@ -490,10 +493,10 @@ export class SettingsService {
   /**
    * `confidential` carries the seven Confidentiality Mode fields in one object, so the positional
    * list ahead of it keeps the shape every existing caller and spec relies on; `verboseResponses`
-   * follows it. A Confidentiality Mode value weaker than the administrator's floor is not an
+   * and `enableFeedbackTool` follow it. A Confidentiality Mode value weaker than the administrator's floor is not an
    * error; the server clamps it.
    */
-  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableSubAgents: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null, showParallelBadge?: boolean, showContextWindowUsage?: boolean, showChatCost?: boolean, confidential?: ConfidentialUserSettings, verboseResponses?: boolean) {
+  saveSettings(spoilerFreeMode: boolean, enableWebSearch: boolean, enableToolUse: boolean, enableSubAgents: boolean, enableClientTools: boolean, enableGameActions: boolean, showSourceCodeReferences: boolean, maxResultLength: number | null, maxCallsPerSession: number | null, maxToolIterations: number | null, maxParallelToolCalls: number | null, showThoughtsAndTools: number, requestTimeout: number | null, showParallelBadge?: boolean, showContextWindowUsage?: boolean, showChatCost?: boolean, confidential?: ConfidentialUserSettings, verboseResponses?: boolean, enableFeedbackTool?: boolean) {
     return this.http.put('/api/settings', {
       spoilerFreeMode,
       enableWebSearch,
@@ -512,6 +515,7 @@ export class SettingsService {
       showContextWindowUsage,
       showChatCost,
       verboseResponses,
+      enableFeedbackTool,
       ...(confidential ?? {})
     });
   }

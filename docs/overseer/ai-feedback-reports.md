@@ -109,6 +109,12 @@ runs choose it per run: *GnollBench → Run Benchmark → Feedback Tool* (§ 10)
 - **The switch governs the production chat.** `ChatService` reads it when it builds the turn's request, so
   the next turn after a change declares or withholds the tool, and the handler reads it again before
   storing, so a turn that was already running when the tool was turned off records nothing.
+- **The user's setting.** `UserAiSettings.EnableFeedbackTool` (default on; the migration sets existing rows
+  on), under Settings → AI Permissions → *Feedback to developers*, can only withhold the tool: the chat
+  offers it when the admin switch and the user's setting are both on (`ChatFeedbackToolGate`). The page
+  leads with whether the tool is available in the user's chats and why not, shows the admin switch's state
+  (`feedbackToolAdminEnabled` in `GET /api/settings`) as a secondary line under it, and its (i) dialog
+  explains the tool and names the admin switch's state again. GnollBench does not read it.
 - **No confirmation.** Turning the tool off is reversible in one click and destroys nothing, so the switch
   commits at once, as the System Configs access switches do, and announces the result in a status line.
 
@@ -172,7 +178,7 @@ this category; it comes after the experimental-tool check.
 
 | Caller | `EnableFeedbackTool` |
 |---|---|
-| `ChatService` (production chat) | the chat switch is on, and the session is neither ephemeral nor confidential |
+| `ChatService` (production chat) | the chat switch and the user's setting are on, and the session is neither ephemeral nor confidential |
 | `DelegateToSubAgentTool` | not set: sub-agents are never offered it |
 | GnollBench candidate paths (`ExecuteSingleQuestionAsync`, `ReExecuteSingleAnswerAsync`) | `!FeedbackToolWithheld` of the run's recorded candidate prompt options (§ 3) |
 | Graders, claim verifier, rubric-gap author, report writers | not set |
@@ -186,7 +192,8 @@ registry gate is what keeps it away from sub-agents.
 **Second guard.** `AgentLoopRunner.IsDeclared` refuses any call whose name was not declared for the
 request, so a grader, the verifier or a sub-agent cannot execute `report_feedback` even if a model names
 it. The handler itself refuses at `AgentDepth > 0`, in an ephemeral or a confidential session, with a
-default session reference (the Developer Tools handler probe), and when the chat switch is off; each of those
+default session reference (the Developer Tools handler probe), when the chat switch is off, and when the
+user's setting is off; each of those
 returns *Feedback reports are not available in this conversation.*
 
 **The closed-book case.** A closed-book GnollBench candidate runs with `EnableToolUse = false` and an empty
@@ -197,7 +204,7 @@ has no tool loop, and giving it one tool would make it a different condition. Th
 
 **Order of the handler's checks.** Sub-agent; argument parse; the GnollBench candidate branch (the per-turn
 cap, then an acknowledgment without a write); the session and the chat switch; scrub and fingerprint; the
-daily cap; the same-conversation duplicate; the per-turn cap; store and acknowledge. A refused, invalid or
+user's setting; the daily cap; the same-conversation duplicate; the per-turn cap; store and acknowledge. A refused, invalid or
 duplicate call does not use one of the turn's three reports. **Storage never fails the turn**: any
 exception in the database steps is logged at Warning with the category, never the text, and the model gets
 the not-available result, which it treats like any other tool failure.
@@ -424,6 +431,15 @@ The switch and the GnollBench setting have their own cases:
   `admin-feedback.service.spec.ts`, the Feedback Tool field in `benchmark.component.launcher.spec.ts`, its
   request, remembered value, repeated setup and recommended-run reset in `benchmark-launcher.state.spec.ts`,
   and the *feedback tool withheld* tag in `run-facts.spec.ts`.
+- **The user's setting.** `ChatFeedbackToolGateTests`: all sixteen combinations of the admin switch, the
+  user's setting and the two session kinds, offered only for an ordinary session with both on.
+  `ReportFeedbackToolTests`: a user who turned the tool off gets the not-available result, and nothing is
+  stored (`AUserWhoTurnedTheToolOff_GetsNotAvailableAndNothingIsStored`). `SettingsControllerFeedbackToolTests`:
+  GET defaults the setting to on and reports the admin switch (null without the switch service), and PUT
+  stores the setting and keeps it when the field is absent. On the client, `settings.component.spec.ts`: the
+  checkbox and its nineteenth `saveSettings` argument, the result and sentence of every state, the
+  administrator line outside the live region, the checkbox kept operable while the admin switch is off, and
+  the (i) dialog naming the admin switch's state.
 
 ## 14. Deferred
 

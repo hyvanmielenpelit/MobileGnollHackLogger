@@ -526,6 +526,37 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
   }
 }
 
+/* The feedback tool: the checkbox row with its (i) at the end, and the read-out under it. */
+.feedback-tool-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+
+  > .checkbox-label {
+    flex: 1 1 auto;
+  }
+}
+
+/* A read-out, not an alert: no full border or background, and the words carry the state, not the color.
+   The negative margin takes the panel closer to its row than the fieldset's grid gap. */
+.feedback-tool-status {
+  margin-top: -8px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--text-muted, #888);
+
+  &[data-state='available'] {
+    border-left-color: var(--color-success, #28a745);
+  }
+}
+
+.feedback-tool-status-text {
+  margin: 0;
+}
+
+.feedback-tool-admin {
+  margin: 4px 0 0;
+}
+
 /* Confidentiality Mode */
 .confidential-intro,
 .dlp-intro {

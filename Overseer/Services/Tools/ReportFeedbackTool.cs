@@ -141,9 +141,15 @@ public sealed class ReportFeedbackTool : IToolHandler
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             DateTime now = DateTime.UtcNow;
 
-            // 6. Daily cap per user.
+            // 6. The user's own setting, then the daily cap per user.
             if (userId != null)
             {
+                bool? userAllows = await db.UserAiSettings.AsNoTracking()
+                    .Where(s => s.AspNetUserId == userId)
+                    .Select(s => (bool?)s.EnableFeedbackTool)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (userAllows == false) return NotAvailable();
+
                 DateTime midnight = now.Date;
                 int recordedToday = await db.OverseerFeedbackReports
                     .CountAsync(r => r.AspNetUserId == userId && r.CreatedUtc >= midnight, cancellationToken);

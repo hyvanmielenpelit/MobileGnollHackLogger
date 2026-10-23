@@ -339,6 +339,32 @@ public sealed class ReportFeedbackToolTests : IDisposable
     }
 
     [Fact]
+    public async Task AUserWhoTurnedTheToolOff_GetsNotAvailableAndNothingIsStored()
+    {
+        var (tool, feedbackSwitch) = CreateTool();
+        Assert.True(feedbackSwitch.IsEnabled());
+        await using (var db = Db())
+        {
+            db.UserAiSettings.Add(new UserAiSettings { AspNetUserId = UserId, EnableFeedbackTool = false });
+            await db.SaveChangesAsync(Ct);
+        }
+        var budget = new AgentRunBudget();
+
+        AssertNotAvailable(await tool.ExecuteAsync(Arguments(), Chat(budget: budget), Ct));
+        Assert.Empty(await ReportsAsync());
+        Assert.Empty(await IssuesAsync());
+
+        // The refusal used none of the turn's three.
+        for (int i = 0; i < ReportFeedbackTool.MaxReportsPerTurn; i++)
+        {
+            Assert.True(budget.TryIncrementFeedbackReport(ReportFeedbackTool.MaxReportsPerTurn));
+        }
+
+        // Another user, without a settings row, still records.
+        AssertRecorded(await tool.ExecuteAsync(Arguments(), Chat(sessionId: 2, userId: OtherUserId), Ct));
+    }
+
+    [Fact]
     public async Task ASubAgent_IsRefused()
     {
         var (tool, _) = CreateTool();

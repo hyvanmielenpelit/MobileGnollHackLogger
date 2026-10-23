@@ -5736,6 +5736,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<bool>("EnableClientTools")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("EnableFeedbackTool")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("EnableGameActions")
                         .HasColumnType("bit");
 
