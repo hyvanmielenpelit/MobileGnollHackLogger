@@ -30,9 +30,10 @@ time {
 
 /* --- The header -------------------------------------------------------------------------------- */
 
-/* The range, then Refresh, at the header's end; they wrap under the title when narrow. */
+/* The switch, the range, then Refresh, at the header's end; they wrap under the title when narrow. */
 .fb-head {
   margin-bottom: 0.25rem;
+  container: fb-head / inline-size;
 }
 
 .fb-header-tools {
@@ -67,82 +68,24 @@ time {
   color: #a1a1aa;
 }
 
-/* --- The switch card ------------------------------------------------------------------------- */
-
-/* The title and its (i), then one row per switch, each under a hairline. */
-.tl-fb-switch-card {
-  @include cards.card-surface;
-
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--tl-row-gap);
-  container: tl-fb-switch / inline-size;
-}
-
-.tl-fb-switch-head {
+/* The switch group, a hairline, then the range and Refresh; the hairline goes when they wrap, and with
+   the custom range's date inputs. */
+.fb-tool {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 0.5rem;
-
-  .gh-section-title {
-    margin: 0;
-    padding: 0;
-    border-bottom: 0;
-  }
+  gap: 0.625rem;
 }
 
-/* The text at the start, the state word and the switch at the end of the label line's row. */
-.tl-fb-switch-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "text  state"
-    "error error";
-  align-items: center;
-  gap: 0.5rem var(--tl-zone-gap);
-  padding-block-start: var(--tl-row-gap);
-  border-block-start: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.tl-fb-switch-text {
-  grid-area: text;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-inline-size: 0;
-}
-
-.tl-fb-switch-label {
-  font-size: var(--text-body);
+.fb-tool-label {
+  margin: 0;
   font-weight: 600;
   color: #f4f4f5;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.tl-fb-switch-desc {
-  margin: 0;
-  font-size: var(--text-body);
-  color: #d4d4d8;
-}
-
-.tl-fb-switch-meta {
-  margin: 0;
-  font-size: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-  color: #a1a1aa;
-
-  &:empty {
-    display: none;
-  }
-}
-
-.tl-fb-switch-control {
-  grid-area: state;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  justify-self: end;
-}
-
-.tl-fb-switch-word {
+.fb-tool-word {
   min-inline-size: 1.75rem;
   font-weight: 600;
   text-align: end;
@@ -153,25 +96,37 @@ time {
   }
 }
 
-.tl-fb-switch {
+.fb-tool-switch {
   margin: 0;
 }
 
-.tl-fb-switch-error {
-  grid-area: error;
-  margin: 0;
+.fb-tool-divider {
+  align-self: center;
+  inline-size: 1px;
+  block-size: 24px;
+  background: rgba(255, 255, 255, 0.12);
 }
 
-.tl-fb-switch-load-error {
-  margin: 0;
+.fb-header-tools:has(input[type='date']) .fb-tool-divider {
+  display: none;
 }
 
-/* A narrow card keeps the switch on the label line instead of centering it against the text. */
-@container tl-fb-switch (inline-size < 30rem) {
-  .tl-fb-switch-row {
-    align-items: start;
-    column-gap: 1rem;
+/* The tools fit on one line down to 40 rem of the header's content box (measured). */
+@container fb-head (inline-size < 41rem) {
+  .fb-tool-divider {
+    display: none;
   }
+}
+
+/* In the popup, which is part of this template. */
+.fb-tool-changed {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A load or toggle error takes a line of its own under the controls. */
+.fb-head-error {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 /* --- The issue list -------------------------------------------------------------------------- */

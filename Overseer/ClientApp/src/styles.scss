@@ -708,14 +708,9 @@ a:hover {
       font-size: 1.125rem;
       overflow-wrap: anywhere;
 
+      /* Focused on open as the reading start; not a control, so no ring. */
       &:focus {
         outline: none;
-      }
-
-      &:focus-visible {
-        outline: 2px solid var(--primary-color);
-        outline-offset: 2px;
-        border-radius: 4px;
       }
     }
   }
@@ -731,6 +726,19 @@ a:hover {
   &:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: -2px;
+  }
+
+  /* A sectioned body: each <section> headed by an h4.gh-section-title. */
+  > section + section {
+    margin-block-start: 18px;
+  }
+
+  > section > .gh-section-title {
+    margin-block-end: 8px;
+  }
+
+  ul + p {
+    margin-block-start: 8px;
   }
 }
 
@@ -2257,7 +2265,7 @@ input[type="number"] {
     }
 }
 
-/* The large switch: for a card that is about one feature (the Feedback tab's Overseer chat
+/* The large switch: for the one switch that governs a feature (the Feedback tab's header
    switch). The knob keeps a 3 px inset all round, and the ring marks keyboard focus. */
 .gh-switch-wrapper .gh-switch.gh-switch-lg {
     width: 64px;

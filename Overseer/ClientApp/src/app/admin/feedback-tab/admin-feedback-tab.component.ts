@@ -198,27 +198,15 @@ interface TriageResult {
   error: string | null;
 }
 
-/** One row of the switch card: its switch, the surface it governs, the name its messages use and what On does. */
-interface SwitchRow {
-  target: AdminFeedbackSwitchTarget;
-  label: string;
-  name: string;
-  description: string;
-}
-
-const SWITCH_ROWS: readonly SwitchRow[] = [
-  {
-    target: 'chat', label: 'Overseer chat', name: 'Overseer chat',
-    description: 'Lets the chat assistant report missing information, tool problems and its own mistakes to administrators.'
-  }
-];
+/** The surface the switch governs, as its status and error messages name it. */
+const FEEDBACK_SWITCH_NAME = 'Overseer chat';
 
 /**
- * The Admin page's Feedback tab: a sticky header with its own date range and Refresh; the switch that
- * offers the assistant's `report_feedback` tool in the Overseer chat (GnollBench runs choose it per run
- * in the launcher); and the issues it has reported in the range as a server-paged card list with a
- * search, Sort by, Status, Category and Model facets kept in the address, each issue with its figures,
- * latest facts, occurrences on demand and a triage form. The range lives in the page store and the
+ * The Admin page's Feedback tab: a sticky header with the switch that offers the assistant's
+ * `report_feedback` tool in the Overseer chat (GnollBench runs choose it per run in the launcher), its
+ * own date range and Refresh; and the issues it has reported in the range as a server-paged card list
+ * with a search, Sort by, Status, Category and Model facets kept in the address, each issue with its
+ * figures, latest facts, occurrences on demand and a triage form. The range lives in the page store and the
  * counts per status, which the Admin tab row also shows, come from it. Report text is model output and
  * is rendered as plain text only.
  */
@@ -259,7 +247,6 @@ export class AdminFeedbackTabComponent implements OnInit, AfterViewInit, OnDestr
 
   // --- Switch ---
 
-  readonly switchRows = SWITCH_ROWS;
   readonly switches = signal<AdminFeedbackSwitches | null>(null);
   /** Per switch: its request is running, its last result, its last error. */
   readonly switchPending = { chat: signal(false) };
@@ -458,15 +445,14 @@ export class AdminFeedbackTabComponent implements OnInit, AfterViewInit, OnDestr
     return this.switches()?.[target] ?? null;
   }
 
-  /** A row's meta line: `On · Changed 21 Oct 2026 22:54 by tommi`; the date and name are the server's. */
-  switchSentence(target: AdminFeedbackSwitchTarget): string {
+  /** `Changed 21 Oct 2026 22:54 by tommi.`, `Configuration default.` while seeded; empty while unknown. */
+  switchChangedText(target: AdminFeedbackSwitchTarget): string {
     const state = this.switchOf(target);
-    if (!state) return this.switchLoadError() ? '' : 'Loading…';
-    const word = state.enabled ? 'On' : 'Off';
-    if (state.seeded) return `${word} · Configuration default`;
-    if (!state.setAtUtc) return word;
+    if (!state || this.switchLoadError()) return '';
+    if (state.seeded) return 'Configuration default.';
+    if (!state.setAtUtc) return '';
     const by = state.setByUserName ? ` by ${state.setByUserName}` : '';
-    return `${word} · Changed ${feedbackDateTimeText(state.setAtUtc)}${by}`;
+    return `Changed ${feedbackDateTimeText(state.setAtUtc)}${by}.`;
   }
 
   loadSwitches(): void {
@@ -494,7 +480,7 @@ export class AdminFeedbackTabComponent implements OnInit, AfterViewInit, OnDestr
       checkbox.checked = !enabled;
       return;
     }
-    const name = SWITCH_ROWS.find(row => row.target === target)?.name ?? target;
+    const name = FEEDBACK_SWITCH_NAME;
     pending.set(true);
     this.switchMessage[target].set('');
     this.switchError[target].set(null);

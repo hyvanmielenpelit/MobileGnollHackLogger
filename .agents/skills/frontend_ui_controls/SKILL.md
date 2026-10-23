@@ -959,6 +959,10 @@ help).
   `.btn-icon-action` named *Close {title}* has an `interestfor` tooltip (`{tipId}-close-tip`); the
   scrolling body `.gh-info-dialog-body` is `{tipId}` and shares `.gh-info-popup-body`'s `<dl>` rules.
   Every id derives from `tipId`. A backdrop click closes it where `closedby` is unsupported.
+- **The title is focused on open without a ring**: it is a reading start, not a control. The close
+  button and the body region keep their focus rings.
+- **A sectioned body** is `<section>`s each headed by an `h4.gh-section-title`; the global rules space
+  them 18 px apart (Settings → the feedback tool, the Download Center's document options).
 - **Nested-dialog rule**: its `close`, `cancel` and `click` events stop propagating, because these
   tips sit inside other dialogs (run report, PDF viewer, Download Center) and inside table headers.
   Escape closes only the tip. Do not put a dialog-mode tip inside a `<label>`: stopping propagation
@@ -2354,7 +2358,8 @@ returns every group unpaged (groups are administrator-made and few).
 
 The **Admin Feedback issues** (`app-admin-feedback-tab`, `admin/feedback-tab/`, 2026-10-21, an Admin
 tab of its own at `/admin/feedback` since 2026-10-22) are the twenty-second. The tab has a sticky
-`.tab-header-row` of its own (the title, its own date range with an (i), an icon-only *Refresh*), and
+`.tab-header-row` of its own (the title, the feedback tool switch, its own date range with a click (i),
+an icon-only *Refresh*), and
 the *Reported issues* section title carries the list's count at the end of its row. The list is
 one full-width `article[aria-labelledby="tl-fb-{id}-title"]` per
 feedback issue, in Run History's layout — a kicker (category badge, status badge with *Regressed N×*,
@@ -2897,31 +2902,33 @@ and the AI Telemetry *Manage limits*, *… for group {group}* from the Groups su
 *Manage Groups for {user}* (`users-tab/user-list/`, `#manageGroupsDialog`) uses the same frame at
 36 rem, not full height, with the same switch-first cards (title only, no badges) and **Done**.
 
-**The Feedback switch card** (2026-10-21; first under the Feedback tab's header since 2026-10-22) is
-the reference for **the switches that govern one feature**, one row per surface. A full-width
-`<section aria-labelledby="tl-fb-switch-title">` whose head row holds the section title
-`h3#tl-fb-switch-title.gh-section-title` *Feedback tool* and a click-mode `app-info-tip` saying where the
-switch applies and what it does not govern (*Applies to the Overseer chat only. GnollBench runs choose it
-per run: …*), so that scope text is not a gray line on the card. Then one row per surface (today one).
-Each row has, on the left, **a label naming the surface** (*Overseer chat*, never *Enabled in …*), a
-readable description of what *On* does (`--text-body`, `#d4d4d8`, not a faint note), and a short meta line
-from the server (*On · Changed {time} by {user}*, *Off · Changed {time}*, *On · Configuration default*;
-`--text-secondary`, tabular figures); on the right a **state word** (*On* in the primary color, *Off* in
-gray, `aria-hidden` because the switch announces its own state) beside the switch, so the state is a word
-and not only a knob position; and below, a **visually hidden** `role="status"` line, which announces the
-change without repeating the meta line on screen, and a visible `.gh-field-error` line. The switch is the
+**The Feedback header switch** (2026-10-23; a card of its own from 2026-10-21 to 2026-10-22) is the
+reference for **a feature-level switch in a tab header**. In the Feedback tab's sticky `.tab-header-row`,
+before the date range and Refresh, a `div.fb-tool` that never wraps inside itself holds: a visible
+`<label for>` **Feedback tool** (clicking it toggles), whose visually hidden *in the Overseer chat* puts the
+surface in the accessible name (*Feedback tool in the Overseer chat*, `aria-labelledby` the label alone, so
+the name begins with the visible words); a **state word** (*On* in the primary color, *Off* in gray,
+`aria-hidden` because the switch announces its own state), so the state is a word and not only a knob
+position; the switch; and a click-mode `app-info-tip` that holds what *On* does, where it applies (*Applies
+to the Overseer chat only. GnollBench runs choose it per run: …*) and the server's newest entry (*Changed
+{time} by {user}.*, *Changed {time}.*, *Configuration default.*), and that **describes the switch**
+(`aria-describedby`). Until the state arrives the switch is disabled, the word absent and the (i) has no
+*Changed* line; no *Loading…* text sits in the header. A **visually hidden** `role="status"` line announces
+the change, and a load or toggle error is a `.gh-field-error` line across the header's full width under
+its controls. A 1 px **hairline** (`aria-hidden`) separates the switch, a setting, from the range and
+Refresh, view controls; it is hidden below a measured container breakpoint of the header (an inline-size
+container), at or above the width at which the tools wrap, and whenever the custom range's date inputs are
+shown (`:has(input[type='date'])`), so it never sits at the end of a wrapped line. The switch is the
 global `gh-switch` with the size modifier **`gh-switch-lg`** (`styles.scss`, beside `.gh-switch`: about
-64 × 34 pixels, the knob scaled to match), so it reads as the row's one big control, and **every
+64 × 34 pixels, the knob scaled to match), so it reads as the one big control, and **every
 `gh-switch-lg` checkbox carries `role="switch"`**, so assistive technology announces *switch, on/off*
 rather than *checkbox, checked* (valid ARIA on a checkbox, which maps `checked`; the native `switch`
-attribute is Safari-only, so it is not used and no polyfill is added). Like the access switches above,
-each commits at once with no confirmation (the change is reversible and destroys nothing): its checkbox
-is named by **the section title and its row's label** through `aria-labelledby` (*Feedback tool Overseer
-chat*) and described by the description and the meta line, is disabled while its own request runs and
-reverts on an error, and after a success its meta line is refetched so it is the server's, not the
-client's. **One row's request never disables another row.** Below 30 rem of the card (a container query
-on the section) the switch stays at the end of the label line. Use `gh-switch-lg` only for such a
-feature-level switch; a switch in a list row stays the plain `gh-switch`.
+attribute is Safari-only, so it is not used and no polyfill is added). Keep the `label.gh-switch-wrapper`
+around the checkbox: the global switch styles hang off it. Like the access switches above, it commits at
+once with no confirmation (the change is reversible and destroys nothing), is disabled while its own
+request runs and reverts on an error, and after a success its state is refetched so the *Changed* line is
+the server's, not the client's. Use `gh-switch-lg` only for such a feature-level switch; a switch in a
+list row stays the plain `gh-switch`.
 
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
 `.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with

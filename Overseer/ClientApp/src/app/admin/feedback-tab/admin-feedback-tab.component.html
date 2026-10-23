@@ -1,7 +1,35 @@
-<!-- The header, with the tab's own date range and Refresh, stays at the top while the tab scrolls. -->
+<!-- The header, with the feedback tool switch, the tab's own date range and Refresh, stays at the top while the tab scrolls. -->
 <div class="tab-header-row fb-head" #fbHead>
   <h3 class="m-0" id="fb-tab-title">Feedback</h3>
   <div class="fb-header-tools">
+    @let state = switchOf('chat');
+    <div class="fb-tool">
+      <label class="fb-tool-label" id="fb-tool-label" for="fb-tool-toggle">Feedback tool<span class="visually-hidden"> in the Overseer chat</span></label>
+      <!-- The switch announces its own state; the word is for the eye. -->
+      @if (state) {
+        <span class="fb-tool-word" aria-hidden="true" [attr.data-state]="state.enabled ? 'on' : 'off'">{{ state.enabled ? 'On' : 'Off' }}</span>
+      }
+      <label class="gh-switch-wrapper fb-tool-switch">
+        <span class="gh-switch gh-switch-lg">
+          <input type="checkbox" role="switch" id="fb-tool-toggle"
+                 aria-labelledby="fb-tool-label"
+                 [attr.aria-describedby]="'fb-tool-tip' + (switchError.chat() ? ' fb-tool-error' : '')"
+                 [checked]="state?.enabled ?? false"
+                 [disabled]="switchPending.chat() || !state"
+                 [attr.aria-busy]="switchPending.chat() ? 'true' : null"
+                 (change)="onSwitchChange('chat', $event)">
+          <span class="gh-slider"></span>
+        </span>
+      </label>
+      <app-info-tip trigger="click" tipId="fb-tool-tip" subject="the feedback tool">
+        <p>Lets the chat assistant report missing information, tool problems and its own mistakes to administrators.</p>
+        <p>Applies to the Overseer chat only. GnollBench runs choose it per run: GnollBench → Run Benchmark → Feedback Tool.</p>
+        @if (switchChangedText('chat'); as changed) {
+          <p class="fb-tool-changed">{{ changed }}</p>
+        }
+      </app-info-tip>
+    </div>
+    <span class="fb-tool-divider" aria-hidden="true"></span>
     <div class="gh-field-row fb-range" role="group" aria-label="Date range">
       <label for="fb-range-select" class="visually-hidden">Date range</label>
       <select id="fb-range-select" class="gh-input" aria-describedby="fb-range-tip" (change)="onTimeSpanChange($event)">
@@ -18,7 +46,7 @@
         <input id="fb-range-end" type="date" class="gh-input" [value]="endDate" [min]="startDate" [max]="todayDate"
                (change)="onCustomDateChange('end', $event)">
       }
-      <app-info-tip tipId="fb-range-tip" subject="Date range">Shows the issues reported at least once in this range. The counts on the tab are over all dates.</app-info-tip>
+      <app-info-tip trigger="click" tipId="fb-range-tip" subject="Date range">Shows the issues reported at least once in this range. The counts on the tab are over all dates.</app-info-tip>
     </div>
     <!-- aria-disabled while the first page loads, so the button keeps its focus and its tooltip. -->
     <button type="button" class="action-btn fb-refresh-btn" id="fb-refresh-btn"
@@ -34,57 +62,20 @@
     </button>
     <div popover="hint" class="gh-tooltip" id="fb-refresh-tip" style="position-anchor: --fb-refresh-btn">Refresh</div>
   </div>
-</div>
-
-<!-- The switch of this card, committed at once. -->
-<section class="tl-fb-switch-card" aria-labelledby="tl-fb-switch-title">
-  <div class="tl-fb-switch-head">
-    <h3 class="gh-section-title tl-fb-switch-title" id="tl-fb-switch-title">Feedback tool</h3>
-    <app-info-tip trigger="click" tipId="tl-fb-switch-scope-tip" subject="the feedback tool">Applies to the Overseer chat only. GnollBench runs choose it per run: GnollBench → Run Benchmark → Feedback Tool.</app-info-tip>
-  </div>
+  <p class="visually-hidden" id="fb-tool-status" role="status">{{ switchMessage.chat() }}</p>
   @if (switchLoadError(); as message) {
-    <p class="gh-field-error tl-fb-switch-load-error" id="tl-fb-switch-load-error">
+    <p class="gh-field-error fb-head-error" id="fb-tool-load-error">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
       <span>{{ message }}</span>
     </p>
   }
-  @for (row of switchRows; track row.target) {
-    @let state = switchOf(row.target);
-    <div class="tl-fb-switch-row">
-      <div class="tl-fb-switch-text">
-        <span class="tl-fb-switch-label" [id]="'tl-fb-switch-' + row.target + '-label'">{{ row.label }}</span>
-        <p class="tl-fb-switch-desc" [id]="'tl-fb-switch-' + row.target + '-desc'">{{ row.description }}</p>
-        <p class="tl-fb-switch-meta" [id]="'tl-fb-switch-' + row.target + '-state'">{{ switchSentence(row.target) }}</p>
-      </div>
-      <div class="tl-fb-switch-control">
-        <!-- The switch announces its own state; the word is for the eye. -->
-        @if (state) {
-          <span class="tl-fb-switch-word" aria-hidden="true" [attr.data-state]="state.enabled ? 'on' : 'off'">{{ state.enabled ? 'On' : 'Off' }}</span>
-        }
-        <label class="gh-switch-wrapper tl-fb-switch">
-          <span class="gh-switch gh-switch-lg">
-            <input type="checkbox" role="switch" [id]="'tl-fb-switch-' + row.target + '-toggle'"
-                   [attr.aria-labelledby]="'tl-fb-switch-title tl-fb-switch-' + row.target + '-label'"
-                   [attr.aria-describedby]="'tl-fb-switch-' + row.target + '-desc tl-fb-switch-' + row.target + '-state'
-                     + (switchError[row.target]() ? ' tl-fb-switch-' + row.target + '-error' : '')"
-                   [checked]="state?.enabled ?? false"
-                   [disabled]="switchPending[row.target]() || !state"
-                   [attr.aria-busy]="switchPending[row.target]() ? 'true' : null"
-                   (change)="onSwitchChange(row.target, $event)">
-            <span class="gh-slider"></span>
-          </span>
-        </label>
-      </div>
-      <p class="visually-hidden tl-fb-switch-status" [id]="'tl-fb-switch-' + row.target + '-status'" role="status">{{ switchMessage[row.target]() }}</p>
-      @if (switchError[row.target](); as message) {
-        <p class="gh-field-error tl-fb-switch-error" [id]="'tl-fb-switch-' + row.target + '-error'">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-          <span>{{ message }}</span>
-        </p>
-      }
-    </div>
+  @if (switchError.chat(); as message) {
+    <p class="gh-field-error fb-head-error" id="fb-tool-error">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ message }}</span>
+    </p>
   }
-</section>
+</div>
 
 <section class="tl-fb-issues" aria-labelledby="tl-fb-issues-title">
   <div class="tl-fb-issues-head">

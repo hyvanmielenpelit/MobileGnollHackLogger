@@ -202,16 +202,20 @@ describe('AdminFeedbackTabComponent', () => {
   describe('header', () => {
     const rangeSelect = () => q<HTMLSelectElement>('#fb-range-select')!;
 
-    it('is a sticky header titled Feedback, with the date range, its (i) and a Refresh icon button', async () => {
+    it('is a sticky header titled Feedback, with the feedback tool switch, the date range, its (i) and a Refresh icon button', async () => {
       await create();
 
       const head = q('.tab-header-row')!;
       expect(textOf(head.querySelector('h3'))).toBe('Feedback');
       expect(getComputedStyle(head).position).toBe('sticky');
+      expect(head.querySelector('#fb-tool-toggle')).not.toBeNull();
       expect(textOf(q('label[for="fb-range-select"]'))).toBe('Date range');
       expect(rangeSelect().getAttribute('aria-describedby')).toBe('fb-range-tip');
+      const rangeButton = rangeSelect().closest('.fb-range')!.querySelector<HTMLButtonElement>('app-info-tip button')!;
+      expect(rangeButton.getAttribute('popovertarget')).toBe('fb-range-tip-popup');
       expect(textOf(q('#fb-range-tip'))).toBe(
         'Shows the issues reported at least once in this range. The counts on the tab are over all dates.');
+      expect(q('section.tl-fb-switch-card')).toBeNull();
       const refresh = q<HTMLButtonElement>('#fb-refresh-btn')!;
       expect(refresh.getAttribute('aria-label')).toBe('Refresh feedback');
       expect(refresh.getAttribute('interestfor')).toBe('fb-refresh-tip');
@@ -325,12 +329,11 @@ describe('AdminFeedbackTabComponent', () => {
     });
   });
 
-  describe('switch card', () => {
-    const toggleOf = (target: string) => q<HTMLInputElement>(`#tl-fb-switch-${target}-toggle`)!;
-    const metaOf = (target: string) => textOf(q(`#tl-fb-switch-${target}-state`));
-    const wordOf = (target: string) => q(`#tl-fb-switch-${target}-toggle`)!.closest('.tl-fb-switch-row')!.querySelector('.tl-fb-switch-word');
-    const statusOf = (target: string) => textOf(q(`#tl-fb-switch-${target}-status`));
-    const rowOf = (target: string) => toggleOf(target).closest('.tl-fb-switch-row') as HTMLElement;
+  describe('feedback tool switch', () => {
+    const toggle = () => q<HTMLInputElement>('#fb-tool-toggle')!;
+    const changedText = () => textOf(q('.fb-tool-changed'));
+    const word = () => q('.fb-tool .fb-tool-word');
+    const statusText = () => textOf(q('#fb-tool-status'));
     const at = '2026-10-21T12:02:00Z';
 
     function serve(chat: Partial<AdminFeedbackSwitches['chat']>): void {
@@ -339,86 +342,84 @@ describe('AdminFeedbackTabComponent', () => {
       fixture.detectChanges();
     }
 
-    it('is a section named by Feedback tool, with one large switch named by the title and the surface it governs', async () => {
+    it('sits in the header as one large switch labeled Feedback tool and named for the surface it governs', async () => {
       await create();
 
-      const section = q('section.tl-fb-switch-card')!;
-      expect(section.getAttribute('aria-labelledby')).toBe('tl-fb-switch-title');
-      const title = q('h3#tl-fb-switch-title')!;
-      expect(textOf(title)).toBe('Feedback tool');
-      expect(title.classList.contains('gh-section-title')).toBe(true);
-      expect(section.querySelectorAll('.tl-fb-switch-row').length).toBe(1);
-      expect(section.querySelectorAll('input[type="checkbox"]').length).toBe(1);
-
-      const toggle = toggleOf('chat');
-      expect(toggle.type).toBe('checkbox');
-      expect(toggle.getAttribute('role')).toBe('switch');
-      expect(toggle.closest('.gh-switch')?.classList.contains('gh-switch-lg')).toBe(true);
-      expect(toggle.getAttribute('aria-labelledby')).toBe('tl-fb-switch-title tl-fb-switch-chat-label');
-      const name = toggle.getAttribute('aria-labelledby')!.split(' ').map(id => textOf(el.querySelector('#' + id))).join(' ');
-      expect(name).toBe('Feedback tool Overseer chat');
-      expect(textOf(q('#tl-fb-switch-chat-label'))).toBe('Overseer chat');
-      expect(textOf(q('#tl-fb-switch-chat-desc'))).toBe(
-        'Lets the chat assistant report missing information, tool problems and its own mistakes to administrators.');
-      expect(toggle.getAttribute('aria-describedby')).toBe('tl-fb-switch-chat-desc tl-fb-switch-chat-state');
-      expect(toggle.checked).toBe(true);
-      expect(toggle.disabled).toBe(false);
+      const head = q('.tab-header-row')!;
+      const switches = head.querySelectorAll<HTMLInputElement>('input[role="switch"]');
+      expect(switches.length).toBe(1);
+      expect(switches[0]).toBe(toggle());
+      expect(toggle().type).toBe('checkbox');
+      expect(toggle().closest('.gh-switch')?.classList.contains('gh-switch-lg')).toBe(true);
+      expect(toggle().getAttribute('aria-labelledby')).toBe('fb-tool-label');
+      const label = q('#fb-tool-label')!;
+      expect(label.getAttribute('for')).toBe('fb-tool-toggle');
+      expect(textOf(label)).toBe('Feedback tool in the Overseer chat');
+      const visible = label.cloneNode(true) as HTMLElement;
+      visible.querySelectorAll('.visually-hidden').forEach(hidden => hidden.remove());
+      expect(textOf(visible)).toBe('Feedback tool');
+      expect(toggle().getAttribute('aria-describedby')).toBe('fb-tool-tip');
+      expect(toggle().checked).toBe(true);
+      expect(toggle().disabled).toBe(false);
       expect(el.textContent).not.toContain('Enabled in Overseer chat');
       expect(el.textContent).not.toContain('Enabled in GnollBench');
     });
 
-    it('says in an (i) popup that the switch is for the Overseer chat only and where GnollBench sets it', async () => {
+    it('says in its (i) popup what the tool does, that it is for the Overseer chat only and where GnollBench sets it', async () => {
       await create();
 
-      const head = q('.tl-fb-switch-head')!;
-      const button = head.querySelector<HTMLButtonElement>('app-info-tip button')!;
+      const button = q('.fb-tool')!.querySelector<HTMLButtonElement>('app-info-tip button')!;
       expect(button.getAttribute('aria-label')).toBe('About the feedback tool');
-      expect(button.getAttribute('popovertarget')).toBe('tl-fb-switch-scope-tip-popup');
-      const tip = textOf(q('#tl-fb-switch-scope-tip'));
+      expect(button.getAttribute('popovertarget')).toBe('fb-tool-tip-popup');
+      const tip = textOf(q('#fb-tool-tip'));
+      expect(tip).toContain('Lets the chat assistant report missing information, tool problems and its own mistakes to administrators.');
       expect(tip).toContain('Overseer chat only');
       expect(tip).toContain('GnollBench → Run Benchmark → Feedback Tool');
-      expect(q('#tl-fb-switch-gnollbench-pointer')).toBeNull();
     });
 
     it('keeps the status line announced but visually hidden', async () => {
       await create();
 
-      const line = q('#tl-fb-switch-chat-status')!;
+      const line = q('#fb-tool-status')!;
       expect(line.getAttribute('role')).toBe('status');
       expect(line.classList.contains('visually-hidden')).toBe(true);
     });
 
-    it('states how the switch was set in its meta line, and its state in a word', async () => {
+    it('states how the switch was set in its (i), and its state in a word', async () => {
       await create();
-      expect(metaOf('chat')).toBe(`On · Changed ${feedbackDateTimeText('2026-10-01T09:00:00Z')} by tommi`);
-      expect(textOf(wordOf('chat'))).toBe('On');
-      expect(wordOf('chat')!.getAttribute('data-state')).toBe('on');
-      expect(wordOf('chat')!.getAttribute('aria-hidden')).toBe('true');
+      expect(changedText()).toBe(`Changed ${feedbackDateTimeText('2026-10-01T09:00:00Z')} by tommi.`);
+      expect(q('#fb-tool-tip')!.contains(q('.fb-tool-changed'))).toBe(true);
+      expect(textOf(word())).toBe('On');
+      expect(word()!.getAttribute('data-state')).toBe('on');
+      expect(word()!.getAttribute('aria-hidden')).toBe('true');
 
       serve({ enabled: false, setAtUtc: at, setByUserName: 'tommi', seeded: false });
-      expect(metaOf('chat')).toBe(`Off · Changed ${feedbackDateTimeText(at)} by tommi`);
-      expect(textOf(wordOf('chat'))).toBe('Off');
-      expect(wordOf('chat')!.getAttribute('data-state')).toBe('off');
-      expect(toggleOf('chat').checked).toBe(false);
+      expect(changedText()).toBe(`Changed ${feedbackDateTimeText(at)} by tommi.`);
+      expect(textOf(word())).toBe('Off');
+      expect(word()!.getAttribute('data-state')).toBe('off');
+      expect(toggle().checked).toBe(false);
 
       serve({ enabled: true, setAtUtc: at, setByUserName: null, seeded: false });
-      expect(metaOf('chat')).toBe(`On · Changed ${feedbackDateTimeText(at)}`);
+      expect(changedText()).toBe(`Changed ${feedbackDateTimeText(at)}.`);
 
       serve({ enabled: false, setAtUtc: null, setByUserName: null, seeded: true });
-      expect(metaOf('chat')).toBe('Off · Configuration default');
+      expect(changedText()).toBe('Configuration default.');
+      expect(textOf(word())).toBe('Off');
 
       serve({ enabled: true, setAtUtc: null, setByUserName: null, seeded: true });
-      expect(metaOf('chat')).toBe('On · Configuration default');
+      expect(changedText()).toBe('Configuration default.');
+      expect(textOf(word())).toBe('On');
     });
 
-    it('says Loading… until the state arrives, and shows no state word', async () => {
+    it('shows no state word and no changed line until the state arrives, and keeps the switch disabled', async () => {
       const pending = new Subject<AdminFeedbackSwitches>();
       switchSpy.mockReturnValue(pending.asObservable());
       await create();
 
-      expect(metaOf('chat')).toBe('Loading…');
-      expect(wordOf('chat')).toBeNull();
-      expect(toggleOf('chat').disabled).toBe(true);
+      expect(word()).toBeNull();
+      expect(q('.fb-tool-changed')).toBeNull();
+      expect(toggle().disabled).toBe(true);
+      expect(textOf(q('.tab-header-row'))).not.toContain('Loading');
     });
 
     it('commits an Overseer chat click at once, disables the switch while it runs, announces it and refetches', async () => {
@@ -426,7 +427,7 @@ describe('AdminFeedbackTabComponent', () => {
       const pending = new Subject<AdminFeedbackSwitches>();
       const setSpy = vi.spyOn(service, 'setSwitch').mockReturnValue(pending.asObservable());
       switchSpy.mockClear();
-      const toggle = toggleOf('chat');
+      const toggle = q<HTMLInputElement>('#fb-tool-toggle')!;
 
       toggle.click();
       fixture.detectChanges();
@@ -444,44 +445,42 @@ describe('AdminFeedbackTabComponent', () => {
       expect(toggle.disabled).toBe(false);
       expect(toggle.checked).toBe(false);
       expect(toggle.getAttribute('aria-busy')).toBeNull();
-      expect(statusOf('chat')).toBe('Overseer chat: the feedback tool is off.');
+      expect(statusText()).toBe('Overseer chat: the feedback tool is off.');
       expect(switchSpy).toHaveBeenCalledTimes(1);
-      expect(metaOf('chat')).toBe(`Off · Changed ${feedbackDateTimeText(at)} by tommi`);
-      expect(textOf(wordOf('chat'))).toBe('Off');
-      expect(q('.tl-fb-switch-error')).toBeNull();
+      expect(changedText()).toBe(`Changed ${feedbackDateTimeText(at)} by tommi.`);
+      expect(textOf(word())).toBe('Off');
+      expect(q('#fb-tool-error')).toBeNull();
     });
 
-    it('reverts only the Overseer chat switch and shows the error under it when the request fails', async () => {
+    it('reverts the switch and shows the error in the header when the request fails', async () => {
       await create();
       vi.spyOn(service, 'setSwitch').mockReturnValue(throwError(() => ({ status: 500, error: { message: 'Database unavailable' } })));
-      const toggle = toggleOf('chat');
+      const toggle = q<HTMLInputElement>('#fb-tool-toggle')!;
 
       toggle.click();
       fixture.detectChanges();
 
       expect(toggle.checked).toBe(true);
       expect(toggle.disabled).toBe(false);
-      const errors = el.querySelectorAll('.tl-fb-switch-error.gh-field-error');
+      const errors = el.querySelectorAll('#fb-tool-error.gh-field-error');
       expect(errors.length).toBe(1);
-      expect(errors[0].id).toBe('tl-fb-switch-chat-error');
-      expect(rowOf('chat').contains(errors[0])).toBe(true);
+      expect(q('.tab-header-row')!.contains(errors[0])).toBe(true);
       expect(textOf(errors[0])).toBe('The feedback tool could not be turned off for Overseer chat: Database unavailable');
-      expect(toggle.getAttribute('aria-describedby')).toBe('tl-fb-switch-chat-desc tl-fb-switch-chat-state tl-fb-switch-chat-error');
-      expect(statusOf('chat')).toBe('');
+      expect(toggle.getAttribute('aria-describedby')).toBe('fb-tool-tip fb-tool-error');
+      expect(statusText()).toBe('');
     });
 
-    it('shows a failed load once, under the title, and leaves the switch disabled', async () => {
+    it('shows a failed load once, in the header, and leaves the switch disabled', async () => {
       switchSpy.mockReturnValue(throwError(() => ({ status: 500, error: { message: 'Database unavailable' } })));
       await create();
 
-      const errors = el.querySelectorAll('.tl-fb-switch-load-error');
+      const errors = el.querySelectorAll('#fb-tool-load-error');
       expect(errors.length).toBe(1);
+      expect(q('.tab-header-row')!.contains(errors[0])).toBe(true);
       expect(textOf(errors[0])).toBe('The state of the feedback tool could not be loaded: Database unavailable');
-      expect(errors[0].closest('.tl-fb-switch-row')).toBeNull();
-      expect(el.querySelectorAll('.tl-fb-switch-error').length).toBe(0);
-      expect(el.querySelectorAll('.tl-fb-switch-row').length).toBe(1);
-      expect(toggleOf('chat').disabled).toBe(true);
-      expect(metaOf('chat')).toBe('');
+      expect(q('#fb-tool-error')).toBeNull();
+      expect(toggle().disabled).toBe(true);
+      expect(q('.fb-tool-changed')).toBeNull();
     });
   });
 

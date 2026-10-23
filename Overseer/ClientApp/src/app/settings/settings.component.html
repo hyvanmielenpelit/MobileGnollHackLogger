@@ -201,27 +201,34 @@
             </label>
             <app-info-tip trigger="dialog" tipId="feedbackToolInfo" subject="the feedback tool" dialogTitle="The feedback tool">
               <section>
-                <h4>What it is</h4>
+                <h4 class="gh-section-title">What it is</h4>
                 <p>The feedback tool lets the AI send a short report to the people who develop Overseer when something in a chat went wrong in a way they can fix: information the GnollHack wiki, the knowledge base or the source code should contain but did not, a tool that returned an error or a wrong result, or a mistake the AI made earlier in the chat and then corrected. In the chat the report appears as a tool call named <em>Feedback to developers</em>.</p>
               </section>
               <section>
-                <h4>What it does not do</h4>
+                <h4 class="gh-section-title">What it does not do</h4>
                 <p>A report never changes the answer you get: the AI corrects its answer first and then continues with your request. It does not count against your Max Calls Per Session limit. The AI may send at most three reports per response, and there is a daily limit.</p>
               </section>
               <section>
-                <h4>What a report contains, and who reads it</h4>
+                <h4 class="gh-section-title">What a report contains, and who reads it</h4>
                 <p>A report is a few sentences the AI writes: the kind of problem, its subject and a short description, sometimes what it searched for and where it expected to find the answer. Credentials, card and account numbers, e-mail addresses and phone numbers are removed before the report is stored. The same text is also kept, unredacted, with the chat's tool calls, like every other tool call. Overseer administrators read the reports on the Admin page. Nothing is sent to an AI provider beyond the chat itself.</p>
               </section>
               <section>
-                <h4>How long it is kept</h4>
+                <h4 class="gh-section-title">How long it is kept</h4>
                 <p>A report is kept until the chat is permanently deleted or your account is erased. The problem it describes is kept as one issue, with a count of how often it was reported, until an administrator deletes it; the issue holds no reference to you or to the chat.</p>
               </section>
               <section>
-                <h4>When the AI can use it</h4>
-                <p>All of these must hold: an administrator has enabled the feedback tool; this setting is on; Enable Server Tools is on; and the chat is neither confidential nor incognito. The administrator's setting applies to everyone and you cannot turn it on yourself. When you opened this page, the administrator's setting was <strong class="feedback-tool-admin-state">{{ feedbackToolAdminLabel }}</strong>.</p>
+                <h4 class="gh-section-title">When the AI can use it</h4>
+                <p>All of these must hold:</p>
+                <ul>
+                  <li>an administrator has enabled the feedback tool;</li>
+                  <li>this setting is on;</li>
+                  <li>Enable Server Tools is on;</li>
+                  <li>the chat is neither confidential nor incognito.</li>
+                </ul>
+                <p>The administrator's setting applies to everyone and you cannot turn it on yourself. When you opened this page, the administrator's setting was <strong class="feedback-tool-admin-state">{{ feedbackToolAdminLabel }}</strong>.</p>
               </section>
               <section>
-                <h4>What turning it off does</h4>
+                <h4 class="gh-section-title">What turning it off does</h4>
                 <p>From your next message on, the AI is not offered the tool in any of your chats, and a response that is already being written records no further report. Reports already sent are not deleted. You can turn it back on here at any time.</p>
               </section>
             </app-info-tip>

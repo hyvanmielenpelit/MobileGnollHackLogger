@@ -84,24 +84,24 @@ removes the issue and, by cascade, its occurrences.
 
 ## 3. The feedback switch and the GnollBench setting
 
-An administrator turns the tool on and off for the production chat at runtime, from the card at the top of
-the Feedback tab, without a restart or a configuration edit. The card *Feedback tool* holds one switch,
-on the row **Overseer chat**, and an (i) that says it applies to the Overseer chat only and that GnollBench
-runs choose it per run: *GnollBench → Run Benchmark → Feedback Tool* (§ 10).
+An administrator turns the tool on and off for the production chat at runtime, from the switch in the
+Feedback tab's header, without a restart or a configuration edit. The header holds one switch, **Feedback
+tool**, for the Overseer chat, and an (i) that says what the tool does, that it applies to the Overseer chat
+only and that GnollBench runs choose it per run: *GnollBench → Run Benchmark → Feedback Tool* (§ 10).
 
 - **Storage.** `OverseerFeedbackSetting` is append-only, like `BenchmarkBaselineModelSetting`: rows are
   never updated or deleted, and each click appends one (`Target`, `Enabled`, `SetAtUtc`, `SetByUserId`),
   even when it sets the value the switch already has. `Target` is an `OverseerFeedbackSwitchTarget`
   (`Chat = 0`, `GnollBench = 1`; the column defaults to 0, so a row without one is a chat row), and the
   switch's state is the newest chat row, read through the `(Target, Id)` index. **The table is the
-  switch's history**, and the card shows its newest entry (*Off · Changed 21 Oct 2026 14:02 by {user
-  name}*); no admin-log entry is written.
+  switch's history**, and the (i) shows its newest entry (*Changed 21 Oct 2026 14:02 by {user name}.*);
+  no admin-log entry is written.
 - **The retired GnollBench target.** Until 2026-10-22 the card also held an *Enabled in GnollBench* switch,
   stored as rows of `Target = GnollBench`. Those rows are kept as history and are never read again; the
   enum value stays so they still load. GnollBench now takes the value from each run's launcher setting
   (below).
 - **The seed.** Until an administrator has set the switch once, its state is `Feedback:Enabled` from
-  `Overseer/appsettings.json` (the row reads *Off by configuration default* in that state). Once a chat row
+  `Overseer/appsettings.json` (the (i) reads *Configuration default.* in that state). Once a chat row
   exists, the seed is not consulted again.
 - **The cache.** `FeedbackSwitchService.IsEnabled()` caches the state for 30 seconds; `SetAsync` writes the
   cache through, so a change is immediate in the Overseer process. A read failure returns `false` and
@@ -298,32 +298,34 @@ tab, after *Services*; it has no sub-tabs. Until 2026-10-22 it was the AI Teleme
   dates**: the tab's date range does not limit them. `AdminPageStore.loadFeedbackCounts()` fetches them when
   the Admin page loads and again after a status change, a delete or a Refresh in the tab; the tab row and
   the *Status* facet both read `store.feedbackCounts`.
-- **The header** is sticky, like the other Admin tabs': the title *Feedback*, the **date range** and a
-  **Refresh** icon button (*Refresh feedback*, tooltip *Refresh*). The range is the tab's own, kept in the
-  page store for the life of the page (not in the address or `localStorage`): *All time* (the default),
+- **The header** is sticky, like the other Admin tabs': the title *Feedback*, the **feedback tool switch**,
+  the **date range** and a **Refresh** icon button (*Refresh feedback*, tooltip *Refresh*). The range is
+  the tab's own, kept in the page store for the life of the page (not in the address or `localStorage`):
+  *All time* (the default),
   *Last 7 days*, *Last 30 days*, *Last 90 days*, *Last year* or *Custom date range* (two date inputs, up to
-  today; an end before the start is moved to the start). Its (i) reads *Shows the issues reported at least
+  today; an end before the start is moved to the start). Its click (i) reads *Shows the issues reported at least
   once in this range. The counts on the tab are over all dates.* An issue is listed when its **active
   span** overlaps the range (`FirstSeenUtc <= end` and `LastSeenUtc >= start`), so an issue first seen in
   August and last seen today is listed for an August range, and the answer does not depend on occurrence
   rows a purge may have removed; *All time* sends no dates. Issues have no key source, so there is no
   *Keys* filter. Refresh reloads the switch, the models, the first page of issues and the counts, and is
   `aria-disabled` while the first page loads.
-- **The switch card** comes next. Its head is the section title *Feedback tool* (`gh-section-title`) and a
-  click (i), *About the feedback tool*: *Applies to the Overseer chat only. GnollBench runs choose it per
-  run: GnollBench → Run Benchmark → Feedback Tool.* One row follows: the label **Overseer chat**, the
-  surface the switch governs; the description *Lets the chat assistant report missing information, tool
-  problems and its own mistakes to administrators.*; a meta line; and, at the row's end, the state word
-  *On* (gold) or *Off* (gray) beside one large switch (`gh-switch gh-switch-lg`). The switch is a checkbox
-  with `role="switch"`, so assistive technology announces a switch, on or off; its accessible name is
-  *Feedback tool Overseer chat* (`aria-labelledby` the title and the row label), and it is described by the
-  description and the meta line. The meta line reads *On · Changed {time} by {name}*, *On · Changed {time}*
-  without a name, *On · Configuration default* while the switch is seeded (and the same with *Off*),
-  *Loading…* until the state arrives, and nothing after a load error, which an error line states.
+- **The switch** comes first among the header's controls: the label **Feedback tool**, the state word *On*
+  (gold) or *Off* (gray, `aria-hidden`), one large switch (`gh-switch gh-switch-lg`) and a click (i),
+  *About the feedback tool*. The switch is a checkbox with `role="switch"`, so assistive technology
+  announces a switch, on or off; its accessible name is *Feedback tool in the Overseer chat* (the visible
+  label with a visually hidden *in the Overseer chat*), and it is described by the (i). The (i) reads *Lets
+  the chat assistant report missing information, tool problems and its own mistakes to administrators.*,
+  then *Applies to the Overseer chat only. GnollBench runs choose it per run: GnollBench → Run Benchmark →
+  Feedback Tool.*, then the switch's newest entry: *Changed {time} by {name}.*, *Changed {time}.* without a
+  name, or *Configuration default.* while the switch is seeded; nothing while loading or after a load error.
+  Until the state arrives the switch is disabled and the state word absent.
 
   The switch commits at once, is disabled while its request runs, reverts on an error and refetches. A
   visually hidden `role="status"` line announces *Overseer chat: the feedback tool is on.* (or *off*);
-  the meta line and the state word show the same on screen.
+  the state word shows the same on screen. A load or toggle error is a red line across the header under
+  its controls. A 1 px hairline separates the switch from the range and Refresh; it is hidden when the
+  header is too narrow to hold them on one line, and while the custom range's date inputs are shown.
 - **Reported issues**: the section title, with the list's count (*Showing 25 of 40 issues*, a polite
   live region) at the end of its row.
 - **The filter bar**: a search over the issue's subject and summary; *Sort by* *Last seen* (the default),
@@ -427,7 +429,7 @@ The switch and the GnollBench setting have their own cases:
   withheld setting and not when only one does. `BenchmarkReportBuilderTests`: the Self-Reports section of a
   withheld run says the run's Feedback Tool setting withheld the tool.
   `BenchmarkChatConsistencyReportFactsTests`: the change reads *feedback tool withheld: not set → on*.
-- **The client.** The switch card and its scope (i) in `admin-feedback-tab.component.spec.ts`, the route in
+- **The client.** The header switch and its (i) in `admin-feedback-tab.component.spec.ts`, the route in
   `admin-feedback.service.spec.ts`, the Feedback Tool field in `benchmark.component.launcher.spec.ts`, its
   request, remembered value, repeated setup and recommended-run reset in `benchmark-launcher.state.spec.ts`,
   and the *feedback tool withheld* tag in `run-facts.spec.ts`.

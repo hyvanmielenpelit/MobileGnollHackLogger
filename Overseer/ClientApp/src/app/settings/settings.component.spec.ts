@@ -455,6 +455,14 @@ describe('SettingsComponent', () => {
       const body = dialog.querySelector('#feedbackToolInfo')!;
       expect(text(body)).toContain('When you opened this page, the administrator\'s setting was enabled.');
       expect(text(body.querySelector('.feedback-tool-admin-state'))).toBe('enabled');
+
+      const headings = Array.from(body.querySelectorAll('h4'));
+      expect(headings.length).toBe(6);
+      expect(headings.every(h => h.classList.contains('gh-section-title'))).toBe(true);
+      const conditions = headings.find(h => text(h) === 'When the AI can use it')!.closest('section')!;
+      const lists = conditions.querySelectorAll('ul');
+      expect(lists.length).toBe(1);
+      expect(lists[0].querySelectorAll('li').length).toBe(4);
     });
   });
 
