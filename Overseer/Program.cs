@@ -328,7 +328,9 @@ builder.Services.AddSingleton<Overseer.Services.Telemetry.IActivityCounter, Over
 builder.Services.AddScoped<Overseer.Services.Telemetry.AiTelemetrySummaryService>();
 builder.Services.AddSingleton<OngoingChatManager>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRunManager>();
-builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkInstructionVariantCatalog>();
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkExperimentalChangeCatalog>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkExperimentalChangeStore>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkChangeTextScreen>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkDifficultyJobManager>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComplianceGuard>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkSnapshotImporter>();

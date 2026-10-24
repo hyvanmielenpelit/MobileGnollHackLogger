@@ -92,7 +92,7 @@ no status filter. Unknown values are dropped.
 | `suite` · `question` | Suite and question ids |
 | `condition` | Information conditions (`production`, `sourceOnly`, `closedBook`) |
 | `corpus` | Corpus conditions (`live` for none) |
-| `variant` | Experimental Changes: a variant name or an ablation spec, without the hash, or `none` |
+| `variant` | Experimental Changes: a spec, the change ids joined by `+` (a space reads as `+`), without the hash, or `none` |
 | `harness` | Harness versions |
 | `accepted` | The *Self-reports* select: absent for accepted calls only, `all`, or `refused` |
 | `q` | The search text |

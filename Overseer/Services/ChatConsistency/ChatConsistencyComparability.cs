@@ -618,8 +618,8 @@ public static class ChatConsistencyComparability
 
     /// <summary>
     /// Why <paramref name="run"/> measured a benchmark-only configuration rather than the chat: a
-    /// non-production information condition, a corpus other than the live wiki, or an instruction
-    /// variant. Null for a production run, which chat consistency may analyze.
+    /// non-production information condition, a corpus other than the live wiki, or experimental
+    /// changes. Null for a production run, which chat consistency may analyze.
     /// </summary>
     public static string? NonProductionReason(BenchmarkRun run)
     {
@@ -629,7 +629,7 @@ public static class ChatConsistencyComparability
         if (!string.IsNullOrWhiteSpace(run.CorpusCondition))
             return "the corpus condition " + BenchmarkCorpusConditionMarker.Describe(run.CorpusCondition);
         if (!string.IsNullOrWhiteSpace(run.InstructionVariant))
-            return "the instruction variant " + run.InstructionVariant;
+            return "the experimental changes " + run.InstructionVariant;
         return null;
     }
 

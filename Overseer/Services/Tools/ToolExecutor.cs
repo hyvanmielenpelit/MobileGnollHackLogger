@@ -155,7 +155,7 @@ namespace Overseer.Services.Tools
                     };
                 }
 
-                // An experimental tool runs only under the instruction variant that offers it.
+                // An experimental tool runs only under the experimental changes that offer it.
                 if (handler.IsExperimental && !ToolRegistry.IsEnabledByVariant(handler.ToolName, context))
                 {
                     return new ToolResult

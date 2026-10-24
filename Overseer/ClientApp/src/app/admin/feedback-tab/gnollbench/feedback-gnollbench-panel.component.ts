@@ -221,16 +221,17 @@ export function gnollBenchCorpusLabel(corpus: string | null | undefined): string
 }
 
 /**
- * An Experimental Changes spec in words: `None`, `source-tools-v1`, `asker-profile-v1 without guide.wiki_search`
- * or `asker-profile-v1, only tool.get_character_info`. A stored stamp's hash, after the first `:`, is dropped.
+ * An Experimental Changes spec in words: `None`, or its changes joined by `, ` — each by its title when
+ * `titles` (the catalog's, by id) has it, else by its id. A stored stamp's hash, after the first `:`, is
+ * dropped, and a space stands for the `+` between ids.
  */
-export function gnollBenchVariantLabel(value: string | null | undefined): string {
+export function gnollBenchVariantLabel(value: string | null | undefined, titles?: ReadonlyMap<string, string> | null): string {
   if (!value || value === 'none') return 'None';
   const colon = value.indexOf(':');
-  const spec = colon >= 0 ? value.slice(0, colon) : value;
-  const ablation = /^(.+?)\/(minus|only)\/(.+)$/.exec(spec);
-  if (!ablation) return spec;
-  return ablation[2] === 'minus' ? `${ablation[1]} without ${ablation[3]}` : `${ablation[1]}, only ${ablation[3]}`;
+  const spec = (colon >= 0 ? value.slice(0, colon) : value).trim();
+  const ids = spec.split(/[+\s]+/).filter(id => id !== '');
+  if (ids.length === 0) return 'None';
+  return ids.map(id => titles?.get(id) || id).join(', ');
 }
 
 /** `21 Oct 2026`, local time; the raw value when it does not parse. */
@@ -436,7 +437,8 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   readonly categoryLabel = gnollBenchCategoryLabel;
   readonly conditionLabel = gnollBenchConditionLabel;
   readonly corpusLabel = gnollBenchCorpusLabel;
-  readonly variantLabel = gnollBenchVariantLabel;
+  /** An Experimental Changes spec in words, with the catalog's titles once it has arrived. */
+  readonly variantLabel = (value: string | null | undefined): string => gnollBenchVariantLabel(value, this.changeTitles());
   readonly dateText = gnollBenchDateText;
   readonly dateTimeText = gnollBenchDateTimeText;
   readonly formatInteger = formatInteger;
@@ -456,6 +458,8 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   readonly facetData = signal<GnollBenchFeedbackFacets | null>(null);
   /** Issue counts per status over all dates, for the Status facet. */
   readonly counts = signal<GnollBenchFeedbackCounts | null>(null);
+  /** The experimental changes' titles by id; null until the catalog arrives, or when it fails. */
+  readonly changeTitles = signal<ReadonlyMap<string, string> | null>(null);
 
   // --- Issues ---
 
@@ -578,10 +582,16 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   private pruneSub: Subscription | null = null;
   private selectAllSub: Subscription | null = null;
   private readonly occurrenceSubs = new Map<string, Subscription>();
+  private changesSub: Subscription | null = null;
   private initialized = false;
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
+    // The Experimental Changes labels use the catalog's titles once it arrives, and the ids until then.
+    this.changesSub = this.benchmark.getExperimentalChanges().subscribe({
+      next: catalog => this.changeTitles.set(new Map((catalog?.changes ?? []).map(c => [c.id, c.title] as const))),
+      error: () => this.changeTitles.set(null)
+    });
     this.sortId.set(this.list.sortId);
     this.exportOptions.set(loadFeedbackView('gnollbench')?.exportOptions);
     this.selection.set(new Set(loadGnollBenchSelection()));
@@ -613,7 +623,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   ngOnDestroy(): void {
     this.list.dispose();
     for (const sub of [this.listSub, this.probeSub, this.facetsSub, this.countsSub, this.querySub, this.selectionSub,
-      this.matchingSub, this.pruneSub, this.selectAllSub]) {
+      this.matchingSub, this.pruneSub, this.selectAllSub, this.changesSub]) {
       sub?.unsubscribe();
     }
     this.occurrenceSubs.forEach(sub => sub.unsubscribe());
@@ -742,7 +752,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
       case 'question': return entities(data?.questions);
       case 'condition': return values(data?.conditions, v => gnollBenchConditionLabel(v.value) || v.label);
       case 'corpus': return values(data?.corpora, v => gnollBenchCorpusLabel(v.value));
-      case 'variant': return values(data?.variants, v => gnollBenchVariantLabel(v.value));
+      case 'variant': return values(data?.variants, v => gnollBenchVariantLabel(v.value, this.changeTitles()));
       case 'harness': return values(data?.harnesses, v => `Harness ${v.value}`);
     }
   }
@@ -756,7 +766,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
       case 'category': return gnollBenchCategoryLabel(value);
       case 'condition': return gnollBenchConditionLabel(value);
       case 'corpus': return gnollBenchCorpusLabel(value);
-      case 'variant': return gnollBenchVariantLabel(value);
+      case 'variant': return gnollBenchVariantLabel(value, this.changeTitles());
       case 'harness': return `Harness ${value}`;
       default: return value;
     }

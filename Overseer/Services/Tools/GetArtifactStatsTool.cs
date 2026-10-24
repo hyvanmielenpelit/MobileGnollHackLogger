@@ -60,7 +60,7 @@ namespace Overseer.Services.Tools
             var result = _sourceCodeService.GetArtifactStats(name);
 
             if (result.Error == null
-                && context?.Variant?.HasExperiment(Benchmarking.BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment) == true)
+                && context?.Variant?.HasExperiment(Benchmarking.BenchmarkExperimentalChangeCatalog.StatsReferencedByExperiment) == true)
             {
                 string? artifactName = result.Stats != null && result.Stats.Fields.TryGetValue("name", out var statsName)
                     ? statsName as string

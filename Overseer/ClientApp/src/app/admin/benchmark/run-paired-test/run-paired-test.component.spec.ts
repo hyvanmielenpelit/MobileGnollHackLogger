@@ -43,7 +43,7 @@ function detail(id: number): BenchmarkRunDetailDto {
 function kind(runId: number, value: BenchmarkRunPairKindDto['kind'], explanation = ''): BenchmarkRunPairKindDto {
   const labels: Record<string, string> = {
     ModelComparison: 'Model comparison', Verification: 'Verification of a change', Replicate: 'Replicate',
-    ConditionContrast: 'Condition contrast', VariantContrast: 'Variant contrast', NotComparable: 'Not comparable'
+    ConditionContrast: 'Condition contrast', VariantContrast: 'Experimental-changes contrast', NotComparable: 'Not comparable'
   };
   return {
     runId,
@@ -158,7 +158,7 @@ describe('RunPairedTestComponent', () => {
     expect(service.getRunPairKinds).toHaveBeenCalledTimes(1);
   });
 
-  it('groups condition and variant contrasts after the replicates', () => {
+  it('groups condition and experimental-changes contrasts after the replicates', () => {
     service.getRunPairKinds.mockReturnValue(of([
       kind(6, 'ModelComparison', ''),
       kind(5, 'VariantContrast', ''),
@@ -171,14 +171,14 @@ describe('RunPairedTestComponent', () => {
 
     const groups = Array.from(el().querySelectorAll('#rpt-baseline optgroup'));
     expect(groups.map(group => group.getAttribute('label'))).toEqual(
-      ['Model comparison', 'Verification of a change', 'Replicate', 'Condition contrast', 'Variant contrast']);
+      ['Model comparison', 'Verification of a change', 'Replicate', 'Condition contrast', 'Experimental-changes contrast']);
     expect(groups.map(group => Array.from(group.querySelectorAll('option')).map(o => (o as HTMLOptionElement).value)))
       .toEqual([['6'], ['4'], ['3'], ['1'], ['5']]);
 
     choose('1');
     expect(text('#rpt-kind')).toContain('Condition contrast');
     choose('5');
-    expect(text('#rpt-kind')).toContain('Variant contrast');
+    expect(text('#rpt-kind')).toContain('Experimental-changes contrast');
   });
 
   it('names the kind of the chosen baseline and, for a verification, the changed key', () => {

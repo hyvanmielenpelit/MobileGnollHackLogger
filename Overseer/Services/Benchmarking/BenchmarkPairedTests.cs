@@ -76,7 +76,7 @@ public enum BenchmarkRunPairKind
     /// </summary>
     ConditionContrast = 4,
 
-    /// <summary>Only the instruction variant differs (and, with it, at most the prompt hash).</summary>
+    /// <summary>Only the experimental changes differ (and, with them, at most the prompt hash).</summary>
     VariantContrast = 5
 }
 
@@ -954,7 +954,40 @@ public static class BenchmarkPairedTests
 
     public static string KindName(BenchmarkRunPairKind kind) => kind.ToString();
 
-    private static string VariantDisplay(string? stamp) => stamp ?? "none";
+    /// <summary>
+    /// The experimental-changes contrast of two stamps in words: what the baseline has and what the
+    /// treatment adds and removes, by title, else by id.
+    /// </summary>
+    internal static string ExperimentalChangesContrast(
+        BenchmarkRun baseline, BenchmarkRun treatment, Func<string, string?>? changeTitle = null)
+    {
+        var titleOf = changeTitle ?? BenchmarkExperimentalChangeCatalog.SharedTitleOf;
+        string Title(string id) => titleOf(id) ?? id;
+        var before = BenchmarkExperimentalChangeCatalog.IdsOf(baseline.InstructionVariant);
+        var after = BenchmarkExperimentalChangeCatalog.IdsOf(treatment.InstructionVariant);
+        var added = after.Where(id => !before.Contains(id, StringComparer.Ordinal)).ToList();
+        var removed = before.Where(id => !after.Contains(id, StringComparer.Ordinal)).ToList();
+
+        string has = before.Count == 0
+            ? "none"
+            : BenchmarkExperimentalChangeCatalog.JoinWords(before.Select(Title).ToList());
+        var differences = new List<string>();
+        if (added.Count > 0) differences.Add("adds " + BenchmarkExperimentalChangeCatalog.JoinWords(added.Select(Title).ToList()));
+        if (removed.Count > 0) differences.Add("removes " + BenchmarkExperimentalChangeCatalog.JoinWords(removed.Select(Title).ToList()));
+        string difference = differences.Count > 0
+            ? string.Join(" and ", differences)
+            : "has the same changes with different text";
+
+        string text = $"Experimental-changes contrast: run #{baseline.Id.ToString(CultureInfo.InvariantCulture)} has {has}; "
+            + $"run #{treatment.Id.ToString(CultureInfo.InvariantCulture)} {difference}. "
+            + "Everything else is the same; compare, never pool.";
+        int changed = added.Count + removed.Count;
+        if (changed > 1)
+        {
+            text += $" The runs differ by {changed.ToString(CultureInfo.InvariantCulture)} changes, so a difference belongs to them together.";
+        }
+        return text;
+    }
 
     public static string KindLabel(BenchmarkRunPairKind kind) => kind switch
     {
@@ -962,7 +995,7 @@ public static class BenchmarkPairedTests
         BenchmarkRunPairKind.Verification => "Verification of a change",
         BenchmarkRunPairKind.Replicate => "Replicate",
         BenchmarkRunPairKind.ConditionContrast => "Condition contrast",
-        BenchmarkRunPairKind.VariantContrast => "Variant contrast",
+        BenchmarkRunPairKind.VariantContrast => "Experimental-changes contrast",
         _ => "Not comparable"
     };
 
@@ -972,7 +1005,7 @@ public static class BenchmarkPairedTests
     /// <list type="bullet">
     /// <item><b>Condition contrast</b>: only the information condition differs, with at most the
     /// prompt hash and the corpus condition beside it;</item>
-    /// <item><b>Variant contrast</b>: only the instruction variant differs, with at most the prompt hash beside it;</item>
+    /// <item><b>Experimental-changes contrast</b>: only the experimental changes differ, with at most the prompt hash beside it;</item>
     /// <item><b>Model comparison</b>: every must-match key agrees and a model-axis key differs;</item>
     /// <item><b>Verification of a change</b>: every candidate key agrees and exactly one instrument key differs;</item>
     /// <item><b>Replicate</b>: no quality-relevant key differs;</item>
@@ -982,7 +1015,9 @@ public static class BenchmarkPairedTests
     /// Item revisions only reduce the paired set. The degrading keys degrade speed and cost and refuse
     /// nothing; under a repriced basis the pricing snapshot degrades nothing.
     /// </summary>
-    public static BenchmarkRunPairClassification ClassifyRunPair(BenchmarkRun baseline, BenchmarkRun treatment, bool repriced)
+    /// <param name="changeTitle">The title of an experimental change; null reads the catalog, falling back to the id.</param>
+    public static BenchmarkRunPairClassification ClassifyRunPair(
+        BenchmarkRun baseline, BenchmarkRun treatment, bool repriced, Func<string, string?>? changeTitle = null)
     {
         ArgumentNullException.ThrowIfNull(baseline);
         ArgumentNullException.ThrowIfNull(treatment);
@@ -1087,8 +1122,7 @@ public static class BenchmarkPairedTests
         {
             kind = BenchmarkRunPairKind.VariantContrast;
             changed = instrument;
-            explanation = $"Variant contrast: instruction variant {VariantDisplay(baseline.InstructionVariant)} against "
-                + $"{VariantDisplay(treatment.InstructionVariant)}, with everything else the same; compare, never pool." + tail;
+            explanation = ExperimentalChangesContrast(baseline, treatment, changeTitle) + tail;
         }
         else if (mustMatch.Count == 0 && modelAxis.Count > 0)
         {

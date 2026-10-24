@@ -26,7 +26,7 @@ namespace Overseer.Services.Tools
 
         /// <summary>
         /// An experimental tool is offered to no request unless the request's benchmark-only
-        /// instruction variant names it (<see cref="ToolExecutionContext.Variant"/>), so live chat
+        /// experimental changes offer it (<see cref="ToolExecutionContext.Variant"/>), so live chat
         /// never sees it. It has no production tool guide.
         /// </summary>
         bool IsExperimental => false;
@@ -107,8 +107,8 @@ namespace Overseer.Services.Tools
         public ApiKeyAlerts.ApiKeyAlertContext? ApiKeyAlert { get; set; }
 
         /// <summary>
-        /// The benchmark-only instruction variant this request runs under: its experimental tools,
-        /// per-request tool-guide texts and tool-output switches. Null everywhere except a benchmark
+        /// The benchmark-only experimental changes this request runs under: their experimental tools,
+        /// per-request tool descriptions and tool-output switches. Null everywhere except a benchmark
         /// candidate's own requests.
         /// </summary>
         public Benchmarking.BenchmarkVariantContext? Variant { get; set; }

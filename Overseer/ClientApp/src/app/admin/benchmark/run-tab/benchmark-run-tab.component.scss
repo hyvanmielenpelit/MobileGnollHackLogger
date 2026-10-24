@@ -183,7 +183,7 @@ $setup-two-columns: 72rem;
   white-space: nowrap;
 }
 
-// Experimental Changes: what the chosen variant changes, under the read-out.
+// Experimental Changes: what the ticked changes do, under the read-out.
 .variant-summary {
   display: flex;
   flex-direction: column;
@@ -222,14 +222,14 @@ $setup-two-columns: 72rem;
   }
 }
 
-.variant-summary-note {
-  color: #aaa;
-  overflow-wrap: anywhere;
+.variant-summary-mention {
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
 }
 
-.variant-summary-reference {
-  color: #ccc;
-  overflow-wrap: anywhere;
+.variant-summary-add {
+  flex: none;
 }
 
 .exec-fields {

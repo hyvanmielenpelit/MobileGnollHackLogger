@@ -36,7 +36,10 @@ public class BenchmarkService
     private readonly ILogger<BenchmarkService> _logger;
     private BenchmarkCitationLivenessCheck? _citationLivenessCheck;
 
-    private readonly List<string> _defaultAllowedTools = new()
+    private readonly List<string> _defaultAllowedTools = new(DefaultAllowedTools);
+
+    /// <summary>The candidate tool allowlist when <c>Benchmark:AllowedTools</c> is not configured.</summary>
+    internal static readonly IReadOnlyList<string> DefaultAllowedTools = new[]
     {
         "wiki_search", "wiki_view", "get_knowledge_article",
         "nethack_wiki_search", "nethack_wiki_view",
@@ -45,6 +48,10 @@ public class BenchmarkService
         "get_function_definition", "search_definitions",
         "source_code_search", "source_code_view", "list_indexed_files"
     };
+
+    /// <summary><c>Benchmark:AllowedTools</c>, else <see cref="DefaultAllowedTools"/>.</summary>
+    internal static IReadOnlyList<string> ConfiguredAllowedTools(IConfiguration configuration)
+        => configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? (IReadOnlyList<string>)DefaultAllowedTools;
 
     public BenchmarkService(
         IServiceScopeFactory scopeFactory,
@@ -986,22 +993,34 @@ public class BenchmarkService
 
             await db.SaveChangesAsync(cancellationToken);
 
+            // The launcher stamps the run before saving it; the run executes exactly the stamped
+            // selection. A run saved without a stamp resolves the requested spec here.
             BenchmarkVariantContext? variant = null;
-            if (instructionVariant != null)
+            if (!string.IsNullOrWhiteSpace(run.InstructionVariant) || !string.IsNullOrWhiteSpace(instructionVariant))
             {
-                var resolved = FindInstructionVariant(instructionVariant);
-                if (resolved?.Context == null)
+                await RefreshExperimentalChangesAsync(cancellationToken);
+                string? variantError;
+                if (!string.IsNullOrWhiteSpace(run.InstructionVariant))
+                {
+                    (variant, variantError) = ResolveRunVariant(run);
+                }
+                else
+                {
+                    var selection = ResolveExperimentalChanges(instructionVariant);
+                    variant = selection.Context;
+                    variantError = selection.Error;
+                }
+
+                if (variant == null)
                 {
                     run.Status = BenchmarkRunStatus.Failed;
-                    run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(resolved == null
-                        ? $"Unknown instruction variant '{instructionVariant}'."
-                        : $"The instruction variant '{instructionVariant}' is invalid: {resolved.InvalidReason}");
+                    run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(
+                        variantError ?? $"The experimental changes '{instructionVariant}' could not be resolved.");
                     run.CompletedAtUtc = DateTime.UtcNow;
                     await db.SaveChangesAsync(cancellationToken);
                     _runManager.Complete(runId);
                     return;
                 }
-                variant = resolved.Context;
             }
             run.InstructionVariant = variant?.Stamp;
 
@@ -1457,6 +1476,7 @@ public class BenchmarkService
             // A re-run overwrites answer rows in place and adds none, so the suite totals cannot
             // describe its progress. The scope and the two marks below are what the progress
             // dialog counts instead.
+            if (!string.IsNullOrWhiteSpace(run.InstructionVariant)) await RefreshExperimentalChangesAsync(cancellationToken);
             var (variant, variantError) = ResolveRunVariant(run);
             if (variantError != null)
             {
@@ -8739,6 +8759,7 @@ public class BenchmarkService
                 return;
             }
 
+            if (!string.IsNullOrWhiteSpace(run.InstructionVariant)) await RefreshExperimentalChangesAsync(cancellationToken);
             var (variant, variantError) = ResolveRunVariant(run);
             if (variantError != null)
             {
@@ -9595,8 +9616,7 @@ public class BenchmarkService
 
     /// <summary>
     /// SHA-256 over the sorted <c>relative path:file SHA-256</c> lines of every file under
-    /// <paramref name="guidesPath"/>; null when the directory is absent, empty or unreadable. The
-    /// instruction-variant content hash uses the same manifest.
+    /// <paramref name="guidesPath"/>; null when the directory is absent, empty or unreadable.
     /// </summary>
     internal static string? ComputeToolGuidesSha256(string guidesPath)
     {
@@ -9688,7 +9708,7 @@ public class BenchmarkService
 
     /// <summary>
     /// The candidate's tool allowlist of a recorded run, rebuilt from its prompt options and its
-    /// variant: what the graders' prompt names as the tools the candidate had.
+    /// experimental changes: what the graders' prompt names as the tools the candidate had.
     /// </summary>
     /// <summary><see cref="CandidateAllowedToolsOf(BenchmarkRun, IReadOnlyList{string})"/> against <c>Benchmark:AllowedTools</c>.</summary>
     internal List<string> CandidateAllowedToolsOf(BenchmarkRun run)
@@ -9699,48 +9719,58 @@ public class BenchmarkService
         var options = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson);
         var variant = run.InstructionVariant == null
             ? null
-            : FindInstructionVariant(BenchmarkInstructionVariantCatalog.NameOfStamp(run.InstructionVariant))?.Context;
+            : ResolveExperimentalChanges(BenchmarkExperimentalChangeCatalog.SpecOfStamp(run.InstructionVariant), allowRetired: true).Context;
         return CandidateAllowedTools(options.Condition, configured, variant);
     }
 
     /// <summary>Set by tests; otherwise the catalog registered in the container.</summary>
-    internal BenchmarkInstructionVariantCatalog? VariantCatalog { get; set; }
+    internal BenchmarkExperimentalChangeCatalog? ExperimentalChangeCatalog { get; set; }
 
-    private BenchmarkInstructionVariantCatalog? ResolveVariantCatalog()
+    /// <summary>The experimental change catalog; null when none is registered.</summary>
+    internal BenchmarkExperimentalChangeCatalog? ResolveExperimentalChangeCatalog()
     {
-        if (VariantCatalog != null || _scopeFactory == null) return VariantCatalog;
+        if (ExperimentalChangeCatalog != null || _scopeFactory == null) return ExperimentalChangeCatalog;
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            return scope.ServiceProvider.GetService<BenchmarkInstructionVariantCatalog>();
+            return scope.ServiceProvider.GetService<BenchmarkExperimentalChangeCatalog>();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Instruction variant catalog unavailable.");
+            _logger.LogWarning(ex, "Experimental change catalog unavailable.");
             return null;
         }
     }
 
-    /// <summary>The catalog entry named <paramref name="name"/>, valid or not; null when there is none.</summary>
-    internal BenchmarkInstructionVariant? FindInstructionVariant(string? name)
-        => name == null ? null : ResolveVariantCatalog()?.Find(name);
-
-    /// <summary>Every variant of the catalog, valid or not.</summary>
-    internal IReadOnlyList<BenchmarkInstructionVariant> ListInstructionVariants()
-        => ResolveVariantCatalog()?.All ?? Array.Empty<BenchmarkInstructionVariant>();
+    /// <summary>Re-reads the experimental changes written in Overseer, so a launch or re-run sees every edit.</summary>
+    internal Task RefreshExperimentalChangesAsync(CancellationToken ct = default)
+        => ResolveExperimentalChangeCatalog()?.RefreshAsync(ct) ?? Task.CompletedTask;
 
     /// <summary>
-    /// The variant a recorded run ran under, resolved by the name in its stamp. A re-run refuses
-    /// when the variant is gone, invalid, or its hash no longer matches the stamp.
+    /// The selection <paramref name="spec"/> names, or the reason it is refused; the empty selection
+    /// for a blank spec, and a refusal when no catalog is registered.
+    /// </summary>
+    internal BenchmarkExperimentalChangeSelection ResolveExperimentalChanges(string? spec, bool allowRetired = false)
+    {
+        if (BenchmarkExperimentalChangeCatalog.NormalizeSpec(spec) == null) return BenchmarkExperimentalChangeSelection.None;
+        var catalog = ResolveExperimentalChangeCatalog();
+        return catalog?.Resolve(spec, allowRetired)
+            ?? new BenchmarkExperimentalChangeSelection { Spec = spec, Error = "The experimental change catalog is unavailable." };
+    }
+
+    /// <summary>
+    /// The experimental changes a recorded run ran under, resolved from the spec in its stamp,
+    /// retired changes included. A re-run refuses when a change is gone or invalid, or the
+    /// selection's hash no longer matches the stamp.
     /// </summary>
     internal (BenchmarkVariantContext? Variant, string? Error) ResolveRunVariant(BenchmarkRun run)
     {
         if (string.IsNullOrWhiteSpace(run.InstructionVariant)) return (null, null);
-        string name = BenchmarkInstructionVariantCatalog.NameOfStamp(run.InstructionVariant);
-        var context = FindInstructionVariant(name)?.Context;
+        string spec = BenchmarkExperimentalChangeCatalog.SpecOfStamp(run.InstructionVariant);
+        var context = ResolveExperimentalChanges(spec, allowRetired: true).Context;
         if (context == null || !string.Equals(context.Stamp, run.InstructionVariant, StringComparison.Ordinal))
         {
-            return (null, $"The instruction variant '{name}' has changed since this run; re-run is not possible.");
+            return (null, $"The experimental changes '{spec}' have changed since this run; re-run is not possible.");
         }
         return (context, null);
     }
@@ -9783,7 +9813,8 @@ public class BenchmarkService
 
         var promptOptions = CandidatePromptOptionsFor(
             verboseMode, allowSourceCodeReferences, suite.GameSnapshot != null, informationCondition);
-        string? appendix = FindInstructionVariant(instructionVariant)?.Context?.Appendix;
+        if (instructionVariant != null) await RefreshExperimentalChangesAsync(ct);
+        string? appendix = ResolveExperimentalChanges(instructionVariant, allowRetired: true).Context?.Appendix;
 
         string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode, appendix);
 

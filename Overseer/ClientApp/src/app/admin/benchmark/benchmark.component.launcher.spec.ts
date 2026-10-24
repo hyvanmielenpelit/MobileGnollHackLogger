@@ -7,6 +7,7 @@ import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
 import {
   AdminBenchmarkSpecContext, buildBattery, clearStoredState, createAdminBenchmarkFixture, RUN_SETTINGS_KEY
 } from './benchmark.component.testing';
+import { buildCatalog, builtInChanges, citePageFirst } from './run-tab/experimental-changes.testing';
 
 describe('AdminBenchmarkComponent', () => {
   let ctx: AdminBenchmarkSpecContext;
@@ -729,54 +730,28 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     describe('Experimental Changes', () => {
-      const CITE_FIRST = {
-        name: 'cite-first', description: 'Cite the page before answering', extends: null, hashPrefix: 'ab12cd34ef56', isValid: true,
-        experimentalTools: ['get_character_info'], experiments: [], rewordedTools: ['wiki_search'],
-        hasPromptAppendix: true, rewordingsWithheldUnderSourceOnly: ['wiki_search'],
-        features: [
-          {
-            id: 'tool.get_character_info', kind: 'experimentalTool' as const, target: 'get_character_info', fromParent: false,
-            appliesUnder: { production: true, sourceOnly: true, closedBook: false }, mentions: []
-          },
-          {
-            id: 'guide.wiki_search', kind: 'rewordedGuide' as const, target: 'wiki_search', fromParent: false,
-            appliesUnder: { production: true, sourceOnly: false, closedBook: false }, mentions: []
-          },
-          {
-            id: 'appendix.cite-first', kind: 'appendix' as const, target: 'cite-first', fromParent: false,
-            appliesUnder: { production: true, sourceOnly: true, closedBook: true }, mentions: ['tool.get_character_info']
-          }
-        ]
-      };
-      let getDetails: Mock;
+      const SPEC = 'race-role-tool-v1+stats-referenced-by-v1';
 
       const choose = (): HTMLButtonElement => card().querySelector('#candidateInstructionVariant') as HTMLButtonElement;
       const readout = (): string => (card().querySelector('#candidateInstructionVariantReadout')?.textContent ?? '').trim();
-      const variantDialog = (): HTMLDialogElement => fixture.nativeElement.querySelector('#instructionVariantDialog');
-      const inDialog = <T extends HTMLElement>(selector: string): T => variantDialog().querySelector(selector) as T;
+      const picker = (): HTMLDialogElement => fixture.nativeElement.querySelector('#experimentalChangesDialog');
+      const inPicker = <T extends HTMLElement>(selector: string): T => picker().querySelector(selector) as T;
+      const pickerCheck = (id: string): HTMLInputElement =>
+        picker().querySelector(`.xc-card[data-change-id="${id}"] input.xc-check`) as HTMLInputElement;
+      const clean = (el: Element | null): string => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
       const click = (el: HTMLElement): void => {
         el.click();
         fixture.detectChanges();
       };
 
       beforeEach(() => {
-        benchmarkServiceMock.getInstructionVariants.mockReturnValue(of([
-          CITE_FIRST,
-          { name: 'broken', description: 'Does not parse', extends: null, hashPrefix: null, isValid: false, invalidReason: 'Bad file.' }
-        ]));
-        getDetails = vi.fn(() => of({
-          name: 'cite-first', description: 'Cite the page before answering', parent: null, stamp: 'cite-first:ab12cd34ef56',
-          isValid: true, invalidReason: null,
-          features: CITE_FIRST.features.map(f => ({ ...f, text: `${f.target} text`, productionText: null, parameterSchemaJson: null })),
-          runs: [], runCount: 0, olderHashRunCount: 0
-        }));
-        (benchmarkServiceMock as any).getInstructionVariantDetails = getDetails;
-        ctx.launcher.loadInstructionVariants();
+        benchmarkServiceMock.getExperimentalChanges.mockReturnValue(of(buildCatalog([...builtInChanges(), citePageFirst()])));
+        ctx.launcher.loadExperimentalChanges();
         ctx.refresh();
       });
 
       afterEach(() => {
-        if (variantDialog()?.open) variantDialog().close();
+        if (picker()?.open) picker().close();
       });
 
       it('should show the choice as a read-out with Choose…, which opens the dialog on it', () => {
@@ -789,119 +764,129 @@ describe('AdminBenchmarkComponent', () => {
         expect(readout()).toBe('None — same as the live chat');
         expect(choose().getAttribute('aria-describedby')).toBe('candidateInstructionVariantReadout candidateInstructionVariantHint');
         expect(card().querySelector('#candidateInstructionVariantSummary')).toBeNull();
-        expect(card().querySelector('#candidateInstructionVariantHint')?.textContent)
-          .toContain('Reports call this the instruction variant.');
+        const tip = clean(card().querySelector('#candidateInstructionVariantHint'));
+        expect(tip).toContain('tick the changes a run should try');
+        expect(tip.toLowerCase()).not.toContain('variant');
 
         click(choose());
 
-        expect(variantDialog().open).toBe(true);
-        const radios = Array.from(variantDialog().querySelectorAll<HTMLInputElement>('input[name="ivVariant"]'));
-        expect(radios.length).toBe(3);
-        expect(radios[0].checked).toBe(true);
-        expect(document.activeElement).toBe(radios[0]);
-        expect(radios[2].disabled).toBe(true);
-        expect(getDetails).toHaveBeenCalledWith('cite-first');
+        expect(picker().open).toBe(true);
+        expect(picker().querySelectorAll('.xc-card').length).toBe(5);
+        expect(document.activeElement).toBe(picker().querySelector('input.xc-check'));
       });
 
       it('should take the dialog\'s choice and return focus to Choose… when it closes', async () => {
         click(choose());
-        click(inDialog('input[name="ivVariant"][value="cite-first"]'));
-        const closed = new Promise<void>(resolve => variantDialog().addEventListener('close', () => resolve(), { once: true }));
-        click(inDialog('#ivUseThis'));
+        click(pickerCheck('stats-referenced-by-v1'));
+        click(pickerCheck('race-role-tool-v1'));
+        const closed = new Promise<void>(resolve => picker().addEventListener('close', () => resolve(), { once: true }));
+        click(inPicker('#xcUseThis'));
         await closed;
         ctx.refresh();
 
-        expect(ctx.launcher.instructionVariant).toBe('cite-first');
-        expect(variantDialog().open).toBe(false);
+        expect(ctx.launcher.instructionVariant).toBe(SPEC);
+        expect(ctx.launcher.buildRunRequest(1, 2, 1).instructionVariant).toBe(SPEC);
+        expect(picker().open).toBe(false);
         expect(document.activeElement).toBe(choose());
-        expect(readout()).toBe('cite-first — new tools and extra instructions · ab12cd34ef56');
-        expect(JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY) ?? '{}').instructionVariant).toBe('cite-first');
+        expect(readout()).toBe('2 changes: Race and role lookup tool, Where the game code uses it');
+        expect(JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY) ?? '{}').instructionVariant).toBe(SPEC);
       });
 
-      it('should say what the chosen variant changes, with the Tool Access warnings', () => {
-        ctx.launcher.instructionVariant = 'cite-first';
+      it('should list each ticked change with its summary, then the mention, multi-change and Tool Access warnings', () => {
+        ctx.launcher.instructionVariant = 'asker-character-procedure-v1';
         ctx.refresh();
 
+        expect(readout()).toBe('Answer from the player\'s own character');
         const summary = card().querySelector('#candidateInstructionVariantSummary') as HTMLElement;
         expect(summary.getAttribute('role')).toBe('group');
-        expect(summary.querySelector('#candidateInstructionVariantSummaryTitle')?.textContent?.trim()).toBe('What cite-first changes');
-        expect(Array.from(summary.querySelectorAll('li')).map(li => li.textContent?.trim())).toEqual([
-          'Adds a tool the live chat does not have: race and role lookup.',
-          'Adds extra instructions to the end of the AI\'s instructions.',
-          'Rewords the descriptions of: wiki search.'
-        ]);
-        expect(summary.querySelector('.variant-summary-note')?.textContent).toContain('Cite the page before answering');
-        expect(summary.querySelector('#candidateInstructionVariantWarning')?.textContent).toContain('Test only: the live chat never uses it.');
-        expect(summary.querySelector('#candidateInstructionVariantReference')).toBeNull();
-        expect(card().querySelector('#candidateInstructionVariantConditionWarning')).toBeNull();
+        expect(clean(summary.querySelector('#candidateInstructionVariantSummaryTitle'))).toBe('What this run changes');
+        expect(Array.from(summary.querySelectorAll('li')).map(clean))
+          .toEqual(['Answer from the player\'s own character — Adds a paragraph to the end of the AI\'s instructions.']);
+        expect(summary.querySelector('li strong')?.textContent).toBe('Answer from the player\'s own character');
+        expect(clean(summary.querySelector('.variant-summary-mention')))
+          .toContain('Answer from the player\'s own character mentions get_character_info, which this run does not offer.');
+        expect(summary.querySelector('#candidateInstructionVariantTogether')).toBeNull();
+        expect(clean(summary.querySelector('#candidateInstructionVariantWarning'))).toContain('Test only: the live chat never uses it.');
+        expect(summary.querySelector('.variant-summary-note')).toBeNull();
         expect(choose().getAttribute('aria-describedby'))
           .toBe('candidateInstructionVariantReadout candidateInstructionVariantHint candidateInstructionVariantSummary');
 
+        click(summary.querySelector('.variant-summary-add') as HTMLElement);
+        ctx.refresh();
+
+        expect(ctx.launcher.instructionVariant).toBe('asker-character-procedure-v1+race-role-tool-v1');
+        expect(card().querySelector('.variant-summary-mention')).toBeNull();
+        expect(clean(card().querySelector('#candidateInstructionVariantTogether')))
+          .toBe('The effect will belong to these 2 changes together. To learn which one did it, test each alone later.');
+
         ctx.launcher.informationCondition = 'closedBook';
         ctx.refresh();
-
-        expect(card().querySelector('#candidateInstructionVariantConditionWarning')?.textContent?.trim())
-          .toBe('With Closed book the AI gets no tools, so only this change\'s extra instructions apply.');
-        expect(choose().getAttribute('aria-describedby'))
-          .toBe('candidateInstructionVariantReadout candidateInstructionVariantHint candidateInstructionVariantSummary candidateInstructionVariantConditionWarning');
-
-        ctx.launcher.informationCondition = 'sourceOnly';
-        ctx.refresh();
-
-        expect(card().querySelector('#candidateInstructionVariantConditionWarning')?.textContent?.trim())
-          .toBe('With Source code only, its rewording of wiki search does not apply: that tool is switched off.');
+        expect(Array.from(card().querySelectorAll('.variant-summary-condition')).map(clean))
+          .toEqual(['Race and role lookup tool: Has no effect under Closed book: the AI gets no tools there.']);
 
         ctx.launcher.informationCondition = 'production';
         ctx.refresh();
-
-        expect(card().querySelector('#candidateInstructionVariantConditionWarning')).toBeNull();
+        expect(card().querySelector('.variant-summary-condition')).toBeNull();
       });
 
-      it('should choose an ablation in the dialog, and list what it changes and the run it is compared with', () => {
-        click(choose());
-        click(inDialog('input[name="ivVariant"][value="cite-first"]'));
-        click(inDialog('input[name="ivMode"][value="minus"]'));
-        expect(inDialog('#ivUseThis').getAttribute('aria-disabled')).toBe('true');
-        click(inDialog('input[name="ivFeature"][value="tool.get_character_info"]'));
-        // The kept appendix names the left-out tool, so the warning must be acknowledged first.
-        expect(inDialog('#ivUseThis').getAttribute('aria-disabled')).toBe('true');
-        click(inDialog('#ivDanglingAck'));
-        click(inDialog('#ivUseThis'));
+      it('should reset a remembered legacy spec to None, with its note', () => {
+        ctx.launcher.instructionVariant = 'asker-profile-v1';
+        ctx.launcher.loadExperimentalChanges();
         ctx.refresh();
 
-        expect(ctx.launcher.instructionVariant).toBe('cite-first/minus/tool.get_character_info');
-        expect(readout()).toBe('cite-first without the get_character_info tool');
-        const summary = card().querySelector('#candidateInstructionVariantSummary') as HTMLElement;
-        expect(summary.querySelector('#candidateInstructionVariantSummaryTitle')?.textContent?.trim())
-          .toBe('What cite-first without the get_character_info tool changes');
-        expect(Array.from(summary.querySelectorAll('li')).map(li => li.textContent?.trim())).toEqual([
-          'Adds extra instructions to the end of the AI\'s instructions.',
-          'Rewords the descriptions of: wiki search.',
-          'Leaves out the get_character_info tool.'
-        ]);
-        expect(summary.querySelector('#candidateInstructionVariantReference')?.textContent?.trim())
-          .toBe('Compare with a run of cite-first that is identical otherwise.');
-        expect(ctx.launcher.buildRunRequest(1, 2, 1).instructionVariant).toBe('cite-first/minus/tool.get_character_info');
-
-        ctx.launcher.informationCondition = 'closedBook';
-        ctx.refresh();
-        expect(card().querySelector('#candidateInstructionVariantConditionWarning')?.textContent?.trim())
-          .toBe('With Closed book, the get_character_info tool does not apply, so this run would be the same as a run of '
-            + 'cite-first, and it cannot start. Choose another feature or another Tool Access.');
+        expect(ctx.launcher.instructionVariant).toBeNull();
+        expect(readout()).toBe('None — same as the live chat');
+        expect(clean(fixture.nativeElement.querySelector('.bm-restore-notes')))
+          .toContain('Experimental Changes reset to None: asker-profile-v1 is no longer offered.');
       });
 
       it('should keep the choice on Cancel', async () => {
-        ctx.launcher.instructionVariant = 'cite-first';
+        ctx.launcher.instructionVariant = 'race-role-tool-v1';
         ctx.refresh();
         click(choose());
-        click(inDialog('input[name="ivVariant"]'));
-        const closed = new Promise<void>(resolve => variantDialog().addEventListener('close', () => resolve(), { once: true }));
-        click(inDialog('#ivCancel'));
+        click(pickerCheck('race-role-tool-v1'));
+        const closed = new Promise<void>(resolve => picker().addEventListener('close', () => resolve(), { once: true }));
+        click(inPicker('#xcCancel'));
         await closed;
         ctx.refresh();
 
-        expect(ctx.launcher.instructionVariant).toBe('cite-first');
+        expect(ctx.launcher.instructionVariant).toBe('race-role-tool-v1');
         expect(document.activeElement).toBe(choose());
+      });
+
+      it('should open the editor beside the picker, and tick the new change after the save', async () => {
+        const created = citePageFirst({ id: 'name-the-page-v1', title: 'Name the page', conflictsWith: [] });
+        benchmarkServiceMock.createExperimentalChange.mockReturnValue(of({ change: created, overlaps: [] }));
+        click(choose());
+        click(inPicker('#xcNewChange'));
+
+        const editor = fixture.nativeElement.querySelector('#experimentalChangeEditorDialog') as HTMLDialogElement;
+        expect(editor.open).toBe(true);
+        expect(picker().open).toBe(true);
+        expect(editor.parentElement).not.toBe(picker());
+
+        const typeInto = (selector: string, value: string): void => {
+          const input = editor.querySelector(selector) as HTMLInputElement;
+          input.value = value;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          fixture.detectChanges();
+        };
+        typeInto('#xceTitle', 'Name the page');
+        typeInto('#xceSummary', 'Asks the AI to name the page it read.');
+        click(editor.querySelector('#xceAddInstructions') as HTMLElement);
+        typeInto('textarea.xce-text', 'Name the page you read before you answer.');
+        click(editor.querySelector('#xceConfirm') as HTMLElement);
+
+        benchmarkServiceMock.getExperimentalChanges.mockReturnValue(of(buildCatalog([...builtInChanges(), citePageFirst(), created])));
+        const editorClosed = new Promise<void>(resolve => editor.addEventListener('close', () => resolve(), { once: true }));
+        click(editor.querySelector('#xceSave') as HTMLElement);
+        await editorClosed;
+        fixture.detectChanges();
+
+        expect(benchmarkServiceMock.createExperimentalChange).toHaveBeenCalledTimes(1);
+        expect(picker().open).toBe(true);
+        expect(pickerCheck('name-the-page-v1').checked).toBe(true);
+        expect(document.activeElement).toBe(pickerCheck('name-the-page-v1'));
       });
     });
 

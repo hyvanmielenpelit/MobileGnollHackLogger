@@ -33,7 +33,7 @@ const KIND_GROUP_LABELS: Readonly<Record<BenchmarkPairKind, string>> = {
   Verification: 'Verification of a change',
   Replicate: 'Replicate',
   ConditionContrast: 'Condition contrast',
-  VariantContrast: 'Variant contrast'
+  VariantContrast: 'Experimental-changes contrast'
 };
 
 /** One baseline the select offers. */

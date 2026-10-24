@@ -820,9 +820,9 @@ public class ChatConsistencyComparabilityTests
     public void NonProductionReason_NamesAnInstructionVariant()
     {
         var run = Run(1);
-        run.InstructionVariant = "source-tools-v1:0123456789ab";
+        run.InstructionVariant = "race-role-tool-v1:0123456789ab";
 
-        Assert.Equal("the instruction variant source-tools-v1:0123456789ab", ChatConsistencyComparability.NonProductionReason(run));
+        Assert.Equal("the experimental changes race-role-tool-v1:0123456789ab", ChatConsistencyComparability.NonProductionReason(run));
     }
 
     [Fact]

@@ -68,7 +68,7 @@ namespace Overseer.Services.Tools
             var result = _sourceCodeService.GetItemStats(name, objectClass);
 
             if (result.Error == null
-                && context?.Variant?.HasExperiment(Benchmarking.BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment) == true)
+                && context?.Variant?.HasExperiment(Benchmarking.BenchmarkExperimentalChangeCatalog.StatsReferencedByExperiment) == true)
             {
                 result.ReferencedBy = SourceReferenceIndex.ForStatsResult(
                     _sourceCodeService, _configuration, ObjectConstantOf(result), SourceReferenceIndex.OnamesHeaderPath);

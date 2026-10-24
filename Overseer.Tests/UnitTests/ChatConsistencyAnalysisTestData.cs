@@ -314,7 +314,7 @@ internal static class ChatConsistencyAnalysisTestData
 
     /// <summary>
     /// Puts <paramref name="run"/> under the benchmark-only configuration <paramref name="kind"/> names: the
-    /// source-only information condition, a scarce corpus or an instruction variant. Returns the reason
+    /// source-only information condition, a scarce corpus or experimental changes. Returns the reason
     /// <see cref="ChatConsistencyComparability.NonProductionReason"/> gives for it.
     /// </summary>
     public static string MakeNonProduction(BenchmarkRun run, string kind)
@@ -328,8 +328,8 @@ internal static class ChatConsistencyAnalysisTestData
                 run.CorpusCondition = "scarce:Run 125 scrub";
                 return "the corpus condition scarce — Run 125 scrub";
             case InstructionVariantKind:
-                run.InstructionVariant = "source-tools-v1:0123456789ab";
-                return "the instruction variant source-tools-v1:0123456789ab";
+                run.InstructionVariant = "race-role-tool-v1:0123456789ab";
+                return "the experimental changes race-role-tool-v1:0123456789ab";
             default:
                 throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown benchmark-only configuration.");
         }

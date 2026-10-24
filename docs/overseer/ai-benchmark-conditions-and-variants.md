@@ -1,4 +1,4 @@
-# GnollBench Information Conditions, Scarce Corpora, Gold Evidence and Instruction Variants
+# GnollBench Information Conditions, Scarce Corpora, Gold Evidence and Experimental Changes
 
 This document describes the parts of GnollBench (the Overseer AI benchmark) that change **what the
 candidate can reach** and **what it is told**, and the measurement that reads how far an answer got
@@ -10,8 +10,9 @@ to the truth:
 - **Gold evidence** records, per question, the wiki pages, source spans and knowledge-base topics a
   grounded answer reads.
 - **Evidence Reach** classifies every answer from its stored tool calls against that evidence.
-- **Instruction variants** are benchmark-only bundles of instruction text, tool-guide text,
-  experimental tools and tool-output switches. Production never loads one.
+- **Experimental changes** are benchmark-only, titled changes to the candidate's instructions, tool
+  descriptions, experimental tools and tool-output switches, ticked one by one for a run, built in the
+  repository or written in Overseer. Production never loads one.
 
 It is a companion to [`ai-benchmark.md`](ai-benchmark.md) (the single-run harness; the features
 arrived with harness 59) and [`ai-benchmark-multi-run.md`](ai-benchmark-multi-run.md) (comparability
@@ -28,8 +29,12 @@ Implementation:
 | The corpus marker | `Overseer/Services/Benchmarking/BenchmarkCorpusConditionMarker.cs`, read by `Overseer/Services/WikiService.cs` |
 | Gold evidence units and the suite evidence SHA | `Overseer/Services/Benchmarking/BenchmarkEvidence.cs` |
 | Evidence Reach | `Overseer/Services/Benchmarking/BenchmarkEvidenceReach.cs` |
-| Variant catalog and runtime context | `Overseer/Services/Benchmarking/BenchmarkInstructionVariant.cs` |
-| Variant folders | `Overseer/BenchmarkVariants/<name>/` |
+| Experimental changes: the catalog, validation, hashes, selection and runtime context | `Overseer/Services/Benchmarking/BenchmarkExperimentalChanges.cs` |
+| Changes written in Overseer: the store, ids, locking, folder download | `Overseer/Services/Benchmarking/BenchmarkExperimentalChangeStore.cs`, `GnollHackServer.Data/BenchmarkExperimentalChange.cs` |
+| The overlap check against the benchmark questions | `Overseer/Services/Benchmarking/BenchmarkChangeTextScreen.cs` |
+| Built-in change folders | `Overseer/BenchmarkChanges/<id>/`, `Overseer/BenchmarkChanges/retired.json` |
+| The API | `Overseer/Controllers/AdminBenchmarkController.cs` (`experimental-changes`) |
+| The picker and the editor | `Overseer/ClientApp/src/app/admin/benchmark/run-tab/experimental-changes-dialog/`, `experimental-change-editor-dialog/`, `experimental-changes.ts` |
 | Experimental tools | `Overseer/Services/Tools/IToolHandler.cs`, `ToolRegistry.cs`, `ToolExecutor.cs`, `GetCharacterInfoTool.cs`, `CharacterTables.cs` |
 | `referenced_by` | `Overseer/Services/SourceReferenceIndex.cs` and the three stats tools |
 | Pair kinds | `Overseer/Services/Benchmarking/BenchmarkPairedTests.cs` (`ClassifyRunPair`) |
@@ -59,8 +64,8 @@ The candidate's tool list is `BenchmarkInformationConditions.ResolveAllowedTools
   the GnollHack wiki), in the configured order. The source-code and stats tools stay.
 - **Closed book** returns an empty list.
 
-A variant's experimental tools are added to the list under Production and Source code only, never
-under Closed book (§ 6.4).
+The experimental tools of a run's experimental changes are added to the list under Production and
+Source code only, never under Closed book (§ 6.8).
 
 **The source-only notice.** Under Source code only, `BuildSystemPrompt` and
 `BuildSegmentedSystemPrompt` append `BenchmarkInformationConditions.SourceOnlyNotice` as a final
@@ -79,7 +84,7 @@ empty allowlist matches no tool).
 
 **Graders see the candidate's list.** The per-question grading prompt prints *"- Available tools:
 …"*; it names the candidate's resolved list (*None* under Closed book), so a grader of a source-only,
-closed-book or variant answer is told what the candidate had. The graders' and the claim verifier's
+closed-book or experimental-changes answer is told what the candidate had. The graders' and the claim verifier's
 own requests keep reading `Benchmark:AllowedTools`: the verifier keeps the wiki.
 
 ### 1.2 The launcher
@@ -87,7 +92,7 @@ own requests keep reading `Benchmark:AllowedTools`: the verifier keeps the wiki.
 The launcher labels the field **Tool Access**; its info tip ends *"Reports call this the information
 condition."* It sits in the *Test Setup* fieldset of Run Benchmark, after **Source Code References**
 and an *Experiment settings* caption (*"Leave these at their defaults for a normal run. Change one only
-to test what the AI's tools or instructions contribute."*), above **Experimental Changes** (§ 6.4). The
+to test what the AI's tools or instructions contribute."*), above **Experimental Changes** (§ 6.14). The
 *Experiment settings* part ends with **Feedback Tool**, after Experimental Changes, which offers or
 withholds `report_feedback` for the run ([`ai-feedback-reports.md`](ai-feedback-reports.md) § 3).
 Production is first and the default. The info tip lists the three conditions in plain words, Production
@@ -110,7 +115,8 @@ before. `BenchmarkCandidatePromptOptions.Describe()` names the condition when it
 Run History reports a changed condition as a changed run option against the previous run, and the
 history card and the run detail's *Prompt* fact show a tag for each setting that differs from
 production (`runConditionTags` in `run-report-frame/run-facts.ts`): the condition (`source code only`,
-`closed book`), `variant: <name:hash12>` and `corpus: <condition:label>`.
+`closed book`), `changes: <spec>` (the experimental changes' spec, without the hash) and
+`corpus: <condition:label>`.
 
 ### 1.4 Where it is printed
 
@@ -120,12 +126,14 @@ The run report's *Chat Prompt Under Test* block, after the *Tools* line, prints 
 - **Information condition:** the display name;
 - **Candidate tools:** the resolved list, comma-separated, or *none*;
 - **Corpus condition:** *live*, or *scarce — <label>* (§ 2);
-- **Instruction variant:** *none*, or *<name> (<hash12>) — benchmark-only instruction text and tools
-  that production does not have* (§ 6).
+- **Experimental changes:** *none*, or *<titles> (<spec>:<hash12>) — benchmark-only instruction text
+  and tools that production does not have*, the titles joined by commas, an id standing in for a change
+  the catalog no longer knows (§ 6).
 
 The tool-call log header prints the same four lines, and the copied diagnostics' `options:` line ends
-with `condition=…, variant=…, corpus=…`. The *Candidate tools* line is rebuilt when the report is
-rendered, from the recorded condition, the recorded variant and the current `Benchmark:AllowedTools`;
+with `condition=…, variant=…, corpus=…`, where `variant` is the stamp or `none`. The *Candidate tools*
+line is rebuilt when the report is rendered, from the recorded condition, the recorded experimental
+changes and the current `Benchmark:AllowedTools`;
 it is the list the run had as long as that setting has not changed since.
 
 ---
@@ -330,7 +338,7 @@ Two Instrument keys join the 27 of key definition 2, for 29:
 | Key | Value | Absent reads as |
 |---|---|---|
 | `CorpusCondition` | `BenchmarkRun.CorpusCondition` | `live` |
-| `InstructionVariant` | `BenchmarkRun.InstructionVariant` (`name:hash12`) | `none` |
+| `InstructionVariant` (labeled *Experimental changes*) | `BenchmarkRun.InstructionVariant`, the experimental changes' stamp (`<spec>:<hash12>`) | `none` |
 
 Every run recorded before them reads `live` and `none`, so no historical pair changes tier. The
 information condition is not a key of its own: it is part of `CandidatePromptOptions`, a Candidate key.
@@ -349,187 +357,306 @@ others:
   condition is cleared and tools are enabled (`ComparabilitySignatureWithoutCondition`), and the only
   Instrument keys that differ are at most `CandidateSystemPromptSha256` (moved by the notice or the
   dropped tool sections) and `CorpusCondition`.
-- **Variant contrast** (`VariantContrast`): every Candidate key matches, `InstructionVariant` differs,
-  and the only other Instrument key that may differ is `CandidateSystemPromptSha256` (moved by an
-  appendix).
+- **Experimental-changes contrast** (`VariantContrast`): every Candidate key matches,
+  `InstructionVariant` differs, and the only other Instrument key that may differ is
+  `CandidateSystemPromptSha256` (moved by a change's instructions).
 
-**Ablation pairs are variant contrasts too** (§ 6.10). An ablation's stamp is its own `InstructionVariant`
-value, so the classification needs no new kind: a `<name>/minus/<feature>` run against a run of the whole
-`<name>`, and a `<name>/only/<feature>` run against a run without a variant, each differ in
-`InstructionVariant` and at most in `CandidateSystemPromptSha256`, and are `VariantContrast` pairs. An
-ablation is never pooled with its base, with no variant, or with another ablation.
+**Every two selections of experimental changes pair this way** (§ 6.13). A run with one change against
+a run with none, a run with a set without one change against a run with the whole set, and any two
+selections at all differ in `InstructionVariant` and at most in `CandidateSystemPromptSha256`, so the
+classification needs no other kind. The explanation computes the difference from the two stamps, by
+title, else by id: *"Experimental-changes contrast: run #412 has none; run #415 adds Race and role lookup
+tool. Everything else is the same; compare, never pool."* When the runs differ by more than one change it
+adds *"The runs differ by 2 changes, so a difference belongs to them together."*; when they have the same
+changes with different text, it says so (`BenchmarkPairedTests.ExperimentalChangesContrast`). Two
+different selections are never pooled.
 
-Both explanations end *"compare, never pool"*. A pair that differs in condition **and** variant is
-*NotComparable*. Neither kind is ever a Root Cause control (only Model comparison pairs are), and a
-condition or variant run never joins production runs in Model Comparison, because the keys it moves
-are must-match keys there.
+Both explanations end *"compare, never pool"*. A pair that differs in condition **and** experimental
+changes is *NotComparable*. Neither kind is ever a Root Cause control (only Model comparison pairs are),
+and a condition or experimental-changes run never joins production runs in Model Comparison, because the
+keys it moves are must-match keys there.
 
 A pair that differs **only in the corpus condition** moves one Instrument key, so it is a
 *Verification of a change* pair and, in Multi-Run Analysis, a Tier C cross-condition set: two
-conditions to compare, never one group to pool. So is a variant that adds no appendix, such as
-`source-tools-v1`, against a run without a variant, at group level.
+conditions to compare, never one group to pool. So is a selection without instructions, such as *Race
+and role lookup tool*, against a run without experimental changes, at group level.
 
 ### 5.3 Chat consistency
 
 Chat consistency measures the production chat, so `ChatConsistencyComparability.NonProductionReason`
-excludes a run with a non-production information condition, a corpus condition other than live, or an
-instruction variant, each with its own reason (*"the information condition …"*, *"the corpus condition
-…"*, *"the instruction variant …"*).
+excludes a run with a non-production information condition, a corpus condition other than live, or
+experimental changes, each with its own reason (*"the information condition …"*, *"the corpus condition
+…"*, *"the experimental changes …"*).
 
 ---
 
-## 6. Instruction Variants
+## 6. Experimental Changes
 
-### 6.1 What a variant is
+### 6.1 What an experimental change is
 
-A variant is a named, hashed, benchmark-only bundle that changes how the candidate is instructed and
-equipped without touching production. It is the way to try a change — an instruction sentence, a tool
-description, a source-derived tool, a tool-output switch — as a controlled pair against the unchanged
-instructions before it is promoted. A run records the variant's name and content hash.
+An experimental change is one titled, self-contained, benchmark-only idea — an instruction paragraph, a
+tool-description sentence, a source-derived tool, a tool-output switch — that changes how the candidate
+is instructed or equipped without touching production. The launcher's **Experimental Changes** field
+ticks any set of them for a run, and the run records the set and its hash. It is the way to try a change
+as a controlled pair against the unchanged instructions before it is promoted (§ 6.13).
 
-### 6.2 The folder
+Changes come from two sources and are described by the same fields:
 
-A variant is a folder `Overseer/BenchmarkVariants/<name>/`, copied to the build output by a
-`Content` item in `Overseer.csproj`, holding `variant.json` and the files it names:
+| Field | Meaning | Built in | Written in Overseer | Hashed |
+|---|---|---|---|---|
+| `id` | Kebab-case ending `-v<N>`, at most 32 characters; unique across both sources | the folder name | generated from the title, never edited | yes |
+| `title` | The name everyone sees; at most 60 characters | yes | yes | no |
+| `summary` | One sentence: what the AI gets; at most 220 characters | yes | yes | no |
+| `expectedEffect` | Optional, shown as *Should improve*; at most 220 characters | yes | yes | no |
+| experimental tool | A registered `IsExperimental` tool offered to the candidate, with an optional description of its own | yes | no (code) | yes |
+| experiment | A tool-output switch; the only one is `stats_referenced_by` | yes | no (code) | yes |
+| description additions | Production tool → text **appended** to its live description | yes | yes | yes |
+| description replacements | Production tool → text that **replaces** its description | yes | yes | yes |
+| instructions | Text appended to the end of the system prompt | yes | yes | yes |
+
+A new tool and a tool-output switch are C# code, so only a built-in change can have one; the texts can
+be written in either place.
+
+**Text normalization.** Every text is normalized before it is used and before it is hashed
+(`BenchmarkExperimentalChangeHash.Normalize`): CRLF and CR become LF, and the text is trimmed. A built-in
+`.md` file with CRLF endings and the same text typed into the editor give the same hash and the same
+request bytes. A blank text, `instructions` or `expectedEffect` included, counts as none.
+
+**The change hash** (`BenchmarkExperimentalChangeHash.Of`) is the SHA-256 of the change's canonical
+lines, sorted ordinally, each ending `\n`: `id:<id>`, `tool:<name>`, `tooldesc:<SHA-256 of text>`,
+`experiment:<name>`, `add:<tool>:<SHA-256 of text>`, `replace:<tool>:<SHA-256 of text>` and
+`instructions:<SHA-256 of text>`. The source is not in it, and neither are `title`, `summary` and
+`expectedEffect`: the wording people see can be corrected at any time without making a run
+un-re-runnable, and a change moved from the database into the repository keeps its hash (§ 6.5). A
+database change's hash is recomputed from its stored text whenever the catalog reads it.
+
+**Validation** (`BenchmarkExperimentalChangeValidator`, shared by both sources): the id rules; a title
+and a summary, each within its length; at least one effect; an experimental tool that is registered and
+`IsExperimental`, and an experimental-tool description only beside one; a known experiment; a
+description edit's tool registered, **not** experimental and in the benchmark allowlist
+(`Benchmark:AllowedTools`, else `BenchmarkService`'s default list); no tool both added to and replaced,
+or edited twice, within one change; every text non-empty after normalization and at most 4,000
+characters; at most 6 description edits per change. A built-in change's files are named without `/`,
+`\` or `..`, end in `.md` and exist in its folder.
+
+**Conflicts.** Two changes cannot run together when both offer the same experimental tool, both turn on
+the same experiment, both replace the same tool's description, or one replaces a description the other
+adds to (`BenchmarkExperimentalChangeCatalog.ConflictBetween`). Additions to the same tool compose. The
+catalog computes each change's `conflictsWith`, the picker disables a conflicting card, and the launcher
+refuses the selection.
+
+**Mentions** are a warning, never a refusal. A change mentions another when one of its texts names, as a
+whole word, the other's experimental tool, or `referenced_by` for the `stats_referenced_by` experiment.
+*Answer from the player's own character* names `get_character_info`, so it mentions *Race and role
+lookup tool*. When a ticked change mentions one that is not ticked, the picker and the launcher's summary
+box say *"Answer from the player's own character mentions get_character_info, which this run does not
+offer."* with an **Add Race and role lookup tool** button. Such a run can be a deliberate test.
+
+### 6.2 Built-in changes
+
+A built-in change is a folder `Overseer/BenchmarkChanges/<id>/`, copied to the build output by a
+`Content` item in `Overseer.csproj`, holding `change.json` and the `.md` files it names:
 
 ```json
 {
-  "name": "source-tools-v1",
-  "description": "One sentence shown in the launcher.",
-  "extends": null,
-  "promptAppendix": null,
-  "toolGuides": { "get_character_info": "get_character_info.md" },
-  "experimentalTools": ["get_character_info"],
-  "experiments": ["stats_referenced_by"]
+  "id": "race-role-tool-v1",
+  "title": "Race and role lookup tool",
+  "summary": "Adds get_character_info, which reads a race's or role's rules — allowed combinations, intrinsics by level, racial attitudes — straight from the game tables.",
+  "expectedEffect": "Questions that depend on the player's race or role are answered from the tables, not from memory.",
+  "experimentalTool": "get_character_info",
+  "experimentalToolDescription": "get_character_info.md",
+  "experiment": null,
+  "descriptionAdditions": {},
+  "descriptionReplacements": {},
+  "instructions": null
 }
 ```
 
-| Field | Meaning |
-|---|---|
-| `name` | Equal to the folder name; lower-case kebab-case, at most 64 characters |
-| `description` | The *Technical note* of the launcher's summary box (§ 6.4); one sentence |
-| `extends` | Another variant whose content this one starts from, or null |
-| `promptAppendix` | A Markdown file of the folder whose text ends the system prompt, or null |
-| `toolGuides` | Tool name → a file of the folder whose text replaces that tool's description for the candidate's requests |
-| `experimentalTools` | Experimental tools the candidate is offered |
-| `experiments` | Tool-output switches; the only one is `stats_referenced_by` |
+`id` equals the folder name. `experimentalToolDescription` and `instructions` name a `.md` file of the
+folder; `descriptionAdditions` and `descriptionReplacements` map a production tool to one.
+`BenchmarkExperimentalChangeCatalog` loads every folder once at startup; an invalid folder is logged,
+listed with its reason, and never selectable. `Overseer/BenchmarkChanges/retired.json` is a JSON array
+of retired built-in ids, outside every hash. The folders live outside `Overseer/ToolGuides`, so they
+never move `ToolGuidesSha256`.
 
-**Validation.** `BenchmarkInstructionVariantCatalog` loads every folder once at startup. A variant is
-invalid when `name` is not the folder name or not kebab-case; it extends itself, a missing or invalid
-variant, or a variant that itself extends one; `promptAppendix` is not a `.md` file of the folder; a
-`toolGuides` key is not a registered tool or its file is not in the folder; an `experimentalTools`
-entry is not a registered tool or not experimental; or an `experiments` entry is unknown. Files are
-named without directories or `..`. An invalid variant is logged, listed with its reason, and refused
-by the launcher; *Instruction Variant* offers the valid ones only.
+Only a built-in change can carry a new tool or a tool-output switch. An agent writes a built-in folder
+as part of an implementation plan, and it is reviewed in Git like any other file.
 
-**`extends`** is one level deep. The child's tool guides override the parent's for the same tool;
-experimental tools and experiments are the union; the appendix is the parent's text, a blank line,
-then the child's.
+### 6.3 Changes written in Overseer
 
-**The content hash** is `BenchmarkService.ComputeToolGuidesSha256(folder)`, the same manifest that
-`ToolGuidesSha256` uses (the SHA-256 of the sorted `relative path:file SHA-256` lines of every file in
-the folder, `variant.json` included). A variant that extends another hashes `parent:<parent hash>` and
-`self:<own hash>` together. The run stamp, `BenchmarkRun.InstructionVariant`, is `<name>:<first 12 hex
-of the hash>`. The variants live outside `Overseer/ToolGuides`, so they never move `ToolGuidesSha256`.
+A text-only change — description additions, description replacements and instructions — can be written
+in the picker's editor (§ 6.15) and is stored as a row of `BenchmarkExperimentalChanges`
+(`GnollHackServer.Data/BenchmarkExperimentalChange.cs`, migration `AddBenchmarkExperimentalChanges`):
+`ChangeId` (unique), `Title`, `Summary`, `ExpectedEffect`, `DescriptionEditsJson`
+(`[{ "tool", "mode": "add" | "replace", "text" }]`, normalized text), `Instructions`, `ContentHash`,
+`CopiedFromChangeId`, `CreatedAtUtc`, `UpdatedAtUtc`, `LockedAtUtc` and `RetiredAtUtc`. The table has no
+foreign keys and stores no user id: authorship of a handful of admin-written changes is not worth adding
+personal data that the account-erasure flow would then have to know about, so the picker shows dates
+only. `BenchmarkExperimentalChangeStore` creates, edits, retires, restores and deletes the rows, and
+every write refreshes the catalog.
 
-### 6.3 What a variant may and may not contain
+- **Ids** are generated from the title on creation: lower-case ASCII, every run of other characters a
+  `-`, trimmed to 26 characters at a word boundary, then `-v1`; when either source already holds the id,
+  `-2`, `-3` … go before `-v1`. Ids never change.
+- **Copy as new version** is offered for any valid change without a tool or a switch, built-in ones
+  included. The copy is a database change whose id is the next free `x-v<M>` after `x-v<N>`, with
+  `CopiedFromChangeId` set.
+- **Edits are conditional.** A save carries the `UpdatedAtUtc` the editor opened with and is an update
+  `where ChangeId = <id> and UpdatedAtUtc = <expected>` (and, when the text changes, `and LockedAtUtc is
+  null`), so an edit made elsewhere in the meantime is refused: *"It was changed elsewhere since you
+  opened it. Reload it and make your edit again."*
+- **Delete** is allowed only while the change is unlocked; otherwise *"A run has used it, so it cannot be
+  deleted. Retire it instead."* **Retire** and **Restore** are always allowed.
 
-A variant may contain **generic procedures** (how to search, what to read, when to read the source),
+**The catalog** (`BenchmarkExperimentalChangeCatalog`, a singleton) holds the built-in changes and an
+immutable snapshot that merges them with the database rows, swapped atomically. The snapshot is rebuilt
+on first use, after every store write, and by `RefreshAsync()` at the start of every launch, re-run and
+catalog call (the table is tiny), so a change written by another request or process is seen where it
+matters. A failed database read keeps the previous snapshot and logs a warning. Built-in changes are
+listed first, then the database's, each by title.
+
+### 6.4 Locking and screening
+
+**Locking.** Once a run has used a change, its hashed text must never change, or the run could not be
+re-run. After every other check has passed and immediately before the run row is saved, the launcher
+(`BenchmarkRunLauncher.LockAndStampAsync`) sets `LockedAtUtc` on each database change of the selection
+in one conditional update (`where LockedAtUtc is null`), refreshes the catalog, and resolves and stamps
+the selection again. An edit racing the launch either lands before the lock, and the launch stamps the
+edited text, or is refused: *"Its text is locked: a run has used it, and that run stays re-runnable only
+while the text is unchanged. Copy it as a new version to change the text."* A locked change keeps its
+title, summary and *Should improve* editable. A lock is never removed, even when the run is deleted. A
+built-in change needs no lock: its text changes only through Git.
+
+**Screening.** The rule of § 6.6 is enforced by the person who writes the change, helped by two checks:
+
+- **A required confirmation** on every save that creates or changes text: *"This text is a general
+  procedure or wording. It states no game fact, answer or hint about a particular question."* The server
+  refuses such a save without `genericConfirmed: true`. A save that changes only the title, the summary
+  or *Should improve* does not need it.
+- **An overlap check** (`BenchmarkChangeTextScreen`): every text is compared with every benchmark
+  question's `QuestionText` and `ExpectedPoints`, in all suites, as lower-cased word sequences (letters
+  and digits; punctuation and spacing ignored). A run of **8 or more consecutive words** shared with a
+  question or a rubric is reported, once per question field and at most 10 times: *"Shares "the quest
+  artifact of the healer is the staff …" with the rubric of question 3 of Gnoll Basics."* It warns and
+  never blocks, because a generic procedure can legitimately echo a question's wording. It runs as the
+  person types (`POST …/screen`, 600 ms after typing stops) and again on save.
+
+The overlap check catches copied wording, not a paraphrased answer; the confirmation and the rule of
+§ 6.6 remain the guard.
+
+### 6.5 Moving a change into the repository
+
+**Download as folder** (`GET api/admin/benchmark/experimental-changes/{id}/folder`) returns `<id>.zip`,
+holding `<id>/change.json` and its `.md` files — `<tool>.md` per description edit and for an
+experimental tool's description, `instructions.md` — UTF-8 without a BOM, CRLF. It works for any change,
+built in or not. Put the folder in `Overseer/BenchmarkChanges/` and rebuild.
+
+When a built-in folder and a database change share an id:
+
+- **Equal hashes**: the built-in change is the one listed. The database row is shown nowhere, its runs
+  still resolve (the hash is the same), and the editor refuses it: *"This change is now built in; change
+  it in the repository."*
+- **Different hashes**: the database change is the one listed and resolvable. The built-in folder is
+  logged as invalid, *"Its id is taken by a change written in Overseer with different text."*, and not
+  listed.
+
+This is how a change written in Overseer reaches Git review; promotion to production then follows
+§ 6.13.
+
+### 6.6 What a change may and may not contain
+
+A change may contain **generic procedures** (how to search, what to read, when to read the source),
 **tool descriptions**, and **source-derived tools** whose facts are extracted mechanically from the
 game source and checked by unit tests. It never contains a game fact we authored: no answer, no rubric
 text, no question-specific hint, no *"if asked about X, answer Y"*. A sentence that would answer a
 benchmark question by itself is a wiki edit in disguise. The anti-overfitting rules of the
 `server_benchmark_to_chat_transfer` skill (§ 8) apply in full.
 
-### 6.4 How a variant reaches the candidate
+This applies alike to a built-in change and to a change written in Overseer.
 
-- **The request.** `StartBenchmarkRunRequest.InstructionVariant` names it; the launcher refuses an
-  unknown name (*"Unknown instruction variant '<name>'."*) or an invalid one (*"The instruction variant
-  '<name>' is invalid: <reason>"*). `GET api/admin/benchmark/instruction-variants` lists every variant
-  with its name, description, parent, hash prefix, validity and reason.
-- **The prompt.** The resolved appendix is passed to the two prompt wrappers and ends the flat prompt
-  and the volatile suffix, after the source-only notice when both apply. It moves
-  `CandidateSystemPromptSha256`. It is not part of the stored options record.
-- **The tools.** The candidate's allowlist is the condition's list plus the variant's experimental
-  tools (none under Closed book). A variant's tool-guide text is used only for a tool the request
-  declares: under Source code only, a replacement `wiki_search` guide never reaches the model.
-- **The context.** `BenchmarkService` puts the variant on the `ToolExecutionContext` of the
-  candidate's own requests only — the answer, the failed-question re-run and the single-answer re-run —
-  never on a grader, verifier, difficulty or synthesis call. `ToolExecutionContext.CloneFor` copies it
-  to each tool call.
-- **Re-runs.** A re-run resolves the variant by the stamped name and refuses, *"The instruction variant
-  '<name>' has changed since this run; re-run is not possible."*, when the variant is gone, invalid,
-  or its hash no longer matches the stamp.
-- **The launcher.** The launcher labels the field **Experimental Changes**; its info tip ends *"Reports
-  call this the instruction variant."* It sits under **Tool Access** (§ 1.2) and is a read-out line of the
-  choice with a **Choose…** button (`#candidateInstructionVariant`, `.btn-gh btn-gh-small`) that opens the
-  full-screen Experimental Changes dialog (§ 6.10). The read-out is *None — same as the live chat*, a
-  whole variant as *<name> — <what it adds> · <hash prefix>*, or an ablation in words (*asker-profile-v1
-  without the reworded wiki_search description*). The suffix and the summary
-  are derived from what the variant contains (`run-tab/instruction-variant-summary.ts`), never written
-  for it, so a new variant needs no launcher text and `variant.json` never has to change for the
-  launcher's sake (editing it would move the variant's hash):
+### 6.7 A selection, its spec and its stamp
 
-  | The variant | Suffix |
-  |---|---|
-  | adds a tool or an experiment, and has an appendix | *new tools and extra instructions* |
-  | adds a tool or an experiment only | *new tools* |
-  | has an appendix only | *extra instructions* |
-  | only replaces tool guides | *reworded tool descriptions* |
-  | none of these | the name alone |
+- **Spec.** The ticked ids, sorted ordinally, joined by `+`: `race-role-tool-v1+stats-referenced-by-v1`.
+  Null is no changes. `StartBenchmarkRunRequest.InstructionVariant` carries it; the server canonicalizes
+  the order and refuses a duplicate.
+- **`+` in a query string.** ASP.NET Core decodes `+` in a query string to a space, and Angular's
+  `HttpParams` leaves `+` unencoded. Every server-side spec parser turns spaces back into `+` before
+  splitting (ids contain no spaces): `BenchmarkExperimentalChangeCatalog.NormalizeSpec`, used by the
+  launcher, the runs endpoint and the Feedback tab's `variant` filter.
+- **Stamp.** `<spec>:<hash12>`, where the selection hash is the SHA-256 of `<id>:<change hash>\n` per
+  change in spec order (`BenchmarkExperimentalChangeHash.OfSelection`). It is stored in
+  `BenchmarkRun.InstructionVariant` (160 characters). A longer stamp is refused: *"Too many changes for
+  one run: the run record holds 160 characters. Choose fewer."* The four built-in changes together make
+  a 91-character spec and a 104-character stamp. Every site that splits a stamp at its first `:` gets the
+  spec.
+- **Composition** (`BenchmarkExperimentalChangeCatalog.Resolve`) builds a `BenchmarkVariantContext`, the
+  runtime context that `ToolExecutionContext.Variant`, the prompt wrappers and the stats tools read, in
+  spec order: experimental tools and experiments are the union; a tool's description is its replacement
+  when a change replaces it, else the live description (`IToolHandler.Description`, read at resolve time
+  and normalized) followed by `"\n\n" + text` for each change that adds to it; an experimental tool's
+  description is the change's own text when it gives one, else the tool's declared one; instructions are
+  joined by a blank line into `AppendixParts` (`Variant` is the change id) and `Appendix`. Resolved
+  contexts are cached per spec and selection hash.
+- **Applicability under Tool Access**, per change, `full`, `partial` or `none`
+  (`BenchmarkExperimentalChange.AppliesUnder`): under Closed book only instructions reach the model;
+  under Source code only a description edit of a tool in
+  `BenchmarkInformationConditions.SourceOnlyExcludedTools` does not. A selection with a change that is
+  `none` under the chosen Tool Access is refused (*"Search with the player's race and role has no effect
+  under Source code only: wiki_search is not offered there. Untick it, or choose another Tool Access."*),
+  because the stamp would claim a change the model never saw. `partial` is allowed, with a note.
 
-  With a variant chosen, a summary box (`#candidateInstructionVariantSummary`) is headed *What
-  <name> changes* and lists, in plain words, each experimental tool (*Adds a tool the live chat does not
-  have: race and role lookup.*), each experiment, the appendix, the reworded tool guides and the parent
-  (*Builds on source-tools-v1.*); a tool without a plain name shows its identifier as code. Then the
-  variant's `description` as a *Technical note*, and the warning *"Test only: the live chat never uses
-  it. Compare this run only with a run that is identical except for Experimental Changes, on the Paired
-  Test tab of its report."* When the Tool Access choice voids part of the variant, one more warning
-  (`#candidateInstructionVariantConditionWarning`) says so: under Closed book only the appendix applies,
-  or nothing does; under Source code only a reworded guide of a withheld tool does not apply. For an
-  ablation the summary lists what the run changes — the base's lines without the left-out feature, or the
-  one kept feature — and names its reference run (`#candidateInstructionVariantReference`). *Repeat
-  this run's setup* strips the hash suffix (splitting the stamp at its first `:`, so an ablation spec is
-  kept whole) and, when the catalog no longer lists the name as valid, or an ablation's base is invalid
-  or no longer has the feature, chooses None and says so. The launcher keeps the spec in
-  `instructionVariant` and remembers it under `overseer_admin_benchmark_run_settings`.
-- **The catalog endpoint.** Besides the name, description, parent, hash prefix, validity and reason,
-  each entry carries `experimentalTools` and `experiments` (a parent's included), `rewordedTools` (the
-  `toolGuides` keys that are not experimental tools), `hasPromptAppendix`, and
-  `rewordingsWithheldUnderSourceOnly` (the reworded tools Source code only withholds), all from the
-  resolved variant (`BenchmarkInstructionVariantDto.From`); the lists are empty for an invalid one. Each
-  entry also carries `features` (§ 6.10): `{ id, kind, target, fromParent, appliesUnder: { production,
-  sourceOnly, closedBook }, mentions }`, so the launcher can validate and label a remembered ablation
-  without another call. `GET api/admin/benchmark/instruction-variants/{name}/details` returns one folder
-  variant for the dialog: `name`, `description`, `parent`, `stamp`, `isValid`, `invalidReason`, the
-  features with their `text` (an experimental tool's or a reworded description's variant guide, an
-  appendix part's text), `productionText` (a reworded description's startup production text, from
-  `Overseer/ToolGuides/`) and `parameterSchemaJson` (an experimental tool's parameter schema), and
-  `runs`: the ten newest runs whose stamp starts with `<name>:` or `<name>/` (the whole variant and its
-  ablations), each with its spec and whether its hash equals the current one, plus `runCount` and
-  `olderHashRunCount`. An invalid variant has no features and no stamp; an unknown name, or an ablation
-  spec, is 404.
+**An addition follows production.** It is appended to the live description, so a change to a production
+guide alters what the next run with that addition sends while the stamp stays the same.
+`ToolGuidesSha256` then differs between the two runs, so they are not a clean pair. A replacement is a
+fixed text and does not follow production.
 
-**Production never loads a variant.** `ToolExecutionContext.Variant` is null on every live-chat
-request and on every benchmark run whose variant is None, and such a request declares the same tools,
-with the same descriptions, and receives the same prompt bytes as under harness 58.
+**Launch refusals**, in this order: a malformed spec (*"'<spec>' is not a list of experimental change
+ids joined by '+'."*, which is also what a spec in the earlier `<variant>/minus/<feature>` form gets); an
+unknown id (*"Unknown experimental change '<id>'."*); an invalid change (*"<title> is invalid:
+<reason>"*); a retired change (*"<title> is retired."*); a duplicate (*"<title> is selected more than
+once."*); a conflict (*"<title> and <title> both replace the wiki_search description."*); a stamp too
+long; a change with no effect under the Tool Access.
 
-### 6.5 Experimental tools and experiments
+### 6.8 How a selection reaches the candidate
+
+- **The prompt.** The resolved appendix, the changes' instructions, is passed to the two prompt wrappers
+  and ends the flat prompt and the volatile suffix, after the source-only notice when both apply. It
+  moves `CandidateSystemPromptSha256`. It is not part of the stored options record.
+- **The tools.** The candidate's allowlist is the condition's list plus the selection's experimental
+  tools (none under Closed book). A changed description is used only for a tool the request declares:
+  under Source code only, an addition to `wiki_search` never reaches the model.
+- **The context.** `BenchmarkService` puts the context on the `ToolExecutionContext` of the candidate's
+  own requests only — the answer, the failed-question re-run and the single-answer re-run — never on a
+  grader, verifier, difficulty or synthesis call. `ToolExecutionContext.CloneFor` copies it to each tool
+  call.
+- **Re-runs.** A re-run resolves the stamped spec, retired changes included, and refuses, *"The
+  experimental changes '<spec>' have changed since this run; re-run is not possible."*, when a change is
+  gone or invalid, or the selection's hash no longer matches the stamp.
+- **The record.** The run report's manifest line reads *Experimental changes: <titles> (<stamp>) —
+  benchmark-only instruction text and tools that production does not have* (§ 1.4); the comparability
+  key is labeled *Experimental changes* (§ 5.1); the run's tag is `changes: <spec>` (§ 1.3).
+
+**Production never loads a change.** `ToolExecutionContext.Variant` is null on every live-chat request
+and on every benchmark run whose Experimental Changes is None, and such a request declares the same
+tools, with the same descriptions, and receives the same prompt bytes as under harness 58.
+
+### 6.9 Experimental tools and experiments
 
 - **`IToolHandler.IsExperimental`** (default false). `ToolRegistry.BuildToolsForRequest` skips an
-  experimental handler unless the request's variant lists it in `experimentalTools`, before the
-  allowlist is consulted. `ToolExecutor` refuses a call to an experimental tool the request's variant
-  does not enable — *"Tool '<name>' is not available in this session."* — before the handler runs, and
-  the agent loop refuses a call to a tool the request did not declare.
-- **Per-request guide text.** The description a request declares is the variant's guide when it has
-  one for the tool, otherwise the handler's own. The shared handler's `Description` is set once at
-  startup and never changed per request, so concurrent requests cannot see each other's variant. An
+  experimental handler unless the request's experimental changes offer it, before the allowlist is
+  consulted. `ToolExecutor` refuses a call to an experimental tool the request's changes do not offer —
+  *"Tool '<name>' is not available in this session."* — before the handler runs, and the agent loop
+  refuses a call to a tool the request did not declare.
+- **Per-request descriptions.** The description a request declares is the composed one when the
+  selection changes the tool, otherwise the handler's own. The shared handler's `Description` is set once
+  at startup and never changed per request, so concurrent requests cannot see each other's changes. An
   experimental tool has no file in `Overseer/ToolGuides/`, and startup does not log a missing guide for
   it.
 - **Experiments.** `stats_referenced_by` adds a `referenced_by` list to the results of
-  `get_artifact_stats`, `get_item_stats` and `get_monster_stats` when the request's variant enables it.
+  `get_artifact_stats`, `get_item_stats` and `get_monster_stats` when the request's changes turn it on
+  (`BenchmarkExperimentalChangeCatalog.StatsReferencedByExperiment`).
 
-### 6.6 `get_character_info`
+### 6.10 `get_character_info`
 
 An experimental tool that reads the GnollHack race and role tables from the indexed source
 (`src/role.c`, `src/attrib.c`, `src/prop.c`, with quest artifact names from `include/artilist.h`),
@@ -550,7 +677,7 @@ parsed when the source is indexed.
 - A name that matches nothing returns an `error` listing the valid races and roles; while the source
   is indexing, the stats tools' guard message.
 
-### 6.7 `referenced_by`
+### 6.11 `referenced_by`
 
 The functions whose code uses the artifact's `ART_`, the monster's `PM_` or the item's object
 constant: whole-word occurrences in the GnollHack `src/*.c` files, outside comments, string and
@@ -562,150 +689,219 @@ ready, or on any failure. It is the first field dropped when a result is too lon
 (`SourceReferenceIndex`) is built lazily on first use over the same corpus view as
 `SourceLivenessIndex`.
 
-### 6.8 The shipped variants
+### 6.12 The built-in changes
 
-| Variant | Contents |
-|---|---|
-| `source-tools-v1` | `get_character_info` with its guide; `stats_referenced_by`; the three stats-tool guides as in production plus one sentence describing `referenced_by`. No appendix and no new instruction prose. |
-| `asker-profile-v1` | Extends `source-tools-v1`. An appendix with one generic procedure: when a question states or implies the player's race, role or alignment, put those words in the searches, read that race's or role's page, and when no page states the rule, read the game's race and role tables (`get_character_info`) or the source rather than general NetHack knowledge. The production `wiki_search` guide plus one sentence to the same effect. |
-
-Measured against each other, `asker-profile-v1` isolates the instruction from the tools.
-
-### 6.9 Testing, promotion and retirement
-
-- **Test in pairs.** A run with the variant against a run without it, nothing else changed, is a
-  variant contrast. Run the pair in *Source code only* first, where the wiki cannot mask the effect,
-  then in *Production*, to see that it does not hurt where the wiki helps. Every pair carries
-  pre-declared acceptance and rollback criteria, cost among them (input tokens and model time), and a
-  variant motivated by some questions is checked on questions that did not motivate it.
-- **Promote** a variant that clears its criteria, and a held-out check on a second suite: move its
-  tool-guide texts into `Overseer/ToolGuides/` and its appendix into `_policy.md` or the prompt; set
-  the tool's `IsExperimental` to false and add it to `Benchmark:AllowedTools`; make a switch the
-  default; record the change in the chat change ledger; and make one confirming production run, since
-  the appendix sat in the volatile segment and a `_policy.md` sentence sits in the frozen one.
-- **Retire, never edit.** A variant a run has used is never edited: its hash would no longer match the
-  stamp and the run could not be re-run. Copy it to a new folder with the next suffix (`-v2`) and change
-  that. When a production guide that a variant copied changes, the copy is stale; the hash records what
-  was used, and the next version re-bases.
-
-### 6.10 Ablations
-
-A run can use a folder variant whole, the variant **with one feature left out**, or **only one** of its
-features. Both are single-factor ablations: they say which part of a variant made its effect. Free
-composition of several hand-picked features is deliberately not offered: with about 11 questions a
-suite, many ad-hoc combinations produce false discoveries and lose the attribution.
-
-**Features** are derived from the resolved variant (`BenchmarkInstructionVariantCatalog`, `DeriveFeatures`),
-never written in `variant.json`, so no folder and no hash changes:
-
-| Feature id | Kind (`kind` on the wire) | What it is |
+| Id | Title | Contents |
 |---|---|---|
-| `tool.<name>` | experimental tool (`experimentalTool`) | The tool together with its variant guide |
-| `experiment.<name>` | tool-output switch (`experiment`) | For example `experiment.stats_referenced_by` |
-| `guide.<tool>` | reworded description (`rewordedGuide`) | A `toolGuides` entry for a tool that is not one of the variant's experimental tools |
-| `appendix.<variant>` | instruction paragraph (`appendix`) | The appendix of that variant folder; a child and its parent contribute one each, so they can be ablated separately |
+| `race-role-tool-v1` | Race and role lookup tool | The experimental tool `get_character_info` with its own description (`get_character_info.md`) |
+| `stats-referenced-by-v1` | Where the game code uses it | The experiment `stats_referenced_by`, and one sentence describing `referenced_by` added to the `get_artifact_stats`, `get_item_stats` and `get_monster_stats` descriptions |
+| `asker-search-words-v1` | Search with the player's race and role | One sentence added to the `wiki_search` description: when the question states the player's race, role or alignment, include those words in the query |
+| `asker-character-procedure-v1` | Answer from the player's own character | Instructions with one generic procedure: when a question states or implies the player's race, role or alignment, put those words in the searches, read that race's or role's page, and when no page states the rule, read the game's race and role tables (`get_character_info`) or the source rather than general NetHack knowledge |
 
-The order is experimental tools, experiments and reworded descriptions in ordinal order, then the
-appendices, parent first. A feature inherited from the parent has `fromParent`. The context keeps the
-appendices per folder in `BenchmarkVariantContext.AppendixParts`; `Appendix` stays their concatenation,
-which the prompt and the series fingerprint read. Feature ids contain no `:`.
+They replace the two instruction variants of the run-125 round, whose texts they hold unchanged. Each
+variant guide was the production text plus one blank line and one sentence, so each addition is that
+sentence. `source-tools-v1` is *Race and role lookup tool* + *Where the game code uses it*;
+`asker-profile-v1`, which extended it, is all four. Composed, the changes give exactly the tools, tool
+descriptions and appendix the variants gave, which a unit test checks. No run used either variant, so no
+stamp of the earlier form needs mapping.
 
-- `source-tools-v1`: `tool.get_character_info`, `experiment.stats_referenced_by`,
-  `guide.get_artifact_stats`, `guide.get_item_stats`, `guide.get_monster_stats`.
-- `asker-profile-v1`: those five, inherited, plus `guide.wiki_search` and `appendix.asker-profile-v1`.
+Under Closed book only *Answer from the player's own character* applies; under Source code only *Search
+with the player's race and role* does not apply, since `wiki_search` is withheld there.
 
-**The spec** is the string the launch request sends in `StartBenchmarkRunRequest.InstructionVariant`:
+### 6.13 Testing, promotion and retirement
 
-| Spec | Meaning | Compare it with |
-|---|---|---|
-| `<name>` | The whole variant | A run without a variant |
-| `<name>/minus/<feature>` | The variant with that feature left out | A run of the whole `<name>` |
-| `<name>/only/<feature>` | Just that feature of the variant | A run without a variant |
+**Free combination, by decision.** Changes are ticked freely, in any combination. This reverses the
+earlier single-factor rule, under which a variant ran whole, with one feature left out, or with only one
+feature, and free composition was deliberately not offered, because with about 11 questions a suite
+many ad-hoc combinations produce false discoveries and lose the attribution. The rule was reversed on
+2026-10-24 because it made every idea part of a bundle that had to be picked by its slug and then taken
+apart in modes, and a run could record nothing but such a bundle. The risk it guarded against is
+mitigated instead by three things:
 
-**Resolution.** `BenchmarkInstructionVariantCatalog.Find(spec)` resolves a plain name exactly as before. A
-spec containing `/` that is not a folder name is parsed (`TryParseSpec`) and resolved to a synthesized
-entry whose context is the base's with the feature removed (`minus`) or with only that feature kept
-(`only`):
+- **the multi-change callout** in the picker and the launcher, *"The effect will belong to these 2
+  changes together. To learn which one did it, test each alone later."*;
+- **the pair explanation** of the Paired Test tab, which names the exact difference between the two
+  stamps — *"Experimental-changes contrast: run #412 has none; run #415 adds Race and role lookup tool.
+  Everything else is the same; compare, never pool."* — and adds *"The runs differ by 2 changes, so a
+  difference belongs to them together."* when they differ by more than one;
+- **the *Confirm a winner on a second suite* tip** of the picker.
 
-- a removed tool also removes its guide;
-- a removed appendix part leaves the other part;
-- a removed reworded guide falls back to the production description, as for any tool without a variant
-  guide.
-
-Its `Name` is the spec, and its hash is the SHA-256 of `base:<base hash>\n<mode>:<feature id>\n`, so the
-stamp `<spec>:<hash12>` changes whenever the base variant's files change. Valid synthesized entries are
-cached per spec; `All` lists folder variants only. Every consumer that resolves a variant goes through
-`Find`, so the launch, the stamp, the re-run check, the grader's tool list and the series resume guard
-handle an ablation unchanged. The sites that read the stamp as a string split it at the first `:`, which
-yields the spec. A plain variant records, receives and prints exactly what it did before ablations
-existed, so there is no `HarnessVersion` bump and `BenchmarkComparabilityKey.DefinitionVersion` stays 3.
-
-**Refusals.** `Find` returns an invalid entry, which the launcher reports as *"The instruction variant
-'<spec>' is invalid: <reason>"*, when:
-
-- the spec is not `<variant>/<mode>/<feature>`;
-- the base is not a variant, or is invalid;
-- the mode is not `minus` or `only`;
-- the feature is not one of the base's (the reason lists the base's features);
-- the base has one feature only: `minus` *leaves nothing; choose None*, and `only` *is the whole variant;
-  choose it*;
-- the stamp would be longer than the 160 characters `BenchmarkRun.InstructionVariant` holds.
-
-The launcher (`BenchmarkRunLauncher.AblationConditionRefusal`) also refuses an ablation whose feature
-**does not apply under the chosen Tool Access**, because the run would be identical to its reference and
-the contrast empty: under Closed book only an appendix applies, and under Source code only a reworded
-description of a withheld tool does not apply. The message names the feature, its id, the condition
-and the run it would equal.
-
-**Dangling references** are a warning, never a refusal. Each feature carries `mentions`, the other
-features its text names, found mechanically: an experimental tool's name, and `referenced_by` for
-`experiment.stats_referenced_by`. Each of the three reworded stats guides mentions the experiment, and
-`asker-profile-v1`'s appendix mentions `tool.get_character_info`. When an ablation keeps a text that
-mentions a feature it removes — `asker-profile-v1/minus/tool.get_character_info` keeps an appendix that
-names `get_character_info` — the dialog says the model will be told about a tool it does not have, and
-requires a checkbox before **Use this**. Such a run can be a deliberate test.
-
-**The report** prints an ablation in words in the condition manifest
-(`BenchmarkInstructionVariantCatalog.DescribeAblation`): *asker-profile-v1, leaving out the reworded
-wiki_search description (3fa2c91b0d1e) — benchmark-only instruction text and tools that production does
-not have*, or *…, only the get_character_info tool (…)*. A plain variant prints as before.
-
-**The dialog** (`run-tab/instruction-variant-dialog/`, opened by the launcher's **Choose…**) is a native
-full-screen `<dialog>`:
-
-- an **About** disclosure, open on first use and remembered in
-  `overseer.benchmark.instructionVariantDialog.view`, which explains variants, the pairing rule, *Source
-  code only first, then Production*, pre-declared criteria including cost, the one-at-a-time rule below,
-  and never comparing with production runs in Model Comparison;
-- on the left, a radio group of *None — same as the live chat*, each valid variant (name, suffix, hash,
-  parent, the number of runs that used it), and invalid variants disabled with their reason;
-- on the right, for the checked variant: *How to run it* (*The whole variant*, *Leave one feature out*,
-  *Only one feature*, shown when the variant has two or more features); *What it changes*, one section
-  per feature, marked *From <parent>* when inherited — an experimental tool's guide and its parameters, a
-  reworded description's diff against production with a *Side by side* / *Diff* toggle, an appendix's
-  text; in the two ablation modes a *Leave this out* or *Run only this* radio per feature, unavailable
-  with its reason when the feature does not apply under the current Tool Access; what applies under that
-  Tool Access; the result (the spec, its words, the run to compare it with, any dangling-reference
-  warning); the technical stamp; and the runs that used the variant or its ablations;
-- **Use this**, `aria-disabled` with a stated reason until the choice is complete and every warning is
-  acknowledged, and **Cancel** (Escape cancels).
-
-A reworded description shows *The live description has changed since this variant copied it; a -v2
-should re-base on it.* when a non-blank line of the live description is missing from the variant's copy.
-A variant that deliberately deletes a production line also triggers it.
+One tick is *only one*; the same set without one tick is *leave one out*. Both are ordinary selections
+and ordinary experimental-changes contrasts.
 
 **Method.**
 
-- **One ablation at a time, and confirm a winner on a second suite.** Running every ablation on one
-  11-question suite and keeping the best is a multiple-comparisons trap.
-- Pre-declare the criteria per ablation, as for a variant (§ 6.9).
-- **Promotion** of an ablation result promotes the corresponding subset of the variant as a new `-vN`
-  folder, never the spec, so a promoted change is again an ordinary variant with its own hash.
+- **Test in pairs.** A run with the selection against a run identical except for Experimental Changes,
+  nothing else changed, is an experimental-changes contrast (§ 5.2). Run the pair in *Source code only*
+  first, where the wiki cannot mask the effect, then in *Production*, to see that it does not hurt where
+  the wiki helps. Every pair carries pre-declared acceptance and rollback criteria, cost among them
+  (input tokens and model time), and a change motivated by some questions is checked on questions that
+  did not motivate it.
+- **Learn which change did it.** When a selection of several changes won or lost, test each change alone
+  against None, or the selection without one change against the whole selection.
+- **Do not fish.** Trying many combinations on one 11-question suite and keeping the best is a
+  multiple-comparisons trap. Pre-declare the criteria per selection, and confirm a winner on a second
+  suite.
+- **Promote** a change that clears its criteria, and a held-out check on a second suite: append its
+  description additions to the matching `Overseer/ToolGuides/<tool>.md`, put its replacements in their
+  place, and move its instructions into `_policy.md` or the prompt; set an experimental tool's
+  `IsExperimental` to false and add it to `Benchmark:AllowedTools`; make a switch the default; record the
+  change in the chat change ledger; and make one confirming production run, since the instructions sat in
+  the volatile segment and a `_policy.md` sentence sits in the frozen one. A change written in Overseer is
+  downloaded as a folder (§ 6.5) first, so the promoted text is the one that was reviewed in Git.
+- **Retire, never edit.** A change a run has used is never edited: its hash would no longer match the
+  stamp and the run could not be re-run. A change written in Overseer is locked for this automatically
+  (§ 6.4); a built-in folder is protected only by this rule. Copy the change as a new version (`-v2`)
+  and change the copy. When a production description that a replacement copied changes, the copy is
+  stale; the hash records what was used, and the next version re-bases.
+- **Retirement.** A retired change is hidden from the picker (listed under *Show retired*) and refused
+  in a new launch, but still resolves for re-runs and reports. A built-in change is retired by adding its
+  id to `Overseer/BenchmarkChanges/retired.json`; a change written in Overseer with **Retire**, and
+  brought back with **Restore**.
 
-**A limit of the series resume guard.** The guard compares the instrument hashes, which see a variant
-only through its appendix. A base edit that touches only a guide file therefore does not block resuming
-a series, for a plain variant and an ablation alike; only a re-run's stamp check catches it. This
-predates ablations and is unchanged.
+**A limit of the series resume guard.** The guard compares the instrument hashes, which see a selection
+only through its instructions. An edit of a built-in change's description file alone therefore does not
+block resuming a series; only a re-run's stamp check catches it. A change written in Overseer cannot be
+edited once a series member has used it, because the launch locked it.
+
+### 6.14 The launcher
+
+The launcher labels the field **Experimental Changes**. It sits under **Tool Access** (§ 1.2) and is a
+read-out line of the choice (`#candidateInstructionVariantReadout`) with a **Choose…** button
+(`#candidateInstructionVariant`, `.btn-gh btn-gh-small`) that opens the picker (§ 6.15). The read-out is
+*None — same as the live chat*, the one change's title (*Race and role lookup tool*), or *2 changes: Race
+and role lookup tool, Where the game code uses it* (`changeReadout` in `run-tab/experimental-changes.ts`).
+Its info tip says what the changes are, that the live chat never uses them, and to choose None for a
+normal run.
+
+With changes chosen, a summary box (`#candidateInstructionVariantSummary`, *What this run changes*) lists
+each change as **title** — summary, then the mention warning with its **Add …** button, the multi-change
+warning (`#candidateInstructionVariantTogether`), a line for each change that does not fully apply under
+the Tool Access choice, and the warning (`#candidateInstructionVariantWarning`) *"Test only: the live chat
+never uses it. Compare this run only with a run that is identical except for Experimental Changes, on the
+Paired Test tab of its report."*
+
+The launcher keeps the spec in `instructionVariant` and remembers it under
+`overseer_admin_benchmark_run_settings`. A remembered or repeated spec (*Repeat this run's setup* splits
+the stamp at its first `:`) is kept, in canonical order, only when every id is valid and unretired;
+otherwise it resets with *"Experimental Changes reset to None: <id> is no longer offered."* When the
+catalog cannot be loaded at all on first load, a remembered spec resets with *"Experimental Changes reset
+to None: the list of changes could not be loaded."* An editor save, retire, restore or delete reloads the
+catalog.
+
+### 6.15 The dialogs
+
+**The picker** (`run-tab/experimental-changes-dialog/`, `app-experimental-changes-dialog`) is a native
+`<dialog>` opened with `showModal()`, `min(76rem, 100vw - 2rem)` wide and at most `90dvh` tall. Escape
+cancels; there is no light dismiss. Under the title *Experimental Changes* the subtitle reads *"Tick the
+test-only changes this run should try. The live chat never uses them."*
+
+- **Used before** (only when there are any): up to six buttons, one per distinct change set of recent
+  runs whose changes are all selectable (`recentSelections`), labeled by the titles joined by ` + `
+  (*All four* when the set is every selectable built-in change) and the run count, and `aria-pressed`
+  when equal to the current selection. One click sets the selection.
+- **Changes to test**: a fieldset with **New change**, which opens the editor, **Clear all** while
+  anything is ticked, and a filter field when more than eight changes are selectable. Built-in changes
+  come first, then the ones written in Overseer, each by title, and invalid changes last, disabled with
+  their reason. Each card has:
+  - a checkbox labeled by the **title**, and kind tags derived from the contents — *New tool*, *Tool
+    output*, *Tool description*, *Instructions*;
+  - for a change written in Overseer, *Written in Overseer · edited 24 Oct 2026* and, when locked,
+    *Locked — used by a run*;
+  - the summary and *Should improve: …*;
+  - a line saying what does not reach the model under the current Tool Access, or why the checkbox is
+    disabled (the change has no effect there, conflicts with a ticked change, or is invalid), linked to
+    the checkbox by `aria-describedby`;
+  - **Show exactly what the AI gets**, one labeled block per effect: *New tool* with its description and
+    parameter table; *Tool output* with the switch in plain words; an addition with the added text and a
+    nested **Show the whole description**; a replacement with `app-text-diff` against the live
+    description, *Side by side* or *Diff*; instructions with their text; and beside it *Used in N runs*;
+  - a **More actions** popover with, as they apply: *Edit…* (written in Overseer), *Copy as new
+    version…* (valid, no tool or switch), *Download as folder* (any change), *Retire* (written in
+    Overseer) and *Delete…* (written in Overseer and unlocked), which asks in an inline row on the card,
+    *Delete "<title>"?* with **Delete** and **Keep**. An action that does not apply is absent.
+- **Show retired (N)**: the retired changes, with **Restore** for one written in Overseer and *Retired in
+  the repository* for a built-in one. They cannot be ticked.
+- **Testing fairly (4 tips)**, open on first use and then remembered in
+  `overseer.benchmark.experimentalChangesDialog.view`: *Compare in pairs*, *Source code only first, then
+  Production*, *Declare the criteria first, cost included*, *Confirm a winner on a second suite*; then
+  never to compare these runs with production runs in Model Comparison, and this document's path.
+- **This run**, an aside that stays at the top of its column on wide screens and follows the list below a
+  container width of 52 rem: the count and the ticked titles, or *"No changes — this run uses exactly
+  what the live chat uses."*; **Compare it with** — *This is a normal run.* with none ticked, else *A run
+  identical except for Experimental Changes: None.* and *Runs with exactly this selection: #415, #420* as
+  links that open the reports; the mention, multi-change and Tool Access warnings; *Tool Access: <name> —
+  everything applies* when it does; and **Technical details**: the spec, the stamp, and each change's id,
+  source, hash prefix and folder or *database*.
+- **The footer**: a polite status (*2 changes selected*, *No changes — same as the live chat*),
+  **Cancel** and **Use this**. **Use this** is `aria-disabled` with its reason in a footer note while the
+  catalog is loading or could not be loaded, while the stamp would be too long, and while a ticked change
+  has no effect under the Tool Access or conflicts with another ticked one.
+
+**The editor** (`run-tab/experimental-change-editor-dialog/`, `app-experimental-change-editor-dialog`) is
+a sibling `<dialog>` of the picker in the run tab, never its child: its `close` and `cancel` events stop
+there, so closing it never closes the picker. It is `min(64rem, 100vw - 2rem)` wide and opens in three
+modes, headed *New experimental change*, *Edit <title>* and *New version of <title>* (prefilled from the
+copied change); its subtitle says that new tools and output switches are built in the repository.
+
+- **Name it**: *Title* and *Summary* (required) and *Should improve*, each with a live character count;
+  errors show under the field after it is left or on a refused save, and focus moves to the first invalid
+  field.
+- **What it changes**: one fieldset per effect, each with **Remove** — *Added to the end of a tool's
+  description* (a tool select, a textarea, and **What the AI will read**, the live description with the
+  addition after it), *Replaces a tool's description* (prefilled with the live description, the change
+  shown with `app-text-diff`) and *Added to the end of the AI's instructions* (at most one). The tool
+  select offers the production tools a change may edit, marks the ones Source code only withholds, and
+  does not offer a tool another block of the change already uses; up to 6 description blocks. The **Add
+  …** buttons below the blocks are absent once their limit is reached.
+- **Check**: the overlap findings as warnings, or *No overlap with any benchmark question or rubric.*;
+  then the required confirmation, unticked again whenever the texts change, and asked only when the save
+  creates or changes text.
+- **Locked**: editing a locked change shows a banner — *"Used by a run, so its text is locked: that run
+  stays re-runnable only while the text is unchanged. You can still edit the title, summary and Should
+  improve."* — with **Copy as new version**, and the effect blocks read-only.
+- **The footer**: **Cancel** and **Save**. **Save** is `aria-disabled` with its reason while a required
+  field or a block's tool or text is empty, there is no effect, or the confirmation is unticked. A 409
+  (locked meanwhile, edited elsewhere, or built in) is shown in the footer note, with **Reload** unless the
+  change is now built in. Cancel, the close button or Escape with unsaved edits asks *Discard your edits?*
+  with **Keep editing** and **Discard** instead of closing.
+- **After saving**, the editor closes, the picker reloads the catalog, a new change is ticked and its
+  checkbox focused; after an edit, focus returns to the card's **More actions**.
+
+### 6.16 The API
+
+All under `api/admin/benchmark/` in `AdminBenchmarkController`, `AdminOnly`:
+
+| Method and route | Body / query | Result |
+|---|---|---|
+| `GET experimental-changes` | | `{ changes, recentSelections, productionTools, limits, maxStampLength }` |
+| `GET experimental-changes/runs` | `spec` | `{ runCount, olderHashRunCount, runs }`: the ten newest runs whose stamp has exactly this spec, and how many no longer match its current hash; 400 for an invalid spec |
+| `POST experimental-changes` | the edit request | 201 `{ change, overlaps }`; 400 with field errors |
+| `PUT experimental-changes/{id}` | the edit request and `expectedUpdatedAtUtc` | 200 `{ change, overlaps }`; 400; 404; 409 locked, edited elsewhere, or built in |
+| `POST experimental-changes/{id}/retire`, `…/restore` | | 204; 404; 409 built in |
+| `DELETE experimental-changes/{id}` | | 204; 404; 409 locked or built in |
+| `POST experimental-changes/screen` | `{ texts }` | `{ overlaps }` |
+| `GET experimental-changes/{id}/folder` | | `application/zip`, `<id>.zip` |
+
+- **A change**: `id`, `title`, `summary`, `expectedEffect`, `source` (`builtIn` / `database`), `kinds`
+  (`newTool`, `toolOutput`, `toolDescription`, `instructions`), `hashPrefix`, `isValid`,
+  `invalidReason`, `retired`, `locked`, `createdAtUtc`, `updatedAtUtc`, `copiedFrom`, `experimentalTool`
+  (`name`, `description`, `parameterSchemaJson`) or null, `experiment` or null, `descriptionEdits`
+  (`tool`, `mode`, `text`, `productionText`), `instructions`, `appliesUnder` (`production`,
+  `sourceOnly`, `closedBook`: `full` / `partial` / `none`), `notApplyingUnderSourceOnly`, `mentions`,
+  `conflictsWith`, `runCount`, and `canEdit`, `canEditText`, `canDelete`, `canCopy` (`canCopy` is a
+  valid change with no tool or switch).
+- **`recentSelections`**: up to six distinct specs of the newest runs whose changes are all valid and
+  unretired: `spec`, `changeIds`, `runCount`, `lastRunId`, `lastStartedAtUtc`.
+- **`productionTools`**: `name`, `description`, `withheldUnderSourceOnly` — the allowlisted
+  non-experimental tools, in the allowlist's order.
+- **`limits`**: `titleMax` 60, `summaryMax` 220, `textMax` 4000, `descriptionEditsMax` 6.
+- **The edit request**: `title`, `summary`, `expectedEffect`, `descriptionEdits` (`tool`, `mode`,
+  `text`), `instructions`, `copiedFrom`, `genericConfirmed`.
+- **An overlap**: `text` (the shared words), `suiteId`, `suiteName`, `questionId`, `questionNumber`
+  (`OrderIndex + 1`), `field` (`question` / `rubric`).
+
+The texts make the catalog one call of a few kilobytes, so the picker has no per-change loading state.
 
 ---
 
@@ -718,8 +914,8 @@ The research report's roadmap (§ 7 there) lists the later phases. Not in the co
   **held-out flag** (items whose facts never enter the wiki or the knowledge base), as fields on a
   question;
 - **knowledge-base scrubbing** and a knowledge-base corpus marker;
-- **family-scoped variants** (`appliesTo` on `variant.json`), a **prompt-profile** comparability key,
-  and an **admin-only variant preview** in the chat.
+- **family-scoped experimental changes** (an `appliesTo` field on a change), a **prompt-profile**
+  comparability key, and an **admin-only preview** of a change in the chat.
 
 The roadmap is in `research_report_v5.md`, task directory
 `hyvanmielenpelit/MobileGnollHackLogger/2026-10-21/benchmark_run_125_analysis/` in the plans

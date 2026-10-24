@@ -986,6 +986,68 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("BenchmarkComparisons");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkExperimentalChange", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ChangeId")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CopiedFromChangeId")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DescriptionEditsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ExpectedEffect")
+                        .HasMaxLength(220)
+                        .HasColumnType("nvarchar(220)");
+
+                    b.Property<string>("Instructions")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("LockedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("RetiredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(220)
+                        .HasColumnType("nvarchar(220)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChangeId")
+                        .IsUnique();
+
+                    b.ToTable("BenchmarkExperimentalChanges");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkFeedbackTriage", b =>
                 {
                     b.Property<long>("Id")

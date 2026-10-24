@@ -1,0 +1,16 @@
+{
+  "id": "stats-referenced-by-v1",
+  "title": "Where the game code uses it",
+  "summary": "The item, monster and artifact lookups also list the game functions that use the thing, and their descriptions say to read the matching function.",
+  "expectedEffect": "Answers about what something does in a particular situation rest on the function that implements it.",
+  "experimentalTool": null,
+  "experimentalToolDescription": null,
+  "experiment": "stats_referenced_by",
+  "descriptionAdditions": {
+    "get_artifact_stats": "get_artifact_stats.md",
+    "get_item_stats": "get_item_stats.md",
+    "get_monster_stats": "get_monster_stats.md"
+  },
+  "descriptionReplacements": {},
+  "instructions": null
+}

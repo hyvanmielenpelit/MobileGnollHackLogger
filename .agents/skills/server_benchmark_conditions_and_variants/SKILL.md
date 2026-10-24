@@ -2,19 +2,22 @@
 name: server_benchmark_conditions_and_variants
 description: >-
   GnollBench (Overseer AI benchmark) information conditions, scarce corpora, gold evidence and
-  instruction variants. Read when a task involves scarce information, a source code only run, a
+  experimental changes. Read when a task involves scarce information, a source code only run, a
   closed book run, comparing scarce with plentiful information, how far a model relies on its
   training data instead of its tools, scrubbing the wiki for a benchmark, a scarce or scrubbed
   wiki branch and its .gnollbench-corpus.json marker, gold evidence or an evidence manifest for a
   suite, evidence reach (grounded correct, retrieval failure, navigation failure, read but wrong),
-  held-out questions, an instruction variant, an experimental tool such as get_character_info or
-  referenced_by, testing a prompt or tool-guide change before production, promoting or retiring a
-  variant, or improving the AI without adding wiki data. Covers writing the evidence YAML from a
-  rubric's SOURCE section and the wiki, building and auditing a scrubbed branch, the held-out rule,
-  reading Evidence Reach in an analysis, and writing and testing a variant.
+  held-out questions, an experimental change (instruction variant), a built-in change folder under
+  Overseer/BenchmarkChanges or a change written in Overseer's editor, an experimental tool such as
+  get_character_info or referenced_by, testing a prompt or tool-guide change before production,
+  combining changes in one run, promoting or retiring a change, or improving the AI without adding
+  wiki data. Covers writing the evidence YAML from a rubric's SOURCE section and the wiki, building
+  and auditing a scrubbed branch, the held-out rule, reading Evidence Reach in an analysis, and
+  writing and testing an experimental change, including asking the developer for Download as folder
+  when a run used a change written in Overseer.
 ---
 
-# GnollBench Conditions, Scarce Corpora, Gold Evidence and Variants
+# GnollBench Conditions, Scarce Corpora, Gold Evidence and Experimental Changes
 
 GnollBench is the user's name for the Overseer AI benchmark. What the code does is described in
 [`docs/overseer/ai-benchmark-conditions-and-variants.md`](../../../docs/overseer/ai-benchmark-conditions-and-variants.md);
@@ -144,59 +147,98 @@ Before reading it, check that the run has tool-call rows (harness 17 or later), 
   from "right from reading".
 - Under *Source code only* the wiki units cannot be reached by construction; read the source units.
 
-## 6. Writing and Testing a Variant
+## 6. Writing and Testing an Experimental Change
 
-An instruction variant tries a change to the candidate's instructions or tools as a benchmark-only
-bundle that production never loads. The format is the doc's § 6.
+An experimental change tries one idea for the candidate's instructions or tools as a benchmark-only
+change that production never loads. The model, the two sources, the selection and the dialogs are the
+doc's § 6.
 
+- **Built in, or written in Overseer.**
+  - A new tool or a tool-output switch is C# code, so its change is **built in**: a folder
+    `Overseer/BenchmarkChanges/<id>/` holding `change.json` and the `.md` files it names (the doc's
+    § 6.2). **An agent writes built-in folders**, as files of an implementation plan, UTF-8 without a
+    BOM, CRLF; it never writes a change into the database.
+  - A text-only change (a description addition or replacement, instructions) can be either. A built-in
+    folder is reviewed in Git with the round. The developer can instead write it in the picker's editor
+    (**New change**), where it is stored in the database, screened against the benchmark questions and
+    locked by its first run; that is a runbook `CHANGE` step that spells out every field
+    (`server_benchmark_runbook` § 3 *A change written in Overseer*).
+  - **A run that used a change written in Overseer is read through *Download as folder*.** Its text is
+    not in the repository, so it cannot be read from disk. Ask the developer for the folder (Admin →
+    **GnollBench** → **Run Benchmark** → **Experimental Changes** → **Choose…**, then **More actions** →
+    **Download as folder** on the change's card, a `<id>.zip`) before writing any finding about it, and
+    name it as an `EXPORT` step when the analysis needs it. The first run locked the change, so the folder
+    holds the text that run used. Never rely on a change written in Overseer that you have not been given
+    as a folder.
+  - A built-in folder and a database change with the same id: equal text, the built-in one wins; other
+    text, the built-in folder is invalid (the doc's § 6.5). Pick an id no database change holds.
+- **One idea per change.** A change is one titled idea, so a selection can isolate it: split a bundle
+  into changes rather than putting several ideas into one. The id is kebab-case ending `-v<N>`, at most
+  32 characters; the stamp of a whole selection must fit 160 characters, and the four built-in changes
+  together take 104. The title, summary and *Should improve* are not hashed, so they can be corrected
+  later; every text is.
 - **Only generic procedures and source-derived tools, never answers.** No rubric text, no
   question-specific hint, no mechanic's value, no *"if asked about X, answer Y"*. Before handoff, read
-  every file once against the question *"would this sentence answer a benchmark question by itself?"*.
+  every text once against the question *"would this sentence answer a benchmark question by itself?"*.
   A source-derived tool extracts facts mechanically from the game source and is unit-tested against
-  it. The anti-overfitting rules of `server_benchmark_to_chat_transfer` § 8 apply in full.
-- **A variant used by a run is never edited.** Its hash would no longer match the run's stamp and the
-  run could no longer be re-run. Copy it to `<name>-v2` and change the copy; when a production guide a
-  variant copied changes, the next version re-bases on it.
-- **Every variant pair carries cost criteria.** Pre-declare acceptance and rollback criteria before
+  it. The anti-overfitting rules of `server_benchmark_to_chat_transfer` § 8 apply in full, to both
+  sources. The editor's overlap check finds copied wording only, so a change written in Overseer is read
+  the same way once it is handed over as a folder.
+- **A change used by a run is never edited.** Its hash would no longer match the run's stamp and the
+  run could no longer be re-run. A change written in Overseer is locked for this by its first run; a
+  built-in folder is protected only by this rule. Copy it to `<id>-v2` (a new folder, or *Copy as new
+  version* in the editor) and change the copy. When a production description that a replacement copied
+  changes, the next version re-bases on it.
+- **An addition follows production.** It is appended to the live description when the run starts, so a
+  production guide edit between the two runs of a pair changes what the treatment run reads without
+  changing its stamp. `ToolGuidesSha256` shows it; keep the guides unchanged across a pair.
+- **Every pair carries cost criteria.** Pre-declare acceptance and rollback criteria before
   the runs (`server_benchmark_to_chat_transfer` § 9), and always include input tokens and model time:
   an instruction that adds tool rounds can win on quality and lose on cost.
 - **Test in *Source code only* first, then in Production.** The wiki cannot mask the effect in Source
-  code only; the Production pair shows the change does not hurt where the wiki helps. A tool-guide
-  replacement for a tool the condition withholds never reaches the model, so name what each pair can
-  and cannot test.
-- **Check beyond the motivating questions.** A variant motivated by some questions is checked on the
+  code only; the Production pair shows the change does not hurt where the wiki helps. A description edit
+  of a tool the condition withholds never reaches the model, and the launcher refuses a change with no
+  effect under the chosen Tool Access, so name what each pair can and cannot test.
+- **Check beyond the motivating questions.** A change motivated by some questions is checked on the
   others, and before promotion on a held-out second suite.
-- **Promotion** of a variant that clears its criteria:
-  1. its tool-guide texts move into `Overseer/ToolGuides/`, and its appendix into `_policy.md` or the
-     prompt;
+- **Combinations are free; attribution is not.** Changes are ticked in any combination (the doc's § 6.13
+  records why the earlier single-factor rule was reversed).
+  - A selection of several changes is one treatment, and its effect belongs to them together. To learn
+    which change did it, test each alone against None, or the selection without one change against the
+    whole selection. Both pairs are experimental-changes contrasts on the Paired Test tab, whose
+    explanation names the exact difference.
+  - Do not try many combinations on one suite and keep the best: with about 11 questions that is a
+    multiple-comparisons trap. Pre-declare the criteria per selection, cost included, and confirm a
+    winner on a second suite.
+  - A mention warning means the model is told about a tool or a field it does not have (*Answer from the
+    player's own character* without *Race and role lookup tool* names `get_character_info`). That is a
+    deliberate test or a mistake, so say which in the analysis.
+- **The run-125 runbook's R3 and R4** named the two removed variants: `source-tools-v1` is *Race and
+  role lookup tool* + *Where the game code uses it* (`race-role-tool-v1+stats-referenced-by-v1`), and
+  `asker-profile-v1` is all four built-in changes. A runbook step written for a variant is set up with
+  those ticks.
+- **Promotion** of a change that clears its criteria:
+  1. its description additions are appended to the matching `Overseer/ToolGuides/<tool>.md`, its
+     replacements put in their place, and its instructions moved into `_policy.md` or the prompt; a
+     change written in Overseer is first handed over as a folder, so the promoted text is the reviewed
+     one;
   2. an experimental tool's `IsExperimental` becomes false and the tool is added to
      `Benchmark:AllowedTools`; an experiment switch becomes the default;
   3. a row in the chat change ledger (`server_benchmark_to_chat_transfer`
      `references/chat_change_ledger.md`);
-  4. one confirming production run, because the appendix sat in the volatile segment and a
+  4. one confirming production run, because the instructions sat in the volatile segment and a
      `_policy.md` sentence sits in the frozen one, which can matter to the model and does matter to
      the prompt cache.
-- **Ablations** (the doc's § 6.10): a run of a variant with one feature left out
-  (`<name>/minus/<feature>`) or only one of its features (`<name>/only/<feature>`), chosen in the launcher's
-  Experimental Changes dialog.
-  - Use one when a variant won or lost and you need to know which feature did it.
-  - *Leave one out* is compared with the whole variant; *only one* with no variant. Both pairs are
-    variant contrasts on the Paired Test tab.
-  - Pre-declare the criteria per ablation, cost included, as for the variant.
-  - Do not run every ablation on one suite and keep the best: with about 11 questions that is a
-    multiple-comparisons trap. Run one at a time, and confirm a winner on a second suite.
-  - An ablation of a feature that does not apply under the run's Tool Access is refused, because the
-    pair would be empty: under Closed book only an appendix applies, and under Source code only a
-    reworded description of a withheld tool does not.
-  - A dangling-reference warning means the model is told about something it does not have (for example
-    `asker-profile-v1/minus/tool.get_character_info` keeps an appendix that names the tool). That is a
-    deliberate test or a mistake, so say which in the analysis.
-  - Promotion of an ablation result promotes the corresponding subset as a new `-vN` folder, never the
-    spec.
-- **A family-specific instruction is an interaction claim.** One base prompt stays; a variant scoped
-  to a provider or model family needs a factorial (variant × family) and far more data than a main
-  effect (research report § 11). Variants cannot be scoped to a family today.
-- A chat trial of a variant is impossible by construction and would be a smoke test, never evidence.
+  Promoting part of a selection promotes those changes, each a reviewed folder with its own hash.
+- **Retirement.** A retired change is hidden from the picker and refused in a new launch, but its runs
+  still re-run and report. A built-in change is retired by adding its id to
+  `Overseer/BenchmarkChanges/retired.json` in a plan; a change written in Overseer by the developer's
+  **Retire**.
+- **A family-specific instruction is an interaction claim.** One base prompt stays; a change scoped
+  to a provider or model family needs a factorial (change × family) and far more data than a main
+  effect (research report § 11). Changes cannot be scoped to a family today.
+- A chat trial of an experimental change is impossible by construction and would be a smoke test, never
+  evidence.
 
 ## 7. References
 

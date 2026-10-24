@@ -2940,6 +2940,61 @@ and the AI Telemetry *Manage limits*, *… for group {group}* from the Groups su
 *Manage Groups for {user}* (`users-tab/user-list/`, `#manageGroupsDialog`) uses the same frame at
 36 rem, not full height, with the same switch-first cards (title only, no badges) and **Done**.
 
+**The Experimental Changes picker** (2026-10-24, `admin/benchmark/run-tab/experimental-changes-dialog/`,
+`app-experimental-changes-dialog`) is the reference for **a checklist of cards inside a dialog that
+commits on a footer button**, with a sibling editor dialog:
+
+- **The frame**: `.gh-dialog`, `showModal()`, the `_benchmark-dialog-frame.scss` `frame` mixin at
+  76 rem and `90dvh`, `inline-size: min(76rem, calc(100vw - 2rem))`; Escape cancels and there is **no
+  light dismiss**, because ticks are work in progress. The body is an inline-size container: two columns,
+  the list and an `aside` *This run* (sticky at the top of its column), and one column below 52 rem, the
+  aside after the list.
+- **The checklist** is a `<fieldset>` with a `<legend>` (*Changes to test*), **New change** (`.btn-ghost`,
+  *plus*, `aria-haspopup="dialog"`) and **Clear all** (`.btn-link`, while anything is ticked); a
+  `<search>` filter only above eight selectable changes. No facets, Sort by or Load more: an
+  installation has a handful of changes.
+- **The card** `div.xc-card[data-change-id]`: a native checkbox (`accent-color`, `:focus-visible`
+  outline) wrapped in a `<label>` with the card's **title**, a hit target at least 44 px tall; the kind tags as `.gh-tag` words,
+  never colors; the summary at `max-inline-size: 70ch`; and a reason line linked to the checkbox by
+  `aria-describedby`. A checkbox the selection cannot take (the change has no effect under the Tool
+  Access, conflicts with a ticked change, or is invalid) is `disabled`, and the line says why — the card
+  keeps its title and its **Show exactly what the AI gets** disclosure, which never has a heading inside
+  `<summary>`; a scrollable `<pre>` in it gets `tabindex="0"`. A ticked card gets the gold border and
+  tint (`.is-checked`).
+- **More actions** is a §4f action popover (icon-only, *more*, *More actions for <title>*): *Edit…*,
+  *Copy as new version…*, *Download as folder*, *Retire*, *Delete…*, each present only when it applies —
+  a missing action is absent, not disabled. *Delete…* confirms in an inline row on the card (*Delete
+  "<title>"?* with `.btn-ghost-danger` **Delete** and **Keep**), not in another dialog.
+- **Used before** is a `role="group"` of `.btn-ghost` buttons with `aria-pressed`, one click setting the
+  whole selection; **Show retired (N)** and **Testing fairly** are `.gh-disclosure`s, the latter's open
+  state remembered in `localStorage` (`overseer.benchmark.experimentalChangesDialog.view`, in try/catch).
+- **Warnings** in the aside are amber callouts with an icon **and** words; the mention warning carries
+  its own **Add <title>** `.btn-ghost`.
+- **The footer**: a polite live status (*2 changes selected*), **Cancel** (`btn-gh btn-gh-cancel`) and
+  **Use this** (`btn-gh`), `aria-disabled` with its reason in a `.gh-footer-note` while the server would
+  refuse the selection or the catalog is not loaded.
+
+**The editor** (`run-tab/experimental-change-editor-dialog/`, `app-experimental-change-editor-dialog`) is
+a **sibling** `<dialog>` of the picker in the run tab, never its child (the nested-dialog rule): its
+`close` and `cancel` stop there, so closing it never closes the picker. The frame mixin at 64 rem.
+
+- **Fields**: each a `<label for>` with a live character count in its `aria-describedby` and a
+  `maxlength`; *Title* and *Summary* `required`. Errors appear under the field once it is left
+  (`:user-invalid` styling) or on a refused save, linked by `aria-describedby`, with focus moved to the
+  first invalid field.
+- **Effect blocks**: one `<fieldset>` per effect, its kind as the `<legend>` and a **Remove** `.btn-link`
+  whose visually hidden rest names the block; the **Add …** `.btn-ghost` buttons sit below the blocks and
+  are absent once their limit is reached.
+- **The confirmation** is a required checkbox, unticked again whenever a text changes, and shown only
+  when the save would create or change text.
+- **The footer**: **Cancel** and **Save**, **Save** `aria-disabled` with its `.gh-footer-note` reason; a
+  409 shows in the note with a **Reload** `.btn-link`. With unsaved edits, Cancel, the close button and
+  Escape (its `cancel` event prevented) replace the buttons with an inline *Discard your edits?* row —
+  **Keep editing** (`btn-gh btn-gh-cancel`) and **Discard** (`btn-gh btn-gh-delete`) — instead of
+  closing.
+- **Focus after saving**: a new change's checkbox in the picker; after an edit, the card's **More
+  actions**.
+
 **The Feedback header switch** (2026-10-23; a card of its own from 2026-10-21 to 2026-10-22) is the
 reference for **a feature-level switch in a tab header**. In the Feedback tab's sticky `.tab-header-row`,
 before the date range and Refresh, a `div.fb-tool` that never wraps inside itself holds: a visible

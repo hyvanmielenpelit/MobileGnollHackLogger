@@ -403,87 +403,202 @@ export const BENCHMARK_INFORMATION_CONDITIONS: readonly BenchmarkInformationCond
   }
 ];
 
-/** A benchmark-only instruction variant the server's catalog offers. */
-export interface BenchmarkInstructionVariantDto {
+/** Where an experimental change comes from: a folder in the repository, or a row written in Overseer. */
+export type BenchmarkExperimentalChangeSource = 'builtIn' | 'database';
+
+/** What an experimental change contains, as the picker's kind tags name it. */
+export type BenchmarkExperimentalChangeKind = 'newTool' | 'toolOutput' | 'toolDescription' | 'instructions';
+
+/** How much of a change reaches the model under one Tool Access choice. */
+export type BenchmarkChangeApplicability = 'full' | 'partial' | 'none';
+
+/** A description edit appends to the live description, or replaces it. */
+export type BenchmarkDescriptionEditMode = 'add' | 'replace';
+
+/** An experimental tool a change offers the candidate. */
+export interface BenchmarkExperimentalToolDto {
   name: string;
+  /** The description the AI reads: the change's own text, else the tool's. */
   description?: string | null;
-  extends?: string | null;
-  hashPrefix?: string | null;
-  isValid: boolean;
-  invalidReason?: string | null;
-  /** The experimental tools the candidate is offered, a parent's included. */
-  experimentalTools?: string[] | null;
-  /** The tool-output switches the variant turns on, a parent's included. */
-  experiments?: string[] | null;
-  /** The production tools whose description the variant replaces. */
-  rewordedTools?: string[] | null;
-  /** Whether the variant appends text to the system prompt. */
-  hasPromptAppendix?: boolean | null;
-  /** The reworded tools that Source code only switches off. */
-  rewordingsWithheldUnderSourceOnly?: string[] | null;
-  /** The variant's features, each of which a single-feature ablation can leave out or keep alone; empty when invalid. */
-  features?: BenchmarkInstructionVariantFeatureDto[] | null;
-}
-
-/** What a variant feature is: an experimental tool, a tool-output switch, a reworded tool description, or an appendix. */
-export type BenchmarkVariantFeatureKind = 'experimentalTool' | 'experiment' | 'rewordedGuide' | 'appendix';
-
-/** One feature of an instruction variant. */
-export interface BenchmarkInstructionVariantFeatureDto {
-  /** `tool.<name>`, `experiment.<name>`, `guide.<tool>` or `appendix.<variant>`; never contains `:` or `/`. */
-  id: string;
-  kind: BenchmarkVariantFeatureKind;
-  /** The tool, the experiment, or the variant folder whose appendix it is. */
-  target: string;
-  /** The feature comes from the variant this one extends. */
-  fromParent: boolean;
-  /** Under which information conditions the feature reaches the candidate. */
-  appliesUnder: { production: boolean; sourceOnly: boolean; closedBook: boolean };
-  /** The ids of the variant's other features that this feature's text names. */
-  mentions: string[];
-}
-
-/** A variant feature with its texts, as the Experimental Changes dialog shows it. */
-export interface BenchmarkInstructionVariantFeatureDetailsDto extends BenchmarkInstructionVariantFeatureDto {
-  /** An experimental tool's variant guide, a reworded description, or an appendix; null for an experiment. */
-  text?: string | null;
-  /** A reworded tool's production description; null otherwise. */
-  productionText?: string | null;
-  /** An experimental tool's parameter schema as JSON; null otherwise. */
+  /** The tool's parameter schema as JSON. */
   parameterSchemaJson?: string | null;
 }
 
-/** One run that used a variant or one of its ablations. */
-export interface BenchmarkInstructionVariantRunDto {
+/** One edit of a production tool's description. */
+export interface BenchmarkDescriptionEditDto {
+  tool: string;
+  mode: BenchmarkDescriptionEditMode;
+  /** The normalized text: appended after a blank line, or the whole replacement. */
+  text: string;
+  /** The tool's live description. */
+  productionText?: string | null;
+}
+
+/** A change's applicability under each Tool Access choice. */
+export interface BenchmarkChangeAppliesUnderDto {
+  production: BenchmarkChangeApplicability;
+  sourceOnly: BenchmarkChangeApplicability;
+  closedBook: BenchmarkChangeApplicability;
+}
+
+/** One experimental change of the catalog, built in or written in Overseer. */
+export interface BenchmarkExperimentalChangeDto {
+  /** Kebab-case, ending `-v<N>`; never contains `+` or `:`. */
+  id: string;
+  title: string;
+  summary: string;
+  expectedEffect?: string | null;
+  source: BenchmarkExperimentalChangeSource;
+  kinds: BenchmarkExperimentalChangeKind[];
+  /** The first 12 hex characters of the change hash. */
+  hashPrefix: string;
+  isValid: boolean;
+  invalidReason?: string | null;
+  retired: boolean;
+  /** A run has used it, so its texts are read-only. */
+  locked: boolean;
+  /** Null for a built-in change. */
+  createdAtUtc?: string | null;
+  /** Null for a built-in change; the optimistic concurrency check of an edit. */
+  updatedAtUtc?: string | null;
+  /** The change this one was copied from as a new version. */
+  copiedFrom?: string | null;
+  experimentalTool?: BenchmarkExperimentalToolDto | null;
+  /** A tool-output switch, such as `stats_referenced_by`. */
+  experiment?: string | null;
+  descriptionEdits: BenchmarkDescriptionEditDto[];
+  /** Text appended to the end of the system prompt. */
+  instructions?: string | null;
+  appliesUnder: BenchmarkChangeAppliesUnderDto;
+  /** The edited tools Source code only does not offer. */
+  notApplyingUnderSourceOnly: string[];
+  /** The ids of the other changes whose tool or output switch this change's texts name. */
+  mentions: string[];
+  /** The ids of the changes it cannot run with. */
+  conflictsWith: string[];
+  runCount: number;
+  canEdit: boolean;
+  canEditText: boolean;
+  canDelete: boolean;
+  canCopy: boolean;
+}
+
+/** A distinct selection of recent runs, for the picker's Used before buttons. */
+export interface BenchmarkExperimentalChangeRecentSelectionDto {
+  spec: string;
+  changeIds: string[];
+  runCount: number;
+  lastRunId: number;
+  lastStartedAtUtc: string;
+}
+
+/** A production tool whose description a change may edit, in the allowlist's order. */
+export interface BenchmarkExperimentalChangeProductionToolDto {
+  name: string;
+  description: string;
+  withheldUnderSourceOnly: boolean;
+}
+
+/** The editor's limits. */
+export interface BenchmarkExperimentalChangeLimitsDto {
+  titleMax: number;
+  summaryMax: number;
+  textMax: number;
+  descriptionEditsMax: number;
+}
+
+/** `GET experimental-changes`: everything the picker and the editor show. */
+export interface BenchmarkExperimentalChangeCatalogDto {
+  changes: BenchmarkExperimentalChangeDto[];
+  recentSelections: BenchmarkExperimentalChangeRecentSelectionDto[];
+  productionTools: BenchmarkExperimentalChangeProductionToolDto[];
+  limits: BenchmarkExperimentalChangeLimitsDto;
+  /** The longest stamp a run record holds. */
+  maxStampLength: number;
+}
+
+/** One run that used a selection of experimental changes. */
+export interface BenchmarkExperimentalChangeRunDto {
   id: number;
   startedAtUtc: string;
   suiteName?: string | null;
   modelDisplayName?: string | null;
   informationCondition: BenchmarkInformationCondition;
   status: string;
-  /** The variant name or ablation spec of the run's stamp, without the hash. */
+  /** The spec of the run's stamp, without the hash. */
   spec: string;
   /** The run's stamp equals the stamp the spec resolves to now. */
   hashMatchesCurrent: boolean;
 }
 
-/** Everything the Experimental Changes dialog shows about one variant folder. */
-export interface BenchmarkInstructionVariantDetailsDto {
-  name: string;
-  description?: string | null;
-  parent?: string | null;
-  /** The run stamp, `name:hash12`; null when invalid. */
-  stamp?: string | null;
-  isValid: boolean;
-  invalidReason?: string | null;
-  /** Empty when the variant is invalid. */
-  features: BenchmarkInstructionVariantFeatureDetailsDto[];
-  /** The newest runs of the variant and its ablations, newest first. */
-  runs: BenchmarkInstructionVariantRunDto[];
-  /** Every run of the variant and its ablations. */
+/** `GET experimental-changes/runs?spec=`: the runs with exactly that selection, newest first, at most 10. */
+export interface BenchmarkExperimentalChangeRunsDto {
   runCount: number;
-  /** The runs whose stamp no longer matches the current hash of their spec. */
+  /** The runs whose stamp no longer matches the current hash of the spec. */
   olderHashRunCount: number;
+  runs: BenchmarkExperimentalChangeRunDto[];
+}
+
+/** One description edit of an editor save. */
+export interface BenchmarkDescriptionEditRequest {
+  tool: string;
+  mode: BenchmarkDescriptionEditMode;
+  text: string;
+}
+
+/** `POST experimental-changes`: a new change written in Overseer. */
+export interface BenchmarkExperimentalChangeEditRequest {
+  title: string;
+  summary: string;
+  expectedEffect: string | null;
+  descriptionEdits: BenchmarkDescriptionEditRequest[];
+  instructions: string | null;
+  copiedFrom: string | null;
+  /** The person confirmed the text states no game fact, answer or hint. */
+  genericConfirmed: boolean;
+}
+
+/** `PUT experimental-changes/{id}`: an edit, refused when the row changed since `expectedUpdatedAtUtc`. */
+export interface BenchmarkExperimentalChangeUpdateRequest extends BenchmarkExperimentalChangeEditRequest {
+  expectedUpdatedAtUtc: string | null;
+}
+
+/** Which text of a benchmark question a change's text overlaps. */
+export type BenchmarkChangeOverlapField = 'question' | 'rubric';
+
+/** A run of 8 or more words a change's text shares with a benchmark question or rubric. */
+export interface BenchmarkChangeOverlapDto {
+  /** The shared words. */
+  text: string;
+  suiteId: number;
+  suiteName: string;
+  questionId: number;
+  /** One-based. */
+  questionNumber: number;
+  field: BenchmarkChangeOverlapField;
+}
+
+/** `POST experimental-changes` and `PUT experimental-changes/{id}`: the saved change and its overlaps. */
+export interface BenchmarkExperimentalChangeSaveResultDto {
+  change: BenchmarkExperimentalChangeDto;
+  overlaps: BenchmarkChangeOverlapDto[];
+}
+
+/** `POST experimental-changes/screen`. */
+export interface BenchmarkChangeScreenResultDto {
+  overlaps: BenchmarkChangeOverlapDto[];
+}
+
+/** Why a 409 refused an editor write. */
+export type BenchmarkExperimentalChangeConflictReason = 'locked' | 'editedElsewhere' | 'builtIn';
+
+/** The body of a refused experimental-changes request. */
+export interface BenchmarkExperimentalChangeErrorDto {
+  error: string;
+  /** A 400's errors by field: `title`, `summary`, `descriptionEdits[0].text`, `genericConfirmed`, `effects`, … */
+  fieldErrors?: Record<string, string> | null;
+  /** A 409's reason. */
+  reason?: BenchmarkExperimentalChangeConflictReason | null;
 }
 
 export interface BenchmarkGameSnapshotDto {
@@ -915,7 +1030,10 @@ export interface StartBenchmarkRunRequest {
    * `closedBook`.
    */
   informationCondition?: string | null;
-  /** A benchmark-only instruction variant's name; null runs the production instructions. */
+  /**
+   * The Experimental Changes spec: the ticked change ids, sorted ordinally and joined by `+`; null runs
+   * the production tools and instructions.
+   */
   instructionVariant?: string | null;
   /** True withholds report_feedback from the candidate; null and false offer it. */
   withholdFeedbackTool?: boolean | null;
@@ -1667,7 +1785,7 @@ export interface BenchmarkRunDetailDto extends ProviderAvailabilityCardFields {
   informationCondition?: string | null;
   /** The corpus condition, `condition:label`; null is the live wiki. */
   corpusCondition?: string | null;
-  /** The instruction variant, `name:hash12`; null is none. */
+  /** The Experimental Changes stamp, `<spec>:<hash12>`; null is none. */
   instructionVariant?: string | null;
   candidateSystemPromptSha256?: string | null;
   toolGuidesSha256?: string | null;
@@ -2165,7 +2283,7 @@ export interface BenchmarkRunSummaryDto extends ProviderAvailabilityCardFields {
   informationCondition?: string | null;
   /** The corpus condition, `condition:label`; null is the live wiki. */
   corpusCondition?: string | null;
-  /** The instruction variant, `name:hash12`; null is none. */
+  /** The Experimental Changes stamp, `<spec>:<hash12>`; null is none. */
   instructionVariant?: string | null;
   harnessVersion?: string | null;
   totalDurationMs: number;
@@ -4822,15 +4940,53 @@ export class AdminBenchmarkService {
     return this.http.get<BenchmarkRunLimitsDto>('/api/admin/benchmark/runs/limits');
   }
 
-  /** The benchmark-only instruction variants the catalog lists, valid or not. */
-  getInstructionVariants(): Observable<BenchmarkInstructionVariantDto[]> {
-    return this.http.get<BenchmarkInstructionVariantDto[]>('/api/admin/benchmark/instruction-variants');
+  // Experimental Changes
+
+  /** The experimental changes, built in and written in Overseer, with what the picker and the editor need. */
+  getExperimentalChanges(): Observable<BenchmarkExperimentalChangeCatalogDto> {
+    return this.http.get<BenchmarkExperimentalChangeCatalogDto>('/api/admin/benchmark/experimental-changes');
   }
 
-  /** One variant folder's features with their texts, and the runs that used it or one of its ablations. */
-  getInstructionVariantDetails(name: string): Observable<BenchmarkInstructionVariantDetailsDto> {
-    return this.http.get<BenchmarkInstructionVariantDetailsDto>(
-      `/api/admin/benchmark/instruction-variants/${encodeURIComponent(name)}/details`);
+  /**
+   * The runs with exactly the selection `spec`. The `+` between ids is percent-encoded: a query string
+   * decodes a bare `+` to a space.
+   */
+  getExperimentalChangeRuns(spec: string): Observable<BenchmarkExperimentalChangeRunsDto> {
+    return this.http.get<BenchmarkExperimentalChangeRunsDto>(
+      `/api/admin/benchmark/experimental-changes/runs?spec=${encodeURIComponent(spec)}`);
+  }
+
+  /** Writes a new text-only change; 400 carries `fieldErrors`. */
+  createExperimentalChange(req: BenchmarkExperimentalChangeEditRequest): Observable<BenchmarkExperimentalChangeSaveResultDto> {
+    return this.http.post<BenchmarkExperimentalChangeSaveResultDto>('/api/admin/benchmark/experimental-changes', req);
+  }
+
+  /** Edits a change written in Overseer; 409 carries a `reason` of `locked`, `editedElsewhere` or `builtIn`. */
+  updateExperimentalChange(
+    id: string, req: BenchmarkExperimentalChangeUpdateRequest): Observable<BenchmarkExperimentalChangeSaveResultDto> {
+    return this.http.put<BenchmarkExperimentalChangeSaveResultDto>(
+      `/api/admin/benchmark/experimental-changes/${encodeURIComponent(id)}`, req);
+  }
+
+  /** Retires a change written in Overseer, or restores it. */
+  setExperimentalChangeRetired(id: string, retired: boolean): Observable<void> {
+    return this.http.post<void>(
+      `/api/admin/benchmark/experimental-changes/${encodeURIComponent(id)}/${retired ? 'retire' : 'restore'}`, {});
+  }
+
+  /** Deletes an unlocked change written in Overseer. */
+  deleteExperimentalChange(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/admin/benchmark/experimental-changes/${encodeURIComponent(id)}`);
+  }
+
+  /** The runs of 8 or more words the texts share with any benchmark question or rubric. */
+  screenExperimentalChangeTexts(texts: string[]): Observable<BenchmarkChangeScreenResultDto> {
+    return this.http.post<BenchmarkChangeScreenResultDto>('/api/admin/benchmark/experimental-changes/screen', { texts });
+  }
+
+  /** The change as a repository folder, `<id>.zip`. */
+  downloadExperimentalChangeFolder(id: string): Observable<Blob> {
+    return this.http.get(`/api/admin/benchmark/experimental-changes/${encodeURIComponent(id)}/folder`, { responseType: 'blob' });
   }
 
   startRunSeries(req: StartBenchmarkRunRequest): Observable<{ seriesId: number }> {

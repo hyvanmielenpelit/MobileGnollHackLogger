@@ -136,7 +136,7 @@ public sealed record BenchmarkCandidatePromptOptions
 
     /// <summary>
     /// Builds the system prompt using this configuration and the specified parallel execution mode.
-    /// The source-only notice and then <paramref name="appendix"/> (an instruction variant's text)
+    /// The source-only notice and then <paramref name="appendix"/> (the experimental changes' instructions)
     /// follow the production prompt as final paragraphs.
     /// </summary>
     public string BuildSystemPrompt(ChatService chatService, ParallelExecutionMode parallelMode, string? appendix = null)

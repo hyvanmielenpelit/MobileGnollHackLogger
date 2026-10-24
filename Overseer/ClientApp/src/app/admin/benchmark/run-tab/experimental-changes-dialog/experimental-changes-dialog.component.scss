@@ -1,0 +1,490 @@
+@use '../../benchmark-dialog-frame' as frame;
+
+/* Experimental Changes dialog: layout and component-local presentation only. The buttons, .gh-disclosure,
+ * .gh-choice / .gh-radio, .gh-table, .gh-tag, .gh-field-error, .gh-footer-note, .gh-section-title,
+ * .gh-action-popover, .btn-link, .btn-ghost, .gh-tooltip and the diff classes of app-text-diff come from
+ * styles.scss. */
+
+.gh-dialog.xc-dialog {
+  @include frame.frame($width: 76rem, $max-height: 90dvh);
+  inline-size: min(76rem, calc(100vw - 2rem));
+  max-inline-size: min(76rem, calc(100vw - 2rem));
+  max-block-size: 90dvh;
+
+  .dialog-title-group h3 {
+    text-wrap: balance;
+  }
+
+  .dialog-footer {
+    align-items: center;
+  }
+}
+
+.xc-body {
+  container: xc / inline-size;
+  line-height: 1.5;
+  color: #ddd;
+}
+
+.xc-muted {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+/* Used before: one button per recent selection. */
+.xc-used-before {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.xc-used-before-label {
+  margin: 0 4px 0 0;
+}
+
+.xc-recent[aria-pressed="true"] {
+  border-color: var(--primary-color);
+  background: rgba(224, 186, 109, 0.12);
+  color: var(--primary-color);
+}
+
+/* The list and This run side by side; This run follows the list in a narrow dialog. */
+.xc-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+  gap: 24px;
+  align-items: start;
+}
+
+@container xc (max-width: 52rem) {
+  .xc-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .xc-aside {
+    position: static;
+  }
+}
+
+.xc-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Always rendered, so a later outcome is announced; empty, it takes no space. */
+.xc-action-status {
+  margin: 0;
+  color: var(--color-success);
+}
+
+.xc-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+
+  > legend {
+    float: left;
+    margin: 0;
+  }
+}
+
+.xc-changes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.xc-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  clear: both;
+
+  label {
+    font-weight: 600;
+  }
+
+  input {
+    flex: 1 1 14rem;
+    min-width: 0;
+  }
+}
+
+/* One change: its head is the checkbox's label, a hit target of at least 44 × 44 px. */
+.xc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  clear: both;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+
+  &.is-checked {
+    border-color: var(--primary-color);
+    background: rgba(224, 186, 109, 0.08);
+  }
+
+  &.is-disabled .xc-card-check {
+    cursor: not-allowed;
+  }
+
+  > p {
+    margin: 0;
+  }
+}
+
+.xc-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.xc-card-check {
+  display: inline-flex;
+  flex: 1 1 14rem;
+  align-items: center;
+  gap: 10px;
+  min-block-size: 44px;
+  min-width: 0;
+  cursor: pointer;
+
+  input[type="checkbox"] {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    accent-color: var(--primary-color);
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+  }
+}
+
+.xc-card-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.xc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.xc-source {
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+.xc-locked {
+  color: var(--color-warning);
+}
+
+.xc-summary {
+  max-inline-size: 70ch;
+  text-wrap: pretty;
+}
+
+.xc-expected {
+  max-inline-size: 70ch;
+  font-size: var(--text-secondary);
+  color: #aaa;
+  text-wrap: pretty;
+}
+
+.xc-line {
+  font-size: var(--text-secondary);
+  color: #ccc;
+
+  &.is-blocked {
+    color: var(--color-warning);
+  }
+}
+
+.xc-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 12px;
+}
+
+.xc-details {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
+.xc-used {
+  flex: none;
+  padding-block-start: 6px;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+.xc-more-btn {
+  flex: none;
+}
+
+.xc-effect {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+
+  & + & {
+    margin-top: 14px;
+  }
+}
+
+.xc-effect-label {
+  margin: 0;
+  font-weight: 600;
+  color: #e4e4e7;
+}
+
+.xc-effect-text {
+  margin: 0;
+}
+
+/* Change text is shown as written, wrapped, and scrolls past a cap. */
+.xc-text {
+  max-height: 22rem;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+/* Inserted text: a green rule on the left. */
+.xc-inserted {
+  border-inline-start: 3px solid var(--color-success);
+}
+
+.xc-live-text {
+  color: #999;
+}
+
+.xc-ins {
+  text-decoration: none;
+  color: #e4e4e7;
+  background: rgba(34, 197, 94, 0.14);
+  box-shadow: inset 3px 0 0 var(--color-success);
+}
+
+.xc-table-wrap {
+  overflow-x: auto;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  .gh-table {
+    min-width: 32rem;
+
+    th,
+    td {
+      vertical-align: top;
+    }
+  }
+}
+
+.xc-diff-view {
+  margin: 0;
+}
+
+.xc-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  border-radius: 6px;
+
+  > span {
+    flex: 1 1 12rem;
+    overflow-wrap: anywhere;
+  }
+}
+
+.xc-retired-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 12px;
+  }
+}
+
+.xc-retired-title {
+  overflow-wrap: anywhere;
+}
+
+.xc-tips {
+  ul {
+    margin: 0 0 10px;
+    padding-inline-start: 1.25rem;
+  }
+
+  li + li {
+    margin-top: 6px;
+  }
+
+  p {
+    margin: 0 0 8px;
+  }
+}
+
+/* This run: sticky at the top of its column while the list scrolls. */
+.xc-aside {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+
+  .gh-section-title {
+    margin: 0;
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+.xc-count {
+  font-weight: 600;
+}
+
+.xc-this-list {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+
+  > li {
+    overflow-wrap: anywhere;
+  }
+}
+
+.xc-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--primary-color);
+  border-radius: 8px;
+  background: rgba(224, 186, 109, 0.08);
+}
+
+.xc-compare-title {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.xc-runs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+/* An amber callout: an icon and words, never the color alone. */
+.xc-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.xc-warning-icon {
+  flex: none;
+  margin-top: 0.2em;
+  color: var(--color-warning);
+}
+
+.xc-warning-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.xc-access-rows {
+  margin: 0;
+  padding-inline-start: 1.1rem;
+}
+
+.xc-facts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+
+  & + & {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-glass);
+  }
+
+  > div {
+    display: grid;
+    grid-template-columns: minmax(4rem, 5rem) minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  dt {
+    font-weight: 600;
+    color: #ccc;
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.xc-status {
+  margin: 0 auto 0 0;
+  font-size: var(--text-secondary);
+  color: #ccc;
+}

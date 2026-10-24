@@ -273,6 +273,50 @@ Rules for writing a step:
 - **A developer step inside a pause ends with**: *"When this is done, tell the agent. The agent
   still has work to do — do not commit, do not launch a run."*
 
+### A change written in Overseer
+
+A text-only experimental change the round wants tested without a code change — a description
+addition or replacement, or instructions — can be written by the developer in the picker's editor
+instead of as a built-in folder (`server_benchmark_conditions_and_variants` § 6). It is a `CHANGE`
+step of its own, after Overseer's start (order 4 above) and before the `CHECK` of the first run that
+ticks it, in this form:
+
+```text
+### Step <n> — CHANGE: Write the experimental change "<title>" in Overseer
+- Who: You
+- Needs: Step <k> (Overseer started)
+- Where: Admin -> GnollBench -> Run Benchmark -> Experimental Changes -> Choose… -> New change
+- Do:
+  1. Title: <the title, at most 60 characters>
+  2. Summary: <one sentence, at most 220 characters>
+  3. Should improve: <one line, or leave empty>
+  4. For each effect, in this order:
+     - Add to a tool description -> Tool: <tool> -> Text: the contents of <absolute path of the .md file>
+     - Replace a tool description -> Tool: <tool> -> The new description: the contents of <absolute path>
+     - Add instructions -> Text: the contents of <absolute path>
+  5. Check: tick "This text is a general procedure or wording. It states no game fact, answer or hint
+     about a particular question." only if the Check section lists no overlap, or only the ones this
+     step names as expected
+  6. Save
+- Expect: the editor closes, and the picker lists "<title>" ticked, with "Written in Overseer" and the
+  kind tags <tags>; This run -> Technical details names the id <expected id>
+- If not: stop, and paste the editor's footer note or the overlap lines into this chat
+- Takes: a few minutes; no cost
+```
+
+Rules for writing it:
+
+- **Every text is a file the agent wrote**, named by absolute path in the round's task directory
+  (`agent-change-<slug>-<tool>_v<N>.md`, UTF-8 without a BOM), so the developer pastes it rather than
+  retypes it; the agent has read it against the anti-overfitting rule first.
+- **The expected id** is the one the editor generates from the title: lower-case ASCII, every run of
+  other characters a `-`, cut to 26 characters at a word boundary, then `-v1` (`-2-v1` and so on when
+  taken). The `RUN` step's *Experimental Changes* row names that id in its spec.
+- **The `SAVE` step of the first run that used it** asks for **Download as folder** of the change and
+  saves the zip with the run's files: the next analysis reads the change from it, and the first run
+  locked the text it holds.
+- **A change a run must not see** is written after that run's `SAVE` step, by the rule of § 3.
+
 ### The `CHECK` step (its own step immediately before every `RUN` step)
 
 A short checklist the developer ticks immediately before the run that follows. It is **written
@@ -534,7 +578,7 @@ to stop if the projection is more than about twice the estimate.
 | Response Style | Concise — production default | same |
 | Source Code References | Allowed / Disallowed — production default | same |
 | Tool Access | Production — every tool, as in the live chat (default) / Source code only — no wikis, no knowledge base / Closed book — no tools, memory only | same / CHANGED |
-| Experimental Changes | None — same as the live chat (default), or <name — suffix as the dropdown prints it> | same / CHANGED |
+| Experimental Changes | None — same as the live chat (default), or the read-out after **Choose…** → tick <each change by its title, as its card prints it> → **Use this**: <title> for one change, *<n> changes: <title>, <title>* for several; name the spec (`<id>+<id>`, under *Technical details*) beside it | same / CHANGED |
 | Feedback Tool | Offered — default / Withheld — the AI cannot report problems | same / CHANGED |
 | Assessor | ... | same |
 | Co-Assessor (optional) | <entry as the dropdown prints it> or "None - single assessor" | same / CHANGED |
@@ -776,7 +820,8 @@ Labels drift; these are the files to grep, with the state verified on 2026-09-19
 | The model batch progress dialog's resume options and their labels | `admin/benchmark/model-batch/`, `Overseer/Services/Benchmarking/BenchmarkModelBatchOrchestrator.cs` (`ResumeOptionsFor`) |
 | The `Source Code References` field and its two option labels (from 2026-09-30, harness 44; a run before it always used *Allowed*, so a card repeating an earlier run's configuration sets *Allowed* explicitly) | `admin/benchmark/run-tab/benchmark-run-tab.component.html` |
 | Coverage option labels | `Overseer/ClientApp/src/app/services/admin-benchmark.service.ts` |
-| The `Tool Access` and `Experimental Changes` fields (reports call them the information condition and the instruction variant): Tool Access option labels, and the Experimental Changes option suffixes derived from each variant's contents (from 2026-10-22) | `Overseer/ClientApp/src/app/services/admin-benchmark.service.ts` (`BENCHMARK_INFORMATION_CONDITIONS`), `admin/benchmark/run-tab/instruction-variant-summary.ts` |
+| The `Tool Access` and `Experimental Changes` fields (reports call the first the information condition): Tool Access option labels; the Experimental Changes read-out (from 2026-10-24) | `Overseer/ClientApp/src/app/services/admin-benchmark.service.ts` (`BENCHMARK_INFORMATION_CONDITIONS`), `admin/benchmark/run-tab/experimental-changes.ts` (`changeReadout`) |
+| The Experimental Changes picker and editor: card titles and kind tags, **Use this**, **New change**, **More actions** and its items, the editor's field labels, **Add …** buttons, confirmation and **Save** (from 2026-10-24); the built-in changes' titles | `admin/benchmark/run-tab/experimental-changes-dialog/experimental-changes-dialog.component.html`, `admin/benchmark/run-tab/experimental-change-editor-dialog/experimental-change-editor-dialog.component.html`, `Overseer/BenchmarkChanges/<id>/change.json` (`title`) |
 | The `Feedback Tool` field and its two option labels (from 2026-10-22; before it, a global switch on the AI Telemetry Feedback card decided) | `admin/benchmark/run-tab/benchmark-run-tab.component.html` |
 | Launcher refusals and their messages | `Overseer/Services/Benchmarking/BenchmarkRunLauncher.cs` |
 | Delivery-check failure messages | `Overseer/Services/Benchmarking/BenchmarkCandidateRequestProbe.cs`, `BenchmarkGradingRequestProbe.cs` |

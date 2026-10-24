@@ -4,7 +4,6 @@ import { of, throwError } from 'rxjs';
 import {
   AdminBenchmarkService,
   BenchmarkBatteryDto,
-  BenchmarkInstructionVariantDto,
   BenchmarkModelBatchFindingDto,
   BenchmarkRunDetailDto,
   BenchmarkScoringProfileDto,
@@ -18,6 +17,7 @@ import { launcherSetupFromRecommendedRun } from './benchmark-shell-bridge.servic
 import type { LauncherSetupPrefill } from './benchmark-shell-bridge.service';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
+import { buildCatalog, buildChange, builtInChanges, citePageFirst } from '../run-tab/experimental-changes.testing';
 
 const RUN_SETTINGS_KEY = 'overseer_admin_benchmark_run_settings';
 
@@ -901,10 +901,10 @@ describe('BenchmarkLauncherState: prefillFromSetup', () => {
     expect(launcher.selectedSuiteId).toBe(2);
   });
 
-  it('sets the production condition, no instruction variant and an offered feedback tool, as a recommended run has them', () => {
+  it('sets the production condition, no experimental changes and an offered feedback tool, as a recommended run has them', () => {
     loadPage();
     launcher.informationCondition = 'closedBook';
-    launcher.instructionVariant = 'cite-first';
+    launcher.instructionVariant = 'race-role-tool-v1';
     launcher.withholdFeedbackTool = true;
 
     launcher.prefillFromSetup(setup());
@@ -920,17 +920,13 @@ describe('BenchmarkLauncherState: prefillFromSetup', () => {
   });
 });
 
-describe('BenchmarkLauncherState: information condition and instruction variant', () => {
+describe('BenchmarkLauncherState: information condition and experimental changes', () => {
   let launcher: BenchmarkLauncherState;
   let workspace: BenchmarkWorkspaceStore;
-  let variants: Mock;
+  let catalogMock: Mock;
 
   const stored = (): any => JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY) ?? 'null');
-
-  const variant = (name: string, isValid = true): BenchmarkInstructionVariantDto => ({
-    name, description: `${name} description`, extends: null, hashPrefix: 'ab12cd34ef56', isValid,
-    invalidReason: isValid ? null : 'Its file does not parse.'
-  });
+  const SPEC = 'race-role-tool-v1+stats-referenced-by-v1';
 
   function loadPage(): void {
     launcher.restoreRunSettings();
@@ -942,7 +938,11 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
 
   beforeEach(() => {
     clearRunSettings();
-    variants = vi.fn(() => of([variant('cite-first'), variant('broken', false)]));
+    catalogMock = vi.fn(() => of(buildCatalog([
+      ...builtInChanges(),
+      citePageFirst({ retired: true }),
+      buildChange({ id: 'broken-v1', isValid: false, invalidReason: 'Its change.json does not parse.' })
+    ])));
     TestBed.configureTestingModule({
       providers: [
         BenchmarkLauncherState,
@@ -953,7 +953,7 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
           useValue: {
             getLastAssessor: vi.fn(() => of({})),
             previewBatteryReuse: vi.fn(() => of(null)),
-            getInstructionVariants: variants
+            getExperimentalChanges: catalogMock
           }
         }
       ]
@@ -969,7 +969,7 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
 
   afterEach(clearRunSettings);
 
-  it('defaults to Production and no variant, and the request carries both', () => {
+  it('defaults to Production and no changes, and the request carries both', () => {
     expect(launcher.informationCondition).toBe('production');
     expect(launcher.instructionVariant).toBeNull();
 
@@ -978,10 +978,10 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
     expect(req.instructionVariant).toBeNull();
 
     launcher.informationCondition = 'sourceOnly';
-    launcher.instructionVariant = 'cite-first';
+    launcher.instructionVariant = SPEC;
     const changed = launcher.buildRunRequest(1, 2, 1);
     expect(changed.informationCondition).toBe('sourceOnly');
-    expect(changed.instructionVariant).toBe('cite-first');
+    expect(changed.instructionVariant).toBe(SPEC);
   });
 
   it('carries both into a model batch template', () => {
@@ -989,26 +989,26 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
     launcher.runMode = 'batch';
     launcher.setBatchModels([2, 3]);
     launcher.informationCondition = 'closedBook';
-    launcher.instructionVariant = 'cite-first';
+    launcher.instructionVariant = 'asker-character-procedure-v1';
 
     const req = launcher.buildModelBatchRequest()!;
 
     expect(req.run.informationCondition).toBe('closedBook');
-    expect(req.run.instructionVariant).toBe('cite-first');
+    expect(req.run.instructionVariant).toBe('asker-character-procedure-v1');
   });
 
   it('round-trips both through the remembered settings', () => {
     loadPage();
     launcher.informationCondition = 'closedBook';
-    launcher.instructionVariant = 'cite-first';
+    launcher.instructionVariant = SPEC;
     launcher.persistRunSettings();
-    expect(stored()).toEqual(expect.objectContaining({ informationCondition: 'closedBook', instructionVariant: 'cite-first' }));
+    expect(stored()).toEqual(expect.objectContaining({ informationCondition: 'closedBook', instructionVariant: SPEC }));
 
     launcher.informationCondition = 'production';
     launcher.instructionVariant = null;
     launcher.restoreRunSettings();
     expect(launcher.informationCondition).toBe('closedBook');
-    expect(launcher.instructionVariant).toBe('cite-first');
+    expect(launcher.instructionVariant).toBe(SPEC);
   });
 
   it('restores Production from a blob that predates the fields or names an unknown condition', () => {
@@ -1020,44 +1020,108 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
     expect(launcher.instructionVariant).toBeNull();
   });
 
-  it('offers the valid variants and clears a remembered one the catalog no longer lists as valid, with a note', () => {
-    localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, instructionVariant: 'broken' }));
+  it('resolves the spec against the catalog, in spec order', () => {
     loadPage();
-    expect(launcher.instructionVariant).toBe('broken');
+    launcher.loadExperimentalChanges();
+    launcher.instructionVariant = SPEC;
 
-    launcher.loadInstructionVariants();
+    expect(catalogMock).toHaveBeenCalledTimes(1);
+    expect(launcher.selectedExperimentalChanges.map(c => c.id)).toEqual(['race-role-tool-v1', 'stats-referenced-by-v1']);
+    launcher.instructionVariant = 'race-role-tool-v1+gone-v1';
+    expect(launcher.selectedExperimentalChanges).toEqual([]);
+  });
 
-    expect(variants).toHaveBeenCalledTimes(1);
-    expect(launcher.validInstructionVariants.map(v => v.name)).toEqual(['cite-first']);
+  it('keeps a remembered spec of offered changes, in canonical order', () => {
+    localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, instructionVariant: 'stats-referenced-by-v1+race-role-tool-v1' }));
+    loadPage();
+
+    launcher.loadExperimentalChanges();
+
+    expect(launcher.instructionVariant).toBe(SPEC);
+    expect(launcher.restoreNotes).toEqual([]);
+    expect(stored().instructionVariant).toBe(SPEC);
+  });
+
+  it('resets a remembered legacy spec to None, with the note', () => {
+    localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, instructionVariant: 'asker-profile-v1' }));
+    loadPage();
+    expect(launcher.instructionVariant).toBe('asker-profile-v1');
+
+    launcher.loadExperimentalChanges();
+
     expect(launcher.instructionVariant).toBeNull();
-    expect(launcher.restoreNotes).toEqual([expect.stringContaining('Experimental Changes: broken is no longer available')]);
+    expect(launcher.restoreNotes).toEqual(['Experimental Changes reset to None: asker-profile-v1 is no longer offered.']);
     expect(stored().instructionVariant).toBeNull();
   });
 
-  it('falls back to no variant when the catalog cannot be read', () => {
-    variants.mockReturnValue(throwError(() => ({ status: 500 })));
+  it('resets a spec with a retired or an invalid change, naming each', () => {
+    localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, instructionVariant: 'broken-v1+cite-page-first-v1+race-role-tool-v1' }));
     loadPage();
-    launcher.instructionVariant = 'cite-first';
 
-    launcher.loadInstructionVariants();
+    launcher.loadExperimentalChanges();
 
-    expect(launcher.instructionVariantsLoaded).toBe(true);
     expect(launcher.instructionVariant).toBeNull();
+    expect(launcher.restoreNotes).toEqual(['Experimental Changes reset to None: broken-v1 and cite-page-first-v1 are no longer offered.']);
   });
 
-  it('repeats a run\'s condition and variant, the variant without its hash', () => {
+  it('falls back to None, with a note, when the catalog cannot be read', () => {
+    catalogMock.mockReturnValue(throwError(() => ({ status: 500 })));
     loadPage();
-    launcher.loadInstructionVariants();
+    launcher.instructionVariant = SPEC;
+
+    launcher.loadExperimentalChanges();
+
+    expect(launcher.experimentalChangesLoaded).toBe(true);
+    expect(launcher.experimentalChanges).toBeNull();
+    expect(launcher.experimentalChangesError).toBe('the server did not answer.');
+    expect(launcher.instructionVariant).toBeNull();
+    expect(launcher.restoreNotes).toEqual(['Experimental Changes reset to None: the list of changes could not be loaded.']);
+  });
+
+  it('reloads the catalog after an edit, and runs the callback once it has arrived', () => {
+    loadPage();
+    launcher.loadExperimentalChanges();
+    launcher.instructionVariant = SPEC;
+    catalogMock.mockReturnValue(of(buildCatalog([...builtInChanges(), citePageFirst()])));
+
+    let done = 0;
+    launcher.reloadExperimentalChanges(() => done++);
+
+    expect(catalogMock).toHaveBeenCalledTimes(2);
+    expect(done).toBe(1);
+    expect(launcher.experimentalChangeList.find(c => c.id === 'cite-page-first-v1')?.retired).toBe(false);
+    expect(launcher.instructionVariant).toBe(SPEC);
+  });
+
+  it('keeps the catalog and the spec when a reload fails', () => {
+    loadPage();
+    launcher.loadExperimentalChanges();
+    launcher.instructionVariant = SPEC;
+    catalogMock.mockReturnValue(throwError(() => ({ status: 500, error: { error: 'Down for a moment.' } })));
+
+    let done = 0;
+    launcher.reloadExperimentalChanges(() => done++);
+
+    expect(done).toBe(1);
+    expect(launcher.experimentalChangesError).toBe('Down for a moment.');
+    expect(launcher.experimentalChangeList.length).toBeGreaterThan(0);
+    expect(launcher.instructionVariant).toBe(SPEC);
+    expect(launcher.restoreNotes).toEqual([]);
+  });
+
+  it('repeats a run\'s condition and changes, the spec without its hash', () => {
+    loadPage();
+    launcher.loadExperimentalChanges();
 
     launcher.prefillFromRun(run({
       candidatePromptOptionsJson: '{"verboseMode":true,"enableToolUse":true,"allowSourceCodeReferences":true,"informationCondition":"sourceOnly"}',
-      instructionVariant: 'cite-first:ab12cd34ef56'
+      instructionVariant: `${SPEC}:ab12cd34ef56`
     }));
 
     expect(launcher.informationCondition).toBe('sourceOnly');
-    expect(launcher.instructionVariant).toBe('cite-first');
+    expect(launcher.instructionVariant).toBe(SPEC);
     expect(launcher.prefillResult!.notes).toEqual([]);
-    expect(stored()).toEqual(expect.objectContaining({ informationCondition: 'sourceOnly', instructionVariant: 'cite-first' }));
+    expect(stored()).toEqual(expect.objectContaining({ informationCondition: 'sourceOnly', instructionVariant: SPEC }));
   });
 
   it('repeats Production for a run whose prompt options name no condition, falling back to the run\'s own field', () => {
@@ -1083,102 +1147,34 @@ describe('BenchmarkLauncherState: information condition and instruction variant'
     ]);
   });
 
-  it('repeats no variant, with a note, when the catalog no longer lists the run\'s as valid', () => {
+  it('repeats no changes, with a note, when the catalog no longer offers the run\'s', () => {
     loadPage();
-    launcher.loadInstructionVariants();
-    launcher.instructionVariant = 'cite-first';
+    launcher.loadExperimentalChanges();
+    launcher.instructionVariant = SPEC;
 
-    launcher.prefillFromRun(run({ instructionVariant: 'broken:0123456789ab' }));
+    launcher.prefillFromRun(run({ instructionVariant: 'cite-page-first-v1:0123456789ab' }));
 
     expect(launcher.instructionVariant).toBeNull();
-    expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Experimental Changes: broken is no longer available')]);
+    expect(launcher.prefillResult!.notes).toEqual(['Experimental Changes reset to None: cite-page-first-v1 is no longer offered.']);
   });
 
-  it('checks a repeated variant once the catalog arrives, when it arrives later', () => {
+  it('checks a repeated spec once the catalog arrives, when it arrives later', () => {
     loadPage();
 
-    launcher.prefillFromRun(run({ instructionVariant: 'gone:0123456789ab' }));
-    expect(launcher.instructionVariant).toBe('gone');
+    launcher.prefillFromRun(run({ instructionVariant: 'gone-v1:0123456789ab' }));
+    expect(launcher.instructionVariant).toBe('gone-v1');
 
-    launcher.loadInstructionVariants();
+    launcher.loadExperimentalChanges();
 
     expect(launcher.instructionVariant).toBeNull();
-    expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Experimental Changes: gone is no longer available')]);
+    expect(launcher.prefillResult!.notes).toEqual(['Experimental Changes reset to None: gone-v1 is no longer offered.']);
   });
 
-  describe('ablation specs', () => {
-    const featured = (): BenchmarkInstructionVariantDto => ({
-      ...variant('asker-profile-v1'),
-      features: [
-        {
-          id: 'tool.get_character_info', kind: 'experimentalTool', target: 'get_character_info', fromParent: true,
-          appliesUnder: { production: true, sourceOnly: true, closedBook: false }, mentions: []
-        },
-        {
-          id: 'guide.wiki_search', kind: 'rewordedGuide', target: 'wiki_search', fromParent: false,
-          appliesUnder: { production: true, sourceOnly: false, closedBook: false }, mentions: []
-        }
-      ]
-    });
-
-    beforeEach(() => {
-      variants.mockReturnValue(of([featured(), variant('broken', false)]));
-    });
-
-    it('keeps a spec whose base is valid and whose feature is the base\'s, and sends it as it is', () => {
-      loadPage();
-      launcher.loadInstructionVariants();
-      launcher.instructionVariant = 'asker-profile-v1/minus/guide.wiki_search';
-      launcher.persistRunSettings();
-
-      expect(launcher.resolvedInstructionVariant?.featureDto?.id).toBe('guide.wiki_search');
-      expect(launcher.buildRunRequest(1, 2, 1).instructionVariant).toBe('asker-profile-v1/minus/guide.wiki_search');
-      expect(stored().instructionVariant).toBe('asker-profile-v1/minus/guide.wiki_search');
-
-      launcher.instructionVariant = null;
-      launcher.restoreRunSettings();
-      expect(launcher.instructionVariant).toBe('asker-profile-v1/minus/guide.wiki_search');
-    });
-
-    it('falls back to None with the note for an ablation of a feature the base does not have', () => {
-      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, instructionVariant: 'asker-profile-v1/only/guide.gone' }));
-      loadPage();
-
-      launcher.loadInstructionVariants();
-
-      expect(launcher.instructionVariant).toBeNull();
-      expect(launcher.restoreNotes).toEqual([
-        'Experimental Changes: asker-profile-v1/only/guide.gone is no longer available, so None (the same as the live chat) was chosen.'
-      ]);
-    });
-
-    it('falls back to None for an ablation of an invalid base', () => {
-      loadPage();
-      launcher.loadInstructionVariants();
-
-      launcher.prefillFromRun(run({ instructionVariant: 'broken/minus/guide.wiki_search:0123456789ab' }));
-
-      expect(launcher.instructionVariant).toBeNull();
-      expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Experimental Changes: broken/minus/guide.wiki_search')]);
-    });
-
-    it('repeats a run\'s ablation, the spec without its hash', () => {
-      loadPage();
-      launcher.loadInstructionVariants();
-
-      launcher.prefillFromRun(run({ instructionVariant: 'asker-profile-v1/only/tool.get_character_info:ab12cd34ef56' }));
-
-      expect(launcher.instructionVariant).toBe('asker-profile-v1/only/tool.get_character_info');
-      expect(launcher.prefillResult!.notes).toEqual([]);
-    });
-
-    it('strips the hash at the first colon, so a spec keeps its slashes', () => {
-      expect(BenchmarkLauncherState.instructionVariantName('asker-profile-v1/minus/guide.wiki_search:ab12cd34ef56'))
-        .toBe('asker-profile-v1/minus/guide.wiki_search');
-      expect(BenchmarkLauncherState.instructionVariantName('cite-first:ab12cd34ef56')).toBe('cite-first');
-      expect(BenchmarkLauncherState.instructionVariantName('cite-first')).toBe('cite-first');
-      expect(BenchmarkLauncherState.instructionVariantName('  ')).toBeNull();
-    });
+  it('strips the hash at the first colon, so a spec keeps its plus signs', () => {
+    expect(BenchmarkLauncherState.instructionVariantName(`${SPEC}:ab12cd34ef56`)).toBe(SPEC);
+    expect(BenchmarkLauncherState.instructionVariantName('race-role-tool-v1:ab12cd34ef56')).toBe('race-role-tool-v1');
+    expect(BenchmarkLauncherState.instructionVariantName('race-role-tool-v1')).toBe('race-role-tool-v1');
+    expect(BenchmarkLauncherState.instructionVariantName('  ')).toBeNull();
   });
 });
 
@@ -1208,7 +1204,7 @@ describe('BenchmarkLauncherState: feedback tool', () => {
           useValue: {
             getLastAssessor: vi.fn(() => of({})),
             previewBatteryReuse: vi.fn(() => of(null)),
-            getInstructionVariants: vi.fn(() => of([]))
+            getExperimentalChanges: vi.fn(() => of(buildCatalog([])))
           }
         }
       ]

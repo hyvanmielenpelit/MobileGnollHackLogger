@@ -18,7 +18,8 @@ import {
   StartBenchmarkModelBatchRequest,
   BENCHMARK_INFORMATION_CONDITIONS,
   BenchmarkInformationCondition,
-  BenchmarkInstructionVariantDto
+  BenchmarkExperimentalChangeCatalogDto,
+  BenchmarkExperimentalChangeDto
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
 import { Observable, Subject, Subscription, catchError, debounceTime, map, of, switchMap } from 'rxjs';
@@ -27,7 +28,7 @@ import { parsePromptOptions, refusalText } from '../benchmark-run-format';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
 import type { LauncherSetupPrefill, ModelBatchPrefill } from './benchmark-shell-bridge.service';
-import { ResolvedVariantSpec, resolveVariantSpec } from '../run-tab/instruction-variant-summary';
+import { changeErrorText, changeSpec, changesResetNote, resolveChangeSpec, unofferedIds } from '../run-tab/experimental-changes';
 
 /**
  * A setup the launcher took over, and each setting it could not take over: a run's recorded setup
@@ -218,9 +219,9 @@ export class BenchmarkLauncherState implements OnDestroy {
   informationCondition: BenchmarkInformationCondition = 'production';
 
   /**
-   * A benchmark-only instruction variant's spec — its name, or `<name>/minus/<feature>` or
-   * `<name>/only/<feature>` for a single-feature ablation — or null for the production instructions
-   * (the default). A run with one is analyzed as a variant contrast.
+   * The Experimental Changes spec: the ticked change ids, sorted ordinally and joined by `+`; null for
+   * none (the default), the production tools and instructions. A run with one pairs with a run without
+   * as a `VariantContrast`.
    */
   instructionVariant: string | null = null;
 
@@ -230,13 +231,16 @@ export class BenchmarkLauncherState implements OnDestroy {
    */
   withholdFeedbackTool = false;
 
-  /** The instruction variant catalog, valid and invalid entries alike; empty until it arrives. */
-  instructionVariants: BenchmarkInstructionVariantDto[] = [];
+  /** The experimental changes catalog; null until it arrives, or when it failed to load. */
+  experimentalChanges: BenchmarkExperimentalChangeCatalogDto | null = null;
 
   /** True once the catalog has answered, successfully or not. */
-  instructionVariantsLoaded = false;
+  experimentalChangesLoaded = false;
 
-  private instructionVariantsSubscription: Subscription | null = null;
+  /** Why the catalog could not be loaded; null when it loaded. */
+  experimentalChangesError: string | null = null;
+
+  private experimentalChangesSubscription: Subscription | null = null;
 
   /** The information condition a wire value names, or null when it names none the launcher offers. */
   static informationConditionOf(value: unknown): BenchmarkInformationCondition | null {
@@ -244,8 +248,8 @@ export class BenchmarkLauncherState implements OnDestroy {
   }
 
   /**
-   * A recorded instruction variant, `<spec>:hash12`, as its spec alone (a name, or an ablation spec);
-   * null for none. A spec contains no `:`, so the first one ends it.
+   * A recorded Experimental Changes stamp, `<spec>:<hash12>`, as its spec alone; null for none. A
+   * spec contains no `:`, so the first one ends it.
    */
   static instructionVariantName(recorded: string | null | undefined): string | null {
     const text = (recorded ?? '').trim();
@@ -254,42 +258,62 @@ export class BenchmarkLauncherState implements OnDestroy {
     return colon > 0 ? text.slice(0, colon) : text;
   }
 
-  /** The variants the Experimental Changes dialog offers: the valid ones. */
-  get validInstructionVariants(): BenchmarkInstructionVariantDto[] {
-    return this.instructionVariants.filter(v => v.isValid);
+  /** The changes of the catalog; empty until it arrives. */
+  get experimentalChangeList(): BenchmarkExperimentalChangeDto[] {
+    return this.experimentalChanges?.changes ?? [];
   }
 
-  /** The chosen spec resolved against the catalog; null for None, or while it does not resolve. */
-  get resolvedInstructionVariant(): ResolvedVariantSpec | null {
-    return resolveVariantSpec(this.instructionVariant, this.validInstructionVariants);
+  /** The chosen spec's changes in spec order; empty for None, or while the spec does not resolve. */
+  get selectedExperimentalChanges(): BenchmarkExperimentalChangeDto[] {
+    return resolveChangeSpec(this.instructionVariant, this.experimentalChangeList) ?? [];
   }
 
   /**
-   * Fetches the instruction variant catalog. A selected variant the catalog does not list as valid,
-   * or every selection when the catalog cannot be read, falls back to none with a note.
+   * Fetches the experimental changes catalog. A selected spec with a change the catalog does not offer,
+   * or every selection when the catalog cannot be read, resets to None with a note. `onLoaded` runs once
+   * the answer has been applied.
    */
-  loadInstructionVariants(): void {
-    this.instructionVariantsSubscription?.unsubscribe();
-    this.instructionVariantsSubscription = this.benchmarkService.getInstructionVariants().subscribe({
-      next: (variants) => {
-        this.instructionVariants = variants ?? [];
-        this.instructionVariantsLoaded = true;
+  loadExperimentalChanges(onLoaded?: () => void): void {
+    this.experimentalChangesSubscription?.unsubscribe();
+    this.experimentalChangesSubscription = this.benchmarkService.getExperimentalChanges().subscribe({
+      next: (catalog) => {
+        this.experimentalChanges = catalog ?? null;
+        this.experimentalChangesLoaded = true;
+        this.experimentalChangesError = null;
         this.checkInstructionVariant();
         this.viewSync.notify();
+        onLoaded?.();
       },
-      error: () => {
-        this.instructionVariants = [];
-        this.instructionVariantsLoaded = true;
-        this.checkInstructionVariant();
+      error: (err) => {
+        this.experimentalChangesLoaded = true;
+        this.experimentalChangesError = changeErrorText(err, 'the server did not answer.');
+        // A reload that fails keeps the catalog it had; a first load that fails has none.
+        if (!this.experimentalChanges) {
+          this.checkInstructionVariant();
+        }
         this.viewSync.notify();
+        onLoaded?.();
       }
     });
   }
 
-  /** Clears a selected variant the loaded catalog does not list as valid, and says so beside the prefill or restore notes. */
+  /** Fetches the catalog again after the editor saved, retired, restored or deleted a change. */
+  reloadExperimentalChanges(onLoaded?: () => void): void {
+    this.loadExperimentalChanges(onLoaded);
+  }
+
+  /** Resets a selected spec the loaded catalog does not back, and says so beside the prefill or restore notes. */
   private checkInstructionVariant(): void {
     const note = this.instructionVariantNote(this.instructionVariant);
-    if (note === null) return;
+    if (note === null) {
+      // A spec the catalog backs is kept in its canonical order.
+      const canonical = this.instructionVariant ? changeSpec(this.selectedExperimentalChanges.map(c => c.id)) : null;
+      if (canonical && canonical !== this.instructionVariant) {
+        this.instructionVariant = canonical;
+        this.persistRunSettings();
+      }
+      return;
+    }
     this.instructionVariant = null;
     if (this.prefillResult) {
       this.prefillResult = { ...this.prefillResult, notes: [...this.prefillResult.notes, note] };
@@ -300,15 +324,16 @@ export class BenchmarkLauncherState implements OnDestroy {
   }
 
   /**
-   * The note for a spec the loaded catalog does not back — a base it does not list as valid, or an
-   * ablation of a feature the base does not have; null when it resolves, is none, or the catalog has
-   * not arrived.
+   * The note for a spec the loaded catalog does not back — malformed, or naming an unknown, invalid or
+   * retired change; null when it resolves, is none, or the catalog has not answered.
    */
-  private instructionVariantNote(name: string | null): string | null {
-    if (name == null || !this.instructionVariantsLoaded || resolveVariantSpec(name, this.validInstructionVariants) !== null) {
-      return null;
+  private instructionVariantNote(spec: string | null): string | null {
+    if (spec == null || !this.experimentalChangesLoaded) return null;
+    if (!this.experimentalChanges) {
+      return 'Experimental Changes reset to None: the list of changes could not be loaded.';
     }
-    return `Experimental Changes: ${name} is no longer available, so None (the same as the live chat) was chosen.`;
+    const unoffered = unofferedIds(spec, this.experimentalChangeList);
+    return unoffered.length > 0 ? changesResetNote(unoffered) : null;
   }
 
   /**
@@ -1078,7 +1103,7 @@ export class BenchmarkLauncherState implements OnDestroy {
     if (setup.allowSourceCodeReferences != null) {
       this.candidateAllowSourceCodeReferences = setup.allowSourceCodeReferences;
     }
-    // A recommended run is a production run without an instruction variant, offered the feedback tool.
+    // A recommended run is a production run without experimental changes, offered the feedback tool.
     this.informationCondition = BenchmarkLauncherState.informationConditionOf(setup.informationCondition ?? 'production') ?? 'production';
     this.instructionVariant = null;
     this.withholdFeedbackTool = false;
@@ -1624,8 +1649,8 @@ export class BenchmarkLauncherState implements OnDestroy {
   ngOnDestroy(): void {
     this.reusePreviewSubscription?.unsubscribe();
     this.reusePreviewSubscription = null;
-    this.instructionVariantsSubscription?.unsubscribe();
-    this.instructionVariantsSubscription = null;
+    this.experimentalChangesSubscription?.unsubscribe();
+    this.experimentalChangesSubscription = null;
     this.preflightSubscription.unsubscribe();
     this.clearPreflightRetry();
   }

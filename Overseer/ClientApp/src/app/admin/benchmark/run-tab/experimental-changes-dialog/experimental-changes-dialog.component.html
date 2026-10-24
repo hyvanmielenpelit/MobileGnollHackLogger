@@ -1,0 +1,393 @@
+<!--
+  EXPERIMENTAL CHANGES: tick the test-only changes a run should try. Its close event fires however it
+  closes (Use this, Cancel, the close button, Escape, a run link), and the host returns focus to Choose…
+  from it. The editor is a sibling dialog of the host's, never a child of this one.
+-->
+<dialog #xcDialog class="gh-dialog xc-dialog" id="experimentalChangesDialog"
+        aria-labelledby="xcTitle" aria-describedby="xcSubtitle" (close)="onDialogClosed()">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="xcTitle">Experimental Changes</h3>
+        <p class="dialog-subtitle" id="xcSubtitle">Tick the test-only changes this run should try. The live chat never uses them.</p>
+      </div>
+      <button type="button" class="btn-icon-action" id="xcClose" aria-label="Close Experimental Changes"
+              interestfor="xcCloseTip" style="anchor-name: --xc-close-tip" (click)="cancel()">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="xcCloseTip" style="position-anchor: --xc-close-tip">Close without changing the choice</div>
+    </div>
+
+    <div class="dialog-body xc-body">
+      @if (recentSelections.length > 0) {
+        <div class="xc-used-before" id="xcUsedBefore" role="group" aria-labelledby="xcUsedBeforeLabel">
+          <span class="gh-section-title xc-used-before-label" id="xcUsedBeforeLabel">Used before</span>
+          @for (recent of recentSelections; track recent.selection.spec) {
+            <button type="button" class="btn-ghost xc-recent" [attr.aria-pressed]="recent.pressed ? 'true' : 'false'"
+                    [attr.data-spec]="recent.selection.spec" (click)="applyRecent(recent.selection)">{{ recent.label }}</button>
+          }
+        </div>
+      }
+
+      <div class="xc-columns">
+        <div class="xc-main">
+          <p class="xc-action-status" id="xcActionStatus" role="status">{{ actionStatus }}</p>
+          @if (actionError; as error) {
+            <p class="gh-field-error" id="xcActionError" role="alert">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>{{ error }}</span>
+            </p>
+          }
+          @if (!catalog) {
+            @if (catalogError) {
+              <p class="gh-field-error" id="xcCatalogError" role="alert">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span>The experimental changes could not be loaded: {{ catalogError }}</span>
+              </p>
+            } @else {
+              <p class="xc-muted" role="status">Loading the experimental changes…</p>
+            }
+          }
+
+          <fieldset class="xc-changes">
+            <legend class="gh-section-title">Changes to test</legend>
+            <div class="xc-changes-actions">
+              <button type="button" class="btn-ghost" id="xcNewChange" aria-haspopup="dialog" (click)="newChange()">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                New change
+              </button>
+              @if (selected.size > 0) {
+                <button type="button" class="btn-link" id="xcClearAll" (click)="clearAll()">Clear all</button>
+              }
+            </div>
+
+            @if (showFilter) {
+              <search class="xc-filter">
+                <label for="xcFilter">Filter changes</label>
+                <input type="search" id="xcFilter" class="gh-input" autocomplete="off" [value]="filterText"
+                       (input)="onFilterInput($event)" (keydown)="onFilterKeydown($event)">
+              </search>
+            }
+
+            @for (view of listCards; track view.change.id) {
+              @let reason = disabledReason(view.change);
+              @let line = cardLine(view.change);
+              @let mid = moreId(view);
+              <div class="xc-card" [id]="'xc-card-' + view.domId" [attr.data-change-id]="view.change.id"
+                   [class.is-checked]="isChecked(view.change)" [class.is-disabled]="!!reason">
+                <div class="xc-card-head">
+                  <label class="xc-card-check">
+                    <input type="checkbox" class="xc-check" [id]="'xc-check-' + view.domId" [value]="view.change.id"
+                           [checked]="isChecked(view.change)" [disabled]="!!reason"
+                           [attr.aria-describedby]="'xc-summary-' + view.domId + (line ? ' xc-line-' + view.domId : '')"
+                           (change)="toggle(view.change, $event)">
+                    <span class="xc-card-title">{{ view.change.title }}</span>
+                  </label>
+                  <span class="xc-tags">
+                    @for (tag of view.kinds; track tag.kind) {
+                      <span class="gh-tag xc-kind">{{ tag.label }}</span>
+                    }
+                  </span>
+                </div>
+                @if (view.sourceLine) {
+                  <p class="xc-source">
+                    <span>{{ view.sourceLine }}</span>
+                    @if (view.change.locked) {<span class="xc-locked"> · Locked — used by a run</span>}
+                  </p>
+                }
+                <p class="xc-summary" [id]="'xc-summary-' + view.domId">{{ view.change.summary }}</p>
+                @if (view.change.expectedEffect) {
+                  <p class="xc-expected">Should improve: {{ view.change.expectedEffect }}</p>
+                }
+                @if (line) {
+                  <p class="xc-line" [class.is-blocked]="!!reason" [id]="'xc-line-' + view.domId">{{ line }}</p>
+                }
+
+                <div class="xc-card-foot">
+                  <details class="gh-disclosure xc-details" [id]="'xc-details-' + view.domId">
+                    <summary>Show exactly what the AI gets</summary>
+                    <div class="gh-disclosure-body">
+                      @for (effect of view.effects; track effect.key) {
+                        <section class="xc-effect" [id]="effect.key" [attr.data-kind]="effect.kind" [attr.aria-labelledby]="effect.key + '-label'">
+                          <p class="xc-effect-label" [id]="effect.key + '-label'">{{ effect.label }}</p>
+                          @if (effect.kind === 'newTool') {
+                            @if (effect.text) {
+                              <pre class="xc-text" tabindex="0" [attr.aria-label]="'Description of ' + effect.tool">{{ effect.text }}</pre>
+                            }
+                            @if (effect.parameters; as parameters) {
+                              <div class="xc-table-wrap" role="region" tabindex="0" [attr.aria-label]="'Parameters of ' + effect.tool">
+                                <table class="gh-table xc-params">
+                                  <caption class="visually-hidden">Parameters of {{ effect.tool }}</caption>
+                                  <thead>
+                                    <tr>
+                                      <th scope="col">Parameter</th>
+                                      <th scope="col">Type</th>
+                                      <th scope="col">Required</th>
+                                      <th scope="col">Description</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    @for (parameter of parameters; track parameter.name) {
+                                      <tr>
+                                        <td><code>{{ parameter.name }}</code></td>
+                                        <td>{{ parameter.type }}</td>
+                                        <td>{{ parameter.required ? 'Yes' : 'No' }}</td>
+                                        <td>{{ parameter.description }}</td>
+                                      </tr>
+                                    } @empty {
+                                      <tr><td colspan="4">The tool takes no parameters.</td></tr>
+                                    }
+                                  </tbody>
+                                </table>
+                              </div>
+                            }
+                            @if (effect.parametersUnreadable) {
+                              <p class="xc-muted">The tool's parameter schema could not be read.</p>
+                            }
+                          } @else if (effect.kind === 'toolOutput') {
+                            <p class="xc-effect-text">{{ effect.text }}</p>
+                          } @else if (effect.kind === 'add') {
+                            <pre class="xc-text xc-inserted" tabindex="0" [attr.aria-label]="effect.label">{{ effect.text }}</pre>
+                            @if (effect.productionText != null) {
+                              <details class="gh-disclosure xc-whole">
+                                <summary>Show the whole description</summary>
+                                <div class="gh-disclosure-body">
+                                  <pre class="xc-text" tabindex="0" [attr.aria-label]="'The whole ' + effect.tool + ' description'"><span class="xc-live-text">{{ effect.productionText }}</span><span>{{ separator }}</span><ins class="xc-ins">{{ effect.text }}</ins></pre>
+                                </div>
+                              </details>
+                            }
+                          } @else if (effect.kind === 'replace') {
+                            @if (effect.diff) {
+                              <fieldset class="gh-choice xc-diff-view">
+                                <legend>Show the change</legend>
+                                <label class="gh-radio">
+                                  <input type="radio" [name]="effect.key + '-view'" value="side"
+                                         [checked]="diffViewOf(effect.key) === 'side'" (change)="setDiffView(effect.key, 'side')">
+                                  <span>Side by side</span>
+                                </label>
+                                <label class="gh-radio">
+                                  <input type="radio" [name]="effect.key + '-view'" value="diff"
+                                         [checked]="diffViewOf(effect.key) === 'diff'" (change)="setDiffView(effect.key, 'diff')">
+                                  <span>Diff</span>
+                                </label>
+                              </fieldset>
+                              <p class="xc-muted">
+                                @if (diffViewOf(effect.key) === 'side') {Left: the live description. Right: this change's.}
+                                @else {Removed lines are the live description's; added lines are this change's.}
+                              </p>
+                              <app-text-diff [diff]="effect.diff" [view]="diffViewOf(effect.key)"
+                                             beforeLabel="The live description" afterLabel="This change's description" />
+                            } @else {
+                              <pre class="xc-text" tabindex="0" [attr.aria-label]="effect.label">{{ effect.text }}</pre>
+                            }
+                          } @else {
+                            <pre class="xc-text" tabindex="0" [attr.aria-label]="effect.label">{{ effect.text }}</pre>
+                          }
+                        </section>
+                      } @empty {
+                        <p class="xc-muted">The catalog lists no effect for this change.</p>
+                      }
+                    </div>
+                  </details>
+                  <span class="xc-used">{{ usedText(view.change) }}</span>
+
+                  <!-- One anchor for the trigger's tooltip and its popover. -->
+                  <button type="button" class="action-btn xc-more-btn" [id]="mid + '-trigger'"
+                          [attr.popovertarget]="mid"
+                          [attr.aria-expanded]="moreOpenId === view.change.id"
+                          [attr.aria-label]="'More actions for ' + view.change.title"
+                          [attr.interestfor]="mid + '-tip'"
+                          [attr.style]="'anchor-name: --' + mid">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="mid + '-tip'"
+                       [attr.style]="'position-anchor: --' + mid">More actions</div>
+                  <div popover="auto" class="gh-action-popover xc-more-popover" [id]="mid"
+                       role="group" [attr.aria-label]="'Actions for ' + view.change.title"
+                       [attr.style]="'position-anchor: --' + mid"
+                       (toggle)="onMoreToggle(view, $event)" (keydown)="onMoreKeydown(view, $event)">
+                    @if (canEdit(view.change)) {
+                      <button type="button" class="gh-action-popover-item xc-action-edit" (click)="editChange(view)">Edit…</button>
+                    }
+                    @if (canCopy(view.change)) {
+                      <button type="button" class="gh-action-popover-item xc-action-copy" (click)="copyChange(view)">Copy as new version…</button>
+                    }
+                    <button type="button" class="gh-action-popover-item xc-action-download" (click)="downloadFolder(view)">Download as folder</button>
+                    @if (canRetire(view.change)) {
+                      <button type="button" class="gh-action-popover-item xc-action-retire" (click)="retire(view)">Retire</button>
+                    }
+                    @if (canDelete(view.change)) {
+                      <button type="button" class="gh-action-popover-item is-danger xc-action-delete" (click)="askDelete(view)">Delete…</button>
+                    }
+                  </div>
+                </div>
+
+                @if (deleteConfirmId === view.change.id) {
+                  <div class="xc-confirm" role="group" [attr.aria-labelledby]="'xc-confirm-' + view.domId">
+                    <span [id]="'xc-confirm-' + view.domId">Delete "{{ view.change.title }}"?</span>
+                    <button type="button" class="btn-ghost btn-ghost-danger" [id]="'xc-delete-' + view.domId"
+                            [attr.aria-disabled]="busyId ? 'true' : null" (click)="confirmDelete(view)">Delete</button>
+                    <button type="button" class="btn-ghost" [id]="'xc-keep-' + view.domId" (click)="keepChange(view)">Keep</button>
+                  </div>
+                }
+              </div>
+            } @empty {
+              @if (catalog) {
+                <p class="xc-muted">{{ filterText.trim() ? 'No change matches the filter.' : 'There are no experimental changes yet.' }}</p>
+              }
+            }
+          </fieldset>
+
+          @if (retiredCards.length > 0) {
+            <details class="gh-disclosure xc-retired" id="xcRetired">
+              <summary>Show retired ({{ retiredCards.length }})</summary>
+              <div class="gh-disclosure-body">
+                <ul class="xc-retired-list">
+                  @for (view of retiredCards; track view.change.id) {
+                    <li [attr.data-change-id]="view.change.id">
+                      <span class="xc-retired-title">{{ view.change.title }}</span>
+                      @if (view.change.source === 'database') {
+                        <button type="button" class="btn-ghost xc-restore" [attr.aria-disabled]="busyId ? 'true' : null"
+                                (click)="restore(view.change)">Restore<span class="visually-hidden"> {{ view.change.title }}</span></button>
+                      } @else {
+                        <span class="xc-muted">Retired in the repository</span>
+                      }
+                    </li>
+                  }
+                </ul>
+                <p class="xc-muted">A retired change cannot be ticked for a new run; the runs that used it still re-run.</p>
+              </div>
+            </details>
+          }
+
+          <details class="gh-disclosure xc-tips" id="xcTips" [open]="tipsOpen" (toggle)="onTipsToggle($event)">
+            <summary>Testing fairly (4 tips)</summary>
+            <div class="gh-disclosure-body">
+              <ul>
+                <li><strong>Compare in pairs:</strong> on the Paired Test tab, against a run identical except here.</li>
+                <li><strong>Source code only first, then Production:</strong> the wiki cannot mask the effect under Source code only.</li>
+                <li><strong>Declare the criteria first, cost included:</strong> input tokens and model time count as well as the score.</li>
+                <li><strong>Confirm a winner on a second suite:</strong> with about 11 questions, trying many combinations and keeping the best finds effects that are not there.</li>
+              </ul>
+              <p>Never compare these runs with production runs in Model Comparison.</p>
+              <p class="xc-muted">The full description is in <code>{{ docPath }}</code>.</p>
+            </div>
+          </details>
+        </div>
+
+        <aside class="xc-aside" id="xcThisRun" aria-labelledby="xcThisRunTitle">
+          <h4 class="gh-section-title" id="xcThisRunTitle">This run</h4>
+          @if (selectedChanges.length === 0) {
+            <p class="xc-count" id="xcThisRunCount">No changes — this run uses exactly what the live chat uses.</p>
+          } @else {
+            <p class="xc-count" id="xcThisRunCount">{{ selectedCountText }}</p>
+            <ul class="xc-this-list">
+              @for (change of selectedChanges; track change.id) {
+                <li>{{ change.title }}</li>
+              }
+            </ul>
+          }
+
+          <div class="xc-compare" id="xcCompare" role="group" aria-labelledby="xcCompareTitle">
+            <p class="xc-compare-title" id="xcCompareTitle">Compare it with</p>
+            @if (selectedChanges.length === 0) {
+              <p>This is a normal run.</p>
+            } @else {
+              <p>A run identical except for Experimental Changes: None.</p>
+              @if (runsLoading) {
+                <p class="xc-muted">Looking for runs with exactly this selection…</p>
+              }
+              @if (runsError; as error) {
+                <p class="gh-field-error">{{ error }}</p>
+              }
+              @if (runsList.length > 0) {
+                <p class="xc-runs" id="xcRuns">
+                  <span>Runs with exactly this selection:</span>
+                  @for (run of runsList; track run.id) {
+                    <button type="button" class="btn-link xc-run-link" [attr.aria-label]="runLabel(run)" (click)="openRun(run)">#{{ run.id }}</button>
+                  }
+                </p>
+              }
+              @if (runsSummary; as summary) {
+                <p class="xc-muted" id="xcRunsSummary">{{ summary }}</p>
+              }
+            }
+          </div>
+
+          @for (mention of mentions; track mention.change.id + ' ' + mention.missing.id) {
+            <div class="xc-warning xc-mention">
+              <svg class="xc-warning-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <div class="xc-warning-body">
+                <p>{{ mentionText(mention) }}</p>
+                @if (canAdd(mention)) {
+                  <button type="button" class="btn-ghost xc-add" (click)="addMissing(mention)">Add {{ mention.missing.title }}</button>
+                }
+              </div>
+            </div>
+          }
+          @if (selectedChanges.length >= 2) {
+            <div class="xc-warning" id="xcTogether">
+              <svg class="xc-warning-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <div class="xc-warning-body">
+                <p>The effect will belong to these {{ selectedChanges.length }} changes together. To learn which one did it, test each alone later.</p>
+              </div>
+            </div>
+          }
+
+          <div class="xc-access" id="xcAccess" [class.xc-warning]="conditionRows.length > 0">
+            @if (conditionRows.length === 0) {
+              <p>Tool Access: {{ conditionText }} — everything applies.</p>
+            } @else {
+              <svg class="xc-warning-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <div class="xc-warning-body">
+                <p>Tool Access: {{ conditionText }}</p>
+                <ul class="xc-access-rows">
+                  @for (row of conditionRows; track row.title) {
+                    <li><strong>{{ row.title }}:</strong> {{ row.line }}</li>
+                  }
+                </ul>
+                <p class="xc-muted">To change Tool Access, change it in the launcher.</p>
+              </div>
+            }
+          </div>
+
+          <details class="gh-disclosure xc-technical" id="xcTechnical">
+            <summary>Technical details</summary>
+            <div class="gh-disclosure-body">
+              <dl class="xc-facts">
+                <div><dt>Spec</dt><dd>@if (spec) {<code>{{ spec }}</code>} @else {<span>None</span>}</dd></div>
+                <div><dt>Stamp</dt><dd>@if (stampText) {<code>{{ stampText }}</code>} @else {<span>None</span>}</dd></div>
+              </dl>
+              @for (change of selectedChanges; track change.id) {
+                <dl class="xc-facts xc-change-facts" [attr.data-change-id]="change.id">
+                  <div><dt>Id</dt><dd><code>{{ change.id }}</code></dd></div>
+                  <div><dt>Source</dt><dd>{{ sourceText(change) }}</dd></div>
+                  <div><dt>Hash</dt><dd><code>{{ change.hashPrefix }}</code></dd></div>
+                  <div><dt>Folder</dt><dd>@if (change.source === 'builtIn') {<code>{{ folderText(change) }}</code>} @else {<span>{{ folderText(change) }}</span>}</dd></div>
+                </dl>
+              }
+            </div>
+          </details>
+        </aside>
+      </div>
+    </div>
+
+    <div class="dialog-footer">
+      @if (useRefusal; as refusal) {
+        <p class="gh-footer-note" id="xcFooterNote">
+          <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>{{ refusal }}</span>
+        </p>
+      }
+      <p class="xc-status" id="xcStatus" role="status" aria-live="polite">{{ liveStatus }}</p>
+      <button type="button" class="btn-gh btn-gh-cancel" id="xcCancel" (click)="cancel()">Cancel</button>
+      <button type="button" class="btn-gh" id="xcUseThis"
+              [attr.aria-disabled]="useRefusal ? 'true' : null"
+              [attr.aria-describedby]="useRefusal ? 'xcFooterNote' : null"
+              (click)="useThis()">Use this</button>
+    </div>
+  </div>
+</dialog>

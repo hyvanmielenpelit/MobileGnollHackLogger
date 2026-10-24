@@ -8006,10 +8006,11 @@ No answer flag is added, and the grading and synthesis prompts are unchanged.
 GnollBench run 125 round (2026-10-21). `HarnessVersion` moves to **"59"**; `ScoringMethodVersion` stays
 **14**. Migration `AddBenchmarkEvidenceConditionsAndVariants` adds `BenchmarkQuestion.EvidenceJson`,
 `BenchmarkRun.CorpusCondition` and `BenchmarkRun.InstructionVariant`. `HarnessImpactLedger` classifies 59
-as `ReportingOnly`: the Production condition without an instruction variant sends the candidate exactly
-what harness 58 sent — the same prompt bytes, the same declared tools with the same descriptions — so
-`CandidateSystemPromptSha256` and `ToolGuidesSha256` do not move. A non-production condition or a variant
-is a different candidate configuration, kept apart by its own record and keys. The method for the new
+as `ReportingOnly`: the Production condition without experimental changes (introduced in this harness
+as instruction variants) sends the candidate exactly what harness 58 sent — the same prompt bytes, the
+same declared tools with the same descriptions — so `CandidateSystemPromptSha256` and
+`ToolGuidesSha256` do not move. A non-production condition or a run with experimental changes is a
+different candidate configuration, kept apart by its own record and keys. The method for the new
 measurements is [`ai-benchmark-conditions-and-variants.md`](ai-benchmark-conditions-and-variants.md);
 this section lists what changed.
 
@@ -8081,6 +8082,19 @@ this section lists what changed.
   Variant guide text is read per request and never written to the shared handler.
   `ToolExecutionContext.Variant` is set only on the benchmark candidate's own requests, so production
   never loads a variant.
+
+> **Variants became experimental changes** (2026-10-24, no `HarnessVersion` or comparability
+> `DefinitionVersion` bump: a run without changes sends byte-identical requests, and the key's value is
+> still the stamp string). The two variants and their ablations were removed and their texts kept,
+> unchanged, as four titled changes that are ticked one by one: `source-tools-v1` is *Race and role
+> lookup tool* + *Where the game code uses it*, and `asker-profile-v1` is those two plus *Search with the
+> player's race and role* and *Answer from the player's own character*. Built-in changes are folders under
+> `Overseer/BenchmarkChanges/`; text-only changes can also be written in Overseer and are stored in
+> `BenchmarkExperimentalChanges`. A run stamps `BenchmarkRun.InstructionVariant` as `<spec>:<hash12>`,
+> the spec being the change ids joined by `+`; the manifest line reads *Experimental changes*, and the
+> *Variant contrast* pair kind below is labeled *Experimental-changes contrast*. No run had used a
+> variant. The current description is
+> [`ai-benchmark-conditions-and-variants.md`](ai-benchmark-conditions-and-variants.md) § 6.
 - **`get_character_info`** returns a race's or a role's allowed roles or races and alignments, its
   intrinsics by experience level and, for a race, the races it is always peaceful or always hostile
   toward, from `src/role.c`, `src/attrib.c` and `src/prop.c`. **`referenced_by`** (the

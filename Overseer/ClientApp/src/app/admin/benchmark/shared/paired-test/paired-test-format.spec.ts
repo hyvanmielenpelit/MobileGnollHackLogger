@@ -142,7 +142,7 @@ describe('paired-test-format', () => {
     expect(kindDescription('ModelComparison', 'Model comparison', '')).toBe(kindSentence('ModelComparison'));
     expect(kindSentence('Replicate')).toContain('run-to-run variation');
     expect(kindSentence('ConditionContrast')).toMatch(/^Condition contrast: .*information condition/);
-    expect(kindSentence('VariantContrast')).toMatch(/^Variant contrast: .*instruction variant/);
+    expect(kindSentence('VariantContrast')).toMatch(/^Experimental-changes contrast: .*experimental changes/);
   });
 
   it('reads a refusal from a string body, an error field or a message', () => {

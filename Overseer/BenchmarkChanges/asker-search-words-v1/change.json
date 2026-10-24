@@ -1,0 +1,14 @@
+{
+  "id": "asker-search-words-v1",
+  "title": "Search with the player's race and role",
+  "summary": "Adds one sentence to the wiki_search description: put the player's race, role or alignment into the query when the question states it.",
+  "expectedEffect": "Race- and role-specific wiki pages are found more often.",
+  "experimentalTool": null,
+  "experimentalToolDescription": null,
+  "experiment": null,
+  "descriptionAdditions": {
+    "wiki_search": "wiki_search.md"
+  },
+  "descriptionReplacements": {},
+  "instructions": null
+}

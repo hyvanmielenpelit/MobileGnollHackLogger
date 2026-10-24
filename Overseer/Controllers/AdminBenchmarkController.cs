@@ -193,82 +193,312 @@ public class AdminBenchmarkController : ControllerBase
         return null;
     }
 
-    // --- Instruction variants ---
+    // --- Experimental changes ---
 
-    /// <summary>The benchmark-only instruction variants the launcher may offer, valid or not.</summary>
-    [HttpGet("instruction-variants")]
-    public IActionResult GetInstructionVariants()
+    /// <summary>The most selections <c>recentSelections</c> lists.</summary>
+    internal const int RecentSelectionCount = 6;
+
+    /// <summary>The most texts one screen request compares.</summary>
+    internal const int MaxScreenTexts = 16;
+
+    private sealed record StampedRun(long Id, DateTime StartedAtUtc, string Stamp);
+
+    private Task<List<StampedRun>> StampedRunsAsync(CancellationToken ct)
+        => _dbContext.BenchmarkRuns
+            .AsNoTracking()
+            .Where(r => r.InstructionVariant != null)
+            .Select(r => new StampedRun(r.Id, r.StartedAtUtc, r.InstructionVariant!))
+            .ToListAsync(ct);
+
+    /// <summary>The number of runs whose stamp includes each change id.</summary>
+    private static Dictionary<string, int> RunCountsByChange(IEnumerable<StampedRun> runs)
     {
-        var dtos = _benchmarkService.ListInstructionVariants()
-            .Select(BenchmarkInstructionVariantDto.From)
-            .ToList();
-        return Ok(dtos);
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var run in runs)
+        {
+            foreach (string id in BenchmarkExperimentalChangeCatalog.IdsOf(run.Stamp).Distinct(StringComparer.Ordinal))
+            {
+                counts[id] = counts.GetValueOrDefault(id) + 1;
+            }
+        }
+        return counts;
     }
 
+    private BenchmarkExperimentalChangeCatalog? ExperimentalChangeCatalog => _benchmarkService.ResolveExperimentalChangeCatalog();
+
+    private ObjectResult CatalogUnavailable()
+        => StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "The experimental change catalog is unavailable." });
+
     /// <summary>
-    /// One variant folder with its features and texts, and the runs that used it or one of its
-    /// ablations (stamps starting <c>name:</c> or <c>name/</c>). 404 for a name the catalog does not list.
+    /// Every experimental change with its texts and run count, up to six distinct selections of the
+    /// newest runs whose changes are all valid and unretired, the production tools a change may edit,
+    /// and the editor's limits.
     /// </summary>
-    [HttpGet("instruction-variants/{name}/details")]
-    public async Task<IActionResult> GetInstructionVariantDetails(string name, CancellationToken ct = default)
+    [HttpGet("experimental-changes")]
+    public async Task<IActionResult> GetExperimentalChanges(CancellationToken ct = default)
     {
-        var variant = _benchmarkService.ListInstructionVariants()
-            .FirstOrDefault(v => string.Equals(v.Name, name, StringComparison.Ordinal));
-        if (variant == null)
-        {
-            return NotFound(new { error = $"Unknown instruction variant '{name}'." });
-        }
+        var catalog = ExperimentalChangeCatalog;
+        if (catalog == null) return CatalogUnavailable();
 
         try
         {
-            string wholePrefix = name + ":";
-            string ablationPrefix = name + BenchmarkInstructionVariantCatalog.SpecSeparator;
-            var matching = _dbContext.BenchmarkRuns
-                .AsNoTracking()
-                .Where(r => r.InstructionVariant != null
-                    && (r.InstructionVariant.StartsWith(wholePrefix) || r.InstructionVariant.StartsWith(ablationPrefix)));
+            await catalog.RefreshAsync(ct);
+            var snapshot = catalog.Snapshot;
+            var runs = await StampedRunsAsync(ct);
+            var runCounts = RunCountsByChange(runs);
 
-            var stamps = await matching.Select(r => r.InstructionVariant!).ToListAsync(ct);
-
-            var currentStamps = new Dictionary<string, string?>(StringComparer.Ordinal);
-            bool MatchesCurrent(string stamp)
+            var recent = new List<BenchmarkExperimentalChangeRecentSelectionDto>();
+            var bySpec = runs
+                .GroupBy(r => BenchmarkExperimentalChangeCatalog.SpecOfStamp(r.Stamp), StringComparer.Ordinal)
+                .Select(g => (Spec: g.Key, Count: g.Count(), Last: g.OrderByDescending(r => r.StartedAtUtc).ThenByDescending(r => r.Id).First()))
+                .OrderByDescending(s => s.Last.StartedAtUtc)
+                .ThenByDescending(s => s.Last.Id);
+            foreach (var selection in bySpec)
             {
-                string spec = BenchmarkInstructionVariantCatalog.NameOfStamp(stamp);
-                if (!currentStamps.TryGetValue(spec, out string? current))
+                var ids = BenchmarkExperimentalChangeCatalog.IdsOf(selection.Spec);
+                if (ids.Count == 0 || ids.Any(id => snapshot.Find(id) is not { IsValid: true, Retired: false })) continue;
+                recent.Add(new BenchmarkExperimentalChangeRecentSelectionDto
                 {
-                    current = _benchmarkService.FindInstructionVariant(spec)?.Context?.Stamp;
-                    currentStamps[spec] = current;
-                }
-                return string.Equals(current, stamp, StringComparison.Ordinal);
+                    Spec = selection.Spec,
+                    ChangeIds = ids.ToList(),
+                    RunCount = selection.Count,
+                    LastRunId = selection.Last.Id,
+                    LastStartedAtUtc = selection.Last.StartedAtUtc
+                });
+                if (recent.Count == RecentSelectionCount) break;
             }
 
-            int olderHashRunCount = stamps.Count(stamp => !MatchesCurrent(stamp));
-
-            var newest = await matching
-                .OrderByDescending(r => r.StartedAtUtc)
-                .ThenByDescending(r => r.Id)
-                .Take(BenchmarkInstructionVariantDetailsDto.RunListSize)
-                .ToListAsync(ct);
-
-            var runs = newest.Select(r => new BenchmarkInstructionVariantRunDto
+            return Ok(new BenchmarkExperimentalChangeCatalogDto
             {
-                Id = r.Id,
-                StartedAtUtc = r.StartedAtUtc,
-                SuiteName = r.SuiteName,
-                ModelDisplayName = r.TestedModelSnapshot.Label(),
-                InformationCondition = BenchmarkCandidatePromptOptions.FromJson(r.CandidatePromptOptionsJson).Condition.ToWire(),
-                Status = r.Status.ToString(),
-                Spec = BenchmarkInstructionVariantCatalog.NameOfStamp(r.InstructionVariant!),
-                HashMatchesCurrent = MatchesCurrent(r.InstructionVariant!)
-            }).ToList();
-
-            return Ok(BenchmarkInstructionVariantDetailsDto.From(variant, runs, stamps.Count, olderHashRunCount));
+                Changes = snapshot.Changes
+                    .Select(c => BenchmarkExperimentalChangeDto.From(c, catalog, runCounts.GetValueOrDefault(c.Id)))
+                    .ToList(),
+                RecentSelections = recent,
+                ProductionTools = BenchmarkExperimentalChangeCatalogDto.ProductionToolsOf(catalog),
+                Limits = new BenchmarkExperimentalChangeLimitsDto(),
+                MaxStampLength = BenchmarkExperimentalChangeCatalog.MaxStampLength
+            });
         }
         catch (Exception ex) when (ex.IsCanceledBy(ct))
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
     }
+
+    /// <summary>
+    /// The runs whose stamp's spec equals <paramref name="spec"/> exactly (spaces read as <c>+</c>, ids
+    /// in any order), newest first, at most ten, and how many no longer match the spec's current hash.
+    /// </summary>
+    [HttpGet("experimental-changes/runs")]
+    public async Task<IActionResult> GetExperimentalChangeRuns([FromQuery] string? spec, CancellationToken ct = default)
+    {
+        string? canonical = BenchmarkExperimentalChangeCatalog.CanonicalizeSpec(spec);
+        if (canonical == null)
+            return BadRequest(new { error = "Give the spec of the experimental changes." });
+        if (!BenchmarkExperimentalChangeCatalog.IsWellFormedSpec(canonical))
+            return BadRequest(new { error = $"'{canonical}' is not a list of experimental change ids joined by '+'." });
+
+        try
+        {
+            await _benchmarkService.RefreshExperimentalChangesAsync(ct);
+            string? current = _benchmarkService.ResolveExperimentalChanges(canonical, allowRetired: true).Stamp;
+
+            string prefix = canonical + ":";
+            var matching = _dbContext.BenchmarkRuns
+                .AsNoTracking()
+                .Where(r => r.InstructionVariant != null && r.InstructionVariant.StartsWith(prefix));
+            var stamps = await matching.Select(r => r.InstructionVariant!).ToListAsync(ct);
+
+            var newest = await matching
+                .OrderByDescending(r => r.StartedAtUtc)
+                .ThenByDescending(r => r.Id)
+                .Take(BenchmarkExperimentalChangeRunsDto.RunListSize)
+                .ToListAsync(ct);
+
+            return Ok(new BenchmarkExperimentalChangeRunsDto
+            {
+                RunCount = stamps.Count,
+                OlderHashRunCount = stamps.Count(s => !string.Equals(s, current, StringComparison.Ordinal)),
+                Runs = newest.Select(r => new BenchmarkExperimentalChangeRunDto
+                {
+                    Id = r.Id,
+                    StartedAtUtc = r.StartedAtUtc,
+                    SuiteName = r.SuiteName,
+                    ModelDisplayName = r.TestedModelSnapshot.Label(),
+                    InformationCondition = BenchmarkCandidatePromptOptions.FromJson(r.CandidatePromptOptionsJson).Condition.ToWire(),
+                    Status = r.Status.ToString(),
+                    Spec = BenchmarkExperimentalChangeCatalog.SpecOfStamp(r.InstructionVariant!),
+                    HashMatchesCurrent = string.Equals(r.InstructionVariant, current, StringComparison.Ordinal)
+                }).ToList()
+            });
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>Creates a text-only change written in Overseer: 201 with the change and its overlaps; 400 with field errors.</summary>
+    [HttpPost("experimental-changes")]
+    public async Task<IActionResult> CreateExperimentalChange(
+        [FromBody] BenchmarkExperimentalChangeEditRequest? request,
+        [FromServices] BenchmarkExperimentalChangeStore store,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var result = await store.CreateAsync(request ?? new BenchmarkExperimentalChangeEditRequest(), ct);
+            return await ChangeStoreResultAsync(result, store.Catalog, ct);
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>
+    /// Edits a change written in Overseer: 200 with the change and its overlaps; 400 with field errors;
+    /// 404; 409 when it is locked, was edited elsewhere, or is built in.
+    /// </summary>
+    [HttpPut("experimental-changes/{id}")]
+    public async Task<IActionResult> UpdateExperimentalChange(
+        string id,
+        [FromBody] BenchmarkExperimentalChangeEditRequest? request,
+        [FromServices] BenchmarkExperimentalChangeStore store,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var result = await store.UpdateAsync(id, request ?? new BenchmarkExperimentalChangeEditRequest(), ct);
+            return await ChangeStoreResultAsync(result, store.Catalog, ct);
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>Retires a change written in Overseer: 204; 404; 409 when it is built in.</summary>
+    [HttpPost("experimental-changes/{id}/retire")]
+    public async Task<IActionResult> RetireExperimentalChange(
+        string id, [FromServices] BenchmarkExperimentalChangeStore store, CancellationToken ct = default)
+    {
+        try
+        {
+            return NoContentOrRefusal(await store.RetireAsync(id, ct));
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>Restores a retired change written in Overseer: 204; 404; 409 when it is built in.</summary>
+    [HttpPost("experimental-changes/{id}/restore")]
+    public async Task<IActionResult> RestoreExperimentalChange(
+        string id, [FromServices] BenchmarkExperimentalChangeStore store, CancellationToken ct = default)
+    {
+        try
+        {
+            return NoContentOrRefusal(await store.RestoreAsync(id, ct));
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>Deletes a change written in Overseer that no run has used: 204; 404; 409 when it is locked or built in.</summary>
+    [HttpDelete("experimental-changes/{id}")]
+    public async Task<IActionResult> DeleteExperimentalChange(
+        string id, [FromServices] BenchmarkExperimentalChangeStore store, CancellationToken ct = default)
+    {
+        try
+        {
+            return NoContentOrRefusal(await store.DeleteAsync(id, ct));
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>The 8-word overlaps of <c>texts</c> with every benchmark question and rubric; it warns and never blocks.</summary>
+    [HttpPost("experimental-changes/screen")]
+    public async Task<IActionResult> ScreenExperimentalChangeTexts(
+        [FromBody] BenchmarkChangeScreenRequest? request,
+        [FromServices] BenchmarkChangeTextScreen screen,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var texts = (request?.Texts ?? new List<string?>()).Take(MaxScreenTexts).ToList();
+            var overlaps = await screen.ScreenAsync(texts, ct);
+            return Ok(new BenchmarkChangeScreenResultDto { Overlaps = overlaps.Select(BenchmarkChangeOverlapDto.From).ToList() });
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>
+    /// The change as a folder to put in <c>Overseer/BenchmarkChanges/</c>: <c>&lt;id&gt;.zip</c> holding
+    /// <c>&lt;id&gt;/change.json</c> and its <c>.md</c> files.
+    /// </summary>
+    [HttpGet("experimental-changes/{id}/folder")]
+    public async Task<IActionResult> DownloadExperimentalChangeFolder(string id, CancellationToken ct = default)
+    {
+        var catalog = ExperimentalChangeCatalog;
+        if (catalog == null) return CatalogUnavailable();
+
+        try
+        {
+            await catalog.RefreshAsync(ct);
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+
+        var change = catalog.Snapshot.Find(id) ?? catalog.BuiltIns.FirstOrDefault(b => string.Equals(b.Id, id, StringComparison.Ordinal));
+        if (change == null) return NotFound(new { error = $"Unknown experimental change '{id}'." });
+
+        return File(BenchmarkExperimentalChangeStore.BuildFolderZip(change), "application/zip", $"{change.Id}.zip");
+    }
+
+    /// <summary>A create's or an edit's result as its response: 201 or 200 with the change and its overlaps, else the refusal.</summary>
+    private async Task<IActionResult> ChangeStoreResultAsync(
+        BenchmarkChangeStoreResult result, BenchmarkExperimentalChangeCatalog catalog, CancellationToken ct)
+    {
+        if (!result.Succeeded || result.Change == null) return ChangeStoreRefusal(result);
+
+        int runCount = RunCountsByChange(await StampedRunsAsync(ct)).GetValueOrDefault(result.Change.Id);
+        var body = new BenchmarkExperimentalChangeSaveResultDto
+        {
+            Change = BenchmarkExperimentalChangeDto.From(result.Change, catalog, runCount),
+            Overlaps = result.Overlaps.Select(BenchmarkChangeOverlapDto.From).ToList()
+        };
+        return result.Outcome == BenchmarkChangeStoreOutcome.Created
+            ? StatusCode(StatusCodes.Status201Created, body)
+            : Ok(body);
+    }
+
+    private IActionResult NoContentOrRefusal(BenchmarkChangeStoreResult result)
+        => result.Succeeded ? NoContent() : ChangeStoreRefusal(result);
+
+    /// <summary>
+    /// 404 <c>{ error }</c>; 400 <c>{ error, fieldErrors }</c>, or <c>{ error }</c> without field
+    /// errors; 409 <c>{ error, reason }</c>.
+    /// </summary>
+    private IActionResult ChangeStoreRefusal(BenchmarkChangeStoreResult result) => result.Outcome switch
+    {
+        BenchmarkChangeStoreOutcome.NotFound => NotFound(new { error = result.Error }),
+        BenchmarkChangeStoreOutcome.Conflict => Conflict(new { error = result.Error, reason = result.ConflictReason }),
+        _ => BadRequest(result.FieldErrors != null && result.FieldErrors.Count > 0
+            ? (object)new { error = result.Error, fieldErrors = result.FieldErrors }
+            : new { error = result.Error })
+    };
 
     // --- Scoring Profiles CRUD ---
 

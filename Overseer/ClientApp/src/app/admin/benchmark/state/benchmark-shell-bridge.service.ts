@@ -69,7 +69,7 @@ export interface LauncherSetupPrefill extends LauncherSetupFields {
   sourceLabel: string;
   /** The information condition's wire name; a recommended run is always `production`. Absent means production. */
   informationCondition?: string | null;
-  /** The instruction variant's name; a recommended run never has one. */
+  /** The Experimental Changes spec; a recommended run never has one. */
   instructionVariant?: string | null;
 }
 

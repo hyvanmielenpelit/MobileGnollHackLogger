@@ -16,7 +16,7 @@ using Xunit;
 
 /// <summary>
 /// Experimental tools and per-request tool guides: an experimental tool is declared and executed
-/// only under the instruction variant that names it, a variant's guide replaces the declared
+/// only under the experimental changes that offer it, a changed description replaces the declared
 /// description for its own requests alone, and the shared handler is never changed by a request.
 /// </summary>
 public class ToolRegistryExperimentalToolTests

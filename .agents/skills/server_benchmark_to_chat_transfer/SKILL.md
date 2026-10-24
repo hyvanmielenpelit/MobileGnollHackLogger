@@ -515,7 +515,7 @@ When an empirical chat-transferable finding clears the evidence bar, resolve it 
      | `Overseer/ToolGuides/_policy_parallel_disabled.md`, `_policy_parallel_on_request.md` | Parallel-mode overrides |
      | `Overseer/ToolGuides/<tool_name>.md` | Per-tool description, overriding the handler default |
    - `_policy.md` is inlined into the candidate system prompt (`ToolRegistry.GetPolicyText()`), so editing it moves `CandidateSystemPromptSha256` and the frozen-segment cache as well as `ToolGuidesSha256`.
-   - **Test it as an instruction variant first.** A tool-guide text, a `_policy.md` or prompt sentence, a new tool, or a tool-output change is tried as a benchmark-only variant (`docs/overseer/ai-benchmark-conditions-and-variants.md`) before it reaches production. Its variant contrast against a run without it is § 6's controlled pair. It is promoted only when its pre-declared criteria are met, including one criterion on questions it was not motivated by, and one confirming production run follows promotion.
+   - **Test it as an experimental change first.** A tool-guide text, a `_policy.md` or prompt sentence, a new tool, or a tool-output change is tried as a benchmark-only experimental change (`docs/overseer/ai-benchmark-conditions-and-variants.md` § 6; the method is `server_benchmark_conditions_and_variants` § 6) before it reaches production: a built-in folder the agent writes, or a text-only change the developer writes in Overseer. Its experimental-changes contrast against a run without it is § 6's controlled pair. It is promoted only when its pre-declared criteria are met, including one criterion on questions it was not motivated by, and one confirming production run follows promotion.
 4. **Limits Parity**:
    - Aligning session and iteration budgets between chat and benchmark bands per `docs/overseer/ai-benchmark.md` § 9.
 5. **Prompt Segmentation**:
@@ -525,7 +525,7 @@ When an empirical chat-transferable finding clears the evidence bar, resolve it 
    - Adjusting default models or reasoning effort in `/settings` rather than hacking prompt prose.
 7. **Chat System Prompt Modification (Highest Risk, Last Resort)**:
    - Modifying `ChatService.BuildSystemPrompt` prose directly. Reserved exclusively for systemic, cross-model deficiencies backed by multiple comparable runs.
-   - **Test it as an instruction variant first**, as rung 3 says.
+   - **Test it as an experimental change first**, as rung 3 says.
 
 ---
 
@@ -550,7 +550,7 @@ To preserve Overseer chat quality for real human players, agents and developers 
 
 A protocol that authorises production prompt edits but specifies no way to detect that an edit made things worse is incomplete in the direction that matters most. Every change that reached **rung 3 or above** carries these four obligations.
 
-1. **Re-run.** The change is followed by a benchmark run under the **same** configuration as the run that motivated it — same prompt options, harness version, scoring profile and assessor regime, per § 6. A change verified against a differently-configured run is unverified. For a variant, the re-run is the variant contrast itself; the confirming production run after promotion is the second half.
+1. **Re-run.** The change is followed by a benchmark run under the **same** configuration as the run that motivated it — same prompt options, harness version, scoring profile and assessor regime, per § 6. A change verified against a differently-configured run is unverified. For an experimental change, the re-run is the experimental-changes contrast itself; the confirming production run after promotion is the second half.
 2. **Pre-declared acceptance criterion.** *Before* the change is made, write down which dimension is expected to move, in which direction, and by how much — **referenced to the run's own confidence interval.** Run 11's Intelligence Index carried 91.5 ± 5.9 at 95% CI; a 3-point movement is not a result. Declaring the criterion afterwards is choosing the target after seeing the arrow land.
 3. **Side-effect check.** Improvement on the intended axis is not sufficient. Check the specific opposing pairs from § 5:
 
@@ -778,7 +778,7 @@ the plans repository.
 - **Quality**: Index 79 ± 14 (A 79, B 79, reference reader 87), ICC 0.99, 0 disagreements. 2 confirmed critical errors (Q9, Q11). Outcomes 7/2/2/0; Completeness 68.5 lowest. Claims 10 supported; accused sentences 1 supported, 2 refuted; critical-error quotes 2 refuted (Q9, absent from the run report: H1). One verifier error (instance 70).
 - **Speed**: median model time 10.2 s, P90 36.1 s, TTFT P50 2.55 s; 3.0 model calls per answer; source-family share r = 0.81 with model time (n = 11).
 - **Cost**: US$1.57 per run; candidate US$0.0018 per question; claim verifier 38 %; candidate cache-read share 90.5 %. 26 tool calls, 0 failed, 0 refused.
-- **Transfer Action**: `benchmark_run_125_analysis/implementation_plan_v5.md` — W4 rung 2 (`wiki_handoff_prompt_v5.md`, five pages: the W3 Orc and Gnoll hostility lines repaired, Chaotic, Eating Guide, Master Key); harness 59 (H1 critical-error quotes in the run report, H2–H6 report fixes, information conditions, evidence reach, instruction variants); `server_wiki_handoff` quantifier rule (M1). T1 (asker's race/role) and T2 (category) logged. No change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides/` or `RecommendedModels`.
+- **Transfer Action**: `benchmark_run_125_analysis/implementation_plan_v5.md` — W4 rung 2 (`wiki_handoff_prompt_v5.md`, five pages: the W3 Orc and Gnoll hostility lines repaired, Chaotic, Eating Guide, Master Key); harness 59 (H1 critical-error quotes in the run report, H2–H6 report fixes, information conditions, evidence reach, instruction variants — annotated 2026-10-24: now experimental changes, `source-tools-v1` being *Race and role lookup tool* + *Where the game code uses it* and `asker-profile-v1` all four built-in changes, see the ledger); `server_wiki_handoff` quantifier rule (M1). T1 (asker's race/role) and T2 (category) logged. No change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides/` or `RecommendedModels`.
 - **Verification Outcome**: W3 partially closed (Q8, Q7, Q3 passed; Q9 failed on W3's own Orc clause; Q11 failed, Healer page not reached). Harness-57 T2 closed, kept. T1 revert confirmed (Q1–Q7 14.3 s, 34,406 tokens). Lesson: a quantified or comparative clause on one entity's page ("as they may be to any chaotic character") is a claim about every member of the set it names; validate it against each.
 - **Still outstanding**: W4 (R1 of this round); T1, T2 logged; from earlier rounds, the run-124 entry's *Still outstanding* after W3.
 - **Analysis directory**: `hyvanmielenpelit/MobileGnollHackLogger/2026-10-21/benchmark_run_125_analysis/`

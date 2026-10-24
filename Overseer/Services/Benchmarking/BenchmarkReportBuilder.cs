@@ -433,12 +433,16 @@ public static class BenchmarkReportBuilder
 
     /// <summary>
     /// The information condition, the candidate's tool list, the corpus condition and the
-    /// instruction variant, as the manifest, the tool-call log and the diagnostics print them.
+    /// experimental changes, as the manifest, the tool-call log and the diagnostics print them.
     /// <paramref name="candidateTools"/> null prints the list as not recorded, except under
-    /// Closed book, which has none.
+    /// Closed book, which has none. The changes print by title, from <paramref name="changeTitle"/>
+    /// or else the catalog, falling back to the id, followed by the stamp.
     /// </summary>
     internal static IReadOnlyList<string> ConditionManifestLines(
-        BenchmarkRun run, BenchmarkCandidatePromptOptions promptOptions, IReadOnlyList<string>? candidateTools)
+        BenchmarkRun run,
+        BenchmarkCandidatePromptOptions promptOptions,
+        IReadOnlyList<string>? candidateTools,
+        Func<string, string?>? changeTitle = null)
     {
         var condition = promptOptions.Condition;
         string tools = condition == BenchmarkInformationCondition.ClosedBook
@@ -446,21 +450,19 @@ public static class BenchmarkReportBuilder
             : candidateTools == null
                 ? "not recorded"
                 : candidateTools.Count == 0 ? "none" : string.Join(", ", candidateTools);
-        string variant = "none";
+        string changes = "none";
         if (!string.IsNullOrWhiteSpace(run.InstructionVariant))
         {
-            string spec = BenchmarkInstructionVariantCatalog.NameOfStamp(run.InstructionVariant);
-            // An ablation spec is named in words; a plain name prints as it is.
-            string label = BenchmarkInstructionVariantCatalog.DescribeAblation(spec) ?? spec;
-            variant = $"{label} "
-                + $"({run.InstructionVariant[(run.InstructionVariant.IndexOf(':') + 1)..]}) — benchmark-only instruction text and tools that production does not have";
+            string titles = BenchmarkExperimentalChangeCatalog.DescribeWith(
+                run.InstructionVariant, changeTitle ?? BenchmarkExperimentalChangeCatalog.SharedTitleOf);
+            changes = $"{titles} ({run.InstructionVariant}) — benchmark-only instruction text and tools that production does not have";
         }
         return new[]
         {
             $"**Information condition:** {condition.DisplayName()}",
             $"**Candidate tools:** {tools}",
             $"**Corpus condition:** {BenchmarkCorpusConditionMarker.Describe(run.CorpusCondition)}",
-            $"**Instruction variant:** {variant}"
+            $"**Experimental changes:** {changes}"
         };
     }
 

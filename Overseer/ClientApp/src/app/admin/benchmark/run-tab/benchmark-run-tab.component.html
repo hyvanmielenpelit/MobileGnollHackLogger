@@ -815,28 +815,41 @@
                     [attr.aria-describedby]="instructionVariantDescribedBy"
                     (click)="openInstructionVariantDialog()"><span id="candidateInstructionVariantChooseText">Choose…</span></button>
             <app-info-tip trigger="click" tipId="candidateInstructionVariantHint" subject="Experimental Changes">
-              <p>A test-only change to the AI's tools or instructions, tried out before anyone decides to put
-                it into the live chat. The live chat never uses one. Choose None for a normal run; pick a
-                change to see what it does, and compare that run with one that differs only here.</p>
-              <p>Reports call this the instruction variant.</p>
+              <p>Test-only changes to the AI's tools or instructions, tried out before anyone decides to put
+                them into the live chat. The live chat never uses them. Choose None for a normal run; tick the
+                changes a run should try, and compare that run with one that differs only here.</p>
             </app-info-tip>
           </div>
-          @if (selectedVariant; as variant) {
+          @if (selectedChanges.length > 0) {
             <div id="candidateInstructionVariantSummary" class="variant-summary" role="group"
                  aria-labelledby="candidateInstructionVariantSummaryTitle">
-              <p id="candidateInstructionVariantSummaryTitle" class="variant-summary-title">What {{ selectedVariantTitle }} changes</p>
-              @if (selectedVariantLines.length > 0) {
-                <ul class="variant-summary-lines">
-                  @for (line of selectedVariantLines; track $index) {
-                    <li>@for (segment of line; track $index) {@if (segment.code) {<code>{{ segment.text }}</code>} @else {<span>{{ segment.text }}</span>}}</li>
+              <p id="candidateInstructionVariantSummaryTitle" class="variant-summary-title">What this run changes</p>
+              <ul class="variant-summary-lines">
+                @for (line of selectedChangeLines; track line.id) {
+                  <li><strong>{{ line.title }}</strong> — {{ line.summary }}</li>
+                }
+              </ul>
+              @for (mention of selectedChangeMentions; track mention.change.id + ' ' + mention.missing.id) {
+                <div class="gh-field-warning variant-summary-mention">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  <span>{{ mentionText(mention) }}</span>
+                  @if (canAddMentioned(mention)) {
+                    <button type="button" class="btn-ghost variant-summary-add" (click)="addMentioned(mention)">Add {{ mention.missing.title }}</button>
                   }
-                </ul>
+                </div>
               }
-              @if (selectedVariantReference; as reference) {
-                <p id="candidateInstructionVariantReference" class="variant-summary-reference">{{ reference }}</p>
+              @if (selectedChanges.length >= 2) {
+                <p id="candidateInstructionVariantTogether" class="gh-field-warning">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  <span>The effect will belong to these {{ selectedChanges.length }} changes together. To learn which one
+                    did it, test each alone later.</span>
+                </p>
               }
-              @if (variant.description?.trim()) {
-                <p class="variant-summary-note"><em>Technical note:</em> {{ variant.description }}</p>
+              @for (row of selectedChangeConditionLines; track row.id) {
+                <p class="gh-field-warning variant-summary-condition">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  <span>{{ row.title }}: {{ row.line }}</span>
+                </p>
               }
               <p id="candidateInstructionVariantWarning" class="gh-field-warning">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
@@ -844,12 +857,6 @@
                   except for Experimental Changes, on the Paired Test tab of its report.</span>
               </p>
             </div>
-            @if (selectedVariantConditionWarning; as conditionWarning) {
-              <p id="candidateInstructionVariantConditionWarning" class="gh-field-warning">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                <span>{{ conditionWarning }}</span>
-              </p>
-            }
           }
         </div>
 
@@ -1828,7 +1835,14 @@
   }
 </dialog>
 
-<!-- Experimental Changes: the dialog behind the launcher's Choose…. -->
-<app-instruction-variant-dialog [variants]="launcher.instructionVariants" [informationCondition]="launcher.informationCondition"
-                                (chosen)="onInstructionVariantChosen($event)" (closed)="onInstructionVariantDialogClosed()"
-                                (openRunReport)="onInstructionVariantRunReport($event)" />
+<!-- Experimental Changes: the dialog behind the launcher's Choose…, and its editor as a sibling dialog. -->
+<app-experimental-changes-dialog [catalog]="launcher.experimentalChanges" [catalogError]="launcher.experimentalChangesError"
+                                 [informationCondition]="launcher.informationCondition"
+                                 (chosen)="onInstructionVariantChosen($event)" (closed)="onInstructionVariantDialogClosed()"
+                                 (openRunReport)="onInstructionVariantRunReport($event)"
+                                 (editRequested)="onExperimentalChangeEditRequested($event)"
+                                 (catalogChanged)="onExperimentalChangesCatalogChanged()" />
+<app-experimental-change-editor-dialog [catalog]="launcher.experimentalChanges"
+                                       (saved)="onExperimentalChangeSaved($event)"
+                                       (closed)="onExperimentalChangeEditorClosed($event)"
+                                       (reloadRequested)="onExperimentalChangeReloadRequested()" />

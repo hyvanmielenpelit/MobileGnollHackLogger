@@ -919,7 +919,7 @@ public class BenchmarkComparabilityKeyTests
         Assert.Equal(3, BenchmarkComparabilityKey.DefinitionVersion);
     }
 
-    // -- The corpus condition and the instruction variant: two Instrument keys --------------------
+    // -- The corpus condition and the experimental changes: two Instrument keys -------------------
 
     [Fact]
     public void AnAbsentCorpusCondition_ReadsLive_AndAnAbsentVariant_ReadsNone()
@@ -967,26 +967,26 @@ public class BenchmarkComparabilityKeyTests
     }
 
     [Fact]
-    public void AVariantStamp_MovesExactlyOneInstrumentKey()
+    public void AnExperimentalChangesStamp_MovesExactlyOneInstrumentKey()
     {
         var production = Run(13);
         var variant = Run(14);
-        variant.InstructionVariant = "source-tools-v1:0123456789ab";
+        variant.InstructionVariant = "race-role-tool-v1:0123456789ab";
 
         var productionKeys = BenchmarkComparabilityKey.Extract(production);
         var variantKeys = BenchmarkComparabilityKey.Extract(variant).ToDictionary(k => k.Name);
 
         var key = Assert.Single(productionKeys, k => variantKeys[k.Name].Value != k.Value);
         Assert.Equal(BenchmarkComparabilityKey.InstructionVariantKey, key.Name);
-        Assert.Equal("source-tools-v1:0123456789ab", variantKeys[BenchmarkComparabilityKey.InstructionVariantKey].Value);
+        Assert.Equal("race-role-tool-v1:0123456789ab", variantKeys[BenchmarkComparabilityKey.InstructionVariantKey].Value);
         Assert.NotEqual(BenchmarkComparabilityKey.ComputeKeyHash(production), BenchmarkComparabilityKey.ComputeKeyHash(variant));
     }
 
     [Theory]
-    [InlineData("asker-profile-v1/minus/guide.wiki_search:3fa2c91b0d1e", "asker-profile-v1:0123456789ab")]
-    [InlineData("asker-profile-v1/only/tool.get_character_info:3fa2c91b0d1e", null)]
-    [InlineData("asker-profile-v1/minus/guide.wiki_search:3fa2c91b0d1e", "asker-profile-v1/only/guide.wiki_search:abcdefabcdef")]
-    public void AnAblationStamp_MovesExactlyOneInstrumentKey(string ablationStamp, string? referenceStamp)
+    [InlineData("race-role-tool-v1+stats-referenced-by-v1:3fa2c91b0d1e", "race-role-tool-v1:0123456789ab")]
+    [InlineData("asker-character-procedure-v1:3fa2c91b0d1e", null)]
+    [InlineData("race-role-tool-v1+stats-referenced-by-v1:3fa2c91b0d1e", "race-role-tool-v1+stats-referenced-by-v1:abcdefabcdef")]
+    public void AStampOfSeveralChanges_MovesExactlyOneInstrumentKey(string ablationStamp, string? referenceStamp)
     {
         var reference = Run(13);
         reference.InstructionVariant = referenceStamp;

@@ -93,6 +93,14 @@ public static class BenchmarkInformationConditions
         _ => "Production — all tools (production default)"
     };
 
+    /// <summary>The condition's name alone, as a sentence names it: <i>Source code only</i>.</summary>
+    public static string ShortName(this BenchmarkInformationCondition condition) => condition switch
+    {
+        BenchmarkInformationCondition.SourceOnly => "Source code only",
+        BenchmarkInformationCondition.ClosedBook => "Closed book",
+        _ => "Production"
+    };
+
     /// <summary>
     /// The candidate's tool allowlist under <paramref name="condition"/>: the configured list as it
     /// is, without the excluded tools in its original order, or empty.

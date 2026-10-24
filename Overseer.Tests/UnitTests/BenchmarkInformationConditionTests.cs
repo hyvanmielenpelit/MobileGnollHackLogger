@@ -7,7 +7,7 @@ using Xunit;
 
 /// <summary>
 /// The information conditions: their wire names, the candidate tool allowlist each resolves to, and
-/// the allowlist a run with an instruction variant adds experimental tools to.
+/// the allowlist a run with experimental changes adds experimental tools to.
 /// </summary>
 public class BenchmarkInformationConditionTests
 {

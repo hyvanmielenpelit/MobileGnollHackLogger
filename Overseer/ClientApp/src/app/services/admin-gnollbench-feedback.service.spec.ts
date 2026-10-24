@@ -34,7 +34,7 @@ describe('AdminGnollBenchFeedbackService', () => {
       startDate: '2026-09-21', endDate: '2026-10-21', statuses: ['new', 'regressed'], accepted: 'all',
       categories: ['tool_problem'], models: ['claude-x', 'gpt-x'], providers: ['Anthropic'], runs: ['12', '13'],
       series: ['4'], groups: ['5'], batteries: ['6'], batches: ['7'], suites: ['8'], questions: ['9', '10'],
-      conditions: ['sourceOnly'], corpora: ['live', 'scarce-1'], variants: ['none', 'asker-profile-v1/minus/guide.wiki_search'],
+      conditions: ['sourceOnly'], corpora: ['live', 'scarce-1'], variants: ['none', 'asker-search-words-v1+race-role-tool-v1'],
       harnesses: ['60'], fingerprints: [FP], search: ' crystal ', sort: 'runs', skip: 25, take: 25
     }).subscribe();
 
@@ -58,7 +58,7 @@ describe('AdminGnollBenchFeedbackService', () => {
     expect(p.get('question')).toBe('9,10');
     expect(p.get('condition')).toBe('sourceOnly');
     expect(p.get('corpus')).toBe('live,scarce-1');
-    expect(p.get('variant')).toBe('none,asker-profile-v1/minus/guide.wiki_search');
+    expect(p.get('variant')).toBe('none,asker-search-words-v1+race-role-tool-v1');
     expect(p.get('harness')).toBe('60');
     expect(p.get('fingerprints')).toBe(FP);
     expect(p.get('search')).toBe('crystal');

@@ -8,6 +8,11 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of, throwError } from 'rxjs';
 import {
+  AdminBenchmarkService,
+  BenchmarkExperimentalChangeCatalogDto,
+  BenchmarkExperimentalChangeDto
+} from '../../../services/admin-benchmark.service';
+import {
   AdminGnollBenchFeedbackService,
   GnollBenchFeedbackCounts,
   GnollBenchFeedbackFacets,
@@ -70,8 +75,8 @@ function occurrence(id: number, overrides: Partial<GnollBenchFeedbackOccurrence>
   return {
     id, occurredUtc: '2026-10-20T12:30:00Z', runId: 12, seriesId: 4, suiteId: 8, suiteName: 'Suite A',
     questionId: 9, questionText: 'What does a dilithium crystal do?', modelId: 'claude-x', modelLabel: 'Claude X',
-    provider: 'Anthropic', condition: 'closedBook', variant: 'asker-profile-v1/minus/guide.wiki_search:0123456789ab',
-    variantName: 'asker-profile-v1/minus/guide.wiki_search', corpus: 'live', harness: '61', accepted: true, error: null,
+    provider: 'Anthropic', condition: 'closedBook', variant: 'asker-search-words-v1+race-role-tool-v1:0123456789ab',
+    variantName: 'asker-search-words-v1+race-role-tool-v1', corpus: 'live', harness: '61', accepted: true, error: null,
     category: 'missing_information', subject: 'Dilithium crystal', summary: 'No page.', details: null,
     searchedFor: 'wiki_search "dilithium"', expectedLocation: 'wiki page Dilithium crystal', relatedTools: ['wiki_search'],
     noticedVia: null, suspectedCause: 'did_not_verify', suspectedCauseNote: 'I answered first.', truncated: false,
@@ -99,7 +104,7 @@ function facets(overrides: Partial<GnollBenchFeedbackFacets> = {}): GnollBenchFe
     corpora: [{ value: 'live', label: 'live', count: 3 }],
     variants: [
       { value: 'none', label: 'none', count: 2 },
-      { value: 'asker-profile-v1/minus/guide.wiki_search', label: 'asker-profile-v1/minus/guide.wiki_search', count: 1 }
+      { value: 'asker-search-words-v1+race-role-tool-v1', label: 'asker-search-words-v1+race-role-tool-v1', count: 1 }
     ],
     harnesses: [{ value: '61', label: '61', count: 3 }],
     runs: [{ id: 13, name: 'Run #13 · Suite A · Claude X', count: 1 }, { id: 12, name: 'Run #12 · Suite A · GPT X', count: 2 }],
@@ -107,6 +112,28 @@ function facets(overrides: Partial<GnollBenchFeedbackFacets> = {}): GnollBenchFe
     suites: [{ id: 8, name: 'Suite A', count: 3 }],
     questions: [{ id: 9, name: 'What does a dilithium crystal do?', count: 1 }, { id: 10, name: 'Where is it?', count: 2 }],
     ...overrides
+  };
+}
+
+/** The catalog's titles of the two changes the fixtures use. */
+const CHANGE_TITLES: ReadonlyMap<string, string> = new Map([
+  ['asker-search-words-v1', 'Search with the player\'s race and role'],
+  ['race-role-tool-v1', 'Race and role lookup tool']
+]);
+
+/** The experimental changes catalog the panel reads its titles from. */
+function changesCatalog(): BenchmarkExperimentalChangeCatalogDto {
+  return {
+    changes: [...CHANGE_TITLES].map(([id, title]): BenchmarkExperimentalChangeDto => ({
+      id, title, summary: `${title}.`, expectedEffect: null, source: 'builtIn' as const, kinds: [], hashPrefix: '0123456789ab',
+      isValid: true, invalidReason: null, retired: false, locked: false, createdAtUtc: null, updatedAtUtc: null, copiedFrom: null,
+      experimentalTool: null, experiment: null, descriptionEdits: [], instructions: null,
+      appliesUnder: { production: 'full' as const, sourceOnly: 'full' as const, closedBook: 'none' as const },
+      notApplyingUnderSourceOnly: [], mentions: [], conflictsWith: [], runCount: 0,
+      canEdit: false, canEditText: false, canDelete: false, canCopy: true
+    })),
+    recentSelections: [], productionTools: [],
+    limits: { titleMax: 60, summaryMax: 220, textMax: 4000, descriptionEditsMax: 6 }, maxStampLength: 160
   };
 }
 
@@ -131,15 +158,17 @@ class SelectionBarStubComponent {
 
 describe('FeedbackGnollBenchPanelComponent', () => {
   describe('labels and the address', () => {
-    it('names a variant, its ablations and no variant in words, and drops a stamp\'s hash', () => {
+    it('names the experimental changes by title when the catalog has them, by id otherwise, and drops a stamp\'s hash', () => {
       expect(gnollBenchVariantLabel('none')).toBe('None');
       expect(gnollBenchVariantLabel(null)).toBe('None');
-      expect(gnollBenchVariantLabel('source-tools-v1')).toBe('source-tools-v1');
-      expect(gnollBenchVariantLabel('source-tools-v1:0123456789ab')).toBe('source-tools-v1');
-      expect(gnollBenchVariantLabel('asker-profile-v1/minus/guide.wiki_search:0123456789ab'))
-        .toBe('asker-profile-v1 without guide.wiki_search');
-      expect(gnollBenchVariantLabel('asker-profile-v1/only/tool.get_character_info'))
-        .toBe('asker-profile-v1, only tool.get_character_info');
+      expect(gnollBenchVariantLabel('race-role-tool-v1')).toBe('race-role-tool-v1');
+      expect(gnollBenchVariantLabel('race-role-tool-v1:0123456789ab')).toBe('race-role-tool-v1');
+      expect(gnollBenchVariantLabel('asker-search-words-v1+race-role-tool-v1:0123456789ab'))
+        .toBe('asker-search-words-v1, race-role-tool-v1');
+      expect(gnollBenchVariantLabel('asker-search-words-v1+race-role-tool-v1', CHANGE_TITLES))
+        .toBe('Search with the player\'s race and role, Race and role lookup tool');
+      // A decoded query string has a space for the `+`; an id the catalog does not list keeps its id.
+      expect(gnollBenchVariantLabel('asker-search-words-v1 gone-v1', CHANGE_TITLES)).toBe('Search with the player\'s race and role, gone-v1');
     });
 
     it('reads a local day as 21 Oct 2026 and adds the local time as 14:02', () => {
@@ -152,20 +181,20 @@ describe('FeedbackGnollBenchPanelComponent', () => {
     it('reads an address, dropping unknown values and non-numeric ids, and writes it back without the defaults', () => {
       const state = gnollBenchStateFromQuery(convertToParamMap({
         status: 'resolved,bogus', category: 'tool_problem,nope', run: '12,x,13', condition: 'closedBook,moon',
-        variant: 'none,asker-profile-v1/minus/guide.wiki_search', accepted: 'refused', q: ' crystal '
+        variant: 'none,asker-search-words-v1+race-role-tool-v1', accepted: 'refused', q: ' crystal '
       }));
       expect(state.facets.status).toEqual(['resolved']);
       expect(state.facets.category).toEqual(['tool_problem']);
       expect(state.facets.run).toEqual(['12', '13']);
       expect(state.facets.condition).toEqual(['closedBook']);
-      expect(state.facets.variant).toEqual(['none', 'asker-profile-v1/minus/guide.wiki_search']);
+      expect(state.facets.variant).toEqual(['none', 'asker-search-words-v1+race-role-tool-v1']);
       expect(state.accepted).toBe('refused');
       expect(state.search).toBe('crystal');
 
       const params = gnollBenchQueryParams(state);
       expect(params).toEqual(expect.objectContaining({
         status: 'resolved', category: 'tool_problem', run: '12,13', condition: 'closedBook',
-        variant: 'none,asker-profile-v1/minus/guide.wiki_search', accepted: 'refused', q: 'crystal', model: null
+        variant: 'none,asker-search-words-v1+race-role-tool-v1', accepted: 'refused', q: 'crystal', model: null
       }));
 
       const defaults = gnollBenchStateFromQuery(convertToParamMap({ accepted: 'bogus' }));
@@ -226,6 +255,7 @@ describe('FeedbackGnollBenchPanelComponent', () => {
       facetsSpy = vi.spyOn(service, 'getFacets').mockReturnValue(of(facets()));
       countsSpy = vi.spyOn(service, 'getCounts').mockReturnValue(of(counts({ new: 3, regressed: 1, resolved: 7 })));
       occurrencesSpy = vi.spyOn(service, 'getOccurrences').mockReturnValue(of({ totalCount: 0, rows: [] }));
+      vi.spyOn(TestBed.inject(AdminBenchmarkService), 'getExperimentalChanges').mockReturnValue(of(changesCatalog()));
     });
 
     afterEach(() => {
@@ -414,7 +444,8 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         expect(facet('model')!.options.map(o => o.label)).toEqual(['Claude X', 'GPT X']);
         expect(facet('run')!.options.map(o => o.value)).toEqual(['13', '12']);
         expect(facet('condition')!.options.map(o => o.label)).toEqual(['Production', 'Closed book']);
-        expect(facet('variant')!.options.map(o => o.label)).toEqual(['None', 'asker-profile-v1 without guide.wiki_search']);
+        expect(facet('variant')!.options.map(o => o.label))
+          .toEqual(['None', 'Search with the player\'s race and role, Race and role lookup tool']);
         expect(chipLabels()).toEqual(['Remove filter Status: New', 'Remove filter Status: Regressed']);
       });
 
@@ -424,15 +455,15 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         choose('run', ['12']);
         expect(lastQuery()).toEqual(expect.objectContaining({ runs: ['12'], statuses: ['new', 'regressed'], skip: 0 }));
 
-        choose('variant', ['asker-profile-v1/minus/guide.wiki_search']);
+        choose('variant', ['asker-search-words-v1+race-role-tool-v1']);
         choose('condition', ['closedBook']);
         expect(lastQuery()).toEqual(expect.objectContaining({
-          runs: ['12'], variants: ['asker-profile-v1/minus/guide.wiki_search'], conditions: ['closedBook']
+          runs: ['12'], variants: ['asker-search-words-v1+race-role-tool-v1'], conditions: ['closedBook']
         }));
 
         await settle();
         expect(queryParams()).toEqual(expect.objectContaining({
-          run: '12', variant: 'asker-profile-v1/minus/guide.wiki_search', condition: 'closedBook'
+          run: '12', variant: 'asker-search-words-v1+race-role-tool-v1', condition: 'closedBook'
         }));
         expect(queryParams()['status']).toBeUndefined();
         expect(router.url.startsWith('/admin/feedback/gnollbench?')).toBe(true);
@@ -712,7 +743,7 @@ describe('FeedbackGnollBenchPanelComponent', () => {
           'Suite': 'Suite A',
           'Model and provider': 'Claude X · Anthropic',
           'Information condition': 'Closed book',
-          'Experimental Changes': 'asker-profile-v1 without guide.wiki_search asker-profile-v1/minus/guide.wiki_search:0123456789ab',
+          'Experimental Changes': 'Search with the player\'s race and role, Race and role lookup tool asker-search-words-v1+race-role-tool-v1:0123456789ab',
           'Corpus': 'Live',
           'Harness': '61',
           'Question #9': 'What does a dilithium crystal do?',

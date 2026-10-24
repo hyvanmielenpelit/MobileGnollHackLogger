@@ -83,6 +83,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<OverseerFeedbackSetting> OverseerFeedbackSettings { get; set; } = null!;
         public DbSet<BenchmarkRunAnswerSelfReport> BenchmarkRunAnswerSelfReports { get; set; } = null!;
         public DbSet<BenchmarkFeedbackTriage> BenchmarkFeedbackTriages { get; set; } = null!;
+        public DbSet<BenchmarkExperimentalChange> BenchmarkExperimentalChanges { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -273,6 +274,11 @@ namespace MobileGnollHackLogger.Data
             {
                 e.Property(t => t.Status).HasConversion<string>().HasMaxLength(16);
                 e.HasIndex(t => t.Fingerprint).IsUnique();
+            });
+
+            modelBuilder.Entity<BenchmarkExperimentalChange>(e =>
+            {
+                e.HasIndex(c => c.ChangeId).IsUnique();
             });
 
             modelBuilder.Entity<AdminBulkOperation>(e =>

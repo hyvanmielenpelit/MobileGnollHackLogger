@@ -289,7 +289,14 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
     getLastAssessor: vi.fn().mockName("AdminBenchmarkService.getLastAssessor"),
     retryClaimVerification: vi.fn().mockName("AdminBenchmarkService.retryClaimVerification"),
     getRunLimits: vi.fn().mockName("AdminBenchmarkService.getRunLimits"),
-    getInstructionVariants: vi.fn().mockName("AdminBenchmarkService.getInstructionVariants"),
+    getExperimentalChanges: vi.fn().mockName("AdminBenchmarkService.getExperimentalChanges"),
+    getExperimentalChangeRuns: vi.fn().mockName("AdminBenchmarkService.getExperimentalChangeRuns"),
+    createExperimentalChange: vi.fn().mockName("AdminBenchmarkService.createExperimentalChange"),
+    updateExperimentalChange: vi.fn().mockName("AdminBenchmarkService.updateExperimentalChange"),
+    setExperimentalChangeRetired: vi.fn().mockName("AdminBenchmarkService.setExperimentalChangeRetired"),
+    deleteExperimentalChange: vi.fn().mockName("AdminBenchmarkService.deleteExperimentalChange"),
+    screenExperimentalChangeTexts: vi.fn().mockName("AdminBenchmarkService.screenExperimentalChangeTexts"),
+    downloadExperimentalChangeFolder: vi.fn().mockName("AdminBenchmarkService.downloadExperimentalChangeFolder"),
     startRunSeries: vi.fn().mockName("AdminBenchmarkService.startRunSeries"),
     getRunSeries: vi.fn().mockName("AdminBenchmarkService.getRunSeries"),
     getActiveRunSeries: vi.fn().mockName("AdminBenchmarkService.getActiveRunSeries"),
@@ -449,8 +456,13 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
     remainingDailyHeadroom: 20,
     maxRunCountPerSeries: 20
   }));
-  // The Run Benchmark sub-tab reads the instruction variant catalog; it lists none.
-  benchmarkServiceMock.getInstructionVariants.mockReturnValue(of([]));
+  // The Run Benchmark sub-tab reads the experimental changes catalog; it lists none, and no run used one.
+  benchmarkServiceMock.getExperimentalChanges.mockReturnValue(of({
+    changes: [], recentSelections: [], productionTools: [],
+    limits: { titleMax: 60, summaryMax: 220, textMax: 4000, descriptionEditsMax: 6 }, maxStampLength: 160
+  }));
+  benchmarkServiceMock.getExperimentalChangeRuns.mockReturnValue(of({ runCount: 0, olderHashRunCount: 0, runs: [] }));
+  benchmarkServiceMock.screenExperimentalChangeTexts.mockReturnValue(of({ overlaps: [] }));
   benchmarkServiceMock.getRun.mockReturnValue(of({ id: 1, answers: [] } as any));
   benchmarkServiceMock.getQuestions.mockReturnValue(of([]));
   benchmarkServiceMock.getSuiteRunsFootprint.mockReturnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));

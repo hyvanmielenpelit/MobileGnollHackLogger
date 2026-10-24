@@ -223,8 +223,8 @@ namespace Overseer.Services.Tools
         }
 
         /// <summary>
-        /// Whether the request's instruction variant offers the experimental tool <paramref name="toolName"/>.
-        /// A request without a variant offers none.
+        /// Whether the request's experimental changes offer the experimental tool <paramref name="toolName"/>.
+        /// A request without experimental changes offers none.
         /// </summary>
         internal static bool IsEnabledByVariant(string toolName, ToolExecutionContext context)
             => context.Variant?.ExperimentalTools.Contains(toolName, StringComparer.OrdinalIgnoreCase) == true;

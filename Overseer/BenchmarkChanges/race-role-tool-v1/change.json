@@ -1,0 +1,12 @@
+{
+  "id": "race-role-tool-v1",
+  "title": "Race and role lookup tool",
+  "summary": "Adds get_character_info, which reads a race's or role's rules — allowed combinations, intrinsics by level, racial attitudes — straight from the game tables.",
+  "expectedEffect": "Questions that depend on the player's race or role are answered from the tables, not from memory.",
+  "experimentalTool": "get_character_info",
+  "experimentalToolDescription": "get_character_info.md",
+  "experiment": null,
+  "descriptionAdditions": {},
+  "descriptionReplacements": {},
+  "instructions": null
+}

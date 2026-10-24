@@ -15,7 +15,7 @@ namespace Overseer.Tests.UnitTests;
 
 /// <summary>
 /// Pins the production candidate prompt and its comparability record. A benchmark-only addition
-/// (an information condition, an instruction variant) must leave every production run's prompt
+/// (an information condition, experimental changes) must leave every production run's prompt
 /// bytes, canonical options JSON and signature exactly as they were, or every later run becomes
 /// NotComparable with the history. A deliberate prompt edit updates these literals.
 /// </summary>

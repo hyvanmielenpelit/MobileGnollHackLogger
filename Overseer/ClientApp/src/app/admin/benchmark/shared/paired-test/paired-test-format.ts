@@ -220,7 +220,7 @@ export function kindSentence(kind: BenchmarkPairKind | 'NotComparable' | null | 
     case 'ConditionContrast':
       return 'Condition contrast: the same model and setup under a different information condition; the difference measures what the withheld tools contribute.';
     case 'VariantContrast':
-      return 'Variant contrast: the same model and setup with a different benchmark-only instruction variant; the difference measures the variant\'s effect.';
+      return 'Experimental-changes contrast: the same model and setup with different benchmark-only experimental changes; the difference measures their effect.';
     case 'NotComparable':
       return 'Not comparable.';
     default:

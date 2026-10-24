@@ -493,9 +493,10 @@ public static class BenchmarkComparabilityKey
                 BenchmarkComparabilityValueKind.Text),
 
             InstructionVariantKey => Info(name,
-                "Instruction variant",
-                "The benchmark-only instruction text, tool guides and experimental tools the "
-                + "candidate ran under, or none; a difference is the variant contrast it exists for.",
+                "Experimental changes",
+                "The benchmark-only experimental changes the candidate ran under, as their spec and "
+                + "selection hash: instruction text, tool descriptions, experimental tools and "
+                + "tool-output switches, or none; a difference is the experimental-changes contrast it exists for.",
                 BenchmarkComparabilityValueKind.Text),
 
             // --- Speed and cost ---------------------------------------------------------------

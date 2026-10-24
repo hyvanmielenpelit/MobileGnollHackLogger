@@ -234,7 +234,8 @@ AI snapshot into a one-file benchmark suite YAML, offline), `server_chat_consist
 with a given model), `server_nuget_packages` (NuGet references in the .NET projects, tracing a
 NuGet audit warning to the transitive package behind it, and the deliberate pins that override
 one, such as `System.Security.Cryptography.Pkcs`), `server_benchmark_conditions_and_variants`
-(GnollBench information conditions, scarce corpora, gold evidence and instruction variants), and
+(GnollBench information conditions, scarce corpora, gold evidence and experimental changes: built-in
+change folders under `Overseer/BenchmarkChanges/` and text-only changes written in Overseer), and
 the tool-layer trio
 `server_tool_data_sources`, `server_tool_parameter_reference` and
 `server_benchmark_tool_diagnostics`.

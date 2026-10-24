@@ -43,8 +43,8 @@
 
   <ItemGroup>
     <Content Include="ToolGuides\**" CopyToOutputDirectory="PreserveNewest" />
-    <Content Remove="BenchmarkVariants\**" />
-    <Content Include="BenchmarkVariants\**" CopyToOutputDirectory="PreserveNewest" />
+    <Content Remove="BenchmarkChanges\**" />
+    <Content Include="BenchmarkChanges\**" CopyToOutputDirectory="PreserveNewest" />
     <Content Update="Data\**" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="Services\ModelCatalogs\*.json" />
     <EmbeddedResource Include="Resources\Pdf\**" />

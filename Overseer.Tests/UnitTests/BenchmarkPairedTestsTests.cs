@@ -671,11 +671,11 @@ public class BenchmarkPairedTestsTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void AVariantPair_IsAVariantContrast_WithOrWithoutAPromptHashDifference(bool movePromptHash)
+    public void AnExperimentalChangesPair_IsAVariantContrast_WithOrWithoutAPromptHashDifference(bool movePromptHash)
     {
         var baseline = Run(1, SixScores);
         var treatment = Run(2, SixScores);
-        treatment.InstructionVariant = "asker-profile-v1:0123456789ab";
+        treatment.InstructionVariant = "probe-tool-v1:0123456789ab";
         if (movePromptHash)
         {
             treatment.CandidateSystemPromptSha256 = OtherPromptSha;
@@ -687,19 +687,25 @@ public class BenchmarkPairedTestsTests
         Assert.Contains(BenchmarkComparabilityKey.InstructionVariantKey, classification.ChangedKeys);
         Assert.Equal(movePromptHash, classification.ChangedKeys.Contains(BenchmarkComparabilityKey.CandidateSystemPromptKey));
         Assert.Equal(movePromptHash ? 2 : 1, classification.ChangedKeys.Count);
-        Assert.StartsWith("Variant contrast:", classification.Explanation);
-        Assert.Contains("none", classification.Explanation);
-        Assert.Contains("asker-profile-v1:0123456789ab", classification.Explanation);
+        Assert.StartsWith(
+            $"Experimental-changes contrast: run #{baseline.Id} has none; run #{treatment.Id} adds probe-tool-v1. "
+            + "Everything else is the same; compare, never pool.",
+            classification.Explanation);
+        Assert.DoesNotContain("belongs to them together", classification.Explanation);
     }
 
     [Theory]
-    [InlineData("asker-profile-v1:0123456789ab", "asker-profile-v1/minus/guide.wiki_search:3fa2c91b0d1e", false)]
-    [InlineData("asker-profile-v1:0123456789ab", "asker-profile-v1/minus/appendix.asker-profile-v1:3fa2c91b0d1e", true)]
-    [InlineData(null, "asker-profile-v1/only/tool.get_character_info:3fa2c91b0d1e", false)]
-    [InlineData(null, "asker-profile-v1/only/appendix.asker-profile-v1:3fa2c91b0d1e", true)]
-    public void AnAblationPair_IsAVariantContrast_AgainstItsReference(string? referenceStamp, string ablationStamp, bool movePromptHash)
+    [InlineData("probe-a-v1+probe-b-v1:0123456789ab", "probe-a-v1:3fa2c91b0d1e", false,
+        "has probe-a-v1 and probe-b-v1; run #{1} removes probe-b-v1.")]
+    [InlineData(null, "probe-a-v1+probe-b-v1:3fa2c91b0d1e", true,
+        "has none; run #{1} adds probe-a-v1 and probe-b-v1. Everything else is the same; compare, never pool. The runs differ by 2 changes, so a difference belongs to them together.")]
+    [InlineData("probe-a-v1:0123456789ab", "probe-b-v1:3fa2c91b0d1e", false,
+        "has probe-a-v1; run #{1} adds probe-b-v1 and removes probe-a-v1. Everything else is the same; compare, never pool. The runs differ by 2 changes")]
+    [InlineData("probe-a-v1:0123456789ab", "probe-a-v1:3fa2c91b0d1e", true,
+        "has probe-a-v1; run #{1} has the same changes with different text.")]
+    public void TwoSelections_AreAVariantContrast_NamingTheirDifference(
+        string? referenceStamp, string ablationStamp, bool movePromptHash, string expected)
     {
-        // Leave one out is compared with the whole variant, only one with no variant.
         var baseline = Run(1, SixScores);
         baseline.InstructionVariant = referenceStamp;
         var treatment = Run(2, SixScores);
@@ -714,8 +720,25 @@ public class BenchmarkPairedTestsTests
         Assert.Equal(BenchmarkRunPairKind.VariantContrast, classification.Kind);
         Assert.Contains(BenchmarkComparabilityKey.InstructionVariantKey, classification.ChangedKeys);
         Assert.Equal(movePromptHash ? 2 : 1, classification.ChangedKeys.Count);
-        Assert.StartsWith("Variant contrast:", classification.Explanation);
-        Assert.Contains(ablationStamp, classification.Explanation);
+        Assert.StartsWith($"Experimental-changes contrast: run #{baseline.Id} ", classification.Explanation);
+        Assert.Contains(string.Format(expected, baseline.Id, treatment.Id), classification.Explanation);
+    }
+
+    [Fact]
+    public void TheContrast_NamesTheChangesByTitle()
+    {
+        var baseline = Run(1, SixScores);
+        var treatment = Run(2, SixScores);
+        treatment.InstructionVariant = "probe-steps-v1+probe-tool-v1:0123456789ab";
+        var titles = new Dictionary<string, string> { ["probe-tool-v1"] = "Probe tool", ["probe-steps-v1"] = "Probe steps" };
+
+        var classification = BenchmarkPairedTests.ClassifyRunPair(
+            baseline, treatment, repriced: false, id => titles.TryGetValue(id, out var title) ? title : null);
+
+        Assert.StartsWith(
+            $"Experimental-changes contrast: run #{baseline.Id} has none; run #{treatment.Id} adds Probe steps and Probe tool. "
+            + "Everything else is the same; compare, never pool. The runs differ by 2 changes, so a difference belongs to them together.",
+            classification.Explanation);
     }
 
     [Fact]
@@ -723,7 +746,7 @@ public class BenchmarkPairedTestsTests
     {
         var baseline = ConditionRun(1, BenchmarkInformationCondition.Production);
         var treatment = ConditionRun(2, BenchmarkInformationCondition.SourceOnly);
-        treatment.InstructionVariant = "source-tools-v1:0123456789ab";
+        treatment.InstructionVariant = "probe-tool-v1:0123456789ab";
 
         var classification = BenchmarkPairedTests.ClassifyRunPair(baseline, treatment, repriced: false);
 
@@ -748,7 +771,7 @@ public class BenchmarkPairedTestsTests
         Assert.Equal(4, (int)BenchmarkRunPairKind.ConditionContrast);
         Assert.Equal(5, (int)BenchmarkRunPairKind.VariantContrast);
         Assert.Equal("Condition contrast", BenchmarkPairedTests.KindLabel(BenchmarkRunPairKind.ConditionContrast));
-        Assert.Equal("Variant contrast", BenchmarkPairedTests.KindLabel(BenchmarkRunPairKind.VariantContrast));
+        Assert.Equal("Experimental-changes contrast", BenchmarkPairedTests.KindLabel(BenchmarkRunPairKind.VariantContrast));
         Assert.Equal("ConditionContrast", BenchmarkPairedTests.KindName(BenchmarkRunPairKind.ConditionContrast));
         Assert.Equal("VariantContrast", BenchmarkPairedTests.KindName(BenchmarkRunPairKind.VariantContrast));
     }

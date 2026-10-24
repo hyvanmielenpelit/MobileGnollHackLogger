@@ -102,11 +102,11 @@ export function informationConditionShortName(condition: string | null | undefin
 }
 
 /**
- * The run's settings that differ from production, in the order information condition, instruction
- * variant, corpus condition, withheld feedback tool: `closed book`, `variant: cite-first:ab12cd34ef56`,
+ * The run's settings that differ from production, in the order information condition, experimental
+ * changes, corpus condition, withheld feedback tool: `closed book`, `changes: race-role-tool-v1`,
  * `corpus: scarce:2026-10`, `feedback tool withheld`. The condition is the run's own field, else the
- * prompt options' `informationCondition`; the last tag is the prompt options' `feedbackToolWithheld`.
- * Empty for a production run.
+ * prompt options' `informationCondition`; the changes tag is the stamp's spec, without its hash; the
+ * last tag is the prompt options' `feedbackToolWithheld`. Empty for a production run.
  */
 export function runConditionTags(run: RunConditionFields | null | undefined): string[] {
   if (!run) return [];
@@ -127,8 +127,10 @@ export function runConditionTags(run: RunConditionFields | null | undefined): st
   }
   const conditionName = informationConditionShortName(condition);
   if (conditionName) tags.push(conditionName);
-  const variant = (run.instructionVariant ?? '').trim();
-  if (variant) tags.push(`variant: ${variant}`);
+  const stamp = (run.instructionVariant ?? '').trim();
+  const colon = stamp.indexOf(':');
+  const spec = colon > 0 ? stamp.slice(0, colon) : stamp;
+  if (spec) tags.push(`changes: ${spec}`);
   const corpus = (run.corpusCondition ?? '').trim();
   if (corpus) tags.push(`corpus: ${corpus}`);
   if (opts?.feedbackToolWithheld === true) tags.push('feedback tool withheld');

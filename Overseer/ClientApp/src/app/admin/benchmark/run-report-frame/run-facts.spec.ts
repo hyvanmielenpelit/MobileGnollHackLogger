@@ -327,13 +327,13 @@ describe('run facts', () => {
       expect(formatCandidatePrompt(null)).toBeNull();
     });
 
-    it('names a non-production condition, the instruction variant and the corpus condition', () => {
+    it('names a non-production condition, the experimental changes and the corpus condition', () => {
       const parts = candidatePromptParts({
         candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true,"informationCondition":"closedBook"}',
-        instructionVariant: 'cite-first:ab12cd34ef56', corpusCondition: 'scarce:2026-10'
+        instructionVariant: 'asker-character-procedure-v1+race-role-tool-v1:ab12cd34ef56', corpusCondition: 'scarce:2026-10'
       });
       expect(formatCandidatePrompt(parts))
-        .toBe('Gameplay Help · concise (tools on) · closed book · variant: cite-first:ab12cd34ef56 · corpus: scarce:2026-10');
+        .toBe('Gameplay Help · concise (tools on) · closed book · changes: asker-character-procedure-v1+race-role-tool-v1 · corpus: scarce:2026-10');
 
       // The run's own field wins over the prompt options; production is not named.
       expect(runConditionTags({ informationCondition: 'sourceOnly', candidatePromptOptionsJson: '{"informationCondition":"closedBook"}' }))

@@ -1,0 +1,239 @@
+<!--
+  EXPERIMENTAL CHANGE EDITOR: a text-only change written in Overseer. A sibling of the Experimental Changes
+  dialog in the run tab; its close and cancel events stop here, so closing it never closes the picker.
+-->
+<dialog #xceDialog class="gh-dialog xce-dialog" id="experimentalChangeEditorDialog"
+        aria-labelledby="xceHeading" aria-describedby="xceSubtitle"
+        (cancel)="onCancel($event)" (close)="onClose($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="xceHeading">{{ heading }}</h3>
+        <p class="dialog-subtitle" id="xceSubtitle">A text-only change for test runs. New tools and output switches are built in the repository.</p>
+      </div>
+      <button type="button" class="btn-icon-action" id="xceClose" aria-label="Close the experimental change editor"
+              interestfor="xceCloseTip" style="anchor-name: --xce-close-tip" (click)="requestClose()">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="xceCloseTip" style="position-anchor: --xce-close-tip">Close without saving</div>
+    </div>
+
+    <div class="dialog-body xce-body">
+      @if (locked) {
+        <div class="xce-locked" id="xceLocked" role="note">
+          <svg class="xce-locked-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+          <div class="xce-locked-body">
+            <p>Used by a run, so its text is locked: that run stays re-runnable only while the text is unchanged. You can
+              still edit the title, summary and Should improve.</p>
+            <button type="button" class="btn-ghost" id="xceCopyVersion" (click)="copyAsNewVersion()">Copy as new version</button>
+          </div>
+        </div>
+      }
+
+      <section class="xce-section" aria-labelledby="xceNameTitle">
+        <h4 class="gh-section-title" id="xceNameTitle">Name it</h4>
+        <div class="xce-field">
+          <label for="xceTitle">Title <span class="xce-required" aria-hidden="true">*</span></label>
+          <div class="xce-input-row">
+            <input type="text" id="xceTitle" class="gh-input" required autocomplete="off" [attr.maxlength]="limits.titleMax"
+                   [value]="title" [attr.aria-invalid]="errorFor('title') ? 'true' : null"
+                   [attr.aria-describedby]="describedBy('title', 'xceTitleCount')"
+                   (input)="onTitleInput($event)" (blur)="markTouched('title')">
+            <span class="xce-count" id="xceTitleCount">{{ title.length }}/{{ limits.titleMax }}</span>
+          </div>
+          @if (errorFor('title'); as error) {
+            <p class="gh-field-error xce-error" id="xceTitle-error">{{ error }}</p>
+          }
+        </div>
+        <div class="xce-field">
+          <label for="xceSummary">Summary <span class="xce-required" aria-hidden="true">*</span></label>
+          <div class="xce-input-row">
+            <textarea id="xceSummary" class="gh-input" rows="2" required [attr.maxlength]="limits.summaryMax"
+                      [value]="summary" [attr.aria-invalid]="errorFor('summary') ? 'true' : null"
+                      [attr.aria-describedby]="describedBy('summary', 'xceSummaryHint', 'xceSummaryCount')"
+                      (input)="onSummaryInput($event)" (blur)="markTouched('summary')"></textarea>
+            <span class="xce-count" id="xceSummaryCount">{{ summary.length }}/{{ limits.summaryMax }}</span>
+          </div>
+          <p class="form-hint" id="xceSummaryHint">One sentence: what the AI gets.</p>
+          @if (errorFor('summary'); as error) {
+            <p class="gh-field-error xce-error" id="xceSummary-error">{{ error }}</p>
+          }
+        </div>
+        <div class="xce-field">
+          <label for="xceExpected">Should improve</label>
+          <div class="xce-input-row">
+            <input type="text" id="xceExpected" class="gh-input" autocomplete="off" [attr.maxlength]="limits.summaryMax"
+                   [value]="expectedEffect"
+                   [attr.aria-describedby]="describedBy('expectedEffect', 'xceExpectedCount')"
+                   (input)="onExpectedInput($event)" (blur)="markTouched('expectedEffect')">
+            <span class="xce-count" id="xceExpectedCount">{{ expectedEffect.length }}/{{ limits.summaryMax }}</span>
+          </div>
+          @if (errorFor('expectedEffect'); as error) {
+            <p class="gh-field-error xce-error" id="xceExpected-error">{{ error }}</p>
+          }
+        </div>
+      </section>
+
+      <section class="xce-section" id="xceEffects" aria-labelledby="xceEffectsTitle">
+        <h4 class="gh-section-title" id="xceEffectsTitle">What it changes</h4>
+        @for (block of blocks; track block.key) {
+          <fieldset class="xce-block" [id]="'xce-block-' + block.key" [attr.data-kind]="block.kind">
+            <legend>{{ legends[block.kind] }}</legend>
+            @if (!locked) {
+              <button type="button" class="btn-link xce-remove" [id]="'xce-block-' + block.key + '-remove'"
+                      (click)="removeBlock(block)">Remove<span class="visually-hidden"> {{ legends[block.kind] }}</span></button>
+            }
+            @if (block.kind !== 'instructions') {
+              <div class="xce-field">
+                <label [for]="'xce-block-' + block.key + '-tool'">Tool</label>
+                <select class="gh-input xce-tool" [id]="'xce-block-' + block.key + '-tool'" [disabled]="locked"
+                        [attr.aria-invalid]="errorFor('block-' + block.key + '-tool') ? 'true' : null"
+                        [attr.aria-describedby]="describedBy('block-' + block.key + '-tool', block.tool && isWithheld(block.tool) ? 'xce-block-' + block.key + '-withheld' : '')"
+                        (change)="onBlockTool(block, $event)" (blur)="markTouched('block-' + block.key + '-tool')">
+                  <option value="" [selected]="block.tool === ''" disabled>Choose a tool</option>
+                  @for (tool of toolOptions(block); track tool.name) {
+                    <option [value]="tool.name" [selected]="block.tool === tool.name">{{ toolOptionText(tool) }}</option>
+                  }
+                </select>
+                @if (block.tool && isWithheld(block.tool)) {
+                  <p class="form-hint" [id]="'xce-block-' + block.key + '-withheld'">Not offered under Source code only, so this part does not reach the AI there.</p>
+                }
+                @if (errorFor('block-' + block.key + '-tool'); as error) {
+                  <p class="gh-field-error xce-error" [id]="'xce-block-' + block.key + '-tool-error'">{{ error }}</p>
+                }
+              </div>
+            }
+            <div class="xce-field">
+              <label [for]="'xce-block-' + block.key + '-text'">{{ block.kind === 'replace' ? 'The new description' : 'Text' }}</label>
+              <div class="xce-input-row">
+                <textarea class="gh-input xce-text" [id]="'xce-block-' + block.key + '-text'" rows="5" required
+                          [attr.maxlength]="limits.textMax" [readOnly]="locked" [value]="block.text"
+                          [attr.aria-invalid]="errorFor('block-' + block.key + '-text') ? 'true' : null"
+                          [attr.aria-describedby]="describedBy('block-' + block.key + '-text', 'xce-block-' + block.key + '-count')"
+                          (input)="onBlockText(block, $event)" (blur)="markTouched('block-' + block.key + '-text')"></textarea>
+                <span class="xce-count" [id]="'xce-block-' + block.key + '-count'">{{ block.text.length }}/{{ limits.textMax }}</span>
+              </div>
+              @if (errorFor('block-' + block.key + '-text'); as error) {
+                <p class="gh-field-error xce-error" [id]="'xce-block-' + block.key + '-text-error'">{{ error }}</p>
+              }
+            </div>
+            @if (block.kind === 'add' && block.tool) {
+              <details class="gh-disclosure xce-preview">
+                <summary>What the AI will read</summary>
+                <div class="gh-disclosure-body">
+                  <pre class="xce-pre" tabindex="0" [attr.aria-label]="'The ' + block.tool + ' description with the addition'"><span class="xce-live-text">{{ liveDescription(block.tool) }}</span><span>{{ separator }}</span><ins class="xce-ins">{{ block.text }}</ins></pre>
+                </div>
+              </details>
+            }
+            @if (block.kind === 'replace' && block.tool) {
+              @if (diffFor(block); as diff) {
+                <p class="xce-muted">Removed lines are the live description's; added lines are this change's.</p>
+                <app-text-diff [diff]="diff" view="diff" beforeLabel="The live description" afterLabel="This change's description" />
+              }
+            }
+          </fieldset>
+        } @empty {
+          <p class="xce-muted">Nothing yet. Add to a tool description, replace one, or add instructions.</p>
+        }
+        @if (errorFor('effects'); as error) {
+          <p class="gh-field-error xce-error" id="xceEffects-error">{{ error }}</p>
+        }
+        @if (!locked) {
+          <div class="xce-add-row" id="xceAddButtons">
+            @if (canAddDescription) {
+              <button type="button" class="btn-ghost xce-add" id="xceAddAddition" (click)="addBlock('add')">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                Add to a tool description
+              </button>
+              <button type="button" class="btn-ghost xce-add" id="xceAddReplacement" (click)="addBlock('replace')">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                Replace a tool description
+              </button>
+            }
+            @if (canAddInstructions) {
+              <button type="button" class="btn-ghost xce-add" id="xceAddInstructions" (click)="addBlock('instructions')">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                Add instructions
+              </button>
+            }
+          </div>
+        }
+      </section>
+
+      <section class="xce-section" id="xceCheck" aria-labelledby="xceCheckTitle">
+        <h4 class="gh-section-title" id="xceCheckTitle">Check</h4>
+        <div class="xce-screen" role="status">
+          @if (screenStatus === 'checking') {
+            <p class="xce-muted">Checking the text against the benchmark questions…</p>
+          } @else if (screenStatus === 'error') {
+            <p class="gh-field-error">{{ screenError }}</p>
+          } @else if (screenStatus === 'done' && overlaps && overlaps.length === 0) {
+            <p class="xce-muted" id="xceNoOverlap">No overlap with any benchmark question or rubric.</p>
+          } @else if (!hasText()) {
+            <p class="xce-muted">Each text is checked against every benchmark question and rubric as you write.</p>
+          }
+        </div>
+        @if (overlaps && overlaps.length > 0) {
+          <ul class="xce-overlaps" id="xceOverlaps">
+            @for (overlap of overlaps; track $index) {
+              <li class="xce-warning">
+                <svg class="xce-warning-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                <span>{{ overlapText(overlap) }}</span>
+              </li>
+            }
+          </ul>
+        }
+        @if (confirmationRequired) {
+          <label class="checkbox-label align-start xce-confirm">
+            <input type="checkbox" id="xceConfirm" [checked]="confirmed"
+                   [attr.aria-invalid]="errorFor('genericConfirmed') ? 'true' : null"
+                   [attr.aria-describedby]="describedBy('genericConfirmed')"
+                   (change)="onConfirmChange($event)">
+            <span>This text is a general procedure or wording. It states no game fact, answer or hint about a particular question.</span>
+          </label>
+          @if (errorFor('genericConfirmed'); as error) {
+            <p class="gh-field-error xce-error" id="xceConfirm-error">{{ error }}</p>
+          }
+        }
+      </section>
+    </div>
+
+    <div class="dialog-footer">
+      @if (discardPrompt) {
+        <div class="xce-discard" id="xceDiscard" role="group" aria-labelledby="xceDiscardText">
+          <span id="xceDiscardText">Discard your edits?</span>
+          <button type="button" class="btn-gh btn-gh-cancel" id="xceKeepEditing" (click)="keepEditing()">Keep editing</button>
+          <button type="button" class="btn-gh btn-gh-delete" id="xceDiscardEdits" (click)="discard()">Discard</button>
+        </div>
+      } @else {
+        @if (conflict; as c) {
+          <p class="gh-footer-note xce-conflict" id="xceFooterNote">
+            <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span>{{ c.message }}</span>
+            @if (c.reason !== 'builtIn' && source) {
+              <button type="button" class="btn-link" id="xceReload" (click)="reload()">Reload</button>
+            }
+          </p>
+        } @else if (saveRefusal) {
+          <p class="gh-footer-note" id="xceFooterNote">
+            <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span>{{ saveRefusal }}</span>
+          </p>
+        } @else if (saveError) {
+          <p class="gh-footer-note" id="xceFooterNote" role="alert">
+            <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span>{{ saveError }}</span>
+          </p>
+        }
+        <button type="button" class="btn-gh btn-gh-cancel" id="xceCancel" (click)="requestClose()">Cancel</button>
+        <button type="button" class="btn-gh" id="xceSave"
+                [attr.aria-disabled]="saveRefusal || conflict ? 'true' : null"
+                [attr.aria-describedby]="saveRefusal || conflict || saveError ? 'xceFooterNote' : null"
+                (click)="save()">Save</button>
+      }
+    </div>
+  </div>
+</dialog>

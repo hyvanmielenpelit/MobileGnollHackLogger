@@ -118,7 +118,7 @@ public sealed class GnollBenchFeedbackFilter
     /// <summary>The <c>corpus</c> value that selects runs with no corpus condition.</summary>
     public const string LiveCorpus = "live";
 
-    /// <summary>The <c>variant</c> value that selects runs with no instruction variant.</summary>
+    /// <summary>The <c>variant</c> value that selects runs with no experimental changes.</summary>
     public const string NoVariant = "none";
 
     public const string SortLastSeen = "lastSeen";
@@ -153,7 +153,7 @@ public sealed class GnollBenchFeedbackFilter
     /// <summary>Stored corpus conditions; <see cref="LiveCorpus"/> matches a null one.</summary>
     public List<string> Corpora { get; set; } = new();
 
-    /// <summary>Variant names without the hash; <see cref="NoVariant"/> matches a run without one.</summary>
+    /// <summary>Experimental-changes specs without the hash, ids sorted; <see cref="NoVariant"/> matches a run without one.</summary>
     public List<string> Variants { get; set; } = new();
     public List<string> Harnesses { get; set; } = new();
     public List<string> Fingerprints { get; set; } = new();
@@ -206,7 +206,7 @@ public sealed class GnollBenchFeedbackFilter
         foreach (var part in Split(query.Model)) AddDistinct(filter.Models, part);
         foreach (var part in Split(query.Provider)) AddDistinct(filter.Providers, part);
         foreach (var part in Split(query.Corpus)) AddDistinct(filter.Corpora, part);
-        foreach (var part in Split(query.Variant)) AddDistinct(filter.Variants, part);
+        foreach (var part in Split(query.Variant)) AddDistinct(filter.Variants, BenchmarkExperimentalChangeCatalog.CanonicalizeSpec(part) ?? part);
         foreach (var part in Split(query.Harness)) AddDistinct(filter.Harnesses, part);
         foreach (var part in Split(query.Fingerprints)) AddDistinct(filter.Fingerprints, part.ToLowerInvariant());
         if (filter.Fingerprints.Count > MaxFingerprints)
@@ -1547,9 +1547,9 @@ public sealed class GnollBenchFeedbackQuery
 
     // --- Helpers ---
 
-    /// <summary>The variant name of a run stamp, split at the first ':' as <see cref="BenchmarkInstructionVariantCatalog.NameOfStamp"/> does; null for none.</summary>
+    /// <summary>The experimental-changes spec of a run stamp, split at the first ':' as <see cref="BenchmarkExperimentalChangeCatalog.SpecOfStamp"/> does; null for none.</summary>
     public static string? VariantNameOf(string? stamp)
-        => string.IsNullOrWhiteSpace(stamp) ? null : BenchmarkInstructionVariantCatalog.NameOfStamp(stamp);
+        => string.IsNullOrWhiteSpace(stamp) ? null : BenchmarkExperimentalChangeCatalog.SpecOfStamp(stamp);
 
     /// <summary>The lowercase, trimmed fingerprint; empty when it is not 64 hex characters.</summary>
     public static string NormalizeFingerprint(string? fingerprint)

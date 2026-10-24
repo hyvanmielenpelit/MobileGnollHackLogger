@@ -1,0 +1,12 @@
+{
+  "id": "asker-character-procedure-v1",
+  "title": "Answer from the player's own character",
+  "summary": "Adds a paragraph to the end of the AI's instructions: when a question depends on the player's race, role or alignment, read that page or the game tables rather than general NetHack knowledge.",
+  "expectedEffect": "Fewer answers carried over from NetHack where GnollHack differs.",
+  "experimentalTool": null,
+  "experimentalToolDescription": null,
+  "experiment": null,
+  "descriptionAdditions": {},
+  "descriptionReplacements": {},
+  "instructions": "instructions.md"
+}

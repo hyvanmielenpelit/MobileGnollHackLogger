@@ -15,6 +15,22 @@ export function downloadTextFile(fileName: string, text: string, mimeType = 'app
   }
 }
 
+/** Saves a blob as a file through a temporary object URL, revoked once the download has started. */
+export function downloadBlobFile(fileName: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  try {
+    anchor.click();
+  } finally {
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+}
+
 /** Reduces a file name to lower-case `[a-z0-9._-]`, with whitespace as `-`. Empty input becomes `export`. */
 export function safeFileName(input: string): string {
   const name = (input ?? '')

@@ -32,8 +32,8 @@ public sealed class AdminGnollBenchFeedbackControllerTests : IDisposable
     private const string AdminName = "triager";
     private const string MissingInformation = "missing_information";
     private const string ToolProblem = "tool_problem";
-    private const string AblationStamp = "asker-profile-v1/minus/guide.wiki_search:abcdef123456";
-    private const string AblationName = "asker-profile-v1/minus/guide.wiki_search";
+    private const string AblationStamp = "asker-search-words-v1+race-role-tool-v1:abcdef123456";
+    private const string AblationName = "asker-search-words-v1+race-role-tool-v1";
     private const string ScarceCorpus = "scarce:no-items";
 
     private static readonly DateTime T0 = new(2025, 3, 1, 12, 0, 0, DateTimeKind.Utc);
@@ -149,8 +149,8 @@ public sealed class AdminGnollBenchFeedbackControllerTests : IDisposable
 
     /// <summary>
     /// Four runs with one issue each. A: model A, suite 1, production, live, harness 60, question 11. B: model B, suite 2,
-    /// source code only, the ablation variant, scarce corpus, harness 61, question 22, in series S. C: model A, suite 1,
-    /// closed book, source-tools-v1, live, harness 9, question 11, in group G and battery run R. D: model B, suite 2,
+    /// source code only, two experimental changes, scarce corpus, harness 61, question 22, in series S. C: model A, suite 1,
+    /// closed book, race-role-tool-v1, live, harness 9, question 11, in group G and battery run R. D: model B, suite 2,
     /// production, live, harness 60, question 22, in nothing. Batch M names run A, series S and battery run R.
     /// </summary>
     private sealed record FilterFixture(BenchmarkRun A, BenchmarkRun B, BenchmarkRun C, BenchmarkRun D,
@@ -170,7 +170,7 @@ public sealed class AdminGnollBenchFeedbackControllerTests : IDisposable
 
         var a = await AddRunAsync(_modelA, "Suite One", 1, harness: "60");
         var b = await AddRunAsync(_modelB, "Suite Two", 2, series, BenchmarkInformationConditions.SourceOnlyWire, AblationStamp, ScarceCorpus, "61");
-        var c = await AddRunAsync(_modelA, "Suite One", 1, null, BenchmarkInformationConditions.ClosedBookWire, "source-tools-v1:0123456789ab", null, "9");
+        var c = await AddRunAsync(_modelA, "Suite One", 1, null, BenchmarkInformationConditions.ClosedBookWire, "race-role-tool-v1:0123456789ab", null, "9");
         var d = await AddRunAsync(_modelB, "Suite Two", 2, harness: "60");
 
         await AddReportAsync(await AddAnswerAsync(a, T0.AddHours(1), 11, "Question eleven about gnolls"), FilterFixture.FpA, "Issue A", ToolProblem);
@@ -390,8 +390,10 @@ public sealed class AdminGnollBenchFeedbackControllerTests : IDisposable
 
         Assert.Equal(Sorted(FilterFixture.FpA, FilterFixture.FpD), await MatchingAsync(new GnollBenchFeedbackFilterQuery { Variant = "none" }));
         Assert.Equal(new[] { FilterFixture.FpB }, await MatchingAsync(new GnollBenchFeedbackFilterQuery { Variant = AblationName }));
-        Assert.Equal(new[] { FilterFixture.FpC }, await MatchingAsync(new GnollBenchFeedbackFilterQuery { Variant = "source-tools-v1" }));
-        Assert.Empty(await MatchingAsync(new GnollBenchFeedbackFilterQuery { Variant = "asker-profile-v1" }));
+        // A query string decodes '+' to a space, and the ids may come in any order.
+        Assert.Equal(new[] { FilterFixture.FpB }, await MatchingAsync(new GnollBenchFeedbackFilterQuery { Variant = "race-role-tool-v1 asker-search-words-v1" }));
+        Assert.Equal(new[] { FilterFixture.FpC }, await MatchingAsync(new GnollBenchFeedbackFilterQuery { Variant = "race-role-tool-v1" }));
+        Assert.Empty(await MatchingAsync(new GnollBenchFeedbackFilterQuery { Variant = "asker-character-procedure-v1" }));
         Assert.Empty(await MatchingAsync(new GnollBenchFeedbackFilterQuery { Variant = AblationStamp }));
 
         Assert.Equal(Sorted(FilterFixture.FpA, FilterFixture.FpD), await MatchingAsync(new GnollBenchFeedbackFilterQuery { Harness = "60" }));
@@ -551,7 +553,7 @@ public sealed class AdminGnollBenchFeedbackControllerTests : IDisposable
             facets.Questions.Select(q => (q.Id, q.Name, q.Count)));
         Assert.Equal(new[] { "production", "sourceOnly", "closedBook" }, facets.Conditions.Select(c => c.Value));
         Assert.Equal(new[] { "live", ScarceCorpus }, facets.Corpora.Select(c => c.Value));
-        Assert.Equal(new[] { "none", AblationName, "source-tools-v1" }, facets.Variants.Select(v => v.Value));
+        Assert.Equal(new[] { "none", AblationName, "race-role-tool-v1" }, facets.Variants.Select(v => v.Value));
         Assert.Equal(new[] { "9", "60", "61" }, facets.Harnesses.Select(h => h.Value));
         Assert.Equal(2, facets.Harnesses[1].Count);
     }

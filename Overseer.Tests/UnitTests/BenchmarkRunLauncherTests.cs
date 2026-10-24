@@ -10,6 +10,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -37,18 +38,18 @@ public class BenchmarkRunLauncherTests
     }
 
     [Fact]
-    public void TheConditionAndVariant_AreResolvedAsGiven_AndTheVariantNameTrimmed()
+    public void TheConditionAndChanges_AreResolvedAsGiven_AndTheSpecNormalized()
     {
         var request = new StartBenchmarkRunRequest
         {
             InformationCondition = BenchmarkInformationConditions.ClosedBookWire,
-            InstructionVariant = "  source-tools-v1 "
+            InstructionVariant = "  race-role-tool-v1 stats-referenced-by-v1 "
         };
 
         var switches = BenchmarkRunLauncher.ResolvePromptSwitches(request);
 
         Assert.Equal(BenchmarkInformationCondition.ClosedBook, switches.InformationCondition);
-        Assert.Equal("source-tools-v1", switches.InstructionVariant);
+        Assert.Equal("race-role-tool-v1+stats-referenced-by-v1", switches.InstructionVariant);
 
         var options = RecordedOptions(request);
         Assert.False(options.EnableToolUse);
@@ -147,7 +148,7 @@ public class BenchmarkRunLauncherTests
             AssessorModelConfigurationId = 2,
             RunCount = 3,
             InformationCondition = BenchmarkInformationConditions.SourceOnlyWire,
-            InstructionVariant = "source-tools-v1"
+            InstructionVariant = "race-role-tool-v1"
         };
         var series = new BenchmarkRunSeries { StartRequestJson = JsonSerializer.Serialize(request) };
 
@@ -156,7 +157,7 @@ public class BenchmarkRunLauncherTests
         Assert.NotNull(stored);
         var switches = BenchmarkRunLauncher.ResolvePromptSwitches(stored!);
         Assert.Equal(BenchmarkInformationCondition.SourceOnly, switches.InformationCondition);
-        Assert.Equal("source-tools-v1", switches.InstructionVariant);
+        Assert.Equal("race-role-tool-v1", switches.InstructionVariant);
     }
 
     [Theory]
@@ -202,37 +203,6 @@ public class BenchmarkRunLauncherTests
         Assert.False(BenchmarkRunLauncher.ResolvePromptSwitches(legacy).WithholdFeedbackTool);
     }
 
-    [Fact]
-    public void ARerun_RefusesAVariantWhoseHashNoLongerMatchesTheRunsStamp()
-    {
-        string root = Path.Combine(Path.GetTempPath(), "variant-rerun-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Path.Combine(root, "probe-variant"));
-        try
-        {
-            File.WriteAllText(Path.Combine(root, "probe-variant", BenchmarkInstructionVariantCatalog.VariantFileName),
-                "{ \"name\": \"probe-variant\", \"description\": \"Probe.\" }");
-            var catalog = new BenchmarkInstructionVariantCatalog(
-                root, Array.Empty<Overseer.Services.Tools.IToolHandler>(), NullLogger.Instance);
-            var service = CreateService(catalog);
-            string stamp = catalog.Find("probe-variant")!.Context!.Stamp;
-
-            var (variant, error) = service.ResolveRunVariant(new BenchmarkRun { InstructionVariant = stamp });
-            Assert.Null(error);
-            Assert.Equal("probe-variant", variant!.Name);
-
-            var (_, changed) = service.ResolveRunVariant(new BenchmarkRun { InstructionVariant = "probe-variant:000000000000" });
-            Assert.Equal("The instruction variant 'probe-variant' has changed since this run; re-run is not possible.", changed);
-
-            var (none, noError) = service.ResolveRunVariant(new BenchmarkRun());
-            Assert.Null(none);
-            Assert.Null(noError);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
     // --- The orchestrator claim and battery members ------------------------------------------
 
     /// <summary>Runs an action once, while the first save that inserts a run is being written.</summary>
@@ -272,9 +242,9 @@ public class BenchmarkRunLauncherTests
         ApplicationDbContext db,
         BenchmarkRunManager runManager,
         ModelAvailabilityService? modelAvailability = null,
-        BenchmarkInstructionVariantCatalog? variantCatalog = null)
+        BenchmarkExperimentalChangeCatalog? changeCatalog = null)
     {
-        var benchmarkService = CreateService(variantCatalog, runManager);
+        var benchmarkService = CreateService(changeCatalog, runManager);
         var config = LauncherConfig();
         var endpointPolicy = new Overseer.Services.Privacy.EndpointPolicy(config);
 
@@ -295,7 +265,7 @@ public class BenchmarkRunLauncherTests
 
     /// <summary>A benchmark service that never executes a candidate: the chat service and agent loop are null.</summary>
     private static BenchmarkService CreateService(
-        BenchmarkInstructionVariantCatalog? variantCatalog = null, BenchmarkRunManager? runManager = null)
+        BenchmarkExperimentalChangeCatalog? changeCatalog = null, BenchmarkRunManager? runManager = null)
     {
         var config = LauncherConfig();
         var services = new ServiceCollection();
@@ -314,9 +284,9 @@ public class BenchmarkRunLauncherTests
             endpointPolicy,
             config,
             NullLogger<BenchmarkService>.Instance);
-        if (variantCatalog != null)
+        if (changeCatalog != null)
         {
-            benchmarkService.VariantCatalog = variantCatalog;
+            benchmarkService.ExperimentalChangeCatalog = changeCatalog;
         }
 
         return benchmarkService;
@@ -594,32 +564,7 @@ public class BenchmarkRunLauncherTests
         }
     }
 
-    // --- Information conditions and instruction variants ------------------------------------------
-
-    /// <summary>A catalog over a fresh temporary root holding the given variant folders.</summary>
-    private static (BenchmarkInstructionVariantCatalog Catalog, string Root) VariantCatalogOver(
-        params (string Folder, string? VariantJson)[] folders)
-    {
-        string root = Path.Combine(Path.GetTempPath(), "launcher-variants-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        foreach (var (folder, variantJson) in folders)
-        {
-            string path = Path.Combine(root, folder);
-            Directory.CreateDirectory(path);
-            if (variantJson != null)
-            {
-                File.WriteAllText(Path.Combine(path, BenchmarkInstructionVariantCatalog.VariantFileName), variantJson);
-            }
-        }
-
-        return (new BenchmarkInstructionVariantCatalog(
-            root, Array.Empty<Overseer.Services.Tools.IToolHandler>(), NullLogger.Instance), root);
-    }
-
-    private static void DeleteRoot(string root)
-    {
-        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
-    }
+    // --- Information conditions and experimental changes -----------------------------------------
 
     [Fact]
     public async Task AnUnknownInformationCondition_IsRefused_AndWritesNothing()
@@ -660,304 +605,247 @@ public class BenchmarkRunLauncherTests
         Assert.Null(await CreateLauncher(db, new BenchmarkRunManager()).ValidateRequestAsync(request, ct));
     }
 
-    [Fact]
-    public async Task AnUnknownInstructionVariant_IsRefused_AndWritesNothing()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var (catalog, root) = VariantCatalogOver();
-        try
-        {
-            using var db = CreateDb(Guid.NewGuid().ToString());
-            var (suiteId, _) = await SeedAsync(db);
-            var launcher = CreateLauncher(db, new BenchmarkRunManager(), variantCatalog: catalog);
-
-            var request = LaunchRequest(suiteId);
-            request.InstructionVariant = " no-such-variant ";
-
-            var refusal = await launcher.ValidateRequestAsync(request, ct);
-
-            Assert.NotNull(refusal);
-            Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, refusal!.Outcome);
-            Assert.Equal("Unknown instruction variant 'no-such-variant'.", refusal.Error);
-
-            var launch = await launcher.CreateAndLaunchRunAsync(request, "user", ct: ct);
-            Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, launch.Outcome);
-            Assert.Empty(await db.BenchmarkRuns.ToListAsync(ct));
-        }
-        finally
-        {
-            DeleteRoot(root);
-        }
-    }
-
-    [Fact]
-    public async Task AnInvalidInstructionVariant_IsRefused_WithItsReason()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var (catalog, root) = VariantCatalogOver(("broken-variant", null));
-        try
-        {
-            using var db = CreateDb(Guid.NewGuid().ToString());
-            var (suiteId, _) = await SeedAsync(db);
-
-            var request = LaunchRequest(suiteId);
-            request.InstructionVariant = "broken-variant";
-
-            var refusal = await CreateLauncher(db, new BenchmarkRunManager(), variantCatalog: catalog)
-                .ValidateRequestAsync(request, ct);
-
-            Assert.NotNull(refusal);
-            Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, refusal!.Outcome);
-            Assert.StartsWith("The instruction variant 'broken-variant' is invalid: ", refusal.Error);
-            Assert.Contains(BenchmarkInstructionVariantCatalog.VariantFileName, refusal.Error);
-        }
-        finally
-        {
-            DeleteRoot(root);
-        }
-    }
-
-    [Fact]
-    public async Task AValidInstructionVariant_PassesValidation()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var (catalog, root) = VariantCatalogOver(("plain-variant", "{\"name\":\"plain-variant\"}"));
-        try
-        {
-            Assert.True(catalog.Find("plain-variant")!.IsValid);
-
-            using var db = CreateDb(Guid.NewGuid().ToString());
-            var (suiteId, _) = await SeedAsync(db);
-
-            var request = LaunchRequest(suiteId);
-            request.InstructionVariant = "plain-variant";
-
-            Assert.Null(await CreateLauncher(db, new BenchmarkRunManager(), variantCatalog: catalog)
-                .ValidateRequestAsync(request, ct));
-        }
-        finally
-        {
-            DeleteRoot(root);
-        }
-    }
-
-    // --- Single-feature ablations ------------------------------------------------------------------
-
-    private sealed class FakeToolHandler : Overseer.Services.Tools.IToolHandler
-    {
-        public FakeToolHandler(string toolName) => ToolName = toolName;
-
-        public string ToolName { get; }
-        public string Description { get; set; } = "A fake tool.";
-        public Overseer.Services.Tools.ToolExecutionLocation ExecutionLocation => Overseer.Services.Tools.ToolExecutionLocation.Server;
-        public Overseer.Services.Tools.ToolCategory Category => Overseer.Services.Tools.ToolCategory.InformationRetrieval;
-        public JsonElement ParameterSchema => JsonDocument.Parse("{}").RootElement;
-
-        public Task<Overseer.Services.Tools.ToolResult> ExecuteAsync(
-            JsonElement parameters, Overseer.Services.Tools.ToolExecutionContext context, CancellationToken cancellationToken)
-            => Task.FromResult(new Overseer.Services.Tools.ToolResult { Success = true, Content = "ok" });
-    }
-
-    private const string ProbeVariantJson = """
-        {
-          "name": "probe",
-          "promptAppendix": "appendix.md",
-          "toolGuides": { "wiki_search": "wiki.md", "get_item_stats": "items.md" },
-          "experiments": ["stats_referenced_by"]
-        }
-        """;
-
     /// <summary>
-    /// The variant <c>probe</c>, with an appendix, a reworded wiki_search and get_item_stats and an
-    /// experiment, under a fresh temporary root.
+    /// <c>probe-wiki-v1</c> adds to wiki_search, <c>probe-items-v1</c> adds to get_item_stats,
+    /// <c>probe-steps-v1</c> adds instructions, <c>probe-wiki-replace-v1</c> replaces wiki_search,
+    /// <c>probe-old-v1</c> is retired and <c>probe-broken-v1</c> has no change.json.
     /// </summary>
-    private static string WriteProbeVariant(string appendix = "Probe appendix.")
+    private static void WriteProbeChanges(ExperimentalChangeRoot root, string steps = "Probe steps.")
     {
-        string root = Path.Combine(Path.GetTempPath(), "launcher-ablations-" + Guid.NewGuid().ToString("N"));
-        WriteProbeFiles(root, appendix);
-        return root;
+        root.Write("probe-wiki-v1", ExperimentalChangeFixtures.ChangeJson("probe-wiki-v1", title: "Probe wiki",
+            additions: new() { ["wiki_search"] = "w.md" }), ("w.md", "Probe wiki addition."));
+        root.Write("probe-items-v1", ExperimentalChangeFixtures.ChangeJson("probe-items-v1", title: "Probe items",
+            additions: new() { ["get_item_stats"] = "w.md" }), ("w.md", "Probe item addition."));
+        root.Write("probe-steps-v1", ExperimentalChangeFixtures.ChangeJson("probe-steps-v1", title: "Probe steps",
+            instructions: "i.md"), ("i.md", steps));
+        root.Write("probe-wiki-replace-v1", ExperimentalChangeFixtures.ChangeJson("probe-wiki-replace-v1", title: "Probe wiki replacement",
+            replacements: new() { ["wiki_search"] = "w.md" }), ("w.md", "Probe wiki replacement."));
+        root.Write("probe-old-v1", ExperimentalChangeFixtures.ChangeJson("probe-old-v1", title: "Probe old",
+            instructions: "i.md"), ("i.md", "Old steps."));
+        root.Write("probe-broken-v1", null);
+        root.WriteRetired("probe-old-v1");
     }
 
-    private static void WriteProbeFiles(string root, string appendix)
-    {
-        string folder = Path.Combine(root, "probe");
-        Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, BenchmarkInstructionVariantCatalog.VariantFileName), ProbeVariantJson);
-        File.WriteAllText(Path.Combine(folder, "appendix.md"), appendix);
-        File.WriteAllText(Path.Combine(folder, "wiki.md"), "Reworded wiki guide.");
-        File.WriteAllText(Path.Combine(folder, "items.md"), "Reworded item guide.");
-    }
+    private static BenchmarkExperimentalChangeCatalog ProbeCatalog(ExperimentalChangeRoot root)
+        => ExperimentalChangeFixtures.Catalog(root.Root);
 
-    private static BenchmarkInstructionVariantCatalog ProbeCatalog(string root)
-        => new(root, new Overseer.Services.Tools.IToolHandler[] { new FakeToolHandler("wiki_search"), new FakeToolHandler("get_item_stats") },
-            NullLogger.Instance);
+    public static TheoryData<string?, string, string> LaunchRefusals => new()
+    {
+        { null, " no-such-v1 ", "Unknown experimental change 'no-such-v1'." },
+        { null, "probe-broken-v1", "probe-broken-v1 is invalid: No change.json in the folder." },
+        { null, "probe-old-v1", "Probe old is retired." },
+        { null, "asker-profile-v1/minus/guide.wiki_search", "'asker-profile-v1/minus/guide.wiki_search' is not a list of experimental change ids joined by '+'." },
+        { null, "probe-steps-v1+probe-steps-v1", "Probe steps is selected more than once." },
+        { null, "probe-wiki-v1+probe-wiki-replace-v1", "Probe wiki replacement and Probe wiki both change the wiki_search description, and one of them replaces it." },
+        { "closedBook", "probe-wiki-v1+probe-steps-v1", "Probe wiki has no effect under Closed book: no tools are offered there. Untick it, or choose another Tool Access." },
+        { "sourceOnly", "probe-wiki-v1", "Probe wiki has no effect under Source code only: wiki_search is not offered there. Untick it, or choose another Tool Access." }
+    };
 
     [Theory]
-    [InlineData("closedBook", "probe/minus/experiment.stats_referenced_by", "Closed book — no tools", "a run of the whole probe")]
-    [InlineData("closedBook", "probe/only/guide.get_item_stats", "Closed book — no tools", "a run without Experimental Changes")]
-    [InlineData("sourceOnly", "probe/minus/guide.wiki_search", "Source code only — no wiki, knowledge base or lookup tools", "a run of the whole probe")]
-    [InlineData("sourceOnly", "probe/only/guide.wiki_search", "Source code only — no wiki, knowledge base or lookup tools", "a run without Experimental Changes")]
-    public async Task AnAblationOfAFeatureThatDoesNotApply_IsRefusedUnderTheCondition(
-        string condition, string spec, string conditionName, string reference)
+    [MemberData(nameof(LaunchRefusals))]
+    public async Task ASelectionTheCatalogRefuses_IsRefused_AndWritesNothing(string? condition, string spec, string error)
     {
         var ct = TestContext.Current.CancellationToken;
-        string root = WriteProbeVariant();
-        try
-        {
-            using var db = CreateDb(Guid.NewGuid().ToString());
-            var (suiteId, _) = await SeedAsync(db);
-            var launcher = CreateLauncher(db, new BenchmarkRunManager(), variantCatalog: ProbeCatalog(root));
+        using var root = new ExperimentalChangeRoot();
+        WriteProbeChanges(root);
+        using var db = CreateDb(Guid.NewGuid().ToString());
+        var (suiteId, _) = await SeedAsync(db);
+        var launcher = CreateLauncher(db, new BenchmarkRunManager(), changeCatalog: ProbeCatalog(root));
 
-            var request = LaunchRequest(suiteId);
-            request.InformationCondition = condition;
-            request.InstructionVariant = spec;
+        var request = LaunchRequest(suiteId);
+        request.InformationCondition = condition;
+        request.InstructionVariant = spec;
 
-            var refusal = await launcher.ValidateRequestAsync(request, ct);
+        var refusal = await launcher.ValidateRequestAsync(request, ct);
 
-            Assert.NotNull(refusal);
-            Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, refusal!.Outcome);
-            string featureId = spec[(spec.LastIndexOf('/') + 1)..];
-            Assert.StartsWith($"The instruction variant '{spec}' cannot run under {conditionName}: ", refusal.Error);
-            Assert.Contains($"({featureId}) does not apply there", refusal.Error);
-            Assert.EndsWith($"so the run would be identical to {reference}.", refusal.Error);
+        Assert.NotNull(refusal);
+        Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, refusal!.Outcome);
+        Assert.Equal(error, refusal.Error);
 
-            var launch = await launcher.CreateAndLaunchRunAsync(request, "user", ct: ct);
-            Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, launch.Outcome);
-            Assert.Empty(await db.BenchmarkRuns.ToListAsync(ct));
-        }
-        finally
-        {
-            DeleteRoot(root);
-        }
+        var launch = await launcher.CreateAndLaunchRunAsync(request, "user", ct: ct);
+        Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, launch.Outcome);
+        Assert.Equal(error, launch.Error);
+        Assert.Empty(await db.BenchmarkRuns.ToListAsync(ct));
     }
 
     [Theory]
-    [InlineData(null, "probe/minus/guide.wiki_search")]
-    [InlineData("production", "probe/only/experiment.stats_referenced_by")]
-    [InlineData("sourceOnly", "probe/minus/guide.get_item_stats")]
-    [InlineData("sourceOnly", "probe/only/experiment.stats_referenced_by")]
-    [InlineData("closedBook", "probe/minus/appendix.probe")]
-    [InlineData("closedBook", "probe/only/appendix.probe")]
-    [InlineData("closedBook", "probe")]
-    public async Task AnAblationOfAFeatureThatApplies_PassesValidation(string? condition, string spec)
+    [InlineData(null, "probe-wiki-v1")]
+    [InlineData("production", "probe-wiki-v1+probe-items-v1+probe-steps-v1")]
+    [InlineData("sourceOnly", "probe-items-v1")]
+    [InlineData("sourceOnly", "probe-steps-v1 probe-items-v1")]
+    [InlineData("closedBook", "probe-steps-v1")]
+    public async Task ASelectionWithAnEffectUnderTheCondition_PassesValidation(string? condition, string spec)
     {
         var ct = TestContext.Current.CancellationToken;
-        string root = WriteProbeVariant();
-        try
-        {
-            using var db = CreateDb(Guid.NewGuid().ToString());
-            var (suiteId, _) = await SeedAsync(db);
+        using var root = new ExperimentalChangeRoot();
+        WriteProbeChanges(root);
+        using var db = CreateDb(Guid.NewGuid().ToString());
+        var (suiteId, _) = await SeedAsync(db);
 
-            var request = LaunchRequest(suiteId);
-            request.InformationCondition = condition;
-            request.InstructionVariant = spec;
+        var request = LaunchRequest(suiteId);
+        request.InformationCondition = condition;
+        request.InstructionVariant = spec;
 
-            Assert.Null(await CreateLauncher(db, new BenchmarkRunManager(), variantCatalog: ProbeCatalog(root))
-                .ValidateRequestAsync(request, ct));
-        }
-        finally
-        {
-            DeleteRoot(root);
-        }
+        Assert.Null(await CreateLauncher(db, new BenchmarkRunManager(), changeCatalog: ProbeCatalog(root))
+            .ValidateRequestAsync(request, ct));
     }
 
     [Fact]
-    public async Task AnInvalidAblationSpec_IsRefused_WithTheCatalogsReason()
+    public void ARerun_RefusesASelectionWhoseHashNoLongerMatchesTheRunsStamp_AndAcceptsARetiredOne()
     {
-        var ct = TestContext.Current.CancellationToken;
-        string root = WriteProbeVariant();
-        try
-        {
-            using var db = CreateDb(Guid.NewGuid().ToString());
-            var (suiteId, _) = await SeedAsync(db);
+        using var root = new ExperimentalChangeRoot();
+        WriteProbeChanges(root);
+        var before = CreateService(ProbeCatalog(root));
+        string stamp = before.ResolveExperimentalChanges("probe-steps-v1+probe-items-v1").Stamp!;
+        Assert.StartsWith("probe-items-v1+probe-steps-v1:", stamp);
 
-            var request = LaunchRequest(suiteId);
-            request.InstructionVariant = " probe/minus/tool.get_character_info ";
+        var (variant, error) = before.ResolveRunVariant(new BenchmarkRun { InstructionVariant = stamp });
+        Assert.Null(error);
+        Assert.Equal("probe-items-v1+probe-steps-v1", variant!.Name);
+        Assert.Equal("Probe steps.", variant.Appendix);
 
-            var refusal = await CreateLauncher(db, new BenchmarkRunManager(), variantCatalog: ProbeCatalog(root))
-                .ValidateRequestAsync(request, ct);
+        string retiredStamp = before.ResolveExperimentalChanges("probe-old-v1", allowRetired: true).Stamp!;
+        Assert.Null(before.ResolveRunVariant(new BenchmarkRun { InstructionVariant = retiredStamp }).Error);
 
-            Assert.NotNull(refusal);
-            Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, refusal!.Outcome);
-            Assert.StartsWith("The instruction variant 'probe/minus/tool.get_character_info' is invalid: ", refusal.Error);
-            Assert.Contains("is not a feature of 'probe'", refusal.Error);
-        }
-        finally
-        {
-            DeleteRoot(root);
-        }
-    }
+        WriteProbeChanges(root, "Probe steps, edited.");
+        var after = CreateService(ProbeCatalog(root));
 
-    [Fact]
-    public void ARerun_RefusesAnAblationWhoseBaseHasChanged()
-    {
-        const string Spec = "probe/minus/guide.wiki_search";
-        string root = WriteProbeVariant();
-        try
-        {
-            var before = CreateService(ProbeCatalog(root));
-            string stamp = before.FindInstructionVariant(Spec)!.Context!.Stamp;
+        var (none, changed) = after.ResolveRunVariant(new BenchmarkRun { InstructionVariant = stamp });
+        Assert.Null(none);
+        Assert.Equal("The experimental changes 'probe-items-v1+probe-steps-v1' have changed since this run; re-run is not possible.", changed);
 
-            var (variant, error) = before.ResolveRunVariant(new BenchmarkRun { InstructionVariant = stamp });
-            Assert.Null(error);
-            Assert.Equal(Spec, variant!.Name);
-
-            File.WriteAllText(Path.Combine(root, "probe", "items.md"), "Reworded item guide, edited.");
-            var after = CreateService(ProbeCatalog(root));
-
-            var (none, changed) = after.ResolveRunVariant(new BenchmarkRun { InstructionVariant = stamp });
-            Assert.Null(none);
-            Assert.Equal($"The instruction variant '{Spec}' has changed since this run; re-run is not possible.", changed);
-        }
-        finally
-        {
-            DeleteRoot(root);
-        }
+        var (noVariant, noError) = after.ResolveRunVariant(new BenchmarkRun());
+        Assert.Null(noVariant);
+        Assert.Null(noError);
     }
 
     /// <summary>
-    /// A series stores the spec in its start request; the resume guard recomputes the candidate
-    /// prompt from <c>BenchmarkService.FindInstructionVariant</c> of that spec, so an edit of
-    /// the base's appendix reaches it, and the launch of the next member resolves the new stamp.
+    /// A series stores the spec in its start request; the resume guard and each member's launch
+    /// resolve it again, so an edit of a change's text reaches them under the same spec.
     /// </summary>
     [Fact]
-    public async Task AnAblationSeries_ReadsItsBasesCurrentContent_OnResume()
+    public async Task ASeries_ReadsItsChangesCurrentContent_OnResume()
     {
         var ct = TestContext.Current.CancellationToken;
-        const string Spec = "probe/minus/guide.wiki_search";
-        string root = WriteProbeVariant("Probe appendix.");
-        try
+        using var root = new ExperimentalChangeRoot();
+        WriteProbeChanges(root, "Probe steps.");
+        var request = new StartBenchmarkRunRequest
         {
-            var request = new StartBenchmarkRunRequest
-            {
-                SuiteId = 1, TestedModelConfigurationId = 1, AssessorModelConfigurationId = 2, RunCount = 3,
-                InstructionVariant = Spec
-            };
-            var series = new BenchmarkRunSeries { StartRequestJson = JsonSerializer.Serialize(request) };
-            var switches = BenchmarkRunLauncher.ResolvePromptSwitches(BenchmarkSeriesOrchestrator.DeserializeRequest(series)!);
-            Assert.Equal(Spec, switches.InstructionVariant);
+            SuiteId = 1, TestedModelConfigurationId = 1, AssessorModelConfigurationId = 2, RunCount = 3,
+            InstructionVariant = "probe-steps-v1 probe-items-v1"
+        };
+        var series = new BenchmarkRunSeries { StartRequestJson = JsonSerializer.Serialize(request) };
+        var switches = BenchmarkRunLauncher.ResolvePromptSwitches(BenchmarkSeriesOrchestrator.DeserializeRequest(series)!);
+        Assert.Equal("probe-steps-v1+probe-items-v1", switches.InstructionVariant);
 
-            var before = CreateService(ProbeCatalog(root)).FindInstructionVariant(switches.InstructionVariant)!.Context!;
-            Assert.Equal("Probe appendix.", before.Appendix);
+        var before = CreateService(ProbeCatalog(root)).ResolveExperimentalChanges(switches.InstructionVariant).Context!;
+        Assert.Equal("Probe steps.", before.Appendix);
 
-            WriteProbeFiles(root, "Probe appendix, edited.");
-            var service = CreateService(ProbeCatalog(root));
-            var after = service.FindInstructionVariant(switches.InstructionVariant)!.Context!;
+        WriteProbeChanges(root, "Probe steps, edited.");
+        var after = CreateService(ProbeCatalog(root)).ResolveExperimentalChanges(switches.InstructionVariant).Context!;
 
-            Assert.Equal("Probe appendix, edited.", after.Appendix);
-            Assert.NotEqual(before.Stamp, after.Stamp);
-            Assert.Equal(BenchmarkInstructionVariantCatalog.NameOfStamp(before.Stamp), BenchmarkInstructionVariantCatalog.NameOfStamp(after.Stamp));
+        Assert.Equal("Probe steps, edited.", after.Appendix);
+        Assert.NotEqual(before.Stamp, after.Stamp);
+        Assert.Equal(BenchmarkExperimentalChangeCatalog.SpecOfStamp(before.Stamp), BenchmarkExperimentalChangeCatalog.SpecOfStamp(after.Stamp));
 
-            using var db = CreateDb(Guid.NewGuid().ToString());
-            var (suiteId, _) = await SeedAsync(db);
-            var member = BenchmarkSeriesOrchestrator.DeserializeRequest(series)!;
-            member.SuiteId = suiteId;
-            Assert.Null(await CreateLauncher(db, new BenchmarkRunManager(), variantCatalog: ProbeCatalog(root))
-                .ValidateRequestAsync(member, ct));
-        }
-        finally
+        using var db = CreateDb(Guid.NewGuid().ToString());
+        var (suiteId, _) = await SeedAsync(db);
+        var member = BenchmarkSeriesOrchestrator.DeserializeRequest(series)!;
+        member.SuiteId = suiteId;
+        Assert.Null(await CreateLauncher(db, new BenchmarkRunManager(), changeCatalog: ProbeCatalog(root))
+            .ValidateRequestAsync(member, ct));
+    }
+
+    // --- Locking on launch ----------------------------------------------------------------------
+
+    /// <summary>
+    /// A launch over SQLite whose run gate is taken while the run row is saved, so the row is written
+    /// with its stamp and the run never executes.
+    /// </summary>
+    private static async Task<BenchmarkRun> LaunchWithoutRunningAsync(
+        Microsoft.Data.Sqlite.SqliteConnection connection, BenchmarkExperimentalChangeCatalog catalog, string spec, CancellationToken ct)
+    {
+        var runManager = new BenchmarkRunManager();
+        var race = new RaceOnRunInsert(() => Assert.True(runManager.TryStart(999, new CancellationTokenSource(), out _)));
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).AddInterceptors(race).Options;
+        await using var db = new ApplicationDbContext(options);
+        var (suiteId, _) = await SeedAsync(db);
+        db.Users.Add(new ApplicationUser { Id = "user", UserName = "user" });
+        await db.SaveChangesAsync(ct);
+
+        var request = LaunchRequest(suiteId);
+        request.InstructionVariant = spec;
+        var result = await CreateLauncher(db, runManager, changeCatalog: catalog).CreateAndLaunchRunAsync(request, "user", ct: ct);
+
+        Assert.Equal(BenchmarkRunLaunchOutcome.Conflict, result.Outcome);
+        return await db.BenchmarkRuns.AsNoTracking().SingleAsync(ct);
+    }
+
+    [Fact]
+    public async Task ALaunch_LocksItsDatabaseChanges_StampsTheEditedText_AndALaterTextEditIsRefused()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var root = new ExperimentalChangeRoot();
+        WriteProbeChanges(root);
+        await using var connection = Overseer.Tests.Helpers.SqliteSchemaTemplate.OpenCopy();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        var catalog = ExperimentalChangeFixtures.Catalog(root.Root, options);
+        await using var storeDb = new ApplicationDbContext(options);
+        var store = new BenchmarkExperimentalChangeStore(storeDb, catalog, new BenchmarkChangeTextScreen(storeDb));
+
+        var created = (await store.CreateAsync(new BenchmarkExperimentalChangeEditRequest
         {
-            DeleteRoot(root);
-        }
+            Title = "Stored steps",
+            Summary = "Adds stored steps.",
+            Instructions = "Stored steps.",
+            GenericConfirmed = true
+        }, ct)).Change!;
+        var edited = (await store.UpdateAsync(created.Id, new BenchmarkExperimentalChangeEditRequest
+        {
+            Title = created.Title,
+            Summary = created.Summary,
+            Instructions = "Stored steps, edited before the launch.",
+            GenericConfirmed = true,
+            ExpectedUpdatedAtUtc = created.UpdatedAtUtc
+        }, ct)).Change!;
+        string spec = "probe-items-v1+" + created.Id;
+
+        var run = await LaunchWithoutRunningAsync(connection, catalog, spec, ct);
+
+        var stored = await storeDb.BenchmarkExperimentalChanges.AsNoTracking().SingleAsync(c => c.ChangeId == created.Id, ct);
+        Assert.NotNull(stored.LockedAtUtc);
+        await catalog.RefreshAsync(ct);
+        var selection = catalog.Resolve(spec);
+        Assert.Equal(selection.Stamp, run.InstructionVariant);
+        Assert.Contains("Stored steps, edited before the launch.", selection.Context!.Appendix);
+        Assert.True(catalog.Snapshot.Find(created.Id)!.Locked);
+
+        var refused = await store.UpdateAsync(created.Id, new BenchmarkExperimentalChangeEditRequest
+        {
+            Title = edited.Title,
+            Summary = edited.Summary,
+            Instructions = "Stored steps, edited after the launch.",
+            GenericConfirmed = true,
+            ExpectedUpdatedAtUtc = edited.UpdatedAtUtc
+        }, ct);
+        Assert.Equal(BenchmarkChangeConflictReasons.Locked, refused.ConflictReason);
+
+        Assert.Equal(1, await storeDb.BenchmarkExperimentalChanges.CountAsync(c => c.LockedAtUtc != null, ct));
+    }
+
+    [Fact]
+    public async Task ALaunchOfBuiltInChangesOnly_StampsTheRun_AndLocksNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var root = new ExperimentalChangeRoot();
+        WriteProbeChanges(root);
+        await using var connection = Overseer.Tests.Helpers.SqliteSchemaTemplate.OpenCopy();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        var catalog = ExperimentalChangeFixtures.Catalog(root.Root, options);
+
+        var run = await LaunchWithoutRunningAsync(connection, catalog, "probe-steps-v1 probe-items-v1", ct);
+
+        Assert.Equal(catalog.Resolve("probe-items-v1+probe-steps-v1").Stamp, run.InstructionVariant);
+        Assert.StartsWith("probe-items-v1+probe-steps-v1:", run.InstructionVariant);
     }
 }

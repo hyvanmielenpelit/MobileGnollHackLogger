@@ -8129,7 +8129,7 @@ public class BenchmarkReportBuilderTests
             "- **Information condition:** Production — all tools (production default)" + Environment.NewLine,
             "- **Candidate tools:** wiki_search, source_code_view" + Environment.NewLine,
             "- **Corpus condition:** live" + Environment.NewLine,
-            "- **Instruction variant:** none" + Environment.NewLine
+            "- **Experimental changes:** none" + Environment.NewLine
         };
         int previous = report.IndexOf("- **Tools:** ", StringComparison.Ordinal);
         Assert.True(previous >= 0);
@@ -8181,16 +8181,16 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
-    public void ConditionManifest_NamesAScarceCorpusAndAnInstructionVariant()
+    public void ConditionManifest_NamesAScarceCorpusAndTheExperimentalChanges()
     {
         var run = PromptOptionsRun(new BenchmarkCandidatePromptOptions());
         run.CorpusCondition = "scarce:Run 125 scrub";
-        run.InstructionVariant = "source-tools-v1:0123456789ab";
+        run.InstructionVariant = "probe-tool-v1:0123456789ab";
 
         string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
         Assert.Contains("- **Corpus condition:** scarce — Run 125 scrub" + Environment.NewLine, report);
-        Assert.Contains("- **Instruction variant:** source-tools-v1 (0123456789ab) — benchmark-only instruction text and tools that production does not have" + Environment.NewLine, report);
+        Assert.Contains("- **Experimental changes:** probe-tool-v1 (probe-tool-v1:0123456789ab) — benchmark-only instruction text and tools that production does not have" + Environment.NewLine, report);
     }
 
     [Fact]
@@ -8199,19 +8199,19 @@ public class BenchmarkReportBuilderTests
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
         run.CandidatePromptOptionsJson = null;
-        run.InstructionVariant = "source-tools-v1:0123456789ab";
+        run.InstructionVariant = "probe-tool-v1:0123456789ab";
         BenchmarkRunFinalizer.Apply(run, new[] { q1 });
 
         string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
         Assert.DoesNotContain("**Information condition:**", report);
-        Assert.DoesNotContain("**Instruction variant:**", report);
+        Assert.DoesNotContain("**Experimental changes:**", report);
     }
 
     [Fact]
     public void ConditionManifestLines_AreTheFourLinesInOrder()
     {
-        var run = new BenchmarkRun { CorpusCondition = "invalid", InstructionVariant = "source-tools-v1:0123456789ab" };
+        var run = new BenchmarkRun { CorpusCondition = "invalid", InstructionVariant = "probe-tool-v1:0123456789ab" };
 
         var lines = BenchmarkReportBuilder.ConditionManifestLines(
             run, new BenchmarkCandidatePromptOptions { InformationCondition = BenchmarkInformationConditions.SourceOnlyWire }, null);
@@ -8222,55 +8222,26 @@ public class BenchmarkReportBuilderTests
                 "**Information condition:** Source code only — no wiki, knowledge base or lookup tools",
                 "**Candidate tools:** not recorded",
                 "**Corpus condition:** invalid",
-                "**Instruction variant:** source-tools-v1 (0123456789ab) — benchmark-only instruction text and tools that production does not have"
+                "**Experimental changes:** probe-tool-v1 (probe-tool-v1:0123456789ab) — benchmark-only instruction text and tools that production does not have"
             },
             lines);
     }
 
     [Theory]
-    [InlineData("source-tools-v1:0123456789ab", "source-tools-v1 (0123456789ab)")]
-    [InlineData("asker-profile-v1:3fa2c91b0d1e", "asker-profile-v1 (3fa2c91b0d1e)")]
-    [InlineData("asker-profile-v1", "asker-profile-v1 (asker-profile-v1)")]
-    public void ConditionManifestLines_PrintAPlainVariantAsBefore(string stamp, string expectedPrefix)
+    [InlineData("probe-tool-v1:0123456789ab", "Probe tool (probe-tool-v1:0123456789ab)")]
+    [InlineData("probe-steps-v1+probe-tool-v1:3fa2c91b0d1e", "Probe steps, Probe tool (probe-steps-v1+probe-tool-v1:3fa2c91b0d1e)")]
+    [InlineData("probe-gone-v1+probe-tool-v1:3fa2c91b0d1e", "probe-gone-v1, Probe tool (probe-gone-v1+probe-tool-v1:3fa2c91b0d1e)")]
+    public void ConditionManifestLines_PrintTheChangesByTitle_AndTheStamp(string stamp, string expectedPrefix)
     {
+        var titles = new Dictionary<string, string> { ["probe-tool-v1"] = "Probe tool", ["probe-steps-v1"] = "Probe steps" };
         var run = new BenchmarkRun { InstructionVariant = stamp };
 
-        var lines = BenchmarkReportBuilder.ConditionManifestLines(run, new BenchmarkCandidatePromptOptions(), null);
+        var lines = BenchmarkReportBuilder.ConditionManifestLines(
+            run, new BenchmarkCandidatePromptOptions(), null, id => titles.TryGetValue(id, out var title) ? title : null);
 
         Assert.Equal(
-            "**Instruction variant:** " + expectedPrefix + " — benchmark-only instruction text and tools that production does not have",
+            "**Experimental changes:** " + expectedPrefix + " — benchmark-only instruction text and tools that production does not have",
             lines[3]);
-    }
-
-    [Theory]
-    [InlineData("asker-profile-v1/minus/guide.wiki_search:3fa2c91b0d1e",
-        "asker-profile-v1, leaving out the reworded wiki_search description (3fa2c91b0d1e)")]
-    [InlineData("asker-profile-v1/only/tool.get_character_info:3fa2c91b0d1e",
-        "asker-profile-v1, only the get_character_info tool (3fa2c91b0d1e)")]
-    [InlineData("source-tools-v1/minus/experiment.stats_referenced_by:0123456789ab",
-        "source-tools-v1, leaving out the stats_referenced_by tool-output switch (0123456789ab)")]
-    [InlineData("asker-profile-v1/minus/appendix.asker-profile-v1:3fa2c91b0d1e",
-        "asker-profile-v1, leaving out the asker-profile-v1 instruction paragraph (3fa2c91b0d1e)")]
-    public void ConditionManifestLines_PrintAnAblationInWords(string stamp, string expectedPrefix)
-    {
-        var run = new BenchmarkRun { InstructionVariant = stamp };
-
-        var lines = BenchmarkReportBuilder.ConditionManifestLines(run, new BenchmarkCandidatePromptOptions(), null);
-
-        Assert.Equal(
-            "**Instruction variant:** " + expectedPrefix + " — benchmark-only instruction text and tools that production does not have",
-            lines[3]);
-    }
-
-    [Fact]
-    public void ConditionManifest_NamesAnAblationInTheReport()
-    {
-        var run = PromptOptionsRun(new BenchmarkCandidatePromptOptions());
-        run.InstructionVariant = "asker-profile-v1/minus/guide.wiki_search:3fa2c91b0d1e";
-
-        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
-
-        Assert.Contains("- **Instruction variant:** asker-profile-v1, leaving out the reworded wiki_search description (3fa2c91b0d1e) — benchmark-only instruction text and tools that production does not have" + Environment.NewLine, report);
     }
 
     // -------------------------------------------------------------------------------------

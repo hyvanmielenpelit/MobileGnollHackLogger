@@ -16,17 +16,25 @@ import {
   BenchmarkModelBatchRunDto,
   BENCHMARK_INFORMATION_CONDITIONS,
   BenchmarkInformationConditionOption,
-  BenchmarkInstructionVariantDto
+  BenchmarkExperimentalChangeDto
 } from '../../../services/admin-benchmark.service';
 import {
-  VariantSummarySegment,
-  ablationLabel,
-  variantChangeLines,
-  variantConditionWarning,
-  variantOptionSuffix,
-  variantReferenceLine
-} from './instruction-variant-summary';
-import { InstructionVariantDialogComponent } from './instruction-variant-dialog/instruction-variant-dialog.component';
+  ChangeSummaryLine,
+  ExperimentalChangeEditorRequest,
+  ExperimentalChangeSaved,
+  MissingMention,
+  NO_CHANGES_READOUT,
+  applicabilityLine,
+  changeReadout,
+  changeSpec,
+  changeSummaryLines,
+  conflictReason,
+  isSelectable,
+  mentionLine,
+  missingMentions
+} from './experimental-changes';
+import { ExperimentalChangesDialogComponent } from './experimental-changes-dialog/experimental-changes-dialog.component';
+import { ExperimentalChangeEditorDialogComponent } from './experimental-change-editor-dialog/experimental-change-editor-dialog.component';
 import { SystemAiConfigDto } from '../../../services/admin.service';
 import { BenchmarkCompletionSoundKind, BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
 import {
@@ -162,7 +170,8 @@ export interface LauncherAvailabilityLine {
   standalone: true,
   imports: [
     CommonModule, DecimalPipe, FormsModule, ModelPickerComponent, ModelMultiPickerComponent, ReorderableListComponent,
-    InfoTipComponent, ModelBatchReadinessComponent, ProviderBadgeComponent, InstructionVariantDialogComponent
+    InfoTipComponent, ModelBatchReadinessComponent, ProviderBadgeComponent, ExperimentalChangesDialogComponent,
+    ExperimentalChangeEditorDialogComponent
   ],
   templateUrl: './benchmark-run-tab.component.html',
   styleUrls: ['./benchmark-run-tab.component.scss']
@@ -206,8 +215,8 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
   ngOnInit(): void {
     // The model batch confirmation's close button carries an interest-triggered tooltip.
     ensureOverlayPolyfills();
-    // The Instruction Variant select lists the catalog's valid variants as they are now.
-    this.launcher.loadInstructionVariants();
+    // The Experimental Changes read-out and dialog show the catalog as it is now.
+    this.launcher.loadExperimentalChanges();
   }
 
   ngAfterViewInit(): void {
@@ -676,70 +685,72 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
     this.launcher.refreshReusePreview();
   }
 
-  /** An Experimental Changes option: *name — what it adds*, or the name alone. */
-  instructionVariantLabel(variant: BenchmarkInstructionVariantDto): string {
-    const suffix = variantOptionSuffix(variant);
-    return suffix ? `${variant.name} — ${suffix}` : variant.name;
-  }
-
   /** The Tool Access option chosen now. */
   get selectedCondition(): BenchmarkInformationConditionOption | undefined {
     return this.informationConditionOptions.find(c => c.value === this.launcher.informationCondition);
   }
 
-  /** The valid variant chosen now, the base of an ablation included; null for None. */
-  get selectedVariant(): BenchmarkInstructionVariantDto | null {
-    return this.launcher.resolvedInstructionVariant?.variant ?? null;
-  }
-
-  /** The chosen spec while it resolves; null for None. */
-  private get selectedSpec(): string | null {
-    return this.launcher.resolvedInstructionVariant?.spec ?? null;
+  /** The ticked experimental changes in spec order; empty for None. */
+  get selectedChanges(): BenchmarkExperimentalChangeDto[] {
+    return this.launcher.selectedExperimentalChanges;
   }
 
   /** The choice in words, beside Choose…. */
   get instructionVariantReadout(): string {
-    const resolved = this.launcher.resolvedInstructionVariant;
-    if (!resolved) {
-      // A remembered or repeated spec waits for the catalog, which keeps it or falls back to None.
-      const pending = this.launcher.instructionVariant;
-      return pending && !this.launcher.instructionVariantsLoaded ? `${pending} (checking…)` : 'None — same as the live chat';
-    }
-    if (resolved.mode !== null) return ablationLabel(resolved.spec, this.launcher.instructionVariants);
-    const label = this.instructionVariantLabel(resolved.variant);
-    return resolved.variant.hashPrefix ? `${label} · ${resolved.variant.hashPrefix}` : label;
+    const spec = this.launcher.instructionVariant;
+    if (!spec) return NO_CHANGES_READOUT;
+    // A remembered or repeated spec waits for the catalog, which keeps it or resets it to None.
+    if (!this.launcher.experimentalChangesLoaded) return `${spec} (checking…)`;
+    return this.selectedChanges.length > 0 ? changeReadout(spec, this.launcher.experimentalChangeList) : NO_CHANGES_READOUT;
   }
 
-  /** The summary box's heading subject: the variant's name, or an ablation in words. */
-  get selectedVariantTitle(): string {
-    const spec = this.selectedSpec;
-    return spec ? ablationLabel(spec, this.launcher.instructionVariants) : '';
+  /** The summary box's lines: each ticked change's title and summary. */
+  get selectedChangeLines(): ChangeSummaryLine[] {
+    return this.selectedChanges.length > 0 ? changeSummaryLines(this.launcher.instructionVariant, this.selectedChanges) : [];
   }
 
-  /** The lines of the *What <name> changes* box; an ablation's describe what the run keeps. */
-  get selectedVariantLines(): VariantSummarySegment[][] {
-    const variant = this.selectedVariant;
-    return variant ? variantChangeLines(variant, this.selectedSpec) : [];
+  /** The ticked changes whose texts name a change that is not ticked. */
+  get selectedChangeMentions(): MissingMention[] {
+    return missingMentions(this.selectedChanges.map(c => c.id), this.launcher.experimentalChangeList);
   }
 
-  /** For an ablation, the run it is compared with; null for a whole variant, whose warning says it. */
-  get selectedVariantReference(): string | null {
-    const resolved = this.launcher.resolvedInstructionVariant;
-    return resolved?.mode ? variantReferenceLine(resolved.spec) : null;
+  mentionText(mention: MissingMention): string {
+    return mentionLine(mention);
   }
 
-  /** The line saying what the chosen Tool Access voids of the chosen variant or ablation; null when nothing. */
-  get selectedVariantConditionWarning(): string | null {
-    const variant = this.selectedVariant;
-    return variant ? variantConditionWarning(variant, this.launcher.informationCondition, this.selectedSpec) : null;
+  /** Whether the mention warning's Add button can tick the mentioned change under the current Tool Access. */
+  canAddMentioned(mention: MissingMention): boolean {
+    const missing = mention.missing;
+    return isSelectable(missing)
+      && missing.appliesUnder?.[this.launcher.informationCondition] !== 'none'
+      && !conflictReason(missing, this.selectedChanges.map(c => c.id), this.launcher.experimentalChangeList);
   }
 
-  @ViewChild(InstructionVariantDialogComponent) instructionVariantDialog?: InstructionVariantDialogComponent;
+  /** The mention warning's Add button: adds the mentioned change to the spec. */
+  addMentioned(mention: MissingMention): void {
+    if (!this.canAddMentioned(mention)) return;
+    this.launcher.instructionVariant = changeSpec([...this.selectedChanges.map(c => c.id), mention.missing.id]);
+    this.onReuseInputsChanged();
+    this.cdr.markForCheck();
+  }
+
+  /** The ticked changes that do not fully apply under the chosen Tool Access, each with its line. */
+  get selectedChangeConditionLines(): { id: string; title: string; line: string }[] {
+    return this.selectedChanges
+      .map(change => ({ id: change.id, title: change.title, line: applicabilityLine(change, this.launcher.informationCondition) }))
+      .filter((row): row is { id: string; title: string; line: string } => row.line !== null);
+  }
+
+  @ViewChild(ExperimentalChangesDialogComponent) experimentalChangesDialog?: ExperimentalChangesDialogComponent;
+  @ViewChild(ExperimentalChangeEditorDialogComponent) experimentalChangeEditor?: ExperimentalChangeEditorDialogComponent;
   @ViewChild('instructionVariantChoose') instructionVariantChoose?: ElementRef<HTMLButtonElement>;
+
+  /** A save waits for both the catalog reload and the editor's close before the picker shows it. */
+  private pendingChangeSave: { saved: ExperimentalChangeSaved; reloaded: boolean; closed: boolean } | null = null;
 
   /** Choose…: opens the Experimental Changes dialog on the current choice. */
   openInstructionVariantDialog(): void {
-    this.instructionVariantDialog?.open(this.launcher.instructionVariant);
+    this.experimentalChangesDialog?.open(this.launcher.instructionVariant);
   }
 
   /** Use this: takes the dialog's spec, or None. */
@@ -755,9 +766,56 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
     this.cdr.markForCheck();
   }
 
-  /** A run of the dialog's Runs that used it list: opens its report. */
+  /** A run link of the dialog: opens its report. */
   onInstructionVariantRunReport(runId: number): void {
     this.bridge.viewRunDetail(runId);
+  }
+
+  /** New change, Edit… or Copy as new version… in the picker: opens the editor beside it. */
+  onExperimentalChangeEditRequested(request: ExperimentalChangeEditorRequest): void {
+    this.experimentalChangeEditor?.open(request);
+  }
+
+  /** The editor saved: the catalog reloads, then the picker ticks or focuses the change. */
+  onExperimentalChangeSaved(saved: ExperimentalChangeSaved): void {
+    const pending = { saved, reloaded: false, closed: false };
+    this.pendingChangeSave = pending;
+    this.launcher.reloadExperimentalChanges(() => {
+      pending.reloaded = true;
+      this.finishChangeSave(pending);
+    });
+  }
+
+  /** The editor closed: after a save the picker shows it; otherwise focus returns to what opened the editor. */
+  onExperimentalChangeEditorClosed(saved: boolean): void {
+    const pending = this.pendingChangeSave;
+    if (saved && pending) {
+      pending.closed = true;
+      this.finishChangeSave(pending);
+      return;
+    }
+    this.experimentalChangesDialog?.onEditorClosed();
+  }
+
+  /** The editor's Reload after a 409: the catalog reloads and the editor starts again on the change. */
+  onExperimentalChangeReloadRequested(): void {
+    this.launcher.reloadExperimentalChanges(() => {
+      this.cdr.markForCheck();
+      this.experimentalChangeEditor?.reloadFrom(this.launcher.experimentalChanges);
+    });
+  }
+
+  /** A change was retired, restored or deleted in the picker. */
+  onExperimentalChangesCatalogChanged(): void {
+    this.launcher.reloadExperimentalChanges();
+  }
+
+  private finishChangeSave(pending: { saved: ExperimentalChangeSaved; reloaded: boolean; closed: boolean }): void {
+    if (!pending.reloaded || !pending.closed || this.pendingChangeSave !== pending) return;
+    this.pendingChangeSave = null;
+    this.cdr.markForCheck();
+    this.cdr.detectChanges();
+    this.experimentalChangesDialog?.onChangeSaved(pending.saved);
   }
 
   /** The Tool Access select's `aria-describedby`. */
@@ -769,11 +827,8 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
 
   /** The Experimental Changes Choose… button's `aria-describedby`: the read-out first. */
   get instructionVariantDescribedBy(): string {
-    if (!this.selectedVariant) {
-      return 'candidateInstructionVariantReadout candidateInstructionVariantHint';
-    }
-    return this.selectedVariantConditionWarning
-      ? 'candidateInstructionVariantReadout candidateInstructionVariantHint candidateInstructionVariantSummary candidateInstructionVariantConditionWarning'
+    return this.selectedChanges.length === 0
+      ? 'candidateInstructionVariantReadout candidateInstructionVariantHint'
       : 'candidateInstructionVariantReadout candidateInstructionVariantHint candidateInstructionVariantSummary';
   }
 

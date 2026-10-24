@@ -273,26 +273,16 @@ public class BenchmarkRunLauncher
                 $"Unknown information condition '{request.InformationCondition}'."), null);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.InstructionVariant))
+        string? spec = BenchmarkExperimentalChangeCatalog.NormalizeSpec(request.InstructionVariant);
+        if (spec != null)
         {
-            string variantName = request.InstructionVariant.Trim();
-            var variant = _benchmarkService.FindInstructionVariant(variantName);
-            if (variant == null)
+            await _benchmarkService.RefreshExperimentalChangesAsync(ct);
+            string? changesRefusal = ExperimentalChangesRefusal(
+                _benchmarkService.ResolveExperimentalChanges(spec),
+                BenchmarkInformationConditions.FromWire(request.InformationCondition));
+            if (changesRefusal != null)
             {
-                return (BenchmarkRunLaunchResult.Fail(
-                    BenchmarkRunLaunchOutcome.Invalid, $"Unknown instruction variant '{variantName}'."), null);
-            }
-            if (!variant.IsValid)
-            {
-                return (BenchmarkRunLaunchResult.Fail(
-                    BenchmarkRunLaunchOutcome.Invalid,
-                    $"The instruction variant '{variantName}' is invalid: {variant.InvalidReason}"), null);
-            }
-
-            string? ablationRefusal = AblationConditionRefusal(variant, request.InformationCondition);
-            if (ablationRefusal != null)
-            {
-                return (BenchmarkRunLaunchResult.Fail(BenchmarkRunLaunchOutcome.Invalid, ablationRefusal), null);
+                return (BenchmarkRunLaunchResult.Fail(BenchmarkRunLaunchOutcome.Invalid, changesRefusal), null);
             }
         }
 
@@ -668,6 +658,17 @@ public class BenchmarkRunLauncher
             ReplacementCause = replacesRunId.HasValue ? replacementCause ?? BenchmarkReplacementCause.Unknown : null
         };
 
+        var switches = ResolvePromptSwitches(request);
+        if (switches.InstructionVariant != null)
+        {
+            var (stamp, changesRefusal) = await LockAndStampAsync(switches.InstructionVariant, switches.InformationCondition, ct);
+            if (changesRefusal != null)
+            {
+                return BenchmarkRunLaunchResult.Fail(BenchmarkRunLaunchOutcome.Invalid, changesRefusal);
+            }
+            run.InstructionVariant = stamp;
+        }
+
         _dbContext.BenchmarkRuns.Add(run);
 
         // Saved with the run, so a run is never visible without its battery membership.
@@ -709,7 +710,6 @@ public class BenchmarkRunLauncher
         // Sentry's scope stack is async-local, so without this the run reports under the launch
         // request's context and collects a tag from every log scope opened beneath it while it runs.
         long runId = run.Id;
-        var switches = ResolvePromptSwitches(request);
         // async, not a Task-returning lambda: the scope must be disposed when the run finishes, and
         // a non-async lambda would dispose it the moment RunAsync hit its first await.
         _ = Task.Run(async () =>
@@ -733,38 +733,47 @@ public class BenchmarkRunLauncher
     /// The request's candidate prompt switches as a run records them: a null
     /// <see cref="StartBenchmarkRunRequest.VerboseMode"/> is the concise style, a null
     /// <see cref="StartBenchmarkRunRequest.AllowSourceCodeReferences"/> is disallowed, a user's default,
-    /// a null information condition is Production, a null variant is production instructions and a
-    /// null Feedback Tool setting offers the tool.
+    /// a null information condition is Production, a null experimental-changes spec is production
+    /// instructions (a spec is normalized, spaces read as <c>+</c>) and a null Feedback Tool setting
+    /// offers the tool.
     /// </summary>
     internal static BenchmarkPromptSwitches ResolvePromptSwitches(StartBenchmarkRunRequest request)
         => new(
             request.VerboseMode ?? false,
             request.AllowSourceCodeReferences ?? false,
             BenchmarkInformationConditions.FromWire(request.InformationCondition),
-            string.IsNullOrWhiteSpace(request.InstructionVariant) ? null : request.InstructionVariant.Trim(),
+            BenchmarkExperimentalChangeCatalog.NormalizeSpec(request.InstructionVariant),
             request.WithholdFeedbackTool ?? false);
 
     /// <summary>
-    /// Why an ablation cannot run under the requested information condition, or null when it can (or
-    /// <paramref name="variant"/> is not an ablation). A feature that does not reach the candidate
-    /// under the condition makes the run identical to its reference: leaving it out equals the whole
-    /// variant, and keeping only it equals no variant.
+    /// Why a selection of experimental changes cannot launch under <paramref name="condition"/>: the
+    /// catalog's refusal, else a change without effect under the condition; null when it can.
     /// </summary>
-    internal static string? AblationConditionRefusal(BenchmarkInstructionVariant variant, string? informationCondition)
+    internal static string? ExperimentalChangesRefusal(
+        BenchmarkExperimentalChangeSelection selection, BenchmarkInformationCondition condition)
+        => selection.Error ?? selection.ConditionRefusal(condition);
+
+    /// <summary>
+    /// Locks the selection's database changes, refreshes the catalog and resolves the selection again,
+    /// so the stamp records the text that is now locked: an edit that landed before the lock is
+    /// stamped, one after it is refused by the editor. Returns the stamp, or the refusal.
+    /// </summary>
+    private async Task<(string? Stamp, string? Refusal)> LockAndStampAsync(
+        string spec, BenchmarkInformationCondition condition, CancellationToken ct)
     {
-        var ablation = variant.Ablation;
-        if (ablation == null) return null;
+        var databaseIds = _benchmarkService.ResolveExperimentalChanges(spec).Changes
+            .Where(c => c.Source == BenchmarkExperimentalChangeSource.Database)
+            .Select(c => c.Id)
+            .ToList();
+        if (databaseIds.Count > 0)
+        {
+            await BenchmarkExperimentalChangeStore.LockAsync(_dbContext, databaseIds, DateTime.UtcNow, ct);
+        }
 
-        BenchmarkInformationConditions.TryParse(informationCondition, out var condition);
-        var feature = ablation.Feature;
-        if (feature.AppliesUnder(condition)) return null;
-
-        string reference = ablation.IsMinus
-            ? $"a run of the whole {ablation.BaseName}"
-            : "a run without Experimental Changes";
-        return $"The instruction variant '{variant.Name}' cannot run under {condition.DisplayName()}: "
-            + $"{BenchmarkVariantFeature.Describe(feature.Id)} ({feature.Id}) does not apply there, "
-            + $"so the run would be identical to {reference}.";
+        await _benchmarkService.RefreshExperimentalChangesAsync(ct);
+        var selection = _benchmarkService.ResolveExperimentalChanges(spec);
+        string? refusal = ExperimentalChangesRefusal(selection, condition);
+        return refusal != null ? (null, refusal) : (selection.Stamp, null);
     }
 
     /// <summary>

@@ -318,7 +318,7 @@ export interface BenchmarkRunSettings {
   allowSourceCodeReferences: boolean | null;
   /** The information condition's wire name. Absent restores Production. */
   informationCondition?: string | null;
-  /** The instruction variant's name, or null for the production instructions. Absent restores none. */
+  /** The Experimental Changes spec (change ids joined by `+`), or null for none. Absent restores none. */
   instructionVariant?: string | null;
   /** True withholds report_feedback from the candidate. Absent restores Offered. */
   withholdFeedbackTool?: boolean | null;

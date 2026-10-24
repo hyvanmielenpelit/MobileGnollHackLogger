@@ -1,0 +1,238 @@
+@use '../../benchmark-dialog-frame' as frame;
+
+/* Experimental change editor: layout and component-local presentation only. The buttons, .gh-input,
+ * .gh-disclosure, .checkbox-label, .gh-field-error, .gh-footer-note, .gh-section-title, .form-hint,
+ * .btn-link, .btn-ghost, .gh-tooltip and the diff classes of app-text-diff come from styles.scss. */
+
+.gh-dialog.xce-dialog {
+  @include frame.frame($width: 64rem, $max-height: 90dvh);
+  inline-size: min(64rem, calc(100vw - 2rem));
+  max-inline-size: min(64rem, calc(100vw - 2rem));
+  max-block-size: 90dvh;
+
+  .dialog-title-group h3 {
+    text-wrap: balance;
+  }
+
+  .dialog-footer {
+    align-items: center;
+  }
+}
+
+.xce-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  line-height: 1.5;
+  color: #ddd;
+}
+
+.xce-muted {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+.xce-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+
+  > .gh-section-title {
+    margin: 0;
+  }
+}
+
+.xce-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+
+  > label {
+    font-weight: 600;
+    color: #ccc;
+  }
+
+  > .form-hint,
+  > .gh-field-error {
+    margin: 0;
+  }
+}
+
+.xce-required {
+  color: var(--color-warning);
+}
+
+.xce-input-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+
+  > .gh-input {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  > textarea {
+    resize: vertical;
+  }
+}
+
+/* An error shows once the field was left or a save was tried, not while it is first typed. */
+.gh-input:user-invalid,
+.gh-input[aria-invalid="true"] {
+  border-color: var(--color-warning);
+}
+
+.xce-count {
+  flex: none;
+  min-width: 5.5rem;
+  padding-top: 0.45rem;
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  color: #aaa;
+}
+
+.xce-block {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+
+  > legend {
+    padding: 0 6px;
+    font-weight: 600;
+    color: #e4e4e7;
+  }
+}
+
+.xce-remove {
+  align-self: flex-end;
+  margin-top: -4px;
+}
+
+.xce-text {
+  min-height: 6rem;
+}
+
+.xce-pre {
+  max-height: 22rem;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.xce-live-text {
+  color: #999;
+}
+
+.xce-ins {
+  text-decoration: none;
+  color: #e4e4e7;
+  background: rgba(34, 197, 94, 0.14);
+  box-shadow: inset 3px 0 0 var(--color-success);
+}
+
+.xce-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.xce-locked {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.xce-locked-icon {
+  flex: none;
+  margin-top: 0.2em;
+  color: var(--color-warning);
+}
+
+.xce-locked-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+
+  p {
+    margin: 0;
+  }
+}
+
+.xce-overlaps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* An amber callout: an icon and words, never the color alone. */
+.xce-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+  overflow-wrap: anywhere;
+}
+
+.xce-warning-icon {
+  flex: none;
+  margin-top: 0.2em;
+  color: var(--color-warning);
+}
+
+.xce-confirm {
+  margin: 0;
+}
+
+.xce-conflict .btn-link {
+  margin-inline-start: 6px;
+}
+
+.xce-discard {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+
+  > span {
+    margin-inline-end: auto;
+    font-weight: 600;
+  }
+}

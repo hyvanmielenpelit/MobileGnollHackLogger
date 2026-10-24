@@ -262,7 +262,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runDiagnosticsText).toContain('snapshot=false');
     });
 
-    it('should record the information condition, the instruction variant and the corpus condition', () => {
+    it('should record the information condition, the experimental changes stamp and the corpus condition', () => {
       ctx.monitor.activeRunDetail = buildDiagnosticsRun({
         candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}'
       });
@@ -270,10 +270,11 @@ describe('AdminBenchmarkComponent', () => {
 
       ctx.monitor.activeRunDetail = buildDiagnosticsRun({
         candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true,"informationCondition":"closedBook"}',
-        instructionVariant: 'cite-first:ab12cd34ef56',
+        instructionVariant: 'race-role-tool-v1+stats-referenced-by-v1:ab12cd34ef56',
         corpusCondition: 'scarce:2026-10'
       });
-      expect(component.runDiagnosticsText).toContain('condition=closedBook, variant=cite-first:ab12cd34ef56, corpus=scarce:2026-10');
+      expect(component.runDiagnosticsText)
+        .toContain('condition=closedBook, variant=race-role-tool-v1+stats-referenced-by-v1:ab12cd34ef56, corpus=scarce:2026-10');
     });
 
     it('should record the candidate delivery probe and the board delivery per grading role', () => {

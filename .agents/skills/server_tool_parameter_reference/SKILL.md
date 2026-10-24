@@ -88,7 +88,7 @@ these figures.
 | `get_github_repo_info` | Server | `GitHubApiService` (network) | **No** | Repo summary, commits, issues, PRs, releases, or one issue's detail |
 | `search_server_dumplogs` | Server | `ApplicationDbContext` + `DumpLogPath` | **No** | Search recent players' dumplog files for a term |
 | `delegate_to_subagent` | Server | `SubAgentCatalogService` / `AgentLoopRunner` | **No** | Run a specialized subagent turn and fold its findings back in |
-| `get_character_info` | Server | `SourceCodeService` (`CharacterTables`: `src/role.c`, `src/attrib.c`, `src/prop.c`) | **No** — experimental (`IsExperimental`), offered only to a benchmark request whose instruction variant names it | A player race or role: allowed combinations, intrinsics by level, racial attitudes |
+| `get_character_info` | Server | `SourceCodeService` (`CharacterTables`: `src/role.c`, `src/attrib.c`, `src/prop.c`) | **No** — experimental (`IsExperimental`), offered only to a benchmark request whose experimental changes offer it (the built-in change *Race and role lookup tool*, `race-role-tool-v1`) | A player race or role: allowed combinations, intrinsics by level, racial attitudes |
 | `report_feedback` | Server | `ApplicationDbContext` (`OverseerFeedbackIssues` / `OverseerFeedbackReports`) | **No** — `ToolCategory.Feedback` is declared outside the allow-list (§ 7a) | A short report to the development team: missing information, a tool problem, or the model's own mistake |
 | `get_full_message_history` | Client | GnollHack client (SignalR bridge) | **No** | Full in-session message log |
 | `get_directory_listing` | Client | same | **No** | Directory listing on the client device |
@@ -146,7 +146,8 @@ not a routing defect.
 Two tools reach a candidate without being on the list:
 
 - **`get_character_info`** is experimental: `ToolRegistry` declares it only when the run's
-  instruction variant names it, and the variant is recorded on the run.
+  experimental changes offer it (*Race and role lookup tool*, `race-role-tool-v1`), and the changes
+  are recorded on the run as their stamp in `BenchmarkRun.InstructionVariant`.
 - **`report_feedback`** (from harness 60) is `ToolCategory.Feedback`, which `ToolRegistry` gates on
   `AgentRunRequest.EnableFeedbackTool` and `enableToolUse` **in place of** the allow-list check. Both
   candidate paths set the flag to `!FeedbackToolWithheld` of the run's recorded candidate prompt

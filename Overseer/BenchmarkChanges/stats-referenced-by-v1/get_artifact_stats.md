@@ -1,0 +1,1 @@
+`referenced_by` lists the functions whose code uses this artifact; when the question asks what it does in a particular situation, read the listed function that matches the situation with get_function_definition.

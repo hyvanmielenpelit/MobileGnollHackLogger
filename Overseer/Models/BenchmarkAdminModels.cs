@@ -359,8 +359,8 @@ public class StartBenchmarkRunRequest
     public string? InformationCondition { get; set; }
 
     /// <summary>
-    /// Optional. The name of a benchmark-only instruction variant; null runs production
-    /// instructions.
+    /// Optional. The spec of the benchmark-only experimental changes to test: their ids joined by
+    /// <c>+</c>, in any order; null runs production instructions.
     /// </summary>
     public string? InstructionVariant { get; set; }
 
@@ -1258,7 +1258,7 @@ public class BenchmarkRunDetailDto : IProviderAvailabilityCardDto
     /// <summary>The wiki's declared corpus condition (<c>condition:label</c>); null for the live wiki.</summary>
     public string? CorpusCondition { get; set; }
 
-    /// <summary>The instruction variant as <c>name:hash12</c>; null for production instructions.</summary>
+    /// <summary>The experimental changes as <c>spec:hash12</c>; null for production instructions.</summary>
     public string? InstructionVariant { get; set; }
 
     /// <summary>The default-suite key the run's suite carried at launch; null for a custom suite or an older run.</summary>
@@ -2134,7 +2134,7 @@ public class BenchmarkRunSummaryDto : IProviderAvailabilityCardDto
     /// <summary>The wiki's declared corpus condition (<c>condition:label</c>); null for the live wiki.</summary>
     public string? CorpusCondition { get; set; }
 
-    /// <summary>The instruction variant as <c>name:hash12</c>; null for production instructions.</summary>
+    /// <summary>The experimental changes as <c>spec:hash12</c>; null for production instructions.</summary>
     public string? InstructionVariant { get; set; }
 
     public decimal? EstimatedCost { get; set; }
@@ -2470,147 +2470,207 @@ public class BenchmarkRunBoardDto
     public string Sha256 { get; set; } = string.Empty;
 }
 
-/// <summary>One benchmark-only instruction variant as the launcher lists it.</summary>
-public class BenchmarkInstructionVariantDto
+/// <summary>Everything the Experimental Changes dialog lists: <c>GET experimental-changes</c>.</summary>
+public class BenchmarkExperimentalChangeCatalogDto
 {
-    public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
-    public string? Extends { get; set; }
-    /// <summary>The first 12 hex characters of the variant's content hash; null when invalid.</summary>
+    /// <summary>Built-in changes by title, then the ones written in Overseer by title; valid or not, retired or not.</summary>
+    public List<BenchmarkExperimentalChangeDto> Changes { get; set; } = new();
+    /// <summary>Up to six distinct selections of the newest runs whose changes are all valid and unretired.</summary>
+    public List<BenchmarkExperimentalChangeRecentSelectionDto> RecentSelections { get; set; } = new();
+    /// <summary>The allowlisted production tools a change may edit the description of, in the allowlist's order.</summary>
+    public List<BenchmarkExperimentalChangeProductionToolDto> ProductionTools { get; set; } = new();
+    public BenchmarkExperimentalChangeLimitsDto Limits { get; set; } = new();
+    /// <summary>The longest run stamp the run record holds.</summary>
+    public int MaxStampLength { get; set; } = BenchmarkExperimentalChangeCatalog.MaxStampLength;
+
+    /// <summary>The production tools of <paramref name="catalog"/>'s allowlist that are registered and not experimental.</summary>
+    public static List<BenchmarkExperimentalChangeProductionToolDto> ProductionToolsOf(BenchmarkExperimentalChangeCatalog catalog)
+    {
+        var tools = new List<BenchmarkExperimentalChangeProductionToolDto>();
+        foreach (string name in catalog.AllowedTools)
+        {
+            var handler = catalog.HandlerOf(name);
+            if (handler == null || handler.IsExperimental) continue;
+            if (tools.Any(t => string.Equals(t.Name, handler.ToolName, StringComparison.OrdinalIgnoreCase))) continue;
+            tools.Add(new BenchmarkExperimentalChangeProductionToolDto
+            {
+                Name = handler.ToolName,
+                Description = catalog.LiveDescriptionOf(handler.ToolName),
+                WithheldUnderSourceOnly = BenchmarkExperimentalChangeCatalog.IsWithheldUnderSourceOnly(handler.ToolName)
+            });
+        }
+        return tools;
+    }
+}
+
+/// <summary>One experimental change, built in or written in Overseer, with every text it carries.</summary>
+public class BenchmarkExperimentalChangeDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string? ExpectedEffect { get; set; }
+    /// <summary><c>builtIn</c> or <c>database</c>.</summary>
+    public string Source { get; set; } = BenchmarkExperimentalChangeWire.BuiltIn;
+    /// <summary><c>newTool</c>, <c>toolOutput</c>, <c>toolDescription</c>, <c>instructions</c>, in that order.</summary>
+    public List<string> Kinds { get; set; } = new();
+    /// <summary>The first 12 hex characters of the change hash; null when it could not be computed.</summary>
     public string? HashPrefix { get; set; }
     public bool IsValid { get; set; }
-    /// <summary>Why the variant is not selectable; null when valid.</summary>
+    /// <summary>Why the change is not selectable; null when valid.</summary>
     public string? InvalidReason { get; set; }
-    /// <summary>The experimental tools the candidate is offered, a parent's included.</summary>
-    public List<string> ExperimentalTools { get; set; } = new();
-    /// <summary>The tool-output switches the variant turns on, a parent's included.</summary>
-    public List<string> Experiments { get; set; } = new();
-    /// <summary>The production tools whose description the variant replaces, in ordinal order.</summary>
-    public List<string> RewordedTools { get; set; } = new();
-    /// <summary>Whether the variant appends text to the system prompt.</summary>
-    public bool HasPromptAppendix { get; set; }
-    /// <summary>The <see cref="RewordedTools"/> that Source code only withholds, so their rewording never reaches the candidate there.</summary>
-    public List<string> RewordingsWithheldUnderSourceOnly { get; set; } = new();
-    /// <summary>The variant's features, each of which a single-feature ablation can leave out or keep alone.</summary>
-    public List<BenchmarkInstructionVariantFeatureDto> Features { get; set; } = new();
-
-    /// <summary>The launcher's view of <paramref name="variant"/>; the content lists are empty when it is invalid.</summary>
-    public static BenchmarkInstructionVariantDto From(BenchmarkInstructionVariant variant)
-    {
-        var context = variant.Context;
-        var experimentalTools = new List<string>(context?.ExperimentalTools ?? Array.Empty<string>());
-        var rewordedTools = new List<string>();
-        var withheld = new List<string>();
-        foreach (string tool in context?.ToolGuides.Keys ?? (IEnumerable<string>)Array.Empty<string>())
-        {
-            if (!experimentalTools.Contains(tool))
-            {
-                rewordedTools.Add(tool);
-            }
-        }
-        rewordedTools.Sort(StringComparer.Ordinal);
-        foreach (string tool in rewordedTools)
-        {
-            foreach (string excluded in BenchmarkInformationConditions.SourceOnlyExcludedTools)
-            {
-                if (string.Equals(tool, excluded, StringComparison.OrdinalIgnoreCase))
-                {
-                    withheld.Add(tool);
-                    break;
-                }
-            }
-        }
-        return new BenchmarkInstructionVariantDto
-        {
-            Name = variant.Name,
-            Description = variant.Description,
-            Extends = variant.Extends,
-            HashPrefix = context?.Hash[..Math.Min(12, context.Hash.Length)],
-            IsValid = variant.IsValid,
-            InvalidReason = variant.InvalidReason,
-            ExperimentalTools = experimentalTools,
-            Experiments = new List<string>(context?.Experiments ?? Array.Empty<string>()),
-            RewordedTools = rewordedTools,
-            HasPromptAppendix = !string.IsNullOrWhiteSpace(context?.Appendix),
-            RewordingsWithheldUnderSourceOnly = withheld,
-            Features = context == null
-                ? new List<BenchmarkInstructionVariantFeatureDto>()
-                : variant.Features.Select(BenchmarkInstructionVariantFeatureDto.From).ToList()
-        };
-    }
-}
-
-/// <summary>Under which information conditions a variant feature reaches the candidate.</summary>
-public class BenchmarkVariantFeatureConditionsDto
-{
-    public bool Production { get; set; }
-    public bool SourceOnly { get; set; }
-    public bool ClosedBook { get; set; }
-}
-
-/// <summary>One feature of an instruction variant, as the launcher validates and labels an ablation spec.</summary>
-public class BenchmarkInstructionVariantFeatureDto
-{
-    /// <summary><c>tool.&lt;name&gt;</c>, <c>experiment.&lt;name&gt;</c>, <c>guide.&lt;tool&gt;</c> or <c>appendix.&lt;variant&gt;</c>.</summary>
-    public string Id { get; set; } = string.Empty;
-    /// <summary><c>experimentalTool</c>, <c>experiment</c>, <c>rewordedGuide</c> or <c>appendix</c>.</summary>
-    public string Kind { get; set; } = string.Empty;
-    /// <summary>The tool, the experiment, or the variant folder whose appendix it is.</summary>
-    public string Target { get; set; } = string.Empty;
-    /// <summary>The feature comes from the variant this one extends.</summary>
-    public bool FromParent { get; set; }
-    public BenchmarkVariantFeatureConditionsDto AppliesUnder { get; set; } = new();
-    /// <summary>The ids of the variant's other features that this feature's text names.</summary>
+    public bool Retired { get; set; }
+    /// <summary>A run has used the change, so its texts are read-only.</summary>
+    public bool Locked { get; set; }
+    /// <summary>Null for a built-in change.</summary>
+    public DateTime? CreatedAtUtc { get; set; }
+    /// <summary>Null for a built-in change; an edit sends it back as <c>expectedUpdatedAtUtc</c>.</summary>
+    public DateTime? UpdatedAtUtc { get; set; }
+    /// <summary>The id of the change this one was copied from as a new version.</summary>
+    public string? CopiedFrom { get; set; }
+    public BenchmarkExperimentalToolDto? ExperimentalTool { get; set; }
+    /// <summary>The tool-output switch, such as <c>stats_referenced_by</c>; null for none.</summary>
+    public string? Experiment { get; set; }
+    public List<BenchmarkChangeDescriptionEditDto> DescriptionEdits { get; set; } = new();
+    /// <summary>Text appended to the end of the AI's instructions; null for none.</summary>
+    public string? Instructions { get; set; }
+    public BenchmarkChangeApplicabilityDto AppliesUnder { get; set; } = new();
+    /// <summary>The tools whose description edit Source code only withholds.</summary>
+    public List<string> NotApplyingUnderSourceOnly { get; set; } = new();
+    /// <summary>The ids of the changes whose tool or switch this change's texts name.</summary>
     public List<string> Mentions { get; set; } = new();
+    /// <summary>The ids of the changes that cannot be selected with this one.</summary>
+    public List<string> ConflictsWith { get; set; } = new();
+    /// <summary>The runs whose stamp includes the change.</summary>
+    public int RunCount { get; set; }
+    public bool CanEdit { get; set; }
+    public bool CanEditText { get; set; }
+    public bool CanDelete { get; set; }
+    public bool CanCopy { get; set; }
 
-    public static BenchmarkInstructionVariantFeatureDto From(BenchmarkVariantFeature feature)
-        => Fill(new BenchmarkInstructionVariantFeatureDto(), feature);
-
-    protected static T Fill<T>(T dto, BenchmarkVariantFeature feature) where T : BenchmarkInstructionVariantFeatureDto
+    public static BenchmarkExperimentalChangeDto From(
+        Overseer.Services.Benchmarking.BenchmarkExperimentalChange change, BenchmarkExperimentalChangeCatalog catalog, int runCount)
     {
-        dto.Id = feature.Id;
-        dto.Kind = feature.KindName;
-        dto.Target = feature.Target;
-        dto.FromParent = feature.FromParent;
-        dto.AppliesUnder = new BenchmarkVariantFeatureConditionsDto
+        bool database = change.Source == BenchmarkExperimentalChangeSource.Database;
+        BenchmarkExperimentalToolDto? tool = null;
+        if (change.ExperimentalTool != null)
         {
-            Production = feature.AppliesUnder(BenchmarkInformationCondition.Production),
-            SourceOnly = feature.AppliesUnder(BenchmarkInformationCondition.SourceOnly),
-            ClosedBook = feature.AppliesUnder(BenchmarkInformationCondition.ClosedBook)
+            var handler = catalog.HandlerOf(change.ExperimentalTool);
+            tool = new BenchmarkExperimentalToolDto
+            {
+                Name = change.ExperimentalTool,
+                Description = change.ExperimentalToolDescription
+                    ?? BenchmarkExperimentalChangeHash.Normalize(handler?.Description) ?? string.Empty,
+                ParameterSchemaJson = handler?.ParameterSchema.GetRawText()
+            };
+        }
+
+        return new BenchmarkExperimentalChangeDto
+        {
+            Id = change.Id,
+            Title = change.Title,
+            Summary = change.Summary,
+            ExpectedEffect = change.ExpectedEffect,
+            Source = BenchmarkExperimentalChangeWire.SourceName(change.Source),
+            Kinds = change.Kinds.Select(BenchmarkExperimentalChangeWire.KindName).ToList(),
+            HashPrefix = change.Hash.Length == 0 ? null : change.HashPrefix,
+            IsValid = change.IsValid,
+            InvalidReason = change.InvalidReason,
+            Retired = change.Retired,
+            Locked = change.Locked,
+            CreatedAtUtc = change.CreatedAtUtc,
+            UpdatedAtUtc = change.UpdatedAtUtc,
+            CopiedFrom = change.CopiedFrom,
+            ExperimentalTool = tool,
+            Experiment = change.Experiment,
+            DescriptionEdits = change.DescriptionEdits.Select(e => new BenchmarkChangeDescriptionEditDto
+            {
+                Tool = e.Tool,
+                Mode = BenchmarkExperimentalChangeWire.ModeName(e.Mode),
+                Text = e.Text,
+                ProductionText = catalog.LiveDescriptionOf(e.Tool)
+            }).ToList(),
+            Instructions = change.Instructions,
+            AppliesUnder = BenchmarkChangeApplicabilityDto.Of(change),
+            NotApplyingUnderSourceOnly = change.NotApplyingUnderSourceOnly.ToList(),
+            Mentions = change.Mentions.ToList(),
+            ConflictsWith = change.ConflictsWith.ToList(),
+            RunCount = runCount,
+            CanEdit = database,
+            CanEditText = database && !change.Locked,
+            CanDelete = database && !change.Locked,
+            CanCopy = !change.HasCodeEffect && change.IsValid
         };
-        dto.Mentions = new List<string>(feature.Mentions);
-        return dto;
     }
 }
 
-/// <summary>A variant feature with its texts, as the Experimental Changes dialog shows it.</summary>
-public class BenchmarkInstructionVariantFeatureDetailsDto : BenchmarkInstructionVariantFeatureDto
+/// <summary>A change's experimental tool, as the candidate is offered it.</summary>
+public class BenchmarkExperimentalToolDto
 {
-    /// <summary>An experimental tool's variant guide, a reworded description, or an appendix; null for an experiment.</summary>
-    public string? Text { get; set; }
-    /// <summary>A reworded tool's production description, loaded from <c>ToolGuides/</c> at startup; null otherwise.</summary>
-    public string? ProductionText { get; set; }
-    /// <summary>An experimental tool's parameter schema as JSON; null otherwise.</summary>
+    public string Name { get; set; } = string.Empty;
+    /// <summary>The change's own description of the tool, else the tool's declared one.</summary>
+    public string Description { get; set; } = string.Empty;
+    /// <summary>The tool's parameter schema as JSON; null when the tool is not registered.</summary>
     public string? ParameterSchemaJson { get; set; }
-
-    public static new BenchmarkInstructionVariantFeatureDetailsDto From(BenchmarkVariantFeature feature)
-    {
-        var dto = Fill(new BenchmarkInstructionVariantFeatureDetailsDto(), feature);
-        dto.Text = feature.Text;
-        if (feature.Kind == BenchmarkVariantFeatureKind.RewordedGuide)
-        {
-            dto.ProductionText = feature.Handler?.Description;
-        }
-        if (feature.Kind == BenchmarkVariantFeatureKind.ExperimentalTool && feature.Handler != null)
-        {
-            dto.ParameterSchemaJson = feature.Handler.ParameterSchema.GetRawText();
-        }
-        return dto;
-    }
 }
 
-/// <summary>One run that used a variant or one of its ablations.</summary>
-public class BenchmarkInstructionVariantRunDto
+/// <summary>One description edit of a change.</summary>
+public class BenchmarkChangeDescriptionEditDto
+{
+    public string Tool { get; set; } = string.Empty;
+    /// <summary><c>add</c> (appended to the live description) or <c>replace</c>.</summary>
+    public string Mode { get; set; } = BenchmarkExperimentalChangeWire.Add;
+    public string Text { get; set; } = string.Empty;
+    /// <summary>The tool's live production description, normalized.</summary>
+    public string ProductionText { get; set; } = string.Empty;
+}
+
+/// <summary>How much of a change reaches the candidate under each Tool Access: <c>full</c>, <c>partial</c> or <c>none</c>.</summary>
+public class BenchmarkChangeApplicabilityDto
+{
+    public string Production { get; set; } = "full";
+    public string SourceOnly { get; set; } = "full";
+    public string ClosedBook { get; set; } = "full";
+
+    public static BenchmarkChangeApplicabilityDto Of(Overseer.Services.Benchmarking.BenchmarkExperimentalChange change) => new()
+    {
+        Production = BenchmarkExperimentalChangeWire.ApplicabilityName(change.AppliesUnder(BenchmarkInformationCondition.Production)),
+        SourceOnly = BenchmarkExperimentalChangeWire.ApplicabilityName(change.AppliesUnder(BenchmarkInformationCondition.SourceOnly)),
+        ClosedBook = BenchmarkExperimentalChangeWire.ApplicabilityName(change.AppliesUnder(BenchmarkInformationCondition.ClosedBook))
+    };
+}
+
+/// <summary>One distinct selection of recent runs, offered under Used before.</summary>
+public class BenchmarkExperimentalChangeRecentSelectionDto
+{
+    public string Spec { get; set; } = string.Empty;
+    public List<string> ChangeIds { get; set; } = new();
+    /// <summary>The runs whose stamp has this spec.</summary>
+    public int RunCount { get; set; }
+    public long LastRunId { get; set; }
+    public DateTime LastStartedAtUtc { get; set; }
+}
+
+/// <summary>A production tool whose description a change may edit.</summary>
+public class BenchmarkExperimentalChangeProductionToolDto
+{
+    public string Name { get; set; } = string.Empty;
+    /// <summary>The live production description, normalized.</summary>
+    public string Description { get; set; } = string.Empty;
+    public bool WithheldUnderSourceOnly { get; set; }
+}
+
+/// <summary>The editor's length and count limits.</summary>
+public class BenchmarkExperimentalChangeLimitsDto
+{
+    public int TitleMax { get; set; } = BenchmarkExperimentalChangeValidator.TitleMaxLength;
+    public int SummaryMax { get; set; } = BenchmarkExperimentalChangeValidator.SummaryMaxLength;
+    public int TextMax { get; set; } = BenchmarkExperimentalChangeValidator.TextMaxLength;
+    public int DescriptionEditsMax { get; set; } = BenchmarkExperimentalChangeValidator.DescriptionEditsMax;
+}
+
+/// <summary>One run whose stamp has a given spec.</summary>
+public class BenchmarkExperimentalChangeRunDto
 {
     public long Id { get; set; }
     public DateTime StartedAtUtc { get; set; }
@@ -2619,49 +2679,93 @@ public class BenchmarkInstructionVariantRunDto
     /// <summary>The wire name: <c>production</c>, <c>sourceOnly</c> or <c>closedBook</c>.</summary>
     public string InformationCondition { get; set; } = BenchmarkInformationConditions.ProductionWire;
     public string Status { get; set; } = string.Empty;
-    /// <summary>The variant name or ablation spec of the run's stamp, without the hash.</summary>
+    /// <summary>The spec of the run's stamp, without the hash.</summary>
     public string Spec { get; set; } = string.Empty;
     /// <summary>The run's stamp equals the stamp the spec resolves to now.</summary>
     public bool HashMatchesCurrent { get; set; }
 }
 
-/// <summary>Everything the Experimental Changes dialog shows about one variant folder.</summary>
-public class BenchmarkInstructionVariantDetailsDto
+/// <summary>The runs of one selection: <c>GET experimental-changes/runs?spec=</c>.</summary>
+public class BenchmarkExperimentalChangeRunsDto
 {
     /// <summary>The newest runs <see cref="Runs"/> lists.</summary>
     public const int RunListSize = 10;
 
-    public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
-    public string? Parent { get; set; }
-    /// <summary>The run stamp, <c>name:hash12</c>; null when invalid.</summary>
-    public string? Stamp { get; set; }
-    public bool IsValid { get; set; }
-    public string? InvalidReason { get; set; }
-    /// <summary>Empty when the variant is invalid.</summary>
-    public List<BenchmarkInstructionVariantFeatureDetailsDto> Features { get; set; } = new();
-    /// <summary>The newest runs of the variant and its ablations, newest first.</summary>
-    public List<BenchmarkInstructionVariantRunDto> Runs { get; set; } = new();
-    /// <summary>Every run of the variant and its ablations.</summary>
+    /// <summary>Every run whose stamp has the spec.</summary>
     public int RunCount { get; set; }
-    /// <summary>The runs whose stamp no longer matches the current hash of their spec.</summary>
+    /// <summary>The runs whose stamp no longer matches the spec's current hash.</summary>
     public int OlderHashRunCount { get; set; }
+    /// <summary>The newest runs, newest first.</summary>
+    public List<BenchmarkExperimentalChangeRunDto> Runs { get; set; } = new();
+}
 
-    public static BenchmarkInstructionVariantDetailsDto From(
-        BenchmarkInstructionVariant variant, List<BenchmarkInstructionVariantRunDto> runs, int runCount, int olderHashRunCount)
-        => new()
-        {
-            Name = variant.Name,
-            Description = variant.Description,
-            Parent = variant.Extends,
-            Stamp = variant.Context?.Stamp,
-            IsValid = variant.IsValid,
-            InvalidReason = variant.InvalidReason,
-            Features = variant.Context == null
-                ? new List<BenchmarkInstructionVariantFeatureDetailsDto>()
-                : variant.Features.Select(BenchmarkInstructionVariantFeatureDetailsDto.From).ToList(),
-            Runs = runs,
-            RunCount = runCount,
-            OlderHashRunCount = olderHashRunCount
-        };
+/// <summary>A description edit as the editor sends it.</summary>
+public class BenchmarkChangeDescriptionEditRequest
+{
+    public string? Tool { get; set; }
+    /// <summary><c>add</c> or <c>replace</c>.</summary>
+    public string? Mode { get; set; }
+    public string? Text { get; set; }
+}
+
+/// <summary>
+/// The body of <c>POST experimental-changes</c> and <c>PUT experimental-changes/{id}</c>. Texts are
+/// normalized on save; a blank Should improve or instructions is none.
+/// </summary>
+public class BenchmarkExperimentalChangeEditRequest
+{
+    public string? Title { get; set; }
+    public string? Summary { get; set; }
+    public string? ExpectedEffect { get; set; }
+    public List<BenchmarkChangeDescriptionEditRequest>? DescriptionEdits { get; set; }
+    public string? Instructions { get; set; }
+    /// <summary>On create, the change this is a new version of; ignored on an edit.</summary>
+    public string? CopiedFrom { get; set; }
+    /// <summary>The person confirmed the text is general; required by a save that creates or changes text.</summary>
+    public bool GenericConfirmed { get; set; }
+    /// <summary>On an edit, the <c>updatedAtUtc</c> the editor loaded; a different stored value is a 409.</summary>
+    public DateTime? ExpectedUpdatedAtUtc { get; set; }
+}
+
+/// <summary>The result of a create or an edit: the saved change and its overlaps with the benchmark questions.</summary>
+public class BenchmarkExperimentalChangeSaveResultDto
+{
+    public BenchmarkExperimentalChangeDto Change { get; set; } = new();
+    public List<BenchmarkChangeOverlapDto> Overlaps { get; set; } = new();
+}
+
+/// <summary>The body of <c>POST experimental-changes/screen</c>.</summary>
+public class BenchmarkChangeScreenRequest
+{
+    public List<string?>? Texts { get; set; }
+}
+
+/// <summary>The result of <c>POST experimental-changes/screen</c>.</summary>
+public class BenchmarkChangeScreenResultDto
+{
+    public List<BenchmarkChangeOverlapDto> Overlaps { get; set; } = new();
+}
+
+/// <summary>A run of 8 or more words a change text shares with a benchmark question or its rubric.</summary>
+public class BenchmarkChangeOverlapDto
+{
+    /// <summary>The shared words.</summary>
+    public string Text { get; set; } = string.Empty;
+    public long SuiteId { get; set; }
+    public string SuiteName { get; set; } = string.Empty;
+    public long QuestionId { get; set; }
+    /// <summary>The question's position in its suite, from 1.</summary>
+    public int QuestionNumber { get; set; }
+    /// <summary><c>question</c> or <c>rubric</c>.</summary>
+    public string Field { get; set; } = BenchmarkChangeTextScreen.QuestionField;
+
+    public static BenchmarkChangeOverlapDto From(BenchmarkChangeOverlap overlap) => new()
+    {
+        Text = overlap.Text,
+        SuiteId = overlap.SuiteId,
+        SuiteName = overlap.SuiteName,
+        QuestionId = overlap.QuestionId,
+        QuestionNumber = overlap.QuestionNumber,
+        Field = overlap.Field
+    };
 }

@@ -60,7 +60,7 @@ namespace Overseer.Services.Tools
             var result = _sourceCodeService.GetMonsterStats(name);
 
             if (result.Error == null
-                && context?.Variant?.HasExperiment(Benchmarking.BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment) == true)
+                && context?.Variant?.HasExperiment(Benchmarking.BenchmarkExperimentalChangeCatalog.StatsReferencedByExperiment) == true)
             {
                 result.ReferencedBy = SourceReferenceIndex.ForStatsResult(
                     _sourceCodeService, _configuration, MonsterConstantOf(result), SourceReferenceIndex.PmHeaderPath);

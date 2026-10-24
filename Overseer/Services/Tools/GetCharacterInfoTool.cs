@@ -10,7 +10,7 @@ namespace Overseer.Services.Tools
     /// <c>get_character_info</c>: a GnollHack race or role from <see cref="CharacterTables"/> — which
     /// roles, races and alignments it allows, its intrinsics by experience level and, for a race,
     /// the races it is always peaceful or always hostile towards. Experimental: offered only to a
-    /// benchmark request whose instruction variant names it.
+    /// benchmark request whose experimental changes offer it.
     /// </summary>
     public class GetCharacterInfoTool : IToolHandler
     {

@@ -488,7 +488,7 @@ only an administrator's triage is stored.
   is the answer's own `QuestionText` copy, because the question link is nullable. An issue shows the latest
   subject and summary. Grouping and the occurrence filters run in SQL; the triage join, the derived status,
   the date overlap, the status filter and the sorts run in memory over one row per fingerprint, which the
-  small volume allows; the information condition, the variant and the model batch resolve to run-id lists
+  small volume allows; the information condition, the experimental changes and the model batch resolve to run-id lists
   first, the condition parsed from `CandidatePromptOptionsJson` because it has no column.
 - **Triage by fingerprint.** `BenchmarkFeedbackTriages` (§ 9) holds the status, note, resolution and
   fixed-in version of a fingerprint. No row reads **New**. **Regressed is derived**: a triage row that is
@@ -504,7 +504,8 @@ only an administrator's triage is stored.
   from `GET counts`), *Category*, *Model*, *Provider*, *Run*, *Series*, *Analysis group* (Multi-Run
   Analysis), *Battery run*, *Model batch* (a batch member that names the run, its series or a battery run
   it belongs to), *Suite*, *Question*, *Information condition*, *Corpus* (`live` for none), *Experimental
-  Changes* (the variant name or ablation spec without its hash, or *None*) and *Harness* (sorted
+  Changes* (a run's change titles joined by commas, its ids while the catalog is not loaded, or *None*;
+  the value is the spec without its hash) and *Harness* (sorted
   numerically). The facet options count self-reports whose own time is in the range. The view, the
   selection and the address follow the Overseer sub-tab's rules (§ 10).
 - **The cards** show the category and derived status, the models, the subject and summary, four metrics
@@ -519,7 +520,8 @@ only an administrator's triage is stored.
 - **The API** (`AdminGnollBenchFeedbackController`, `api/admin/feedback/gnollbench`, `AdminOnly`). The
   filters, every list comma-separated: `startDate`, `endDate`, `status`, `accepted`, `category`, `model`,
   `provider`, `run`, `series`, `group`, `battery`, `batch`, `suite`, `question`, `condition`
-  (`production`, `sourceOnly`, `closedBook`), `corpus`, `variant`, `harness`, `fingerprints` (at most 500)
+  (`production`, `sourceOnly`, `closedBook`), `corpus`, `variant` (experimental-changes specs, spaces read
+  as `+`, or `none`), `harness`, `fingerprints` (at most 500)
   and `search` (at most 200 characters).
 
   | Method and path | Purpose |
@@ -572,12 +574,13 @@ anything is read. The file is `overseer-feedback-<source>-<yyyyMMdd-HHmm>.md`:
    fingerprint>` (GnollBench). A facts table holds only values the server controls: id, fingerprint,
    category, status, first and last seen, counts (occurrences with the retained count, distinct users and
    regressions; for GnollBench self-reports and runs), models, providers, and for Overseer the model
-   sources, system configuration names and versions, for GnollBench the suites, conditions, variants,
-   corpora and harness versions; then related tools, suspected causes (hypotheses), the triage time and
+   sources, system configuration names and versions, for GnollBench the suites, conditions, variants
+   (the experimental-changes specs), corpora and harness versions; then related tools, suspected causes (hypotheses), the triage time and
    the fixed-in version. Cells escape `|` and `\` and flatten line breaks. The subject, summary, triage
    note and resolution follow, then `### Occurrences`: the newest occurrences, each `#### Occurrence N`
    with its own facts table (time, provider and model, the model source and configuration or the run,
-   suite, question id, condition, variant, corpus and harness, how it was noticed, the suspected cause,
+   suite, question id, condition, variant (the experimental-changes stamp), corpus and harness, how it was
+   noticed, the suspected cause,
    related tools, the truncated and redacted marks) and its fenced texts (subject and summary when they
    differ from the issue's, details, *searched for*, expected location, the cause note, and the question
    text when included). A GnollBench issue with only refused self-reports is exported over all of them.
@@ -758,7 +761,8 @@ Not in this version, and named so nobody assumes otherwise:
   benchmark's stored fingerprints, so it is a decision of its own.
 - **Moving the questions importer to `app-text-diff`.** The import review and the Experimental Changes
   dialog use the shared component; the questions YAML importer still renders the same diff classes itself.
-- **The series resume guard and guide-only variant edits.** The guard compares instrument hashes, which see
-  a variant only through its appendix, so an edit to a variant's guide file alone does not stop a series
-  from resuming; only a re-run's stamp check catches it
-  ([`ai-benchmark-conditions-and-variants.md`](ai-benchmark-conditions-and-variants.md) § 6.10).
+- **The series resume guard and description-only edits of a built-in experimental change.** The guard
+  compares instrument hashes, which see experimental changes only through their instructions, so an edit
+  to a built-in change's description file alone does not stop a series from resuming; only a re-run's
+  stamp check catches it ([`ai-benchmark-conditions-and-variants.md`](ai-benchmark-conditions-and-variants.md)
+  § 6.13).

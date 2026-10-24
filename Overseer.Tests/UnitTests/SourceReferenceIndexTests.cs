@@ -337,7 +337,7 @@ public class SourceReferenceIndexTests : IDisposable
                 Variant = new BenchmarkVariantContext
                 {
                     Name = "fixture",
-                    Experiments = new[] { BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment }
+                    Experiments = new[] { BenchmarkExperimentalChangeCatalog.StatsReferencedByExperiment }
                 }
             };
 
@@ -361,7 +361,7 @@ public class SourceReferenceIndexTests : IDisposable
             var context = new ToolExecutionContext
             {
                 SessionId = Overseer.Services.Privacy.SessionRef.Persistent(4204),
-                Variant = new BenchmarkVariantContext { Experiments = new[] { BenchmarkInstructionVariantCatalog.StatsReferencedByExperiment } }
+                Variant = new BenchmarkVariantContext { Experiments = new[] { BenchmarkExperimentalChangeCatalog.StatsReferencedByExperiment } }
             };
 
             var result = await ExecuteAsync(tool, context.CloneFor("call-3"));
