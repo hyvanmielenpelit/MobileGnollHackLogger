@@ -197,6 +197,16 @@ is an `ObjectsMacroResolver` — the same field `get_item_stats`'s Level 1 resol
 `_objectsResolver`, which does not exist. A stored miss with no `Did you mean:` line and no
 appearance note is a run recorded **before** the harness-29 round.
 
+**A `get_monster_stats` miss carrying `Did you mean: ` is a harness-61 marker (the runs 126–131
+round, 2026-10-24).** From harness 61 the tool resolves a monster's female name (slot 3 of its
+`src/monst.c` macro) and common name (slot 4) after its base name, with a `Resolved '…' to '…'` note in
+`message`, and a miss lists up to five near names, one per entry, between its unchanged opening and the
+`monster_lookup` / `wiki_search` sentence (`server_tool_parameter_reference` § 6). A stored miss without
+`Did you mean:` on a request sharing a word of four or more characters with some monster name, or a miss on a name that is a female or common name in `src/monst.c` at the run's
+`SourceCodeHeadSha`, dates the run to harness 60 or earlier and is that tool gap, not a model or corpus
+failure — run 127, 128 and 131's three misses on *kobold lady* are the motivating instances. On a run
+stamped 61 or later, a miss on a female or common name is a regression.
+
 **A `[Not compiled: …]` line is a harness-35 marker (the runs 57 and 59 round, 2026-09-19).** From
 the round `get_function_definition` and `source_code_view` end a result whose lines fall inside a
 region opened by a literal `#if 0` with one line, at most **300 characters**, naming those file line

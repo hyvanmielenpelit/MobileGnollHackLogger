@@ -41,6 +41,18 @@ This skill is read with the other four benchmark skills on **every** benchmark a
 (`.agents/AGENTS.md`, "AI Benchmark Findings"); its body is acted on only when a finding lands
 on rung 2.
 
+**A knowledge-base edit uses the same document.** A rung-1 finding
+(`server_benchmark_to_chat_transfer` § 7) follows §§ 2–4a with four substitutions. The document is
+`knowledge_base_handoff_v<V>.md`. The pre-flight confirms that the clone's remote names
+`hyvanmielenpelit/OverseerKnowledgeBase` and compares its HEAD with the run's `KnowledgeBaseHeadSha`,
+reading the clone through `KbPath` and printing no path. The execution session opens on that clone,
+named by repository only, and cites its `.agents/skills/kb_article_generation/SKILL.md` in place of
+`wiki_editing` and `wiki_bulk_edits`. And the edit leaves the article's `summary:` line unchanged
+unless the finding needs it, because `KnowledgeBaseService.GetTopicList` writes the summary into the
+frozen prompt segment. The
+quantified-clause rule, the validation template and the fence and diff self-check apply unchanged. A
+rubric repair is not handed over this way (`server_rubric_handoff`).
+
 Reading `C:\hmp\GnollHackWiki` and `C:\hmp\GnollHack` is read-only research in other repositories
 and is permitted. **Editing either from this repository's session is not** — that is what the two
 prompts exist for.

@@ -32,7 +32,7 @@ namespace Overseer.Services.Tools
             "properties": {
                 "name": { 
                     "type": "string", 
-                    "description": "The exact name of the monster as defined in src/monst.c (e.g. 'goblin', 'adult red dragon')" 
+                    "description": "The monster's name as defined in src/monst.c (e.g. 'goblin', 'adult red dragon'). A female or common name, such as 'kobold lady', also resolves."
                 }
             },
             "required": ["name"]

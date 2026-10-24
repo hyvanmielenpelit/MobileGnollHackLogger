@@ -1711,10 +1711,31 @@ namespace Overseer.Services
                 }
             }
 
+            /* A base name always wins; only then a female name, then a common name, each first in file order */
+            string? resolutionNote = null;
             if (matchLine == -1)
             {
-                response.Error = $"No monster named '{name}' found in the game data. Try monster_lookup or wiki_search for partial matches, or check the spelling.";
-                return response;
+                var entries = EnumerateMonsterEntries(doc.ContentLines).ToList();
+                var femaleMatch = entries.FirstOrDefault(e => string.Equals(e.FemaleName, name, StringComparison.OrdinalIgnoreCase));
+                var commonMatch = femaleMatch == null
+                    ? entries.FirstOrDefault(e => string.Equals(e.CommonName, name, StringComparison.OrdinalIgnoreCase))
+                    : null;
+
+                if (femaleMatch != null)
+                {
+                    matchLine = femaleMatch.Line;
+                    resolutionNote = $"Resolved '{name}' to '{femaleMatch.Name}': '{name}' is the female name of the {femaleMatch.Name}.";
+                }
+                else if (commonMatch != null)
+                {
+                    matchLine = commonMatch.Line;
+                    resolutionNote = $"Resolved '{name}' to '{commonMatch.Name}': '{name}' is the common name of the {commonMatch.Name}.";
+                }
+                else
+                {
+                    response.Error = BuildMonsterStatsMissMessage(entries, name);
+                    return response;
+                }
             }
 
             var extraction = CLexer.ExtractParenBlock(doc.ContentLines, matchLine);
@@ -1777,6 +1798,7 @@ namespace Overseer.Services
 
                     /* Level 1 success: populate stats, populate flag_descriptions, leave macro/struct empty */
                     response.Stats = stats;
+                    response.Message = resolutionNote;
                     PopulateFlagDescriptions(response, tokens);
 
                     return response;
@@ -1791,10 +1813,132 @@ namespace Overseer.Services
             response.RawDefinition = rawDef;
             response.MacroDefinitions = index.Parser.GetMacroDefinitions("MON", "ANIMATED_MON", "ENLARGED_MON", "ENLARGED_ANIMATED_MON", "GENERAL_MON", "LVL", "A", "ATTK", "SIZ", "STATS");
             response.StructDefinitions = index.Parser.GetStructDefinitions("permonst", "attack");
-            response.Message = $"Could not parse structured stats for '{name}'. Raw source and context provided for manual interpretation.";
+            string level2Message = $"Could not parse structured stats for '{name}'. Raw source and context provided for manual interpretation.";
+            response.Message = resolutionNote == null ? level2Message : resolutionNote + " " + level2Message;
             PopulateFlagDescriptions(response, rawDef);
 
             return response;
+        }
+
+        private const int MonsterStatsMissMaxChars = 600;
+        private const int MaxMonsterStatsSuggestions = 5;
+
+        private static readonly Regex MonsterEntryStartRegex = new(
+            $@"^\s*(?:{MonsterMacroAlternation})\(\s*""([^""]+)""", RegexOptions.IgnoreCase);
+
+        /* Slots 0-4: name, title, description, female name, common name */
+        private static readonly Regex MonsterEntryNamesRegex = new(
+            $@"^\s*(?:{MonsterMacroAlternation})\(\s*""([^""]+)""\s*,\s*(None|""[^""]*"")\s*,\s*(None|""[^""]*"")\s*,\s*(None|""[^""]*"")\s*,\s*(None|""[^""]*"")\s*,",
+            RegexOptions.IgnoreCase);
+
+        private sealed record MonsterEntryNames(int Line, string Name, string? FemaleName, string? CommonName);
+
+        /// <summary>
+        /// Reads the base, female and common names of the src/monst.c entry starting at
+        /// <paramref name="start"/>, joining the next two lines so an entry whose description wraps
+        /// still reads. An entry the five-slot pattern cannot read yields its base name alone.
+        /// False when the line does not start a named entry.
+        /// </summary>
+        private static bool TryReadMonsterEntryNames(string[] lines, int start, out string name, out string? femaleName, out string? commonName)
+        {
+            name = string.Empty;
+            femaleName = null;
+            commonName = null;
+
+            var startMatch = MonsterEntryStartRegex.Match(lines[start]);
+            if (!startMatch.Success)
+            {
+                return false;
+            }
+
+            name = startMatch.Groups[1].Value;
+            string joined = string.Join(" ", lines.Skip(start).Take(3));
+            var namesMatch = MonsterEntryNamesRegex.Match(joined);
+            if (namesMatch.Success)
+            {
+                femaleName = ReadOptionalName(namesMatch.Groups[4].Value);
+                commonName = ReadOptionalName(namesMatch.Groups[5].Value);
+            }
+
+            return true;
+
+            static string? ReadOptionalName(string slot) => slot == "None" ? null : slot.Trim('"');
+        }
+
+        private static IEnumerable<MonsterEntryNames> EnumerateMonsterEntries(string[] lines)
+        {
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (TryReadMonsterEntryNames(lines, i, out var name, out var femaleName, out var commonName))
+                {
+                    yield return new MonsterEntryNames(i, name, femaleName, commonName);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The <see cref="StatsResponse{T}.Error"/> get_monster_stats returns when no entry carries
+        /// <paramref name="name"/> as its base, female or common name: up to
+        /// <see cref="MaxMonsterStatsSuggestions"/> near names, at most one per entry — first entries
+        /// any of whose names contains the whole request, then each word of four or more characters —
+        /// a base name as is, a female or common name followed by its base name in parentheses; then
+        /// the pointer to monster_lookup and wiki_search. Capped at <see cref="MonsterStatsMissMaxChars"/>.
+        /// </summary>
+        private static string BuildMonsterStatsMissMessage(IReadOnlyList<MonsterEntryNames> entries, string name)
+        {
+            var suggestions = new List<string>();
+            var suggestedLines = new HashSet<int>();
+
+            void AddCandidates(string query)
+            {
+                if (suggestions.Count >= MaxMonsterStatsSuggestions || string.IsNullOrWhiteSpace(query))
+                {
+                    return;
+                }
+
+                foreach (var entry in entries)
+                {
+                    if (suggestions.Count >= MaxMonsterStatsSuggestions) break;
+                    if (suggestedLines.Contains(entry.Line)) continue;
+
+                    string? suggestion = null;
+                    if (entry.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    {
+                        suggestion = entry.Name;
+                    }
+                    else if (entry.FemaleName?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        suggestion = $"{entry.FemaleName} ({entry.Name})";
+                    }
+                    else if (entry.CommonName?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        suggestion = $"{entry.CommonName} ({entry.Name})";
+                    }
+
+                    if (suggestion != null && !suggestions.Contains(suggestion, StringComparer.OrdinalIgnoreCase))
+                    {
+                        suggestedLines.Add(entry.Line);
+                        suggestions.Add(suggestion);
+                    }
+                }
+            }
+
+            AddCandidates(name);
+            foreach (Match wordMatch in Regex.Matches(name, @"[A-Za-z0-9]{4,}"))
+            {
+                AddCandidates(wordMatch.Value);
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"No monster named '{name}' found in the game data.");
+            if (suggestions.Count > 0)
+            {
+                sb.Append($" Did you mean: {string.Join("; ", suggestions)}.");
+            }
+            sb.Append(" Try monster_lookup or wiki_search for partial matches, or check the spelling.");
+
+            string message = sb.ToString();
+            return message.Length > MonsterStatsMissMaxChars ? message.Substring(0, MonsterStatsMissMaxChars) : message;
         }
 
         public IEnumerable<string> SearchMonsters(string query)

@@ -224,11 +224,11 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsSixty()
+    public void HarnessVersion_IsSixtyOne()
     {
-        // Harness 60: the candidate is offered report_feedback outside the tool budget and the
-        // allow-list, and its calls are stored as self-reports apart from the tool-call rows.
-        Assert.Equal("60", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 61: get_monster_stats resolves a monster's female and common names and lists near
+        // names on a miss; its name parameter says so.
+        Assert.Equal("61", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     private static readonly IReadOnlyList<string> ConfiguredCandidateTools = new[]

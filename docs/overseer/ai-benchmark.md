@@ -8193,6 +8193,35 @@ own switch stays on Admin → Feedback ([`ai-feedback-reports.md`](ai-feedback-r
 `BenchmarkComparabilityKey.DefinitionVersion` does not move: withholding the tool is an instrument change the
 existing *CandidatePromptOptions* key records.
 
+### Harness Version 61 Updates
+
+GnollBench runs 126–131 round (2026-10-24). `HarnessVersion` moves to **"61"**; `ScoringMethodVersion`
+stays **14**. No migration. `HarnessImpactLedger` classifies 61 as `CandidateInput`: the `name` parameter
+description of `get_monster_stats` and its results change. `ToolGuidesSha256` and
+`CandidateSystemPromptSha256` do not move (no guide or prompt edit), so a 60- and a 61-stamped run differ on
+the harness key alone.
+
+- **Female and common names resolve.** `SourceCodeService.GetMonsterStats` first looks for the entry whose
+  base name (slot 0 of its `src/monst.c` macro) equals the request, as before; only when none does, the first
+  entry in file order whose female name (slot 3) equals it, then the first whose common name (slot 4) does,
+  all case-insensitively. A base name always wins. A female- or common-name resolution returns the base
+  entry's stats with the note *"Resolved 'kobold lady' to 'kobold lord': 'kobold lady' is the female name of
+  the kobold lord."* in `message`; if the Level 1 parse then fails, the Level 2 message follows the note. The
+  names are read from the entry's start line joined with the next two, so an entry whose description wraps
+  before the female-name slot (*Baphomet*, *Orcus*, *Baalzebub*, *Demogorgon*) still reads. A run stamped 60
+  or earlier missed every such request: `{"name": "kobold lady"}` returned a plain miss on runs 127, 128
+  and 131.
+- **Near names on a miss.** A miss still opens *"No monster named '…' found in the game data."*, which
+  `BenchmarkToolResultClassifier` counts, and then lists *"Did you mean: a; b; c."* — up to five near names,
+  at most one per entry, first from entries any of whose three names contains the whole request, then from
+  each word of four or more characters of it, in file order. A suggestion is the base name, or
+  *"female or common name (base name)"* when only that name matched. The existing pointer to
+  `monster_lookup` and `wiki_search` follows, and the message is capped at 600 characters, as
+  `get_item_stats` has done since harness 29. A run stamped 60 or earlier stored the same miss with no
+  near names.
+
+No answer flag is added, and the grading and synthesis prompts are unchanged.
+
 ---
 
 ## 3. Assessor Strategy

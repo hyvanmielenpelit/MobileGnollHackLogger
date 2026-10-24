@@ -60,6 +60,8 @@ public class MonsterStatsMacroFormTests : IDisposable
     [InlineData("fixture jackal", "S_DOG", 3, 13)]           /* ENLARGED_MON */
     [InlineData("fixture hell hound", "S_DOG", 4, 14)]       /* ENLARGED_ANIMATED_MON */
     [InlineData("fixture little dog", "S_DOG", 5, 15)]       /* GENERAL_MON */
+    [InlineData("fixture kobold lord", "S_KOBOLD", 6, 16)]   /* ANIMATED_MON, female and common names */
+    [InlineData("fixture wolf", "S_DOG", 7, 17)]             /* ENLARGED_MON, wrapped */
     public void EveryMonsterMacroForm_IsFoundAndParsedPositionally(string name, string mlet, int level, int difficulty)
     {
         var response = _service.GetMonsterStats(name);
@@ -109,7 +111,7 @@ public class MonsterStatsMacroFormTests : IDisposable
         var names = _service.SearchMonsters("fixture").ToList();
 
         Assert.Equal(
-            new[] { "fixture newt", "fixture fox", "fixture jackal", "fixture hell hound", "fixture little dog" },
+            new[] { "fixture newt", "fixture fox", "fixture jackal", "fixture hell hound", "fixture little dog", "fixture kobold lord", "fixture wolf" },
             names);
     }
 
@@ -122,9 +124,99 @@ public class MonsterStatsMacroFormTests : IDisposable
         Assert.StartsWith("No monster named 'fixture nonesuch' found in the game data.", response.Error);
     }
 
+    [Fact]
+    public void FemaleName_ResolvesToTheBaseEntry()
+    {
+        var response = _service.GetMonsterStats("fixture kobold lady");
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Stats);
+        Assert.Equal("fixture kobold lord", response.Stats!.Fields["mname"]);
+        Assert.Equal(6, response.Stats.Fields["mlevel"]);
+        Assert.StartsWith("Resolved 'fixture kobold lady' to 'fixture kobold lord'", response.Message);
+        Assert.Contains("female name", response.Message);
+    }
+
+    [Fact]
+    public void CommonName_ResolvesToTheBaseEntry()
+    {
+        var response = _service.GetMonsterStats("fixture kobold noble");
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Stats);
+        Assert.Equal("fixture kobold lord", response.Stats!.Fields["mname"]);
+        Assert.Equal(6, response.Stats.Fields["mlevel"]);
+        Assert.StartsWith("Resolved 'fixture kobold noble' to 'fixture kobold lord'", response.Message);
+        Assert.Contains("common name", response.Message);
+    }
+
+    [Fact]
+    public void WrappedEntry_FemaleNameResolves()
+    {
+        var response = _service.GetMonsterStats("fixture she-wolf");
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Stats);
+        Assert.Equal("fixture wolf", response.Stats!.Fields["mname"]);
+        Assert.Equal(7, response.Stats.Fields["mlevel"]);
+    }
+
+    [Fact]
+    public void BaseName_WinsOverAnotherEntrysCommonName()
+    {
+        var response = _service.GetMonsterStats("fixture jackal");
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Stats);
+        Assert.Equal(3, response.Stats!.Fields["mlevel"]);
+        Assert.Null(response.Message);
+    }
+
+    [Fact]
+    public void CaseIsIgnored()
+    {
+        var response = _service.GetMonsterStats("FIXTURE KOBOLD LADY");
+
+        Assert.NotNull(response.Stats);
+        Assert.Equal("fixture kobold lord", response.Stats!.Fields["mname"]);
+    }
+
+    [Fact]
+    public void Miss_ListsNearNamesAndKeepsItsOpening()
+    {
+        var response = _service.GetMonsterStats("fixture kobold");
+
+        Assert.Null(response.Stats);
+        Assert.NotNull(response.Error);
+        Assert.StartsWith("No monster named 'fixture kobold' found in the game data.", response.Error);
+        Assert.Contains("Did you mean: fixture kobold lord", response.Error);
+        Assert.Contains("Try monster_lookup or wiki_search for partial matches, or check the spelling.", response.Error);
+        Assert.True(response.Error!.Length <= 600);
+    }
+
+    [Fact]
+    public void Miss_NamesAFemaleNameWithItsBaseEntry()
+    {
+        var response = _service.GetMonsterStats("she-wolf");
+
+        Assert.Null(response.Stats);
+        Assert.Contains(" Did you mean: fixture she-wolf (fixture wolf).", response.Error);
+    }
+
+    [Fact]
+    public void Miss_WithoutNearNames_HasNoSuggestionList()
+    {
+        var response = _service.GetMonsterStats("zzyzx");
+
+        Assert.Null(response.Stats);
+        Assert.StartsWith("No monster named 'zzyzx' found in the game data.", response.Error);
+        Assert.DoesNotContain("Did you mean:", response.Error);
+    }
+
     /* Shaped like the real src/monst.c: the macro definitions, then one entry per macro form. The
        GENERAL_MON entry keeps the real file's layout, its six trailing slots on their own lines with
-       nested ACTION_INFO calls in the last two. */
+       nested ACTION_INFO calls in the last two. The last two entries carry female and common names;
+       the wolf's wraps before its female name, and its common name is the jackal's base name. */
     private const string FixtureMonstC = @"/* monst.c */
 #define GENERAL_MON(nam, title, desc, femalename, commonname, sym, lvl, gen, atk, siz, stats, mr1, mr2, mc1, flg1, flg2, flg3, flg4, flg5, flg6, flg7, flg8, d, col, soundset, female_soundset, soundset_subtype, anim, female_anim, enlarge, female_enlarge, replacement, female_replacement) \
     { nam, title, desc, femalename, commonname, sym, lvl, gen, atk, siz, stats, mr1, mr2, mc1, flg1, flg2, flg3, flg4, flg5, flg6, flg7, flg8, d, C(col), soundset, female_soundset, soundset_subtype, anim, female_anim, enlarge, female_enlarge, replacement, female_replacement }
@@ -192,6 +284,23 @@ struct permonst mons[] = {
         NO_ACTION_INFO,
         ACTION_INFO(LITTLE_DOG_REPLACEMENT, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, LITTLE_DOG_STATUE_REPLACEMENT, 0, 0),
         ACTION_INFO(LITTLE_DOG_REPLACEMENT, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, LITTLE_DOG_STATUE_REPLACEMENT, 0, 0)),
+    ANIMATED_MON(""fixture kobold lord"", None, ""small subterranean humanoid in a leadership position"", ""fixture kobold lady"", ""fixture kobold noble"", S_KOBOLD, LVL(6, 6, 10, 0, 0, -4), (G_GENO | 1),
+        A(ATTK(AT_WEAP, AD_PHYS, 2, 4, 0, 0, 0, 0, 0UL, 0), NO_ATTK, NO_ATTK, NO_ATTK, NO_ATTK,
+          NO_ATTK, NO_ATTK, NO_ATTK),
+        SIZ(500, 150, MS_ORC, MZ_SMALL, 1, 0, MAT_FLESH), STATS(10, 10, 10, 8, 8, 8), MR_POISON, MR2_NONE, MC_NONE,
+        M1_HUMANOID | M1_POIS | M1_OMNIVORE, M2_HOSTILE | M2_LORD | M2_MALE | M2_COLLECT, M3_INFRAVISIBLE | M3_INFRAVISION, M4_NONE, M5_NONE, M6_NONE, M7_NONE, M8_NONE,
+        16, HI_DOMESTIC, MONSTER_SOUNDSET_NONE, MONSTER_SOUNDSET_NONE, NO_SOUNDSET_SUBTYPE,
+        ACTION_INFO(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, KOBOLD_LORD_ANIMATION, 0, 0, 0),
+        NO_ACTION_INFO),
+    ENLARGED_MON(""fixture wolf"", None, ""wild canine of the hills"",
+        ""fixture she-wolf"", ""fixture jackal"", S_DOG, LVL(7, 12, 4, 0, 0, 0), (G_GENO | G_SGROUP | 2),
+        A(ATTK(AT_BITE, AD_PHYS, 2, 4, 0, 0, 0, 0, 0UL, 0), NO_ATTK, NO_ATTK, NO_ATTK, NO_ATTK,
+          NO_ATTK, NO_ATTK, NO_ATTK),
+        SIZ(500, 250, MS_BARK, MZ_SMALL, 1, 0, MAT_FLESH), STATS(13, 14, 14, 3, 3, 3), MR_NONE, MR2_NONE, MC_NONE,
+        M1_ANIMAL | M1_NOHANDS | M1_CARNIVORE, M2_HOSTILE, M3_INFRAVISIBLE, M4_NONE, M5_NONE, M6_NONE, M7_NONE, M8_NONE,
+        17, HI_DOMESTIC, MONSTER_SOUNDSET_DOG, MONSTER_SOUNDSET_DOG, NO_SOUNDSET_SUBTYPE,
+        ACTION_INFO(WOLF_ENLARGEMENT, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+        NO_ACTION_INFO),
 };
 ";
 }

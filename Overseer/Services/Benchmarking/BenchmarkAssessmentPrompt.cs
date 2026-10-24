@@ -835,8 +835,11 @@ public static class BenchmarkAssessmentPrompt
     ///     fingerprint, never as tool-call rows, so ToolCallCount, ToolCallSummary and every tool metric
     ///     exclude them; the run report gains a Self-Reports section. ScoringMethodVersion stays 14;
     ///     ToolGuidesSha256 moves (new guide report_feedback.md); CandidateSystemPromptSha256 does not move.
+    /// v61: get_monster_stats resolves a monster's female and common names after its base name, with a
+    ///     "Resolved '…' to '…'" note, and a miss lists up to five near names; its name parameter says so.
+    ///     ScoringMethodVersion stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
     /// </summary>
-    public const string HarnessVersion = "60";
+    public const string HarnessVersion = "61";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

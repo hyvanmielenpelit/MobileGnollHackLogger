@@ -322,6 +322,8 @@ public static class HarnessImpactLedger
                 "Run report prints critical-error-quote verifications; report-pack status word, digest wording, single-model rank and PDF heading fixes; information condition, candidate tool list and corpus condition recorded on runs; evidence reach from tool-call rows; benchmark-only instruction variants and experimental tools, never loaded by production."),
             new("60", CI,
                 "report_feedback is offered to the candidate outside the tool budget and the allow-list; self-reports are stored apart from tool calls; the tool guides hash moves."),
+            new("61", CI,
+                "get_monster_stats resolves a monster's female and common names and lists near names on a miss; its name parameter says so."),
         };
 
         return table.OrderBy(e => e.Number).ToList();

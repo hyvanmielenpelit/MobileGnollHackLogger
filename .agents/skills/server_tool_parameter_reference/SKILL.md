@@ -948,7 +948,9 @@ wiki context, which is built by `GetRelevantContext`. A run stamped 38 or earlie
 filename there. `ToolGuidesSha256` did not move.
 
 **`get_monster_stats` / `get_item_stats` / `get_artifact_stats`** — `name` (required, exact as
-written in the source: `src/monst.c`, `src/objects.c`, `include/artilist.h` respectively). For
+written in the source: `src/monst.c`, `src/objects.c`, `include/artilist.h` respectively — for
+`get_monster_stats`, from harness 61, the base, female or common name of the entry (see the name-match
+paragraph below)). For
 `get_item_stats` that is the `oc_name`, whose form depends on the class: wands, rings, potions,
 scrolls and spellbooks drop their class word (`digging`, `identify`, `adornment`), and every other
 class keeps its full name (`amulet of reflection`, `belt of hill giant strength`, `ioun stone of
@@ -994,6 +996,24 @@ enlargement and replacement slots appended after them, so one positional Level 1
 the game data."* from a fully working corpus. In a run older than that fix, such a miss is a **tool
 defect**, not a model error and not a corpus defect; confirm with
 `Select-String '^\s*GENERAL_MON\(\s*"<name>"'` against `src/monst.c` at the run's recorded SHA.
+
+**From harness 61 a female or common name resolves** (`SourceCodeService.TryReadMonsterEntryNames`,
+`BuildMonsterStatsMissMessage`). Every monster macro takes `nam, title, desc, femalename, commonname` as
+slots 0–4; the board names a female monster by slot 3 (*"a kobold lady corpse"*). The tool resolves in
+three passes, each case-insensitive: the first entry whose base name equals `name` (the match above,
+unchanged); only when none does, the first entry in file order whose female name equals it; then the first
+whose common name does. A base name always wins. A pass-2 or pass-3 resolution returns the base entry's
+stats with `message` *"Resolved 'kobold lady' to 'kobold lord': 'kobold lady' is the female name of the
+kobold lord."* (*… is the common name of the …* for pass 3), and a Level 2 message follows the note after
+one space. The names are read from the start line joined with the next two lines, so the four entries whose
+descriptions wrap before slot 3 (*Baphomet*, *Orcus*, *Baalzebub*, *Demogorgon*) read too; an entry the
+five-slot pattern cannot read resolves by base name alone. A miss keeps its opening *"No monster named '…'
+found in the game data."* and adds *" Did you mean: a; b; c."* — up to five suggestions, at most one per
+entry, first from entries any of whose three names contains the whole request, then from each word of four
+or more characters, in file order; a suggestion is the base name, or *`<female or common name> (<base
+name>)`* when only that name matched — then the `monster_lookup` / `wiki_search` sentence, capped at 600
+characters. Before harness 61, `{"name": "kobold lady"}` missed on runs 127, 128 and 131, and every miss
+was the bare sentence with no near names.
 
 **`get_monster_stats` attacks** (`SourceCodeService.ParseAttacks`): `stats.mattk` is a list with
 one object per attack, carrying the `ATTK` slots by name — `aatyp`, `adtyp`, `damn`, `damd`, `damp`,

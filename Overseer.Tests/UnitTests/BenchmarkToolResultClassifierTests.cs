@@ -212,6 +212,7 @@ public class BenchmarkToolResultClassifierTests
 
     [Theory]
     [InlineData("get_monster_stats", "No monster named 'little dgo' found in the game data. Try monster_lookup or wiki_search for partial matches, or check the spelling.")]
+    [InlineData("get_monster_stats", "No monster named 'kobold lrd' found in the game data. Did you mean: kobold lord; large kobold. Try monster_lookup or wiki_search for partial matches, or check the spelling.")]
     [InlineData("get_item_stats", "No item named 'grail' found in the game data. Did you mean: grail of healing. Try item_lookup or wiki_search for partial matches, or check the spelling.")]
     [InlineData("get_artifact_stats", "No artifact named 'Holy Grail' found in the game data. Try wiki_search for partial matches, or check the spelling.")]
     public void Classify_StatsNotFoundError_IsAMiss(string tool, string error)
