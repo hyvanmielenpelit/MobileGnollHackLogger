@@ -19,6 +19,9 @@ namespace Overseer.Tests.Helpers
 {
     public class OverseerWebApplicationFactory : WebApplicationFactory<Program>
     {
+        /// <summary>Whether the production CSRF filter stays in place; the API tests remove it.</summary>
+        protected virtual bool KeepAntiforgeryFilter => false;
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             // Host logs go to the running test's output, which the test runner shows only for a failed test.
@@ -77,14 +80,17 @@ namespace Overseer.Tests.Helpers
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("TestAuthType", options => { });
 
                 // 4. Disable Antiforgery filter (CSRF) for API tests
-                services.PostConfigure<MvcOptions>(options =>
+                if (!KeepAntiforgeryFilter)
                 {
-                    var antiforgeryFilter = options.Filters.FirstOrDefault(f => f.GetType().Name == "AutoValidateAntiforgeryTokenAttribute");
-                    if (antiforgeryFilter != null)
+                    services.PostConfigure<MvcOptions>(options =>
                     {
-                        options.Filters.Remove(antiforgeryFilter);
-                    }
-                });
+                        var antiforgeryFilter = options.Filters.FirstOrDefault(f => f.GetType().Name == "AutoValidateAntiforgeryTokenAttribute");
+                        if (antiforgeryFilter != null)
+                        {
+                            options.Filters.Remove(antiforgeryFilter);
+                        }
+                    });
+                }
             });
         }
     }

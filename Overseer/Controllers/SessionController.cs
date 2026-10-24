@@ -59,7 +59,8 @@ public class SessionController : ControllerBase
         [FromServices] Overseer.Security.UserTurnRateLimiter? turnLimiter = null,
         [FromServices] Overseer.Security.UserTurnConcurrencyGate? turnGate = null,
         [FromServices] GnollHackServer.Data.Legal.TermsAcceptanceStore? terms = null,
-        [FromServices] Overseer.Services.Legal.PendingGreetingStore? pendingGreetings = null)
+        [FromServices] Overseer.Services.Legal.PendingGreetingStore? pendingGreetings = null,
+        [FromServices] Overseer.Services.Security.SnapshotGuardService? snapshotGuard = null)
     {
         var expectedSecret = _configuration["AntiForgeryToken"];
         if (string.IsNullOrEmpty(expectedSecret) || request.AntiForgeryToken != expectedSecret)
@@ -145,6 +146,39 @@ public class SessionController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, Overseer.Services.Security.OverseerAccessService.BlockedBody(block));
         }
 
+        /* Current apps send both fields; older ones send the raw dump only. Falling back on an
+           empty result rather than on the field being absent means a whitespace-only
+           SnapshotText does not suppress a usable SnapshotHtml. */
+        string snapshot = DumpHtmlSanitizer.PrepareFlattenedSnapshot(request.SnapshotText);
+        string snapshotSource = "text";
+        if (snapshot.Length == 0 && !string.IsNullOrWhiteSpace(request.SnapshotHtml))
+        {
+            snapshot = Overseer.Services.ChatService.SanitizeSnapshotForLlm(request.SnapshotHtml);
+            snapshotSource = "html";
+        }
+
+        /* The guard refuses a text, never the session: the game client shows any refusal of this
+           request as a credentials or connection problem, so the player is told in the chat. */
+        var guard = snapshotGuard == null
+            ? Overseer.Services.Security.SnapshotGuardDecision.Allow
+            : await snapshotGuard.EvaluateAsync(user.Id, new[]
+            {
+                new Overseer.Services.Security.SnapshotGuardInput("create", Overseer.Services.Security.SnapshotGuardSubject.Snapshot,
+                    Overseer.Services.Security.SnapshotGuardTextKind.Snapshot, snapshot),
+                new Overseer.Services.Security.SnapshotGuardInput("history", Overseer.Services.Security.SnapshotGuardSubject.History,
+                    Overseer.Services.Security.SnapshotGuardTextKind.MessageHistory, request.MessageHistory),
+                new Overseer.Services.Security.SnapshotGuardInput("manifest", Overseer.Services.Security.SnapshotGuardSubject.Manifest,
+                    Overseer.Services.Security.SnapshotGuardTextKind.Manifest, request.DirectoryManifest)
+            });
+        bool snapshotWithheld = guard.IsWithheld("create");
+        bool historyWithheld = guard.IsWithheld("history");
+        bool manifestWithheld = guard.IsWithheld("manifest");
+        if (guard.Refuse)
+        {
+            _logger.LogInformation("Game text withheld by the snapshot guard: snapshot={Snapshot}, history={History}, manifest={Manifest}, code={Code}",
+                snapshotWithheld, historyWithheld, manifestWithheld, guard.Code);
+        }
+
         var session = new ChatSession
         {
             AspNetUserId = user.Id,
@@ -153,7 +187,9 @@ public class SessionController : ControllerBase
             LastMessageUtc = DateTime.UtcNow,
             ClientSettings = request.OverseerSettings,
             IsGnollHackSession = request.IsGnollHackSession,
-            IsConfidential = request.IsConfidential
+            IsConfidential = request.IsConfidential,
+            SnapshotRefusedUtc = guard.Refuse ? DateTime.UtcNow : null,
+            SnapshotRefusalCode = guard.Refuse ? guard.SessionCode : null
         };
 
         /* Snapshotted at creation with the two retention scalars, as every other creation path
@@ -197,18 +233,20 @@ public class SessionController : ControllerBase
 
         await _chatRetentionService.EnforceUserSessionQuotaAsync(user.Id);
 
-        /* Current apps send both fields; older ones send the raw dump only. Falling back on an
-           empty result rather than on the field being absent means a whitespace-only
-           SnapshotText does not suppress a usable SnapshotHtml. */
-        string snapshot = DumpHtmlSanitizer.PrepareFlattenedSnapshot(request.SnapshotText);
-        string snapshotSource = "text";
-        if (snapshot.Length == 0 && !string.IsNullOrWhiteSpace(request.SnapshotHtml))
+        if (snapshotWithheld)
         {
-            snapshot = Overseer.Services.ChatService.SanitizeSnapshotForLlm(request.SnapshotHtml);
-            snapshotSource = "html";
+            // In place of the board: a fixed notice that is not a snapshot, so hasGameSnapshot stays false.
+            _dbContext.ChatMessage.Add(new ChatMessage
+            {
+                ChatSessionId = session.Id,
+                Role = "system",
+                Content = Protect(Overseer.Services.Security.SnapshotGuardService.ModelNotice),
+                IsGameSnapshot = false,
+                TimestampUtc = DateTime.UtcNow
+            });
+            await _dbContext.SaveChangesAsync();
         }
-
-        if (snapshot.Length > 0)
+        else if (snapshot.Length > 0)
         {
             var systemMsg = new ChatMessage
             {
@@ -266,7 +304,7 @@ public class SessionController : ControllerBase
                 });
             }
 
-            if (!string.IsNullOrWhiteSpace(request.MessageHistory))
+            if (!historyWithheld && !string.IsNullOrWhiteSpace(request.MessageHistory))
             {
                 // Insert a truncated summary as a system message so the AI knows it's available
                 var preview = request.MessageHistory.Length > 2000
@@ -288,7 +326,7 @@ public class SessionController : ControllerBase
                 await WriteContextFileAsync("message_history.txt", request.MessageHistory, msg);
             }
 
-            if (!string.IsNullOrWhiteSpace(request.DirectoryManifest))
+            if (!manifestWithheld && !string.IsNullOrWhiteSpace(request.DirectoryManifest))
             {
                 var msg = new ChatMessage
                 {

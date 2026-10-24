@@ -256,4 +256,62 @@ describe('feedback-resolution-yaml', () => {
     expect(result.errors).toEqual([]);
     expect(result.request?.items).toEqual([{ id: 42, fingerprint: FP, status: 'resolved', resolution: 'What changed, where, and how it was verified.' }]);
   });
+
+  it('R13: a note or resolution with hidden characters is a notice; clean text is not', async () => {
+    const rlo = String.fromCodePoint(0x202e);
+    const zwsp = String.fromCodePoint(0x200b);
+    const result = await parseFeedbackResolutionYaml(overseerHeader + [
+      'issues:',
+      '  - id: 42',
+      `    fingerprint: "${FP}"`,
+      '    status: resolved',
+      `    resolution: "Fixed ${rlo}txet"`,
+      `    note: "Looked${zwsp}into it"`,
+      '  - id: 43',
+      `    fingerprint: "${FP2}"`,
+      '    status: resolved',
+      '    resolution: "Fixed the tool."',
+      '    note: "Clean."',
+      ''
+    ].join('\n'), 'overseer');
+
+    expect(result.errors).toEqual([]);
+    expect(result.notices).toEqual([
+      'issues[0] (id 42): the note holds hidden characters (U+200B). Check the text before applying.',
+      'issues[0] (id 42): the resolution holds hidden characters (U+202E). Check the text before applying.'
+    ]);
+    expect(result.request?.items.length).toBe(2);
+  });
+
+  it('reports a top-level __proto__ key as unknown and pollutes no prototype', async () => {
+    const result = await parseFeedbackResolutionYaml(overseerHeader + [
+      '__proto__:',
+      '  polluted: true',
+      'issues:',
+      '  - id: 42',
+      `    fingerprint: "${FP}"`,
+      '    status: new',
+      ''
+    ].join('\n'), 'overseer');
+
+    expect(result.request).toBeNull();
+    expect(messages(result)).toContain('Unknown top-level key `__proto__`; allowed: format, version, source, exportedAtUtc, issues.');
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+  });
+
+  it('completes on a document with deeply nested aliases', async () => {
+    const lines = ['a0: &a0 [' + Array(10).fill('"x"').join(', ') + ']'];
+    for (let level = 1; level < 10; level++) {
+      lines.push(`a${level}: &a${level} [` + Array(10).fill(`*a${level - 1}`).join(', ') + ']');
+    }
+    const started = performance.now();
+    const result = await parseFeedbackResolutionYaml(overseerHeader + lines.join('\n') + '\nissues: []\n', 'overseer');
+    const elapsed = performance.now() - started;
+
+    expect(result.request).toBeNull();
+    expect(messages(result)).toContain('Unknown top-level key `a9`; allowed: format, version, source, exportedAtUtc, issues.');
+    expect(messages(result)).toContain('`issues` must be a non-empty list.');
+    expect(elapsed).toBeLessThan(2000);
+    console.log(`feedback-resolution-yaml: deeply nested aliases parsed and checked in ${elapsed.toFixed(1)} ms`);
+  });
 });

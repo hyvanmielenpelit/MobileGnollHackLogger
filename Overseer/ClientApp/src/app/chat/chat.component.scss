@@ -2203,6 +2203,17 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   }
 }
 
+/* The snapshot guard withheld this chat's game text: why, and what the player can do. */
+.alert.alert-compact.snapshot-refused-banner {
+  margin-bottom: 8px;
+
+  .alert-body p {
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: #f3f4f6;
+  }
+}
+
 /* The composer's notice when the provider refused a model the catalog does not flag; the flagged
    case is app-model-availability-notice, whose composer margin is global. */
 .alert.alert-compact.composer-unanswered-notice {

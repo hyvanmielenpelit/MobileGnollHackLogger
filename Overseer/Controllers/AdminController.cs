@@ -189,6 +189,43 @@ public class AdminController : ControllerBase
         return Ok(new SafetyIdentifierLookupDto { UserId = userId, UserName = userName ?? string.Empty });
     }
 
+    /// <summary>The snapshot guard's mode, who set it and when, and the configured block rule.</summary>
+    [HttpGet("security/snapshot-guard")]
+    public async Task<IActionResult> GetSnapshotGuard([FromServices] Overseer.Services.Security.SnapshotGuardModeService modes)
+        => Ok(await SnapshotGuardDtoAsync(await modes.GetStateAsync(HttpContext.RequestAborted)));
+
+    /// <summary>Sets the snapshot guard's mode, appending a setting even when it is unchanged; 400 for an unknown mode.</summary>
+    [HttpPost("security/snapshot-guard")]
+    public async Task<IActionResult> SetSnapshotGuard([FromBody] AdminSnapshotGuardUpdateDto? request,
+        [FromServices] Overseer.Services.Security.SnapshotGuardModeService modes)
+    {
+        if (SnapshotGuardOptions.ParseMode(request?.Mode) is not SnapshotGuardMode mode)
+        {
+            return BadRequest(new { message = "The mode must be Off, Observe or Enforce." });
+        }
+        var state = await modes.SetAsync(mode, AdminUserId, HttpContext.RequestAborted);
+        return Ok(await SnapshotGuardDtoAsync(state));
+    }
+
+    private async Task<AdminSnapshotGuardDto> SnapshotGuardDtoAsync(Overseer.Services.Security.SnapshotGuardModeState state)
+    {
+        var options = SnapshotGuardOptions.Read(_configuration);
+        string? setBy = state.SetByUserId == null
+            ? null
+            : await _dbContext.Users.AsNoTracking().Where(u => u.Id == state.SetByUserId).Select(u => u.UserName).FirstOrDefaultAsync() ?? state.SetByUserId;
+        return new AdminSnapshotGuardDto
+        {
+            Mode = state.Mode.ToString(),
+            SetAtUtc = state.SetAtUtc,
+            SetByUserName = setBy,
+            Seeded = state.Seeded,
+            AutoBlockEnabled = options.AutoBlockEnabled,
+            AutoBlockDistinctDays = options.AutoBlockDistinctDays,
+            AutoBlockWindowDays = options.AutoBlockWindowDays,
+            NotificationEmailConfigured = options.NotificationEmail != null
+        };
+    }
+
     [HttpPost("users/{userId}/groups")]
     public async Task<IActionResult> AssignGroupToUser(string userId, [FromBody] AssignGroupRequest request)
     {

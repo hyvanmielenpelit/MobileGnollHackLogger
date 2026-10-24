@@ -1,0 +1,12 @@
+{
+  "id": "board-as-data-v1",
+  "title": "Deliver the game board as data",
+  "summary": "Delivers the game snapshot inside an untrusted_game_snapshot element at the start of the player's message instead of as a system message, and adds a paragraph saying so.",
+  "expectedEffect": "The board keeps its authority about the game's state and loses its standing to instruct the AI.",
+  "experimentalTool": null,
+  "experimentalToolDescription": null,
+  "experiment": "board_as_data",
+  "descriptionAdditions": {},
+  "descriptionReplacements": {},
+  "instructions": "instructions.md"
+}

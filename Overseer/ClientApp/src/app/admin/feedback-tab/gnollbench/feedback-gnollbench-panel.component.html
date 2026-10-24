@@ -120,6 +120,10 @@
               <div class="tl-gbfb-kicker">
                 <span class="gh-tag tl-gbfb-category" [attr.data-category]="issue.category">{{ categoryLabel(issue.category) }}</span>
                 <span [class]="statusBadgeClass(issue.status) + ' tl-gbfb-status-badge'">{{ statusLabel(issue.status) }}</span>
+                @let hidden = issueHiddenCharacters(issue);
+                @if (hidden.length > 0) {
+                  <span class="gh-tag tl-gbfb-mark-hidden" [attr.title]="'Invisible characters: ' + hidden.join(', ')">Hidden characters</span><span class="visually-hidden">: {{ hidden.join(', ') }}</span>
+                }
                 @if (issue.models.length > 0) {
                   <span class="tl-gbfb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                   <span class="tl-gbfb-models"><span class="visually-hidden">Models: </span>{{ issue.models.join(', ') }}</span>
@@ -210,6 +214,10 @@
                           }
                           @if (o.truncated) {
                             <li><span class="gh-tag tl-gbfb-mark-truncated">Truncated</span></li>
+                          }
+                          @let occHidden = occurrenceHiddenCharacters(o);
+                          @if (occHidden.length > 0) {
+                            <li><span class="gh-tag tl-gbfb-mark-hidden" [attr.title]="'Invisible characters: ' + occHidden.join(', ')">Hidden characters</span><span class="visually-hidden">: {{ occHidden.join(', ') }}</span></li>
                           }
                         </ul>
                         <dl class="tl-gbfb-occ-facts">

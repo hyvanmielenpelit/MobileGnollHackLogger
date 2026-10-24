@@ -81,6 +81,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<OverseerFeedbackIssue> OverseerFeedbackIssues { get; set; } = null!;
         public DbSet<OverseerFeedbackReport> OverseerFeedbackReports { get; set; } = null!;
         public DbSet<OverseerFeedbackSetting> OverseerFeedbackSettings { get; set; } = null!;
+        public DbSet<SnapshotGuardSetting> SnapshotGuardSettings { get; set; } = null!;
         public DbSet<BenchmarkRunAnswerSelfReport> BenchmarkRunAnswerSelfReports { get; set; } = null!;
         public DbSet<BenchmarkFeedbackTriage> BenchmarkFeedbackTriages { get; set; } = null!;
         public DbSet<BenchmarkExperimentalChange> BenchmarkExperimentalChanges { get; set; } = null!;
@@ -267,6 +268,12 @@ namespace MobileGnollHackLogger.Data
                 // The column default is for rows written outside EF; EF itself always sets Target.
                 e.Property(s => s.Target).HasDefaultValue(OverseerFeedbackSwitchTarget.Chat);
                 e.HasIndex(s => new { s.Target, s.Id });
+            });
+
+            modelBuilder.Entity<SnapshotGuardSetting>(e =>
+            {
+                e.Property(s => s.Mode).HasMaxLength(16);
+                e.Property(s => s.SetByUserId).HasMaxLength(450);
             });
 
             // Joined to self-reports by the indexed Fingerprint; no foreign key, since a re-run recreates them.

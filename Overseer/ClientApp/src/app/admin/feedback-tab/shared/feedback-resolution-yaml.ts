@@ -5,10 +5,11 @@ import type {
   FeedbackResolutionStatus
 } from '../../../services/feedback-transfer.service';
 import type { FeedbackSource } from './feedback-view-storage';
+import { findHiddenCharacters } from './feedback-hidden-characters';
 
 /**
  * The resolution file an agent writes from a feedback export (`overseer-feedback-resolutions`, version 1), and the
- * client's parse and schema pass over it, rules R1–R12 of the format. Errors block the import; notices do not. The
+ * client's parse and schema pass over it, rules R1–R13 of the format. Errors block the import; notices do not. The
  * server runs R1–R9 again on preview and apply. Parsing is `js-yaml`, loaded lazily.
  *
  * ```yaml
@@ -76,7 +77,7 @@ export async function parseFeedbackResolutionYaml(text: string, expectedSource: 
   return checkFeedbackResolutionDocument(doc, expectedSource);
 }
 
-/** R1–R12 over a document already parsed from YAML. */
+/** R1–R13 over a document already parsed from YAML. */
 export function checkFeedbackResolutionDocument(doc: unknown, expectedSource: FeedbackSource): FeedbackResolutionParseResult {
   const errors: ParseIssue[] = [];
   const notices: string[] = [];
@@ -237,6 +238,13 @@ export function checkFeedbackResolutionDocument(doc: unknown, expectedSource: Fe
     // R11: only a cleared resolution is known here; the preview also knows the stored one.
     if (item.status === 'resolved' && item.resolution === '') {
       notices.push(`${label}: a resolved issue should say what was done.`);
+    }
+    // R13
+    for (const [noun, text] of [['note', item.note], ['resolution', item.resolution]] as const) {
+      const hidden = findHiddenCharacters(text);
+      if (hidden.length > 0) {
+        notices.push(`${label}: the ${noun} holds hidden characters (${hidden.join(', ')}). Check the text before applying.`);
+      }
     }
     items.push(item);
   });

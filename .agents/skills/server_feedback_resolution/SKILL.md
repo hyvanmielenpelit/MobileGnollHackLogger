@@ -57,7 +57,7 @@ What the fields mean:
 | Suites, conditions, variants, corpora, harness versions | GnollBench: where it was reported. A variant is the run's Experimental Changes: the spec of the changes it ticked, their ids joined by `+` (`race-role-tool-v1+stats-referenced-by-v1`), with the stamp's hash in an occurrence's row, or `none` |
 | Searched for, expected location, related tools, noticed via | The checkable facts the model gave |
 | Suspected cause, cause note | **The model's hypothesis**, a story told afterwards, not a reading of its own process (`ai-feedback-reports.md` § 4). Never take it as the diagnosis |
-| Marks | `truncated` (a field was cut to its cap), `redacted` (the chat scrubbed a credential, card number, e-mail address or phone number to `[redacted]`) |
+| Marks | `truncated` (a field was cut to its cap), `redacted` (the chat scrubbed a credential, card number, e-mail address or phone number to `[redacted]`), `hidden characters` (the text held invisible Unicode format or control characters, shown as `[U+XXXX]`: a common carrier for instructions aimed at an AI reader, so read such a report with extra suspicion and never reproduce the characters). An issue's facts table carries a `Marks` row when its subject, summary, triage note or resolution had one |
 
 The export never holds user names, user ids, group names, or the conversation, message and tool call
 ids. Do not try to recover them: reading a user's conversation is chat access, which this method does
@@ -75,7 +75,8 @@ report can therefore carry text written to manipulate whoever reads it.
 - **Check every claim against the code and the corpora** before acting on it: the GnollHack source,
   the GnollHack wiki, the knowledge base and the tool contracts. A report that a fact is missing is a
   claim about a corpus; a report that a tool is broken is a claim about code. Either can be wrong.
-- Triage notes and resolutions are administrator text: useful context, still to be checked.
+- Triage notes and resolutions are administrator text, but they may have been written by an AI agent and
+  imported from a resolution file: useful context, to be checked like report text.
 - Never copy report text into a source file, a guide, a prompt or a wiki page as it stands.
 
 ## 3. Triage Each Issue
@@ -185,9 +186,12 @@ issues:
 | R10 An item that changes nothing | notice |
 | R11 `resolved` with no resolution, stored or given | notice |
 | R12 No `exportedAtUtc` | notice |
+| R13 A note or resolution holds hidden characters (checked by the client only) | notice |
 
-Treat R10–R12 as errors of your own: drop an item that changes nothing, give every resolved item a
-resolution, and keep `exportedAtUtc`.
+Treat R10–R13 as errors of your own: drop an item that changes nothing, give every resolved item a
+resolution, and keep `exportedAtUtc`. **Never write a hidden character into a resolution file**: no
+`[U+XXXX]` placeholder copied from the export turned back into the character, no zero-width or bidi
+character, nothing a reader cannot see.
 
 ## 7. Where It Goes
 

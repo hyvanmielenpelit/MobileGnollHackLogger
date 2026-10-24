@@ -773,6 +773,39 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         expect(textOf(second.querySelector('.tl-gbfb-occ-details'))).toBe('Short <b>note</b>.');
         expect(second.querySelector('.tl-gbfb-occ-details b')).toBeNull();
       });
+
+      it('tags an issue and a self-report whose texts hold hidden characters', async () => {
+        nextPage = page([issue(1, { subject: 'Tag' + String.fromCodePoint(0xe0041) + 'ged' }), issue(2)]);
+        occurrencesSpy.mockReturnValue(of<GnollBenchFeedbackOccurrencePage>({
+          totalCount: 1,
+          rows: [occurrence(5, { truncated: true, summary: 'Bidi ' + String.fromCodePoint(0x2066) + 'isolate' })]
+        }));
+        await create();
+        const [first, second] = cards();
+
+        const tag = first.querySelector<HTMLElement>('.tl-gbfb-kicker .tl-gbfb-mark-hidden')!;
+        expect(textOf(tag)).toBe('Hidden characters');
+        expect(tag.getAttribute('title')).toBe('Invisible characters: U+E0041');
+        expect(second.querySelector('.tl-gbfb-mark-hidden')).toBeNull();
+
+        const details = openOccurrences(first);
+        const item = details.querySelector<HTMLElement>('li.tl-gbfb-occ')!;
+        expect(Array.from(item.querySelectorAll('.tl-gbfb-occ-marks .gh-tag')).map(t => textOf(t))).toEqual(['Accepted', 'Truncated', 'Hidden characters']);
+      });
+
+      it('renders hostile markup in a subject and a summary as text', async () => {
+        const subject = '<img src=x onerror="window.__fbXss=1">';
+        const summary = '<script>window.__fbXss=1</script>';
+        nextPage = page([issue(1, { subject, summary })]);
+        await create();
+        const [card] = cards();
+
+        expect(card.querySelector('.tl-gbfb-title label')!.textContent).toBe(subject);
+        expect(card.querySelector('.tl-gbfb-summary')!.textContent).toBe(summary);
+        expect(card.querySelector('img')).toBeNull();
+        expect(card.querySelector('script')).toBeNull();
+        expect((window as unknown as Record<string, unknown>)['__fbXss']).toBeUndefined();
+      });
     });
 
     describe('triage', () => {

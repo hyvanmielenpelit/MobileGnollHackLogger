@@ -299,6 +299,9 @@ builder.Services.AddSingleton<Overseer.Services.Security.ISecurityEventRecorder>
     sp => sp.GetRequiredService<Overseer.Services.Security.SecurityEventRecorder>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Overseer.Services.Security.SecurityEventRecorder>());
 builder.Services.AddSingleton<Overseer.Services.Security.OverseerAccessService>();
+// The snapshot guard reads SnapshotGuard options on each call and its mode from the append-only setting.
+builder.Services.AddSingleton<Overseer.Services.Security.SnapshotGuardModeService>();
+builder.Services.AddSingleton<Overseer.Services.Security.SnapshotGuardService>();
 builder.Services.AddSingleton<Overseer.Services.Security.SafetyIdentifierService>();
 builder.Services.AddScoped<Overseer.Services.Security.SecurityQueryService>();
 builder.Services.AddScoped<Overseer.Services.Security.AccountDeletionReviewService>();

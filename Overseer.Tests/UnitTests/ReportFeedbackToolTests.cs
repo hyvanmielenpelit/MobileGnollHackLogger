@@ -641,6 +641,66 @@ public sealed class ReportFeedbackToolTests : IDisposable
         AssertRecorded(await tool.ExecuteAsync(Arguments(subject: "Three"), Chat(sessionId: 4, userId: OtherUserId), Ct));
     }
 
+    // -- results ------------------------------------------------------------------------------------
+
+    private const string EchoMarker = "ZQX-ECHO-MARKER-7731";
+
+    private static JsonElement MarkedArguments(string category = "missing_information", string tag = "") => JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+    {
+        ["category"] = category,
+        ["subject"] = EchoMarker + " subject" + tag,
+        ["summary"] = EchoMarker + " summary",
+        ["details"] = EchoMarker + " details",
+        ["searched_for"] = EchoMarker + " searched",
+        ["expected_location"] = EchoMarker + " location",
+        ["related_tools"] = new[] { EchoMarker },
+        ["noticed_via"] = EchoMarker,
+        ["suspected_cause"] = EchoMarker,
+        ["suspected_cause_note"] = EchoMarker + " note"
+    });
+
+    private static void AssertNoEcho(ToolResult result)
+    {
+        Assert.DoesNotContain(EchoMarker, result.Content ?? "", StringComparison.Ordinal);
+        Assert.DoesNotContain(EchoMarker, result.ErrorMessage ?? "", StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Results_NeverEchoTheArguments()
+    {
+        var (tool, feedbackSwitch) = CreateTool(dailyCap: 2);
+        var budget = new AgentRunBudget();
+
+        var recorded = await tool.ExecuteAsync(MarkedArguments(), Chat(sessionId: 1, budget: budget), Ct);
+        AssertRecorded(recorded);
+        AssertNoEcho(recorded);
+
+        var already = await tool.ExecuteAsync(MarkedArguments(), Chat(sessionId: 1, budget: budget), Ct);
+        Assert.Equal(ReportFeedbackTool.AlreadyRecordedMessage, already.Content);
+        AssertNoEcho(already);
+
+        AssertRecorded(await tool.ExecuteAsync(MarkedArguments(tag: " 2"), Chat(sessionId: 1, budget: budget), Ct));
+        var dailyLimit = await tool.ExecuteAsync(MarkedArguments(tag: " 3"), Chat(sessionId: 1, budget: budget), Ct);
+        Assert.False(dailyLimit.Success);
+        AssertNoEcho(dailyLimit);
+
+        var fullBudget = new AgentRunBudget();
+        for (int i = 0; i < ReportFeedbackTool.MaxReportsPerTurn; i++)
+            Assert.True(fullBudget.TryIncrementFeedbackReport(ReportFeedbackTool.MaxReportsPerTurn));
+        var turnLimit = await tool.ExecuteAsync(MarkedArguments(tag: " 4"), Chat(sessionId: 2, budget: fullBudget, userId: OtherUserId), Ct);
+        Assert.Equal(ReportFeedbackTool.TurnLimitMessage, turnLimit.ErrorMessage);
+        AssertNoEcho(turnLimit);
+
+        var invalid = await tool.ExecuteAsync(MarkedArguments(category: EchoMarker), Chat(sessionId: 3, userId: OtherUserId), Ct);
+        Assert.False(invalid.Success);
+        AssertNoEcho(invalid);
+
+        await feedbackSwitch.SetAsync(false, "admin", Ct);
+        var notAvailable = await tool.ExecuteAsync(MarkedArguments(tag: " 5"), Chat(sessionId: 4, userId: OtherUserId), Ct);
+        AssertNotAvailable(notAvailable);
+        AssertNoEcho(notAvailable);
+    }
+
     // -- scrubbing, failure and the log --------------------------------------------------------------
 
     [Fact]

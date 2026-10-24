@@ -2,8 +2,8 @@ import type { Mock } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { HttpErrorResponse } from '@angular/common/http';
-import { of, throwError } from 'rxjs';
-import { AdminService, SecurityEvent, SecurityEventsPage, SecuritySummary } from '../../services/admin.service';
+import { Subject, of, throwError } from 'rxjs';
+import { AdminService, AdminSnapshotGuard, SecurityEvent, SecurityEventsPage, SecuritySummary } from '../../services/admin.service';
 import { AdminUserActionResult, AdminUsersService } from '../../services/admin-users.service';
 import { FilterFacetComponent } from '../../shared/data-table/filter-facet.component';
 import { AdminPageStore } from '../admin-page.store';
@@ -68,6 +68,14 @@ function fullSummary(): SecuritySummary {
   };
 }
 
+function guardState(overrides: Partial<AdminSnapshotGuard> = {}): AdminSnapshotGuard {
+  return {
+    mode: 'Observe', setAtUtc: null, setByUserName: null, seeded: true,
+    autoBlockEnabled: true, autoBlockDistinctDays: 3, autoBlockWindowDays: 30, notificationEmailConfigured: true,
+    ...overrides
+  };
+}
+
 describe('AdminSecurityTabComponent', () => {
   let fixture: ComponentFixture<AdminSecurityTabComponent>;
   let component: AdminSecurityTabComponent;
@@ -76,12 +84,14 @@ describe('AdminSecurityTabComponent', () => {
   let usersService: AdminUsersService;
   let store: AdminPageStore;
   let eventsSpy: Mock;
+  let guardSpy: Mock;
 
   beforeEach(async () => {
     clearStorage();
     ({ adminService, usersService, store } = await configureAdminTestBed(AdminSecurityTabComponent));
     vi.spyOn(adminService, 'getSecuritySummary').mockReturnValue(of(fullSummary()));
     eventsSpy = vi.spyOn(adminService, 'getSecurityEvents').mockReturnValue(of(page([securityEvent(1)])));
+    guardSpy = vi.spyOn(adminService, 'getSnapshotGuard').mockReturnValue(of(guardState()));
     vi.spyOn(store, 'showToast').mockReturnValue(undefined);
   });
 
@@ -134,7 +144,7 @@ describe('AdminSecurityTabComponent', () => {
       expect(textOf(stat('attachments').querySelector('.sec-stat-value'))).toBe('1');
       expect(textOf(stat('reports').querySelector('.sec-stat-value'))).toBe('2');
       expect(textOf(stat('blocks').querySelector('.sec-stat-value'))).toBe('1');
-      expect(textOf(stat('blocks').querySelector('.sec-stat-lines'))).toBe('Unblocks: 1');
+      expect(Array.from(stat('blocks').querySelectorAll('.sec-stat-lines li')).map(li => textOf(li))).toEqual(['Unblocks: 1', 'Automatic: 0']);
       expect(textOf(stat('holds').querySelector('.sec-stat-value'))).toBe('2 active');
       expect(textOf(stat('holds').querySelector('.sec-stat-lines'))).toBe('3 pending deletion requests');
     });
@@ -153,6 +163,98 @@ describe('AdminSecurityTabComponent', () => {
 
       expect(store.usersSubTab).toBe('deletions');
       expect(store.activeTab).toBe('users');
+    });
+
+    it('counts snapshot refusals on their own card and automatic blocks on the Blocks card, in words in the Kind facet', () => {
+      const kind = (name: string, count: number, distinctUsers = 1) => ({ kind: name, count, distinctUsers, distinctIps: 0 });
+      (adminService.getSecuritySummary as Mock).mockReturnValue(of({
+        kinds: [kind('SnapshotRejected', 4, 2), kind('AutoBlocked', 1), kind('AdminBlocked', 2)],
+        pendingDeletionRequests: 0,
+        activeAccountHolds: 0
+      }));
+      eventsSpy.mockReturnValue(of(page([
+        securityEvent(2, { kind: 'SnapshotRejected', code: 'injection-own', detail: 'observed;create:address,tool', ipAddress: null }),
+        securityEvent(1, { kind: 'AutoBlocked', code: 'snapshot-injection', ipAddress: null })
+      ])));
+      create();
+
+      expect(textOf(stat('snapshots').querySelector('.sec-stat-title'))).toBe('Snapshot refusals');
+      expect(textOf(stat('snapshots').querySelector('.sec-stat-value'))).toBe('4');
+      expect(textOf(stat('snapshots').querySelector('.sec-stat-lines'))).toBe('2 users · 0 IP addresses');
+      expect(Array.from(stat('blocks').querySelectorAll('.sec-stat-lines li')).map(li => textOf(li))).toEqual(['Unblocks: 0', 'Automatic: 1']);
+      expect(textOf(card(2).querySelector('.sec-kind'))).toBe('Snapshot refused');
+      expect(textOf(card(1).querySelector('.sec-kind'))).toBe('Blocked automatically');
+      expect(component.kindOptions.map(o => o.label)).toEqual(['Snapshot refused', 'Blocked automatically', 'Blocked by admin']);
+    });
+  });
+
+  describe('snapshot guard', () => {
+    const radio = (mode: string) => el.querySelector<HTMLInputElement>(`#sec-guard-${mode}`)!;
+    const status = () => textOf(el.querySelector('#sec-guard-status'));
+
+    it('shows the mode, the seeded status and the configured rule', () => {
+      create();
+
+      expect(textOf(el.querySelector('#sec-guard-title'))).toBe('Snapshot guard');
+      const group = el.querySelector<HTMLFieldSetElement>('fieldset.sec-guard-mode')!;
+      expect(textOf(group.querySelector('legend'))).toBe('Mode');
+      expect(group.getAttribute('aria-describedby')).toBe('sec-guard-status sec-guard-error');
+      expect(Array.from(group.querySelectorAll<HTMLInputElement>('input[type="radio"]')).map(r => r.name)).toEqual(['secGuardMode', 'secGuardMode', 'secGuardMode']);
+      expect(radio('Observe').checked).toBe(true);
+      expect(radio('Enforce').checked).toBe(false);
+      expect(textOf(el.querySelector('#sec-guard-Off-desc'))).toBe('Nothing is scanned.');
+      expect(status()).toBe('Not set yet: seeded from the configuration.');
+      expect(textOf(el.querySelector('.sec-guard-rule'))).toBe(
+        'Automatic block: on, after injection-level refusals on 3 separate days within 30 days; e-mail to the operator mailbox: on.');
+    });
+
+    it('posts the chosen mode and shows who changed it', () => {
+      const setSpy = vi.spyOn(adminService, 'setSnapshotGuardMode').mockReturnValue(of(guardState({
+        mode: 'Enforce', seeded: false, setAtUtc: '2026-10-24T12:02:00Z', setByUserName: 'tommi'
+      })));
+      create();
+
+      radio('Enforce').click();
+      fixture.detectChanges();
+
+      expect(setSpy).toHaveBeenCalledWith('Enforce');
+      expect(radio('Enforce').checked).toBe(true);
+      expect(status()).toMatch(/^Changed 24 Oct 2026 \d{2}:02 by tommi\.$/);
+    });
+
+    it('restores the previous mode and says why when the change fails', () => {
+      vi.spyOn(adminService, 'setSnapshotGuardMode').mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 500, error: { message: 'Database unavailable.' } })));
+      create();
+
+      radio('Off').click();
+      fixture.detectChanges();
+
+      expect(radio('Observe').checked).toBe(true);
+      expect(radio('Off').checked).toBe(false);
+      expect(textOf(el.querySelector('#sec-guard-error'))).toBe('The mode could not be changed: Database unavailable.');
+      expect(component.guard!.mode).toBe('Observe');
+    });
+
+    it('disables the radios while a change is pending', () => {
+      vi.spyOn(adminService, 'setSnapshotGuardMode').mockReturnValue(new Subject<AdminSnapshotGuard>().asObservable());
+      create();
+
+      radio('Enforce').click();
+      fixture.detectChanges();
+
+      expect(radio('Off').disabled).toBe(true);
+      expect(el.querySelector('fieldset.sec-guard-mode')!.getAttribute('aria-busy')).toBe('true');
+      expect(status()).toBe('Saving…');
+    });
+
+    it('reloads with Refresh', () => {
+      create();
+      expect(guardSpy).toHaveBeenCalledTimes(1);
+
+      component.refresh();
+
+      expect(guardSpy).toHaveBeenCalledTimes(2);
     });
   });
 

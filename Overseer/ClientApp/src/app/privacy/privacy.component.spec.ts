@@ -180,6 +180,9 @@ describe('PrivacyComponent', () => {
     expect(textOf(review)).toBe('A request to delete your account may be held for review by an administrator when there is ' +
       'evidence of misuse that may be illegal. You are told that it is under review, and you are e-mailed when the ' +
       'deletion is completed or declined.');
+
+    expect(textOf(section.querySelector('.snapshot-guard-use') as HTMLElement)).toBe('Game snapshots that contain text addressed to the AI ' +
+      'assistant are not delivered to it and are recorded as security events; repeated cases can suspend AI chat access automatically.');
   });
 
   it('should link the acceptable use section to the Terms of Service page', () => {

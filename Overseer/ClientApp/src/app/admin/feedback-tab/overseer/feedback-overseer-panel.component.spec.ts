@@ -538,6 +538,42 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(second.querySelector('.tl-fb-occ-details b')).toBeNull();
     });
 
+    it('tags an issue and an occurrence whose texts hold hidden characters', async () => {
+      const rlo = String.fromCodePoint(0x202e);
+      nextPage = page([issue(1, { summary: 'Reversed ' + rlo + 'txet' }), issue(2)]);
+      occurrencesSpy.mockReturnValue(of<AdminFeedbackOccurrencePage>({
+        totalCount: 1,
+        rows: [occurrence(5, { truncated: true, redacted: true, details: 'Zero' + String.fromCodePoint(0x200b) + 'width' })]
+      }));
+      await create();
+      const [first, second] = cards();
+
+      const tag = first.querySelector<HTMLElement>('.tl-fb-kicker .tl-fb-mark-hidden')!;
+      expect(textOf(tag)).toBe('Hidden characters');
+      expect(tag.getAttribute('title')).toBe('Invisible characters: U+202E');
+      expect(textOf(tag.nextElementSibling)).toBe(': U+202E');
+      expect(second.querySelector('.tl-fb-mark-hidden')).toBeNull();
+
+      const details = openOccurrences(first);
+      const item = details.querySelector<HTMLElement>('li.tl-fb-occ')!;
+      expect(Array.from(item.querySelectorAll('.tl-fb-occ-marks .gh-tag')).map(t => textOf(t))).toEqual(['Truncated', 'Redacted', 'Hidden characters']);
+    });
+
+    it('renders hostile markup in a subject and a summary as text', async () => {
+      const subject = '<img src=x onerror="window.__fbXss=1">';
+      const summary = '<script>window.__fbXss=1</script>';
+      nextPage = page([issue(1, { subject, summary })]);
+      await create();
+      await settle(20);
+      const [card] = cards();
+
+      expect(card.querySelector('.tl-fb-title label')!.textContent).toBe(subject);
+      expect(card.querySelector('.tl-fb-summary')!.textContent).toBe(summary);
+      expect(card.querySelector('img')).toBeNull();
+      expect(card.querySelector('script')).toBeNull();
+      expect((window as unknown as Record<string, unknown>)['__fbXss']).toBeUndefined();
+    });
+
     it('narrows the occurrences by the occurrence filters, and Show all occurrences ignores them', async () => {
       occurrencesSpy.mockReturnValue(of<AdminFeedbackOccurrencePage>({ totalCount: 1, rows: [occurrence(5)] }));
       await create('/admin/feedback?model=claude-x&source=system');

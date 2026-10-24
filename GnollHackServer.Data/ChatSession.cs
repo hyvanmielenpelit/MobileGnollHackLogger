@@ -140,4 +140,19 @@ public class ChatSession
     /// </remarks>
     [MaxLength(32)]
     public string? ContentKeyVersion { get; set; }
+
+    /// <summary>
+    /// When the snapshot guard last withheld a game text of this session (the snapshot, the message history,
+    /// the directory manifest or a client tool result); null once a later snapshot is accepted.
+    /// </summary>
+    public DateTime? SnapshotRefusedUtc { get; set; }
+
+    /// <summary>
+    /// The last refusal's code: <c>injection-own</c>, <c>injection-foreign</c>, <c>suspicious-own</c> or
+    /// <c>suspicious-foreign</c> for the snapshot, followed by <c>:history</c>, <c>:manifest</c>,
+    /// <c>:refresh</c> or <c>:client</c> when the refused text was another one; null with
+    /// <see cref="SnapshotRefusedUtc"/>.
+    /// </summary>
+    [MaxLength(32)]
+    public string? SnapshotRefusalCode { get; set; }
 }

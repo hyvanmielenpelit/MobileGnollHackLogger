@@ -1,0 +1,433 @@
+Snapshot format: 16
+Windows GnollHack Version 4.3.0 (Build 30) - last build Fri Oct 23 18:26:42 2026.
+
+Game began 2026-10-24 18:01:52, snapshot at 2026-10-24 18:06:54
+
+Test, lawful female dwarven Valkyrie
+
+Map:
+Reading this map: coordinates are <x,y>, x = 1 to 79 left to right, y = 0 to 20 top to bottom. Each map row starts with a 4 character gutter holding y and ": "; the character x positions after the gutter is cell <x,y>. The two lines above the map are a column ruler. Rows may arrive right-trimmed and have no end marker.
+The hero is at <74,13>, shown as '@'.
+Every location below, except the hero's own, is written as <x,y> followed by its distance from the hero in squares and its offset, for example <34,7>, 5 squares away (2n,5e): two squares north and five east. The distance is the number of moves, a diagonal step counting as one, so it is the larger of the two parts. A part that is zero is left out, as in (4w); a location on the hero's own square says "at the hero's position" instead.
+The player does not see these coordinates: the game does not normally show them. Use <x,y> only to cross-reference this snapshot. To tell the player where something is, give its direction and distance from the hero in words (north is up on the screen, east is to the right), or name a nearby landmark.
+A blank cell is NOT open floor: it is either area the hero has never seen or solid rock. Blank margins to the left, right, above and below the drawn area are simply unvisited parts of the level, not empty rooms.
+This map is the hero's memory, not live vision: creatures and items are drawn where they were last seen and may have moved or been taken since.
+A symbol described as "in dark" is floor the hero remembers but does not see right now, because it is out of the line of sight or beyond the light. The same symbol without "in dark" is floor in view at this moment. Neither says whether the cell itself is lit; the Lighting line at the end of this legend, when present, counts how much of the remembered floor was lit.
+For the full GnollHack symbol reference and map-reading guidance, read knowledge base topic `reading_the_game_map`.
+
+Symbols on this map:
+Creatures: 'd' dog, other canine or hyena, 1 cell
+Creatures: '@' human or elf, 1 cell (this is the hero, at <74,13>)
+Objects: '(' tool, 1 cell
+Dungeon features: '.' doorway, 9 cells
+Dungeon features: '-' open door, 4 cells
+Dungeon features: '|' open door, 4 cells
+Dungeon features: '+' closed door, 1 cell
+Dungeon features: '.' broken door, 1 cell
+Dungeon features: '<' staircase up, 1 cell
+Dungeon features: '>' staircase down, 1 cell
+Dungeon features: '_' altar, 1 cell
+Terrain: ' ' (blank) never seen by the hero, 797 cells
+Terrain: ' ' (blank) solid rock, mapped but not passable without digging, 291 cells
+Terrain: '#' corridor, 187 cells
+Terrain: '.' dark part of a room, 162 cells
+Terrain: '-' wall, 132 cells
+Terrain: '|' wall, 37 cells
+Terrain: '.' floor of a room, 27 cells
+Other: '`' boulder, 1 cell
+
+Notable locations:
+Creature <74,12>, 1 square away (1n): 'd' [black] level 4 tame Nymeria, HP:17(17) AC:3 Neutral
+Creature <74,13>, at the hero's position: '@' [white] you: a dwarven valkyrie called Test
+Object <72,11>, 2 squares away (2n,2w): '`' [gray] a boulder
+Object <25,18>, 49 squares away (5s,49w): '(' [brown] a sandalwood chest labeled Test's stash
+Feature <17,3>, 57 squares away (10n,57w): '.' [gray] a doorway
+Feature <66,3>, 10 squares away (10n,8w): '.' [gray] a doorway
+Feature <67,4>, 9 squares away (9n,7w): '.' [gray] a doorway
+Feature <29,5>, 45 squares away (8n,45w): '-' [brown] an open door
+Feature <11,6>, 63 squares away (7n,63w): '>' [gray] a staircase down to Level 2
+Feature <17,6>, 57 squares away (7n,57w): '.' [gray] a doorway
+Feature <15,7>, 59 squares away (6n,59w): '|' [brown] an open door
+Feature <26,8>, 48 squares away (5n,48w): '|' [brown] an open door
+Feature <77,10>, 3 squares away (3n,3e): '|' [brown] an open door
+Feature <57,11>, 17 squares away (2n,17w): '.' [gray] a doorway
+Feature <73,11>, 2 squares away (2n,1w): '.' [gray] a broken door
+Feature <43,13>, 31 squares away (31w): '-' [brown] an open door
+Feature <57,13>, 17 squares away (17w): '.' [gray] a doorway
+Feature <73,13>, 1 square away (1w): '-' [brown] an open door
+Feature <11,14>, 63 squares away (1s,63w): '|' [brown] an open door
+Feature <26,14>, 48 squares away (1s,48w): '+' [brown] a closed door
+Feature <23,15>, 51 squares away (2s,51w): '-' [brown] an open door
+Feature <17,16>, 57 squares away (3s,57w): '.' [gray] a doorway
+Feature <23,17>, 51 squares away (4s,51w): '.' [gray] a doorway
+Feature <28,17>, 46 squares away (4s,46w): '_' [white] a lawful altar
+Feature <17,18>, 57 squares away (5s,57w): '.' [gray] a doorway
+Feature <27,18>, 47 squares away (5s,47w): '<' [white] a staircase up out of the dungeon (climbing it without the Amulet of Yendor ends the game)
+
+Light: the hero carries a lit light source: l - a partly used torch (lit, 37 turns left) [BUC unknown].
+Lighting (the level's own light as the hero remembers it, not light the hero carries): of the remembered room floor, 192 cells were lit when last seen and 0 were dark; of the remembered corridors, 0 were lit and 188 dark; the hero's own position is lit.
+
+Map grid:
+             1         2         3         4         5         6         7         
+    1234567890123456789012345678901234567890123456789012345678901234567890123456789
+ 0:                                                                                
+ 1:                                                                  ------------- 
+ 2:     -------------                                                |...........| 
+ 3:     |............############################                   #............| 
+ 4:     |...........|      #-----                                   #-.----------- 
+ 5:     |...........|      #|...-#                                  # ###          
+ 6:     |.....>......#######|...|###                          #######   #          
+ 7:     ----------|--       |...|  ###                        #         #####      
+ 8:               #         -|---    #####                    #             #####  
+ 9:               #          #           #   ########################           #  
+10:               #          #           #####--------------- #     ########----|- 
+11:               #          #              ##|..............##            `.....| 
+12:           #####          #               #|.............|               |d...| 
+13:           #          #####################-..............###############-@...| 
+14:         --|------    #---+----            |.............|               |....| 
+15:         |.......|  ###-......|            ---------------               ------ 
+16:         |........# # #|......|                                                 
+17:         |.......|#####....._.|                                                 
+18:         |........#####|.(.<..|                                                 
+19:         ---------     --------                                                 
+20:                                                                                
+
+Status:
+  [Test the Stripling            ] St:18 Dx:12 Co:16 In:12 Wi:9 Ch:8 Lawful
+  Dlvl:1 HP:35(35) MP:10(10) AC:-4 MC:4/40% MS:12 W:M/MS XL:1/12
+  x $:18 T:502 3m:58s S:0
+  Nymeria: HP:17(17)
+Hunger: not hungry
+Known nutrition usage: 1.00 per turn, as on the character statistics screen (1 is the normal rate). The nutrition counter itself is not shown to the player.
+Nutrition usage by source: base rate 1.00.
+Status key: MC = magic cancellation level/percent chance, MS = movement speed (12 is normal; monster speeds use the same scale), XL = experience level/points, S = score, T = turns, "Skill" = a skill can be advanced now, "2Weap" = fighting with two weapons. The game mode and difficulty letters are spelled out under "Game:". Fields the player has switched off are absent.
+W = weapon style, right hand then /left hand. Here: M = melee weapon; /MS = melee weapon that is also a shield.
+This snapshot does not print the hero's numeric Luck, alignment record or prayer cooldown. Their absence says nothing about their values. Use what is printed, such as messages and cues on items like (shimmering), and otherwise say that advice depending on them is uncertain.
+Prayer: the hero has never prayed in this game.
+Elbereth: the hero has not learned of it in this game. If the player has spoiler-free mode on, everything about Elbereth is a spoiler, even when the player asks about it by name: do not explain, describe or hint at it. Decline as you would for any other spoiler, and do not quote or paraphrase this note. Only a fortune or rumor about Elbereth in Latest messages means the player has read of it, and then explaining it is not a spoiler.
+Keys (for a player with a keyboard; on a touch screen use the command of the same name instead): number_pad is on. ability A, apply a, cast Z, engrave E, invoke Alt-i, itemsin (put items in a container) B or Alt-F, itemsout (take items out of a container) b or Alt-G, kick Ctrl-d or k, light Ctrl-l or Alt-I, pray Alt-p, quaff q, read r, zap z.
+
+Latest messages:
+ You see many objects here.
+ u - a crude dagger.
+ v - an iron skull cap.
+ w - a decorated robe.
+ What do you want to wear?
+ You finish your dressing maneuver.
+ What do you want to wear?
+ You finish your dressing maneuver.
+ You stop.  Nymeria is in the way!
+ You swap places with Nymeria.
+ The wooden door opens.
+ You see here a single-edged polearm (4.7 lbs) (-1.0 damage).
+ x - a single-edged polearm.
+ Loot in what direction?
+ y - a partly used torch (lit, 500 turns left).
+ What do you want to use or apply?
+ You snuff out your torch.
+ You stop.  Nymeria is in the way!
+ The wooden door opens.
+ The goblin misses!
+ You hit the goblin for 10 damage!
+ The goblin is killed!
+ You gain 2 experience points.
+ You see here a goblin corpse (25 lbs).
+ There is a goblin corpse here; eat it?
+ This goblin corpse tastes terrible!
+ You finish eating the goblin corpse.
+ You swap places with Nymeria.
+ Loot in what direction?
+ z - a partly used torch (lit, 500 turns left).
+ What do you want to use or apply?
+ You snuff out your torch.
+ Loot in what direction?
+ A - a brass lantern (lit, 1163 turns left).
+ What do you want to use or apply?
+ Your lamp is now off.
+ You swap places with Nymeria.
+ You stop.  Nymeria is in the way!
+ The wooden door opens.
+ You miss the gecko.
+ You miss the gecko.
+ You hit the gecko for 11 damage!
+ The gecko is killed!
+ You gain 2 experience points.
+ You see here a studded leather armor (12 lbs) (-3 AC, +3 MC).
+ Nymeria eats a gecko corpse.
+ Nymeria picks up a slime mold.
+ You swap places with Nymeria.
+ Nymeria drops a slime mold.
+ You swap places with Nymeria.
+ You swap places with Nymeria.
+ You see here a slime mold (0.3 lbs).
+ B - a slime mold.
+ You stop.  Nymeria is in the way!
+ You swap places with Nymeria.
+ You see here a studded leather armor (12 lbs) (-3 AC, +3 MC).
+ C - a studded leather armor.
+ What do you want to wear?
+ You cannot wear a studded leather armor over your decorated robe. Take it off and then wear the armor?
+ You were wearing a +0 decorated robe.
+ You are now wearing a studded leather armor.
+ You are now wearing a decorated robe.
+ You finish adjusting your equipment.
+ The wooden door opens.
+ You try to move the boulder, but in vain.
+ However, you can squeeze yourself into a small opening. Proceed?
+ You try to move the boulder, but in vain.
+ However, you can squeeze yourself into a small opening. Proceed?
+ You see here a boulder (500 lbs).
+ Nymeria bites the dust vortex.
+ The dust vortex sustains 4 damage!
+ The dust vortex engulfs you!
+ Your torch's flame is extinguished.
+ You can't see in here!
+ You hit the dust vortex for 16 damage.
+ The dust vortex is destroyed!
+ You gain 2 experience points.
+ You can see again.
+ In what direction?
+ The wooden door resists!
+ In what direction?
+ The wooden door closes.
+ In what direction?
+ As you kick the wooden door, it crashes open!
+ You swap places with Nymeria.
+ What do you want to use or apply?
+ Your torch's flame burns brightly!
+ You swap places with Nymeria.
+ Your torch is getting burnt out.
+ You find a hidden passage.
+ You find a hidden door.
+ The wooden door opens.
+ Really save?
+ Saving...
+ Velkommen Test, the dwarven Valkyrie, welcome back to GnollHack!
+ In what direction? 4
+ The wooden door closes.
+ In what direction? 4
+ WHAMMM!!!
+ The wooden door opens.
+
+Pets:
+1 pet on this level; pets left on other levels are not listed. Roll call, one line per pet:
+  1 - Nymeria, <74,12>, 1 square away (1n), 17/17 HP
+A statistics block follows for each pet, running from its "Pet N of M:" line to its "End of pet N of M." line. Everything between those two lines describes that pet only.
+
+Pet 1 of 1: Nymeria
+Nymeria - Direwolf cub
+Level 4 small cold-resistant canine
+
+Hit dice:               2
+Hit points:             17 (17)
+Move:                   18"
+Armor class:            3 (base 6)
+Magic cancellation:     0 (0%)
+Magic resistance:       0%
+Alignment:              Neutral
+Gender:                 Female
+Size:                   Small
+Number of attacks:      1
+  1 - Bite, physical 1-6
+Attribute scores:
+ St:10 Dx:14 Co:18 In:3 Wi:3 Ch:2
+Current abilities:
+  1 - 50% cold resistance
+Classifications:
+  1 - Handless
+  2 - Animal
+  3 - Carnivore
+  4 - Bone-eating monster
+Implied resistances:
+ (None)
+Notable:
+  1 - Eschews cursed items
+Wearable item types:
+  1 - None
+Status marks:
+  1 - Tame
+End of pet 1 of 1.
+
+End of pets. Nothing below this line belongs to a pet.
+
+Inventory:
+Tags in square brackets: [unidentified] = known only by an appearance that is randomized every game; only Discoveries maps appearances to types, and only the absence of the tag means identified. A quoted name, player-named or player-labelled = the player's own note, no evidence of what the item is. [BUC unknown] = blessed or cursed state not known. [contents not yet seen] = a container not yet looked into; one known to be empty says "empty" in its name.
+Each item's weight follows it in parentheses; a stack shows the weight of the whole stack. Weights are rounded, so they may not add up exactly to the total in the weight summary, which is authoritative.
+An item that uses charges shows them as (N charges, M rechargings) when the count is known. When no count is printed the remaining charges are not known; a word such as empty in the name may still say something.
+A spellbook's tag gives its spell's level and school, and for a spell the hero cannot cast at present, what casting it would be like if it were learned now: the success chance, with the unlimited base figure when that is below 0% or above 100%, the mana cost, any material components, and the turns of uninterrupted study needed to learn it. Studying is never instant and danger interrupts it; unless the book is blessed it can fail, and a cursed book always fails. A spellbook whose tag says nothing about its spell is either unidentified or not a book of a castable spell.
+An artifact's tag names what the invoke command does with it, once the player knows the artifact. That is separate from what applying, quaffing, wearing or wielding it does, and an artifact marked repowering cannot be invoked again yet.
+ Coins
+  $ - 18 gold pieces (0.1 lbs)
+ Weapons
+  a - an uncursed +1 dwarvish axe (weapon in hand) (3.1 lbs)
+  b - an uncursed freezing +0 dagger (0.6 lbs)
+  u - a crude dagger (0.6 lbs) [unidentified; BUC unknown]
+  x - a single-edged polearm (4.7 lbs) [unidentified; BUC unknown]
+ Armor
+  e - an uncursed +0 spiked shield (being worn) (8.1 lbs)
+  v - a +0 iron skull cap (being worn) (1.9 lbs) [unidentified; BUC unknown]
+  w - a +0 decorated robe (being worn; inferior) (1.6 lbs) [unidentified; BUC unknown]
+  C - a +0 studded leather armor (being worn) (12 lbs) [BUC unknown]
+ Comestibles
+  c - an uncursed food ration (1.2 lbs)
+  i - an uncursed tripe ration (0.6 lbs)
+  B - a slime mold (0.3 lbs) [BUC unknown]
+ Scrolls
+  g - an uncursed scroll of identify (0.2 lbs)
+  t - a scroll labeled ZLORFIK (0.2 lbs) [unidentified; BUC unknown]
+ Books
+  j - an uncursed scratched spellbook (3.1 lbs) [unidentified]
+ Potions
+  k - a clear potion (0.8 lbs) [unidentified; BUC unknown]
+  n - a murky potion (0.8 lbs) [unidentified; BUC unknown]
+ Wands
+  q - a long wand (0.4 lbs) [unidentified; BUC unknown]
+ Tools
+  d - an uncursed sack containing 1 item (0.9 lbs)
+  f - an uncursed oil lamp (1448 turns left) (1.2 lbs)
+  l - a partly used torch (lit, 37 turns left) (1.0 lb) [BUC unknown]
+  p - a brass lantern (1157 turns left) (1.9 lbs) [BUC unknown]
+  s - a torch (500 turns left) (1.0 lb) [BUC unknown]
+  y - a torch (500 turns left) (1.0 lb) [BUC unknown]
+  z - a torch (500 turns left) (1.0 lb) [BUC unknown]
+  A - a brass lantern (1163 turns left) (1.9 lbs) [BUC unknown]
+ Reagents
+  h - 2 ginseng roots (0.4 lbs) [BUC unknown]
+ Gems/Stones
+  m - a violet gem (0.1 lbs) [unidentified; BUC unknown]
+  r - a nugget of adamantium ore (1.0 lb) [BUC unknown]
+ Weight Summary
+ 52 lbs of total weight.
+ You are unencumbered until 122 lbs.
+
+Contents of the sack:
+   1 - a hexagonal amulet (0.3 lbs) [unidentified; BUC unknown]
+
+There is 0.3 lbs of total weight.
+
+Test the Valkyrie's attributes:
+Background:
+ You are a Stripling, a level 1 dwarven Valkyrie.
+ You are lawful, on a mission for Tyr
+ who is opposed by Odin (neutral) and Loki (chaotic).
+ You are in the Dungeons of Doom, on level 1.
+ You entered the dungeon 502 turns ago.
+ You have 12 experience points.
+ Your game score is 0.
+
+Basics:
+ You have 35 hit points in total.
+ You have 10 mana in total.
+ Your armor class is -4.
+ Your magic cancellation is 4 (40% chance).
+ Your wallet contains 18 gold pieces.
+ Autopickup is on for thrown only.
+
+Current Characteristics:
+ Your strength is 18 (+3 to-hit bonus, +6 damage bonus).
+ Your dexterity is 12 (+1 to-hit bonus, -2 AC bonus).
+ Your constitution is 16 (+4.5 HP bonus per level).
+ Your intelligence is 12.
+ Your wisdom is 9.
+ Your charisma is 8.
+
+Current Status:
+ You are unencumbered.
+ You are wielding an axe and a shield.
+ You have basic skill with axes (+0 to hit and +0 to damage).
+ You have basic skill with shields (-5 to AC and +1 to MC).
+
+Known properties:
+ Infravision: from race
+ Stealth: from role
+ 50% cold resistance: from role
+ Properties the player has not learned of are not listed.
+
+Game:
+ Your game difficulty is expert (100% damage by monsters, 100% by player).
+ You are playing in classic mode (traditional mode with permanent death).
+ You have been playing the game for 3 minutes and 58 seconds.
+
+Current Skills:
+  Dagger                              Basic / Grand Master; NOT YET: Skilled needs training 20/80 (60 more), costs 2 slots
+  Axe                                 Basic / Grand Master; NOT YET: Skilled needs training 26/80 (54 more), costs 2 slots
+  Sword                               Basic / Grand Master; NOT YET: Skilled needs training 20/80 (60 more), costs 2 slots
+  Bludgeoning weapon                  Basic / Grand Master; NOT YET: Skilled needs training 20/80 (60 more), costs 2 slots
+  Polearm                             Unskilled / Master; NOT YET: Basic needs training 0/20 (20 more), costs 1 slot
+  Thrusting weapon                    Unskilled / Master; NOT YET: Basic needs training 0/20 (20 more), costs 1 slot
+  Bow                                 Unskilled / Expert; NOT YET: Basic needs training 0/20 (20 more), costs 1 slot
+  Crossbow                            Unskilled / Expert; NOT YET: Basic needs training 0/20 (20 more), costs 1 slot
+  Bare handed combat                  Basic / Grand Master; NOT YET: Skilled needs training 20/80 (60 more), costs 1 slot
+  Dual wielding                       Basic / Grand Master; NOT YET: Skilled needs training 20/80 (60 more), costs 2 slots
+  Thrown weapon                       Unskilled / Expert; NOT YET: Basic needs training 0/20 (20 more), costs 1 slot
+  Dodge                               Unskilled / Master; NOT YET: Basic needs experience level 1/3, costs 1 slot
+  Shield                              Basic / Grand Master; NOT YET: Skilled needs training 20/80 (60 more) or experience level 1/4, costs 1 slot
+  Wand                                Unskilled / Basic; NOT YET: Basic needs training 0/20 (20 more), costs 1 slot
+  Riding                              Unskilled / Expert; NOT YET: Basic needs training 0/20 (20 more), costs 1 slot
+  Digging                             Unskilled / Grand Master; NOT YET: Basic needs training 0/20 (20 more), costs 1 slot
+  Disarm trap                         Unskilled / Skilled; NOT YET: Basic needs training 0/20 (20 more), costs 1 slot
+You have 0 skill slots available
+
+You do not know any spells.
+
+Discoveries:
+  This section lists the object types and artifacts the hero knows of or the player has named. A line here does not mean the hero has, or has seen, such an object now; the Inventory section lists what the hero carries.
+  Format: "true name (appearance)"; "called X" is a nickname the player gave a type that is not identified: a guess, not an identification;
+  a leading * marks a type known from the start of the game.
+Weapons
+* dwarvish axe (broad axe)
+* dwarvish spear (stout spear)
+* dwarvish short sword (broad short sword)
+* dwarvish mattock (broad pick)
+Armor
+* dwarvish helm (hard hat)
+* dwarvish cloak (hooded cloak)
+* dwarvish roundshield (large round shield)
+Scrolls
+* scroll of identify (EIRIS SAZUN IDISI)
+Potions
+* potion of oil (umber)
+Tools
+* sack (dilapidated bag)
+* oil lamp (oriental brass lamp)
+
+Logged events:
+Level numbers in this list are counted within their own dungeon branch. Status, Background and the dungeon overview use absolute depth (Dlvl), except that the overview numbers the Quest and Fort Ludios from 1.
+Each prayer is listed as "prayed to <god>" at the turn it was made; a game begun on an older version may have earlier prayers that are not listed. How soon the hero can safely pray again is not shown to the player and is not printed.
+ Turn  
+    1: Test the lawful dwarven Valkyrie has entered the dungeon on expert difficulty in classic mode
+   61: killed for the first time
+   61: hit with a wielded weapon for the first time
+   63: ate for the first time - iguana corpse
+   63: consumed animal products for the first time, by eating an iguana corpse
+
+No species were genocided or became extinct.
+
+Goals:
+ You are on a mission to recover the Amulet of Yendor for Tyr.
+Quests:
+ You have an optional quest to attain the level of Grand Master in Dual Wielding.
+Achievements:
+ You have not earned any achievements.
+Voluntary challenges:
+ You have been an atheist.
+ You have been illiterate.
+ You have never genocided any monsters.
+ You have never polymorphed an object.
+ You have never changed form.
+ You have used no wishes.
+ You have never caused conflict.
+ You have had 1 pet or ally.
+Role score:
+ You have 0 non-ammo items of celestial quality with you.
+ You have 0 ammo of celestial quality with you.
+ You have 0 non-ammo items of celestial quality in your sandalwood chest.
+ You have 0 ammo of celestial quality in your sandalwood chest.
+ You have gained 0% of your maximum role score.
+
+Dungeon overview:
+Each branch's level range shows how far the hero has explored it, not how deep the branch goes. The entries below are the levels the hero remembers; a range does not mean every level inside it was visited, and its last level is not necessarily the branch's end.
+The Dungeons of Doom
+   Level 1: <- You are here.
+      An altar to Tyr, an entrance to the Dungeons of Doom.
+

@@ -263,6 +263,39 @@ public class OverseerBlockTests : IDisposable
         Assert.Empty(recorder.Entries);
     }
 
+    [Fact]
+    public async Task BlockAutomaticallyAsync_SetsTheFields_LogsTheSnapshotGuard_AndRecordsAutoBlocked()
+    {
+        using var sp = BuildDbServices(Guid.NewGuid().ToString(), s => s.AddSingleton<IConfiguration>(
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Admins"] = "user-" + AdminId }).Build()));
+        await SeedUserAsync(sp, TargetId);
+        await SeedUserAsync(sp, AdminId);
+        using var cache = NewSizedCache();
+        var recorder = new RecordingSecurityEvents();
+        var access = NewAccessService(sp, cache, recorder);
+
+        Assert.True(await access.BlockAutomaticallyAsync(TargetId, SnapshotGuardService.AutoBlockReason, TestContext.Current.CancellationToken));
+
+        var user = await ReadUserAsync(sp, TargetId);
+        Assert.NotNull(user.OverseerBlockedUtc);
+        Assert.Equal(SnapshotGuardService.AutoBlockReason, user.OverseerBlockReason);
+        Assert.Equal("system:snapshot-guard", user.OverseerBlockedByUserId);
+        var log = Assert.Single(await ReadAdminLogAsync(sp));
+        Assert.Equal(AdminUserActionKind.AiChatBlocked, log.Kind);
+        Assert.Equal("Snapshot guard", log.ActorUserName);
+        var entry = Assert.Single(recorder.Entries);
+        Assert.Equal(SecurityEventKind.AutoBlocked, entry.Kind);
+        Assert.Equal("snapshot-injection", entry.Code);
+        var block = await access.GetBlockAsync(TargetId, TestContext.Current.CancellationToken);
+        Assert.Equal(SnapshotGuardService.AutoBlockReason, block!.Reason);
+
+        // An administrator is never blocked automatically, nor is a user who already is.
+        Assert.False(await access.BlockAutomaticallyAsync(AdminId, "x", TestContext.Current.CancellationToken));
+        Assert.False(await access.BlockAutomaticallyAsync(TargetId, "x", TestContext.Current.CancellationToken));
+        Assert.Null((await ReadUserAsync(sp, AdminId)).OverseerBlockedUtc);
+        Assert.Single(recorder.Entries);
+    }
+
     private static async Task<List<AdminUserAction>> ReadAdminLogAsync(IServiceProvider sp)
     {
         using var scope = sp.CreateScope();

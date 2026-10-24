@@ -35,4 +35,8 @@
     <ProjectReference Include="..\GnollHackServer.Data\GnollHackServer.Data.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

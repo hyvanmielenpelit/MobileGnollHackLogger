@@ -4,7 +4,9 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
 import {
   AdminService,
+  AdminSnapshotGuard,
   SafetyIdentifierLookup,
+  SnapshotGuardMode,
   SecurityEvent,
   SecurityEventsQuery,
   SecurityKindCount,
@@ -31,7 +33,7 @@ export const SECURITY_BLOCK_REASON_MAX = 256;
 export const SECURITY_EVENT_KINDS: readonly string[] = [
   'LoginFailed', 'LoginLockedOut', 'TwoFactorFailed', 'RateLimitRejected', 'QuotaRefused', 'AccessDenied',
   'ProviderRefusal', 'ProviderSafetyBlock', 'ProviderPolicyRejection', 'AttachmentRejected', 'ChatReported',
-  'AdminBlocked', 'AdminUnblocked', 'AccountHoldPlaced', 'AccountHoldReleased', 'AccountDeletionHeld',
+  'SnapshotRejected', 'AutoBlocked', 'AdminBlocked', 'AdminUnblocked', 'AccountHoldPlaced', 'AccountHoldReleased', 'AccountDeletionHeld',
   'AdminLockedOut', 'AdminUnlocked', 'AdminBanned', 'AdminUnbanned', 'AdminSignedOut', 'AdminEmailConfirmed',
   'AdminTwoFactorReset'
 ];
@@ -48,6 +50,8 @@ const KIND_LABELS: Readonly<Record<string, string>> = {
   ProviderPolicyRejection: 'Provider policy rejection',
   AttachmentRejected: 'Attachment rejected',
   ChatReported: 'Chat reported',
+  SnapshotRejected: 'Snapshot refused',
+  AutoBlocked: 'Blocked automatically',
   AdminBlocked: 'Blocked by admin',
   AdminUnblocked: 'Unblocked by admin',
   AccountHoldPlaced: 'Deletion hold placed',
@@ -83,6 +87,19 @@ export interface SecuritySummaryCard {
   unit?: string;
   lines: string[];
 }
+
+/** One choice of the snapshot guard's mode, as the Security tab lists it. */
+export interface SnapshotGuardModeOption {
+  value: SnapshotGuardMode;
+  label: string;
+  description: string;
+}
+
+export const SNAPSHOT_GUARD_MODES: readonly SnapshotGuardModeOption[] = [
+  { value: 'Off', label: 'Off', description: 'Nothing is scanned.' },
+  { value: 'Observe', label: 'Observe', description: 'Game text addressed to the AI is recorded and still delivered to the model.' },
+  { value: 'Enforce', label: 'Enforce', description: 'Game text addressed to the AI is refused; the player and you are told.' }
+];
 
 /** The user the events list is narrowed to. */
 interface SecurityUserFilter {
@@ -136,6 +153,13 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
   lookupResult: SafetyIdentifierLookup | null = null;
   lookupMessage = '';
 
+  readonly guardModes = SNAPSHOT_GUARD_MODES;
+  /** The snapshot guard's state; null until it loads. */
+  guard: AdminSnapshotGuard | null = null;
+  /** True while a mode change is on its way. */
+  guardPending = false;
+  guardError: string | null = null;
+
   blockTarget: SecurityEvent | null = null;
   blockReason = '';
   blockError: string | null = null;
@@ -164,6 +188,7 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
   });
 
   private summarySub: Subscription | null = null;
+  private guardSub: Subscription | null = null;
   private eventsSub: Subscription | null = null;
   private lookupSub: Subscription | null = null;
   private securityUserSub: Subscription | null = null;
@@ -210,12 +235,14 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
       }
     });
     this.loadSummary();
+    this.loadGuard();
     this.reloadEvents();
   }
 
   ngOnDestroy(): void {
     this.list.dispose();
     this.summarySub?.unsubscribe();
+    this.guardSub?.unsubscribe();
     this.eventsSub?.unsubscribe();
     this.lookupSub?.unsubscribe();
     this.securityUserSub?.unsubscribe();
@@ -261,10 +288,83 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
     this.refresh();
   }
 
-  /** Reloads the summary and the first page of events. */
+  /** Reloads the summary, the snapshot guard and the first page of events. */
   refresh(): void {
     this.loadSummary();
+    this.loadGuard();
     this.reloadEvents();
+  }
+
+  // --- Snapshot guard ---
+
+  loadGuard(): void {
+    if (this.guardPending) return;
+    this.guardSub?.unsubscribe();
+    this.guardSub = this.adminService.getSnapshotGuard().subscribe({
+      next: guard => {
+        this.guard = guard;
+        this.guardError = null;
+        this.cdr.markForCheck();
+      },
+      error: err => {
+        this.guardError = 'The snapshot guard could not be loaded: ' + AdminSecurityTabComponent.errorText(err);
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  /** Sets the mode a radio chose; on failure the previous mode is selected again and the error says why. */
+  onModeChange(mode: SnapshotGuardMode): void {
+    const previous = this.guard;
+    if (!previous || this.guardPending) return;
+    this.guardPending = true;
+    this.guardError = null;
+    this.guard = { ...previous, mode };
+    this.guardSub?.unsubscribe();
+    this.guardSub = this.adminService.setSnapshotGuardMode(mode).subscribe({
+      next: guard => {
+        this.guardPending = false;
+        this.guard = guard;
+        this.cdr.markForCheck();
+      },
+      error: err => {
+        this.guardPending = false;
+        this.guard = { ...previous };
+        this.guardError = 'The mode could not be changed: ' + AdminSecurityTabComponent.errorText(err);
+        this.cdr.detectChanges();
+        // A radio keeps its own checked state; the group is set back to the stored mode.
+        const input = this.element(`#sec-guard-${previous.mode}`) as HTMLInputElement | null;
+        if (input) input.checked = true;
+      }
+    });
+  }
+
+  /** `Changed 24 Oct 2026 14:02 by tommi.`, or the seeded state. */
+  get guardStatusText(): string {
+    const guard = this.guard;
+    if (!guard) return '';
+    if (this.guardPending) return 'Saving…';
+    if (guard.seeded || !guard.setAtUtc) return 'Not set yet: seeded from the configuration.';
+    const at = parseServerUtcDate(guard.setAtUtc);
+    const when = isNaN(at.getTime()) ? guard.setAtUtc : AdminSecurityTabComponent.formatChangedAt(at);
+    return guard.setByUserName ? `Changed ${when} by ${guard.setByUserName}.` : `Changed ${when}.`;
+  }
+
+  /** The automatic block rule and the e-mail, as configured. */
+  get guardRuleText(): string {
+    const guard = this.guard;
+    if (!guard) return '';
+    const block = guard.autoBlockEnabled
+      ? `on, after injection-level refusals on ${guard.autoBlockDistinctDays} separate days within ${guard.autoBlockWindowDays} days`
+      : 'off';
+    return `Automatic block: ${block}; e-mail to the operator mailbox: ${guard.notificationEmailConfigured ? 'on' : 'off'}.`;
+  }
+
+  /** `24 Oct 2026 14:02`, in local time. */
+  static formatChangedAt(d: Date): string {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   // --- Summary ---
@@ -335,7 +435,11 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
       },
       { id: 'attachments', title: 'Rejected attachments', value: count('AttachmentRejected'), lines: reach('AttachmentRejected') },
       { id: 'reports', title: 'Reports', value: count('ChatReported'), lines: reach('ChatReported') },
-      { id: 'blocks', title: 'Blocks', value: count('AdminBlocked'), lines: [`Unblocks: ${count('AdminUnblocked')}`] }
+      { id: 'snapshots', title: 'Snapshot refusals', value: count('SnapshotRejected'), lines: reach('SnapshotRejected') },
+      {
+        id: 'blocks', title: 'Blocks', value: count('AdminBlocked'),
+        lines: [`Unblocks: ${count('AdminUnblocked')}`, `Automatic: ${count('AutoBlocked')}`]
+      }
     ];
   }
 

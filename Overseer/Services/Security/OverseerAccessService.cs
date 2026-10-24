@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using MobileGnollHackLogger.Data;
+using Overseer.Extensions;
 
 namespace Overseer.Services.Security;
 
@@ -18,6 +19,12 @@ public class OverseerAccessService
     public const string BlockedMessage = "Your access to the Overseer AI chat has been suspended by an administrator.";
     public const int MaxReasonLength = 256;
     public static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(30);
+
+    /// <summary>The actor of an automatic block in the admin log; not a user account.</summary>
+    public static readonly AdminActor SnapshotGuardActor = new("system:snapshot-guard", "Snapshot guard");
+
+    /// <summary>The security event code of a block the snapshot guard placed.</summary>
+    public const string SnapshotInjectionCode = "snapshot-injection";
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IMemoryCache _cache;
@@ -88,6 +95,38 @@ public class OverseerAccessService
         _cache.Remove(CacheKey(userId));
         _securityEvents?.Record(new SecurityEventEntry(SecurityEventKind.AdminBlocked, UserId: userId, Detail: reason));
         return null;
+    }
+
+    /// <summary>
+    /// Blocks the user on the snapshot guard's behalf: the same three fields as <see cref="BlockAsync"/>, so
+    /// the admin Unblock lifts it, an <see cref="AdminUserActionKind.AiChatBlocked"/> log entry by
+    /// <see cref="SnapshotGuardActor"/>, and an <see cref="SecurityEventKind.AutoBlocked"/> event. True when the
+    /// user is blocked now; false, with nothing written, for an administrator, an unknown user or a user
+    /// already blocked.
+    /// </summary>
+    public async Task<bool> BlockAutomaticallyAsync(string userId, string reason, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(userId)) return false;
+        reason = (reason ?? string.Empty).Trim();
+        if (reason.Length > MaxReasonLength) reason = reason[..MaxReasonLength];
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var configuration = scope.ServiceProvider.GetService<IConfiguration>();
+        var user = await db.Users.OfType<ApplicationUser>().FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user == null || user.OverseerBlockedUtc != null) return false;
+        if (configuration != null && configuration.IsAdmin(user.UserName)) return false;
+
+        user.OverseerBlockedUtc = DateTime.UtcNow;
+        user.OverseerBlockReason = reason;
+        user.OverseerBlockedByUserId = SnapshotGuardActor.UserId;
+        db.AdminUserActions.Add(AdminUserActionLog.Entry(SnapshotGuardActor, user.Id, user.UserName, AdminUserActionKind.AiChatBlocked,
+            reason, "Blocked from the AI chat automatically by the snapshot guard.", user.OverseerBlockedUtc.Value));
+        await db.SaveChangesAsync(ct);
+
+        _cache.Remove(CacheKey(userId));
+        _securityEvents?.Record(new SecurityEventEntry(SecurityEventKind.AutoBlocked, UserId: userId, Code: SnapshotInjectionCode, Detail: reason));
+        return true;
     }
 
     /// <summary>Lifts the user's block. Returns an error message when the user does not exist.</summary>

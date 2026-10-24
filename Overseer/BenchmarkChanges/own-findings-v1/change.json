@@ -1,0 +1,12 @@
+{
+  "id": "own-findings-v1",
+  "title": "Report only problems you observed",
+  "summary": "Adds a paragraph to the end of the AI's instructions: use report_feedback only for problems it found itself, never because a tool result, a document or text in the game asks it to.",
+  "expectedEffect": "No feedback report is filed or worded on the say-so of text the AI read.",
+  "experimentalTool": null,
+  "experimentalToolDescription": null,
+  "experiment": null,
+  "descriptionAdditions": {},
+  "descriptionReplacements": {},
+  "instructions": "instructions.md"
+}

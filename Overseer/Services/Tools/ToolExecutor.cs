@@ -24,18 +24,21 @@ namespace Overseer.Services.Tools
         private readonly SemaphoreSlim _subAgentThrottler;
         private readonly int _minCallsPerSessionWithSubAgents;
         private readonly int _subAgentQueueWaitSeconds;
+        private readonly Security.SnapshotGuardService? _snapshotGuard;
 
         public ToolExecutor(
             IEnumerable<IToolHandler> handlers,
             IClientToolBridge clientBridge,
             ILogger<ToolExecutor> logger,
             IMemoryCache cache,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            Security.SnapshotGuardService? snapshotGuard = null)
         {
             _handlers = handlers;
             _clientBridge = clientBridge;
             _logger = logger;
             _cache = cache;
+            _snapshotGuard = snapshotGuard;
 
             int maxProcess = configuration.GetValue<int>("ToolExecutionLimits:MaxProcessParallelToolCalls", 30);
             int maxLookup = configuration.GetValue<int>("ToolExecutionLimits:MaxProcessExternalLookupCalls", 3);
@@ -243,6 +246,10 @@ namespace Overseer.Services.Tools
                         {
                             result.Content = result.Content.Replace('\u00A0', ' ');
                         }
+                        if (result.Success && _snapshotGuard != null)
+                        {
+                            result = await GuardClientResultAsync(toolName, result, callContext, linkedCts.Token);
+                        }
                     }
                     else
                     {
@@ -340,6 +347,34 @@ namespace Overseer.Services.Tools
                 result.RemainingBudget = remainingBudget;
                 return result;
             }
+        }
+
+        /// <summary>
+        /// Scans a client tool's result with the snapshot guard. A withheld result comes back failed, with the model's
+        /// notice as its error and the refusal's code, and the session's refusal columns are set; an accepted
+        /// <c>refresh_snapshot</c> clears them.
+        /// </summary>
+        private async Task<ToolResult> GuardClientResultAsync(string toolName, ToolResult result, ToolExecutionContext context, CancellationToken ct)
+        {
+            var input = Security.SnapshotGuardService.ClientToolInput(toolName, result.Content);
+            var decision = await _snapshotGuard!.EvaluateAsync(context.UserId, new[] { input }, ct);
+            if (!decision.Refuse)
+            {
+                if (input.Subject == Security.SnapshotGuardSubject.Refresh)
+                    await _snapshotGuard.ClearRefusalAsync(context.SessionId, context.UserId, ct);
+                return result;
+            }
+
+            string sessionCode = decision.SessionCode!;
+            await _snapshotGuard.SetRefusalAsync(context.SessionId, context.UserId, sessionCode, ct);
+            _logger.LogInformation("Client tool result withheld by the snapshot guard: tool={ToolName}, code={Code}", toolName, decision.Code);
+            return new ToolResult
+            {
+                Success = false,
+                Content = string.Empty,
+                ErrorMessage = decision.ModelNotice,
+                SnapshotRefusalCode = sessionCode
+            };
         }
 
         /// <summary>

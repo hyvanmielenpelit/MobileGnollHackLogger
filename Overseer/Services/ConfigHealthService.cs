@@ -449,6 +449,8 @@ public class ConfigHealthService
             }
         }
 
+        AddSnapshotGuardAlerts(alerts);
+
         // Database Storage Health Alert
         if (_scopeFactory != null)
         {
@@ -484,5 +486,104 @@ public class ConfigHealthService
         }
 
         return alerts;
+    }
+
+    /// <summary>
+    /// The snapshot guard's mode while it is not Enforce, game snapshots refused in the last 7 days, and users it
+    /// suspended in the last 7 days. The changing part of each id makes a dismissed alert reappear on new events.
+    /// </summary>
+    private void AddSnapshotGuardAlerts(List<SystemAlert> alerts)
+    {
+        try
+        {
+            SnapshotGuardMode mode;
+            if (_scopeFactory != null)
+            {
+                using var modeScope = _scopeFactory.CreateScope();
+                var modeService = modeScope.ServiceProvider.GetService<Security.SnapshotGuardModeService>();
+                mode = modeService?.Mode() ?? SnapshotGuardOptions.Read(_configuration).Mode;
+            }
+            else
+            {
+                mode = SnapshotGuardOptions.Read(_configuration).Mode;
+            }
+
+            if (mode == SnapshotGuardMode.Observe)
+            {
+                alerts.Add(new SystemAlert
+                {
+                    Id = "snapshot-guard-observe",
+                    Type = "warning",
+                    Message = "The snapshot guard is observing only: game text addressed to the AI is recorded but still delivered to the model.",
+                    LinkUrl = "/admin/security",
+                    LinkText = "Change"
+                });
+            }
+            else if (mode == SnapshotGuardMode.Off)
+            {
+                alerts.Add(new SystemAlert
+                {
+                    Id = "snapshot-guard-off",
+                    Type = "warning",
+                    Message = "The snapshot guard is off: game text addressed to the AI is delivered to the model unchecked.",
+                    LinkUrl = "/admin/security",
+                    LinkText = "Change"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to evaluate the snapshot guard mode alert in ConfigHealthService");
+        }
+
+        if (_scopeFactory == null) return;
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+            var now = DateTime.UtcNow;
+            var since = now.AddDays(-7);
+            var invariant = System.Globalization.CultureInfo.InvariantCulture;
+
+            var refusals = dbContext.SecurityEvents.AsNoTracking()
+                .Where(e => e.Kind == MobileGnollHackLogger.Data.SecurityEventKind.SnapshotRejected && e.LastOccurredUtc >= since)
+                .Select(e => new { e.Count, e.AspNetUserId })
+                .ToList();
+            if (refusals.Count > 0)
+            {
+                int count = refusals.Sum(r => r.Count);
+                int users = refusals.Select(r => r.AspNetUserId).Distinct().Count();
+                alerts.Add(new SystemAlert
+                {
+                    Id = $"snapshot-refusals:{now.ToString("yyyyMMdd", invariant)}:{count.ToString(invariant)}",
+                    Type = "warning",
+                    Message = $"{(count == 1 ? "1 game snapshot was" : $"{count} game snapshots were")} refused for text addressed to the AI in the last 7 days ({(users == 1 ? "1 user" : $"{users} users")}).",
+                    LinkUrl = "/admin/security",
+                    LinkText = "Review"
+                });
+            }
+
+            var blocks = dbContext.SecurityEvents.AsNoTracking()
+                .Where(e => e.Kind == MobileGnollHackLogger.Data.SecurityEventKind.AutoBlocked && e.OccurredUtc >= since)
+                .Select(e => new { e.Id, e.AspNetUserId })
+                .ToList();
+            if (blocks.Count > 0)
+            {
+                int users = blocks.Select(b => b.AspNetUserId).Distinct().Count();
+                alerts.Add(new SystemAlert
+                {
+                    Id = $"snapshot-autoblock:{blocks.Max(b => b.Id).ToString(invariant)}",
+                    Type = "error",
+                    Message = $"{(users == 1 ? "1 user was" : $"{users} users were")} suspended from the AI chat automatically for repeated game text addressed to the AI.",
+                    LinkUrl = "/admin/security",
+                    LinkText = "Review"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to evaluate snapshot guard alerts in ConfigHealthService");
+        }
     }
 }

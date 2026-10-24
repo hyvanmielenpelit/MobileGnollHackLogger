@@ -51,6 +51,12 @@ namespace Overseer.Services.Tools
         public bool BudgetExhausted { get; set; }
         public int? RemainingBudget { get; set; }
         public List<Agents.DelegatedRunCost>? DelegatedRunCosts { get; set; }
+
+        /// <summary>
+        /// Set when the snapshot guard withheld a client tool's result: the refusal's session code. The error
+        /// message then carries the notice the model gets, and the agent loop tells the player.
+        /// </summary>
+        public string? SnapshotRefusalCode { get; set; }
     }
 
     public class ToolExecutionContext

@@ -162,8 +162,20 @@ export interface ChatContextUsage {
   modelDisplayName?: string;
 }
 
+/**
+ * The snapshot guard's last refusal of a chat's game text. `code` is `injection-own`, `injection-foreign`,
+ * `suspicious-own` or `suspicious-foreign`, with `:history`, `:manifest`, `:refresh` or `:client` when the refused
+ * text was not the snapshot; `message` is the server's text for the player.
+ */
+export interface SnapshotRefusal {
+  code: string;
+  message: string;
+  occurredUtc?: string;
+}
+
 export interface ChatStreamEvent {
-  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'context' | 'cost' | 'final' | 'confidential_gate' | 'private_badge';
+  /** `snapshot_refused`: the snapshot guard withheld a client tool's result; `data` is JSON `{ code, message }`. */
+  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'context' | 'cost' | 'final' | 'confidential_gate' | 'private_badge' | 'snapshot_refused';
   data: string;
   seqNo?: number;
   /**
@@ -227,6 +239,8 @@ export interface ChatSessionDetailResponse {
   title: string;
   isGnollHackSession?: boolean;
   hasGameSnapshot?: boolean;
+  /** The snapshot guard's last refusal of this chat's game text; null once a snapshot is accepted. */
+  snapshotRefusal?: SnapshotRefusal | null;
   /* The game version the client reported when the chat was created; absent for a chat opened outside the game. */
   gnollHackVersion?: string | null;
   /* The privacy badge, or null/absent when Confidentiality Mode is off — which is every

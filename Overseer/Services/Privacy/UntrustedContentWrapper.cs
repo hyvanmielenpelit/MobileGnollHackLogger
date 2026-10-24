@@ -5,9 +5,9 @@ using System.Text.RegularExpressions;
 namespace Overseer.Services.Privacy;
 
 /// <summary>
-/// The single place uploaded document text enters a prompt. Wraps it in a named element the
-/// system prompt can refer to, and escapes both the filename and the body so neither can
-/// close that element early.
+/// The single place uploaded document text, and under the GnollBench experiment <c>board_as_data</c>
+/// the game board, enters a prompt as data. Wraps it in a named element the system prompt can refer
+/// to, and escapes both the attributes and the body so neither can close that element early.
 /// </summary>
 /// <remarks>
 /// The delimiter this replaces was <c>--- File: {name} ---</c> … <c>--- End File ---</c>, with
@@ -31,17 +31,20 @@ public static class UntrustedContentWrapper
     /// <summary>Name of the wrapping element. Referenced verbatim by the system prompt.</summary>
     public const string ElementName = "untrusted_document_context";
 
+    /// <summary>Name of the element the game board is delivered in under the GnollBench experiment <c>board_as_data</c>.</summary>
+    public const string GameSnapshotElementName = "untrusted_game_snapshot";
+
     /// <summary>
     /// Cap on the filename carried in the attribute. Long enough for any real name, short
     /// enough that a filename cannot become the bulk of the prompt.
     /// </summary>
     public const int MaxFileNameLength = 256;
 
-    /* Matches anything that reads as this element's start or end tag, however it is spaced.
+    /* Matches anything that reads as either element's start or end tag, however it is spaced.
        XML would not accept whitespace after "<", but the model is not an XML parser: it reads
        the text, so anything shaped like the delimiter is treated as the delimiter. */
     private static readonly Regex DelimiterShape = new(
-        @"<\s*/?\s*" + ElementName,
+        @"<\s*/?\s*(" + ElementName + "|" + GameSnapshotElementName + ")",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>
@@ -93,6 +96,23 @@ public static class UntrustedContentWrapper
     }
 
     /// <summary>
+    /// Wraps a game board as <c>&lt;untrusted_game_snapshot source="…" content="complete"&gt;</c>, with the body
+    /// escaped like a document's. Lines end in LF, so the prompt bytes do not depend on the platform.
+    /// </summary>
+    /// <param name="text">The board. Player- and third-party-controlled; escaped here.</param>
+    /// <param name="source">Where the board came from, such as <c>game-client</c>.</param>
+    public static string WrapGameSnapshot(string? text, string source)
+    {
+        var sb = new StringBuilder();
+        sb.Append('<').Append(GameSnapshotElementName)
+          .Append(" source=\"").Append(EscapeAttribute(source))
+          .Append("\" content=\"complete\">\n")
+          .Append(EscapeBody(text)).Append('\n')
+          .Append("</").Append(GameSnapshotElementName).Append('>');
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// Escapes a value for an XML attribute: the five predefined entities, with control
     /// characters and newlines removed so the value cannot break out of the quoting or out of
     /// the line.
@@ -139,7 +159,7 @@ public static class UntrustedContentWrapper
     }
 
     /// <summary>
-    /// Neutralises anything in the body that reads as this element's own tag, and nothing else.
+    /// Neutralises anything in the body that reads as either element's tag, and nothing else.
     /// </summary>
     /// <remarks>
     /// Deliberately narrow. Escaping every <c>&lt;</c> and <c>&amp;</c> would corrupt exactly

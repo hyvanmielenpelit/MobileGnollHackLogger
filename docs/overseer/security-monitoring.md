@@ -138,6 +138,138 @@ A blocked user cannot start AI work on any key but keeps sign-in, reading, expor
 
 The chat shows a persistent banner and disables sending on either refusal.
 
+**The snapshot guard's automatic block** (§ 3a) sets the same three fields, with
+`OverseerBlockedByUserId = system:snapshot-guard`, so the Users tab's and the Security tab's **Unblock**
+lift it and every row of the table above behaves as for an administrator's block. It writes an
+`AiChatBlocked` admin-log entry by the actor *Snapshot guard* and an `AutoBlocked` event, never
+`AdminBlocked`, so the two counts stay apart.
+
+## 3a. The snapshot guard
+
+The GnollHack client sends texts a player or another player can write: the AI snapshot (names, labels,
+`#call` names, annotations; and, through a shared bones level, named monsters, the ghost and engravings
+read), the in-game message history, the directory manifest, and the results of its client tools. Any HTTP
+client with an account can send the same fields, so the game's own input limits bound nothing. The guard
+(`Overseer/Services/Security/`) scans every such text **before it is stored or reaches the model**, and
+refuses a text that addresses the AI, **never the session**: the game client shows any refusal of
+`session/create` as a credentials or connection problem, so the player is told in the chat that opens.
+
+**Detection is heuristic: a paraphrased instruction without a marker word passes.** The guard is one
+layer; the model-side defenses GnollBench measures (the experimental changes `own-findings-v1`,
+`game-text-data-v1` and `board-as-data-v1`) are the others.
+
+**What is scanned, and where.**
+
+| Entry point | Texts | On a refusal |
+|---|---|---|
+| `SessionController.Create` | the flattened `SnapshotText` (or the sanitized `SnapshotHtml`), the full `MessageHistory`, the `DirectoryManifest` (channels `create`, `history`, `manifest`) | the session is still created and the handoff proceeds; the refused text is not stored, neither row nor file. A refused snapshot is replaced by a notice row for the model (`Role = system`, not a snapshot, so `hasGameSnapshot` stays false), and the session's `SnapshotRefusedUtc` / `SnapshotRefusalCode` are set |
+| `ChatController.AttachSnapshot` | the flattened snapshot (`attach`) | `422 { code: "snapshot_refused", error }`; nothing is written or superseded. An accepted snapshot clears the session's refusal |
+| `ToolExecutor`, every client tool | the result (`tool-<name>`); `refresh_snapshot` as a snapshot, `get_full_message_history` as a history, `get_directory_listing` as a manifest, the rest as client data | the result fails with the model's notice as its error and the refusal code on `ToolResult.SnapshotRefusalCode`; the agent loop yields a `snapshot_refused` chat event (`{ code, message }`); the session's refusal is set. An accepted `refresh_snapshot` clears it |
+| GnollBench suite import, the Snapshot Viewer | boards | **not scanned**: administrator-only and deliberate, and the injection-resistance suite depends on its planted board reaching the candidates |
+
+**The scanner** (`SnapshotGuardScanner`, pure, every pattern bounded to a line or a short window, a 2-second
+match timeout read as a finding `scan-timeout`) reports fixed codes only, the one thing ever stored about a
+finding:
+
+| Code | Strength | Matches |
+|---|---|---|
+| `address` | weak | an AI word (`AI`, assistant, Overseer, chatbot, language model, LLM, GPT, ChatGPT, Claude, Gemini) within 60 characters of an imperative, or `AI ASSISTANT:` (not a pet's status line `Assistant: HP:…`) |
+| `override` | strong | ignore / disregard / forget … previous instructions or prompts, ignore *your* rules (not "ignore the rules"), new instructions, system prompt, "you are now an … AI / unrestricted …", "from now on, you …" (not the quest's "… from now on."), "act as an AI / system …", your new role, developer mode, jailbreak, DAN mode |
+| `authority` | strong | from / by / a note from the (Overseer / GnollHack) team, developers, devs, admins, operators; "Overseer devs"; `[INST]`, `<<SYS>>`, `<|im_start|>`, `### System`, turn markers at a line's start, `SYSTEM:`; a header of the prompt's own structure (`Game Context Snapshot`, `Full Message History`, `Game Directory Manifest`, `Snapshot guard notice`); `<untrusted_document_context` / `<untrusted_game_snapshot` |
+| `tool` | weak | a registered tool name (read from `IToolHandler` at first use, so a new tool is covered) within 40 characters of call, use, run, invoke, execute or trigger |
+| `exfil-image` | strong | Markdown image syntax to a URL that is not the game's own site |
+| `exfil-url` | weak | a URL other than the game's own sites (gnollhack.com, nethack.org, nethackwiki.com, hyvanmielenpelit.fi, github.com/hyvanmielenpelit), or "send / post / upload / forward … to" an address |
+| `hidden-tag` | strong | a tag character, U+E0000–U+E007F |
+| `hidden` | weak | any other format or control character (tab, line feed and carriage return excepted), U+2028, U+2029, a lone surrogate |
+| `directive` | weak | end every answer with, always say / reply … (at a clause's start), respond only with, repeat after me, say the word, tell the player that |
+
+**Verdict:** *Injection* for a strong code or two codes, *Suspicious* for one weak code, *Clean* otherwise.
+Calibrated on two real exports of one game (a clean board, which yields no code, and one with three planted
+texts) and on every line of GnollHack's message corpora and C string literals (79,055 lines: rumors,
+oracles, quest texts, epitaphs, the encyclopedia, the tribute novels): no strong code, and seven weak ones,
+in a comment, an encyclopedia URL and font URLs of the HTML dump code.
+
+**Attribution.** For a snapshot the scanner reads the text section by section, by the headings of
+`AI_SNAPSHOT_FORMAT_VERSION` 16, and decides whether the parts **only the current player can write** reach
+the verdict on their own:
+
+| Section | Who can write there |
+|---|---|
+| the lines before `Map:` (the character's line), `Inventory:` (labels are stripped from bones), `Pets:` (a bones pet is no longer tame), `Discoveries:`, `Logged events:`, `Dungeon overview:` (annotations) | the player |
+| `Notable locations:` (named monsters, the ghost), `Latest messages:` (engravings read, anything printed), and every other section | possibly another player |
+
+A message history is possibly another player's; a manifest and other client data are the player's. A heading
+the table does not know continues the section before it. The code is `injection-own`, `injection-foreign`,
+`suspicious-own` or `suspicious-foreign`. A player who walks into a bones level with a hostile ghost name is a
+victim: the snapshot is refused, the player is told it may not be theirs and that leaving the level removes
+it, and nothing counts toward a block.
+
+**Modes**, a runtime setting (below):
+
+| Verdict | `Enforce` | `Observe` | `Off` |
+|---|---|---|---|
+| Clean | delivered | delivered | not scanned |
+| Suspicious | refused, banner *may contain*, model notice, event; never counts toward a block | delivered; event with `Detail` `observed;…` | not scanned |
+| Injection | refused, banner *contains*, model notice, event; `injection-own` counts toward the automatic block | delivered; event with `Detail` `observed;…`; no block | not scanned |
+
+One `SnapshotRejected` event per request, `Code` the strongest verdict, `Detail` (≤ 256, fixed vocabulary)
+`<channel>:<codes>` per channel joined by `;`, for example `create:address,tool;history:directive`, prefixed
+`observed;` in Observe. No text, no excerpt.
+
+**The automatic block** (`SnapshotGuard:AutoBlockEnabled`, on), decided right after an `injection-own` refusal
+in Enforce: the user's earlier `SnapshotRejected` events with `Code = injection-own` and no `observed;` prefix,
+within the last `AutoBlockWindowDays` (30) days today included, are counted by **distinct UTC day**, today is
+added, and the user is blocked at `AutoBlockDistinctDays` (3). Distinct days, not counts: the recorder folds
+identical events within ten minutes into one run, and three reconnects with the same pet name are one
+warning. Never for an administrator, never in Observe or Off, never for a `suspicious-*` or
+`injection-foreign` finding, never twice. The block is § 3's, with the reason *"Suspended automatically: game
+snapshots containing instructions addressed to the AI assistant were uploaded on 3 separate days. An
+administrator has been notified and can lift the suspension."* **Never an Identity ban**: `IsBanned` stops
+every sign-in including the game, and stays an administrator's decision from the Users tab.
+
+**Reported** by the admin alerts below and, when `SnapshotGuard:NotificationEmail` is set
+(`gnollhack@hyvanmielenpelit.fi`; empty disables it), one e-mail per block: the user name, the time and where
+to review it (Admin → Security); never the text or the codes.
+
+**What the player and the model are told.** Fixed texts, by code and by what was refused
+(`SnapshotGuardService.UserMessageFor`, `ModelNoticeFor`); the server writes the banner's text, which the
+session DTO carries as `snapshotRefusal { code, occurredUtc, message }` and the chat event as `{ code,
+message }`. The chat's `alert-warning` banner sits under the blocked banner and is cleared by an accepted
+snapshot. For an injection in the player's own text: *"The game snapshot was not loaded. It contains text
+written as instructions to an AI assistant, in a part of the board you write yourself (a name, a label or a
+note). Rename or remove it and reconnect. The chat works without the snapshot. An administrator has been
+notified; uploading such text on separate days suspends AI chat access automatically."* The model's notice
+row begins `Snapshot guard notice:` — not *Game snapshot …*, which `ChatService.IsGameSnapshotMessage` would
+read as a board — and says the snapshot was withheld, no board is available, and not to guess at it.
+
+**The mode is a runtime setting.** The append-only `SnapshotGuardSettings` table (`Mode`, `SetAtUtc`,
+`SetByUserId`) holds the history; the newest row is the mode, and with no row `SnapshotGuard:Mode` seeds it
+(`Observe` in `appsettings.json`; missing or unreadable means `Enforce`, the closed end, and an unreadable stored
+value reads as `Enforce` too). `SnapshotGuardModeService` caches it for 30 seconds and writes through on a set,
+so every entry point follows a change in the Security tab within that window, without a restart.
+
+| Method | Route | |
+|---|---|---|
+| `GET` | `api/admin/security/snapshot-guard` | `{ mode, setAtUtc, setByUserName, seeded, autoBlockEnabled, autoBlockDistinctDays, autoBlockWindowDays, notificationEmailConfigured }` |
+| `POST` | `api/admin/security/snapshot-guard` | `{ mode }`: appends a row even when unchanged and returns the state; 400 for an unknown mode |
+
+**Admin alerts** (`ConfigHealthService`): *warning* `snapshot-guard-observe` while the mode is Observe and
+`snapshot-guard-off` while it is Off, each with *Change* → `/admin/security`; *warning*
+`snapshot-refusals:{yyyyMMdd}:{count}` while `SnapshotRejected` events fall in the last 7 days (*"N game
+snapshots were refused for text addressed to the AI in the last 7 days (M users)."*); *error*
+`snapshot-autoblock:{newest event id}` while `AutoBlocked` events do. The changing part of each id makes a
+dismissed alert reappear on new events.
+
+**Settings** (`SnapshotGuard`, read on each call by `SnapshotGuardOptions.Read`, which never throws):
+`Mode` (the seed), `AutoBlockEnabled` (true; an unreadable value is true), `AutoBlockDistinctDays` (3; 1–30),
+`AutoBlockWindowDays` (30; 1–365, at least the day count), `NotificationEmail`.
+
+**What it does not do.** It does not scan bones files, which the website receives in the game's save format:
+a hostile name in a bones level is caught where it does harm, in a victim's snapshot, and its uploader is
+found through the ghost's name and the Users tab (`IsBonesBanned`). It changes nothing the model is sent for a
+clean text, so `CandidateSystemPromptSha256` and GnollBench comparability are untouched, and it does not scan
+GnollBench boards.
+
 ## 4. Provider safety identifiers
 
 `SafetyIdentifierService` derives a 32-byte key once by HKDF-SHA256 from `AesEncryptionKey` (info
@@ -175,6 +307,8 @@ the request's context, at most 30 writes per IP address a minute.
 | `ProviderRefusal`, `ProviderSafetyBlock` (`Code` = finish / block reason), `ProviderPolicyRejection` (`Code` = sanitized error code of a final 4xx attempt naming a policy) | after every operator-funded chat turn and sub-agent run (`ProviderRefusalEvents`), incognito included; never for titles | yes | no |
 | `AttachmentRejected` (`Code` count / validation / content / malware / scan-failed) | `ChatService` attachment checks | yes | no |
 | `ChatReported` | `ChatController.ReportMessage`, after the email is sent; the report itself is not stored | yes | no |
+| `SnapshotRejected` (`Code` injection-own / injection-foreign / suspicious-own / suspicious-foreign, `Detail` = the channels' codes, `observed;` first in Observe) | `SnapshotGuardService`, from session create, snapshot attach and client tool results (§ 3a) | yes | no |
+| `AutoBlocked` (`Code` snapshot-injection, `Detail` = the reason) | `OverseerAccessService.BlockAutomaticallyAsync`, for the snapshot guard (§ 3a) | the blocked user | no |
 | `AdminBlocked`, `AdminUnblocked` | `OverseerAccessService` | the blocked user | no |
 | `AccountHoldPlaced`, `AccountHoldReleased` (`Detail` = reason), `AccountDeletionHeld` (`Code` manual / automatic) | holds and the website deletion page | the account's user | no |
 | `AdminLockedOut`, `AdminUnlocked`, `AdminBanned`, `AdminUnbanned`, `AdminSignedOut`, `AdminEmailConfirmed`, `AdminTwoFactorReset` (`Detail` = reason) | the Users tab's per-user actions and the Bulk Actions runner (`AdminUserManagementService`); the durable record naming the administrator is the admin log | the account's user | no |
@@ -232,16 +366,21 @@ LockoutEnabled = 0;` that the developer runs after review; no migration does it.
 ## 7. The Security tab
 
 Admin → **Security** shows, for the shared date range, summary cards (sign-in failures, lockouts, limit
-refusals, provider refusals and policy hits, rejected attachments, reports, blocks, deletion holds with
-a link to the Users tab's *Deletion requests*), an events card list (search by user name, a *Kind*
-facet, server paging) whose cards offer *Block* / *Unblock* and *Usage* (the user's AI usage in the AI
-Telemetry tab), and the safety-identifier lookup. Every count is a word plus a number.
+refusals, provider refusals and policy hits, rejected attachments, reports, snapshot refusals, blocks
+with an *Automatic* line, deletion holds with
+a link to the Users tab's *Deletion requests*), the *Snapshot guard* section (§ 3a: a *Mode* radio group,
+Off / Observe / Enforce, each with its sentence; a choice applies at once, the group is disabled while it is
+saved and restored on a failure; a status line *Changed 24 Oct 2026 14:02 by …* or *Not set yet: seeded from
+the configuration.*; and the configured block rule in one sentence), an events card list (search by user
+name, a *Kind* facet, server paging) whose cards offer *Block* / *Unblock* and *Usage* (the user's AI usage
+in the AI Telemetry tab), and the safety-identifier lookup. Every count is a word plus a number.
 
 | Method | Route | Returns |
 |---|---|---|
 | `GET` | `api/admin/security/summary?startDate&endDate` | counts per kind (sums of `Count`), distinct users and IPs per kind, pending deletion requests, active holds |
 | `GET` | `api/admin/security/events?startDate&endDate&kinds&userId&search&skip&take` | events newest first, `take` 1–100 |
 | `GET` | `api/admin/security/safety-identifier/{identifier}` | `{ userId, userName }` or 404 |
+| `GET` / `POST` | `api/admin/security/snapshot-guard` | the snapshot guard's state / set the mode (`{ mode }`), § 3a |
 | `POST` / `DELETE` | `api/admin/users/{userId}/overseer-block` | block (`{ reason }`) / unblock |
 
 ## 8. Game API sign-in hardening
@@ -332,7 +471,9 @@ which partition by remote IP.
 
 The privacy notice has an *Acceptable use* section: Overseer is for GnollHack and NetHack questions,
 the providers' own policies apply to every message, and misuse can lead to limits or a block of AI
-access. Its data map lists *Security events* and *Provider safety identifier*.
+access. It also says that game snapshots containing text addressed to the AI assistant are not delivered to
+it and are recorded as security events, and that repeated cases can suspend AI chat access automatically
+(§ 3a). Its data map lists *Security events* and *Provider safety identifier*.
 
 ## 10. Account-deletion holds and administrator review
 
@@ -405,7 +546,13 @@ kept past retention until the request is decided; an approved deletion removes t
 - **GnollHack client fixes** (a separate plan in the GnollHack repository): honor `Retry-After`;
   exponential backoff in the main-menu timer; treat 401 / 423 / 429 as "stop until the next trigger";
   drop a queued item after a 4xx other than 408 / 429; null-check `Content-Type` in `SendBonesFile`; send
-  an app version with the credential check and save tracking.
+  an app version with the credential check and save tracking; read a `{ code, message }` body on a refused
+  `session/create` and show the message, which the snapshot guard (§ 3a) could then use to tell the player in
+  the game.
+- **Scanning bones files** for text addressed to the AI: they arrive in the game's save format; the guard
+  catches such text in the victim's snapshot instead (§ 3a).
+- **A model classifier for the snapshot guard's *Suspicious* tier**: a later decision on the Security tab's
+  numbers; a classifier is itself injectable and costs a call per session.
 - **Answering looping banned clients more cheaply**: revisit if `RequestLogs` shows it matters.
 - **Wrapping tool results in the untrusted-content boundary**: changes what the production chat prompt
   sees, so it belongs in a GnollBench-validated round.
@@ -419,3 +566,12 @@ kept past retention until the request is decided; an approved deletion removes t
 `AccountHoldEvaluatorTests`, `AccountErasureTests`, `AccountDeletionReviewTests` and
 `AccountDeletionReviewEmailTests` in `Overseer.Tests/UnitTests/`. No test project hosts the website,
 so the game API controllers, the account pages and the deletion page are checked manually.
+
+The snapshot guard: `SnapshotGuardScannerTests` (against the two real exports in
+`Overseer.Tests/Fixtures/Snapshots/`, each family, a negative corpus and attribution),
+`SnapshotGuardServiceTests` (modes, the distinct-day rule and its exemptions, the e-mail),
+`SnapshotGuardModeServiceTests`, the guard cases of `SessionControllerCreateTests`,
+`ChatAttachSnapshotTests`, `OverseerBlockTests` and `ConfigHealthServiceTests`,
+`ToolExecutorClientResultGuardTests`, and the integration tests `AdminSnapshotGuardEndpointTests`.
+Every `api/admin` endpoint's authorization is pinned by `AdminEndpointAuthorizationSweepTests` and CSRF
+enforcement by `AntiforgeryEnforcementTests` (`Overseer.Tests/IntegrationTests/`).

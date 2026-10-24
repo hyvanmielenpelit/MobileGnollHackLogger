@@ -1037,7 +1037,7 @@ public class BenchmarkService
             PopulateInstrumentFingerprint(run, systemPrompt);
 
             VerifyCandidateDeliveryBeforeRun(
-                run, testedConfig, systemPrompt, segmentedPrompt, questions.FirstOrDefault()?.QuestionText, isRerun: false);
+                run, testedConfig, systemPrompt, segmentedPrompt, questions.FirstOrDefault()?.QuestionText, isRerun: false, variant);
 
             // Check credential collision between candidate and assessor
             string testedKey = AiRequestGovernor.GetCredentialKey(testedConfig.Provider, null, testedConfig.Id);
@@ -1505,7 +1505,7 @@ public class BenchmarkService
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
 
             VerifyCandidateDeliveryBeforeRun(
-                run, testedConfig, systemPrompt, segmentedPrompt, failedAnswers.FirstOrDefault()?.QuestionText, isRerun: true);
+                run, testedConfig, systemPrompt, segmentedPrompt, failedAnswers.FirstOrDefault()?.QuestionText, isRerun: true, variant);
 
             _runManager.MarkStage(runId, BenchmarkRunStage.Answering);
 
@@ -1783,14 +1783,30 @@ public class BenchmarkService
     /// play: with <c>PromptCacheSettings:EnableSegmentedPrompt</c> off,
     /// <c>AgentLoopRunner</c> injects a prompt only into a history that has no system message at
     /// all — and a board is one.
+    ///
+    /// <para>Under the experiment <see cref="BenchmarkExperimentalChangeCatalog.BoardAsDataExperiment"/> a run
+    /// with a board has no board system message: the user message is the board inside an
+    /// <c>&lt;untrusted_game_snapshot&gt;</c> element (<see cref="Overseer.Services.Privacy.UntrustedContentWrapper.WrapGameSnapshot"/>),
+    /// a blank line, then the question with its suffix. Every other run gets the shape above.</para>
     /// </remarks>
-    internal static List<object> BuildCandidateSeedHistory(BenchmarkRun run, string systemPrompt, string questionText)
+    internal static List<object> BuildCandidateSeedHistory(BenchmarkRun run, string systemPrompt, string questionText,
+        BenchmarkVariantContext? variant = null)
     {
         var seed = new List<object>
         {
             new { role = "system", content = systemPrompt }
         };
         var board = BenchmarkRunExamRecord.Board(run);
+        if (board != null && variant?.HasExperiment(BenchmarkExperimentalChangeCatalog.BoardAsDataExperiment) == true)
+        {
+            seed.Add(new
+            {
+                role = "user",
+                content = Overseer.Services.Privacy.UntrustedContentWrapper.WrapGameSnapshot(board.SanitizedText, "game-client")
+                    + "\n\n" + questionText + ChatService.NoGreetInstruction
+            });
+            return seed;
+        }
         if (board != null)
         {
             seed.Add(new
@@ -1855,13 +1871,14 @@ public class BenchmarkService
         string systemPrompt,
         SegmentedPrompt? segmentedPrompt,
         string? firstQuestionText,
-        bool isRerun)
+        bool isRerun,
+        BenchmarkVariantContext? variant)
     {
         VerifyCandidateDelivery(
             run,
             testedConfig.Provider,
             requestProvider: null,
-            BuildCandidateSeedHistory(run, systemPrompt, firstQuestionText ?? string.Empty),
+            BuildCandidateSeedHistory(run, systemPrompt, firstQuestionText ?? string.Empty, variant),
             segmentedPrompt,
             systemPrompt,
             questionNumber: null);
@@ -2112,7 +2129,7 @@ public class BenchmarkService
                 // The feedback handler acknowledges without writing; the call is stored as a self-report.
                 IsBenchmarkCandidate = true
             },
-            SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, question.QuestionText),
+            SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, question.QuestionText, variant),
 
             // The run's own token, not the question's linked one, so the runner can tell an
             // operator cancel from the question time budget.
@@ -2455,7 +2472,7 @@ public class BenchmarkService
                 Variant = variant,
                 IsBenchmarkCandidate = true
             },
-            SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, answer.QuestionText),
+            SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, answer.QuestionText, variant),
 
             // See ExecuteSingleQuestionAsync.
             OperatorCancellation = cancellationToken
@@ -8791,7 +8808,7 @@ public class BenchmarkService
             int maxToolCallsPerQuestion = ResolveToolCallBudget();
 
             VerifyCandidateDeliveryBeforeRun(
-                run, testedConfig, systemPrompt, segmentedPrompt, answer.QuestionText, isRerun: true);
+                run, testedConfig, systemPrompt, segmentedPrompt, answer.QuestionText, isRerun: true, variant);
 
             string? expectedPoints = BenchmarkRunExamRecord.Rubric(answer);
 

@@ -68,6 +68,37 @@
   </li>
 </ul>
 
+<!-- What the snapshot guard does with game text addressed to the AI; a choice applies at once. -->
+<section class="sec-section sec-guard" aria-labelledby="sec-guard-title">
+  <h4 id="sec-guard-title">Snapshot guard</h4>
+  <p class="sec-guard-intro">Scans the game snapshot, the message history and the game's tool results for text written as instructions to the AI.</p>
+  @if (guard; as g) {
+    <fieldset class="gh-choice sec-guard-mode" aria-describedby="sec-guard-status sec-guard-error"
+              [attr.aria-busy]="guardPending ? 'true' : null">
+      <legend>Mode</legend>
+      @for (option of guardModes; track option.value) {
+        <label class="gh-radio sec-guard-option" [attr.for]="'sec-guard-' + option.value">
+          <input type="radio" name="secGuardMode" [id]="'sec-guard-' + option.value" [value]="option.value"
+                 [checked]="option.value === g.mode" [disabled]="guardPending"
+                 [attr.aria-describedby]="'sec-guard-' + option.value + '-desc'" (change)="onModeChange(option.value)">
+          <span class="sec-guard-option-label">{{ option.label }}</span>
+          <span class="sec-guard-option-desc" [id]="'sec-guard-' + option.value + '-desc'">{{ option.description }}</span>
+        </label>
+      }
+    </fieldset>
+    <p class="sec-guard-status" id="sec-guard-status" role="status">{{ guardStatusText }}</p>
+    <p class="sec-guard-rule">{{ guardRuleText }}</p>
+  } @else if (!guardError) {
+    <p class="sec-guard-status" id="sec-guard-status" role="status">Loading the snapshot guard…</p>
+  }
+  <p class="gh-field-error sec-guard-error" id="sec-guard-error" [hidden]="!guardError" role="alert">
+    @if (guardError) {
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ guardError }}</span>
+    }
+  </p>
+</section>
+
 <!-- The user behind a provider's safety identifier. -->
 <section class="sec-section sec-lookup" aria-labelledby="sec-lookup-title">
   <h4 id="sec-lookup-title">Find user by safety identifier</h4>

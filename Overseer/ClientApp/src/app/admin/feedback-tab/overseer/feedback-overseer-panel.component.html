@@ -117,6 +117,10 @@
                 <span [class]="statusBadgeClass(issue.status) + ' tl-fb-status-badge'">
                   <span aria-hidden="true">{{ statusBadgeText(issue) }}</span><span class="visually-hidden">{{ statusBadgeSpoken(issue) }}</span>
                 </span>
+                @let hidden = issueHiddenCharacters(issue);
+                @if (hidden.length > 0) {
+                  <span class="gh-tag tl-fb-mark-hidden" [attr.title]="'Invisible characters: ' + hidden.join(', ')">Hidden characters</span><span class="visually-hidden">: {{ hidden.join(', ') }}</span>
+                }
                 @if (issue.modelIds.length > 0) {
                   <span class="tl-fb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                   <span class="tl-fb-models"><span class="visually-hidden">Models: </span>{{ issue.modelIds.join(', ') }}</span>
@@ -220,13 +224,17 @@
                         <h5 class="tl-fb-occ-time" [id]="'tl-fb-occ-' + o.id + '-time'" tabindex="-1">
                           <time [attr.datetime]="o.createdUtc">{{ dateTimeText(o.createdUtc) }}</time>
                         </h5>
-                        @if (o.truncated || o.redacted) {
+                        @let occHidden = occurrenceHiddenCharacters(o);
+                        @if (o.truncated || o.redacted || occHidden.length > 0) {
                           <ul class="tl-fb-occ-marks" role="list" aria-label="Marks">
                             @if (o.truncated) {
                               <li><span class="gh-tag tl-fb-mark-truncated">Truncated</span></li>
                             }
                             @if (o.redacted) {
                               <li><span class="gh-tag tl-fb-mark-redacted">Redacted</span></li>
+                            }
+                            @if (occHidden.length > 0) {
+                              <li><span class="gh-tag tl-fb-mark-hidden" [attr.title]="'Invisible characters: ' + occHidden.join(', ')">Hidden characters</span><span class="visually-hidden">: {{ occHidden.join(', ') }}</span></li>
                             }
                           </ul>
                         }

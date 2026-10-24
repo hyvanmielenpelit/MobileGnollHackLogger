@@ -343,6 +343,14 @@ previously superseded row on each attach, and hand marker text to `StripGameSnap
 rather than a row. It takes no flag, and is named here so nobody "completes" the change by
 touching it.
 
+**The snapshot guard is the fourth thing that touches snapshot rows: it withholds one.**
+`SessionController.Create` and `AttachSnapshot` ask `SnapshotGuardService` before they write, and a
+snapshot it refuses is never stored ([`security-monitoring.md`](security-monitoring.md) § 3a).
+`Create` writes a notice row in its place — `Role = system`, `IsGameSnapshot = false`, content beginning
+`Snapshot guard notice:`, which no prefix test reads as a board — so `hasGameSnapshot` stays false. The
+session's `SnapshotRefusedUtc` / `SnapshotRefusalCode` hold a code only, never content, and an accepted
+snapshot clears them.
+
 **Attaching a snapshot obeys the session's mode.** `AttachSnapshot` takes the same
 `SessionRef` wire string, and the same `IsConfidential` / `IsEphemeral` create-time pair, that
 `Send` does — the two are the only ways a chat comes into existence from the window, and a
@@ -409,6 +417,15 @@ the rule is off.
 Neither of these is a guarantee. A sufficiently persuasive injection can still talk a model
 into ignoring its instructions; what the boundary removes is the *structural* attack, where the
 document does not have to persuade anything because it has escaped into the prompt's own frame.
+
+**The game board is not inside the boundary in production.** It reaches the model as a system message.
+`UntrustedContentWrapper.WrapGameSnapshot` emits a second element, `<untrusted_game_snapshot
+source="game-client" content="complete">`, and the body escaping neutralizes the shapes of **both**
+elements, so neither a document nor a board can close the other's wrapper. It is used by GnollBench's
+experiment `board_as_data` only (`ai-benchmark-conditions-and-variants.md` § 6.9), which measures delivering
+the board as wrapped data in the user turn before any production change. In production the snapshot guard
+([`security-monitoring.md`](security-monitoring.md) § 3a) refuses board text that addresses the AI before
+it is stored: **the snapshot guard bounds injected game text; it does not prevent it.**
 
 ### 3.11 External-image defang in rendered output
 

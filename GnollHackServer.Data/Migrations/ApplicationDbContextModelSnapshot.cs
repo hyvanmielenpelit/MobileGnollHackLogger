@@ -4085,6 +4085,13 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<DateTime>("LastMessageUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("SnapshotRefusalCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTime?>("SnapshotRefusedUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("Title")
                         .HasMaxLength(2048)
                         .HasColumnType("nvarchar(2048)");
@@ -5155,6 +5162,31 @@ namespace GnollHackServer.Data.Migrations
                     b.HasIndex("Kind", "OccurredUtc");
 
                     b.ToTable("SecurityEvents");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.SnapshotGuardSetting", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTime>("SetAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SetByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SnapshotGuardSettings");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.SystemAiApiConfiguration", b =>

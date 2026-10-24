@@ -44,6 +44,7 @@ import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils
 import { adminQueryList, readAdminQueryList } from '../../admin-url';
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
 import { FeedbackSelectionBarComponent } from '../shared/feedback-selection-bar.component';
+import { hiddenCharactersOf } from '../shared/feedback-hidden-characters';
 import {
   FEEDBACK_SELECTION_CAP,
   FeedbackExportOptions,
@@ -1136,6 +1137,17 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   /** `in 3 runs`; `in 1 run`. */
   runsText(issue: GnollBenchFeedbackIssue): string {
     return issue.runCount === 1 ? 'in 1 run' : `in ${formatInteger(issue.runCount)} runs`;
+  }
+
+  /** The invisible characters in an issue's subject and summary, as `U+XXXX`. */
+  issueHiddenCharacters(issue: GnollBenchFeedbackIssue): string[] {
+    return hiddenCharactersOf(issue.subject, issue.summary);
+  }
+
+  /** The invisible characters in the texts a self-report card shows, as `U+XXXX`. */
+  occurrenceHiddenCharacters(occurrence: GnollBenchFeedbackOccurrence): string[] {
+    return hiddenCharactersOf(occurrence.subject, occurrence.summary, occurrence.details, occurrence.searchedFor,
+      occurrence.expectedLocation, occurrence.suspectedCauseNote, occurrence.questionText, occurrence.error, ...occurrence.relatedTools);
   }
 
   /** `Triaged 21 Oct 2026 14:02 by tommi`; empty for an issue nobody has triaged. */

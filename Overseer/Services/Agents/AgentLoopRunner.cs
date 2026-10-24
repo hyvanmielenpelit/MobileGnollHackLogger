@@ -645,6 +645,22 @@ public class AgentLoopRunner
                         priorSnapshotToolCallId = outcome.ToolCallId;
                     }
 
+                    // The snapshot guard withheld a client result: the model already has the notice; the player is told here.
+                    if (outcome.SnapshotRefusalCode is { } refusalCode)
+                    {
+                        var (guardCode, guardSubject) = Security.SnapshotGuardService.ParseSessionCode(refusalCode);
+                        yield return new ChatEvent
+                        {
+                            Type = Security.SnapshotGuardService.RefusedChatEventType,
+                            Data = System.Text.Json.JsonSerializer.Serialize(new
+                            {
+                                code = refusalCode,
+                                message = Security.SnapshotGuardService.UserMessageFor(guardCode, guardSubject,
+                                    Overseer.Models.SnapshotGuardOptions.Read(_configuration).AutoBlockEnabled)
+                            })
+                        };
+                    }
+
                     /* Masked on the way OUT and nowhere else. providerResults is what re-enters
                        messageHistory and therefore what the next request carries, so a
                        credential a tool returned -- from a file it read, a corpus it searched or

@@ -54,6 +54,7 @@ import { AdminPageStore } from '../../admin-page.store';
 import { ADMIN_TAB_SLUGS, adminCommands, adminQueryList, clearedFeedbackQueryParams, readAdminQueryList } from '../../admin-url';
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
 import { FeedbackSelectionBarComponent, FeedbackSelectionId } from '../shared/feedback-selection-bar.component';
+import { hiddenCharactersOf } from '../shared/feedback-hidden-characters';
 import {
   FEEDBACK_SELECTION_CAP,
   FeedbackExportOptions,
@@ -1351,6 +1352,17 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     return occurrence.turnUserMessageId != null
       ? `Session ${occurrence.chatSessionId} · message ${occurrence.turnUserMessageId}`
       : `Session ${occurrence.chatSessionId}`;
+  }
+
+  /** The invisible characters in an issue's subject and summary, as `U+XXXX`. */
+  issueHiddenCharacters(issue: AdminFeedbackIssue): string[] {
+    return hiddenCharactersOf(issue.subject, issue.summary);
+  }
+
+  /** The invisible characters in the texts an occurrence card shows, as `U+XXXX`. */
+  occurrenceHiddenCharacters(occurrence: AdminFeedbackOccurrence): string[] {
+    return hiddenCharactersOf(occurrence.subject, occurrence.summary, occurrence.details, occurrence.searchedFor,
+      occurrence.expectedLocation, occurrence.suspectedCauseNote, ...occurrence.relatedTools);
   }
 
   /** Whether the details are long enough to start collapsed. */

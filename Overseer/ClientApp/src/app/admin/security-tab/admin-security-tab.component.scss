@@ -120,6 +120,57 @@
   }
 }
 
+/* The snapshot guard: one radio per mode, each with its sentence, then the status and the rule. */
+.sec-guard-intro {
+  margin: 0 0 12px;
+  color: var(--text-secondary, #b8b8b8);
+}
+
+.sec-guard-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+
+  legend {
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+}
+
+.sec-guard-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  align-items: baseline;
+
+  input {
+    grid-row: 1 / span 2;
+  }
+}
+
+.sec-guard-option-desc {
+  grid-column: 2;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #b8b8b8);
+}
+
+.sec-guard-status,
+.sec-guard-rule {
+  margin: 12px 0 0;
+}
+
+.sec-guard-rule {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #b8b8b8);
+}
+
+.sec-guard-error {
+  margin: 8px 0 0;
+}
+
 .sec-lookup-form {
   display: flex;
   flex-wrap: wrap;

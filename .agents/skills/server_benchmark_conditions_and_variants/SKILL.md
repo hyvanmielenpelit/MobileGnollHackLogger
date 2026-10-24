@@ -154,7 +154,10 @@ change that production never loads. The model, the two sources, the selection an
 doc's § 6.
 
 - **Built in, or written in Overseer.**
-  - A new tool or a tool-output switch is C# code, so its change is **built in**: a folder
+  - A new tool or an experiment switch is C# code, so its change is **built in**. The experiments are
+    `stats_referenced_by` (a `referenced_by` field on the stats tools) and `board_as_data` (the board
+    delivered inside `<untrusted_game_snapshot>` at the start of the user turn instead of as a system
+    message; the structural prompt-injection treatment). A built-in change is a folder
     `Overseer/BenchmarkChanges/<id>/` holding `change.json` and the `.md` files it names (the doc's
     § 6.2). **An agent writes built-in folders**, as files of an implementation plan, UTF-8 without a
     BOM, CRLF; it never writes a change into the database.
@@ -174,8 +177,8 @@ doc's § 6.
     text, the built-in folder is invalid (the doc's § 6.5). Pick an id no database change holds.
 - **One idea per change.** A change is one titled idea, so a selection can isolate it: split a bundle
   into changes rather than putting several ideas into one. The id is kebab-case ending `-v<N>`, at most
-  32 characters; the stamp of a whole selection must fit 160 characters, and the four built-in changes
-  together take 104. The title, summary and *Should improve* are not hashed, so they can be corrected
+  32 characters; the stamp of a whole selection must fit 160 characters, and the seven built-in changes
+  together take 155. The title, summary and *Should improve* are not hashed, so they can be corrected
   later; every text is.
 - **Only generic procedures and source-derived tools, never answers.** No rubric text, no
   question-specific hint, no mechanic's value, no *"if asked about X, answer Y"*. Before handoff, read

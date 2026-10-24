@@ -245,8 +245,8 @@ public sealed record BenchmarkExperimentalChange
             .ToList();
 
     /// <summary>
-    /// How much of the change reaches the candidate: under Closed book only instructions do; under
-    /// Source code only a description edit of a withheld tool does not.
+    /// How much of the change reaches the candidate: under Closed book only instructions and the board's
+    /// delivery do; under Source code only a description edit of a withheld tool does not.
     /// </summary>
     public BenchmarkChangeApplicability AppliesUnder(BenchmarkInformationCondition condition)
     {
@@ -260,7 +260,7 @@ public sealed record BenchmarkExperimentalChange
 
         bool toolsOffered = condition != BenchmarkInformationCondition.ClosedBook;
         if (ExperimentalTool != null) Count(toolsOffered);
-        if (Experiment != null) Count(toolsOffered);
+        if (Experiment != null) Count(toolsOffered || Experiment == BenchmarkExperimentalChangeCatalog.BoardAsDataExperiment);
         foreach (var edit in DescriptionEdits)
         {
             Count(toolsOffered && !(condition == BenchmarkInformationCondition.SourceOnly
@@ -561,7 +561,14 @@ public sealed class BenchmarkExperimentalChangeCatalog
     /// <summary>Tool-output switches a change may turn on.</summary>
     public const string StatsReferencedByExperiment = "stats_referenced_by";
 
-    public static readonly IReadOnlyList<string> KnownExperiments = new[] { StatsReferencedByExperiment };
+    /// <summary>
+    /// Delivers the game board inside an <c>&lt;untrusted_game_snapshot&gt;</c> element at the start of the user
+    /// turn instead of as a system message (<see cref="BenchmarkService.BuildCandidateSeedHistory"/>). Not a tool
+    /// output, so it reaches the candidate under every condition.
+    /// </summary>
+    public const string BoardAsDataExperiment = "board_as_data";
+
+    public static readonly IReadOnlyList<string> KnownExperiments = new[] { StatsReferencedByExperiment, BoardAsDataExperiment };
 
     public const string FolderName = "BenchmarkChanges";
     public const string ChangeFileName = "change.json";
@@ -580,7 +587,8 @@ public sealed class BenchmarkExperimentalChangeCatalog
     /// <summary>The word in a text that names an experiment's output.</summary>
     private static readonly IReadOnlyDictionary<string, string> ExperimentMentionWords = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        [StatsReferencedByExperiment] = "referenced_by"
+        [StatsReferencedByExperiment] = "referenced_by",
+        [BoardAsDataExperiment] = Overseer.Services.Privacy.UntrustedContentWrapper.GameSnapshotElementName
     };
 
     private static readonly Regex SpecIdPattern = new("^[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.CultureInvariant);

@@ -62,6 +62,31 @@ public class SafetyIdentifierLookupDto
     public string UserName { get; set; } = string.Empty;
 }
 
+/// <summary>The snapshot guard's mode and the configured block rule, as the Security tab's section shows them.</summary>
+public class AdminSnapshotGuardDto
+{
+    /// <summary><c>Off</c>, <c>Observe</c> or <c>Enforce</c>.</summary>
+    public string Mode { get; set; } = string.Empty;
+
+    /// <summary>When an administrator last set the mode; null while it is seeded from the configuration.</summary>
+    public DateTime? SetAtUtc { get; set; }
+
+    public string? SetByUserName { get; set; }
+
+    /// <summary>True while no setting exists and <c>SnapshotGuard:Mode</c> decides.</summary>
+    public bool Seeded { get; set; }
+
+    public bool AutoBlockEnabled { get; set; }
+    public int AutoBlockDistinctDays { get; set; }
+    public int AutoBlockWindowDays { get; set; }
+    public bool NotificationEmailConfigured { get; set; }
+}
+
+public class AdminSnapshotGuardUpdateDto
+{
+    public string? Mode { get; set; }
+}
+
 public class AccountDeletionRequestDto
 {
     public long Id { get; set; }

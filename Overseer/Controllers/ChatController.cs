@@ -640,6 +640,7 @@ public class ChatController : ControllerBase
             // opaque authoritative figure.
             TotalEstimatedCost = isAdmin ? session.TotalEstimatedCost : session.TotalUserEstimatedCost,
             hasGameSnapshot,
+            SnapshotRefusal = BuildSnapshotRefusalPayload(session),
             GnollHackVersion = ClientSettingsReader.ReadGnollHackVersion(session.ClientSettings),
             session.IsConfidential,
             IsEphemeral = false,
@@ -683,6 +684,20 @@ public class ChatController : ControllerBase
     /// <c>private_badge</c> event. Red still wins over that, because an inactive control is a
     /// property of the session rather than of the key.
     /// </remarks>
+    /// <summary>The snapshot guard's last refusal on the session, with the banner's text; null when none stands.</summary>
+    private object? BuildSnapshotRefusalPayload(ChatSession session)
+    {
+        if (session.SnapshotRefusedUtc is not DateTime at || string.IsNullOrEmpty(session.SnapshotRefusalCode)) return null;
+        var (code, subject) = Overseer.Services.Security.SnapshotGuardService.ParseSessionCode(session.SnapshotRefusalCode);
+        return new
+        {
+            code = session.SnapshotRefusalCode,
+            occurredUtc = DateTime.SpecifyKind(at, DateTimeKind.Utc),
+            message = Overseer.Services.Security.SnapshotGuardService.UserMessageFor(code, subject,
+                Overseer.Models.SnapshotGuardOptions.Read(_configuration).AutoBlockEnabled)
+        };
+    }
+
     private Overseer.Services.Privacy.PrivateBadgeDto? BuildPrivateBadgePayload(ChatSession session)
     {
         var sessionPolicy = session.IsConfidential
@@ -799,6 +814,7 @@ public class ChatController : ControllerBase
             session.IsGnollHackSession,
             TotalEstimatedCost = isAdmin ? session.TotalEstimatedCost : session.TotalUserEstimatedCost,
             hasGameSnapshot = held.Messages.Any(m => m.Role == "system" && m.IsGameSnapshot),
+            SnapshotRefusal = BuildSnapshotRefusalPayload(session),
             GnollHackVersion = ClientSettingsReader.ReadGnollHackVersion(session.ClientSettings),
             session.IsConfidential,
             IsEphemeral = true,
@@ -1168,7 +1184,8 @@ public class ChatController : ControllerBase
 
     [HttpPost("sessions/attach-snapshot")]
     public async Task<IActionResult> AttachSnapshot([FromBody] AttachGameSnapshotRequest request,
-        [FromServices] Overseer.Services.Telemetry.IActivityCounter? activityCounter = null)
+        [FromServices] Overseer.Services.Telemetry.IActivityCounter? activityCounter = null,
+        [FromServices] Overseer.Services.Security.SnapshotGuardService? snapshotGuard = null)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
@@ -1189,6 +1206,21 @@ public class ChatController : ControllerBase
 
         string normalized = DumpHtmlSanitizer.PrepareFlattenedSnapshot(request.SnapshotText);
         string snapshotContent = ChatService.GameSnapshotPrefix + "\n" + normalized;
+
+        // Before anything is written or superseded: a refused snapshot changes nothing.
+        if (snapshotGuard != null)
+        {
+            var guard = await snapshotGuard.EvaluateAsync(userId, new[]
+            {
+                new Overseer.Services.Security.SnapshotGuardInput("attach", Overseer.Services.Security.SnapshotGuardSubject.Snapshot,
+                    Overseer.Services.Security.SnapshotGuardTextKind.Snapshot, normalized)
+            });
+            if (guard.Refuse)
+            {
+                return StatusCode(StatusCodes.Status422UnprocessableEntity,
+                    new { code = Overseer.Services.Security.SnapshotGuardService.RefusedErrorCode, error = guard.UserMessage });
+            }
+        }
 
         // Written only into a session created here; an existing session's ClientSettings is the client's document.
         string newSessionClientSettings = BuildAttachedSessionClientSettings(
@@ -1270,6 +1302,8 @@ public class ChatController : ControllerBase
             if (held == null) return NotFound(new { error = "Session not found." });
 
             held.SupersedeSnapshots(ChatService.GameSnapshotSupersededMarker);
+            held.Session.SnapshotRefusedUtc = null;
+            held.Session.SnapshotRefusalCode = null;
 
             /* Appended to the store; nothing is added to the DbContext and SaveChangesAsync is
                not called on this path. The buffers are plaintext by design — an ephemeral
@@ -1337,6 +1371,8 @@ public class ChatController : ControllerBase
             TimestampUtc = DateTime.UtcNow
         };
         _dbContext.ChatMessage.Add(systemMsg);
+        session.SnapshotRefusedUtc = null;
+        session.SnapshotRefusalCode = null;
         await _dbContext.SaveChangesAsync();
 
         return Ok(new

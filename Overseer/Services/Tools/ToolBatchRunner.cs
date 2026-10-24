@@ -31,6 +31,9 @@ public sealed class ToolBatchOutcome
     public bool BudgetExhausted { get; init; }
     public int? RemainingBudget { get; init; }
     public List<Agents.DelegatedRunCost>? DelegatedRunCosts { get; init; }
+
+    /// <summary><see cref="ToolResult.SnapshotRefusalCode"/>: the snapshot guard withheld this client result.</summary>
+    public string? SnapshotRefusalCode { get; init; }
 }
 
 public static class ToolBatchRunner
@@ -102,7 +105,8 @@ public static class ToolBatchRunner
                             TerminationStatus = res.TerminationStatus ?? (res.Success ? "completed" : "error"),
                             BudgetExhausted = res.BudgetExhausted,
                             RemainingBudget = res.RemainingBudget,
-                            DelegatedRunCosts = res.DelegatedRunCosts
+                            DelegatedRunCosts = res.DelegatedRunCosts,
+                            SnapshotRefusalCode = res.SnapshotRefusalCode
                         };
                         events.TryWrite(outcome);
                         return outcome;

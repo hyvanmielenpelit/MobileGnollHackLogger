@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef, HostListener, NgZone, AfterViewInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall, ChatContextUsage, ChatSessionStateResponse, PrivateBadge } from '../services/chat.service';
+import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall, ChatContextUsage, ChatSessionStateResponse, PrivateBadge, SnapshotRefusal } from '../services/chat.service';
 import { AuthService, AuthUser, hasTermsStatus, needsTermsAcceptance } from '../services/auth.service';
 import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule, NavigationEnd, NavigationStart } from '@angular/router';
@@ -500,6 +500,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
    * reload asks the server again.
    */
   overseerBlock: { message: string; reason: string | null } | null = null;
+  /**
+   * The snapshot guard's last refusal of this chat's game text: from the session on load, a `snapshot_refused`
+   * chat event, or a 422 from attaching a snapshot. The server writes the text; cleared once a snapshot is accepted.
+   */
+  snapshotRefusal: SnapshotRefusal | null = null;
   /**
    * True while the user has not accepted the required Overseer Terms: the composer refuses to
    * send and the banner above it offers the Terms again. Set from `/api/auth/me`, a 403
@@ -1397,12 +1402,19 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         next: (res) => {
           this.isAttachingSnapshot = false;
           this.hasGameSnapshot = true;
+          this.snapshotRefusal = null;
           this.applyCreatedSessionState(res);
           this.clientBridge.setHostGnollHackVersion(res.gnollHackVersion);
           this.cdr.detectChanges();
         },
         error: (err) => {
           this.isAttachingSnapshot = false;
+          if (err?.status === 422 && err?.error?.code === 'snapshot_refused') {
+            // The snapshot guard refused the board: the banner says why, and nothing was attached.
+            this.snapshotRefusal = { code: 'snapshot_refused', message: String(err.error.error ?? '') };
+            this.cdr.detectChanges();
+            return;
+          }
           console.error('Failed to attach game snapshot:', err);
           this.showErrorToast(err?.error?.error || 'Failed to attach game snapshot to chat.', 'Snapshot Error');
           this.cdr.detectChanges();
@@ -1909,6 +1921,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
          // Proceed normally
       } else {
          return;
+      }
+    }
+
+    if (evt?.type === 'snapshot_refused') {
+      const refusal = ChatComponent.readSnapshotRefusal(ChatComponent.parseEventJson(evt.data));
+      if (refusal) {
+        this.snapshotRefusal = refusal;
+        this.cdr.markForCheck();
       }
     }
 
@@ -2685,6 +2705,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.sessionLoadSub?.unsubscribe();
     this.currentSessionId = null;
     this.hasGameSnapshot = false;
+    this.snapshotRefusal = null;
     this.privateBadge = null;
     this.isConfidentialSession = false;
     this.isEphemeralSession = false;
@@ -2785,6 +2806,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.messages = [];
     this.hasGameSnapshot = false;
+    this.snapshotRefusal = null;
     this.privateBadge = null;
     this.isConfidentialSession = false;
     this.isEphemeralSession = false;
@@ -2865,6 +2887,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
         this.messages = s.messages || [];
         this.hasGameSnapshot = !!s.hasGameSnapshot;
+        this.snapshotRefusal = ChatComponent.readSnapshotRefusal(s.snapshotRefusal);
         this.clientBridge.setHostGnollHackVersion(s.gnollHackVersion);
         this.privateBadge = s.privateBadge ?? null;
         this.isConfidentialSession = !!s.isConfidential;
@@ -3991,6 +4014,24 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       
       this.isStreaming = false;
       this.showSpinner = false;
+    }
+  }
+
+  /** A snapshot refusal from the session or a chat event, or null for anything without a code and a message. */
+  static readSnapshotRefusal(value: unknown): SnapshotRefusal | null {
+    if (!value || typeof value !== 'object') return null;
+    const v = value as { code?: unknown; message?: unknown; occurredUtc?: unknown };
+    if (typeof v.code !== 'string' || typeof v.message !== 'string' || v.message.length === 0) return null;
+    return { code: v.code, message: v.message, occurredUtc: typeof v.occurredUtc === 'string' ? v.occurredUtc : undefined };
+  }
+
+  /** An event's JSON data, or null when it does not parse. */
+  private static parseEventJson(data: unknown): unknown {
+    if (typeof data !== 'string') return data ?? null;
+    try {
+      return JSON.parse(data);
+    } catch {
+      return null;
     }
   }
 

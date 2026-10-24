@@ -65,6 +65,21 @@ export interface SafetyIdentifierLookup {
   userName: string;
 }
 
+export type SnapshotGuardMode = 'Off' | 'Observe' | 'Enforce';
+
+/** The snapshot guard's mode, who set it and when, and the configured automatic block rule. */
+export interface AdminSnapshotGuard {
+  mode: SnapshotGuardMode;
+  /** Null while the mode is seeded from the configuration. */
+  setAtUtc: string | null;
+  setByUserName: string | null;
+  seeded: boolean;
+  autoBlockEnabled: boolean;
+  autoBlockDistinctDays: number;
+  autoBlockWindowDays: number;
+  notificationEmailConfigured: boolean;
+}
+
 export type AccountDeletionRequestStatus = 'Pending' | 'Completed' | 'Declined';
 
 /** A held account deletion waiting for, or decided by, an administrator. */
@@ -1186,6 +1201,15 @@ export class AdminService {
   /** 404 when no user has the identifier. */
   lookupSafetyIdentifier(identifier: string): Observable<SafetyIdentifierLookup> {
     return this.http.get<SafetyIdentifierLookup>(`/api/admin/security/safety-identifier/${encodeURIComponent(identifier)}`);
+  }
+
+  getSnapshotGuard(): Observable<AdminSnapshotGuard> {
+    return this.http.get<AdminSnapshotGuard>('/api/admin/security/snapshot-guard');
+  }
+
+  /** Appends a setting even when the mode is unchanged; 400 for an unknown mode. */
+  setSnapshotGuardMode(mode: SnapshotGuardMode): Observable<AdminSnapshotGuard> {
+    return this.http.post<AdminSnapshotGuard>('/api/admin/security/snapshot-guard', { mode });
   }
 
   // Account deletion requests

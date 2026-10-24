@@ -303,4 +303,81 @@ public class ConfigHealthServiceTests
             a => a.Id == "gnollhack-makedefs-failed");
         Assert.DoesNotContain(CreateService().GetSystemAlerts(), a => a.Id == "gnollhack-makedefs-failed");
     }
+
+    // -- The snapshot guard ---------------------------------------------------------------------------
+
+    private ConfigHealthService CreateGuardService(string? mode)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { { "SnapshotGuard:Mode", mode } })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(_dbOptions));
+        services.AddSingleton<Microsoft.Extensions.Caching.Memory.IMemoryCache>(new Microsoft.Extensions.Caching.Memory.MemoryCache(
+            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions { SizeLimit = 100 }));
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<Overseer.Services.Security.SnapshotGuardModeService>();
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        return new ConfigHealthService(configuration, scopeFactory);
+    }
+
+    private void AddSecurityEvent(SecurityEventKind kind, string userId, DateTime at, int count = 1)
+    {
+        using var db = new ApplicationDbContext(_dbOptions);
+        db.SecurityEvents.Add(new SecurityEvent { Kind = kind, AspNetUserId = userId, OccurredUtc = at, LastOccurredUtc = at, Count = count, Code = "injection-own" });
+        db.SaveChanges();
+    }
+
+    [Theory]
+    [InlineData("Observe", "snapshot-guard-observe")]
+    [InlineData("Off", "snapshot-guard-off")]
+    public void TheGuardMode_IsAnAlertWhileItIsNotEnforce(string mode, string id)
+    {
+        var alert = Assert.Single(CreateGuardService(mode).GetSystemAlerts(), a => a.Id.StartsWith("snapshot-guard-", StringComparison.Ordinal));
+
+        Assert.Equal(id, alert.Id);
+        Assert.Equal("warning", alert.Type);
+        Assert.Equal("/admin/security", alert.LinkUrl);
+        Assert.Equal("Change", alert.LinkText);
+    }
+
+    [Fact]
+    public void Enforce_RaisesNoModeAlert()
+    {
+        Assert.DoesNotContain(CreateGuardService("Enforce").GetSystemAlerts(), a => a.Id.StartsWith("snapshot-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RefusalsInTheLastSevenDays_AreCounted_WithTheCountInTheId()
+    {
+        AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-1", DateTime.UtcNow.AddDays(-1), count: 2);
+        AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-2", DateTime.UtcNow.AddHours(-1));
+        AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-3", DateTime.UtcNow.AddDays(-8));
+
+        var alert = Assert.Single(CreateGuardService("Enforce").GetSystemAlerts(), a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal));
+
+        Assert.EndsWith(":3", alert.Id);
+        Assert.Equal("warning", alert.Type);
+        Assert.Equal("3 game snapshots were refused for text addressed to the AI in the last 7 days (2 users).", alert.Message);
+        Assert.Equal("Review", alert.LinkText);
+    }
+
+    [Fact]
+    public void AnAutomaticBlock_IsAnErrorAlert_KeyedByTheNewestEvent()
+    {
+        AddSecurityEvent(SecurityEventKind.AutoBlocked, "u-1", DateTime.UtcNow.AddDays(-2));
+        long newest;
+        using (var db = new ApplicationDbContext(_dbOptions))
+        {
+            newest = db.SecurityEvents.Max(e => e.Id);
+        }
+
+        var alerts = CreateGuardService("Enforce").GetSystemAlerts().ToList();
+
+        var alert = Assert.Single(alerts, a => a.Id.StartsWith("snapshot-autoblock:", StringComparison.Ordinal));
+        Assert.Equal($"snapshot-autoblock:{newest}", alert.Id);
+        Assert.Equal("error", alert.Type);
+        Assert.Equal("1 user was suspended from the AI chat automatically for repeated game text addressed to the AI.", alert.Message);
+        Assert.DoesNotContain(alerts, a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal));
+    }
 }

@@ -49,7 +49,7 @@ when it was not.
 | `Overseer/Hubs/ChatHub.cs`, `Overseer/Controllers/ChatController.cs` | Parse a `SessionRef` at the boundary and authorise through one helper | § 3.5 |
 | `GnollHackServer.Data/Privacy/CryptoShred.cs` | Nulling a session's wrapped content key, and a user's API-key material | See below |
 | `GnollHackServer.Data/Privacy/AccountErasure.cs` | The account erasure steps, run by the website's self-service deletion **and** by an administrator's approved deletion in Overseer | The same reason as `CryptoShred`: both web projects need it |
-| `Overseer/Services/Security/`, `GnollHackServer.Data/Security/` | The security event recorder and writer, the Overseer block, provider safety identifiers, account-deletion holds, the game API sign-in throttle | `security-monitoring.md` |
+| `Overseer/Services/Security/`, `GnollHackServer.Data/Security/` | The security event recorder and writer, the Overseer block, provider safety identifiers, account-deletion holds, the game API sign-in throttle; the snapshot guard (`SnapshotGuardScanner`, `SnapshotGuardService`, `SnapshotGuardModeService`), which withholds game text addressed to the AI before it is stored | `security-monitoring.md` § 3a |
 
 **Two outbound flows and two rules added by the security round** (`docs/overseer/security-monitoring.md`):
 
@@ -349,6 +349,10 @@ them less true changes the framework doc and the UI copy with it, in the same co
   wrapper element) and the user (through the `attachment_excerpt` notice) are told.
 - **Prompt injection is bounded, not prevented.** `UntrustedContentWrapper` removes the
   *structural* attack; a persuasive injection inside a correctly wrapped document still works.
+- **The snapshot guard bounds injected game text; it does not prevent it.** Its scanner is heuristic: a
+  paraphrased instruction with no marker word passes, in English or any other language. The model-side
+  defenses GnollBench measures are the second layer. Never describe the guard as blocking prompt
+  injection.
 
 Two directions that look inconsistent and are not: an unrecognised **posture** resolves *down*
 (failing upward would over-promise), while an unparseable **`Persistence`** resolves to `Encrypted`

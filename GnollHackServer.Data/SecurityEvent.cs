@@ -9,7 +9,7 @@ public enum SecurityEventKind : short
     LoginFailed = 1, LoginLockedOut = 2, TwoFactorFailed = 3,
     RateLimitRejected = 10, QuotaRefused = 11, AccessDenied = 12,
     ProviderRefusal = 20, ProviderSafetyBlock = 21, ProviderPolicyRejection = 22,
-    AttachmentRejected = 30, ChatReported = 31,
+    AttachmentRejected = 30, ChatReported = 31, SnapshotRejected = 32, AutoBlocked = 33,
     AdminBlocked = 40, AdminUnblocked = 41,
     AccountHoldPlaced = 42, AccountHoldReleased = 43, AccountDeletionHeld = 44,
     AdminLockedOut = 45, AdminUnlocked = 46, AdminBanned = 47, AdminUnbanned = 48,
