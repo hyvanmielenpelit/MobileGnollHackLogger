@@ -259,6 +259,9 @@ describe('AdminSecurityTabComponent', () => {
   });
 
   describe('events list', () => {
+    // Focus cannot land in a hidden panel, so the Events panel is on screen.
+    beforeEach(() => store.applyLocation('security', 'events'));
+
     it('shows each event as a card with its kind, time, run, user and facts', () => {
       eventsSpy.mockReturnValue(of(page([
         securityEvent(3, {
@@ -508,6 +511,172 @@ describe('AdminSecurityTabComponent', () => {
       expect(textOf(el.querySelector('#sec-lookup-status'))).toBe('No user has this identifier.');
       expect(el.querySelector('#sec-lookup-status')!.getAttribute('role')).toBe('status');
       expect(el.querySelector('.sec-lookup-usage')).toBeNull();
+      expect(el.querySelector('.sec-lookup-events')).toBeNull();
+    });
+
+    it('sits in a search landmark, in a fieldset named by its legend', () => {
+      create();
+
+      const fieldset = el.querySelector('search.sec-lookup fieldset.gh-fieldset')!;
+      expect(fieldset).not.toBeNull();
+      expect(textOf(fieldset.querySelector('legend'))).toBe('Find user by safety identifier');
+      expect(fieldset.getAttribute('aria-describedby')).toBe('sec-lookup-hint');
+      expect(fieldset.querySelector('#sec-safety-id')).not.toBeNull();
+    });
+
+    it('narrows the events list to the user found with Events, and focuses the list heading', async () => {
+      store.applyLocation('security', 'events');
+      vi.spyOn(adminService, 'lookupSafetyIdentifier').mockReturnValue(of({ userId: 'u4', userName: 'Bob' }));
+      create();
+      await fixture.whenStable();
+      lookUp('sid-123');
+      eventsSpy.mockClear();
+
+      const events = el.querySelector<HTMLButtonElement>('.sec-lookup-events')!;
+      expect(events.getAttribute('aria-label')).toBe('Show the security events of Bob');
+      expect(textOf(events)).toBe('Events');
+      events.click();
+      fixture.detectChanges();
+
+      expect(eventsSpy).toHaveBeenCalledTimes(1);
+      expect(lastQuery()).toEqual(expect.objectContaining({ userId: 'u4', skip: 0 }));
+      expect(textOf(el.querySelector('.sec-user-filter'))).toContain('Showing events of Bob');
+      expect(document.activeElement?.id).toBe('sec-events-title');
+    });
+  });
+
+  describe('header and sub-tabs', () => {
+    const tabs = (): HTMLButtonElement[] => Array.from(el.querySelectorAll<HTMLButtonElement>('.sec-subtabs [role="tab"]'));
+    const panel = (id: string): HTMLElement => el.querySelector<HTMLElement>(`#sec-subpanel-${id}`)!;
+    const refreshButton = (): HTMLButtonElement => el.querySelector<HTMLButtonElement>('#sec-refresh-btn')!;
+    const keydown = (target: HTMLElement, key: string) =>
+      target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+
+    it('puts the date range in the header with visually hidden labels, and has no toolbar box', async () => {
+      create();
+      await fixture.whenStable();
+
+      const select = el.querySelector<HTMLSelectElement>('#securityTimeSpanSelect')!;
+      expect(select.closest('.tab-header-row')).not.toBeNull();
+      const label = el.querySelector('label[for="securityTimeSpanSelect"]')!;
+      expect(textOf(label)).toBe('Date range');
+      expect(label.classList).toContain('visually-hidden');
+      expect(select.getAttribute('aria-describedby')).toBe('sec-range-tip');
+      expect(el.querySelector('.sec-toolbar')).toBeNull();
+      expect(el.querySelector('#securityStartDateInput')).toBeNull();
+
+      select.value = 'custom';
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      expect(store.telemetryRange.timeSpan).toBe('custom');
+      expect(textOf(el.querySelector('label[for="securityStartDateInput"]'))).toBe('Start date');
+      expect(textOf(el.querySelector('label[for="securityEndDateInput"]'))).toBe('End date');
+      expect(el.querySelector('#securityStartDateInput')!.closest('.tab-header-row')).not.toBeNull();
+      expect(el.querySelector('#securityEndDateInput')).not.toBeNull();
+    });
+
+    it('lists Summary, Events and Settings in a named tablist with one selected tab', () => {
+      create();
+
+      const tablist = el.querySelector('.sec-subtabs')!;
+      expect(tablist.getAttribute('role')).toBe('tablist');
+      expect(tablist.getAttribute('aria-label')).toBe('Security sections');
+      expect(tablist.closest('.gh-subtab-head')).not.toBeNull();
+      expect(tabs().map(t => textOf(t))).toEqual(['Summary', 'Events', 'Settings']);
+      expect(tabs().map(t => t.getAttribute('aria-controls'))).toEqual(['sec-subpanel-summary', 'sec-subpanel-events', 'sec-subpanel-settings']);
+      expect(tabs().filter(t => t.getAttribute('aria-selected') === 'true').map(t => t.id)).toEqual(['sec-subtab-summary']);
+      expect(tabs().filter(t => t.getAttribute('tabindex') === '0').map(t => t.id)).toEqual(['sec-subtab-summary']);
+    });
+
+    it('shows only the selected panel, and places each section in its panel', () => {
+      create();
+
+      expect(panel('summary').hidden).toBe(false);
+      expect(panel('events').hidden).toBe(true);
+      expect(panel('settings').hidden).toBe(true);
+      expect(el.querySelector('.sec-summary')!.closest('[role="tabpanel"]')!.id).toBe('sec-subpanel-summary');
+      expect(el.querySelector('#sec-lookup-status')!.closest('[role="tabpanel"]')!.id).toBe('sec-subpanel-events');
+      expect(el.querySelector('.sec-cards')!.closest('[role="tabpanel"]')!.id).toBe('sec-subpanel-events');
+      expect(el.querySelector('fieldset.sec-guard')!.closest('[role="tabpanel"]')!.id).toBe('sec-subpanel-settings');
+    });
+
+    it('moves the address to a sub-tab on a click, and the arrow keys, Home and End select and focus', () => {
+      store.applyLocation('security', 'settings');
+      create();
+      const goTo = vi.spyOn(store, 'goTo');
+
+      tabs()[1].click();
+      expect(goTo).toHaveBeenLastCalledWith('security', 'events', 'push');
+      fixture.detectChanges();
+
+      keydown(tabs()[1], 'ArrowRight');
+      expect(goTo).toHaveBeenLastCalledWith('security', 'settings', 'replace');
+      fixture.detectChanges();
+
+      keydown(tabs()[2], 'ArrowRight');
+      expect(goTo).toHaveBeenLastCalledWith('security', 'summary', 'replace');
+      expect(document.activeElement?.id).toBe('sec-subtab-summary');
+      fixture.detectChanges();
+
+      keydown(tabs()[0], 'End');
+      expect(goTo).toHaveBeenLastCalledWith('security', 'settings', 'replace');
+      expect(document.activeElement?.id).toBe('sec-subtab-settings');
+      fixture.detectChanges();
+
+      keydown(tabs()[2], 'Home');
+      expect(goTo).toHaveBeenLastCalledWith('security', 'summary', 'replace');
+      expect(document.activeElement?.id).toBe('sec-subtab-summary');
+    });
+
+    it('has an icon Refresh that is inert while a load runs', () => {
+      const pending = new Subject<SecuritySummary>();
+      const summarySpy = (adminService.getSecuritySummary as Mock).mockReturnValue(pending.asObservable());
+      create();
+
+      const button = refreshButton();
+      expect(button.classList).toContain('action-btn');
+      expect(button.getAttribute('aria-label')).toBe('Refresh security');
+      expect(button.getAttribute('interestfor')).toBe('sec-refresh-tip');
+      expect(textOf(el.querySelector('#sec-refresh-tip'))).toBe('Refresh security');
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+
+      button.click();
+      expect(summarySpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('reloads the summary, the guard and page 1 of the events from Refresh when idle', () => {
+      create();
+      eventsSpy.mockClear();
+
+      expect(refreshButton().getAttribute('aria-disabled')).toBeNull();
+      refreshButton().click();
+
+      expect(adminService.getSecuritySummary).toHaveBeenCalledTimes(2);
+      expect(guardSpy).toHaveBeenCalledTimes(2);
+      expect(eventsSpy).toHaveBeenCalledTimes(1);
+      expect(lastQuery().skip).toBe(0);
+    });
+  });
+
+  describe('markup', () => {
+    it('heads the settings with a fieldset legend, the events with a section title, and the filter bar is a search', () => {
+      create();
+
+      const title = el.querySelector('#sec-guard-title')!;
+      expect(title.tagName).toBe('LEGEND');
+      const guard = title.parentElement!;
+      expect(guard.tagName).toBe('FIELDSET');
+      expect(guard.classList).toContain('gh-fieldset');
+      expect(guard.classList).toContain('sec-guard');
+      expect(guard.getAttribute('aria-describedby')).toBe('sec-guard-hint');
+
+      const eventsTitle = el.querySelector('#sec-events-title')!;
+      expect(eventsTitle.tagName).toBe('H4');
+      expect(eventsTitle.classList).toContain('gh-section-title');
+
+      expect(el.querySelector('.sec-filter-bar')!.tagName).toBe('SEARCH');
+      expect(el.querySelector('.sec-filter-bar')!.classList).toContain('gh-filter-bar');
     });
   });
 
@@ -540,6 +709,7 @@ describe('AdminSecurityTabComponent', () => {
       expect(eventsSpy).toHaveBeenCalledTimes(1);
       expect(lastQuery()).toEqual(expect.objectContaining({ userId: 'u8', skip: 0 }));
       expect(store.pendingSecurityUserId).toBeNull();
+      expect(store.securitySubTab).toBe('events');
       expect(textOf(el.querySelector('.sec-user-filter'))).toContain('Showing events of Eve');
     });
   });

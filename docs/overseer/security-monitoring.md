@@ -229,7 +229,7 @@ every sign-in including the game, and stays an administrator's decision from the
 
 **Reported** by the admin alerts below and, when `SnapshotGuard:NotificationEmail` is set
 (`gnollhack@hyvanmielenpelit.fi`; empty disables it), one e-mail per block: the user name, the time and where
-to review it (Admin → Security); never the text or the codes.
+to review it (Admin → Security → Events, `/admin/security/events`); never the text or the codes.
 
 **What the player and the model are told.** Fixed texts, by code and by what was refused
 (`SnapshotGuardService.UserMessageFor`, `ModelNoticeFor`); the server writes the banner's text, which the
@@ -254,10 +254,11 @@ so every entry point follows a change in the Security tab within that window, wi
 | `POST` | `api/admin/security/snapshot-guard` | `{ mode }`: appends a row even when unchanged and returns the state; 400 for an unknown mode |
 
 **Admin alerts** (`ConfigHealthService`): *warning* `snapshot-guard-observe` while the mode is Observe and
-`snapshot-guard-off` while it is Off, each with *Change* → `/admin/security`; *warning*
+`snapshot-guard-off` while it is Off, each with *Change* → `/admin/security/settings`; *warning*
 `snapshot-refusals:{yyyyMMdd}:{count}` while `SnapshotRejected` events fall in the last 7 days (*"N game
 snapshots were refused for text addressed to the AI in the last 7 days (M users)."*); *error*
-`snapshot-autoblock:{newest event id}` while `AutoBlocked` events do. The changing part of each id makes a
+`snapshot-autoblock:{newest event id}` while `AutoBlocked` events do; these two with *Review* →
+`/admin/security/events`. The changing part of each id makes a
 dismissed alert reappear on new events.
 
 **Settings** (`SnapshotGuard`, read on each call by `SnapshotGuardOptions.Read`, which never throws):
@@ -365,15 +366,25 @@ LockoutEnabled = 0;` that the developer runs after review; no migration does it.
 
 ## 7. The Security tab
 
-Admin → **Security** shows, for the shared date range, summary cards (sign-in failures, lockouts, limit
-refusals, provider refusals and policy hits, rejected attachments, reports, snapshot refusals, blocks
-with an *Automatic* line, deletion holds with
-a link to the Users tab's *Deletion requests*), the *Snapshot guard* section (§ 3a: a *Mode* radio group,
-Off / Observe / Enforce, each with its sentence; a choice applies at once, the group is disabled while it is
-saved and restored on a failure; a status line *Changed 24 Oct 2026 14:02 by …* or *Not set yet: seeded from
-the configuration.*; and the configured block rule in one sentence), an events card list (search by user
-name, a *Kind* facet, server paging) whose cards offer *Block* / *Unblock* and *Usage* (the user's AI usage
-in the AI Telemetry tab), and the safety-identifier lookup. Every count is a word plus a number.
+Admin → **Security** has three sub-tabs, `/admin/security` (*Summary*), `/admin/security/events`
+(*Events*) and `/admin/security/settings` (*Settings*), under a sticky header that holds the date range
+shared with the AI Telemetry tab (an info tip says it applies to *Summary* and *Events*) and an icon
+*Refresh*:
+
+- **Summary**: for the date range, summary cards (sign-in failures, lockouts, limit refusals, provider
+  refusals and policy hits, rejected attachments, reports, snapshot refusals, blocks with an *Automatic*
+  line, deletion holds with a link to the Users tab's *Deletion requests*).
+- **Events**: the *Find user by safety identifier* lookup, whose result offers *Usage* (the user's AI usage
+  in the AI Telemetry tab) and *Events* (narrows the list below to that user), then the events card list
+  (search by user name, a *Kind* facet, server paging) whose cards offer *Block* / *Unblock* and *Usage*.
+  The Users tab's and the deletion requests' *Security events* actions open this sub-tab narrowed to the
+  user.
+- **Settings**: the *Snapshot guard* fieldset (§ 3a: a *Mode* radio group, Off / Observe / Enforce, each
+  with its sentence; a choice applies at once, the group is disabled while it is saved and restored on a
+  failure; a status line *Changed 24 Oct 2026 14:02 by …* or *Not set yet: seeded from the
+  configuration.*; and the configured block rule in one sentence).
+
+Every count is a word plus a number.
 
 | Method | Route | Returns |
 |---|---|---|

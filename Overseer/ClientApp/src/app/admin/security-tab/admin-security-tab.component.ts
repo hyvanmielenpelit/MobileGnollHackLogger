@@ -1,4 +1,14 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, OnDestroy, OnInit, ViewChild, inject } from '@angular/core';
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  ElementRef,
+  OnDestroy,
+  OnInit,
+  ViewChild,
+  inject
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
@@ -16,9 +26,17 @@ import { AdminUsersService } from '../../services/admin-users.service';
 import { CardListChip, CardListSort, CardListState } from '../../shared/data-table/card-list-state';
 import { FilterFacetComponent, FilterFacetOption } from '../../shared/data-table/filter-facet.component';
 import { TableState, anyOfFilter, customFilter } from '../../shared/data-table/table-state';
+import { InfoTipComponent } from '../../shared/info-tip/info-tip.component';
 import { elapsedMsBetween, parseServerUtcDate } from '../../utils/date.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
-import { AdminPageStore, TelemetryTimeSpan } from '../admin-page.store';
+import { rovingTabIndex } from '../../utils/roving-tab.util';
+import {
+  AdminHistoryMode,
+  AdminPageStore,
+  AdminSecuritySubTab,
+  TELEMETRY_TIME_SPAN_LABELS,
+  TelemetryTimeSpan
+} from '../admin-page.store';
 
 /** Where the events list's view settings are kept, per browser. */
 export const SECURITY_EVENTS_VIEW_STORAGE_KEY = 'overseer.admin.security.events.view';
@@ -101,6 +119,13 @@ export const SNAPSHOT_GUARD_MODES: readonly SnapshotGuardModeOption[] = [
   { value: 'Enforce', label: 'Enforce', description: 'Game text addressed to the AI is refused; the player and you are told.' }
 ];
 
+/** The sub-tabs' visible labels, in tab order. */
+export const SECURITY_SUBTAB_LABELS: Readonly<Record<AdminSecuritySubTab, string>> = {
+  summary: 'Summary',
+  events: 'Events',
+  settings: 'Settings'
+};
+
 /** The user the events list is narrowed to. */
 interface SecurityUserFilter {
   id: string;
@@ -108,19 +133,20 @@ interface SecurityUserFilter {
 }
 
 /**
- * The Admin page's Security tab: counts of security events for the page's date range, a
- * server-paged card list of the events with a search and a Kind facet, Block / Unblock and AI usage
- * per user, and a lookup of the user behind a provider safety identifier.
+ * The Admin page's Security tab, in three sub-tabs that share the AI Telemetry date range: Summary
+ * (the counts of security events), Events (a lookup of the user behind a provider safety identifier,
+ * and a server-paged card list of the events with a search, a Kind facet, Block / Unblock and AI
+ * usage per user) and Settings (the snapshot guard).
  */
 @Component({
   selector: 'app-admin-security-tab',
   standalone: true,
-  imports: [FormsModule, FilterFacetComponent],
+  imports: [FormsModule, FilterFacetComponent, InfoTipComponent],
   templateUrl: './admin-security-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
   styleUrl: './admin-security-tab.component.scss'
 })
-export class AdminSecurityTabComponent implements OnInit, OnDestroy {
+export class AdminSecurityTabComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly adminService = inject(AdminService);
   private readonly usersService = inject(AdminUsersService);
   private readonly store = inject(AdminPageStore);
@@ -128,9 +154,14 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
 
   @ViewChild('blockDialog') blockDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('secHead') private secHead?: ElementRef<HTMLElement>;
 
   readonly kindLabel = securityKindLabel;
   readonly reasonMax = SECURITY_BLOCK_REASON_MAX;
+  readonly subTabs: readonly AdminSecuritySubTab[] = ['summary', 'events', 'settings'];
+  readonly subTabLabels = SECURITY_SUBTAB_LABELS;
+  readonly timeSpans = Object.keys(TELEMETRY_TIME_SPAN_LABELS) as TelemetryTimeSpan[];
+  readonly timeSpanLabels = TELEMETRY_TIME_SPAN_LABELS;
 
   todayDate = '';
 
@@ -195,6 +226,7 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
   private returnFocus: HTMLElement | null = null;
   /** The event whose card title takes focus once the list has reloaded after a Block or Unblock. */
   private focusEventId: number | null = null;
+  private headObserver?: ResizeObserver;
 
   private cardsMemo: { summary: SecuritySummary | null; cards: SecuritySummaryCard[] } | null = null;
   private kindOptionsMemo: { summary: SecuritySummary | null; selected: readonly string[]; options: FilterFacetOption[] } | null = null;
@@ -221,6 +253,11 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
     this.store.telemetryRange.end = value;
   }
 
+  /** The selected sub-tab lives in the page store, which follows the address. */
+  get subTab(): AdminSecuritySubTab {
+    return this.store.securitySubTab;
+  }
+
   ngOnInit(): void {
     ensureOverlayPolyfills();
     this.table.setRemoteTotal(0);
@@ -239,7 +276,21 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
     this.reloadEvents();
   }
 
+  /** Focused or scrolled-to elements stop below the sticky head: its height, plus a gap, as `--sec-sticky-clearance`. */
+  ngAfterViewInit(): void {
+    const head = this.secHead?.nativeElement;
+    if (!head || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    this.headObserver = new ResizeObserver(() => {
+      const height = head.getBoundingClientRect().height;
+      this.host.nativeElement.style.setProperty('--sec-sticky-clearance', `${Math.ceil(height) + 8}px`);
+    });
+    this.headObserver.observe(head);
+  }
+
   ngOnDestroy(): void {
+    this.headObserver?.disconnect();
     this.list.dispose();
     this.summarySub?.unsubscribe();
     this.guardSub?.unsubscribe();
@@ -248,6 +299,29 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
     this.securityUserSub?.unsubscribe();
     const dialog = this.blockDialog?.nativeElement;
     if (dialog?.open) dialog.close();
+  }
+
+  // --- Sub-tabs ---
+
+  /** Moves the address to a sub-tab; the selected one is left alone. */
+  selectSubTab(tab: AdminSecuritySubTab, mode: AdminHistoryMode = 'push'): void {
+    if (tab === this.subTab) {
+      return;
+    }
+    this.store.goTo('security', tab, mode);
+    // The tooltips anchored in the panel about to show are repositioned.
+    setTimeout(() => refreshAnchorPositioning());
+  }
+
+  /** Arrow keys, Home and End move between the sub-tabs, select the one reached and focus it. */
+  onSubTabKeydown(event: KeyboardEvent, index: number): void {
+    const next = rovingTabIndex(event, index, this.subTabs.length);
+    if (next === null) {
+      return;
+    }
+    const tab = this.subTabs[next];
+    this.selectSubTab(tab, 'replace');
+    this.element(`#sec-subtab-${tab}`)?.focus();
   }
 
   // --- Date range ---
@@ -293,6 +367,14 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
     this.loadSummary();
     this.loadGuard();
     this.reloadEvents();
+  }
+
+  /** The header's Refresh: inert while a load runs, since the button is only `aria-disabled`. */
+  refreshFromHeader(): void {
+    if (this.summaryLoading || this.eventsLoading) {
+      return;
+    }
+    this.refresh();
   }
 
   // --- Snapshot guard ---
@@ -743,6 +825,15 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       }
     });
+  }
+
+  /** Narrows the events list to the user the lookup found, and focuses the list's heading. */
+  showLookupEvents(): void {
+    const result = this.lookupResult;
+    if (!result) return;
+    this.userFilter = { id: result.userId, name: result.userName };
+    this.reloadEvents();
+    this.element('#sec-events-title')?.focus();
   }
 
   // --- Helpers ---

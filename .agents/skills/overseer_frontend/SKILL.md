@@ -435,7 +435,8 @@ The Angular application's routes are defined in `app.routes.ts`. The primary pag
   Security, GnollBench, Services, Feedback. *Groups* is a sub-tab of Users (*Users · Groups · Deletion
   requests · Admin log*); AI Telemetry's sub-tabs are *Summary · Models · Users · Groups*, one
   component each (`summary/`, `models/`, `users/`, `groups/` under `admin/telemetry-tab/`) under a
-  parent that keeps the header, the fetch and the dialogs; Feedback (`admin/feedback-tab/`, the
+  parent that keeps the header, the fetch and the dialogs; Security's are *Summary · Events · Settings*
+  (`admin/security-tab/`, one component, all three panels rendered with `hidden` on the inactive two); Feedback (`admin/feedback-tab/`, the
   assistant's feedback issues) has no sub-tabs and its own date range; **API Keys** (`app-admin-api-keys`, the per-provider default keys) is a
   dialog of System Configs at `/admin/configs/api-keys`. One route with `matcher: adminUrlMatcher`
   serves all three shapes, so a tab change reuses the page; the slugs, the legacy `?tab=` redirect

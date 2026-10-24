@@ -337,7 +337,7 @@ public class ConfigHealthServiceTests
 
         Assert.Equal(id, alert.Id);
         Assert.Equal("warning", alert.Type);
-        Assert.Equal("/admin/security", alert.LinkUrl);
+        Assert.Equal("/admin/security/settings", alert.LinkUrl);
         Assert.Equal("Change", alert.LinkText);
     }
 
@@ -359,6 +359,7 @@ public class ConfigHealthServiceTests
         Assert.EndsWith(":3", alert.Id);
         Assert.Equal("warning", alert.Type);
         Assert.Equal("3 game snapshots were refused for text addressed to the AI in the last 7 days (2 users).", alert.Message);
+        Assert.Equal("/admin/security/events", alert.LinkUrl);
         Assert.Equal("Review", alert.LinkText);
     }
 
@@ -378,6 +379,7 @@ public class ConfigHealthServiceTests
         Assert.Equal($"snapshot-autoblock:{newest}", alert.Id);
         Assert.Equal("error", alert.Type);
         Assert.Equal("1 user was suspended from the AI chat automatically for repeated game text addressed to the AI.", alert.Message);
+        Assert.Equal("/admin/security/events", alert.LinkUrl);
         Assert.DoesNotContain(alerts, a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal));
     }
 }

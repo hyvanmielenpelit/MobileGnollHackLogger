@@ -154,6 +154,19 @@ describe('admin URL scheme', () => {
         { tab: 'feedback', subTab: 'overseer', canonical: ['/admin', 'feedback'], isCanonical: false });
     });
 
+    it('reads the Security sub-tabs from their paths, Summary by default', () => {
+      expect(ADMIN_SUBTAB_SLUGS.security).toEqual([['summary', ''], ['events', 'events'], ['settings', 'settings']]);
+      expect(defaultAdminSubTab('security')).toBe('summary');
+      expect(adminCommands('security', 'summary')).toEqual(['/admin', 'security']);
+      expect(adminCommands('security', 'events')).toEqual(['/admin', 'security', 'events']);
+      expect(parseAdminPath('security', null)).toEqual(
+        { tab: 'security', subTab: 'summary', canonical: ['/admin', 'security'], isCanonical: true });
+      expect(parseAdminPath('security', 'settings')).toEqual(
+        { tab: 'security', subTab: 'settings', canonical: ['/admin', 'security', 'settings'], isCanonical: true });
+      expect(parseAdminPath('security', 'bogus')).toEqual(
+        { tab: 'security', subTab: 'summary', canonical: ['/admin', 'security'], isCanonical: false });
+    });
+
     it('opens the retired /admin/telemetry/feedback path as the Feedback tab\'s Overseer sub-tab and replaces it', () => {
       expect(RETIRED_ADMIN_SUBTABS.telemetry).toEqual({ feedback: 'feedback' });
       expect(parseAdminPath('telemetry', 'feedback')).toEqual(

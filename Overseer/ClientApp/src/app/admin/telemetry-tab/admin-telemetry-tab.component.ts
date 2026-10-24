@@ -10,7 +10,13 @@ import {
 } from '../../services/admin.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { rovingTabIndex } from '../../utils/roving-tab.util';
-import { AdminHistoryMode, AdminPageStore, AdminTelemetrySubTab, TelemetryTimeSpan } from '../admin-page.store';
+import {
+  AdminHistoryMode,
+  AdminPageStore,
+  AdminTelemetrySubTab,
+  TELEMETRY_TIME_SPAN_LABELS,
+  TelemetryTimeSpan
+} from '../admin-page.store';
 import { TelemetryChartsDialogComponent } from './charts/telemetry-charts-dialog.component';
 import { TelemetryModelUsersDialogComponent } from './model-users/telemetry-model-users-dialog.component';
 import { TelemetryUserModelsDialogComponent } from './user-models/telemetry-user-models-dialog.component';
@@ -32,17 +38,6 @@ export const TELEMETRY_SUBTAB_LABELS: Readonly<Record<AdminTelemetrySubTab, stri
   models: 'Models',
   users: 'Users',
   groups: 'Groups'
-};
-
-/** The Date Range select's options, also the collapsed bar's summary. */
-export const TELEMETRY_TIME_SPAN_LABELS: Readonly<Record<TelemetryTimeSpan, string>> = {
-  '7d': 'Last 7 days',
-  '28d': 'Last 28 days',
-  '30d': 'Last 30 days',
-  '90d': 'Last 90 days',
-  '180d': 'Last 180 days',
-  '1y': 'Last year',
-  'custom': 'Custom date range'
 };
 
 const TIME_SPANS = Object.keys(TELEMETRY_TIME_SPAN_LABELS) as TelemetryTimeSpan[];

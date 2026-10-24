@@ -1796,7 +1796,7 @@ one rule). Keep the scrolling row for long or open-ended sets, where a
 wrapped block of tabs would push the panel down by several lines. Render the row from one `@for` over
 the component's tab array, so the wrapped order is always the array's order.
 
-Every Admin sub-tab row (Users, AI Telemetry, GnollBench, Services, and Feedback's *Overseer* and
+Every Admin sub-tab row (Users, AI Telemetry, Security, GnollBench, Services, and Feedback's *Overseer* and
 *GnollBench*, a `tablist` named *Feedback sources* in the tab's sticky header since 2026-10-23) is
 `gh-tabs gh-tabs-secondary gh-tabs-wrap` inside a `.gh-subtab-head`, text-only. A filter or action
 that scopes a whole tab goes in its header card, never on the sub-tab row. A count on a tab is a small

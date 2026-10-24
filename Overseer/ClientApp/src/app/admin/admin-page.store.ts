@@ -34,6 +34,9 @@ export type AdminDevtoolsSubTab = 'source' | 'gnollhack-wiki' | 'nethack-wiki' |
 /** The AI Telemetry tab's sub-tabs. */
 export type AdminTelemetrySubTab = 'summary' | 'models' | 'users' | 'groups';
 
+/** The Security tab's sub-tabs. */
+export type AdminSecuritySubTab = 'summary' | 'events' | 'settings';
+
 /** How a store navigation treats the browser history: a new entry, or the current one replaced. */
 export type AdminHistoryMode = 'push' | 'replace';
 
@@ -56,6 +59,17 @@ export interface AdminBulkWizardRequest {
 }
 
 export type TelemetryTimeSpan = '7d' | '28d' | '30d' | '90d' | '180d' | '1y' | 'custom';
+
+/** The Date Range select's options, also the collapsed bar's summary. */
+export const TELEMETRY_TIME_SPAN_LABELS: Readonly<Record<TelemetryTimeSpan, string>> = {
+  '7d': 'Last 7 days',
+  '28d': 'Last 28 days',
+  '30d': 'Last 30 days',
+  '90d': 'Last 90 days',
+  '180d': 'Last 180 days',
+  '1y': 'Last year',
+  'custom': 'Custom date range'
+};
 
 /** The AI Telemetry date range, kept while the tab is closed. Empty dates mean no range yet. */
 export interface AdminTelemetryRange {
@@ -133,6 +147,9 @@ export class AdminPageStore {
 
   /** The AI Telemetry tab's selected sub-tab, kept while the tab is closed. */
   telemetrySubTab: AdminTelemetrySubTab = 'summary';
+
+  /** The Security tab's selected sub-tab, kept while the tab is closed. */
+  securitySubTab: AdminSecuritySubTab = 'summary';
 
   /** The Services tab's selected sub-tab, kept while the tab is closed. */
   devtoolsSubTab: AdminDevtoolsSubTab = 'source';
@@ -262,6 +279,8 @@ export class AdminPageStore {
       this.usersSubTab = known as AdminUsersSubTab;
     } else if (tab === 'telemetry') {
       this.telemetrySubTab = known as AdminTelemetrySubTab;
+    } else if (tab === 'security') {
+      this.securitySubTab = known as AdminSecuritySubTab;
     } else if (tab === 'devtools') {
       this.devtoolsSubTab = known as AdminDevtoolsSubTab;
     } else if (tab === 'benchmark') {
@@ -281,6 +300,7 @@ export class AdminPageStore {
     switch (tab) {
       case 'users': return this.usersSubTab;
       case 'telemetry': return this.telemetrySubTab;
+      case 'security': return this.securitySubTab;
       case 'devtools': return this.devtoolsSubTab;
       case 'benchmark': return this.benchmarkSubTab;
       case 'feedback': return this.feedbackSubTab;
@@ -303,12 +323,12 @@ export class AdminPageStore {
     this.goTo('telemetry', 'users');
   }
 
-  /** Asks the Security tab to show one user's events, and selects it. */
+  /** Asks the Security tab to show one user's events, and selects its Events sub-tab. */
   requestSecurityUser(userId: string, userName: string): void {
     this.pendingSecurityUserId = userId;
     this.pendingSecurityUserName = userName;
     this.securityUserRequested$.next();
-    this.requestTab('security');
+    this.goTo('security', 'events');
   }
 
   /** Asks the Users tab to open its AI configuration access dialog for one user, and selects it. */

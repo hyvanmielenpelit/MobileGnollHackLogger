@@ -243,7 +243,7 @@ public sealed class SnapshotGuardServiceTests : IDisposable
         var (to, subject, body) = Assert.Single(_email.Sent);
         Assert.Equal("ops@example.test", to);
         Assert.Contains(UserName, body, StringComparison.Ordinal);
-        Assert.Contains("/admin/security", body, StringComparison.Ordinal);
+        Assert.Contains("/admin/security/events", body, StringComparison.Ordinal);
         Assert.DoesNotContain("ASSISTANT", body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("report_feedback", body, StringComparison.Ordinal);
         Assert.DoesNotContain("address,", body, StringComparison.Ordinal);

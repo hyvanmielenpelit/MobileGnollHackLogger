@@ -515,7 +515,7 @@ public class ConfigHealthService
                     Id = "snapshot-guard-observe",
                     Type = "warning",
                     Message = "The snapshot guard is observing only: game text addressed to the AI is recorded but still delivered to the model.",
-                    LinkUrl = "/admin/security",
+                    LinkUrl = "/admin/security/settings",
                     LinkText = "Change"
                 });
             }
@@ -526,7 +526,7 @@ public class ConfigHealthService
                     Id = "snapshot-guard-off",
                     Type = "warning",
                     Message = "The snapshot guard is off: game text addressed to the AI is delivered to the model unchecked.",
-                    LinkUrl = "/admin/security",
+                    LinkUrl = "/admin/security/settings",
                     LinkText = "Change"
                 });
             }
@@ -559,7 +559,7 @@ public class ConfigHealthService
                     Id = $"snapshot-refusals:{now.ToString("yyyyMMdd", invariant)}:{count.ToString(invariant)}",
                     Type = "warning",
                     Message = $"{(count == 1 ? "1 game snapshot was" : $"{count} game snapshots were")} refused for text addressed to the AI in the last 7 days ({(users == 1 ? "1 user" : $"{users} users")}).",
-                    LinkUrl = "/admin/security",
+                    LinkUrl = "/admin/security/events",
                     LinkText = "Review"
                 });
             }
@@ -576,7 +576,7 @@ public class ConfigHealthService
                     Id = $"snapshot-autoblock:{blocks.Max(b => b.Id).ToString(invariant)}",
                     Type = "error",
                     Message = $"{(users == 1 ? "1 user was" : $"{users} users were")} suspended from the AI chat automatically for repeated game text addressed to the AI.",
-                    LinkUrl = "/admin/security",
+                    LinkUrl = "/admin/security/events",
                     LinkText = "Review"
                 });
             }

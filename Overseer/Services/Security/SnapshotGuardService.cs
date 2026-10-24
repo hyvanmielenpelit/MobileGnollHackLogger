@@ -307,7 +307,7 @@ public sealed class SnapshotGuardService
         string at = occurredUtc.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture);
         return ("Overseer: a user was suspended from the AI chat automatically",
             $"<p>The Overseer user <strong>{name}</strong> was blocked automatically from the AI chat at {at} after repeated game snapshots addressed to the AI.</p>"
-            + "<p>Review the events and lift the suspension if it is a mistake in Overseer, Admin &gt; Security (/admin/security).</p>");
+            + "<p>Review the events and lift the suspension if it is a mistake in Overseer, Admin &gt; Security &gt; Events (/admin/security/events).</p>");
     }
 
     // --- Codes and texts ---
