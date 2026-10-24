@@ -700,10 +700,10 @@ public sealed class BenchmarkExperimentalChangesTests : IDisposable
         var catalog = ResolutionCatalog();
 
         Assert.Equal(
-            "Add wiki has no effect under Source code only: wiki_search is not offered there. Untick it, or choose another Tool Access.",
+            "Add wiki has no effect under Source code only: wiki_search is not offered there. Uncheck it, or choose another Tool Access.",
             catalog.Resolve("add-wiki-v1").ConditionRefusal(BenchmarkInformationCondition.SourceOnly));
         Assert.Equal(
-            "Add wiki has no effect under Closed book: no tools are offered there. Untick it, or choose another Tool Access.",
+            "Add wiki has no effect under Closed book: no tools are offered there. Uncheck it, or choose another Tool Access.",
             catalog.Resolve("add-wiki-v1+steps-v1").ConditionRefusal(BenchmarkInformationCondition.ClosedBook));
         Assert.Null(catalog.Resolve("steps-v1").ConditionRefusal(BenchmarkInformationCondition.ClosedBook));
         Assert.Null(catalog.Resolve("add-wiki-v1").ConditionRefusal(BenchmarkInformationCondition.Production));

@@ -637,8 +637,8 @@ public class BenchmarkRunLauncherTests
         { null, "asker-profile-v1/minus/guide.wiki_search", "'asker-profile-v1/minus/guide.wiki_search' is not a list of experimental change ids joined by '+'." },
         { null, "probe-steps-v1+probe-steps-v1", "Probe steps is selected more than once." },
         { null, "probe-wiki-v1+probe-wiki-replace-v1", "Probe wiki replacement and Probe wiki both change the wiki_search description, and one of them replaces it." },
-        { "closedBook", "probe-wiki-v1+probe-steps-v1", "Probe wiki has no effect under Closed book: no tools are offered there. Untick it, or choose another Tool Access." },
-        { "sourceOnly", "probe-wiki-v1", "Probe wiki has no effect under Source code only: wiki_search is not offered there. Untick it, or choose another Tool Access." }
+        { "closedBook", "probe-wiki-v1+probe-steps-v1", "Probe wiki has no effect under Closed book: no tools are offered there. Uncheck it, or choose another Tool Access." },
+        { "sourceOnly", "probe-wiki-v1", "Probe wiki has no effect under Source code only: wiki_search is not offered there. Uncheck it, or choose another Tool Access." }
     };
 
     [Theory]

@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
@@ -22,6 +23,7 @@ import {
   BenchmarkExperimentalChangeRunsDto,
   BenchmarkInformationCondition
 } from '../../../../services/admin-benchmark.service';
+import { InfoTipComponent } from '../../../../shared/info-tip/info-tip.component';
 import { TextDiffComponent } from '../../../../shared/text-diff/text-diff.component';
 import { DiffResult, diffLines } from '../../../../utils/text-diff.util';
 import { downloadBlobFile } from '../../../../utils/download.util';
@@ -242,7 +244,7 @@ function cardOrder(a: ChangeCardView, b: ChangeCardView): number {
 @Component({
   selector: 'app-experimental-changes-dialog',
   standalone: true,
-  imports: [TextDiffComponent],
+  imports: [InfoTipComponent, NgTemplateOutlet, TextDiffComponent],
   templateUrl: './experimental-changes-dialog.component.html',
   styleUrls: ['./experimental-changes-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -714,7 +716,7 @@ export class ExperimentalChangesDialogComponent implements OnInit, OnDestroy {
     const selected = this.selectedChanges;
     for (const change of selected) {
       if (applicabilityOf(change, this.informationCondition) === 'none') {
-        return `${change.title} has no effect under ${this.conditionText}. Untick it, or choose another Tool Access.`;
+        return `${change.title} has no effect under ${this.conditionText}. Uncheck it, or choose another Tool Access.`;
       }
     }
     for (let i = 0; i < selected.length; i++) {

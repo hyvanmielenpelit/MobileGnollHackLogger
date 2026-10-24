@@ -519,7 +519,7 @@ public sealed class BenchmarkExperimentalChangeSelection
                 ? "no tools are offered there"
                 : $"{BenchmarkExperimentalChangeCatalog.JoinWords(change.NotApplyingUnderSourceOnly)} "
                     + (change.NotApplyingUnderSourceOnly.Count == 1 ? "is" : "are") + " not offered there";
-            return $"{change.Title} has no effect under {condition.ShortName()}: {reason}. Untick it, or choose another Tool Access.";
+            return $"{change.Title} has no effect under {condition.ShortName()}: {reason}. Uncheck it, or choose another Tool Access.";
         }
         return null;
     }

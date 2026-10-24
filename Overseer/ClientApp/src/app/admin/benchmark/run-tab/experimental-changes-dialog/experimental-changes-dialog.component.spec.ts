@@ -151,6 +151,79 @@ describe('ExperimentalChangesDialogComponent', () => {
     expect(q('#xcTogether')).toBeNull();
   });
 
+  it('should list the changes as article cards, each labelled by its heading, with its actions group and meta line', () => {
+    open(null);
+
+    const list = q('ul.xc-list')!;
+    expect(list.getAttribute('role')).toBe('list');
+    expect(list.getAttribute('aria-labelledby')).toBe('xcChangesTitle');
+    expect(clean(q('#xcChangesTitle'))).toBe('Changes to test');
+
+    const race = card('race-role-tool-v1');
+    expect(race.tagName).toBe('ARTICLE');
+    expect(race.parentElement!.tagName).toBe('LI');
+    expect(race.parentElement!.parentElement).toBe(list);
+    const title = race.querySelector('.xc-card-title')!;
+    expect(race.getAttribute('aria-labelledby')).toBe(title.id);
+    expect(title.closest('h5')).not.toBeNull();
+    const group = race.querySelector('.xc-more-btn')!.closest('[role="group"]')!;
+    expect(group.getAttribute('aria-label')).toBe('Actions for Race and role lookup tool');
+
+    const meta = race.querySelector('.xc-meta')!;
+    expect(Array.from(meta.querySelectorAll('.xc-kind')).map(clean)).toEqual(['New tool']);
+    expect(clean(meta.querySelector('.xc-used'))).toBe('Used in 3 runs');
+  });
+
+  it('should show Testing fairly in This run under Compare it with, and the Model Comparison rule in the callout', () => {
+    open(null);
+
+    const tips = q('#xcTips')!;
+    const compare = q('#xcCompare')!;
+    expect(q('#xcThisRun')!.contains(tips)).toBe(true);
+    expect(compare.compareDocumentPosition(tips) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tips.querySelectorAll('ol > li').length).toBe(4);
+
+    const rule = 'Never compare these runs with production runs in Model Comparison.';
+    expect(clean(compare)).toContain(rule);
+    expect(clean(tips)).not.toContain(rule);
+
+    click(check('race-role-tool-v1'));
+    click(check('stats-referenced-by-v1'));
+    expect(clean(q('#xcCompare'))).toContain(rule);
+  });
+
+  it('should put the secondary information behind info buttons, Technical details in a dialog', () => {
+    setCatalog(buildCatalog(undefined, {
+      recentSelections: [
+        { spec: 'race-role-tool-v1', changeIds: ['race-role-tool-v1'], runCount: 2, lastRunId: 415, lastStartedAtUtc: '2026-10-23T10:00:00Z' }
+      ]
+    }));
+    open(null);
+
+    const names = Array.from(dialog().querySelectorAll('.gh-info-btn')).map(b => b.getAttribute('aria-label'));
+    expect(names).toEqual(expect.arrayContaining([
+      'About Used before', 'About Technical details', 'About Tool Access', 'About Testing fairly'
+    ]));
+    expect(q('details#xcTechnical')).toBeNull();
+    expect(q('#xcTechnical')!.closest('dialog.gh-info-dialog')).not.toBeNull();
+    // The Tool Access (i) sits beside the read-out, not in it.
+    expect(q('#xcAccess')!.querySelector('.gh-info-btn')).toBeNull();
+    expect(clean(q('#xcTipsSource'))).toContain('docs/overseer/ai-benchmark-conditions-and-variants.md');
+  });
+
+  it('should mark a checked card and the This run count, and clear both when it is unchecked', () => {
+    open(null);
+    expect(q('#xcThisRunCount')!.classList).not.toContain('has-selection');
+
+    click(check('race-role-tool-v1'));
+    expect(card('race-role-tool-v1').classList).toContain('is-checked');
+    expect(q('#xcThisRunCount')!.classList).toContain('has-selection');
+
+    click(check('race-role-tool-v1'));
+    expect(card('race-role-tool-v1').classList).not.toContain('is-checked');
+    expect(q('#xcThisRunCount')!.classList).not.toContain('has-selection');
+  });
+
   it('should disable a change that conflicts with a ticked one, with the reason linked to its checkbox', () => {
     open(null);
     click(check('cite-page-first-v1'));
@@ -304,7 +377,7 @@ describe('ExperimentalChangesDialogComponent', () => {
     open(null);
     const tips = q<HTMLDetailsElement>('#xcTips')!;
     expect(tips.open).toBe(true);
-    expect(clean(tips)).toContain('Confirm a winner on a second suite:');
+    expect(clean(tips)).toContain('Confirm a winner on a second suite.');
 
     tips.open = false;
     tips.dispatchEvent(new Event('toggle'));
@@ -355,7 +428,10 @@ describe('ExperimentalChangesDialogComponent', () => {
     expect(actions('asker-character-procedure-v1')).toEqual(['Copy as new version…', 'Download as folder']);
     expect(actions('cite-page-first-v1')).toEqual(['Edit…', 'Copy as new version…', 'Download as folder', 'Retire', 'Delete…']);
     expect(actions('cite-page-first-v2')).toEqual(['Edit…', 'Copy as new version…', 'Download as folder', 'Retire']);
-    expect(clean(card('cite-page-first-v2').querySelector('.xc-source'))).toContain('Locked — used by a run');
+    expect(clean(card('cite-page-first-v2').querySelector('.xc-locked'))).toBe('Locked');
+    expect(Array.from(card('cite-page-first-v2').querySelectorAll('.gh-info-btn')).map(b => b.getAttribute('aria-label')))
+      .toContain('About Locked: Cite the page first, v2');
+    expect(card('cite-page-first-v1').querySelector('.xc-locked')).toBeNull();
 
     const trigger = card('cite-page-first-v1').querySelector<HTMLElement>('.xc-more-btn')!;
     expect(trigger.getAttribute('aria-label')).toBe('More actions for Cite the page first');

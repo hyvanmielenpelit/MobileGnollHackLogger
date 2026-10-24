@@ -602,7 +602,7 @@ This applies alike to a built-in change and to a change written in Overseer.
   under Source code only a description edit of a tool in
   `BenchmarkInformationConditions.SourceOnlyExcludedTools` does not. A selection with a change that is
   `none` under the chosen Tool Access is refused (*"Search with the player's race and role has no effect
-  under Source code only: wiki_search is not offered there. Untick it, or choose another Tool Access."*),
+  under Source code only: wiki_search is not offered there. Uncheck it, or choose another Tool Access."*),
   because the stamp would claim a change the model never saw. `partial` is allowed, with a note.
 
 **An addition follows production.** It is appended to the live description, so a change to a production
@@ -792,51 +792,66 @@ catalog.
 ### 6.15 The dialogs
 
 **The picker** (`run-tab/experimental-changes-dialog/`, `app-experimental-changes-dialog`) is a native
-`<dialog>` opened with `showModal()`, `min(76rem, 100vw - 2rem)` wide and at most `90dvh` tall. Escape
-cancels; there is no light dismiss. Under the title *Experimental Changes* the subtitle reads *"Tick the
-test-only changes this run should try. The live chat never uses them."*
+`<dialog>` opened with `showModal()`, `min(76rem, 100vw - 2rem)` wide and a fixed `90dvh` tall, so it
+does not grow or shrink as cards are checked and disclosures opened. Escape cancels; there is no light
+dismiss. Under the title *Experimental Changes* the subtitle reads *"Select the test-only changes this run
+should try. The live chat never uses them."* From a dialog body width of 52 rem the list and **This run**
+sit side by side as two panes that scroll independently; below it they form one column, **This run** after
+the list, with one scroll. Headings inside the dialog use the header font (Cinzel); body text stays Lato.
 
 - **Used before** (only when there are any): up to six buttons, one per distinct change set of recent
   runs whose changes are all selectable (`recentSelections`), labeled by the titles joined by ` + `
   (*All four* when the set is every selectable built-in change) and the run count, and `aria-pressed`
-  when equal to the current selection. One click sets the selection.
-- **Changes to test**: a fieldset with **New change**, which opens the editor, **Clear all** while
-  anything is ticked, and a filter field when more than eight changes are selectable. Built-in changes
-  come first, then the ones written in Overseer, each by title, and invalid changes last, disabled with
-  their reason. Each card has:
-  - a checkbox labeled by the **title**, and kind tags derived from the contents — *New tool*, *Tool
-    output*, *Tool description*, *Instructions*;
-  - for a change written in Overseer, *Written in Overseer · edited 24 Oct 2026* and, when locked,
-    *Locked — used by a run*;
-  - the summary and *Should improve: …*;
+  when equal to the current selection. One click sets the selection. An (i) beside the label says what
+  the buttons are.
+- **Changes to test**: a section whose heading row — the title, the number of listed changes, **New
+  change**, which opens the editor, and **Clear all** while anything is selected — stays at the top of the
+  list pane as the cards scroll beneath it, with a filter field under it when more than eight changes are
+  selectable. Built-in changes come first, then the ones written in Overseer, each by title, and invalid
+  changes last, disabled with their reason. Each card has:
+  - a checkbox labeled by the **title**, set in the header font, and **More actions** at the top right;
+  - a meta line under the title: the kind tags as outlined pills derived from the contents — *New tool*,
+    *Tool output*, *Tool description*, *Instructions*; for a change written in Overseer, *Written in
+    Overseer · edited 24 Oct 2026*; *Used in N runs* or *Not used by a run yet*; and, when locked, a
+    **Locked** badge whose (i) explains that a run used this version and **Copy as new version…** makes an
+    editable copy;
+  - the summary and *Should improve: …* as a gold-ruled highlighted line;
   - a line saying what does not reach the model under the current Tool Access, or why the checkbox is
-    disabled (the change has no effect there, conflicts with a ticked change, or is invalid), linked to
-    the checkbox by `aria-describedby`;
-  - **Show exactly what the AI gets**, one labeled block per effect: *New tool* with its description and
-    parameter table; *Tool output* with the switch in plain words; an addition with the added text and a
-    nested **Show the whole description**; a replacement with `app-text-diff` against the live
-    description, *Side by side* or *Diff*; instructions with their text; and beside it *Used in N runs*;
-  - a **More actions** popover with, as they apply: *Edit…* (written in Overseer), *Copy as new
+    disabled (the change has no effect there, conflicts with a selected change, or is invalid), linked to
+    the checkbox by `aria-describedby`; when it blocks, it is amber with a warning icon;
+  - **Show exactly what the AI gets** as the card's footer under a hairline, one labeled block per effect:
+    *New tool* with its description and parameter table; *Tool output* with the switch in plain words; an
+    addition with the added text and a nested **Show the whole description**; a replacement with
+    `app-text-diff` against the live description, *Side by side* or *Diff*; instructions with their text;
+  - the **More actions** popover with, as they apply: *Edit…* (written in Overseer), *Copy as new
     version…* (valid, no tool or switch), *Download as folder* (any change), *Retire* (written in
     Overseer) and *Delete…* (written in Overseer and unlocked), which asks in an inline row on the card,
     *Delete "<title>"?* with **Delete** and **Keep**. An action that does not apply is absent.
+
+  A checked card has a gold border, a gold bar on its left and a gold title; while its checkbox has
+  keyboard focus, the whole card is outlined.
 - **Show retired (N)**: the retired changes, with **Restore** for one written in Overseer and *Retired in
-  the repository* for a built-in one. They cannot be ticked.
-- **Testing fairly (4 tips)**, open on first use and then remembered in
-  `overseer.benchmark.experimentalChangesDialog.view`: *Compare in pairs*, *Source code only first, then
-  Production*, *Declare the criteria first, cost included*, *Confirm a winner on a second suite*; then
-  never to compare these runs with production runs in Model Comparison, and this document's path.
-- **This run**, an aside that stays at the top of its column on wide screens and follows the list below a
-  container width of 52 rem: the count and the ticked titles, or *"No changes — this run uses exactly
-  what the live chat uses."*; **Compare it with** — *This is a normal run.* with none ticked, else *A run
-  identical except for Experimental Changes: None.* and *Runs with exactly this selection: #415, #420* as
-  links that open the reports; the mention, multi-change and Tool Access warnings; *Tool Access: <name> —
-  everything applies* when it does; and **Technical details**: the spec, the stamp, and each change's id,
-  source, hash prefix and folder or *database*.
+  the repository* for a built-in one. They cannot be selected.
+- **This run**, the second pane: its heading carries the **Technical details** (i), which opens a dialog
+  with the spec, the stamp, and each change's id, source, hash prefix and folder or *database*. Then, in
+  order:
+  - the count, large and gold, with the selected titles, or *"No changes — this run uses exactly what the
+    live chat uses."*;
+  - the mention, multi-change and Tool Access warnings;
+  - **Compare it with** — *This is a normal run.* with none selected, else *A run identical except for
+    Experimental Changes: None.* and *Runs with exactly this selection: #415, #420* as links that open the
+    reports — always ending in the rule *Never compare these runs with production runs in Model
+    Comparison.*;
+  - *Tool Access: <name> — everything applies.* when it does, as a fact row with a check. Tool Access has an
+    (i) in both states that says it decides which tools the AI gets and is chosen in the launcher;
+  - **Testing fairly (4 tips)**, open on first use and then remembered in
+    `overseer.benchmark.experimentalChangesDialog.view`, a numbered guide: *Compare in pairs*, *Source code
+    only first, then Production*, *Declare the criteria first, cost included*, *Confirm a winner on a
+    second suite*. This document's path is behind the (i) of its intro.
 - **The footer**: a polite status (*2 changes selected*, *No changes — same as the live chat*),
   **Cancel** and **Use this**. **Use this** is `aria-disabled` with its reason in a footer note while the
-  catalog is loading or could not be loaded, while the stamp would be too long, and while a ticked change
-  has no effect under the Tool Access or conflicts with another ticked one.
+  catalog is loading or could not be loaded, while the stamp would be too long, and while a selected
+  change has no effect under the Tool Access or conflicts with another selected one.
 
 **The editor** (`run-tab/experimental-change-editor-dialog/`, `app-experimental-change-editor-dialog`) is
 a sibling `<dialog>` of the picker in the run tab, never its child: its `close` and `cancel` events stop

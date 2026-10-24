@@ -2945,31 +2945,55 @@ and the AI Telemetry *Manage limits*, *… for group {group}* from the Groups su
 commits on a footer button**, with a sibling editor dialog:
 
 - **The frame**: `.gh-dialog`, `showModal()`, the `_benchmark-dialog-frame.scss` `frame` mixin at
-  76 rem and `90dvh`, `inline-size: min(76rem, calc(100vw - 2rem))`; Escape cancels and there is **no
-  light dismiss**, because ticks are work in progress. The body is an inline-size container: two columns,
-  the list and an `aside` *This run* (sticky at the top of its column), and one column below 52 rem, the
-  aside after the list.
-- **The checklist** is a `<fieldset>` with a `<legend>` (*Changes to test*), **New change** (`.btn-ghost`,
-  *plus*, `aria-haspopup="dialog"`) and **Clear all** (`.btn-link`, while anything is ticked); a
-  `<search>` filter only above eight selectable changes. No facets, Sort by or Load more: an
-  installation has a handful of changes.
-- **The card** `div.xc-card[data-change-id]`: a native checkbox (`accent-color`, `:focus-visible`
-  outline) wrapped in a `<label>` with the card's **title**, a hit target at least 44 px tall; the kind tags as `.gh-tag` words,
-  never colors; the summary at `max-inline-size: 70ch`; and a reason line linked to the checkbox by
-  `aria-describedby`. A checkbox the selection cannot take (the change has no effect under the Tool
-  Access, conflicts with a ticked change, or is invalid) is `disabled`, and the line says why — the card
-  keeps its title and its **Show exactly what the AI gets** disclosure, which never has a heading inside
-  `<summary>`; a scrollable `<pre>` in it gets `tabindex="0"`. A ticked card gets the gold border and
-  tint (`.is-checked`).
+  76 rem, `inline-size: min(76rem, calc(100vw - 2rem))` and a **fixed** `block-size: 90dvh`, so the dialog
+  never grows or shrinks as cards are checked; Escape cancels and there is **no light dismiss**, because
+  the selection is work in progress. The body is an inline-size container that does not scroll itself
+  (`overflow: hidden`, a flex column): from 52 rem two panes, the list and an `aside` *This run*, each
+  `overflow-y: auto` with `overscroll-behavior: contain` and `scrollbar-gutter: stable`, scroll
+  independently, with `min-block-size: 0` at every level of the flex chain; below 52 rem one column whose
+  wrapper is the single scroller, the aside after the list. The list's heading row is `position: sticky`
+  at the top of its pane, on the dialog's opaque background. Every heading in the dialog is Cinzel; body
+  text stays Lato.
+- **The checklist** is a `<section>` headed by an `h4.gh-section-title` (*Changes to test*) in a heading
+  row with an `aria-hidden` count pill, **New change** (`.btn-ghost`, *plus*, `aria-haspopup="dialog"`) and
+  **Clear all** (`.btn-link`, while anything is selected); a `<search>` filter only above eight selectable
+  changes; then a `ul role="list"` labelled by the heading, one `li` per card. No facets, Sort by or Load
+  more: an installation has a handful of changes.
+- **The card** `article.xc-card[data-change-id]` in its `li`, `aria-labelledby` its title: a grid whose
+  `h5` heading (a subgrid) holds a native checkbox (`accent-color`, `:focus-visible` outline) wrapped in
+  a `<label>` with the card's **title** in Cinzel, a hit target at least 44 px tall; the actions top right
+  in a `role="group"` named *Actions for <title>*; under the title a meta line of the kind tags as
+  outlined `.gh-tag` pills (words, never colors), the source line, *Used in N runs* and, for a locked
+  change, a **Locked** badge (icon and word) with a hover `app-info-tip`, separated by an `aria-hidden`
+  middle dot and a visually hidden comma; the summary at `max-inline-size: 70ch`; *Should improve* as a
+  gold-ruled callout under a Cinzel eyebrow; and a reason line linked to the checkbox by
+  `aria-describedby`, amber with a warning triangle when it blocks. A checkbox the selection cannot take
+  (the change has no effect under the Tool Access, conflicts with a selected change, or is invalid) is
+  `disabled`, and the line says why — the card keeps its title and its **Show exactly what the AI gets**
+  disclosure, the card's footer under a hairline (no box), which never has a heading inside `<summary>`;
+  a scrollable `<pre>` in it gets `tabindex="0"`. A selected card gets the gold border, the tint and an
+  inset gold bar (`box-shadow: inset 3px 0 0`) beside the checked box (`.is-checked`); while its checkbox
+  has keyboard focus the whole card is outlined (`:has(.xc-check:focus-visible)`). Hover and selection
+  transitions run only under `prefers-reduced-motion: no-preference`.
 - **More actions** is a §4f action popover (icon-only, *more*, *More actions for <title>*): *Edit…*,
   *Copy as new version…*, *Download as folder*, *Retire*, *Delete…*, each present only when it applies —
   a missing action is absent, not disabled. *Delete…* confirms in an inline row on the card (*Delete
   "<title>"?* with `.btn-ghost-danger` **Delete** and **Keep**), not in another dialog.
 - **Used before** is a `role="group"` of `.btn-ghost` buttons with `aria-pressed`, one click setting the
-  whole selection; **Show retired (N)** and **Testing fairly** are `.gh-disclosure`s, the latter's open
-  state remembered in `localStorage` (`overseer.benchmark.experimentalChangesDialog.view`, in try/catch).
-- **Warnings** in the aside are amber callouts with an icon **and** words; the mention warning carries
-  its own **Add <title>** `.btn-ghost`.
+  whole selection, with a hover (i) beside its label kept outside the group; **Show retired (N)**, last in
+  the list pane, and **Testing fairly**, in the aside directly under *Compare it with*, are
+  `.gh-disclosure`s, the latter's open state remembered in `localStorage`
+  (`overseer.benchmark.experimentalChangesDialog.view`, in try/catch) and its tips an `ol` with Cinzel
+  numerals in gold circles drawn by a CSS counter. *Technical details* (spec, stamp, ids, hashes, folders)
+  is a dialog-mode `app-info-tip` beside the *This run* heading, so its text stays in the DOM under the
+  same id; secondary hints (the document path, where Tool Access is changed, what Locked means) are
+  (i) buttons too, while every line that changes the decision stays visible.
+- **Warnings** in the aside are amber callouts with an icon **and** words, placed above *Compare it
+  with*; the mention warning carries its own **Add <title>** `.btn-ghost`. The one hard rule, *Never
+  compare these runs with production runs in Model Comparison*, is the last line of the *Compare it with*
+  callout, always visible. The Tool Access read-out is a warning among them while a selected change does
+  not fully apply and a fact row under *Compare it with* otherwise; its click (i) sits in a wrapping row
+  outside `#xcAccess`, so the element's text stays the read-out alone.
 - **The footer**: a polite live status (*2 changes selected*), **Cancel** (`btn-gh btn-gh-cancel`) and
   **Use this** (`btn-gh`), `aria-disabled` with its reason in a `.gh-footer-note` while the server would
   refuse the selection or the catalog is not loaded.
