@@ -96,7 +96,7 @@ public sealed class NetHackWikiServiceStatusTests : IDisposable
             new[] { "article:3", "variant:2", "source:1" },
             status.Namespaces.Select(n => n.Namespace + ":" + n.Articles).ToArray());
         Assert.Equal(6, status.Index!.FileCount);
-        Assert.Single(service.GetRelevantContext("variant page", "variant", 5).Where(r => r.Contains("--- Foo ---")));
+        Assert.Single(service.GetRelevantContext("variant page", "variant", 5), r => r.Contains("--- Foo ---"));
     }
 
     // -- reindex -------------------------------------------------------------------------------------

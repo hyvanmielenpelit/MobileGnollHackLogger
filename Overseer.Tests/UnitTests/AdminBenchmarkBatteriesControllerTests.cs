@@ -1785,7 +1785,7 @@ public class AdminBenchmarkBatteriesControllerTests
         var batch = await SeedModelBatchAsync(f.Db, BenchmarkRunSeriesStatus.Running, seriesId: series.Id);
 
         var controller = CreateBenchmarkController(f.Db, new BenchmarkRunManager());
-        var conflict = Assert.IsType<ConflictObjectResult>(await controller.ResumeRunSeries(series.Id, null));
+        var conflict = Assert.IsType<ConflictObjectResult>(await controller.ResumeRunSeries(series.Id, null, TestContext.Current.CancellationToken));
 
         Assert.Equal($"Part of model batch #{batch.Id}; continue it from the batch's progress dialog.", conflict.Value);
     }
