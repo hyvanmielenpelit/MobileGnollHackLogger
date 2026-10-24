@@ -21,6 +21,7 @@ import {
   BenchmarkPairedTestDto,
   BenchmarkReportPackPricingBasis
 } from '../../../services/admin-benchmark.service';
+import { ModelPickerComponent, ModelPickerKey } from '../../../shared/model-picker/model-picker.component';
 import { showReasoningBadge } from '../../../utils/model-badge-format.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { rovingTabIndex } from '../../../utils/roving-tab.util';
@@ -41,6 +42,7 @@ import {
   verdictShape,
   verdictText
 } from '../shared/paired-test/paired-test-format';
+import { ComparisonModelOption, comparisonModelOptions } from '../report-pack/comparison-model-options';
 import { PairedTestResultComponent } from '../shared/paired-test/paired-test-result.component';
 import { saveFigureBlob } from './figure-export';
 import { BenchmarkModelComparisonDto, BenchmarkModelComparisonEntryDto, baselineReferenceKey } from './model-comparison.models';
@@ -184,7 +186,7 @@ type PairedFetchOutcome =
 @Component({
   selector: 'app-paired-tests-view',
   standalone: true,
-  imports: [NgTemplateOutlet, PairedTestResultComponent],
+  imports: [ModelPickerComponent, NgTemplateOutlet, PairedTestResultComponent],
   templateUrl: './paired-tests-view.component.html',
   styleUrls: ['./paired-tests-view.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -240,6 +242,9 @@ export class PairedTestsViewComponent implements OnInit, OnChanges, OnDestroy {
 
   private comparableSource: BenchmarkModelComparisonDto | null = null;
   private comparableList: readonly BenchmarkModelComparisonEntryDto[] = [];
+  private referenceOptionsSource: readonly BenchmarkModelComparisonEntryDto[] | null = null;
+  private referenceOptionsBaseline: string | null = null;
+  private referenceOptionsList: readonly ComparisonModelOption[] = [];
   private lastSignature: string | null = null;
   private readonly requests = new Subject<{ readonly request: BenchmarkPairedComparisonRequest } | null>();
   private requestSub: Subscription | null = null;
@@ -339,12 +344,20 @@ export class PairedTestsViewComponent implements OnInit, OnChanges, OnDestroy {
     return baselineReferenceKey(this.comparison);
   }
 
-  /** A Reference option's text: the entry's label, marked when it is the baseline model. */
-  referenceOptionLabel(entry: BenchmarkModelComparisonEntryDto): string {
-    return entry.key === this.baselineKey ? `${entry.label} (baseline model)` : entry.label;
+  /** The Reference picker's options: the comparable entries, the baseline model tagged. */
+  get referencePickerOptions(): readonly ComparisonModelOption[] {
+    const entries = this.comparableEntries;
+    const baseline = this.baselineKey;
+    if (this.referenceOptionsSource !== entries || this.referenceOptionsBaseline !== baseline) {
+      this.referenceOptionsSource = entries;
+      this.referenceOptionsBaseline = baseline;
+      this.referenceOptionsList = comparisonModelOptions(entries)
+        .map(option => option.key === baseline ? { ...option, tag: 'Baseline' } : option);
+    }
+    return this.referenceOptionsList;
   }
 
-  /** What the Reference select shows: the request's, else the reference the server chose. */
+  /** What the Reference picker shows: the request's, else the reference the server chose. */
   get referenceValue(): string {
     return this.requestedReference ?? this.result?.referenceKey ?? '';
   }
@@ -467,9 +480,12 @@ export class PairedTestsViewComponent implements OnInit, OnChanges, OnDestroy {
     document.getElementById(`mc-paired-mode-${next}`)?.focus();
   }
 
-  onReferenceChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    this.chosenReference = value === '' ? null : value;
+  /** Re-choosing the reference already shown changes nothing, so an open details panel stays open. */
+  onReferencePicked(key: ModelPickerKey | null): void {
+    if (String(key ?? '') === this.referenceValue) {
+      return;
+    }
+    this.chosenReference = key === null ? null : String(key);
     this.selected = null;
     this.cdr.markForCheck();
     this.ensureFetched(false);

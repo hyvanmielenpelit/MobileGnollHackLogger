@@ -2601,8 +2601,10 @@ its report."*
     under *Whole comparison* a legend follows: a boxed group titled *Letters in the anonymized copies*
     whose `<dl>` pairs each letter (a small gold tile, read as *Letter A*) with the model's label, in a
     grid of 13 rem columns. It is not added to the picker's description, which it would make long.
-  - **Reference model** (*Whole comparison* only): a select of *Highest Intelligence Index* and each
-    covered model, the baseline model's option marked *(baseline model)*; it starts on the baseline model
+  - **Reference model** (*Whole comparison* only): a model picker whose first option is *Highest
+    Intelligence Index*, then each covered model, the baseline model's tagged *Baseline*; like the Run
+    tab's pickers it offers search, the provider filter and the name and release-date sorts, the release
+    date coming from the model catalog on each comparison entry. It starts on the baseline model
     when the comparison holds a comparable result of it among the covered models, else on *Highest
     Intelligence Index*. The documents judge the other models against it (§ 15). It is sent as
     `referenceEntryKey` in the preview, layout preview and start bodies **only when a model is chosen**;

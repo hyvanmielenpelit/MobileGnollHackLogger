@@ -129,6 +129,32 @@ describe('CcModelStepComponent', () => {
       expect(chosen).toEqual([]);
     });
 
+    it('carries each axis\'s catalog release date into its option, null when it has none', () => {
+      const options = axisPickerOptions([ccAxis({ releaseDate: '2026-03-05' }), ccAxis({ key: 'undated' })]);
+      expect(options.map(option => option.model.releaseDate)).toEqual(['2026-03-05', null]);
+    });
+
+    it('offers the release-date sorts under the subject picker\'s Sort when an axis has a date', () => {
+      fixture.componentRef.setInput('axes', [
+        ccAxis({ releaseDate: '2026-03-05' }),
+        ccAxis({ key: 'anthropic/claude|high', displayName: 'Claude high', provider: 'Anthropic', modelId: 'claude' })
+      ]);
+      fixture.detectChanges();
+      const picker = el.querySelector<HTMLElement>('.cc-subject-model-selector')!;
+      picker.querySelector<HTMLButtonElement>('.picker-tools-toggle-btn')!.click();
+      fixture.detectChanges();
+      picker.querySelector<HTMLButtonElement>('.model-picker-sort')!.click();
+      fixture.detectChanges();
+
+      const panel = picker.querySelector<HTMLElement>('.model-picker-sort-panel')!;
+      expect(panel.matches(':popover-open')).toBe(true);
+      const radios = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+      expect(radios.map(radio => radio.value)).toContain('release-desc');
+      expect(textOf(radios.find(radio => radio.value === 'release-desc')!.closest('label')))
+        .toBe('Release date (newest first)');
+      panel.hidePopover();
+    });
+
     it('shows a model list error under the picker and as the empty list\'s hint', () => {
       fixture.componentRef.setInput('axes', []);
       fixture.componentRef.setInput('axesError', 'The models could not be loaded.');

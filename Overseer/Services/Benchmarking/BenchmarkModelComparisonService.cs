@@ -714,6 +714,7 @@ public class BenchmarkModelComparisonService
     private readonly BenchmarkBatteryLeaderboardService _leaderboard;
     private readonly BenchmarkProviderAvailabilityService _availability;
     private readonly BenchmarkBaselineModelService _baselineModel;
+    private readonly ModelMetadataService? _metadata;
 
     public BenchmarkModelComparisonService(
         ApplicationDbContext db,
@@ -721,7 +722,8 @@ public class BenchmarkModelComparisonService
         ModelPricingService? pricingService = null,
         BenchmarkBatteryLeaderboardService? leaderboard = null,
         BenchmarkProviderAvailabilityService? availability = null,
-        BenchmarkBaselineModelService? baselineModel = null)
+        BenchmarkBaselineModelService? baselineModel = null,
+        ModelMetadataService? metadata = null)
     {
         _db = db;
         _logger = logger;
@@ -729,6 +731,7 @@ public class BenchmarkModelComparisonService
         _leaderboard = leaderboard ?? new BenchmarkBatteryLeaderboardService(db);
         _availability = availability ?? new BenchmarkProviderAvailabilityService(db);
         _baselineModel = baselineModel ?? new BenchmarkBaselineModelService(db);
+        _metadata = metadata;
     }
 
     public async Task<(BenchmarkModelComparisonDto? Result, string? Error)> CompareAsync(
@@ -829,6 +832,7 @@ public class BenchmarkModelComparisonService
 
         var result = BenchmarkModelComparison.Build(sources, basis, today, DateTime.UtcNow);
         await ApplyAvailabilityAsync(result, ct);
+        ApplyReleaseDates(result);
         await _baselineModel.ApplyAsync(result, sources.ToDictionary(s => s.Key, s => NewestRun(s.Runs)), ct);
 
         _logger?.LogInformation(
@@ -864,6 +868,7 @@ public class BenchmarkModelComparisonService
         var distinguishing = await DistinguishingKeysAsync(sources, ct);
         var result = BenchmarkBatteryModelComparison.Build(sources, distinguishing, basis, today, DateTime.UtcNow);
         await ApplyAvailabilityAsync(result, ct);
+        ApplyReleaseDates(result);
         await _baselineModel.ApplyAsync(result, sources.ToDictionary(s => s.Key, s => NewestRun(s.IdentityRuns)), ct);
 
         _logger?.LogInformation(
@@ -903,6 +908,16 @@ public class BenchmarkModelComparisonService
                 entry.Table.RerunsNeeded = availability.RerunsNeeded;
                 entry.Table.ProviderReruns = availability.ProviderRerunsNeeded;
             }
+        }
+    }
+
+    /// <summary>Sets each entry's catalog release date, so a model picker over the entries can sort by it.</summary>
+    private void ApplyReleaseDates(BenchmarkModelComparisonDto result)
+    {
+        if (_metadata == null) return;
+        foreach (var entry in result.Entries)
+        {
+            entry.ReleaseDate = _metadata.GetReleaseDate(entry.Provider, entry.ModelId);
         }
     }
 

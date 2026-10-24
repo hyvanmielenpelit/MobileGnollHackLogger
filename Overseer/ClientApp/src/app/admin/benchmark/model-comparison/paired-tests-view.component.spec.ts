@@ -148,12 +148,16 @@ function pairedDto(
   };
 }
 
+/** Where the Reference picker keeps its search, provider filter and sort. */
+const REFERENCE_VIEW_STORAGE_KEY = 'overseer.modelPicker.view.benchmark.comparison.pairedTests.reference';
+
 describe('PairedTestsViewComponent', () => {
   let fixture: ComponentFixture<PairedTestsViewComponent>;
   let service: MockedObject<AdminBenchmarkService>;
 
   beforeEach(async () => {
     localStorage.removeItem(PAIRED_VIEW_SECTIONS_STORAGE_KEY);
+    localStorage.removeItem(REFERENCE_VIEW_STORAGE_KEY);
     service = {
       getPairedComparison: vi.fn().mockName('AdminBenchmarkService.getPairedComparison')
     } as unknown as MockedObject<AdminBenchmarkService>;
@@ -166,6 +170,7 @@ describe('PairedTestsViewComponent', () => {
 
   afterEach(() => {
     localStorage.removeItem(PAIRED_VIEW_SECTIONS_STORAGE_KEY);
+    localStorage.removeItem(REFERENCE_VIEW_STORAGE_KEY);
     delete (navigator as unknown as { clipboard?: unknown }).clipboard;
     vi.restoreAllMocks();
   });
@@ -196,6 +201,44 @@ describe('PairedTestsViewComponent', () => {
     return service.getPairedComparison.mock.calls.at(-1)![0];
   }
 
+  function referencePicker(): HTMLElement | null {
+    return el().querySelector<HTMLElement>('.mcp-reference-picker');
+  }
+
+  /** The name the Reference picker's trigger shows. */
+  function referenceShown(): string {
+    return (referencePicker()!.querySelector('.selector-trigger .model-name')?.textContent ?? '').trim();
+  }
+
+  /** Opens the Reference list unless it is open, and returns its options. */
+  function referenceOptions(): HTMLElement[] {
+    const picker = referencePicker()!;
+    if (!picker.querySelector('[role="listbox"]')) {
+      picker.querySelector<HTMLButtonElement>('.selector-trigger')!.click();
+      fixture.detectChanges();
+    }
+    return Array.from(picker.querySelectorAll<HTMLElement>('[role="option"]'));
+  }
+
+  const optionName = (option: HTMLElement): string => (option.querySelector('.model-name')?.textContent ?? '').trim();
+
+  /** The Reference list's option names, in order. */
+  function referenceNames(): string[] {
+    return referenceOptions().map(optionName);
+  }
+
+  /** The tag on each Reference option, in order; '' where it has none. */
+  function referenceTags(): string[] {
+    return referenceOptions().map(option => (option.querySelector('.model-option-tag')?.textContent ?? '').trim());
+  }
+
+  function chooseReference(name: string): void {
+    const option = referenceOptions().find(candidate => optionName(candidate) === name);
+    expect(option, name).toBeDefined();
+    option!.click();
+    fixture.detectChanges();
+  }
+
   it('fetches nothing until it is shown', () => {
     service.getPairedComparison.mockReturnValue(of(pairedDto(['run:1', 'run:2'], 'Reference', 'run:2')));
     show({ comparison: comparison(2), active: false });
@@ -222,8 +265,8 @@ describe('PairedTestsViewComponent', () => {
     // The reference is the baseline: the other entry is tested against it.
     expect(text('#mc-paired-intelligence tbody tr .mcp-model-btn')).toContain('Model 1');
     expect(text('#mc-paired-intelligence tbody tr td')).toBe('Model 2');
-    // The reference select shows the entry the server chose.
-    expect((el().querySelector('#mc-paired-reference') as HTMLSelectElement).value).toBe('run:2');
+    // The Reference picker shows the entry the server chose.
+    expect(referenceShown()).toBe('Model 2');
     // Primary first, then the dimensions, speed and cost.
     expect(Array.from(el().querySelectorAll('details.mcp-section')).map(section => section.id)).toEqual([
       'mc-paired-section-intelligence', 'mc-paired-section-dimensions', 'mc-paired-section-speed', 'mc-paired-section-cost'
@@ -243,17 +286,12 @@ describe('PairedTestsViewComponent', () => {
     expect(text('.mcp-status')).toBe('Computing paired tests…');
 
     // A new reference before the first answer: the first request is dropped, never rendered.
-    const select = el().querySelector('#mc-paired-reference') as HTMLSelectElement;
-    select.value = 'run:3';
-    select.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
+    chooseReference('Model 3');
     expect(service.getPairedComparison).toHaveBeenCalledTimes(1);
 
     service.getPairedComparison.mockReset();
     service.getPairedComparison.mockReturnValue(of(pairedDto(keys, 'Reference', 'run:1')));
-    select.value = 'run:1';
-    select.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
+    chooseReference('Model 1');
     expect(lastRequest().referenceKey).toBe('run:1');
     first.next(pairedDto(keys, 'Reference', 'run:3'));
     fixture.detectChanges();
@@ -301,7 +339,7 @@ describe('PairedTestsViewComponent', () => {
     click('#mc-paired-mode-AllPairs');
     expect(lastRequest().mode).toBe('AllPairs');
     expect(lastRequest().referenceKey).toBeNull();
-    expect(el().querySelector('#mc-paired-reference')).toBeNull();
+    expect(referencePicker()).toBeNull();
     expect(text('.mcp-family')).toBe('6 tests, every pair of 4 models · Holm-adjusted');
     expect(el().querySelector('#mc-paired-mode-AllPairs')!.getAttribute('aria-selected')).toBe('true');
 
@@ -357,8 +395,36 @@ describe('PairedTestsViewComponent', () => {
     expect(lastRequest().mode).toBe('Reference');
     // The excluded entry takes no part and is not offered as the reference.
     expect(lastRequest().runIds).toContain(20);
-    expect(Array.from((el().querySelector('#mc-paired-reference') as HTMLSelectElement).options).map(o => o.value))
-      .not.toContain('run:20');
+    expect(referenceNames()).toEqual(keys.map(key => `Model ${key.slice('run:'.length)}`));
+  });
+
+  it('gives the Reference picker the filter button and its toolbar from two comparable entries', () => {
+    service.getPairedComparison.mockReturnValue(of(pairedDto(['run:1', 'run:2', 'run:3'], 'Reference', 'run:1')));
+    show({ comparison: comparison(3), active: true });
+
+    const filter = referencePicker()!.querySelector<HTMLButtonElement>('.picker-tools-toggle-btn');
+    expect(filter).not.toBeNull();
+    filter!.click();
+    fixture.detectChanges();
+    expect(referencePicker()!.querySelector('[role="listbox"]')).not.toBeNull();
+    expect(referencePicker()!.querySelector('.model-picker-search-toggle')).not.toBeNull();
+    expect(referencePicker()!.querySelector('.model-picker-sort')).not.toBeNull();
+  });
+
+  it('offers Highest Intelligence Index first until a reference is named, then only the entries', () => {
+    const keys = ['run:1', 'run:2', 'run:3'];
+    const pending = new Subject<BenchmarkPairedComparisonDto>();
+    service.getPairedComparison.mockReturnValue(pending);
+    show({ comparison: comparison(3), active: true });
+
+    expect(lastRequest().referenceKey).toBeNull();
+    expect(referenceShown()).toBe('Highest Intelligence Index');
+    expect(referenceNames()).toEqual(['Highest Intelligence Index', 'Model 1', 'Model 2', 'Model 3']);
+
+    pending.next(pairedDto(keys, 'Reference', 'run:1'));
+    fixture.detectChanges();
+    expect(referenceShown()).toBe('Model 1');
+    expect(referenceNames()).toEqual(['Model 1', 'Model 2', 'Model 3']);
   });
 
   it('says a degraded speed axis was not tested, and why', () => {
@@ -477,18 +543,15 @@ describe('PairedTestsViewComponent', () => {
       return { ...comparison(3, extra), baselineModelEntryKey: key, baselineModelState: state };
     }
 
-    function optionTexts(): string[] {
-      const select = el().querySelector('#mc-paired-reference') as HTMLSelectElement;
-      return Array.from(select.options).map(option => (option.textContent ?? '').trim());
-    }
-
     it('is the default reference when a charted entry is it, ahead of the first highlighted entry', () => {
       service.getPairedComparison.mockReturnValue(of(pairedDto(keys, 'Reference', 'run:2')));
       show({ comparison: withBaseline('Included', 'run:2'), highlightedKeys: ['run:3'], active: true });
 
       expect(lastRequest().referenceKey).toBe('run:2');
-      expect((el().querySelector('#mc-paired-reference') as HTMLSelectElement).value).toBe('run:2');
-      expect(optionTexts()).toEqual(['Model 1', 'Model 2 (baseline model)', 'Model 3']);
+      expect(referenceShown()).toBe('Model 2');
+      expect(referencePicker()!.querySelector('.selector-trigger .model-option-tag')?.textContent?.trim()).toBe('Baseline');
+      expect(referenceNames()).toEqual(['Model 1', 'Model 2', 'Model 3']);
+      expect(referenceTags()).toEqual(['', 'Baseline', '']);
     });
 
     it("yields to the admin's own choice", () => {
@@ -496,15 +559,12 @@ describe('PairedTestsViewComponent', () => {
       show({ comparison: withBaseline('Included', 'run:2'), active: true });
 
       service.getPairedComparison.mockReturnValue(of(pairedDto(keys, 'Reference', 'run:1')));
-      const select = el().querySelector('#mc-paired-reference') as HTMLSelectElement;
-      select.value = 'run:1';
-      select.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
+      chooseReference('Model 1');
 
       expect(lastRequest().referenceKey).toBe('run:1');
-      expect(select.value).toBe('run:1');
-      // The baseline model stays marked when it is not the reference.
-      expect(optionTexts()).toContain('Model 2 (baseline model)');
+      expect(referenceShown()).toBe('Model 1');
+      // The baseline model stays tagged when it is not the reference.
+      expect(referenceTags()).toEqual(['', 'Baseline', '']);
     });
 
     it('is not the default when only an excluded entry is it', () => {
@@ -513,7 +573,7 @@ describe('PairedTestsViewComponent', () => {
       show({ comparison: withBaseline('Excluded', 'run:4', [excluded]), highlightedKeys: ['run:3'], active: true });
 
       expect(lastRequest().referenceKey).toBe('run:3');
-      expect(optionTexts().some(option => option.includes('(baseline model)'))).toBe(false);
+      expect(referenceTags()).not.toContain('Baseline');
     });
 
     it('leaves the reference to the server when nothing names one', () => {

@@ -204,6 +204,8 @@ export interface BenchmarkModelComparisonEntryDto {
   serviceTier?: string | null;
   maxOutputTokens?: number | null;
   parallelExecutionMode: string;
+  /** The catalog release date, yyyy-MM-dd; null when the catalog has none. */
+  releaseDate?: string | null;
 
   /** A short axis label: the display name, plus the thinking level when the set mixes them. */
   label: string;

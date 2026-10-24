@@ -80,7 +80,8 @@ export function comparisonModelOptions(entries: readonly BenchmarkModelCompariso
       modelId: entry.modelId,
       provider: entry.provider,
       thinkingLevel: entry.thinkingLevel ?? null,
-      reasoningMode: entry.reasoningMode ?? null
+      reasoningMode: entry.reasoningMode ?? null,
+      releaseDate: entry.releaseDate ?? null
     };
     return (looks.get(lookOf(entry)) ?? 0) > 1
       ? { key: entry.key, model, detail: source }

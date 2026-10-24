@@ -6201,10 +6201,11 @@ that the measures are separate questions, not adjusted for each other.
 - **Two entries:** one test per measure, no adjustment — *"Single comparison — no adjustment needed"*;
   the adjusted p equals the raw p.
 - **Against a reference** (the default with three or more): k − 1 tests, **Holm**-adjusted (Holm 1979).
-  The reference is the admin's choice in the **Reference** select; without one, the **baseline model**
+  The reference is the admin's choice in the **Reference** picker (the shared model picker, with search,
+  provider filter and sorts); without one, the **baseline model**
   (§ *Baseline Model* below) when the comparison holds a comparable result of it, else the first entry
   highlighted on step 2, else the one with the highest Intelligence Index. The baseline model's option
-  reads *"<label> (baseline model)"*. The client always sends the reference it chose, so the response
+  carries a *Baseline* tag. The client always sends the reference it chose, so the response
   cache, keyed by the reference, stays correct.
 - **All pairs:** k(k − 1)/2 tests, Holm-adjusted, offered up to **12** comparable entries (66 tests); above
   that it is unavailable, with the reason, and the server answers 400. Unadjusted all-pairs testing was
@@ -6226,7 +6227,7 @@ it is. The caveat is shown beside the results whenever it applies.
   one, it says comparing needs a second comparable entry and where a single model's result lives (its run
   report or battery run report, with the index's interval and the stand-alone AI documents). The sidebar
   shows only **Data** (Models and Prices). The toolbar holds the *Against a reference* / *All pairs* mode
-  (hidden with two entries), the **Reference** select, an icon-only **Recompute**, and **Copy as
+  (hidden with two entries), the **Reference** picker, an icon-only **Recompute**, and **Copy as
   Markdown** and **Download** (Markdown, or CSV, by the Download tab's table format;
   `paired-tests_<yyyyMMdd-HHmmss>`). The body is the family line, the caveat, then one disclosure per
   section — *Intelligence* (*primary test*), *Quality dimensions*, *Speed*, *Cost* — whose open state is

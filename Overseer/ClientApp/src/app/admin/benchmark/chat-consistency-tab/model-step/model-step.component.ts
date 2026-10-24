@@ -83,6 +83,7 @@ export interface CcAxisPickerModel {
   provider: string;
   modelId: string;
   thinkingLevel: string | null;
+  releaseDate?: string | null;
 }
 
 /** The picker's options: the model axes that have runs, as the server orders them. */
@@ -91,7 +92,13 @@ export function axisPickerOptions(axes: readonly CcModelAxis[]): ModelPickerOpti
     .filter(axis => axis.runCount > 0)
     .map(axis => ({
       key: axis.key,
-      model: { displayName: axis.displayName, provider: axis.provider, modelId: axis.modelId, thinkingLevel: axis.thinkingLevel }
+      model: {
+        displayName: axis.displayName,
+        provider: axis.provider,
+        modelId: axis.modelId,
+        thinkingLevel: axis.thinkingLevel,
+        releaseDate: axis.releaseDate ?? null
+      }
     }));
 }
 

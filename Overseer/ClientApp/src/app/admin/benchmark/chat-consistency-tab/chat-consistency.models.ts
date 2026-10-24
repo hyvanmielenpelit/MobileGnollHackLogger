@@ -75,6 +75,8 @@ export interface CcModelAxis {
   modelId: string;
   thinkingLevel: string | null;
   serviceTier: string | null;
+  /** The catalog release date, yyyy-MM-dd; null when the catalog has none. */
+  releaseDate?: string | null;
   runCount: number;
   telemetryRunCount: number;
   firstRunAtUtc: string;

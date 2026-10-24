@@ -685,6 +685,12 @@ failure sound** with icon-only `.action-btn`s after *Play a sound*, in a `role="
 completion sounds*; each keeps its words as its `aria-label` and `interestfor` tooltip, so the status
 message *press Test sound once* and the documentation stay true.*
 
+*Changed 2026-10-25 (GnollBench model pickers, §4e): no glyph or class is new. The Model Comparison
+wizard's Paired tests **Reference** is an `app-model-picker` (`benchmark.comparison.pairedTests.reference`)
+instead of a native `<select>`, the baseline model's option tagged *Baseline*. Comparison entries and
+Chat Consistency model axes carry the catalog `releaseDate`, so the Report Pack's Models and Reference
+model pickers and the Chat Consistency subject picker offer the release-date sorts.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -1035,7 +1041,8 @@ splitter* pattern on its host element.
 ### 4e. Model pickers: `app-model-picker`
 
 **The** control for every choice of an AI model — the benchmark launcher and its dialogs, Suite
-Health, question and description generation, the chat composer and the Models page. Never
+Health, question and description generation, the Model Comparison wizard's Paired tests Reference,
+the chat composer and the Models page. Never
 hand-roll a `.custom-model-selector` block again: the fifteen copies it replaced had no keyboard
 support and, in the composer, no accessible name. It lives in `app/shared/model-picker/` and
 implements the WAI-ARIA *collapsible listbox* pattern: a `<button aria-haspopup="listbox">` that
@@ -1067,7 +1074,7 @@ opens a popup `role="listbox"`, which takes focus and tracks the active option w
 | `disabled` | The trigger is `aria-disabled` and stays focusable; the list does not open, and an open one closes; the host names the reason through `describedBy` |
 | `viewTools` | `'auto'` (default), `'always'` or `'never'`: the filter button, and with it the view toolbar below on request. `auto` shows the button from `MODEL_PICKER_TOOLS_MIN_OPTIONS` (2) options up, the none option not counted. `never` for a short list of roles, such as the Calibration tab's *Compare against* |
 | `viewStateKey` | Names the picker's **role** (`benchmark.run.assessor`); the toolbar's view is stored as `overseer.modelPicker.view.<key>`. `null` (default) keeps the view in memory for the component's lifetime. **Every picker host passes one** |
-| `ModelPickerModel.releaseDate` | Optional, `yyyy-MM-dd`: the catalog date the server puts on `SystemAiConfigDto` and `UserAiModel`. Where no option has one, the release-date sorts are not offered |
+| `ModelPickerModel.releaseDate` | Optional, `yyyy-MM-dd`: the catalog date the server puts on `SystemAiConfigDto` and `UserAiModel`. Where no option has one, the release-date sorts are not offered. Options built from any other DTO (a comparison entry, a Chat Consistency model axis) get it from the server's `ModelMetadataService.GetReleaseDate(provider, modelId)` on that DTO, so the toolbar offers the same sorts as the Run tab's pickers |
 | `ModelPickerModel.thinkingLevel` | Optional: the option's thinking level, shown as a badge. Where two options of one group share a name and model id and differ in level (`hasThinkingLevelChoice()`), the Sort popover offers the *Thinking level* order |
 
 `selectionChange` emits `{ key, model }` on every committed choice, including re-choosing the
@@ -3232,6 +3239,8 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] A role played by a model is a `tag`, not part of `displayName`.
 - [ ] A new model picker host passes `viewStateKey` naming its role (§4e, *View toolbar*); a short list
       of roles takes `viewTools="never"`.
+- [ ] Options built from a DTO that is not a system config or user model carry `releaseDate` from the
+      catalog, or the release-date sorts silently disappear.
 - [ ] No component stylesheet reaches into `.selector-trigger`, `.selector-dropdown` or `.model-option`.
 
 **Tabs**

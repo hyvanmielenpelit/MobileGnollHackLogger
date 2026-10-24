@@ -434,11 +434,14 @@ public class ChatConsistencyEvidenceBuilder
 {
     private readonly ApplicationDbContext _db;
     private readonly ModelPricingService? _pricingService;
+    private readonly ModelMetadataService? _metadata;
 
-    public ChatConsistencyEvidenceBuilder(ApplicationDbContext db, ModelPricingService? pricingService = null)
+    public ChatConsistencyEvidenceBuilder(
+        ApplicationDbContext db, ModelPricingService? pricingService = null, ModelMetadataService? metadata = null)
     {
         _db = db;
         _pricingService = pricingService;
+        _metadata = metadata;
     }
 
     // --- Analysis evidence -----------------------------------------------------------------------
@@ -1607,6 +1610,7 @@ public class ChatConsistencyEvidenceBuilder
                     ModelId = subject.ModelId,
                     ThinkingLevel = subject.ThinkingLevel,
                     ServiceTier = subject.ServiceTier,
+                    ReleaseDate = _metadata?.GetReleaseDate(subject.Provider, subject.ModelId),
                     RunCount = ordered.Count,
                     TelemetryRunCount = ordered.Count(r => r.CallTelemetryVersion.HasValue),
                     FirstRunAtUtc = ChatConsistencyMeasures.AsUtc(ordered[0].StartedAtUtc),

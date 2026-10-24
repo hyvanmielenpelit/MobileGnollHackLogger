@@ -330,6 +330,9 @@ public class BenchmarkModelComparisonEntryDto
     public int? MaxOutputTokens { get; set; }
     public string ParallelExecutionMode { get; set; } = string.Empty;
 
+    /// <summary>The catalog release date of <see cref="ModelId"/>, yyyy-MM-dd; null when the catalog has none.</summary>
+    public string? ReleaseDate { get; set; }
+
     /// <summary>A short axis label: the display name, plus the thinking level when the set mixes them.</summary>
     public string Label { get; set; } = string.Empty;
 

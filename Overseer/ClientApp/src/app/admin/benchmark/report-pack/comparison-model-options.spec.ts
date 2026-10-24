@@ -57,6 +57,15 @@ describe('comparison-model-options', () => {
     expect(options.every(option => option.detail === undefined)).toBe(true);
   });
 
+  it('carries the entry\'s catalog release date into its option, null when it has none', () => {
+    const options = comparisonModelOptions([
+      entry('run:1', 'GPT-6.1 Sol', 71, { releaseDate: '2026-03-05' }),
+      entry('run:2', 'Claude 5 Opus', 68)
+    ]);
+
+    expect(options.map(option => option.model.releaseDate)).toEqual(['2026-03-05', null]);
+  });
+
   it('adds the source as a detail only where two options would look identical', () => {
     const options = comparisonModelOptions([
       entry('battery:9', 'GPT-5.6 Luna', 60, { thinkingLevel: 'max' }),

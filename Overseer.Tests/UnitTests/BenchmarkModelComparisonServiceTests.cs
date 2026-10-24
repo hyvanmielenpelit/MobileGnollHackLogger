@@ -1148,4 +1148,44 @@ public class BenchmarkModelComparisonServiceTests
         Assert.Equal(0, availability.ProviderRerunsNeeded);
         Assert.Equal("OurFailure", Assert.Single(availability.Replaces).Cause);
     }
+
+    // --- Catalog release date ----------------------------------------------------------------------------
+
+    /// <summary>A Google catalog model id whose release date the catalog declares.</summary>
+    private static string GoogleModelWithReleaseDate(ModelMetadataService metadata)
+        => metadata.GetCatalogTargets("Google")
+            .Select(t => t.ModelId)
+            .First(id => metadata.GetReleaseDate("Google", id) != null);
+
+    private static BenchmarkRun GoogleRun(long id, string modelId)
+    {
+        var run = BenchmarkBatteryTestData.SuiteARun(id, modelId);
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(
+            provider: "Google", modelId: modelId, displayName: modelId, thinkingLevel: "high", maxOutputTokens: 32000);
+        return run;
+    }
+
+    [Fact]
+    public async Task Entries_CarryTheCatalogReleaseDate_AndNullForAModelOutsideTheCatalog()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        var metadata = new ModelMetadataService();
+        string catalogued = GoogleModelWithReleaseDate(metadata);
+
+        db.BenchmarkRuns.Add(GoogleRun(61, catalogued));
+        db.BenchmarkRuns.Add(GoogleRun(62, "made-up-model-x"));
+        await db.SaveChangesAsync(ct);
+        var request = new BenchmarkModelComparisonRequest { RunIds = { 61, 62 } };
+
+        var (result, error) = await new BenchmarkModelComparisonService(db, metadata: metadata).CompareAsync(request, ct);
+        Assert.True(result != null, error);
+        Assert.NotNull(Entry(result!, "run:61").ReleaseDate);
+        Assert.Equal(metadata.GetReleaseDate("Google", catalogued), Entry(result!, "run:61").ReleaseDate);
+        Assert.Null(Entry(result!, "run:62").ReleaseDate);
+
+        var (withoutCatalog, withoutError) = await new BenchmarkModelComparisonService(db).CompareAsync(request, ct);
+        Assert.True(withoutCatalog != null, withoutError);
+        Assert.All(withoutCatalog!.Entries, e => Assert.Null(e.ReleaseDate));
+    }
 }

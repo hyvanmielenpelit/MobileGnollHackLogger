@@ -53,15 +53,12 @@
 
       @if (effectiveMode === 'Reference') {
         <div class="mcp-reference">
-          <label for="mc-paired-reference">Reference</label>
-          <select id="mc-paired-reference" class="gh-input" (change)="onReferenceChange($event)">
-            @if (referenceValue === '') {
-              <option value="" selected>Highest Intelligence Index</option>
-            }
-            @for (entry of comparableEntries; track entry.key) {
-              <option [value]="entry.key" [selected]="entry.key === referenceValue">{{ referenceOptionLabel(entry) }}</option>
-            }
-          </select>
+          <label id="mc-paired-reference-label">Reference</label>
+          <app-model-picker class="mcp-reference-picker" labelledBy="mc-paired-reference-label"
+                            viewStateKey="benchmark.comparison.pairedTests.reference"
+                            [noneLabel]="referenceValue === '' ? 'Highest Intelligence Index' : null" [noneMuted]="false"
+                            [options]="referencePickerOptions" [selectedKey]="referenceValue === '' ? null : referenceValue"
+                            (selectionChange)="onReferencePicked($event.key)"></app-model-picker>
         </div>
       }
 

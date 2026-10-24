@@ -1115,6 +1115,10 @@ public sealed record ChatConsistencyModelAxis
     public string ModelId { get; init; } = string.Empty;
     public string? ThinkingLevel { get; init; }
     public string? ServiceTier { get; init; }
+
+    /// <summary>The catalog release date of <see cref="ModelId"/>, yyyy-MM-dd; null when the catalog has none.</summary>
+    public string? ReleaseDate { get; init; }
+
     public int RunCount { get; init; }
     public int TelemetryRunCount { get; init; }
     public DateTime FirstRunAtUtc { get; init; }

@@ -46,9 +46,9 @@
     white-space: nowrap;
   }
 
-  select {
+  .mcp-reference-picker {
     min-width: 0;
-    max-width: 22rem;
+    flex: 0 1 22rem;
   }
 }
 
