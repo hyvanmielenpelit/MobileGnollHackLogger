@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.Build.Framework;
 using Microsoft.EntityFrameworkCore.SqlServer.Query.Internal;
 using MobileGnollHackLogger.Data;
+using Sentry;
 using System.Buffers.Text;
 using System.Runtime.Intrinsics.Arm;
 using System.Security.Cryptography;
@@ -109,6 +110,7 @@ namespace MobileGnollHackLogger.Areas.API
                 }
                 catch (Exception ex)
                 {
+                    SentrySdk.CaptureException(ex);
                     return await LogAndReturnErrorAsyncNonNull(500, "SaveFileTracking creation to database failed.", "SaveFileTracking creation to database failed. Message: " + ex.Message);
                 }
             }
@@ -220,6 +222,7 @@ namespace MobileGnollHackLogger.Areas.API
                 }
                 catch (Exception ex)
                 {
+                    SentrySdk.CaptureException(ex);
                     return await LogAndReturnErrorAsyncNonNull(500, "SaveFileTracking use failed in exception.", "SaveFileTracking use failed in exception. Message: " + ex.Message);
                 }
             }
@@ -283,6 +286,7 @@ namespace MobileGnollHackLogger.Areas.API
                     }
                     catch (Exception ex)
                     {
+                        SentrySdk.CaptureException(ex);
                         return await LogAndReturnErrorAsync(500, "Server error occurred while verifying user.", "Server error occurred while verifying user: " + ex.Message);
                     }
 
@@ -292,6 +296,7 @@ namespace MobileGnollHackLogger.Areas.API
             }
             catch (Exception ex)
             {
+                SentrySdk.CaptureException(ex);
                 return await LogAndReturnErrorAsync(500, "Exception", "Exception: " + ex.Message);
             }
         }

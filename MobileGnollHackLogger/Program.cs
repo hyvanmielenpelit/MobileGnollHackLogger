@@ -14,6 +14,7 @@ using Microsoft.VisualStudio.Web.CodeGenerators.Mvc.Controller;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.AspNetCore.Http.Extensions;
 using System.Text;
+using Sentry;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -188,6 +189,21 @@ builder.Services.AddRazorPages()
 
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 
+// Sentry: backend errors only. An empty SentryDSN disables the SDK.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<Sentry.Extensibility.ISentryEventProcessor, MobileGnollHackLogger.Monitoring.WebsiteSentryEventProcessor>();
+builder.WebHost.UseSentry(options =>
+{
+    options.Dsn = builder.Configuration["SentryDSN"] ?? "";
+
+    /* Already the SDK defaults; pinned so an upgrade cannot start attaching the user's IP and
+       address, or request bodies, which for the game API carry the player's password. */
+    options.SendDefaultPii = false;
+    options.MaxRequestBodySize = Sentry.Extensibility.RequestSize.None;
+
+    options.SetBeforeBreadcrumb(MobileGnollHackLogger.Monitoring.WebsiteSentryEventProcessor.ScrubBreadcrumb);
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -214,5 +230,27 @@ app.UseAuthorization();
 app.MapRazorPages();
 
 app.MapControllers();
+
+if (app.Environment.IsDevelopment())
+{
+    // Sentry check: reports a handled exception, or throws one with ?throw=true.
+    app.MapGet("/dev/sentry-test", (bool? @throw) =>
+    {
+        if (@throw == true)
+        {
+            throw new InvalidOperationException("Sentry test: unhandled exception from /dev/sentry-test.");
+        }
+
+        try
+        {
+            throw new InvalidOperationException("Sentry test: handled exception from /dev/sentry-test.");
+        }
+        catch (Exception ex)
+        {
+            var eventId = SentrySdk.CaptureException(ex);
+            return Results.Text($"Sentry event {eventId} captured.");
+        }
+    });
+}
 
 app.Run();

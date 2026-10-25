@@ -1,6 +1,6 @@
 ---
 name: sentry-logging-architecture
-description: Documentation of the Sentry crash logging architecture for the Overseer project, including the tunnel endpoint, authentication filtering, AI provider error suppression, and source map exclusion logic.
+description: Documentation of the Sentry crash logging architecture for the Overseer project, including the tunnel endpoint, authentication filtering, AI provider error suppression, and source map exclusion logic. Also covers the website's (MobileGnollHackLogger) backend-only Sentry setup and its WebsiteSentryEventProcessor.
 ---
 
 The full skill lives in this repository's tool-neutral agent directory (`.agents/`),

@@ -6,7 +6,9 @@
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>
-  <Folder Name="/docs/" />
+  <Folder Name="/docs/">
+    <File Path="docs/website-sentry-logging.md" />
+  </Folder>
   <Folder Name="/docs/overseer/">
     <File Path="docs/overseer/adding-ai-models.md" />
     <File Path="docs/overseer/admin-page-urls.md" />

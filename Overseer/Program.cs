@@ -496,6 +496,8 @@ builder.WebHost.UseSentry(options =>
        cookies, named query values and the user record on every event that is actually sent. */
     options.SendDefaultPii = false;
     options.MaxRequestBodySize = Sentry.Extensibility.RequestSize.None;
+
+    options.SetBeforeBreadcrumb(AuthSentryEventProcessor.ScrubBreadcrumb);
 });
 
 // Per-user limits on turns started outside the Chat rate-limit policy, and on concurrent operator-funded turns.

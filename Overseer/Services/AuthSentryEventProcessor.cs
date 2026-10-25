@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Http;
 using System.Net.Http;
 using System;
 using System.Linq;
+using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Overseer.Services.Providers;
 using Overseer.Services.Tools;
 
@@ -45,6 +47,12 @@ namespace Overseer.Services
         };
 
         private const string Scrubbed = "[scrubbed]";
+
+        /* A scrubbed query parameter inside free text, such as a URL in a log message. The name
+           must follow '?' or '&', so "postcode=" does not match "code". */
+        private static readonly Regex ScrubbedQueryParameterInText = new Regex(
+            @"(?<prefix>[?&])(?<name>" + string.Join("|", ScrubbedQueryKeys.Select(Regex.Escape)) + @")=[^&#\s]*",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
         /// <summary>
         /// Tag and <c>HttpContext.Items</c> key marking an event as raised inside a
@@ -151,6 +159,46 @@ namespace Overseer.Services
                 if (@event.Tags.ContainsKey(tag))
                     @event.SetTag(tag, Scrubbed);
             }
+        }
+
+        /// <summary>
+        /// Blanks sensitive query values in a breadcrumb's message and data, such as the URL in
+        /// ASP.NET Core's "Request starting" log entry. Registered with
+        /// <c>SetBeforeBreadcrumb</c>, because an event's breadcrumbs cannot be replaced in
+        /// <see cref="Process"/>.
+        /// </summary>
+        public static Breadcrumb ScrubBreadcrumb(Breadcrumb breadcrumb)
+        {
+            string? message = ScrubText(breadcrumb.Message);
+            bool changed = !string.Equals(message, breadcrumb.Message, StringComparison.Ordinal);
+
+            Dictionary<string, string>? data = null;
+            if (breadcrumb.Data != null)
+            {
+                data = new Dictionary<string, string>(breadcrumb.Data.Count);
+                foreach (var (name, value) in breadcrumb.Data)
+                {
+                    string scrubbed = ScrubText(value) ?? value;
+                    changed |= !string.Equals(scrubbed, value, StringComparison.Ordinal);
+                    data[name] = scrubbed;
+                }
+            }
+
+            if (!changed)
+                return breadcrumb;
+
+            /* The constructor taking a timestamp is internal; this one stamps the current time,
+               which is when the SDK hands a new breadcrumb to the callback. */
+            return new Breadcrumb(message ?? string.Empty, breadcrumb.Type ?? string.Empty, data, breadcrumb.Category, breadcrumb.Level);
+        }
+
+        /// <summary>Blanks sensitive query values wherever they appear in free text.</summary>
+        internal static string? ScrubText(string? text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+
+            return ScrubbedQueryParameterInText.Replace(text, m => m.Groups["prefix"].Value + m.Groups["name"].Value + "=" + Scrubbed);
         }
 
         /// <summary>Blanks the value of every sensitive parameter, keeping the shape of the query.</summary>

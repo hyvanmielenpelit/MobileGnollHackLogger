@@ -1,6 +1,6 @@
 ---
 name: sentry_logging_architecture
-description: Documentation of the Sentry crash logging architecture for the Overseer project, including the tunnel endpoint, authentication filtering, AI provider error suppression, and source map exclusion logic.
+description: Documentation of the Sentry crash logging architecture for the Overseer project, including the tunnel endpoint, authentication filtering, AI provider error suppression, and source map exclusion logic. Also covers the website's (MobileGnollHackLogger) backend-only Sentry setup and its WebsiteSentryEventProcessor.
 ---
 
 # Sentry Logging Architecture for Overseer
@@ -81,6 +81,7 @@ In Angular/RxJS, any observable subscription (`observable.subscribe(...)`) that 
    - **Query values** named `token`, `key`, `apiKey`, `api_key`, `password`, `code`, `secret`, `access_token` are blanked in `Request.QueryString` and in the query part of `Request.Url`. Names match **exactly**, case-insensitively — never as substrings, so `code` does not also blank `postcode`. Only values change; the shape of the query is preserved because the shape is usually what makes a report actionable.
    - **User record**: `User.Email`, `User.Username`, `User.IpAddress` and `User.Other` are cleared. These are the fields that make a crash report personal data, and none is needed to triage one.
    - Tags carrying any of those parameter names are scrubbed as well.
+   - **Breadcrumbs** are scrubbed separately, in `ScrubBreadcrumb` registered with `SetBeforeBreadcrumb` in `Program.cs`: the same query names are blanked in a breadcrumb's message and data wherever they follow `?` or `&`. `Scrub` cannot do it, because an event's breadcrumbs cannot be replaced in a processor, and ASP.NET Core's "Request starting" log breadcrumb carries the full URL.
 5. **Preservation of Internal Errors**:
    - If an internal endpoint or internal service fails with an unexpected exception or 500 error, `AuthSentryEventProcessor` preserves the event so developers are alerted in Sentry.
 
@@ -120,3 +121,17 @@ The Sentry DSN is considered a sensitive secret in Overseer to prevent unauthent
     <DistFiles Include="wwwroot\**" Exclude="wwwroot\**\*.map" />
     ```
 - The upload reads `Overseer/wwwroot`, so it is valid only while `wwwroot` matches the publish output file for file; see `overseer_sentry_sourcemaps_upload` Step 3.
+
+---
+
+## 7. The Website (MobileGnollHackLogger)
+
+The website reports **backend errors only** — no browser SDK, no tunnel, no source maps — to its **own Sentry project, `account`**, never to Overseer's. `docs/website-sentry-logging.md` is the full description.
+
+- **`WebsiteSentryEventProcessor`** (`MobileGnollHackLogger/Monitoring/`) has two drop rules: an exception chain containing `BadHttpRequestException` (malformed or truncated uploads, answered 400); and, only when `RequestAborted` is cancelled, a chain containing `OperationCanceledException`, `IOException` or a `SqlException` "Operation cancelled by user". The chain walk includes every member of an `AggregateException` — `LogController.Post` copies its uploads with `Task.WaitAll`.
+- It scrubs the same headers, user fields and query keys as `AuthSentryEventProcessor`, plus the query keys `email` and `userId`, which the Identity `ConfirmEmail`, `ConfirmEmailChange` and `ResetPassword` links carry. **Breadcrumbs are scrubbed too**, in `ScrubBreadcrumb` registered with `SetBeforeBreadcrumb`, as in Overseer (§ 4).
+- **Never adopt Overseer's unauthenticated-request drop here.** The leaderboards and dumplogs are public and the game client authenticates with credentials in the form body, not a cookie, so nearly every website request is unauthenticated: the rule would discard almost every event.
+- **Game API catch blocks** (`LogController`, `BonesController`, `ReplayController`, `SaveFileTrackingController`) that answer 500 for a server-side failure call `SentrySdk.CaptureException(ex);` as their first statement. Blocks for client input (Base64 parsing, `Decrypt`), the 410 `InvalidOperationException` outcome, expected concurrency conflicts and the Identity pages' email-sending catches must **not** capture.
+- **Duplicates**: for a database failure the event in Sentry is EF Core's "Failed executing DbCommand" log entry; the controller's capture of the same exception is dropped by the SDK's duplicate detection. That is expected, not a missing capture.
+- `UseSentry` pins `SendDefaultPii = false` and `MaxRequestBodySize = RequestSize.None`: the game API form body carries the player's password. Both hosts reference the same `Sentry.AspNetCore` version (read it from the `.csproj` files) and move together.
+- `GET /dev/sentry-test` (and `?throw=true`) exists only in Development, for checking the DSN and the scrubbing.

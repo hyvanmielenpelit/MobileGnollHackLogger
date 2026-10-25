@@ -1,5 +1,7 @@
 # Sentry Crash Logging Architecture for Overseer
 
+> The website (MobileGnollHackLogger) has its own, backend-only Sentry setup: see [website-sentry-logging.md](../website-sentry-logging.md).
+
 This document details the architectural design and implementation of Sentry crash logging in the Overseer ASP.NET Core & Angular application.
 
 ---
@@ -46,6 +48,7 @@ A core rule of Overseer's logging architecture is the strict separation between 
      - **Query parameter values** named `token`, `key`, `apiKey`, `api_key`, `password`, `code`, `secret` and `access_token`, in both `Request.QueryString` and the query part of `Request.Url`. Names are matched **exactly** and case-insensitively, never as substrings, so `code` does not also blank `postcode`. The shape of the query is preserved — only values are replaced — because the shape is often what makes a report actionable.
      - **The user record**: `User.Email`, `User.Username`, `User.IpAddress` and `User.Other`. These are the fields that make a crash report personal data, and none of them is needed to triage one: the authenticated session is already known to Overseer.
    - Tags carrying any of the sensitive parameter names are scrubbed too, since a tag is a common route for a URL fragment to reach Sentry sideways.
+   - **Breadcrumbs** get the same query-value scrubbing in their message and data, through `AuthSentryEventProcessor.ScrubBreadcrumb`, registered with `SetBeforeBreadcrumb` in `Program.cs`. ASP.NET Core's "Request starting" log entry becomes a breadcrumb carrying the full URL, and an event processor cannot replace an event's breadcrumbs, so this runs as each breadcrumb is recorded. A name counts only after `?` or `&`, so `postcode=` is kept.
 5. **Preservation of Internal Errors**:
    - Internal endpoint errors and unexpected controller exceptions are preserved and reported to Sentry with full stack traces and breadcrumbs.
 

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Build.ObjectModelRemoting;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
+using Sentry;
 using System.IO.Pipelines;
 using System.Net;
 using System.Text;
@@ -485,6 +486,7 @@ namespace MobileGnollHackLogger.Areas.API
                     }
                     catch (Exception ex)
                     {
+                        SentrySdk.CaptureException(ex);
                         int responseCode = 500;
                         string msg = "Server error occurred while verifying user: " + ex.Message;
                         await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
@@ -580,6 +582,7 @@ namespace MobileGnollHackLogger.Areas.API
                         }
                         catch(Exception ex)
                         {
+                            SentrySdk.CaptureException(ex);
                             int responseCode = 500;
                             await _dbLogger.LogRequestAsync("GameLog insertion to database failed. Message: " + ex.Message, Data.LogLevel.Error, responseCode);
                             Response.StatusCode = responseCode; //Server Error
@@ -609,6 +612,7 @@ namespace MobileGnollHackLogger.Areas.API
             }
             catch (Exception ex) 
             {
+                SentrySdk.CaptureException(ex);
                 int responseCode = 500;
                 string message = (ex.InnerException ?? ex).GetType().FullName + ", Message: " + ex.Message;
                 await _dbLogger.LogRequestAsync(message, Data.LogLevel.Error, responseCode);

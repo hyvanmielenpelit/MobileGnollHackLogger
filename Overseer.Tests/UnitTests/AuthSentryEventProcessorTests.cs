@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Security.Claims;
@@ -175,6 +176,41 @@ public class AuthSentryEventProcessorTests
         Assert.Equal(
             "https://overseer.gnollhack.com/api/chat/send",
             AuthSentryEventProcessor.ScrubUrl("https://overseer.gnollhack.com/api/chat/send"));
+    }
+
+    [Fact]
+    public void ScrubBreadcrumb_BlanksSensitiveQueryValuesInTheMessageAndData()
+    {
+        /* ASP.NET Core's "Request starting" log entry becomes a breadcrumb carrying the full
+           URL, so the request scrubbing alone leaves the values readable in the event. */
+        var breadcrumb = new Breadcrumb(
+            "Request starting HTTP/2 GET https://overseer.gnollhack.com/api/auth/handoff?token=abc&postcode=00100&code=xyz - - -",
+            "default",
+            new Dictionary<string, string> { ["eventId"] = "1", ["url"] = "https://example.test/cb?Access_Token=t1#frag" },
+            "Microsoft.AspNetCore.Hosting.Diagnostics",
+            BreadcrumbLevel.Info);
+
+        var result = AuthSentryEventProcessor.ScrubBreadcrumb(breadcrumb);
+
+        Assert.Equal(
+            "Request starting HTTP/2 GET https://overseer.gnollhack.com/api/auth/handoff?token=[scrubbed]&postcode=00100&code=[scrubbed] - - -",
+            result.Message);
+        Assert.Equal("1", result.Data!["eventId"]);
+        Assert.Equal("https://example.test/cb?Access_Token=[scrubbed]#frag", result.Data["url"]);
+        Assert.Equal("default", result.Type);
+        Assert.Equal("Microsoft.AspNetCore.Hosting.Diagnostics", result.Category);
+        Assert.Equal(BreadcrumbLevel.Info, result.Level);
+    }
+
+    [Fact]
+    public void ScrubBreadcrumb_ReturnsABreadcrumbWithoutSensitiveValuesUnchanged()
+    {
+        var breadcrumb = new Breadcrumb(
+            "Request starting HTTP/2 GET https://overseer.gnollhack.com/api/chat/sessions?keyboard=qwerty&postcode=00100 - - -",
+            "default",
+            new Dictionary<string, string> { ["eventId"] = "ExecutingEndpoint" });
+
+        Assert.Same(breadcrumb, AuthSentryEventProcessor.ScrubBreadcrumb(breadcrumb));
     }
 
     [Fact]
