@@ -1,5 +1,56 @@
 [
   {
+    "version": "1.4.0",
+    "date": "2026-10-25T18:39:45Z",
+    "summary": "A release that gives you more say over how the Overseer answers and helps it learn from its own gaps: a new Verbose Responses setting, settings that now apply to every chat, and a feedback tool the AI can use to tell the developers what it could not find. It also introduces Terms of Service, easier model pickers and more accurate game lookups.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "The AI can now send a short feedback report to the Overseer developers when it cannot find a fact it should know, a tool misbehaves, or it corrects one of its own mistakes. The report appears in the chat as a tool call named Feedback to developers. It is never used in confidential or incognito chats, and you can turn it off under Settings → AI Permissions."
+      },
+      {
+        "type": "feature",
+        "text": "A new Verbose Responses setting under Settings → General gives you longer, detailed explanations with background and edge cases instead of short answers that lead with the recommendation."
+      },
+      {
+        "type": "feature",
+        "text": "Gnoll Overseer now has Terms of Service. You are asked to review and accept them before sending messages, and you can read them, and see when you accepted them, from the sign-in page and under Settings → Terms of Service."
+      },
+      {
+        "type": "improvement",
+        "text": "Spoiler-free mode and the response style are now set once in your Overseer settings and apply to every chat, including chats opened from inside GnollHack."
+      },
+      {
+        "type": "improvement",
+        "text": "Model pickers now have search, sorting and a provider filter, remember your choices separately for each picker, and list the thinking levels of the same model from lowest to highest."
+      },
+      {
+        "type": "improvement",
+        "text": "Monster lookups now understand female and common names such as \"kobold lady\", and suggest similar names when a name is not found."
+      },
+      {
+        "type": "improvement",
+        "text": "Wiki lookups now find a page whether or not you include a leading \"The\", so \"Orb of Fate\" finds \"The Orb of Fate\"."
+      },
+      {
+        "type": "improvement",
+        "text": "The chat opens faster: the math formula renderer is now loaded only when a response needs it, or in the background once the chat is idle."
+      },
+      {
+        "type": "improvement",
+        "text": "If you ask about the game's source code right after the server has restarted, while the source is still being prepared, the AI now tells you to ask again in a moment, and says when an answer has not been checked against the source."
+      },
+      {
+        "type": "fix",
+        "text": "Pressing Enter to confirm text in a Japanese, Chinese or Korean input method no longer sends the message too early, or saves a chat or group name before you have finished typing it."
+      },
+      {
+        "type": "security",
+        "text": "Game snapshots that contain text addressed to the AI assistant are no longer passed to it, and the chat shows a notice when part of a snapshot was withheld."
+      }
+    ]
+  },
+  {
     "version": "1.3.0",
     "date": "2026-10-17T19:15:57Z",
     "summary": "A release focused on fair use, clearer costs and smoother model management: usage limits now explain themselves, every response shows what it really cost, and a model that is retired no longer leaves your chat stuck. Models and API keys have moved into Settings, and the Overseer loads faster.",
