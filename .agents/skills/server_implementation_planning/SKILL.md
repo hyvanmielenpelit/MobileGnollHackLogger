@@ -52,11 +52,12 @@ The sections below specify the repository-specific build boundaries, multi-proje
 
 ## Project Structure
 
-This repository spans four projects and several generated-artifact boundaries:
+This repository spans five projects and several generated-artifact boundaries:
 - `MobileGnollHackLogger` (ASP.NET Core host and Razor Pages)
 - `Overseer` (Angular client SPA frontend)
 - `GnollHackServer.Data` (Entity Framework Core database models and migrations)
 - `Overseer.Tests` (xUnit test suite)
+- `MobileGnollHackLogger.Tests` (xUnit tests of the website: game Web APIs, pages, website-only logic)
 
 A change that looks local often is not: a model added to a catalog file affects the Angular client, a database model change requires an EF Core migration in a different project than the one being edited, and a style tweak is worthless unless the generated CSS is recompiled. Planning is what catches that before any source file is edited.
 
@@ -66,7 +67,7 @@ A change that looks local often is not: a model added to a catalog file affects 
 
 A written implementation plan is **required** when the task meets **any** of these criteria:
 
-- It touches **more than one file**, or more than one project (`MobileGnollHackLogger`, `Overseer`, `GnollHackServer.Data`, `Overseer.Tests`)
+- It touches **more than one file**, or more than one project (`MobileGnollHackLogger`, `Overseer`, `GnollHackServer.Data`, `Overseer.Tests`, `MobileGnollHackLogger.Tests`)
 - It requires an **EF Core migration**
 - It requires **SCSS-to-CSS recompilation** or an **Angular client rebuild**
 - It is a refactor, a new feature, or anything the user describes as large or non-trivial
@@ -176,6 +177,12 @@ dotnet build MobileGnollHackLogger.slnx
 
 ```bash
 dotnet test Overseer.Tests --filter-not-trait "Category=UsesExternalApi"
+```
+
+Whenever the website (`MobileGnollHackLogger`) or what it uses from `GnollHackServer.Data` changed:
+
+```bash
+dotnet test MobileGnollHackLogger.Tests --filter-not-trait "Category=UsesExternalApi"
 ```
 
 From `Overseer/ClientApp/`, whenever the Angular client changed:

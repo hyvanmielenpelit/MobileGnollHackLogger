@@ -45,6 +45,7 @@
   </Folder>
   <Project Path="GnollHackServer.Data/GnollHackServer.Data.csproj" />
   <Project Path="MobileGnollHackLogger/MobileGnollHackLogger.csproj" />
+  <Project Path="MobileGnollHackLogger.Tests/MobileGnollHackLogger.Tests.csproj" />
   <Project Path="Overseer.Tests/Overseer.Tests.csproj" />
   <Project Path="Overseer/Overseer.csproj" />
 </Solution>

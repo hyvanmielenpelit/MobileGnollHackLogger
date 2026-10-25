@@ -243,6 +243,21 @@ When testing ASP.NET Core controllers and endpoints:
 *   **Logging**: the factory clears the host's logging providers and routes logs to the current test's output (`Overseer.Tests/Helpers/TestContextLoggerProvider.cs`), with `PreserveExecutionContext` on the TestServer so a request's log reaches the test that sent it. Passing runs stay quiet; a failing test carries its server log, and `--output detailed` shows it for passing ones. Expect `ExecuteUpdate ... not supported` warnings there: the InMemory provider cannot run `ExecuteUpdateAsync`, and its callers catch and log by design. Their logic is tested on SQLite.
 *   **Blank corpus paths**: the factory sets `WikiPath`, `NetHackWikiPath`, `KbPath`, `SourceCodePath` and `NetHackSourceCodePath` to empty, because Overseer's `ApplicationStarted` hook would otherwise index the developer's real corpora once per factory.
 
+### 3a. Website integration tests (`MobileGnollHackLogger.Tests`)
+
+Every test of the website project `MobileGnollHackLogger` — the game Web APIs, its Razor pages, its own logic — lives in `MobileGnollHackLogger.Tests`. `Overseer.Tests` cannot start the website: it references `Overseer`, whose `Program` would clash. A test of `GnollHackServer.Data` belongs here when **every production consumer of its subject is the website**; a subject Overseer also uses stays in `Overseer.Tests`.
+
+```bash
+dotnet test MobileGnollHackLogger.Tests --filter-not-trait "Category=UsesExternalApi"
+```
+
+*   **`WebsiteWebApplicationFactory`** (`MobileGnollHackLogger.Tests/Helpers/`) starts the real website in-process, one host and one database per test class (`IClassFixture`), with a temporary directory for dumplogs, bones and the wiki that is deleted on dispose.
+*   **Environment `Testing`, not `Development`.** `WebApplication.CreateBuilder` loads the website's user secrets only in Development, and those are the developer's real settings. Under `Testing` the configuration is `appsettings.json` plus the factory's settings table, the same on every machine. `UseExceptionHandler("/Error")` runs; `/dev/sentry-test` is not mapped.
+*   **Settings through `builder.UseSetting`.** `Program.cs` reads the connection strings, the game API throttle options and `BonesVersionCompatibilityInfo` before `builder.Build()`, too early for `ConfigureAppConfiguration`. `WebApplicationFactory` hands every `UseSetting` key to the entry point as a command-line argument, which `CreateBuilder(args)` reads first and which outranks every JSON file. A key `Program.cs` starts reading later is added to the factory's `Settings` table, which derived factories override key by key.
+*   **SQLite by default, InMemory for `ulong` comparisons.** SQLite runs `ExecuteUpdateAsync`, enforces keys and unique indexes and translates the LINQ, so an untranslatable query fails here. Its EF Core provider does not translate `<`, `<=`, `>`, `>=` on `ulong` columns, which the bones pool queries and the Bones Sharing page use; those classes use `InMemoryWebsiteWebApplicationFactory`, which runs no `ExecuteUpdateAsync` (`LastSignInUtc` stays null there).
+*   **Unique users and addresses.** Every test creates its own users (`WebsiteTestData.UniqueUserName`), so throttle state, bones pools and cached Terms status are never shared. A request whose security events or rate limit a test asserts carries its own `X-Test-Remote-Ip` (a documentation address such as `192.0.2.x`): `SecurityEventWriter`'s per-IP cap is process-wide, and without the header every request shares the `"unknown"` partition.
+*   **Suspected defects.** A test written to its specification that fails against production code is not "fixed" by changing the code in the same step: it is marked `Skip = "Suspected defect: <one line>"` and reported for a decision.
+
 ## 4. Angular Frontend Testing (Overseer ClientApp)
 
 When developing or modifying frontend code in `Overseer/ClientApp/`, unit tests must be executed to ensure client-side functionality and regression prevention.

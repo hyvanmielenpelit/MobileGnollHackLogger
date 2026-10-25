@@ -179,6 +179,15 @@ namespace MobileGnollHackLogger.Areas.API
                                 return Content(msg);
                             }
 
+                            if (!BonesFileNames.IsValid(model.BonesFile.FileName))
+                            {
+                                int responseCode = 400;
+                                string msg = "Bones file name is invalid.";
+                                await _dbLogger.LogRequestAsync($"{msg} Rejected name: {model.BonesFile.FileName}", Data.LogLevel.Error, responseCode);
+                                Response.StatusCode = responseCode; //Bad Request
+                                return Content(msg);
+                            }
+
                             const int ServerAllBoneLimit = 512;
                             const int ServerUserBoneLimit = 32;
                             const int ServerAvailableBoneMinLimit = 4;
@@ -231,13 +240,21 @@ namespace MobileGnollHackLogger.Areas.API
                                     Directory.CreateDirectory(dir);
                                 }
 
-                                string baseFilePath = dir + @"\" + model.BonesFile.FileName;
                                 string fullFilePath;
                                 do
                                 {
-                                    fullFilePath = baseFilePath + "_" + i;
+                                    fullFilePath = Path.Combine(dir, model.BonesFile.FileName + "_" + i);
                                     i++;
                                 } while (System.IO.File.Exists(fullFilePath));
+
+                                if (!BonesFileNames.IsInsideDirectory(fullFilePath, dir))
+                                {
+                                    int responseCode = 400;
+                                    string msg = "Bones file name is invalid.";
+                                    await _dbLogger.LogRequestAsync($"{msg} Rejected name: {model.BonesFile.FileName}", Data.LogLevel.Error, responseCode);
+                                    Response.StatusCode = responseCode; //Bad Request
+                                    return Content(msg);
+                                }
 
                                 using var bonesOutStream = System.IO.File.OpenWrite(fullFilePath);
                                 await model.BonesFile.CopyToAsync(bonesOutStream);
@@ -320,7 +337,9 @@ namespace MobileGnollHackLogger.Areas.API
                                                 ? (b.VersionNumber >= model.VersionCompatibilityNumber)
                                                 : (b.VersionCompatibilityNumber <= model.VersionNumber))));
 
-                                var availableBonesList = availableBonesQuery.ToList();
+                                var availableBonesList = availableBonesQuery.ToList()
+                                    .Where(b => BonesFileNames.IsValid(b.OriginalFileName))
+                                    .ToList();
 
                                 if (availableBonesList != null)
                                 {
@@ -483,49 +502,78 @@ namespace MobileGnollHackLogger.Areas.API
                                 var list = availableBones.ToList();
                                 bool didremoveentry = false, diddeletefile = false;
                                 ApplicationUser dbUser = (ApplicationUser)_dbContext.Users.First(u => u.UserName == model.UserName);
+                                string dbUserId = dbUser.Id;
 
-                                if (list != null && list.Count > 0)
+                                // Only a player the bones file was sent to may confirm its receipt
+                                List<long> rowIds = list.Select(b => b.Id).ToList();
+                                List<long> sentBonesIds = rowIds.Count == 0
+                                    ? new List<long>()
+                                    : await _dbContext.BonesTransactions
+                                        .Where(t => t.Type == TransactionType.Download && t.AspNetUserId == dbUserId && rowIds.Contains(t.BonesId))
+                                        .Select(t => t.BonesId)
+                                        .ToListAsync();
+                                var authorizedList = list.Where(b => sentBonesIds.Contains(b.Id)).ToList();
+
+                                if (authorizedList.Count == 0)
                                 {
-                                    foreach (var bone in list)
-                                    {
-                                        if(bone != null)
-                                        {
-                                            long bonesid = bone.Id;
-                                            int difficulty = bone.DifficultyLevel;
-                                            _dbContext.Bones.Remove(bone);
-                                            didremoveentry = true;
-
-                                            await _dbLogger.LogRequestAsync($"Deleted a database bones entry ID {bonesid}.",
-                                                Data.LogLevel.Info);
-
-                                            Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Deletion, null, dbUser)
-                                            {
-                                                BonesId = bonesid,
-                                                DifficultyLevel = difficulty,
-                                                Platform = model.GetPlatform(),
-                                                PlatformVersion = model.GetPlatformVersion(),
-                                                Port = model.GetPort(),
-                                                PortVersion = model.GetPortVersion(),
-                                                PortBuild = model.GetPortBuild(),
-                                                VersionNumber = model.VersionNumber,
-                                                VersionCompatibilityNumber = model.VersionCompatibilityNumber
-                                            };
-                                            await _dbContext.BonesTransactions.AddAsync(transaction);
-                                        }
-                                    }
-                                    await _dbContext.SaveChangesAsync();
+                                    int responseCode = 410;
+                                    string msg = "Bones file " + model.Data + " was not found among the bones files sent to user " + model.UserName + ". Nothing was deleted.";
+                                    await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Warning, responseCode);
+                                    Response.StatusCode = responseCode; //Gone
+                                    return Content(msg, "text/plain", Encoding.UTF8);
                                 }
-                                if (System.IO.File.Exists(model.Data))
+
+                                List<string> removedPaths = new List<string>();
+                                foreach (var bone in authorizedList)
                                 {
-                                    System.IO.File.Delete(model.Data);
-                                    diddeletefile = true;
-                                    await _dbLogger.LogRequestAsync($"Deleted the server file {model.Data}", Data.LogLevel.Info);
+                                    long bonesid = bone.Id;
+                                    int difficulty = bone.DifficultyLevel;
+                                    if (!string.IsNullOrEmpty(bone.BonesFilePath))
+                                    {
+                                        removedPaths.Add(bone.BonesFilePath);
+                                    }
+                                    _dbContext.Bones.Remove(bone);
+                                    didremoveentry = true;
+
+                                    await _dbLogger.LogRequestAsync($"Deleted a database bones entry ID {bonesid}.",
+                                        Data.LogLevel.Info);
+
+                                    Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Deletion, null, dbUser)
+                                    {
+                                        BonesId = bonesid,
+                                        DifficultyLevel = difficulty,
+                                        Platform = model.GetPlatform(),
+                                        PlatformVersion = model.GetPlatformVersion(),
+                                        Port = model.GetPort(),
+                                        PortVersion = model.GetPortVersion(),
+                                        PortBuild = model.GetPortBuild(),
+                                        VersionNumber = model.VersionNumber,
+                                        VersionCompatibilityNumber = model.VersionCompatibilityNumber
+                                    };
+                                    await _dbContext.BonesTransactions.AddAsync(transaction);
+                                }
+                                await _dbContext.SaveChangesAsync();
+
+                                // Files are deleted at the removed rows' stored paths, and only inside the bones store
+                                foreach (string storedPath in removedPaths.Distinct(StringComparer.OrdinalIgnoreCase))
+                                {
+                                    if (!BonesFileNames.IsInsideDirectory(storedPath, _bonesBasePath))
+                                    {
+                                        await _dbLogger.LogRequestAsync($"Server file {storedPath} is outside the bones store and was not deleted.", Data.LogLevel.Error);
+                                        continue;
+                                    }
+                                    if (System.IO.File.Exists(storedPath))
+                                    {
+                                        System.IO.File.Delete(storedPath);
+                                        diddeletefile = true;
+                                        await _dbLogger.LogRequestAsync($"Deleted the server file {storedPath}", Data.LogLevel.Info);
+                                    }
                                 }
                                 if (diddeletefile)
                                 {
                                     int responseCode = 200;
                                     string msg = "File " + model.Data + " was successfully deleted from the server." + (didremoveentry ? " Corresponding entry was also deleted from the database." : "");
-                                    await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Info);
+                                    await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Info, responseCode);
                                     Response.StatusCode = responseCode;
                                     return Content(msg, "text/plain", Encoding.UTF8);
                                 }
@@ -533,7 +581,7 @@ namespace MobileGnollHackLogger.Areas.API
                                 {
                                     int responseCode = 410; 
                                     string msg = "File " + model.Data + " was did not exist on the server and was thus not deleted." + (didremoveentry ? " However, a corresponding entry to the file was deleted from the database." : " A corresponding entry did not exist in the database either.");
-                                    await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error);
+                                    await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
                                     Response.StatusCode = responseCode; //Gone
                                     return Content(msg, "text/plain", Encoding.UTF8);
                                 }

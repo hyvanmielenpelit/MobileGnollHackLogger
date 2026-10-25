@@ -37,4 +37,8 @@
     <ProjectReference Include="..\GnollHackServer.Data\GnollHackServer.Data.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="MobileGnollHackLogger.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -453,11 +453,13 @@ namespace MobileGnollHackLogger.Areas.API
                     //Sign in succeedeed
 
                     //Check next whether the user is not banned
+                    string userId;
                     try
                     {
                         var user = await _userManager.FindByNameAsync(model.UserName);
                         if (user != null)
                         {
+                            userId = user.Id;
                             if (user.IsBanned == true)
                             {
                                 int responseCode = 423;
@@ -505,7 +507,30 @@ namespace MobileGnollHackLogger.Areas.API
                         //Change user name to the account name
                         xLogFileLine.Name = model.UserName;
 
-                        // Write Dumplog Files
+                        //A game already stored for this account with the same starttimeUTC is a repeat when its points and turns match
+                        var storedGameLogs = await _dbContext.GameLog
+                            .AsNoTracking()
+                            .Where(gl => gl.AspNetUserId == userId && gl.StartTimeUTC == xLogFileLine.StartTimeUTC)
+                            .OrderBy(gl => gl.Id)
+                            .ToListAsync();
+
+                        if (storedGameLogs.Count > 0)
+                        {
+                            var storedGameLog = storedGameLogs.FirstOrDefault(gl => gl.Points == xLogFileLine.Points && gl.Turns == xLogFileLine.Turns);
+                            if (storedGameLog != null)
+                            {
+                                await _dbLogger.LogRequestAsync("GameLog already stored as ID " + storedGameLog.Id + "; returning the stored entry.",
+                                    Data.LogLevel.Info, 200);
+                                return await BuildPostResponseAsync(storedGameLog);
+                            }
+
+                            int responseCode = 409;
+                            await _dbLogger.LogRequestAsync("Character already exists. GameLog ID " + storedGameLogs[0].Id
+                                + " has the same starttimeUTC with different points or turns.", Data.LogLevel.Warning, responseCode);
+                            return StatusCode(responseCode); //Character already exists
+                        }
+
+                        // Write Dumplog Files; files left without a row by an earlier failed attempt are replaced
                         string dir = Path.Combine(_dumplogBasePath, xLogFileLine.Name);
                         if (!System.IO.Directory.Exists(dir))
                         {
@@ -516,66 +541,23 @@ namespace MobileGnollHackLogger.Areas.API
                         string plainTextDumpLogPath = filePathWithoutExtension + ".txt";
                         string htmlDumpLogPath = filePathWithoutExtension + ".html";
 
-                        if (System.IO.File.Exists(plainTextDumpLogPath))
-                        {
-                            int responseCode = 409;
-                            await _dbLogger.LogRequestAsync("Character already exists. Plain Text Dumplog Path found: " + plainTextDumpLogPath,
-                                Data.LogLevel.Warning, responseCode);
-                            return StatusCode(responseCode); //Character already exists
-                        }
+                        var t1 = WriteDumplogAsync(model.PlainTextDumpLog, plainTextDumpLogPath);
+                        var t2 = WriteDumplogAsync(model.HtmlDumpLog, htmlDumpLogPath);
 
-                        if (System.IO.File.Exists(htmlDumpLogPath))
-                        {
-                            int responseCode = 409;
-                            await _dbLogger.LogRequestAsync("Character already exists. HTML Dumplog Path found: " + htmlDumpLogPath,
-                                Data.LogLevel.Warning, responseCode);
-                            return StatusCode(responseCode); //Character already exists
-                        }
+                        await Task.WhenAll(t1, t2);
 
-                        using var plainTextOutStream = System.IO.File.OpenWrite(plainTextDumpLogPath);
-                        var t1 = model.PlainTextDumpLog.CopyToAsync(plainTextOutStream);
-
-                        using var htmlOutStream = System.IO.File.OpenWrite(htmlDumpLogPath);
-                        var t2 = model.HtmlDumpLog.CopyToAsync(htmlOutStream);
-
-                        Task.WaitAll(t1, t2);
-
+                        GameLog? gameLog = null;
                         try
                         {
-                            GameLog gameLog = new GameLog(xLogFileLine, _dbContext);
+                            gameLog = new GameLog(xLogFileLine, _dbContext);
                             gameLog.CreatedDate = DateTime.Now;
                             await _dbContext.GameLog.AddAsync(gameLog);
                             await _dbContext.SaveChangesAsync();
-                            long id = gameLog.Id;
-                            if (id == 0)
-                            {
-                                int responseCode = 500;
-                                string msg = "Inserted Id is 0.";
-                                await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
-                                Response.StatusCode = responseCode;
-                                return Content(msg);
-                            }
-
-                            await _dbLogger.LogRequestAsync("GameLog successfully inserted to the database", Data.LogLevel.Info, 200);
-
-                            var topScoreNumberData = await _dbContext.GetTopScoreNumberAsync(id, gameLog.Mode);
-
-                            var resposeInfo = new LogPostResponseInfo()
-                            {
-                                DatabaseRowId = id,
-                                TopScoreDisplayIndex = topScoreNumberData.DisplayIndex,
-                                TopScoreIndex = topScoreNumberData.Index,
-                                TopScorePageUrl = GetTopScorePageUrl(gameLog.Mode)
-                            };
-
-                            var responseText = System.Text.Json.JsonSerializer.Serialize(resposeInfo);
-
-                            await _dbLogger.LogRequestAsync("ResponseText: " + responseText, Data.LogLevel.Info, 200);
-
-                            return Content(responseText, "text/plain", Encoding.UTF8); //OK
                         }
                         catch(InvalidOperationException invEx)
                         {
+                            DetachGameLog(gameLog);
+                            await DeleteDumplogFilesAsync(410, plainTextDumpLogPath, htmlDumpLogPath);
                             int responseCode = 410;
                             await _dbLogger.LogRequestAsync("GameLog insertion to database failed. Message: " + invEx.Message, Data.LogLevel.Error, responseCode);
                             return StatusCode(responseCode); //Gone
@@ -583,11 +565,27 @@ namespace MobileGnollHackLogger.Areas.API
                         catch(Exception ex)
                         {
                             SentrySdk.CaptureException(ex);
+                            DetachGameLog(gameLog);
+                            await DeleteDumplogFilesAsync(500, plainTextDumpLogPath, htmlDumpLogPath);
                             int responseCode = 500;
                             await _dbLogger.LogRequestAsync("GameLog insertion to database failed. Message: " + ex.Message, Data.LogLevel.Error, responseCode);
                             Response.StatusCode = responseCode; //Server Error
                             return Content(ex.Message.ToString());
                         }
+
+                        long id = gameLog.Id;
+                        if (id == 0)
+                        {
+                            int responseCode = 500;
+                            string msg = "Inserted Id is 0.";
+                            await _dbLogger.LogRequestAsync(msg, Data.LogLevel.Error, responseCode);
+                            Response.StatusCode = responseCode;
+                            return Content(msg);
+                        }
+
+                        await _dbLogger.LogRequestAsync("GameLog successfully inserted to the database", Data.LogLevel.Info, 200);
+
+                        return await BuildPostResponseAsync(gameLog);
                     }
                     else if(string.IsNullOrEmpty(model.XLogEntry) && model.PlainTextDumpLog == null && model.HtmlDumpLog == null)
                     {
@@ -618,6 +616,85 @@ namespace MobileGnollHackLogger.Areas.API
                 await _dbLogger.LogRequestAsync(message, Data.LogLevel.Error, responseCode);
                 Response.StatusCode = responseCode;
                 return Content(message);
+            }
+        }
+
+        /// <summary>
+        /// Builds the 200 response of <see cref="Post"/> for a stored game log row. The top score indexes are 0 when the
+        /// row's mode is not a known mode or the top score lookup fails.
+        /// </summary>
+        private async Task<IActionResult> BuildPostResponseAsync(GameLog gameLog)
+        {
+            long topScoreIndex = 0;
+            long topScoreDisplayIndex = 0;
+
+            if (gameLog.Mode != null && GnollHackHelper.Modes.ContainsKey(gameLog.Mode))
+            {
+                try
+                {
+                    var topScoreNumberData = await _dbContext.GetTopScoreNumberAsync(gameLog.Id, gameLog.Mode);
+                    topScoreIndex = topScoreNumberData.Index;
+                    topScoreDisplayIndex = topScoreNumberData.DisplayIndex;
+                }
+                catch (Exception ex)
+                {
+                    SentrySdk.CaptureException(ex);
+                    await _dbLogger.LogRequestAsync("Top score lookup failed for GameLog ID " + gameLog.Id + ". Message: " + ex.Message,
+                        Data.LogLevel.Warning, 200);
+                }
+            }
+
+            var resposeInfo = new LogPostResponseInfo()
+            {
+                DatabaseRowId = gameLog.Id,
+                TopScoreDisplayIndex = topScoreDisplayIndex,
+                TopScoreIndex = topScoreIndex,
+                TopScorePageUrl = GetTopScorePageUrl(gameLog.Mode)
+            };
+
+            var responseText = System.Text.Json.JsonSerializer.Serialize(resposeInfo);
+
+            await _dbLogger.LogRequestAsync("ResponseText: " + responseText, Data.LogLevel.Info, 200);
+
+            return Content(responseText, "text/plain", Encoding.UTF8); //OK
+        }
+
+        /// <summary>
+        /// Writes an uploaded dumplog to the path, replacing any existing file there.
+        /// </summary>
+        private static async Task WriteDumplogAsync(IFormFile dumplog, string path)
+        {
+            await using var outStream = new FileStream(path, FileMode.Create, FileAccess.Write);
+            await dumplog.CopyToAsync(outStream);
+        }
+
+        /// <summary>
+        /// Stops tracking a game log whose insert failed, so later saves of the request log do not retry it.
+        /// </summary>
+        private void DetachGameLog(GameLog? gameLog)
+        {
+            if (gameLog != null)
+            {
+                _dbContext.Entry(gameLog).State = EntityState.Detached;
+            }
+        }
+
+        /// <summary>
+        /// Deletes the dumplog files written by this request, best effort; a failure is logged, not thrown.
+        /// </summary>
+        private async Task DeleteDumplogFilesAsync(int responseCode, params string[] paths)
+        {
+            foreach (var path in paths)
+            {
+                try
+                {
+                    System.IO.File.Delete(path);
+                }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                {
+                    await _dbLogger.LogRequestAsync("Dumplog file " + path + " could not be deleted. Message: " + ex.Message,
+                        Data.LogLevel.Warning, responseCode);
+                }
             }
         }
 

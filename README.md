@@ -87,6 +87,10 @@ A shared .NET class library that provides the **data access layer** used by both
 
 The automated test suite for the Overseer project, containing unit tests and integration tests for the AI chat service, tool execution, API endpoints and GnollBench. It uses xUnit v3 on Microsoft.Testing.Platform. The Angular client has its own Vitest specs, run in browser mode with Playwright.
 
+### 🧪 Website Tests (`MobileGnollHackLogger.Tests/`)
+
+The automated tests of the GnollHack Account website: every game Web API endpoint (game logs, bones, save file tracking, dumplogs, Junethack) over HTTP against the real website host, its public Razor pages, and its own logic. xUnit v3 on Microsoft.Testing.Platform, on SQLite and EF Core InMemory databases.
+
 ## 📏 Codebase Size
 
 > **These figures are an estimate, and they change quickly with new commits.** Measured **2026-10-06** at commit **`7f48dec`**.
@@ -130,7 +134,7 @@ The table count measures schema breadth, not data volume: row counts and sizes a
 
 - **Unit**: non-blank lines, comments included, of tracked source files (`.cs`, `.cshtml`, `.ts`, `.html`, `.scss`, `.css`, `.js`). Tables are the `ToTable` entries of the EF Core model snapshot, `GnollHackServer.Data/Migrations/ApplicationDbContextModelSnapshot.cs`.
 - **GnollBench** is every source file whose path contains `benchmark`, case-insensitive. Tables are assigned by which code uses them: the 22 `Benchmark*` tables plus `SystemAiConfigurationSnapshots`.
-- **Tests** are `Overseer.Tests/`, `*.spec.ts` and `*.testing.ts`.
+- **Tests** are `Overseer.Tests/`, `*.spec.ts` and `*.testing.ts`. `MobileGnollHackLogger.Tests/` was added after this measurement and is not counted.
 - **Excluded**: the generated EF Core migrations, vendored libraries in `MobileGnollHackLogger/wwwroot/lib/`, the CSS compiled from SCSS, minified files, and all non-code files (JSON data and model catalogs, tool guides, documentation, AI agent skills).
 - **Known biases**: GnollBench code is slightly under-counted, because shared Angular components it relies on heavily (the model picker, data table, PDF viewer and snapshot viewer) and benchmark hooks inside chat files count as Gnoll Overseer; `SystemAiConfigurationSnapshot.cs` counts as Gnoll Overseer code although its table counts as GnollBench. GnollHack Account includes ~74 scaffolded ASP.NET Identity UI files.
 
@@ -249,6 +253,7 @@ MobileGnollHackLogger/          # Solution root
 ├── GnollHackServer.Data/       # Shared data access library
 │   └── Migrations/             #   EF Core migrations
 ├── Overseer.Tests/             # Test project
+├── MobileGnollHackLogger.Tests/ # Website test project
 ├── global.json                 # .NET SDK settings; selects the Microsoft.Testing.Platform test runner
 ├── MobileGnollHackLogger.slnx  # Visual Studio solution file
 └── LICENSE                     # MIT License
@@ -412,7 +417,7 @@ Contributions are welcome! To get started:
 1. Check the [Issues](https://github.com/hyvanmielenpelit/MobileGnollHackLogger/issues) for open tasks or bug reports.
 2. Fork the repository and create a feature branch.
 3. Make your changes, ensuring they follow the existing code style.
-4. Run the test suites: `dotnet test Overseer.Tests --filter-not-trait "Category=UsesExternalApi"` from the repository root, and `npm run test:headless` in `Overseer/ClientApp/`. Without the filter, the .NET run calls live OpenAI, Anthropic and Google APIs and spends money.
+4. Run the test suites: `dotnet test Overseer.Tests --filter-not-trait "Category=UsesExternalApi"` and `dotnet test MobileGnollHackLogger.Tests --filter-not-trait "Category=UsesExternalApi"` from the repository root, and `npm run test:headless` in `Overseer/ClientApp/`. Without the filter, the .NET run calls live OpenAI, Anthropic and Google APIs and spends money.
 5. Submit a Pull Request with a clear description of what you changed and why.
 
 ## License

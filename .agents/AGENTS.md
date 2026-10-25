@@ -89,6 +89,11 @@ These are the **only** correct ways to run this repository's tests. Use them ver
   ```
   The `--filter-not-trait` is **not optional**. The live-API tests are also marked `[Fact(Explicit = true)]`, so a run without the filter reports them as *Not run (due to explicit test filtering)* instead of calling OpenAI, Anthropic and Google; the filter stays the documented default as a second guard, because a new live test that omits `Explicit = true` would otherwise spend quota and money unnoticed. For the whole solution, substitute `MobileGnollHackLogger.slnx` for `Overseer.Tests`. Note the project directory is `Overseer.Tests`, plural.
 
+  **Website tests** (from the repository root) — every test of the `MobileGnollHackLogger` website lives in `MobileGnollHackLogger.Tests`, which has no live-API tests; the filter stays as the same guard:
+  ```bash
+  dotnet test MobileGnollHackLogger.Tests --filter-not-trait "Category=UsesExternalApi"
+  ```
+
   To run **only** the live-API tests, which needs the secrets and your explicit permission:
   ```bash
   dotnet test Overseer.Tests --filter-trait "Category=UsesExternalApi" --explicit on
@@ -147,7 +152,7 @@ Rationale, the `[Trait("Category", "UsesExternalApi")]` convention, live-model p
 **Non-trivial tasks require a written implementation plan, approved by the user before any file is modified.** Read the repository overlay skill `server_implementation_planning` (`.agents/skills/server_implementation_planning/SKILL.md`) for project-specific build boundaries, and the global `agent-implementation-planning` skill for the universal lifecycle.
 
 A plan is **required** when a task meets any of these:
-- It touches **more than one file**, or more than one project (`MobileGnollHackLogger`, `Overseer`, `GnollHackServer.Data`, `Overseer.Tests`)
+- It touches **more than one file**, or more than one project (`MobileGnollHackLogger`, `Overseer`, `GnollHackServer.Data`, `Overseer.Tests`, `MobileGnollHackLogger.Tests`)
 - It requires an **EF Core migration**
 - It requires **SCSS-to-CSS recompilation** or an **Angular client rebuild**
 - It is a refactor, a new feature, or anything the user describes as large or non-trivial

@@ -1,7 +1,7 @@
 using MobileGnollHackLogger.Data;
 using Xunit;
 
-namespace Overseer.Tests.UnitTests;
+namespace MobileGnollHackLogger.Tests.Unit;
 
 public class XLogFileLinePlatformTests
 {

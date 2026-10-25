@@ -55,7 +55,8 @@ this repository, and **an agent never commits or pushes here**.
 A plan is **required** when any of these are true:
 
 - The task touches **more than one file**, or more than one project
-  (`MobileGnollHackLogger`, `Overseer`, `GnollHackServer.Data`, `Overseer.Tests`)
+  (`MobileGnollHackLogger`, `Overseer`, `GnollHackServer.Data`, `Overseer.Tests`,
+  `MobileGnollHackLogger.Tests`)
 - It requires an **EF Core migration**
 - It requires **SCSS-to-CSS recompilation** or an **Angular rebuild**
 - It is a refactor, a new feature, or anything the user describes as non-trivial
