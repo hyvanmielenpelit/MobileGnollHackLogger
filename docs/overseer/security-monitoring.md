@@ -312,7 +312,7 @@ the request's context, at most 30 writes per IP address a minute.
 | `AutoBlocked` (`Code` snapshot-injection, `Detail` = the reason) | `OverseerAccessService.BlockAutomaticallyAsync`, for the snapshot guard (§ 3a) | the blocked user | no |
 | `AdminBlocked`, `AdminUnblocked` | `OverseerAccessService` | the blocked user | no |
 | `AccountHoldPlaced`, `AccountHoldReleased` (`Detail` = reason), `AccountDeletionHeld` (`Code` manual / automatic) | holds and the website deletion page | the account's user | no |
-| `AdminLockedOut`, `AdminUnlocked`, `AdminBanned`, `AdminUnbanned`, `AdminSignedOut`, `AdminEmailConfirmed`, `AdminTwoFactorReset` (`Detail` = reason) | the Users tab's per-user actions and the Bulk Actions runner (`AdminUserManagementService`); the durable record naming the administrator is the admin log | the account's user | no |
+| `AdminLockedOut`, `AdminUnlocked`, `AdminBanned`, `AdminUnbanned`, `AdminSignedOut`, `AdminEmailConfirmed`, `AdminTwoFactorReset`, `AdminEmailChanged` (`Detail` = reason) | the Users tab's per-user actions and the Bulk Actions runner (`AdminUserManagementService`); the durable record naming the administrator is the admin log | the account's user | no |
 
 **Retention:** `ChatRetentionSettings:PruneSecurityEventDays` (180) prunes runs last seen before the
 window (full-pass phase 9, `POST api/admin/maintenance/prune-security-events`, the Database tab), except

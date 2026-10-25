@@ -128,6 +128,7 @@ namespace Overseer.Tests.IntegrationTests
             { "POST", "/api/admin/users/user-1/sign-out-everywhere" },
             { "POST", "/api/admin/users/user-1/confirm-email" },
             { "POST", "/api/admin/users/user-1/reset-two-factor" },
+            { "POST", "/api/admin/users/user-1/change-email" },
             { "POST", "/api/admin/users/user-1/overseer-block" },
             { "DELETE", "/api/admin/users/user-1/overseer-block" },
             { "POST", "/api/admin/users/user-1/account-hold" },

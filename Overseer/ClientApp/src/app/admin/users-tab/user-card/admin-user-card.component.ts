@@ -108,6 +108,10 @@ export class AdminUserCardComponent implements OnInit {
     return this.user.twoFactorEnabled ? 'On' : 'Off';
   }
 
+  get junetHackText(): string {
+    return this.user.junetHackUserName || 'None';
+  }
+
   /** `18 October 2026 · accepted 2026-10-18 · web`, or `Not accepted`. */
   get overseerTermsText(): string {
     return this.termsText('overseer-terms');

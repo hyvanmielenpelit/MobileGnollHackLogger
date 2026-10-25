@@ -89,6 +89,8 @@ describe('AdminUsersService', () => {
       [() => service.signOutEverywhere(id).subscribe(), 'POST', '/sign-out-everywhere', {}],
       [() => service.confirmEmail(id).subscribe(), 'POST', '/confirm-email', {}],
       [() => service.resetTwoFactor(id, ' Verified by phone ').subscribe(), 'POST', '/reset-two-factor', { reason: 'Verified by phone' }],
+      [() => service.changeEmail(id, { email: 'b@example.com', markConfirmed: true, reason: 'Lost mailbox' }).subscribe(), 'POST', '/change-email',
+        { email: 'b@example.com', markConfirmed: true, reason: 'Lost mailbox' }],
       [() => service.blockFromAiChat(id, 'Abuse').subscribe(), 'POST', '/overseer-block', { reason: 'Abuse' }],
       [() => service.unblockFromAiChat(id).subscribe(), 'DELETE', '/overseer-block', null],
       [() => service.placeHold(id, 'Fraud').subscribe(), 'POST', '/account-hold', { reason: 'Fraud' }],

@@ -118,6 +118,7 @@ export interface AdminUser {
   gameLogCount: number;
   bonesCount: number;
   chatSessionCount: number;
+  junetHackUserName: string | null;
   /** The newest accepted version per document; a document the user never accepted has no entry. */
   termsAcceptances?: AdminTermsAcceptance[];
 }
@@ -171,6 +172,12 @@ export interface AdminGameRestrictionsRequest {
   gameLogBanned: boolean;
   bonesBanned: boolean;
   reason?: string;
+}
+
+export interface AdminChangeEmailRequest {
+  email: string;
+  markConfirmed: boolean;
+  reason: string;
 }
 
 // --- Deletion ---
@@ -375,7 +382,8 @@ export type AdminUserActionKind =
   | 'HoldPlaced'
   | 'HoldReleased'
   | 'DeletionRequestApproved'
-  | 'DeletionRequestDeclined';
+  | 'DeletionRequestDeclined'
+  | 'EmailChanged';
 
 /** Every kind, in the order of the stored enum. */
 export const ADMIN_USER_ACTION_KINDS: readonly AdminUserActionKind[] = [
@@ -393,7 +401,8 @@ export const ADMIN_USER_ACTION_KINDS: readonly AdminUserActionKind[] = [
   'HoldPlaced',
   'HoldReleased',
   'DeletionRequestApproved',
-  'DeletionRequestDeclined'
+  'DeletionRequestDeclined',
+  'EmailChanged'
 ];
 
 export interface AdminUserLogEntry {
@@ -545,6 +554,11 @@ export class AdminUsersService {
   resetTwoFactor(id: string, reason?: string): Observable<AdminUserActionResult> {
     const body = reason?.trim() ? { reason: reason.trim() } : {};
     return this.http.post<AdminUserActionResult>(this.userUrl(id, '/reset-two-factor'), body);
+  }
+
+  /** `reason` (1–512 characters) is for administrators only. Unless `markConfirmed`, the server emails the new address instructions. */
+  changeEmail(id: string, request: AdminChangeEmailRequest): Observable<AdminUserActionResult> {
+    return this.http.post<AdminUserActionResult>(this.userUrl(id, '/change-email'), request);
   }
 
   /** Blocks the user from starting AI work in Overseer; `reason` (1–256 characters) is shown to them. */

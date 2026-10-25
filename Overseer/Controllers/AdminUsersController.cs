@@ -200,6 +200,10 @@ public class AdminUsersController : ControllerBase
     public async Task<IActionResult> ResetTwoFactor(string id, [FromBody] AdminOptionalReasonRequest? request)
         => ToResult(await _users.ResetTwoFactorAsync(Actor, id, request?.Reason));
 
+    [HttpPost("{id}/change-email")]
+    public async Task<IActionResult> ChangeEmail(string id, [FromBody] AdminChangeEmailRequest request)
+        => ToResult(await _users.ChangeEmailAsync(Actor, id, request?.Email, request?.MarkConfirmed ?? false, request?.Reason));
+
     /// <summary>Blocks the user from starting AI work in Overseer; the reason (1–256 characters) is shown to them.</summary>
     [HttpPost("{id}/overseer-block")]
     public async Task<IActionResult> BlockUser(string id, [FromBody] AdminReasonRequest request)

@@ -1550,9 +1550,8 @@ visible buttons or icon buttons (§4); a single action stays a button.
 `div.gh-action-popover-group[role="group"]` labelled by its visible heading, a
 `p.gh-action-popover-heading` with an id (`aria-labelledby`), separated by a hairline. The Users card's
 popover has *Access* (*Lock out…* / *Unlock*, *Ban…* / *Unban*, *Game upload restrictions…*, *Block from
-AI chat…* / *Unblock from AI chat*, *Sign out everywhere*), *Account* (*Mark email as confirmed* while
-unconfirmed, *Reset two-factor authentication…* while enabled; the group is left out when it has no item)
-and *Deletion* (*Place deletion hold…* / *Release deletion hold*, *Delete account…*). The states are pure
+AI chat…* / *Unblock from AI chat*, *Sign out everywhere*), *Account* (*Change email…*, *Mark email as
+confirmed* while unconfirmed, *Reset two-factor authentication…* while enabled) and *Deletion* (*Place deletion hold…* / *Release deletion hold*, *Delete account…*). The states are pure
 functions in `users-tab/user-card/admin-user-card-actions.ts`, which mirror the server's guard; an
 unavailable item keeps its place `aria-disabled` with the reason on its second line (*You cannot lock out
 your own account.*, *Administrators cannot be locked out, banned or deleted here. Remove them from the

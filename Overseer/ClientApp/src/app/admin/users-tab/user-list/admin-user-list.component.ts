@@ -29,6 +29,7 @@ import { AdminPageStore } from '../../admin-page.store';
 import { AdminUserCardComponent } from '../user-card/admin-user-card.component';
 import { AdminUserActionId } from '../user-card/admin-user-card-actions';
 import { UserBanDialogComponent } from '../user-action-dialogs/user-ban-dialog.component';
+import { UserChangeEmailDialogComponent } from '../user-action-dialogs/user-change-email-dialog.component';
 import { UserDeleteDialogComponent } from '../user-action-dialogs/user-delete-dialog.component';
 import { UserActionDone, ADMIN_REASON_MAX } from '../user-action-dialogs/user-action-dialogs';
 import { UserLockoutDialogComponent } from '../user-action-dialogs/user-lockout-dialog.component';
@@ -68,7 +69,7 @@ interface CardChange {
   imports: [
     UserCriteriaBarComponent, AdminUserCardComponent,
     UserLockoutDialogComponent, UserBanDialogComponent, UserRestrictionsDialogComponent, UserDeleteDialogComponent,
-    AdminConfirmDialogComponent, AdminReasonDialogComponent, ConfigAccessDialogComponent
+    UserChangeEmailDialogComponent, AdminConfirmDialogComponent, AdminReasonDialogComponent, ConfigAccessDialogComponent
   ],
   templateUrl: './admin-user-list.component.html',
   styleUrl: './admin-user-list.component.scss',
@@ -86,6 +87,7 @@ export class AdminUserListComponent implements OnInit, OnDestroy {
   @ViewChild(UserBanDialogComponent, { static: true }) banDialog!: UserBanDialogComponent;
   @ViewChild(UserRestrictionsDialogComponent, { static: true }) restrictionsDialog!: UserRestrictionsDialogComponent;
   @ViewChild(UserDeleteDialogComponent, { static: true }) deleteDialog!: UserDeleteDialogComponent;
+  @ViewChild(UserChangeEmailDialogComponent, { static: true }) changeEmailDialog!: UserChangeEmailDialogComponent;
   @ViewChild(AdminConfirmDialogComponent, { static: true }) confirmDialog!: AdminConfirmDialogComponent;
   @ViewChild(AdminReasonDialogComponent, { static: true }) reasonDialog!: AdminReasonDialogComponent;
   @ViewChild(ConfigAccessDialogComponent, { static: true }) configAccess!: ConfigAccessDialogComponent;
@@ -341,6 +343,9 @@ export class AdminUserListComponent implements OnInit, OnDestroy {
       case 'restrictions':
         this.restrictionsDialog.open(user);
         return;
+      case 'changeEmail':
+        this.changeEmailDialog.open(user);
+        return;
       case 'delete':
         this.deleteDialog.open(user);
         return;
@@ -379,7 +384,7 @@ export class AdminUserListComponent implements OnInit, OnDestroy {
       case 'resetTwoFactor':
         this.reasonDialog.open({
           title: 'Reset two-factor authentication',
-          message: `Do this only after you have verified the identity of the person asking. ${name} can then sign in with the password alone and set up two-factor authentication again. Signed-in sessions end within 5 minutes.`,
+          message: `Do this only after you have verified the identity of the person asking. ${name} can then sign in with the password alone, in GnollHack too. Signed-in sessions end within 5 minutes.`,
           label: 'Reason',
           maxLength: ADMIN_REASON_MAX,
           confirmText: 'Reset Two-Factor',

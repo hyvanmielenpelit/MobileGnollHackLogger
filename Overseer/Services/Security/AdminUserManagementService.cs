@@ -1,5 +1,7 @@
+using System.ComponentModel.DataAnnotations;
 using GnollHackServer.Data.Privacy;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Extensions;
@@ -36,6 +38,8 @@ public static class AdminRefusalCodes
     public const string Acknowledgments = "acknowledgments";
     public const string ErasureFailed = "erasure-failed";
     public const string Identity = "identity";
+    public const string Email = "email";
+    public const string EmailTaken = "email-taken";
 }
 
 /// <summary>Builds rows of the durable admin log, <see cref="AdminUserAction"/>.</summary>
@@ -78,6 +82,7 @@ public static class AdminUserActionLog
 public class AdminUserManagementService
 {
     public const int MaxReasonLength = 512;
+    public const int MaxEmailLength = 256;
     public const int MaxTake = 100;
     public const int DefaultTake = 20;
 
@@ -94,11 +99,13 @@ public class AdminUserManagementService
     private readonly ISecurityEventRecorder? _securityEvents;
     private readonly TimeProvider _time;
     private readonly EphemeralSessionStore? _ephemeralSessions;
+    private readonly IServiceProvider? _services;
 
+    /// <param name="services">Resolves the email sender only when an email is sent: its constructor throws when email is not configured.</param>
     public AdminUserManagementService(ApplicationDbContext db, UserManager<ApplicationUser> userManager, IConfiguration configuration,
         AdminUserManagementOptions options, AccountDeletionReviewService review, OverseerAccessService access,
         ILogger<AdminUserManagementService> logger, ISecurityEventRecorder? securityEvents = null, TimeProvider? time = null,
-        EphemeralSessionStore? ephemeralSessions = null)
+        EphemeralSessionStore? ephemeralSessions = null, IServiceProvider? services = null)
     {
         _db = db;
         _userManager = userManager;
@@ -110,6 +117,7 @@ public class AdminUserManagementService
         _securityEvents = securityEvents;
         _time = time ?? TimeProvider.System;
         _ephemeralSessions = ephemeralSessions;
+        _services = services;
     }
 
     private DateTime UtcNow => _time.GetUtcNow().UtcDateTime;
@@ -283,6 +291,7 @@ public class AdminUserManagementService
                 GameLogCount = gameLogs.Where(g => g.UserId == u.Id).Select(g => g.Count).FirstOrDefault(),
                 BonesCount = bones.Where(g => g.UserId == u.Id).Select(g => g.Count).FirstOrDefault(),
                 ChatSessionCount = chats.Where(g => g.UserId == u.Id).Select(g => g.Count).FirstOrDefault(),
+                JunetHackUserName = u.JunetHackUserName,
                 TermsAcceptances = acceptances.Where(a => a.AspNetUserId == u.Id)
                     .GroupBy(a => a.DocumentKey)
                     .Select(g => g.OrderByDescending(a => a.Version, versionOrder).First())
@@ -605,6 +614,89 @@ public class AdminUserManagementService
             "Email marked confirmed.", SecurityEventKind.AdminEmailConfirmed, null, ct);
     }
 
+    /// <summary>
+    /// Replaces the email address, which renews the security stamp. Unless <paramref name="markConfirmed"/>, the
+    /// account cannot sign in until the user confirms the new address, and the new address is emailed instructions
+    /// for the website's Resend email confirmation page.
+    /// </summary>
+    public async Task<AdminResult<AdminUserActionResultDto>> ChangeEmailAsync(AdminActor actor, string id, string? email,
+        bool markConfirmed, string? reason, CancellationToken ct = default)
+    {
+        if (ValidateReason(ref reason, required: true) is string reasonError)
+            return Refuse(AdminResultStatus.BadRequest, reasonError, AdminRefusalCodes.Reason);
+        email = email?.Trim() ?? string.Empty;
+        if (email.Length == 0 || email.Length > MaxEmailLength || !new EmailAddressAttribute().IsValid(email))
+            return Refuse(AdminResultStatus.BadRequest, $"Enter a valid email address of at most {MaxEmailLength} characters.", AdminRefusalCodes.Email);
+
+        var user = await _userManager.FindByIdAsync(id);
+        if (user == null) return NotFoundResult();
+        if (Guard(actor, user, GuardPolicy.RefuseSelfAndAdministrators) is { } refused) return refused;
+        if (_userManager.NormalizeEmail(email) == user.NormalizedEmail)
+            return Refuse(AdminResultStatus.Conflict, "The account already has this email address.", AdminRefusalCodes.AlreadyDone);
+        // Checked here rather than left to RequireUniqueEmail, which not every Identity setup enables.
+        var owner = await _userManager.FindByEmailAsync(email);
+        if (owner != null && owner.Id != user.Id)
+            return Refuse(AdminResultStatus.Conflict, "Another account already uses this email address.", AdminRefusalCodes.EmailTaken);
+        var facts = await FactsAsync(user.Id, ct);
+        var before = StatusOf(user, facts);
+
+        // Leaves the address unconfirmed and renews the security stamp, which also voids pending confirmation links.
+        if (IdentityFailure(await _userManager.SetEmailAsync(user, email)) is { } failed1) return failed1;
+
+        int minutes = _configuration.GetValue("IdentityLockout:SecurityStampValidationMinutes", 5);
+        string summary;
+        if (markConfirmed)
+        {
+            string token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+            if (IdentityFailure(await _userManager.ConfirmEmailAsync(user, token)) is { } failed2) return failed2;
+            summary = $"Email changed and marked confirmed. Signed-in sessions end within {minutes} minutes.";
+        }
+        else if (await SendChangeEmailInstructionsAsync(user, email))
+        {
+            summary = "Email changed. Instructions for confirming the new address were emailed to it; the account cannot sign in until the user confirms it.";
+        }
+        else
+        {
+            summary = "Email changed, but the instructions email could not be sent. Ask the user to confirm the new address from the "
+                + "Resend email confirmation page of the account website; the account cannot sign in until then.";
+        }
+
+        return await FinishAsync(actor, user, facts, before, AdminUserActionKind.EmailChanged, reason,
+            summary, SecurityEventKind.AdminEmailChanged, null, ct);
+    }
+
+    /// <summary>Emails the new address how to confirm it; false when no sender is configured or the send fails. Never logs the address.</summary>
+    private async Task<bool> SendChangeEmailInstructionsAsync(ApplicationUser user, string email)
+    {
+        IEmailSender? sender;
+        try
+        {
+            sender = _services?.GetService<IEmailSender>();
+        }
+        catch (Exception)
+        {
+            sender = null;
+        }
+        if (sender == null)
+        {
+            _logger.LogWarning("No email sender is configured; the change-email instructions for user {UserId} were not sent.", user.Id);
+            return false;
+        }
+
+        var (subject, html) = AdminEmailChangeEmailBuilder.Build(user.UserName ?? string.Empty, email,
+            AdminEmailChangeEmailBuilder.ResendConfirmationUrl(_options.AccountSiteBaseUrl));
+        try
+        {
+            await sender.SendEmailAsync(email, subject, html);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "The change-email instructions for user {UserId} could not be sent.", user.Id);
+            return false;
+        }
+    }
+
     /// <summary>Turns two-factor authentication off and replaces the authenticator key, which also renews the security stamp.</summary>
     public async Task<AdminResult<AdminUserActionResultDto>> ResetTwoFactorAsync(AdminActor actor, string id, string? reason,
         CancellationToken ct = default)
@@ -621,7 +713,7 @@ public class AdminUserManagementService
         if (IdentityFailure(await _userManager.ResetAuthenticatorKeyAsync(user)) is { } failed2) return failed2;
 
         return await FinishAsync(actor, user, facts, before, AdminUserActionKind.TwoFactorReset, reason,
-            "Two-factor authentication reset. The user can set it up again.", SecurityEventKind.AdminTwoFactorReset, null, ct);
+            "Two-factor authentication reset.", SecurityEventKind.AdminTwoFactorReset, null, ct);
     }
 
     // --- Moved actions: the AI-chat block and the deletion hold; their services write the audit row ---

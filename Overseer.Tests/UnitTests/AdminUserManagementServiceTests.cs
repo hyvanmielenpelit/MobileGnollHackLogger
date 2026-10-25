@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using GnollHackServer.Data.Security;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -43,6 +44,21 @@ internal sealed class RecordingAdminSecurityEvents : ISecurityEventRecorder
     }
 }
 
+/// <summary>Records the emails sent; <see cref="Throw"/> makes every send fail.</summary>
+internal sealed class RecordingAdminEmailSender : IEmailSender
+{
+    public List<(string Email, string Subject, string Html)> Sent { get; } = new();
+
+    public bool Throw { get; set; }
+
+    public Task SendEmailAsync(string email, string subject, string htmlMessage)
+    {
+        if (Throw) throw new InvalidOperationException("The email service is down.");
+        Sent.Add((email, subject, htmlMessage));
+        return Task.CompletedTask;
+    }
+}
+
 /// <summary>Records the operations an execute queues; the test runs them itself.</summary>
 internal sealed class RecordingBulkQueue : IAdminBulkOperationQueue
 {
@@ -71,11 +87,12 @@ internal sealed class AdminUserTestHost : IDisposable
     public MutableTimeProvider Time { get; } = new();
     public RecordingAdminSecurityEvents Events { get; } = new();
     public RecordingBulkQueue Queue { get; } = new();
+    public RecordingAdminEmailSender Emails { get; } = new();
     public AdminUserManagementOptions Options { get; } = new();
     public IConfiguration Configuration { get; }
     public EphemeralSessionStore Ephemeral { get; }
 
-    public AdminUserTestHost(bool erasurePaths = true)
+    public AdminUserTestHost(bool erasurePaths = true, bool registerEmailSender = true)
     {
         Directory.CreateDirectory(Path.Combine(Root, "dumplogs"));
         Directory.CreateDirectory(Path.Combine(Root, "conversations"));
@@ -104,6 +121,7 @@ internal sealed class AdminUserTestHost : IDisposable
         services.AddSingleton<IMemoryCache>(new MemoryCache(new MemoryCacheOptions { SizeLimit = 10000 }));
         services.AddSingleton<OverseerAccessService>();
         services.AddSingleton(Ephemeral);
+        if (registerEmailSender) services.AddSingleton<IEmailSender>(Emails);
         services.AddScoped<AccountDeletionReviewService>();
         services.AddScoped<AdminUserManagementService>();
         services.AddScoped<AdminBulkUserOperationService>();
@@ -248,7 +266,7 @@ public sealed class AdminUserManagementServiceTests : IDisposable
 
     public static TheoryData<string> RefusedForSelfAndAdministrators => new()
     {
-        "lockout", "unlock", "ban", "unban", "confirm-email", "reset-two-factor", "block", "delete"
+        "lockout", "unlock", "ban", "unban", "confirm-email", "reset-two-factor", "change-email", "block", "delete"
     };
 
     private static async Task<(AdminResultStatus Status, string? Code)> RunForCodeAsync(AdminUserManagementService users, AdminActor actor,
@@ -263,6 +281,7 @@ public sealed class AdminUserManagementServiceTests : IDisposable
             case "unban": { var r = await users.UnbanAsync(actor, id, ct: ct); return (r.Status, r.Code); }
             case "confirm-email": { var r = await users.ConfirmEmailAsync(actor, id, ct); return (r.Status, r.Code); }
             case "reset-two-factor": { var r = await users.ResetTwoFactorAsync(actor, id, null, ct); return (r.Status, r.Code); }
+            case "change-email": { var r = await users.ChangeEmailAsync(actor, id, "new@example.com", false, "Lost mailbox", ct); return (r.Status, r.Code); }
             case "block": { var r = await users.BlockFromAiChatAsync(actor, id, "Abuse", ct); return (r.Status, r.Code); }
             case "sign-out": { var r = await users.SignOutEverywhereAsync(actor, id, ct: ct); return (r.Status, r.Code); }
             case "game-restrictions": { var r = await users.SetGameRestrictionsAsync(actor, id, true, false, null, ct); return (r.Status, r.Code); }
@@ -283,6 +302,7 @@ public sealed class AdminUserManagementServiceTests : IDisposable
         Assert.Equal(AdminRefusalCodes.Self, code);
         Assert.Empty(await _host.AuditRowsAsync(AdminUserTestHost.ActorId));
         Assert.Empty(_host.Events.Entries);
+        Assert.Empty(_host.Emails.Sent);
     }
 
     [Theory]
@@ -297,6 +317,7 @@ public sealed class AdminUserManagementServiceTests : IDisposable
         Assert.Equal(AdminResultStatus.Conflict, status);
         Assert.Equal(AdminRefusalCodes.Administrator, code);
         Assert.Empty(await _host.AuditRowsAsync(AdminUserTestHost.OtherAdminId));
+        Assert.Empty(_host.Emails.Sent);
         var deputy = await _host.ReadUserAsync(AdminUserTestHost.OtherAdminId);
         Assert.NotNull(deputy);
         Assert.NotEqual(true, deputy!.IsBanned);
@@ -503,6 +524,174 @@ public sealed class AdminUserManagementServiceTests : IDisposable
         Assert.False(user!.TwoFactorEnabled);
         Assert.NotEqual(seeded.SecurityStamp, user.SecurityStamp);
         Assert.Equal("Lost phone", Assert.Single(await _host.AuditRowsAsync(TargetId)).Reason);
+    }
+
+    private const string OldEmail = TargetName + "@example.com";
+    private const string NewEmail = "new@example.com";
+
+    [Fact]
+    public async Task ChangeEmailReplacesTheAddressUnconfirmedAndKeepsTheUserName()
+    {
+        await _host.SeedAdministratorsAsync();
+        var seeded = await SeedTargetAsync();
+
+        var result = await _host.Users.ChangeEmailAsync(_host.Actor, TargetId, "  " + NewEmail + "  ", false, "Lost mailbox",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.Ok, result.Status);
+        var user = await _host.ReadUserAsync(TargetId);
+        Assert.Equal(NewEmail, user!.Email);
+        Assert.Equal(NewEmail.ToUpperInvariant(), user.NormalizedEmail);
+        Assert.False(user.EmailConfirmed);
+        Assert.Equal(TargetName, user.UserName);
+        Assert.NotEqual(seeded.SecurityStamp, user.SecurityStamp);
+
+        var row = Assert.Single(await _host.AuditRowsAsync(TargetId));
+        Assert.Equal(AdminUserActionKind.EmailChanged, row.Kind);
+        Assert.Equal("Lost mailbox", row.Reason);
+        Assert.DoesNotContain(OldEmail, row.Detail!, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(NewEmail, row.Detail!, StringComparison.OrdinalIgnoreCase);
+        var entry = Assert.Single(_host.Events.Entries);
+        Assert.Equal(SecurityEventKind.AdminEmailChanged, entry.Kind);
+        Assert.Contains(AdminUserStatusKind.EmailUnconfirmed, result.Value!.After.Statuses);
+    }
+
+    [Fact]
+    public async Task ChangeEmailEmailsTheNewAddressTheInstructions()
+    {
+        await _host.SeedAdministratorsAsync();
+        await SeedTargetAsync();
+
+        var result = await _host.Users.ChangeEmailAsync(_host.Actor, TargetId, NewEmail, false, "Lost mailbox",
+            TestContext.Current.CancellationToken);
+
+        var sent = Assert.Single(_host.Emails.Sent);
+        Assert.Equal(NewEmail, sent.Email);
+        Assert.Contains("https://account.gnollhack.com/Identity/Account/ResendEmailConfirmation", sent.Html);
+        Assert.Contains(TargetName, sent.Html);
+        Assert.StartsWith("Email changed. Instructions", result.Value!.Summary);
+    }
+
+    [Fact]
+    public async Task ChangeEmailCanMarkTheNewAddressConfirmed()
+    {
+        await _host.SeedAdministratorsAsync();
+        await SeedTargetAsync();
+
+        var result = await _host.Users.ChangeEmailAsync(_host.Actor, TargetId, NewEmail, true, "Verified by phone",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.Ok, result.Status);
+        var user = await _host.ReadUserAsync(TargetId);
+        Assert.Equal(NewEmail, user!.Email);
+        Assert.True(user.EmailConfirmed);
+        Assert.DoesNotContain(AdminUserStatusKind.EmailUnconfirmed, result.Value!.After.Statuses);
+        Assert.Empty(_host.Emails.Sent);
+    }
+
+    [Fact]
+    public async Task ChangeEmailStandsWhenTheInstructionsCannotBeSent()
+    {
+        await _host.SeedAdministratorsAsync();
+        await SeedTargetAsync();
+        _host.Emails.Throw = true;
+
+        var result = await _host.Users.ChangeEmailAsync(_host.Actor, TargetId, NewEmail, false, "Lost mailbox",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.Ok, result.Status);
+        Assert.StartsWith("Email changed, but the instructions email could not be sent.", result.Value!.Summary);
+        var user = await _host.ReadUserAsync(TargetId);
+        Assert.Equal(NewEmail, user!.Email);
+        Assert.False(user.EmailConfirmed);
+        Assert.Equal(AdminUserActionKind.EmailChanged, Assert.Single(await _host.AuditRowsAsync(TargetId)).Kind);
+        Assert.Equal(SecurityEventKind.AdminEmailChanged, Assert.Single(_host.Events.Entries).Kind);
+    }
+
+    [Fact]
+    public async Task ChangeEmailStandsWhenNoEmailSenderIsConfigured()
+    {
+        using var host = new AdminUserTestHost(registerEmailSender: false);
+        await host.SeedAdministratorsAsync();
+        await host.AddUserAsync(TargetId, TargetName);
+
+        var result = await host.Users.ChangeEmailAsync(host.Actor, TargetId, NewEmail, false, "Lost mailbox",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.Ok, result.Status);
+        Assert.StartsWith("Email changed, but the instructions email could not be sent.", result.Value!.Summary);
+        Assert.Equal(NewEmail, (await host.ReadUserAsync(TargetId))!.Email);
+        Assert.Single(await host.AuditRowsAsync(TargetId));
+    }
+
+    [Fact]
+    public async Task ChangeEmailRefusesAnAddressAnotherAccountUses()
+    {
+        await _host.SeedAdministratorsAsync();
+        await SeedTargetAsync();
+        await _host.AddUserAsync("other-1", "other");
+
+        var result = await _host.Users.ChangeEmailAsync(_host.Actor, TargetId, "Other@Example.com", false, "Lost mailbox",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.Conflict, result.Status);
+        Assert.Equal(AdminRefusalCodes.EmailTaken, result.Code);
+        var user = await _host.ReadUserAsync(TargetId);
+        Assert.Equal(OldEmail, user!.Email);
+        Assert.True(user.EmailConfirmed);
+        Assert.Empty(await _host.AuditRowsAsync(TargetId));
+        Assert.Empty(_host.Events.Entries);
+        Assert.Empty(_host.Emails.Sent);
+    }
+
+    [Fact]
+    public async Task ChangeEmailRefusesTheCurrentAddress()
+    {
+        await _host.SeedAdministratorsAsync();
+        await SeedTargetAsync();
+
+        var result = await _host.Users.ChangeEmailAsync(_host.Actor, TargetId, OldEmail.ToUpperInvariant(), false, "Lost mailbox",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.Conflict, result.Status);
+        Assert.Equal(AdminRefusalCodes.AlreadyDone, result.Code);
+        Assert.Empty(await _host.AuditRowsAsync(TargetId));
+    }
+
+    public static TheoryData<string?, string, string> InvalidChangeEmailInputs => new()
+    {
+        { null, NewEmail, AdminRefusalCodes.Reason },
+        { "Lost mailbox", "", AdminRefusalCodes.Email },
+        { "Lost mailbox", "not-an-address", AdminRefusalCodes.Email },
+        { "Lost mailbox", new string('a', 257 - "@example.com".Length) + "@example.com", AdminRefusalCodes.Email },
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidChangeEmailInputs))]
+    public async Task ChangeEmailValidatesTheReasonAndTheAddress(string? reason, string email, string code)
+    {
+        await _host.SeedAdministratorsAsync();
+        await SeedTargetAsync();
+
+        var result = await _host.Users.ChangeEmailAsync(_host.Actor, TargetId, email, false, reason,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.BadRequest, result.Status);
+        Assert.Equal(code, result.Code);
+        Assert.Equal(OldEmail, (await _host.ReadUserAsync(TargetId))!.Email);
+        Assert.Empty(await _host.AuditRowsAsync(TargetId));
+        Assert.Empty(_host.Emails.Sent);
+    }
+
+    [Fact]
+    public async Task TheCardCarriesTheJunethackName()
+    {
+        await _host.SeedAdministratorsAsync();
+        await SeedTargetAsync(u => u.JunetHackUserName = "gnoll_fan");
+
+        var result = await _host.Users.GetAsync(_host.Actor, TargetId, TestContext.Current.CancellationToken);
+
+        Assert.Equal("gnoll_fan", result.Value!.JunetHackUserName);
     }
 
     // --- The AI-chat block through this service ---

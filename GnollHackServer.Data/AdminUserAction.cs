@@ -12,6 +12,7 @@ public enum AdminUserActionKind : short
     AiChatBlocked = 10, AiChatUnblocked = 11,
     HoldPlaced = 12, HoldReleased = 13,
     DeletionRequestApproved = 14, DeletionRequestDeclined = 15,
+    EmailChanged = 16,
 }
 
 /// <summary>

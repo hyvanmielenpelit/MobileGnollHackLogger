@@ -56,6 +56,7 @@ public class AdminUserDto
     public int GameLogCount { get; set; }
     public int BonesCount { get; set; }
     public int ChatSessionCount { get; set; }
+    public string? JunetHackUserName { get; set; }
 
     /// <summary>The newest accepted version of each Terms document the user has accepted; empty when none.</summary>
     public List<AdminTermsAcceptanceDto> TermsAcceptances { get; set; } = new();
@@ -148,6 +149,14 @@ public class AdminGameRestrictionsRequest
 /// <summary>An optional admin-only reason.</summary>
 public class AdminOptionalReasonRequest
 {
+    public string? Reason { get; set; }
+}
+
+/// <summary>A new email address, whether to mark it confirmed, and the required admin-only reason.</summary>
+public class AdminChangeEmailRequest
+{
+    public string? Email { get; set; }
+    public bool MarkConfirmed { get; set; }
     public string? Reason { get; set; }
 }
 

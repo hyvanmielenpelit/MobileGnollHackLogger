@@ -53,7 +53,7 @@ export const SECURITY_EVENT_KINDS: readonly string[] = [
   'ProviderRefusal', 'ProviderSafetyBlock', 'ProviderPolicyRejection', 'AttachmentRejected', 'ChatReported',
   'SnapshotRejected', 'AutoBlocked', 'AdminBlocked', 'AdminUnblocked', 'AccountHoldPlaced', 'AccountHoldReleased', 'AccountDeletionHeld',
   'AdminLockedOut', 'AdminUnlocked', 'AdminBanned', 'AdminUnbanned', 'AdminSignedOut', 'AdminEmailConfirmed',
-  'AdminTwoFactorReset'
+  'AdminTwoFactorReset', 'AdminEmailChanged'
 ];
 
 const KIND_LABELS: Readonly<Record<string, string>> = {
@@ -81,7 +81,8 @@ const KIND_LABELS: Readonly<Record<string, string>> = {
   AdminUnbanned: 'Unbanned by admin',
   AdminSignedOut: 'Signed out by admin',
   AdminEmailConfirmed: 'Email confirmed by admin',
-  AdminTwoFactorReset: 'Two-factor reset by admin'
+  AdminTwoFactorReset: 'Two-factor reset by admin',
+  AdminEmailChanged: 'Email changed by admin'
 };
 
 /** What a security event kind reads as; an unknown kind reads as its name. */

@@ -15,6 +15,7 @@ export type AdminUserActionId =
   | 'block'
   | 'unblock'
   | 'signout'
+  | 'changeEmail'
   | 'confirmEmail'
   | 'resetTwoFactor'
   | 'hold'
@@ -75,7 +76,9 @@ export function accountActionGroups(user: AdminUser): AdminUserActionGroup[] {
     item('signout', 'Sign out everywhere', user.isSelf ? null : user.isAdministrator ? ADMIN_UNCHANGED_REASON : null)
   ];
 
-  const account: AdminUserActionItem[] = [];
+  const account: AdminUserActionItem[] = [
+    item('changeEmail', 'Change email…', guard(user, 'You cannot change your own email here.', ADMIN_UNCHANGED_REASON))
+  ];
   if (!user.emailConfirmed) {
     account.push(item('confirmEmail', 'Mark email as confirmed', guard(user, 'You cannot change your own account here.', ADMIN_UNCHANGED_REASON)));
   }
@@ -94,10 +97,9 @@ export function accountActionGroups(user: AdminUser): AdminUserActionGroup[] {
     item('delete', 'Delete account…', deleteReason, true)
   ];
 
-  const groups: AdminUserActionGroup[] = [{ key: 'access', heading: 'Access', items: access }];
-  if (account.length > 0) {
-    groups.push({ key: 'account', heading: 'Account', items: account });
-  }
-  groups.push({ key: 'deletion', heading: 'Deletion', items: deletion });
-  return groups;
+  return [
+    { key: 'access', heading: 'Access', items: access },
+    { key: 'account', heading: 'Account', items: account },
+    { key: 'deletion', heading: 'Deletion', items: deletion }
+  ];
 }

@@ -20,4 +20,7 @@ public class AdminUserManagementOptions
 
     /// <summary>A bulk run stops after this many failed accounts in a row.</summary>
     public int BulkConsecutiveFailureLimit { get; set; } = 5;
+
+    /// <summary>The account website; the change-email instructions link to its Resend email confirmation page.</summary>
+    public string AccountSiteBaseUrl { get; set; } = "https://account.gnollhack.com";
 }

@@ -5,6 +5,7 @@ import { buildAdminUser } from '../admin-users.testing';
 import { AdminUserCardComponent } from './admin-user-card.component';
 import {
   ADMIN_PROTECTED_REASON,
+  ADMIN_UNCHANGED_REASON,
   AdminUserActionId,
   HOLD_FIRST_REASON,
   PENDING_REQUEST_REASON,
@@ -72,6 +73,12 @@ describe('AdminUserCardComponent', () => {
     expect(textOf(el.querySelector('.au-fact-groups'))).toBe('Testers');
     expect(textOf(el.querySelector('.au-fact-game'))).toBe('12 game logs · 3 bones');
     expect(textOf(el.querySelector('.au-fact-chats'))).toBe('2');
+    const junetHack = el.querySelector('.au-fact-junethack')!;
+    expect(textOf(junetHack.previousElementSibling)).toBe('Junethack');
+    expect(textOf(junetHack)).toBe('None');
+
+    render(buildAdminUser({ junetHackUserName: 'gnoll_fan' }));
+    expect(textOf(el.querySelector('.au-fact-junethack'))).toBe('gnoll_fan');
   });
 
   it('shows the newest accepted version of each Terms document, and says when one is not accepted', () => {
@@ -119,13 +126,14 @@ describe('AdminUserCardComponent', () => {
     const popover = el.querySelector('#au-u-1-actions')!;
     expect(popover.getAttribute('role')).toBe('group');
     expect(popover.getAttribute('aria-label')).toBe('Account actions for alice');
-    expect(Array.from(popover.querySelectorAll('.gh-action-popover-heading')).map(h => textOf(h))).toEqual(['Access', 'Deletion']);
+    expect(Array.from(popover.querySelectorAll('.gh-action-popover-heading')).map(h => textOf(h))).toEqual(['Access', 'Account', 'Deletion']);
   });
 
   it('offers the actions that fit the account state', () => {
     render();
     expect(Array.from(el.querySelectorAll('.gh-action-popover-item > span:first-child')).map(s => textOf(s))).toEqual([
       'Lock out…', 'Ban…', 'Game upload restrictions…', 'Block from AI chat…', 'Sign out everywhere',
+      'Change email…',
       'Place deletion hold…', 'Delete account…'
     ]);
     expect(item('delete').classList.contains('is-danger')).toBe(true);
@@ -136,7 +144,7 @@ describe('AdminUserCardComponent', () => {
     }));
     expect(Array.from(el.querySelectorAll('.gh-action-popover-item > span:first-child')).map(s => textOf(s))).toEqual([
       'Unlock', 'Unban', 'Game upload restrictions…', 'Unblock from AI chat', 'Sign out everywhere',
-      'Mark email as confirmed', 'Reset two-factor authentication…',
+      'Change email…', 'Mark email as confirmed', 'Reset two-factor authentication…',
       'Release deletion hold', 'Delete account…'
     ]);
     expect(Array.from(el.querySelectorAll('.gh-action-popover-heading')).map(h => textOf(h))).toEqual(['Access', 'Account', 'Deletion']);
@@ -148,9 +156,13 @@ describe('AdminUserCardComponent', () => {
     expect(textOf(item('lockout').querySelector('.gh-action-popover-item-reason'))).toBe('You cannot lock out your own account.');
     expect(item('signout').getAttribute('aria-disabled')).toBeNull();
     expect(item('restrictions').getAttribute('aria-disabled')).toBeNull();
+    expect(item('changeEmail').getAttribute('aria-disabled')).toBe('true');
+    expect(textOf(item('changeEmail').querySelector('.gh-action-popover-item-reason'))).toBe('You cannot change your own email here.');
 
     render(buildAdminUser({ isAdministrator: true, statuses: ['GoodStanding', 'Administrator'] }));
     expect(textOf(item('ban').querySelector('.gh-action-popover-item-reason'))).toBe(ADMIN_PROTECTED_REASON);
+    expect(item('changeEmail').getAttribute('aria-disabled')).toBe('true');
+    expect(textOf(item('changeEmail').querySelector('.gh-action-popover-item-reason'))).toBe(ADMIN_UNCHANGED_REASON);
     expect(textOf(item('delete').querySelector('.gh-action-popover-item-reason'))).toBe(ADMIN_PROTECTED_REASON);
 
     render(buildAdminUser({ hasAccountHold: true, statuses: ['DeletionHold'] }));

@@ -34,7 +34,7 @@ filter bar is shared with step 1 of the wizard:
 Each card shows the user name and email; *Registered 2026-03-02* (or *Registered on or before …* for a
 backfilled date, § 2.1) and the last sign-in (*not recorded* while unknown); the status badges, each a
 glyph and a word with its facts in a tooltip; the failed sign-in count, two-factor state, groups, game
-logs and bones, and chats; the **Overseer Terms** and **Account Terms** lines (below); icon buttons for groups (*Manage Groups for {user}*), AI configurations
+logs and bones, chats, and the Junethack user name (*None* when unset); the **Overseer Terms** and **Account Terms** lines (below); icon buttons for groups (*Manage Groups for {user}*), AI configurations
 (*AI configuration access for {user}*: one card per system configuration with its switch, badges and
 per-assignment state, and the Rate limits and Overrides dialogs) and the user's security events;
 and **Actions**, a popover of the actions in § 3 grouped under *Access*, *Account* and *Deletion*. An
@@ -128,23 +128,42 @@ says otherwise. An action with nothing to change answers 409 `already-done`.
 | Sign out everywhere | `POST {id}/sign-out-everywhere` | — | A new security stamp | other admins only; self allowed | `AdminSignedOut` (49) |
 | Mark email confirmed | `POST {id}/confirm-email` | — | Confirms the email through a generated token | self, admins | `AdminEmailConfirmed` (50) |
 | Reset two-factor | `POST {id}/reset-two-factor` | `{ reason? }` or empty | Two-factor off, a new authenticator key (which renews the security stamp) | self, admins | `AdminTwoFactorReset` (51) |
+| Change email | `POST {id}/change-email` | `{ email, markConfirmed, reason }` | `SetEmailAsync` (the address unconfirmed, a new security stamp), then confirmed through a generated token when `markConfirmed`; the user name is unchanged | self, admins | `AdminEmailChanged` (52) |
 | Block from AI chat | `POST {id}/overseer-block` | `{ reason }` | `OverseerAccessService.BlockAsync` | self, admins | `AdminBlocked` |
 | Unblock from AI chat | `DELETE {id}/overseer-block` | — | `OverseerAccessService.UnblockAsync` | none | `AdminUnblocked` |
 | Place deletion hold | `POST {id}/account-hold` | `{ reason }` | `AccountDeletionReviewService.PlaceHoldAsync` | none | `AccountHoldPlaced` |
 | Release deletion hold | `DELETE {id}/account-hold` | — | `AccountDeletionReviewService.ReleaseHoldAsync` | none | `AccountHoldReleased` |
 | Delete account | `GET {id}/deletion-impact`, `POST {id}/delete` | § 4 | § 4 | self, admins, § 4 | — |
 
-**Reasons.** Lock out, ban and delete need a reason of 1–512 characters (400 `reason`); game
-restrictions and two-factor reset take an optional one of at most 512; the AI-chat block takes 1–256
+**Reasons.** Lock out, ban, change email and delete need a reason of 1–512 characters (400 `reason`);
+game restrictions and two-factor reset take an optional one of at most 512; the AI-chat block takes 1–256
 characters, which the user is shown; a deletion hold takes 1–512, which the user is never shown. No
 other reason reaches the user.
+
+**Two-factor.** The website does not offer two-factor setup: the game API refuses a two-factor account
+(§ 7.2, 412), so an account that turned it on could no longer play online. Its *Enable authenticator* and
+*Reset authenticator* pages exist only to shadow the Identity UI pages at those paths, and redirect to
+*Two-factor authentication*. A user who already has two-factor can still disable it and regenerate
+recovery codes on the website. *Reset two-factor* is the administrator's recovery path; afterwards the
+account signs in with the password alone.
+
+**Change email.** The address must be a valid email address of at most 256 characters (400 `email`),
+and another account must not already use it (409 `email-taken`). Unless `markConfirmed`, Overseer
+emails the **new address only** instructions to confirm it from the account website's *Resend email
+confirmation* page, `AdminUserManagement:AccountSiteBaseUrl` + `/Identity/Account/ResendEmailConfirmation`,
+and why that step is needed. The email carries no confirmation link: Overseer and the website protect
+tokens with separate Data Protection key rings, so a token made in Overseer would not validate on the
+website. No address goes into the admin log, the security event or a log line. A failed send, or no
+email sender configured (`ConnectionStrings:EmailConnection`), leaves the change in place, and the
+summary tells the administrator to pass the instructions on.
 
 **Lockout end.** `until` must be in the future and at most `AdminUserManagement:LockoutMaxDays` (365)
 ahead, else 400 `until`; a longer exclusion is a ban.
 
 **`already-done`.** Unlock on an account that is not locked out, has no failed sign-ins and no admin
 lockout columns; ban on a banned account; unban on one that is not; mark email confirmed on a confirmed
-one; game restrictions that change nothing; placing a deletion hold on an account that already has one.
+one; game restrictions that change nothing; placing a deletion hold on an account that already has one;
+changing the email to the current address, compared normalized.
 Releasing a hold the account does not have answers 404.
 
 The block and hold routes and bodies are unchanged from when they lived in `AdminController`; they now
@@ -159,8 +178,9 @@ return the result DTO instead of an empty 200, and their services write the audi
 | Game upload restrictions | Sign-in unaffected | Unaffected | `/xlogfile` refuses a game-log-banned account with 423; `/bones` refuses a bones-banned one with 423, and its bones are never sent to other players |
 | Sign out everywhere, reset two-factor | Signed-in sessions end within 5 minutes | The same | GnollHack sends the password with every request, so it keeps working |
 | Mark email confirmed | Sign-in allowed | Sign-in allowed | Allowed |
+| Change email | Sign-in refused as unconfirmed until the user confirms the new address, unless marked confirmed; signed-in sessions end within 5 minutes | The same | Refused as unconfirmed (403) until confirmed, unless marked confirmed |
 
-Locking out, banning, signing out everywhere and resetting two-factor renew the security stamp; signed-in
+Locking out, banning, signing out everywhere, resetting two-factor and changing the email renew the security stamp; signed-in
 website and Overseer sessions notice it within `IdentityLockout:SecurityStampValidationMinutes` (5) and
 end, an open Overseer chat connection no later than its first hub call after that interval. A ban and a
 lockout also refuse every new sign-in at once.
@@ -175,6 +195,7 @@ Friction follows the damage an action can do:
 | Caution | Block from AI chat, Place deletion hold, Reset two-factor (do it only after verifying the person's identity) | The shared reason dialog |
 | Caution | Lock out | Duration (*1 hour*, *24 hours*, *7 days*, *30 days*, *Until a date…*), a required reason, the effect line and *"I have checked this is the right account ({email})."* |
 | Caution | Ban | A required reason, *"Cannot sign in anywhere until unbanned. The reason is not shown to the user."* and the same checkbox |
+| Caution | Change email | The current address, *New email address*, *Mark the new address as confirmed* (off by default), the effect line, a required reason and the same checkbox |
 | Caution | Game upload restrictions | *Ban game log uploads*, *Ban bones uploads and downloads*, and a reason the dialog requires whenever anything is turned on |
 | Danger | Delete account | § 4 |
 
@@ -380,12 +401,13 @@ The kinds are a stored contract, only ever appended to:
 | 13 | `HoldReleased` | `AccountDeletionReviewService` |
 | 14 | `DeletionRequestApproved` | *Deletion requests* → Approve and delete |
 | 15 | `DeletionRequestDeclined` | *Deletion requests* → Decline |
+| 16 | `EmailChanged` | Change email |
 
 A user deleting their own account on the website writes no row: no administrator acted.
 
 **Retention.** Nothing prunes `AdminUserActions`, `AdminBulkOperations` or `AdminBulkOperationItems`
 (whose `UserId` has no foreign key either), and account erasure does not touch them: they are kept
-indefinitely. The per-user `SecurityEvent` rows of the same actions, kinds 45–51, cascade with the
+indefinitely. The per-user `SecurityEvent` rows of the same actions, kinds 45–52, cascade with the
 account and are pruned after `ChatRetentionSettings:PruneSecurityEventDays` like every other event.
 
 **The Admin log sub-tab** lists the entries newest first in batches of 20. Each card shows the action
@@ -524,6 +546,7 @@ password passes, an account blocked from the AI chat gets the 403 of
 | `AdminUserManagement:BulkPreviewMinutes` | 15 | How long a preview can be executed |
 | `AdminUserManagement:LockoutMaxDays` | 365 | The furthest ahead an admin lockout can end |
 | `AdminUserManagement:BulkConsecutiveFailureLimit` | 5 | A bulk run stops after this many failures in a row |
+| `AdminUserManagement:AccountSiteBaseUrl` | `https://account.gnollhack.com` | The account website the *Change email* instructions link to |
 | `IdentityLockout:SecurityStampValidationMinutes` (both apps) | 5 | How soon signed-in sessions notice a new security stamp |
 | `GameApiSecurity:*` (both apps) | § 7.2 | The game sign-in throttle |
 
@@ -543,7 +566,9 @@ Remember § 2.1: until accounts have signed in after deployment, *Last sign-in* 
 
 In `Overseer.Tests/UnitTests/`: `AdminUserStatusTests` (the two rule implementations agree),
 `AdminUserManagementServiceTests` (guards, validation, audit rows and events, the deletion refusals and
-the audit row of a failed erasure), `AdminBulkUserOperationTests` (preview classification and cap,
+the audit row of a failed erasure, and change email: the user name kept, the instructions email, a failed
+or unconfigured sender, a taken or current address), `AdminEmailChangeEmailBuilderTests` (the
+instructions email's link, wording and encoding), `AdminBulkUserOperationTests` (preview classification and cap,
 execute refusals, the advanced choice, the re-check, cancel, the failure limit and interrupted
 operations), `AccountErasureTests` (the benchmark foreign keys), `GnollHackSignInManagerTests`,
 `GameApiSignInClassifierTests`, `GameApiSignInThrottleTests`, `GameApiSignInResponsesTests` and

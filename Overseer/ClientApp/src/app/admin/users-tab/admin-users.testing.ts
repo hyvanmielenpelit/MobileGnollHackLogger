@@ -47,6 +47,7 @@ export function buildAdminUser(overrides: Partial<AdminUser> = {}): AdminUser {
     gameLogCount: 0,
     bonesCount: 0,
     chatSessionCount: 0,
+    junetHackUserName: null,
     ...overrides
   };
 }

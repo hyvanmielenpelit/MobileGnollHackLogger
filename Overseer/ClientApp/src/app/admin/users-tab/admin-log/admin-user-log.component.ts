@@ -42,7 +42,8 @@ const KIND_LABELS: Readonly<Record<AdminUserActionKind, string>> = {
   HoldPlaced: 'Deletion hold placed',
   HoldReleased: 'Deletion hold released',
   DeletionRequestApproved: 'Deletion request approved',
-  DeletionRequestDeclined: 'Deletion request declined'
+  DeletionRequestDeclined: 'Deletion request declined',
+  EmailChanged: 'Email changed'
 };
 
 const KIND_TONES: Readonly<Record<AdminUserActionKind, AdminLogKindTone>> = {
@@ -60,7 +61,8 @@ const KIND_TONES: Readonly<Record<AdminUserActionKind, AdminLogKindTone>> = {
   HoldPlaced: 'warning',
   HoldReleased: 'ok',
   DeletionRequestApproved: 'danger',
-  DeletionRequestDeclined: 'info'
+  DeletionRequestDeclined: 'info',
+  EmailChanged: 'warning'
 };
 
 /** The word of an admin log kind: `Locked out`, `Deletion hold placed`; an unknown kind reads as its name. */
