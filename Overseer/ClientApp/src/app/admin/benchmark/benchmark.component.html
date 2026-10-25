@@ -72,8 +72,8 @@
   <!-- TAB 3: MULTI-RUN ANALYSIS -->
   @if (activeSubTab === 'multirun') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-multirun" aria-labelledby="bm-tab-multirun" tabindex="0">
-      <app-benchmark-multi-run #multiRunPanel [suiteId]="launcher.selectedSuiteId"
-                               (openSeries)="monitor.openSeriesDialog($event)"></app-benchmark-multi-run>
+      <app-benchmark-multi-run #multiRunPanel [suites]="workspace.suites" [defaultSuiteId]="launcher.selectedSuiteId"
+                               (openSeries)="monitor.openSeriesDialog($event)" (openRun)="viewRunDetail($event)"></app-benchmark-multi-run>
     </div>
   }
 

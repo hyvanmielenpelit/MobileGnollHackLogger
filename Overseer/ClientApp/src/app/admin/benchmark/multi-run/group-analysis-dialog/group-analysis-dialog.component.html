@@ -1,0 +1,1049 @@
+<!--
+  One group's analysis as a document in a modal dialog. The header names the model and the group;
+  the action row and the section tabs stay put while the panel below scrolls. Every panel is
+  rendered and the inactive ones are hidden, so the tab switch keeps each panel's scroll and state.
+-->
+<dialog #dialog class="gh-dialog mr-analysis-dialog" aria-labelledby="mr-an-title" (close)="onDialogClose()">
+  @if (group; as g) {
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <div class="dialog-title-group">
+          <h3 id="mr-an-title" class="mr-an-title" tabindex="-1" autofocus>
+            <app-model-identity [name]="modelName(g)" [provider]="g.testedModelProvider"
+                                [thinkingLevel]="g.testedModelThinkingLevel"
+                                [reasoningMode]="g.testedModelReasoningMode"></app-model-identity>
+            <span class="mr-an-title-runs"><span aria-hidden="true">&middot;</span><span class="visually-hidden">,</span> R = {{ g.runCount }}</span>
+          </h3>
+          <p class="dialog-subtitle">{{ subtitle(g) }}</p>
+        </div>
+        <div class="mr-dialog-header-badges">
+          <span [class]="'mr-tier ' + tierClass(g.tier)">{{ g.tierLabel || tierName(g.tier) }}</span>
+          @if (analysisStale) {
+            <span class="mr-badge mr-badge-stale">Stale analysis</span>
+          }
+          @if (g.comparabilityKeyStale) {
+            <span class="mr-badge mr-badge-stale">Comparability definition changed — re-analyze to refresh the key hash.</span>
+          }
+          <button type="button" class="btn-icon-action" aria-label="Close group analysis" (click)="close()"
+                  interestfor="mr-an-close-tip" style="anchor-name: --mr-an-close-tip">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" id="mr-an-close-tip" style="position-anchor: --mr-an-close-tip">Close</div>
+        </div>
+      </div>
+
+      <div class="mr-an-bar">
+        <div class="mr-an-actions">
+          <!-- Text-only, as Recompute analysis is everywhere (frontend_ui_controls § 4g). -->
+          <button type="button" class="btn-gh mr-an-recompute" [attr.aria-disabled]="analysing ? 'true' : null"
+                  (click)="recompute()">
+            {{ analysing ? 'Analyzing…' : (analysis || g.latestAnalysisId != null ? 'Recompute analysis' : 'Run analysis') }}
+          </button>
+          <button type="button" class="btn-gh mr-download-detail"
+                  [class.is-unavailable]="!canDownloadReport"
+                  [attr.aria-disabled]="canDownloadReport ? 'false' : 'true'"
+                  (click)="downloadReport()"
+                  interestfor="mr-an-download-tip" style="anchor-name: --mr-an-download-tip">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+            Download Report
+          </button>
+          <div popover="hint" class="gh-tooltip gh-tooltip-multiline" id="mr-an-download-tip"
+               style="position-anchor: --mr-an-download-tip">{{ downloadReportTooltip }}</div>
+        </div>
+
+        @if (groupError) {
+          <div class="alert alert-warning" role="alert">
+            <div class="alert-content"><div class="alert-body">{{ groupError }}</div></div>
+          </div>
+        }
+        @if (analysisError) {
+          <div class="alert alert-danger" role="alert">
+            <div class="alert-content"><div class="alert-body">{{ analysisError }}</div></div>
+          </div>
+        }
+
+        <div class="gh-tabs gh-tabs-secondary mr-an-tabs" role="tablist" aria-label="Analysis sections">
+          @for (section of sections; track section.id; let i = $index) {
+            <button type="button" role="tab" class="gh-tab"
+                    [id]="tabId(section.id)"
+                    [attr.aria-controls]="panelId(section.id)"
+                    [attr.aria-selected]="activeSection === section.id"
+                    [attr.tabindex]="activeSection === section.id ? 0 : -1"
+                    (keydown)="onSectionKeydown($event, i)"
+                    (click)="selectSection(section.id)">{{ section.label }}</button>
+          }
+        </div>
+      </div>
+
+      <div class="dialog-body mr-dialog-body">
+
+        <!-- ================= SUMMARY ================= -->
+        <div role="tabpanel" class="mr-an-panel" [id]="panelId('summary')" [attr.aria-labelledby]="tabId('summary')"
+             tabindex="0" [hidden]="activeSection !== 'summary'">
+
+          @if (analysis) {
+            <p class="mr-provenance">
+              Computed {{ formatDate(analysis.computedAtUtc) }} over
+              {{ analysis.runCount }} run(s) — {{ runIdsLabel(analysis.memberRunIds) }} —
+              at scoring method version {{ analysis.scoringMethodVersion }}, statistics method {{ methodVersion }}@if (analysis.harnessVersion) {<span>, harness {{ analysis.harnessVersion }}</span>}.
+              @if (analysis.stale) {
+                <strong> The membership has changed since; this result describes the runs named above.</strong>
+              }
+            </p>
+          }
+
+          <!-- Manifest. Every figure in the dialog is computed over exactly these runs. -->
+          <dl class="mr-manifest">
+            <div class="mr-manifest-row">
+              <dt>Suite</dt>
+              <dd>{{ suiteName || g.suiteName || '—' }}</dd>
+            </div>
+            <div class="mr-manifest-row">
+              <dt>Runs (R)</dt>
+              <dd>{{ g.runCount }}</dd>
+            </div>
+            <div class="mr-manifest-row">
+              <dt>Members</dt>
+              <dd>
+                <ul class="mr-member-list">
+                  @for (member of g.members; track member.runId) {
+                    <li>
+                      <span class="mr-run-id">#{{ member.runId }}</span>
+                      <span>{{ member.testedModelDisplayName || '—' }}</span>
+                      <span>Index {{ member.indexWithheld ? 'not computed' : (member.qualityIndex ?? '—') }}</span>
+                      <span>Speed {{ member.speedIndex ?? '—' }}</span>
+                      <span class="mr-run-fingerprint">{{ shortFingerprint(member.shortFingerprint) }}</span>
+                    </li>
+                  }
+                </ul>
+              </dd>
+            </div>
+            <div class="mr-manifest-row">
+              <dt>Comparability key</dt>
+              <dd class="mr-mono">{{ g.comparabilityKeyHash ? shortFingerprint(g.comparabilityKeyHash) : '—' }}</dd>
+            </div>
+            <!--
+              What the candidate was told to do. Without it a reader cannot tell prompt adherence
+              from a model weakness — a concise response instruction caps Completeness by design.
+            -->
+            @if (promptStats; as prompt) {
+              <div class="mr-manifest-row">
+                <dt>Prompt under test</dt>
+                <dd>
+                  @if (!prompt.recorded) {
+                    <span class="text-muted">Not recorded for these runs. No figure here can be
+                    attributed to the model until it is: the options that cap a dimension are unknown
+                    for this group.</span>
+                  } @else {
+                    <ul class="mr-prompt-list">
+                      <li>
+                        <span class="mr-prompt-label">Style</span>
+                        <span>{{ prompt.verboseMode ? 'Detailed' : 'Concise' }} · Mode {{ prompt.overseerMode }}{{ prompt.overseerMode === 0 ? ' (Gameplay Help)' : '' }}</span>
+                      </li>
+                      <li>
+                        <span class="mr-prompt-label">Tools</span>
+                        <span>
+                          {{ prompt.enableToolUse ? 'enabled' : 'disabled' }} ·
+                          web search {{ prompt.enableWebSearch ? 'on' : 'off' }} ·
+                          subagents {{ prompt.enableSubAgents ? 'on' : 'off' }} ·
+                          source refs {{ prompt.allowSourceCodeReferences ? 'allowed' : 'disallowed' }} ·
+                          batching {{ parallelModeLabel(prompt.parallelMode) }}
+                        </span>
+                      </li>
+                      <li>
+                        <span class="mr-prompt-label">Context</span>
+                        <span>
+                          spoiler-free {{ prompt.spoilerFreeMode ? 'on' : 'off' }} ·
+                          active game {{ prompt.isGameOn ? 'yes' : 'no' }} ·
+                          history {{ prompt.hasMessageHistory ? 'yes' : 'no' }} ·
+                          wiki context {{ prompt.hasWikiContext ? 'yes' : 'no' }} ·
+                          snapshot {{ prompt.hasGameSnapshot ? 'yes' : 'no' }}
+                        </span>
+                      </li>
+                    </ul>
+                    @if (prompt.divergent) {
+                      <p class="mr-prompt-note mr-prompt-note-warning">
+                        <strong>The members disagree on these options.</strong> The values above are
+                        the first member's. A group graded under two prompts cannot support a pooled
+                        dimensional claim, whatever its tier says.
+                      </p>
+                    } @else if (!prompt.hasWikiContext) {
+                      <p class="mr-prompt-note">
+                        Live chat pre-injects wiki articles and the benchmark does not, so every
+                        retrieval and tool-routing figure here was measured under a condition
+                        production does not share.
+                      </p>
+                    }
+                  }
+                </dd>
+              </div>
+            }
+            @if (g.notes) {
+              <div class="mr-manifest-row">
+                <dt>Notes</dt>
+                <dd>{{ g.notes }}</dd>
+              </div>
+            }
+          </dl>
+
+          @if (loadingAnalysis) {
+            <p class="text-muted">Loading the stored analysis…</p>
+          } @else if (!analysis) {
+            <p class="text-muted mr-an-not-analyzed">This group has not been analyzed yet. Run the analysis to compute its statistics; the report download stays unavailable until then.</p>
+          } @else {
+            @if (indexStats; as index) {
+              <section class="mr-aggregates" aria-labelledby="mr-an-index-heading">
+                <div class="mr-an-heading-row">
+                  <h4 id="mr-an-index-heading" class="gh-section-title">Multi-run Intelligence Index</h4>
+                  @if (methodVersion >= 2) {
+                    <app-info-tip trigger="click" tipId="mr-an-interval-method-tip" subject="How the interval is computed">
+                      The interval runs from the 2.5th to the 97.5th percentile of {{ bootstrapReplicatesLabel }}
+                      resamples of a crossed (pigeonhole) bootstrap, which redraws the runs and the questions
+                      independently and recomputes the index each time (Owen 2007, <i>The pigeonhole bootstrap</i>).
+                      Below three runs only the questions are redrawn, and the two components below are
+                      diagnostics that are not added together, because both contain the residual variation.
+                    </app-info-tip>
+                  }
+                </div>
+
+                <div class="mr-point">
+                  <span class="mr-point-value">{{ formatNumber(index.pointEstimate, 1) }}</span>
+                  <span class="mr-point-label">mean of {{ index.runCount }} per-run indices</span>
+                  @if (index.meanStoredQualityIndex != null) {
+                    <app-info-tip trigger="click" tipId="mr-an-cross-check-tip" subject="Stored per-run indices">
+                      Cross-check only: the mean of the stored, integer-rounded per-run indices is
+                      {{ formatNumber(index.meanStoredQualityIndex, 1) }}. Nothing is computed from it.
+                    </app-info-tip>
+                  }
+                </div>
+
+                @if (withheldIndexNote; as note) {
+                  <div class="alert alert-warning" role="note">
+                    <div class="alert-content"><div class="alert-body">{{ note }}</div></div>
+                  </div>
+                }
+
+                @if (index.identityHolds === false) {
+                  <div class="alert alert-warning" role="note">
+                    <div class="alert-content"><div class="alert-body">
+                      The item set is ragged — some run produced no scored answer to some item — so the
+                      mean of the run indices and the weighted mean of the item means
+                      ({{ formatNumber(index.weightedMeanOfItemMeans, 1) }}) are not identical.
+                      The figure above is the mean of the run indices.
+                    </div></div>
+                  </div>
+                }
+
+                @if (methodVersion >= 2) {
+                  <div class="mr-combined">
+                    <h5>Combined 95% interval</h5>
+                    <p class="mr-combined-value">{{ formatRange(index.combinedLower, index.combinedUpper, 1) }}</p>
+                    <p class="mr-an-method-line">{{ intervalMethodLine }}</p>
+                  </div>
+                  <h5 class="mr-an-made-of">What the interval is made of</h5>
+                }
+
+                <!--
+                  The two components, separately and each with the question it answers. Collapsing
+                  them into one number hides that only one of them can be bought down with more runs.
+                -->
+                <div class="mr-interval-components">
+                  <div class="mr-interval mr-interval-repro">
+                    <div class="mr-an-card-heading">
+                      <h5>Reproducibility standard error</h5>
+                      <app-info-tip trigger="click" tipId="mr-an-repro-tip" subject="Reproducibility standard error">
+                        It falls as 1/√R. This is the component multi-run exists to measure.
+                      </app-info-tip>
+                    </div>
+                    <p class="mr-interval-question">“Would a re-run move this?”</p>
+                    @if (index.reproducibilityAvailable && index.reproducibilityStandardError != null) {
+                      <p class="mr-interval-value">
+                        SE = {{ formatNumber(index.reproducibilityStandardError, 2) }}
+                        (SD {{ formatNumber(index.reproducibilityStandardDeviation, 2) }} over R = {{ index.runCount }})
+                      </p>
+                      <p class="mr-interval-value">
+                        Half-width ± {{ formatNumber(index.reproducibilityHalfWidth, 2) }}
+                        at t({{ index.runCount - 1 }}) = {{ formatNumber(index.reproducibilityCriticalValue, 3) }}
+                      </p>
+                    } @else {
+                      <p class="mr-interval-value text-muted">
+                        Not reported below three runs: a run-to-run standard deviation from two points
+                        is arithmetic rather than evidence.
+                      </p>
+                    }
+                    <p class="mr-interval-behavior mr-shrinks"><strong>Shrinks with R.</strong></p>
+                  </div>
+
+                  <div class="mr-interval mr-interval-item">
+                    <div class="mr-an-card-heading">
+                      <h5>Item-sampling standard error</h5>
+                      <app-info-tip trigger="click" tipId="mr-an-item-sampling-tip" subject="Item-sampling standard error">
+                        Every run answers the same items, so more runs sharpen each item's mean and do
+                        nothing about the fact that the suite drew those particular questions. Shrinking
+                        this component needs more questions, not more runs.
+                      </app-info-tip>
+                    </div>
+                    <p class="mr-interval-question">“Would a different set of questions move this?”</p>
+                    @if (index.itemSamplingStandardError != null) {
+                      <p class="mr-interval-value">
+                        SE = {{ formatNumber(index.itemSamplingStandardError, 2) }}
+                        over {{ result?.itemCount }} item(s)
+                      </p>
+                      <p class="mr-interval-value">
+                        Half-width ± {{ formatNumber(index.itemSamplingHalfWidth, 2) }}
+                        at 1.96 · SE
+                      </p>
+                    } @else {
+                      <p class="mr-interval-value text-muted">Not reported below three items.</p>
+                    }
+                    <!-- Without this label an operator watches the figure fail to move as runs are added. -->
+                    <p class="mr-interval-behavior mr-does-not-shrink"><strong>Does not shrink with R.</strong></p>
+                  </div>
+                </div>
+
+                @if (methodVersion >= 2) {
+                  @if (planningLine; as planning) {
+                    <p class="mr-an-planning">{{ planning }}</p>
+                  }
+                  @if (runSpanWarning; as warning) {
+                    <p class="gh-field-warning mr-an-span-warning">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                      <span>{{ warning }}</span>
+                    </p>
+                  }
+                } @else {
+                  <div class="mr-combined">
+                    <h5>Combined 95% interval</h5>
+                    <p class="mr-combined-value">
+                      {{ formatNumber(index.pointEstimate, 1) }}
+                      ± {{ formatNumber(index.combinedHalfWidth, 2) }}
+                      @if (index.combinedLower != null && index.combinedUpper != null) {
+                        <span class="mr-combined-range">({{ formatNumber(index.combinedLower, 1) }} – {{ formatNumber(index.combinedUpper, 1) }})</span>
+                      }
+                      @if (index.combinedIntervalTruncated) {
+                        <span class="mr-truncated-marker" aria-hidden="true">†</span>
+                        <span class="visually-hidden">(truncated at the score bound)</span>
+                      }
+                    </p>
+                    @if (index.combinedIntervalTruncated) {
+                      <p class="mr-combined-note">
+                        † The half-width is the honest one; the interval reaches past 0 or 100, where no
+                        score can go, so the reported bound is pinned there. The interval is not as
+                        tight as it looks.
+                      </p>
+                    }
+                    <p class="mr-combined-note">
+                      @if (index.reproducibilityAvailable) {
+                        Covers <strong>both</strong> sources — run-to-run variation and item selection —
+                        added in quadrature, because they are independent.
+                      } @else {
+                        Covers <strong>one</strong> source only: item selection. Below three runs no
+                        reproducibility component is reported, so this interval is the item-sampling
+                        half-width alone.
+                      }
+                    </p>
+                  </div>
+                }
+              </section>
+            }
+
+            <!--
+              The decomposition caveat, unconditionally. Run-to-run variance mixes candidate
+              stochasticity with grader stochasticity, and an operator who does not read this
+              attributes an unstable item to the model when it may be the grader.
+            -->
+            <div class="alert alert-info mr-caveat" role="note">
+              <div class="alert-content">
+                <div class="alert-heading"><strong>What this cannot decompose</strong></div>
+                <div class="alert-body">{{ varianceCaveat }}</div>
+              </div>
+            </div>
+          }
+        </div>
+
+        <!-- ================= DIMENSIONS ================= -->
+        <div role="tabpanel" class="mr-an-panel" [id]="panelId('dimensions')" [attr.aria-labelledby]="tabId('dimensions')"
+             tabindex="0" [hidden]="activeSection !== 'dimensions'">
+          <section class="mr-subsection" aria-labelledby="mr-an-dimensions-heading">
+            <div class="mr-an-heading-row">
+              <h4 id="mr-an-dimensions-heading" class="gh-section-title">Quality dimensions</h4>
+              <app-info-tip trigger="click" tipId="mr-an-dimension-weighting-tip" subject="Dimension means">
+                Per-run means, pooled across the group. These are unweighted while the index is
+                difficulty-weighted: there are no per-dimension difficulty weights to apply, so the two
+                are not expected to agree.
+                @if (methodVersion >= 2) {
+                  The 95% bounds are a bootstrap interval with every question weighted equally.
+                }
+              </app-info-tip>
+            </div>
+            @if (!analysis) {
+              <p class="text-muted">Not analyzed yet.</p>
+            } @else if (dimensionStats.length === 0) {
+              <p class="text-muted">No member recorded dimension scores.</p>
+            } @else {
+              <div class="mr-table-scroll">
+                <table class="gh-table mr-dimension-table">
+                  <caption class="visually-hidden">Each scoring dimension's mean, spread and weakest items across the group's runs.</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Dimension</th>
+                      <th scope="col" class="col-num">Mean</th>
+                      <th scope="col" class="col-num">SD</th>
+                      <th scope="col" class="col-num">{{ methodVersion >= 2 ? '95%' : '95% ±' }}</th>
+                      <th scope="col" class="col-num">Min</th>
+                      <th scope="col" class="col-num">Max</th>
+                      <th scope="col">Per-run means</th>
+                      <th scope="col">Lowest items</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (dim of dimensionStats; track dim.dimension) {
+                      <tr>
+                        <th scope="row">{{ dim.dimension }}</th>
+                        <td class="col-num">{{ formatNumber(dim.mean, 1) }}</td>
+                        <td class="col-num">{{ formatNumber(dim.standardDeviation, 1) }}</td>
+                        <td class="col-num mr-an-dim-interval">
+                          {{ dimensionInterval(dim) }}
+                          @if (dimensionUsesQuestionBootstrap(dim)) {
+                            <span class="gh-tag mr-an-qb-tag">Question bootstrap</span>
+                          }
+                        </td>
+                        <td class="col-num">{{ formatNumber(dim.min, 1) }}</td>
+                        <td class="col-num">{{ formatNumber(dim.max, 1) }}</td>
+                        <td>{{ (dim.perRunMeans ?? []).length > 0 ? (dim.perRunMeans ?? []).join(', ') : '—' }}</td>
+                        <td>{{ lowestItemsFor(dim) }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+
+              @if (lowestDimension; as lowest) {
+                <p class="mr-dimension-gap">
+                  <strong>Lowest dimension:</strong> {{ lowest.dimension }} at
+                  {{ formatNumber(lowest.mean, 1) }}, trailing the strongest by
+                  {{ formatNumber(lowest.gap, 1) }} points.
+                </p>
+                <div class="alert alert-info" role="note">
+                  <div class="alert-content">
+                    <div class="alert-body">
+                      A dimension can be low because the prompt instructed the model to answer that
+                      way. Check the response style under Prompt under test on the Summary tab before
+                      reading a low figure here as a model weakness.
+                    </div>
+                  </div>
+                </div>
+              }
+
+              @if (methodVersion < 2 && !(result?.pooledIndexReportable)) {
+                <p class="section-note">
+                  Below three runs no half-width is reported for a dimension, on the same rule the
+                  index uses: a standard deviation over two runs is arithmetic rather than evidence.
+                </p>
+              }
+            }
+          </section>
+        </div>
+
+        <!-- ================= ITEMS ================= -->
+        <div role="tabpanel" class="mr-an-panel" [id]="panelId('items')" [attr.aria-labelledby]="tabId('items')"
+             tabindex="0" [hidden]="activeSection !== 'items'">
+          <section class="mr-subsection" aria-labelledby="mr-an-items-heading">
+            <div class="mr-an-heading-row">
+              <h4 id="mr-an-items-heading" class="gh-section-title">Per-item statistics</h4>
+              <app-info-tip trigger="click" tipId="mr-an-item-sd-tip" subject="Per-item spread">
+                Sample SD (n−1) here, not the population SD the suite-health table shows over the same
+                numbers: a replicate set estimates the spread of the process that produced the runs,
+                while suite health describes the runs it has.
+              </app-info-tip>
+            </div>
+            @if (!analysis) {
+              <p class="text-muted">Not analyzed yet.</p>
+            } @else if (itemStats.length > 0) {
+              <div class="mr-table-scroll">
+                <table class="gh-table mr-item-table">
+                  <caption class="visually-hidden">Per-item cross-run statistics: mean, median, standard deviation, coefficient of variation, critical-error rate and stability.</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Question</th>
+                      <th scope="col" class="col-center">R</th>
+                      <th scope="col" class="col-center">Mean</th>
+                      <th scope="col" class="col-center">Median</th>
+                      <th scope="col" class="col-center">SD</th>
+                      <th scope="col" class="col-center">CV</th>
+                      <th scope="col" class="col-center">CE rate</th>
+                      <th scope="col" class="col-center">Stability</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (item of itemStats; track item.questionId) {
+                      @let stability = itemStability(item);
+                      <tr [class.is-unstable]="stability === 'unstable'">
+                        <th scope="row" class="col-q">
+                          <span class="item-order">Q{{ item.orderIndex }}</span>
+                          <span class="item-text">{{ item.questionText }}</span>
+                        </th>
+                        <td class="col-center">{{ item.runCount }}</td>
+                        <td class="col-center">{{ formatNumber(item.mean, 1) }}</td>
+                        <td class="col-center">{{ formatNumber(item.median, 1) }}</td>
+                        <td class="col-center">{{ formatNumber(item.standardDeviation, 2) }}</td>
+                        <td class="col-center">{{ formatPercentFromFraction(item.coefficientOfVariation) }}</td>
+                        <td class="col-center">{{ formatRate(item.criticalErrorRate) }}</td>
+                        <td class="col-center">
+                          @if (stability === 'unstable') {
+                            <span class="mr-badge mr-badge-warn">Unstable</span>
+                          } @else if (stability === 'few') {
+                            <span class="mr-badge mr-badge-muted">Too few runs</span>
+                          } @else {
+                            <span class="mr-badge mr-badge-ok">Stable</span>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </section>
+        </div>
+
+        <!-- ================= SPEED AND COST ================= -->
+        <div role="tabpanel" class="mr-an-panel" [id]="panelId('speed')" [attr.aria-labelledby]="tabId('speed')"
+             tabindex="0" [hidden]="activeSection !== 'speed'">
+          @if (!analysis) {
+            <p class="text-muted">Not analyzed yet.</p>
+          }
+
+          @if (speedStats; as speed) {
+            <section class="mr-subsection" aria-labelledby="mr-an-speed-heading">
+              <div class="mr-an-heading-row">
+                <h4 id="mr-an-speed-heading" class="gh-section-title">Speed</h4>
+                <app-info-tip trigger="click" tipId="mr-an-speed-percentiles-tip" subject="Speed percentiles">
+                  Percentiles are pooled over all {{ speed.pooledAnswerCount }} answers of every run, not
+                  averaged per run: the question is what a single slow turn looks like.
+                </app-info-tip>
+              </div>
+              @if (speedDegraded) {
+                <div class="alert alert-warning" role="note">
+                  <div class="alert-content">
+                    <div class="alert-heading"><strong>Speed aggregates degraded</strong></div>
+                    <div class="alert-body">{{ speedDegradedReason }}</div>
+                  </div>
+                </div>
+              }
+              <dl class="mr-stats">
+                <div class="mr-stat">
+                  <dt>Mean Speed Index</dt>
+                  <dd>{{ formatNumber(speed.meanSpeedIndex, 1) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>SD across runs</dt>
+                  <dd>{{ formatNumber(speed.speedIndexStandardDeviation, 2) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Model time P50</dt>
+                  <dd>{{ formatMs(speed.modelTimeP50Ms) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Model time P90</dt>
+                  <dd>{{ formatMs(speed.modelTimeP90Ms) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Slowest answer</dt>
+                  <dd>{{ formatMs(speed.modelTimeMaxMs) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Mean model time / answer</dt>
+                  <dd>{{ formatMs(speed.modelTimeMeanMs) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Mean total model time / run</dt>
+                  <dd>
+                    {{ formatMs(speed.totalModelTimePerRunMeanMs) }}
+                    @if (speed.totalModelTimeStandardDeviationMs != null) {
+                      <span> ± {{ formatMs(speed.totalModelTimeStandardDeviationMs) }}</span>
+                    }
+                  </dd>
+                </div>
+              </dl>
+              @if (speed.caveat) {
+                <p class="text-muted">{{ speed.caveat }}</p>
+              }
+            </section>
+          }
+
+          @if (costStats; as cost) {
+            <section class="mr-subsection" aria-labelledby="mr-an-cost-heading">
+              <h4 id="mr-an-cost-heading" class="gh-section-title">Cost</h4>
+              @if (costDegraded) {
+                <div class="alert alert-warning" role="note">
+                  <div class="alert-content">
+                    <div class="alert-heading"><strong>Cost aggregates degraded</strong></div>
+                    <div class="alert-body">{{ costDegradedReason }}</div>
+                  </div>
+                </div>
+              }
+              <dl class="mr-stats">
+                <div class="mr-stat">
+                  <dt>Total</dt>
+                  <dd>{{ formatCost(cost.totalCost) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Mean per run</dt>
+                  <dd>{{ formatCost(cost.meanCostPerRun) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>SD per run</dt>
+                  <dd>{{ formatCost(cost.costStandardDeviation) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Per question</dt>
+                  <dd>{{ formatCost(cost.costPerQuestion) }}
+                    @if (cost.questionsAskedPerRun != null) {
+                      <span class="text-muted"> over {{ formatQuestionsAsked(cost.questionsAskedPerRun) }} asked per run</span>
+                    } @else if (cost.costPerQuestion != null) {
+                      <span class="text-muted"> over scored items; recompute for per question asked</span>
+                    }
+                  </dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Per index point</dt>
+                  <dd>{{ formatCost(cost.costPerIndexPoint) }}</dd>
+                </div>
+              </dl>
+              @if ((cost.perRunTotals ?? []).length > 0) {
+                <p class="section-note">
+                  <strong>Per-run totals:</strong>
+                  @for (total of cost.perRunTotals ?? []; track $index) {
+                    <span class="mr-run-total">{{ formatCost(total) }}</span>
+                  }
+                </p>
+              }
+
+              @if (costRoleRows.length > 0) {
+                <div class="mr-table-scroll">
+                  <table class="gh-table mr-cost-role-table">
+                    <caption class="visually-hidden">Cost by role: total, mean per run, spread and share.</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Role</th>
+                        <th scope="col" class="col-num">Total</th>
+                        <th scope="col" class="col-num">Mean per run</th>
+                        <th scope="col" class="col-num">SD</th>
+                        <th scope="col" class="col-num">Min</th>
+                        <th scope="col" class="col-num">Max</th>
+                        <th scope="col" class="col-num">Share</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of costRoleRows; track row.role) {
+                        <tr>
+                          <th scope="row">{{ roleLabel(row.role) }}</th>
+                          <td class="col-num">{{ formatCost(row.total) }}</td>
+                          <td class="col-num">{{ formatCost(row.mean) }}</td>
+                          <td class="col-num">{{ formatCost(row.sd) }}</td>
+                          <td class="col-num">{{ formatCost(row.min) }}</td>
+                          <td class="col-num">{{ formatCost(row.max) }}</td>
+                          <td class="col-num">{{ formatPercent(row.share, 0) }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+
+              <!-- Which role carries the spread is the actionable half of a cost figure. -->
+              @if (widestCostRole; as widest) {
+                <p class="section-note">
+                  <strong>Cost dispersion sits mostly in {{ roleLabel(widest.role) }}</strong>
+                  (SD {{ formatCost(widest.sd) }} across {{ cost.runCount }} runs). Cost is the
+                  least reproducible quantity a replicate set measures, so a cost difference between
+                  two groups needs the same spread treatment a quality difference gets.
+                </p>
+              }
+            </section>
+          }
+        </div>
+
+        <!-- ================= TOKENS AND TOOLS =================
+             The claim verifier can be most of a set's cost, and a cost table that names it
+             without naming how many claims it checked leaves the reader unable to judge whether
+             the spend bought anything. -->
+        <div role="tabpanel" class="mr-an-panel" [id]="panelId('tokens')" [attr.aria-labelledby]="tabId('tokens')"
+             tabindex="0" [hidden]="activeSection !== 'tokens'">
+          @if (!analysis) {
+            <p class="text-muted">Not analyzed yet.</p>
+          } @else if (!usageStats) {
+            <p class="text-muted">No member recorded token or tool usage.</p>
+          }
+
+          @if (usageStats; as usage) {
+            <section class="mr-subsection" aria-labelledby="mr-an-usage-heading">
+              <h4 id="mr-an-usage-heading" class="gh-section-title">Tokens and tool usage</h4>
+              <dl class="mr-stats">
+                <div class="mr-stat">
+                  <dt>Candidate input</dt>
+                  <dd>{{ formatTokens(usage.totalInputTokens) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Candidate output</dt>
+                  <dd>{{ formatTokens(usage.totalOutputTokens) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Input : output</dt>
+                  <dd>{{ usage.inputOutputRatio != null ? formatNumber(usage.inputOutputRatio, 1) + ' : 1' : '—' }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Cache-read share</dt>
+                  <dd>{{ formatPercent(usage.cacheReadSharePercentage, 1) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Tool calls</dt>
+                  <dd>{{ usage.totalToolCalls }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Tool calls per run</dt>
+                  <dd>{{ formatNumber(usage.meanToolCallsPerRun, 1) }}</dd>
+                </div>
+              </dl>
+
+              <div class="mr-an-card-heading">
+                <h5>Grader tokens, kept separate</h5>
+                <app-info-tip trigger="click" tipId="mr-an-grader-tokens-tip" subject="Grader tokens">
+                  The graders' tokens are never folded into the candidate's totals above: those measure
+                  the model under test.
+                </app-info-tip>
+              </div>
+              <p class="section-note mr-an-grader-tokens">
+                Assessor {{ formatTokens(usage.totalAssessmentInputTokens) }} in /
+                {{ formatTokens(usage.totalAssessmentOutputTokens) }} out ·
+                claim verifier {{ formatTokens(usage.totalClaimVerificationInputTokens) }} in /
+                {{ formatTokens(usage.totalClaimVerificationOutputTokens) }} out
+              </p>
+
+              @if (toolFamilyRows.length > 0) {
+                <div class="mr-an-card-heading">
+                  <h5>Tool calls by family</h5>
+                  <app-info-tip trigger="click" tipId="mr-an-tool-policy-tip" subject="Tool family shares">
+                    A family's share is prompt-compliant or not only against the tool preference
+                    hierarchy in <code>_policy.md</code>. A high source-code share on a suite weighted
+                    toward exact mechanics is what that policy asks for, not a routing defect.
+                  </app-info-tip>
+                </div>
+                <div class="mr-table-scroll">
+                  <table class="gh-table mr-tool-family-table">
+                    <caption class="visually-hidden">Tool calls by family, pooled across the group's runs.</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Tool family</th>
+                        <th scope="col" class="col-num">Calls</th>
+                        <th scope="col" class="col-num">Share</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of toolFamilyRows; track row.family) {
+                        <tr>
+                          <th scope="row">{{ row.family }}</th>
+                          <td class="col-num">{{ row.calls }}</td>
+                          <td class="col-num">{{ formatPercent(row.share, 1) }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+
+              @if (usage.claimsChecked > 0 || usage.answersWithVerification > 0) {
+                <div class="mr-an-card-heading">
+                  <h5>Claim verification</h5>
+                  <app-info-tip trigger="click" tipId="mr-an-claim-reading-tip" subject="Claim verification">
+                    Read this beside the verifier's share of the cost table on the Speed &amp; cost tab:
+                    it is what that spend bought. A verifier that refutes nothing across a whole
+                    replicate set is either confirming the candidate is accurate or failing to test it,
+                    and the claim count is what separates those.
+                  </app-info-tip>
+                </div>
+                <p class="mr-claim-line">
+                  {{ usage.claimsChecked }} claims checked across
+                  {{ usage.answersWithVerification }} answers —
+                  {{ usage.claimsSupported }} supported,
+                  <strong>{{ usage.claimsRefuted }} refuted</strong>,
+                  {{ usage.claimsIndeterminate }} indeterminate.
+                </p>
+              }
+            </section>
+          }
+        </div>
+
+        <!-- ================= COMPARISON ================= -->
+        <div role="tabpanel" class="mr-an-panel" [id]="panelId('comparison')" [attr.aria-labelledby]="tabId('comparison')"
+             tabindex="0" [hidden]="activeSection !== 'comparison'">
+
+          <div class="mr-an-compare">
+            <div class="mr-field">
+              <label for="mr-an-compare-group">Compare with</label>
+              <select id="mr-an-compare-group" class="gh-input" (change)="onCompareChange($event)"
+                      [attr.aria-describedby]="compareError ? 'mr-an-compare-note mr-an-compare-error' : 'mr-an-compare-note'">
+                <option value="" [selected]="compareWithGroupId == null">Choose a group…</option>
+                @for (candidate of comparisonCandidates; track candidate.id) {
+                  <option [value]="candidate.id" [selected]="candidate.id === compareWithGroupId">{{ candidateLabel(candidate) }}</option>
+                }
+              </select>
+              <p class="mr-field-note" id="mr-an-compare-note">
+                @if (comparisonCandidates.length === 0) {
+                  No other Tier A or Tier B group of this suite to compare with.
+                } @else {
+                  The chosen group is the <strong>baseline</strong>; differences are this group minus that one.
+                }
+              </p>
+              @if (compareError) {
+                <p class="gh-field-error" id="mr-an-compare-error">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                  {{ compareError }}
+                </p>
+              }
+            </div>
+            <button type="button" class="btn-gh mr-an-compare-btn"
+                    [attr.aria-disabled]="compareWithGroupId == null || analysing ? 'true' : null"
+                    aria-describedby="mr-an-compare-note"
+                    (click)="compare()">{{ analysing ? 'Analyzing…' : 'Compare' }}</button>
+          </div>
+
+          @if (comparison; as cmp) {
+            <section class="mr-subsection mr-comparison" aria-labelledby="mr-an-comparison-heading">
+              <div class="mr-an-heading-row">
+                <h4 id="mr-an-comparison-heading" class="gh-section-title">Comparison with {{ analysis?.comparedWithGroupName || 'the baseline group' }}</h4>
+                @if (comparisonMethodVersion < 2) {
+                  <app-info-tip trigger="click" tipId="mr-an-wilcoxon-tip" subject="Wilcoxon signed-rank test">
+                    Wilcoxon signed-rank is the primary test — non-parametric, which is what a bounded
+                    0–100 scale over this many items warrants ({{ cmp.wilcoxon?.method }},
+                    n = {{ cmp.wilcoxon?.sampleSize }}, {{ cmp.wilcoxon?.zeroDifferenceCount }} zero
+                    difference(s) discarded). The paired <i>t</i> is reported beside it, never instead of it.
+                  </app-info-tip>
+                }
+              </div>
+              <p class="section-note mr-an-paired-line">
+                Paired by question on per-item cross-run mean quality, over
+                {{ cmp.pairedItemCount }} paired item(s).
+                @if (cmp.unpairedItemCount) {
+                  {{ cmp.unpairedItemCount }} item(s) appear on one side only and are excluded.
+                }
+                @if (cmp.revisionMismatchedItemCount) {
+                  {{ cmp.revisionMismatchedItemCount }} item(s) were graded under different rubric revisions on the two sides and are excluded.
+                }
+                Differences are this group minus the baseline.
+              </p>
+
+              @if (comparisonMethodVersion >= 2) {
+                <!-- 1. What differs between the two groups. -->
+                <div class="mr-an-block mr-an-differences">
+                  <h5>What differs between the groups</h5>
+                  @if (pairKeyDifferences.length === 0) {
+                    <p class="text-muted">Not recorded for this analysis.</p>
+                  } @else {
+                    <ul class="mr-an-difference-list">
+                      @for (difference of pairKeyDifferences; track difference.key) {
+                        <li>
+                          <span class="mr-an-difference-key">{{ difference.key }}</span>
+                          <span class="mr-an-difference-kind">{{ difference.kind }}</span>
+                          @if (difference.description) {
+                            <span class="mr-an-difference-description">{{ difference.description }}</span>
+                          }
+                          <span class="mr-an-difference-values">
+                            Baseline <span class="mr-mono">{{ difference.baselineValue || '—' }}</span>
+                            <span aria-hidden="true">→</span><span class="visually-hidden">, this group</span>
+                            <span class="mr-mono">{{ difference.treatmentValue || '—' }}</span>
+                          </span>
+                        </li>
+                      }
+                    </ul>
+                    @if (pairKeyDifferences.length > 1) {
+                      <p class="gh-field-warning mr-an-multi-difference">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        <span>More than one thing differs between these groups, so the difference cannot be attributed to one change.</span>
+                      </p>
+                    }
+                  }
+                </div>
+
+                <!-- 2. The primary result: the difficulty-weighted index difference. -->
+                <div class="mr-an-block mr-an-primary">
+                  <div class="mr-an-card-heading">
+                    <h5>Index difference</h5>
+                    <app-info-tip trigger="click" tipId="mr-an-index-difference-tip" subject="Why the index difference is primary">
+                      It is the same quantity as the headline index: difficulty-weighted, over the paired
+                      questions, with this group's weights on both sides. The question-level tests weight
+                      every question equally and leave out run-to-run variation, so they answer a
+                      different question and are secondary.
+                    </app-info-tip>
+                  </div>
+                  <dl class="mr-stats">
+                    <div class="mr-stat">
+                      <dt>Index difference</dt>
+                      <dd>{{ formatSigned(cmp.indexDifference, 1) }}</dd>
+                    </div>
+                    <div class="mr-stat">
+                      <dt>95%</dt>
+                      <dd>{{ formatRange(cmp.indexDifferenceLower, cmp.indexDifferenceUpper, 1, true) }}</dd>
+                    </div>
+                    <div class="mr-stat">
+                      <dt>bootstrap p</dt>
+                      <dd>{{ formatPValue(cmp.indexDifferenceBootstrapP) }}</dd>
+                    </div>
+                  </dl>
+                  <p class="mr-an-method-line">
+                    @if (cmp.runVarianceIncluded) {
+                      Run-to-run variation included
+                    } @else {
+                      Run-to-run variation not included (fewer than three runs on a side)
+                    }
+                  </p>
+                </div>
+
+                <!-- 3. What this design can detect. -->
+                @if (cmp.minimumDetectableIndexDifference != null) {
+                  <p class="mr-an-mde">Smallest reliably detectable difference: ±{{ formatNumber(cmp.minimumDetectableIndexDifference, 1) }} points</p>
+                }
+
+                <!-- 4. The question-level tests. -->
+                <div class="mr-an-block mr-an-secondary">
+                  <div class="mr-an-card-heading">
+                    <h5>Secondary, question-level tests</h5>
+                    <app-info-tip trigger="click" tipId="mr-an-wilcoxon-tip" subject="Wilcoxon signed-rank test">
+                      Wilcoxon signed-rank is non-parametric, which is what a bounded 0–100 scale over this
+                      many items warrants ({{ cmp.wilcoxon?.method }}, n = {{ cmp.wilcoxon?.sampleSize }},
+                      {{ cmp.wilcoxon?.zeroDifferenceCount }} zero difference(s) discarded). The
+                      Hodges–Lehmann shift is the location it tests; the paired <i>t</i> is reported beside it.
+                    </app-info-tip>
+                  </div>
+                  <dl class="mr-stats">
+                    <div class="mr-stat">
+                      <dt>Mean difference (unweighted)</dt>
+                      <dd>{{ formatSigned(cmp.meanDifference, 2) }}</dd>
+                    </div>
+                    <div class="mr-stat">
+                      <dt>t interval</dt>
+                      <dd>{{ formatRange(cmp.differenceConfidenceLower, cmp.differenceConfidenceUpper, 2, true) }}</dd>
+                    </div>
+                    <div class="mr-stat">
+                      <dt>Wilcoxon p</dt>
+                      <dd>{{ formatPValue(cmp.wilcoxon?.pValue) }}</dd>
+                    </div>
+                    <div class="mr-stat">
+                      <dt>Hodges–Lehmann shift</dt>
+                      <dd>{{ formatSigned(cmp.hodgesLehmannShift, 2) }}</dd>
+                    </div>
+                    <div class="mr-stat">
+                      <dt>Paired t p</dt>
+                      <dd>{{ formatPValue(cmp.pairedT?.pValue) }}</dd>
+                    </div>
+                    <div class="mr-stat mr-an-dav">
+                      <dt>Cohen's d<sub>av</sub></dt>
+                      <dd>{{ formatNumber(cmp.standardizedDifferenceDav, 2) }}</dd>
+                    </div>
+                  </dl>
+                </div>
+              } @else {
+                <dl class="mr-stats">
+                  <div class="mr-stat">
+                    <dt>Mean paired difference</dt>
+                    <dd>{{ formatSigned(cmp.meanDifference, 2) }}</dd>
+                  </div>
+                  <div class="mr-stat">
+                    <dt>95% CI</dt>
+                    <dd>{{ formatRange(cmp.differenceConfidenceLower, cmp.differenceConfidenceUpper, 2, true) }}</dd>
+                  </div>
+                  <div class="mr-stat">
+                    <dt>Wilcoxon p (primary)</dt>
+                    <dd>{{ formatPValue(cmp.wilcoxon?.pValue) }}</dd>
+                  </div>
+                  <div class="mr-stat">
+                    <dt>Paired t p (secondary)</dt>
+                    <dd>{{ formatPValue(cmp.pairedT?.pValue) }}</dd>
+                  </div>
+                  <div class="mr-stat mr-an-dz">
+                    <dt>Cohen's d<sub>z</sub></dt>
+                    <dd>{{ formatNumber(cmp.cohensDz, 2) }}</dd>
+                  </div>
+                </dl>
+              }
+
+              <!-- 5. The exploratory per-item table. -->
+              @if (itemComparisons.length > 0) {
+                <div class="mr-exploratory">
+                  <h5>Per-item differences — exploratory</h5>
+                  <!-- The label is mandatory: the server sets an Exploratory flag that is always
+                       true precisely so that no surface can render one of these without it. -->
+                  <div class="alert alert-info" role="note">
+                    <div class="alert-content"><div class="alert-body">{{ exploratoryNote }}</div></div>
+                  </div>
+                  <div class="mr-table-scroll">
+                    <table class="gh-table mr-comparison-table">
+                      <caption class="visually-hidden">Exploratory per-item differences between the two groups, under Benjamini-Hochberg false discovery rate control.</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Question</th>
+                          <th scope="col" class="col-center">Baseline</th>
+                          <th scope="col" class="col-center">This group</th>
+                          <th scope="col" class="col-center">Difference</th>
+                          <th scope="col" class="col-center">p</th>
+                          <th scope="col" class="col-center">q (BH)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (item of itemComparisons; track item.questionId) {
+                          <tr [class.is-rejected]="item.rejectedAtFdr">
+                            <th scope="row" class="col-q">
+                              <span class="item-order">Q{{ item.orderIndex }}</span>
+                              <span class="item-text">{{ item.questionText }}</span>
+                            </th>
+                            <td class="col-center">{{ formatNumber(item.baselineMean, 1) }}</td>
+                            <td class="col-center">{{ formatNumber(item.treatmentMean, 1) }}</td>
+                            <td class="col-center">{{ formatSigned(item.difference, 1) }}</td>
+                            <td class="col-center">{{ formatPValue(item.pValue) }}</td>
+                            <td class="col-center">
+                              @if (item.untestable) {
+                                <span class="mr-badge mr-badge-muted">Untestable</span>
+                              } @else {
+                                {{ formatPValue(item.adjustedPValue) }}
+                                @if (item.rejectedAtFdr) {
+                                  <span class="mr-badge mr-badge-warn">exploratory</span>
+                                }
+                              }
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                  <p class="text-muted mr-an-fdr-note">
+                    Controlled at a false discovery rate of {{ cmp.falseDiscoveryRate }}. A
+                    rejection here is a lead to investigate, never a result to report on its own.
+                    @if (untestableNote; as untestable) { {{ untestable }} }
+                  </p>
+                </div>
+              }
+
+              <!-- 6. Repeated looks at the same group. -->
+              @if (comparisonMethodVersion >= 2 && priorComparisonWarning; as prior) {
+                <p class="gh-field-warning mr-an-prior-comparisons">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  <span>{{ prior }}</span>
+                </p>
+              }
+            </section>
+          } @else if (analysis) {
+            <p class="text-muted mr-an-no-comparison">This analysis is not paired with another group. Choose a group above and press Compare.</p>
+          }
+        </div>
+      </div>
+
+      <div class="dialog-footer">
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Close</button>
+      </div>
+    </div>
+  }
+</dialog>

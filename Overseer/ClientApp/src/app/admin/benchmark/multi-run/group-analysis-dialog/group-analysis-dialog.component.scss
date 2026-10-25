@@ -1,0 +1,729 @@
+// The group analysis dialog. Reuses .gh-dialog, .gh-tabs, .gh-table, .gh-input, .btn-gh,
+// .btn-icon-action, .alert, .gh-tooltip, .gh-section-title, .gh-field-error, .gh-field-warning,
+// .gh-tag and .visually-hidden from styles.scss; this file carries only the dialog's layout and the
+// few pieces of vocabulary that exist nowhere else — the tier badge, the interval cards and the stat
+// tiles.
+//
+// Nothing here re-declares a shared class. Angular's emulated encapsulation would rewrite such a
+// rule to match this component's elements only, so the control would keep working while quietly
+// looking like nothing else in the application.
+
+:host {
+  display: contents;
+}
+
+// --- The frame --------------------------------------------------------------------------------
+
+.gh-dialog.mr-analysis-dialog {
+  // Sized for a report.
+  width: min(1150px, 94vw);
+  max-width: min(1150px, 94vw);
+  height: min(88dvh, 900px);
+  max-height: 88dvh;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  background: rgba(20, 20, 20, 0.98);
+
+  &[open],
+  &:modal {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dialog-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 24px;
+    margin: 0;
+    border-bottom: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+    flex-shrink: 0;
+
+    .dialog-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .dialog-subtitle {
+      margin: 0;
+      font-size: 0.85em;
+      color: #888;
+    }
+  }
+
+  .dialog-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px;
+    min-height: 0;
+  }
+
+  .dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 14px 24px;
+    border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+    flex-shrink: 0;
+  }
+}
+
+// The title is a reading start focused on open, not a control, so it takes no focus ring.
+.mr-an-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: 1.2em;
+  color: var(--title-color);
+
+  &:focus {
+    outline: none;
+  }
+}
+
+.mr-an-title-runs {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.mr-dialog-header-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+// The action row and the section tabs, outside the scrolling body so both stay in view.
+.mr-an-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 24px 0;
+  flex-shrink: 0;
+
+  .alert {
+    margin: 0;
+    max-width: 110ch;
+  }
+}
+
+.mr-an-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+// An unavailable action stays visible, focusable and hoverable so its tooltip can explain itself.
+.mr-download-detail.is-unavailable,
+.mr-an-recompute[aria-disabled="true"],
+.mr-an-compare-btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mr-an-tabs {
+  margin: 0;
+}
+
+// The container the content queries: the dialog's own width, not the viewport's.
+.mr-dialog-body {
+  container-type: inline-size;
+  container-name: mr-an-width;
+
+  .text-muted { color: #888; }
+
+  p { margin: 0; }
+
+  h5 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    color: #ddd;
+  }
+
+  .section-note {
+    margin: 0;
+    color: #bbb;
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 110ch;
+    text-wrap: pretty;
+  }
+
+  .alert {
+    max-width: 110ch;
+    margin: 0;
+  }
+}
+
+.mr-an-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+
+  // display: flex would otherwise keep a hidden panel visible.
+  &[hidden] {
+    display: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+// A section heading and its info button: the border moves from the heading to the row, so it runs
+// under both.
+.mr-an-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--border-glass);
+
+  .gh-section-title {
+    margin: 0;
+    padding: 0;
+    border-bottom: 0;
+  }
+}
+
+.mr-an-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  h5 {
+    margin: 0;
+  }
+}
+
+// A table wider than the dialog scrolls inside its own box.
+.mr-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+// --- Tier badge ---
+//
+// Color reinforces the tier; the word carries it.
+.mr-tier {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+
+  &.tier-replicate {
+    border-color: rgba(120, 200, 130, 0.5);
+    background: rgba(120, 200, 130, 0.12);
+    color: #a8dcb0;
+  }
+
+  &.tier-quality {
+    border-color: rgba(224, 186, 109, 0.5);
+    background: rgba(224, 186, 109, 0.12);
+    color: var(--primary-color, #e0ba6d);
+  }
+
+  &.tier-cross {
+    border-color: rgba(214, 150, 90, 0.5);
+    background: rgba(214, 150, 90, 0.12);
+    color: #e0a878;
+  }
+
+  &.tier-none {
+    border-color: rgba(220, 110, 110, 0.5);
+    background: rgba(220, 110, 110, 0.12);
+    color: #e09090;
+  }
+}
+
+.mr-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #bbb;
+  white-space: nowrap;
+
+  &.mr-badge-stale {
+    border-color: rgba(224, 186, 109, 0.5);
+    color: var(--primary-color, #e0ba6d);
+  }
+
+  &.mr-badge-warn {
+    border-color: rgba(214, 150, 90, 0.5);
+    color: #e0a878;
+  }
+
+  &.mr-badge-ok {
+    border-color: rgba(120, 200, 130, 0.4);
+    color: #a8dcb0;
+  }
+
+  &.mr-badge-muted {
+    color: #888;
+  }
+}
+
+.mr-an-qb-tag {
+  margin-left: 6px;
+  border-color: var(--border-glass);
+  color: #bbb;
+  white-space: nowrap;
+}
+
+// --- Summary ---
+
+.mr-provenance {
+  font-size: 12px;
+  color: #999;
+  max-width: 110ch;
+  line-height: 1.5;
+}
+
+.mr-manifest {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 110ch;
+
+  .mr-manifest-row {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+
+    @container mr-an-width (max-width: 560px) {
+      flex-direction: column;
+      gap: 2px;
+    }
+  }
+
+  dt {
+    flex: 0 0 160px;
+    margin: 0;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #888;
+  }
+
+  dd {
+    margin: 0;
+    font-size: 13px;
+    color: #ddd;
+    min-width: 0;
+  }
+}
+
+.mr-member-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 12px;
+    color: #bbb;
+  }
+}
+
+.mr-run-id {
+  font-variant-numeric: tabular-nums;
+  color: #eee;
+  font-weight: 600;
+}
+
+.mr-run-fingerprint,
+.mr-mono {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+  color: #9aa;
+}
+
+.mr-prompt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+
+  li {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+}
+
+.mr-prompt-label {
+  color: #999;
+  min-width: 7ch;
+  flex-shrink: 0;
+}
+
+.mr-prompt-note {
+  margin-top: 8px !important;
+  font-size: 12px;
+  color: #bbb;
+  line-height: 1.5;
+  max-width: 100ch;
+  text-wrap: pretty;
+
+  &.mr-prompt-note-warning {
+    color: var(--color-warning, #fbbf24);
+  }
+}
+
+.mr-aggregates {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 110ch;
+}
+
+.mr-point {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+
+  .mr-point-value {
+    font-size: 34px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--primary-color, #e0ba6d);
+  }
+
+  .mr-point-label {
+    font-size: 12px;
+    color: #999;
+  }
+}
+
+// The two components sit side by side, each with the question it answers and the way it behaves
+// as runs are added: the contrast between "shrinks" and "does not shrink" is the message.
+.mr-interval-components {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+
+  @container mr-an-width (max-width: 720px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mr-interval {
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  .mr-interval-question {
+    font-size: 13px;
+    font-style: italic;
+    color: #bbb;
+  }
+
+  .mr-interval-value {
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: #ddd;
+  }
+
+  .mr-interval-behavior {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #bbb;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.08));
+  }
+
+  .mr-shrinks strong { color: #a8dcb0; }
+
+  .mr-does-not-shrink strong { color: #e0a878; }
+}
+
+.mr-combined {
+  padding: 12px 14px;
+  border: 1px solid rgba(224, 186, 109, 0.35);
+  border-radius: 8px;
+  background: rgba(224, 186, 109, 0.05);
+
+  .mr-combined-value {
+    font-size: 18px;
+    font-variant-numeric: tabular-nums;
+    color: #eee;
+  }
+
+  .mr-combined-range {
+    margin-left: 8px;
+    font-size: 14px;
+    color: #bbb;
+  }
+
+  .mr-combined-note {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #bbb;
+  }
+}
+
+.mr-an-method-line {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #bbb;
+}
+
+.mr-an-made-of {
+  margin: 4px 0 0;
+}
+
+.mr-an-planning {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #ccc;
+}
+
+// The truncation marker on a clamped interval: the interval beside it is narrower than its own
+// half-width, and this is the only visible thing that says so.
+.mr-truncated-marker {
+  color: var(--color-warning, #fbbf24);
+  margin-left: 4px;
+}
+
+.mr-caveat {
+  max-width: 110ch;
+}
+
+// --- Sub-sections, stat tiles and tables ---
+
+.mr-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mr-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  max-width: 110ch;
+
+  .mr-stat {
+    flex: 1 1 150px;
+    padding: 10px 14px;
+    border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+
+    dt {
+      margin: 0 0 2px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #888;
+    }
+
+    dd {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: #eee;
+    }
+  }
+}
+
+.mr-dimension-table,
+.mr-cost-role-table,
+.mr-tool-family-table {
+  font-size: 13px;
+
+  .col-num {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  th[scope="row"] {
+    text-align: left;
+    font-weight: 600;
+  }
+}
+
+.mr-dimension-gap {
+  font-size: 13px;
+  color: #ddd;
+}
+
+.mr-claim-line {
+  font-size: 13px;
+  color: #ddd;
+
+  strong { color: #eee; }
+}
+
+.mr-run-total {
+  display: inline-block;
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mr-item-table,
+.mr-comparison-table {
+  .col-center { text-align: center; }
+
+  .col-q {
+    text-align: left;
+    max-width: 42ch;
+  }
+
+  .item-order {
+    display: inline-block;
+    margin-right: 8px;
+    font-weight: 600;
+    color: var(--primary-color, #e0ba6d);
+  }
+
+  .item-text {
+    color: #bbb;
+    font-weight: 400;
+  }
+
+  td { font-variant-numeric: tabular-nums; }
+
+  tr.is-unstable {
+    background: rgba(214, 150, 90, 0.06);
+  }
+
+  tr.is-rejected {
+    background: rgba(224, 186, 109, 0.06);
+  }
+}
+
+.mr-exploratory {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+// --- Comparison ---
+
+.mr-an-compare {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.mr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 60ch;
+  flex: 1 1 24rem;
+  min-width: 0;
+
+  label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #999;
+  }
+
+  .mr-field-note {
+    font-size: 12px;
+    color: #999;
+  }
+}
+
+.mr-an-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mr-an-difference-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: #ccc;
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+  }
+}
+
+.mr-an-difference-key {
+  font-weight: 600;
+  color: #eee;
+}
+
+.mr-an-difference-kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+}
+
+.mr-an-difference-description {
+  flex-basis: 100%;
+  line-height: 1.5;
+}
+
+.mr-an-mde {
+  font-size: 13px;
+  color: #ddd;
+  font-variant-numeric: tabular-nums;
+}

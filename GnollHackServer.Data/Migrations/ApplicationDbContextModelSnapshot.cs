@@ -1194,6 +1194,18 @@ namespace GnollHackServer.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<double?>("HeadlineCostPerRun")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("HeadlineHalfWidth")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("HeadlineIndex")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("HeadlineSpeedIndex")
+                        .HasColumnType("float");
+
                     b.Property<string>("MemberRunIdsJson")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");

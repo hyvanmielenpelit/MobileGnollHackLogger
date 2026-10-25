@@ -306,6 +306,7 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
     createRunGroup: vi.fn().mockName("AdminBenchmarkService.createRunGroup"),
     updateRunGroup: vi.fn().mockName("AdminBenchmarkService.updateRunGroup"),
     previewRunGroupTier: vi.fn().mockName("AdminBenchmarkService.previewRunGroupTier"),
+    getRunGroupSuggestions: vi.fn().mockName("AdminBenchmarkService.getRunGroupSuggestions"),
     getRunReportUrl: vi.fn().mockName("AdminBenchmarkService.getRunReportUrl"),
     getToolCallLogUrl: vi.fn().mockName("AdminBenchmarkService.getToolCallLogUrl"),
     compareModels: vi.fn().mockName("AdminBenchmarkService.compareModels"),
@@ -448,6 +449,7 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
   benchmarkServiceMock.getActiveRunSeries.mockReturnValue(of(null));
   benchmarkServiceMock.getRunSeries.mockReturnValue(of({ id: 1, status: 'Running', completedRunCount: 0, requestedRunCount: 1, members: [] } as any));
   benchmarkServiceMock.getRunGroups.mockReturnValue(of([]));
+  benchmarkServiceMock.getRunGroupSuggestions.mockReturnValue(of([]));
   benchmarkServiceMock.getRunLimits.mockReturnValue(of({
     maxRunsPerHour: 4,
     maxRunsPerDay: 20,

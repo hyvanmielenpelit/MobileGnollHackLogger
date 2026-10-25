@@ -111,15 +111,26 @@ public static class BenchmarkGroupReportBuilder
 
         var sb = new StringBuilder();
 
+        // Each stored analysis is read by the statistics method it was computed under; a null
+        // version is method 1. Method 1 renders as it always has.
+        int method = result.StatisticsMethodVersion ?? 1;
+
         // Sections are numbered by a running counter rather than by literals. Two of them are
         // conditional, and hardcoded numbers had already produced one arithmetic expression in a
         // heading string.
         int section = 0;
 
-        AppendHeader(sb, group, result, comparability, overseerVersion, computedAtUtc);
+        AppendHeader(sb, group, result, comparability, overseerVersion, computedAtUtc, method);
         AppendManifest(sb, ++section, group, result, comparability, members);
-        AppendIndex(sb, ++section, result);
-        AppendDimensions(sb, ++section, result);
+        if (method >= 2)
+        {
+            AppendIndexMethod2(sb, ++section, result);
+        }
+        else
+        {
+            AppendIndex(sb, ++section, result);
+        }
+        AppendDimensions(sb, ++section, result, method);
         AppendItems(sb, ++section, result);
         AppendSpeed(sb, ++section, result);
         AppendCost(sb, ++section, result);
@@ -131,10 +142,17 @@ public static class BenchmarkGroupReportBuilder
 
         if (comparison != null)
         {
-            AppendComparison(sb, ++section, comparison, group.Name, comparisonGroupName);
+            if ((comparison.StatisticsMethodVersion ?? 1) >= 2)
+            {
+                AppendComparisonMethod2(sb, ++section, comparison, group.Name, comparisonGroupName);
+            }
+            else
+            {
+                AppendComparison(sb, ++section, comparison, group.Name, comparisonGroupName);
+            }
         }
 
-        AppendLimits(sb, ++section, result);
+        AppendLimits(sb, ++section, result, method);
 
         return sb.ToString();
     }
@@ -145,7 +163,8 @@ public static class BenchmarkGroupReportBuilder
         BenchmarkGroupStatisticsResult result,
         BenchmarkComparabilityResult? comparability,
         string? overseerVersion,
-        DateTime? computedAtUtc)
+        DateTime? computedAtUtc,
+        int method)
     {
         sb.AppendLine($"# Multi-Run Benchmark Analysis — {group.Name}");
         sb.AppendLine();
@@ -155,6 +174,10 @@ public static class BenchmarkGroupReportBuilder
                       (result.UnansweredItemCount > 0 ? $" ({result.UnansweredItemCount} unanswered by every member and excluded)" : string.Empty) + "  ");
         sb.AppendLine($"**Comparability:** {TierLabel(comparability?.Tier ?? (BenchmarkComparabilityTier)group.Tier)}  ");
         sb.AppendLine($"**Analysis computed:** {Stamp(computedAtUtc ?? DateTime.UtcNow)} UTC  ");
+        if (method >= 2)
+        {
+            sb.AppendLine($"**Statistics method:** {method.ToString(CultureInfo.InvariantCulture)}  ");
+        }
         if (!string.IsNullOrWhiteSpace(overseerVersion))
         {
             sb.AppendLine($"**Overseer version:** {overseerVersion}  ");
@@ -439,8 +462,11 @@ public static class BenchmarkGroupReportBuilder
     /// <para>A composite index cannot say which dimension moved, and a single run cannot say whether
     /// a dimensional gap survives a re-run. This section is where a replicate set answers both.</para>
     /// </summary>
-    private static void AppendDimensions(StringBuilder sb, int section, BenchmarkGroupStatisticsResult result)
+    private static void AppendDimensions(StringBuilder sb, int section, BenchmarkGroupStatisticsResult result, int method)
     {
+        // Method 2 adds the bootstrap interval as its own column; method 1 renders as before.
+        bool bootstrapColumn = method >= 2;
+
         sb.AppendLine($"## {section}. Quality Dimensions");
         sb.AppendLine();
 
@@ -456,8 +482,16 @@ public static class BenchmarkGroupReportBuilder
 
         sb.AppendLine("Each dimension's per-run mean, pooled across the group. These means are **unweighted**, while the Intelligence Index is difficulty-weighted — there are no per-dimension difficulty weights to apply, so the two are not expected to agree.");
         sb.AppendLine();
-        sb.AppendLine("| Dimension | Mean | SD | 95% half-width | Min | Max | Per-run means | Lowest items |");
-        sb.AppendLine("|---|---:|---:|---:|---:|---:|---|---|");
+        if (bootstrapColumn)
+        {
+            sb.AppendLine("| Dimension | Mean | SD | 95% half-width | Bootstrap 95% interval | Min | Max | Per-run means | Lowest items |");
+            sb.AppendLine("|---|---:|---:|---:|---|---:|---:|---|---|");
+        }
+        else
+        {
+            sb.AppendLine("| Dimension | Mean | SD | 95% half-width | Min | Max | Per-run means | Lowest items |");
+            sb.AppendLine("|---|---:|---:|---:|---:|---:|---|---|");
+        }
 
         foreach (var dim in scored)
         {
@@ -474,11 +508,18 @@ public static class BenchmarkGroupReportBuilder
                 })
                 .ToList();
 
+            string bootstrapCell = !bootstrapColumn
+                ? string.Empty
+                : dim.BootstrapLower.HasValue && dim.BootstrapUpper.HasValue
+                    ? $"| [{Inv(dim.BootstrapLower, "F1")}, {Inv(dim.BootstrapUpper, "F1")}] "
+                    : "| — ";
+
             sb.AppendLine(
                 $"| **{dim.Dimension}** " +
                 $"| {Inv(dim.Mean, "F1")} " +
                 $"| {Inv(dim.StandardDeviation, "F1")} " +
                 $"| {Inv(dim.ConfidenceHalfWidth, "F1")} " +
+                bootstrapCell +
                 $"| {Inv(dim.Min, "F1")} " +
                 $"| {Inv(dim.Max, "F1")} " +
                 $"| {string.Join(", ", dim.PerRunMeans.Select(v => Inv(v, "F1")))} " +
@@ -968,7 +1009,8 @@ public static class BenchmarkGroupReportBuilder
     private static void AppendLimits(
         StringBuilder sb,
         int section,
-        BenchmarkGroupStatisticsResult result)
+        BenchmarkGroupStatisticsResult result,
+        int method)
     {
         sb.AppendLine($"## {section}. What This Analysis Cannot Decompose");
         sb.AppendLine();
@@ -976,6 +1018,254 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine();
         sb.AppendLine("Concretely: an item flagged unstable above may be unstable because the *candidate* answers it differently each time, or because the *grader* scores the same quality of answer differently each time. Nothing in a replicate set separates the two, because each run produces a new answer that is graded once. Separating them requires re-grading identical answers — `SecondOpinionMode = All`, or a re-assessment pass over stored answers — and the run's sampled assessor agreement is the partial measurement available today.");
         sb.AppendLine();
-        sb.AppendLine("*Report generated by `BenchmarkGroupReportBuilder`. No part of it was written by a model.*");
+        sb.AppendLine(method >= 2
+            ? $"*Report generated by `BenchmarkGroupReportBuilder`, statistics method {method.ToString(CultureInfo.InvariantCulture)}. No part of it was written by a model.*"
+            : "*Report generated by `BenchmarkGroupReportBuilder`. No part of it was written by a model.*");
+    }
+
+    // --- Statistics method 2 ------------------------------------------------------------------
+
+    /// <summary>A bootstrap p-value: a resampled p of zero only says it is below the resolution.</summary>
+    private static string BootstrapP(double? p)
+    {
+        if (!p.HasValue) return "—";
+        return p.Value < 0.001
+            ? "< 0.001"
+            : p.Value.ToString("F3", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>An interval method identifier in words.</summary>
+    private static string IntervalMethodText(string? method, int? replicates) => method switch
+    {
+        "crossedBootstrap" => replicates.HasValue
+            ? $"crossed bootstrap over runs and questions, {replicates.Value.ToString("N0", CultureInfo.InvariantCulture)} resamples"
+            : "crossed bootstrap over runs and questions",
+        "questionBootstrap" => "question bootstrap; fewer than three runs",
+        null or "" => "method not recorded",
+        _ => method
+    };
+
+    /// <summary>
+    /// The index under statistics method 2: the point estimate and the combined bootstrap interval
+    /// first, then the two components as diagnostics of what the interval is made of.
+    /// </summary>
+    private static void AppendIndexMethod2(StringBuilder sb, int section, BenchmarkGroupStatisticsResult result)
+    {
+        var ix = result.Index;
+
+        sb.AppendLine($"## {section}. Multi-Run Intelligence Index");
+        sb.AppendLine();
+        sb.AppendLine($"- **Point estimate:** {Inv(ix.PointEstimate, "F2")} / 100 — the mean of the {ix.RunCount} per-run difficulty-weighted indices.");
+
+        string interval = ix.CombinedLower.HasValue && ix.CombinedUpper.HasValue
+            ? $"[{Inv(ix.CombinedLower)}, {Inv(ix.CombinedUpper)}]"
+            : "—";
+        sb.AppendLine($"- **Combined 95% interval:** {interval} ({IntervalMethodText(ix.CombinedIntervalMethod, ix.BootstrapReplicates)})");
+        sb.AppendLine(ix.CombinedIntervalMethod == "crossedBootstrap"
+            ? "  - Runs and questions are resampled together, so the interval covers **both** run-to-run variation and the choice of questions."
+            : "  - Only questions are resampled: below three runs there is no run-to-run variation to resample, so the interval covers the choice of questions only.");
+        if (ix.BootstrapSeed.HasValue)
+        {
+            sb.AppendLine($"  - Resampling seed {ix.BootstrapSeed.Value.ToString(CultureInfo.InvariantCulture)}, so the interval is reproducible from the stored answers.");
+        }
+        sb.AppendLine($"- **Difficulty-weighted mean of per-item cross-run means:** {Inv(ix.WeightedMeanOfItemMeans, "F2")}" +
+                      (ix.IdentityHolds ? string.Empty : " — **differs from the point estimate**, because some member failed to produce a scored answer to some item."));
+        sb.AppendLine($"- **Per-run indices:** {string.Join(", ", ix.PerRunIndices.Select(v => Inv(v, "F1")))}");
+        sb.AppendLine();
+
+        sb.AppendLine($"### {section}.1 What the interval is made of");
+        sb.AppendLine();
+        sb.AppendLine("Two diagnostic components. Neither is the interval above; they show where its width comes from, and only one of them can be bought down with more runs.");
+        sb.AppendLine();
+        sb.AppendLine("| Component | Question it answers | SD | SE | 95% half-width | Shrinks with *R*? |");
+        sb.AppendLine("|---|---|---:|---:|---:|---|");
+        sb.AppendLine(
+            "| **Run-to-run** | *Would a re-run move this?* " +
+            $"| {Inv(ix.ReproducibilityStandardDeviation)} " +
+            $"| {Inv(ix.ReproducibilityStandardError)} " +
+            $"| {Inv(ix.ReproducibilityHalfWidth)} " +
+            "| **Yes**, as 1/√*R* |");
+        sb.AppendLine(
+            "| **Question sampling** | *Would a different set of questions move this?* " +
+            "| — " +
+            $"| {Inv(ix.ItemSamplingStandardError)} " +
+            $"| {Inv(ix.ItemSamplingHalfWidth)} " +
+            "| **No** |");
+        sb.AppendLine();
+
+        if (ix.RunsWhereRunComponentMatchesQuestions.HasValue)
+        {
+            sb.AppendLine($"**From about {ix.RunsWhereRunComponentMatchesQuestions.Value.ToString(CultureInfo.InvariantCulture)} runs, more questions narrow this interval more than more runs.** Beyond that point the run-to-run component is the smaller one, and adding runs mostly sharpens a figure that no longer dominates the width.");
+            sb.AppendLine();
+        }
+
+        if (ix.RunSpanHours.HasValue && ix.RunSpanHours.Value < 24.0 && ix.RunCount >= BenchmarkGroupStatistics.MinRunsForReproducibility)
+        {
+            sb.AppendLine($"**All runs were made within {Inv(ix.RunSpanHours.Value, "F0")} hours; the run component measures re-running now, not on another day.** A provider-side change between days is not in it.");
+            sb.AppendLine();
+        }
+
+        if (ix.ReproducibilityStandardDeviation.HasValue
+            && ix.ReproducibilitySdLower.HasValue
+            && ix.ReproducibilitySdUpper.HasValue)
+        {
+            sb.AppendLine($"The run-to-run SD is itself an estimate: SD {Inv(ix.ReproducibilityStandardDeviation)}, 95% interval on σ [{Inv(ix.ReproducibilitySdLower)}, {Inv(ix.ReproducibilitySdUpper)}], from the χ²({ix.RunCount - 1}) distribution. Two groups' SDs are compared by their intervals, not as bare numbers.");
+            sb.AppendLine();
+        }
+
+        if (!ix.ReproducibilityAvailable)
+        {
+            sb.AppendLine($"> **No run-to-run figure is reported at *R* = {ix.RunCount}.** Below {BenchmarkGroupStatistics.MinRunsForReproducibility} runs a standard deviation over runs is not a measurement.");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("> **The question-sampling component does not shrink as more runs are added, and that is correct.** Every run answers the same questions, so extra runs sharpen each question's mean and do nothing about which questions the suite drew.");
+        sb.AppendLine();
+        sb.AppendLine("---");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// The comparison under statistics method 2: what differs between the groups, the primary index
+    /// difference with its interval, the smallest difference the comparison would detect, the
+    /// question-level tests as secondary, the exploratory per-item table, and how often the group was
+    /// compared before.
+    /// </summary>
+    private static void AppendComparisonMethod2(
+        StringBuilder sb,
+        int section,
+        BenchmarkGroupComparison cmp,
+        string treatmentName,
+        string? baselineName)
+    {
+        sb.AppendLine($"## {section}. Paired Group Comparison");
+        sb.AppendLine();
+        sb.AppendLine($"**Baseline:** {baselineName ?? "(unnamed group)"} — runs {string.Join(", ", cmp.BaselineRunIds)}  ");
+        sb.AppendLine($"**Treatment:** {treatmentName} — runs {string.Join(", ", cmp.TreatmentRunIds)}");
+        sb.AppendLine();
+        sb.AppendLine("Differences are **treatment minus baseline**, so a positive value means the treatment scored higher.");
+        sb.AppendLine();
+
+        // 1. What differs.
+        sb.AppendLine($"### {section}.1 What differs between the groups");
+        sb.AppendLine();
+        if (cmp.PairKeyDifferences == null)
+        {
+            sb.AppendLine("*Not recorded for this analysis.*");
+        }
+        else if (cmp.PairKeyDifferences.Count == 0)
+        {
+            sb.AppendLine("No comparability key separates the two groups: every key either matches or also varies within a group. The difference below is not attributable to a recorded change.");
+        }
+        else
+        {
+            foreach (var key in cmp.PairKeyDifferences)
+            {
+                string label = string.IsNullOrWhiteSpace(key.Description) ? key.Key : key.Description!;
+                sb.AppendLine($"- **{label}** (`{key.Key}`, {key.Kind}): baseline `{key.BaselineValue ?? "—"}`, treatment `{key.TreatmentValue ?? "—"}`");
+            }
+            if (cmp.PairKeyDifferences.Count > 1)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"> **{cmp.PairKeyDifferences.Count} keys differ at once, so the difference below cannot be attributed to any one of them.** A single-change comparison needs groups that differ on exactly one key.");
+            }
+        }
+        sb.AppendLine();
+
+        // 2. The primary result.
+        sb.AppendLine($"### {section}.2 Index difference (primary)");
+        sb.AppendLine();
+        string differenceInterval = cmp.IndexDifferenceLower.HasValue && cmp.IndexDifferenceUpper.HasValue
+            ? $", 95% interval [{Inv(cmp.IndexDifferenceLower, "F2")}, {Inv(cmp.IndexDifferenceUpper, "F2")}]"
+            : string.Empty;
+        sb.AppendLine($"- **Index difference:** {Inv(cmp.IndexDifference, "F2")} points{differenceInterval} ({IntervalMethodText(cmp.IndexDifferenceMethod, null)})");
+        sb.AppendLine($"- **Bootstrap p:** {BootstrapP(cmp.IndexDifferenceBootstrapP)}" +
+                      (cmp.IndexDifferenceStandardError.HasValue ? $" · **SE:** {Inv(cmp.IndexDifferenceStandardError, "F2")}" : string.Empty));
+        sb.AppendLine(cmp.RunVarianceIncluded switch
+        {
+            true => "- **Run-to-run variation included:** the interval covers a re-run as well as the choice of questions.",
+            false => "- **Run-to-run variation not included:** the interval covers the choice of questions only, so it is narrower than a re-run would justify.",
+            null => "- **Run-to-run variation:** not recorded."
+        });
+        sb.AppendLine("- Both sides are weighted by the **treatment group's item weights**, so the two indices are computed over the same weighting and the difference compares like with like.");
+        sb.AppendLine();
+
+        // 3. Sensitivity.
+        sb.AppendLine($"### {section}.3 Smallest difference this comparison would reliably detect");
+        sb.AppendLine();
+        if (cmp.MinimumDetectableIndexDifference.HasValue)
+        {
+            sb.AppendLine($"About **{Inv(cmp.MinimumDetectableIndexDifference, "F2")} points**. A true difference smaller than this would often go unseen with these groups, so a non-significant result says only that any effect is probably below it, not that there is none.");
+        }
+        else
+        {
+            sb.AppendLine("Not computed for this comparison.");
+        }
+        sb.AppendLine();
+
+        // 4. Question-level, secondary.
+        sb.AppendLine($"### {section}.4 Secondary, question-level");
+        sb.AppendLine();
+        sb.AppendLine($"Paired by question on per-item cross-run mean quality, unweighted. {cmp.PairedItemCount} item(s) paired" +
+                      (cmp.UnpairedItemCount > 0 ? $"; {cmp.UnpairedItemCount} present on one side only and excluded" : string.Empty) +
+                      (cmp.RevisionMismatchedItemCount > 0 ? $"; {cmp.RevisionMismatchedItemCount} graded under different rubric revisions on the two sides and excluded" : string.Empty) +
+                      ".");
+        sb.AppendLine();
+        sb.AppendLine($"- **Unweighted mean difference:** {Inv(cmp.MeanDifference, "F2")} points" +
+                      (cmp.DifferenceConfidenceLower.HasValue && cmp.DifferenceConfidenceUpper.HasValue
+                          ? $" (95% *t* interval [{Inv(cmp.DifferenceConfidenceLower, "F2")}, {Inv(cmp.DifferenceConfidenceUpper, "F2")}])"
+                          : string.Empty));
+        sb.AppendLine($"- **Wilcoxon signed-rank:** *n* = {cmp.Wilcoxon.SampleSize}" +
+                      (cmp.Wilcoxon.ZeroDifferenceCount > 0 ? $" after discarding {cmp.Wilcoxon.ZeroDifferenceCount} zero difference(s)" : string.Empty) +
+                      $", W = {Inv(cmp.Wilcoxon.Statistic, "F1")}, p = {PValue(cmp.Wilcoxon.PValue)} ({cmp.Wilcoxon.Method}" +
+                      (cmp.Wilcoxon.TiesPresent ? ", tie-corrected ranks" : string.Empty) + ")" +
+                      (cmp.HodgesLehmannShift.HasValue ? $"; Hodges–Lehmann shift {Inv(cmp.HodgesLehmannShift, "F2")} points" : string.Empty) + ".");
+        sb.AppendLine($"- **Paired *t*:** *n* = {cmp.PairedT.SampleSize}, *t*({Inv(cmp.PairedT.DegreesOfFreedom, "F0")}) = {Inv(cmp.PairedT.TStatistic, "F3")}, p = {PValue(cmp.PairedT.PValue)}.");
+        sb.AppendLine($"- **Effect size *d*<sub>av</sub>:** {Inv(cmp.StandardizedDifferenceDav, "F3")} — the mean difference standardized by the average of the two sides' standard deviations. Not *d*<sub>z</sub>, which divides by the SD of the differences and grows as the pairs agree, whatever the size of the shift.");
+        sb.AppendLine();
+        sb.AppendLine("These treat each question as one observation and ignore run-to-run variation, which is why the index difference above is the primary result.");
+        sb.AppendLine();
+
+        // 5. Exploratory per item.
+        if (cmp.ItemComparisons.Count > 0)
+        {
+            sb.AppendLine($"### {section}.5 Per-item differences — **exploratory**");
+            sb.AppendLine();
+            sb.AppendLine($"> {cmp.ExploratoryNote}");
+            sb.AppendLine();
+            sb.AppendLine($"Benjamini–Hochberg step-up control at a false discovery rate of {Inv(cmp.FalseDiscoveryRate, "F2")}. The adjusted column is a q-value, not a p-value. *Untestable* marks an item the per-item test could not be run on, so it carries no p-value" +
+                          (cmp.UntestableItemCount is int untestable && untestable > 0 ? $"; {untestable} item(s) here." : "."));
+            sb.AppendLine();
+            sb.AppendLine("| Q | Baseline mean | Treatment mean | Δ | *t* | df | p | q (BH) | Rejected | Untestable | Question |");
+            sb.AppendLine("|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|");
+            foreach (var item in cmp.ItemComparisons.OrderBy(i => i.OrderIndex))
+            {
+                sb.AppendLine(
+                    $"| {item.OrderIndex} " +
+                    $"| {Inv(item.BaselineMean, "F1")} " +
+                    $"| {Inv(item.TreatmentMean, "F1")} " +
+                    $"| {(item.Difference >= 0 ? "+" : string.Empty)}{Inv(item.Difference, "F1")} " +
+                    $"| {Inv(item.TStatistic, "F2")} " +
+                    $"| {Inv(item.DegreesOfFreedom, "F1")} " +
+                    $"| {PValue(item.PValue)} " +
+                    $"| {PValue(item.AdjustedPValue)} " +
+                    $"| {(item.RejectedAtFdr ? "yes" : "no")} " +
+                    $"| {(item.Untestable == true ? "yes" : "no")} " +
+                    $"| {Excerpt(item.QuestionText, 60)} |");
+            }
+            sb.AppendLine();
+        }
+
+        // 6. Earlier comparisons.
+        if (cmp.PriorComparisonCount is int prior && prior >= 2)
+        {
+            sb.AppendLine($"### {section}.6 Compared {prior.ToString(CultureInfo.InvariantCulture)} times before");
+            sb.AppendLine();
+            sb.AppendLine($"This group carried a comparison in {prior.ToString(CultureInfo.InvariantCulture)} earlier analyses. Each further comparison is another chance for one of them to look significant by luck, so read this p-value against that history rather than alone.");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("---");
+        sb.AppendLine();
     }
 }

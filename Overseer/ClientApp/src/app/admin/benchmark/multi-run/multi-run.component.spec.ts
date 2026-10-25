@@ -1,28 +1,31 @@
 import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { of, throwError } from 'rxjs';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { By } from '@angular/platform-browser';
+import { Subject, of } from 'rxjs';
 
-import { MultiRunComponent } from './multi-run.component';
+import {
+  MULTI_RUN_DISMISSED_STORAGE_KEY,
+  MULTI_RUN_GROUPS_VIEW_STORAGE_KEY,
+  MULTI_RUN_VIEW_STORAGE_KEY,
+  MultiRunComponent,
+  suggestionKey
+} from './multi-run.component';
+import { GroupAnalysisDialogComponent } from './group-analysis-dialog/group-analysis-dialog.component';
+import { GroupBuilderDialogComponent } from './group-builder-dialog/group-builder-dialog.component';
 import {
   AdminBenchmarkService,
-  BenchmarkComparabilityResultDto,
-  BenchmarkGroupAnalysisDto,
   BenchmarkRunGroupDto,
-  BenchmarkRunGroupTierPreviewDto,
-  BenchmarkRunSummaryDto
+  BenchmarkRunGroupSuggestionDto,
+  BenchmarkSuiteDto
 } from '../../../services/admin-benchmark.service';
-import { RUN_HISTORY_LIMIT } from '../benchmark.models';
 
 /**
- * The URL the group report download targets.
- *
- * Tested against the real service rather than the component's spy, because the point of the test
- * is the route itself: the component only ever hands this string to window.open, so a wrong path
- * here would fail silently as a 404 in a new browser tab that nothing in the app ever sees.
+ * The URLs the page reaches the server by. Tested against the real service, because a wrong path
+ * would fail silently: the report opens as a 404 in a new tab, and a suggestion list never loads.
  */
-describe('AdminBenchmarkService group report URL', () => {
+describe('AdminBenchmarkService run group URLs', () => {
   it('should target /api/admin/benchmark/runs/groups/{id}/report', () => {
     TestBed.configureTestingModule({
       providers: [provideHttpClient(), provideHttpClientTesting()]
@@ -32,6 +35,22 @@ describe('AdminBenchmarkService group report URL', () => {
 
     expect(service.getGroupReportUrl(42)).toBe('/api/admin/benchmark/runs/groups/42/report');
   });
+
+  it('should ask for a suite\'s suggestions at /api/admin/benchmark/runs/groups/suggestions', () => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()]
+    });
+
+    const service = TestBed.inject(AdminBenchmarkService);
+    const http = TestBed.inject(HttpTestingController);
+    service.getRunGroupSuggestions(5).subscribe();
+
+    const request = http.expectOne(r => r.url === '/api/admin/benchmark/runs/groups/suggestions');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.params.get('suiteId')).toBe('5');
+    request.flush([]);
+    http.verify();
+  });
 });
 
 describe('MultiRunComponent', () => {
@@ -39,1166 +58,602 @@ describe('MultiRunComponent', () => {
   let fixture: ComponentFixture<MultiRunComponent>;
   let serviceMock: MockedObject<AdminBenchmarkService>;
 
+  const SUITES = [
+    { id: 5, name: 'GnollHack Player Assistance Benchmark Suite' },
+    { id: 6, name: 'Two initial suites' }
+  ] as BenchmarkSuiteDto[];
+
   function buildGroup(overrides: Partial<BenchmarkRunGroupDto> = {}): BenchmarkRunGroupDto {
     return {
       id: 7,
-      name: 'Suite 5 · GPT-5.6 · baseline · R=3',
+      name: 'GnollHack Player Assistance Benchmark Suite · GPT-5.6 Luna · 2026-09-06 · R=3',
       benchmarkSuiteId: 5,
       suiteName: 'GnollHack Player Assistance Benchmark Suite',
+      testedModelDisplayName: 'GPT-5.6 Luna',
+      testedModelProvider: 'OpenAI',
+      testedModelId: 'gpt-5.6-luna',
+      testedModelThinkingLevel: 'high',
+      testedModelReasoningMode: null,
       tier: 'Replicate',
       tierLabel: 'Tier A — Replicate',
       comparabilityKeyHash: 'a1b2c3d4e5f6',
+      comparabilityKeyStale: false,
       crossCondition: false,
       notes: null,
       createdFromSeriesId: 3,
       createdAtUtc: '2026-09-06T10:00:00Z',
       modifiedAtUtc: '2026-09-06T10:00:00Z',
       runCount: 3,
-      members: [
-        { runId: 41, startedAtUtc: '2026-09-06T08:00:00Z', status: 'Completed', qualityIndex: 71, speedIndex: 55, testedModelDisplayName: 'GPT-5.6 Luna', shortFingerprint: 'e9b3e9a7', addedAtUtc: '2026-09-06T10:00:00Z' },
-        { runId: 42, startedAtUtc: '2026-09-06T09:00:00Z', status: 'Completed', qualityIndex: 73, speedIndex: 54, testedModelDisplayName: 'GPT-5.6 Luna', shortFingerprint: 'e9b3e9a7', addedAtUtc: '2026-09-06T10:00:00Z' },
-        { runId: 43, startedAtUtc: '2026-09-06T09:40:00Z', status: 'Completed', qualityIndex: 70, speedIndex: 56, testedModelDisplayName: 'GPT-5.6 Luna', shortFingerprint: 'e9b3e9a7', addedAtUtc: '2026-09-06T10:00:00Z' }
-      ],
-      latestAnalysisId: null,
-      latestAnalysisAtUtc: null,
-      analysisStale: false,
-      ...overrides
-    };
-  }
-
-  function buildRun(overrides: Partial<BenchmarkRunSummaryDto> = {}): BenchmarkRunSummaryDto {
-    return {
-      id: 41,
-      benchmarkSuiteId: 5,
-      suiteName: 'GnollHack Player Assistance Benchmark Suite',
-      testedModelConfigurationId: 1,
-      testedModelDisplayNameUsed: 'GPT-5.6 Luna',
-      testedModelProviderUsed: 'OpenAI',
-      testedModelIdUsed: 'gpt-5.6-luna',
-      assessorModelConfigurationId: 2,
-      assessorModelDisplayNameUsed: 'Claude Opus 5',
-      status: 'Completed',
-      startedAtUtc: '2026-09-06T08:00:00Z',
-      qualityIndex: 71,
-      speedIndex: 55,
-      totalAnswerDurationMs: 1000,
-      speedMeasurementDegraded: false,
-      answeredQuestionCount: 18,
-      totalQuestionCount: 18,
-      transportDefectAnswerCount: 0,
-      totalDurationMs: 1000,
-      candidateSystemPromptSha256: 'bb19dc24aaaa',
-      toolGuidesSha256: 'f59d8b30aaaa',
-      knowledgeBaseHeadSha: 'cccc2222aaaa',
-      wikiHeadSha: 'dddd3333aaaa',
-      sourceCodeHeadSha: 'eeee4444aaaa',
-      ...overrides
-    } as BenchmarkRunSummaryDto;
-  }
-
-  /** A refusal: the suite differs, so the set is below Tier B and cannot be persisted at all. */
-  function buildRefusedPreview(): BenchmarkRunGroupTierPreviewDto {
-    const comparability: BenchmarkComparabilityResultDto = {
-      tier: 'NotComparable',
-      tierLabel: 'Not comparable',
-      poolingPermitted: false,
-      speedAggregatesDegraded: true,
-      costAggregatesDegraded: true,
-      explanation: 'These runs do not form a comparable set.',
-      comparabilityKeyHash: '',
-      matchedKeys: ['HarnessVersion', 'ScoringMethodVersion'],
-      differences: [
-        {
-          name: 'ToolGuidesSha256',
-          kind: 'Instrument',
-          description: 'The tool guides differ between the runs.',
-          variants: [
-            { value: 'f59d8b30', runIds: [41, 42] },
-            { value: '9c1de220', runIds: [43] }
-          ]
-        }
-      ],
-      runIds: [41, 42, 43]
-    };
-    return { accepted: false, error: 'Refused: the set is below Tier B.', comparability, group: null };
-  }
-
-  function buildCrossConditionPreview(): BenchmarkRunGroupTierPreviewDto {
-    const refused = buildRefusedPreview();
-    return {
-      accepted: true,
-      error: null,
-      comparability: {
-        ...refused.comparability!,
-        tier: 'CrossCondition',
-        tierLabel: 'Tier C — Cross-condition',
-        poolingPermitted: false
-      },
-      group: null
-    };
-  }
-
-  function buildAnalysis(overrides: Partial<BenchmarkGroupAnalysisDto> = {}): BenchmarkGroupAnalysisDto {
-    return {
-      id: 11,
-      groupId: 7,
-      groupName: 'Suite 5 · GPT-5.6 · baseline · R=3',
-      computedAtUtc: '2026-09-06T11:00:00Z',
-      runCount: 3,
+      members: [],
       memberRunIds: [41, 42, 43],
+      latestAnalysisId: 11,
+      latestAnalysisAtUtc: '2026-09-06T11:00:00Z',
+      analysisStale: false,
+      headlineIndex: 71.34,
+      headlineHalfWidth: 1.24,
+      headlineSpeedIndex: 55,
+      headlineCostPerRun: 0.1234,
+      nameIsGenerated: true,
+      ...overrides
+    } as BenchmarkRunGroupDto;
+  }
+
+  function buildSuggestion(overrides: Partial<BenchmarkRunGroupSuggestionDto> = {}): BenchmarkRunGroupSuggestionDto {
+    return {
+      keyHash: 'k1',
+      runIds: [51, 52, 53],
+      runCount: 3,
       tier: 'Replicate',
-      tierLabel: 'Tier A — Replicate',
-      harnessVersion: '8',
-      scoringMethodVersion: 8,
-      stale: false,
-      comparedWithGroupId: null,
-      comparedWithGroupName: null,
-      result: {
-        suiteId: 5,
-        suiteName: 'GnollHack Player Assistance Benchmark Suite',
-        runIds: [41, 42, 43],
-        runCount: 3,
-        itemCount: 18,
-        unansweredItemCount: 0,
-        items: [
-          {
-            questionId: 101,
-            orderIndex: 11,
-            questionText: 'Which intrinsics do gnolls gain?',
-            runCount: 3,
-            mean: 62.5,
-            median: 63,
-            min: 55,
-            max: 70,
-            standardDeviation: 17.4,
-            interquartileRange: 12,
-            coefficientOfVariation: 0.278,
-            meanConfidenceHalfWidth: 9.1,
-            criticalErrorCount: 1,
-            criticalErrorRate: 0.3333,
-            medianModelTimeMs: 41000,
-            unstable: true,
-            insufficientRuns: false
-          }
-        ],
-        index: {
-          runCount: 3,
-          pointEstimate: 71.3,
-          weightedMeanOfItemMeans: 71.3,
-          identityHolds: true,
-          perRunIndices: [71, 73, 70],
-          meanStoredQualityIndex: 71.3,
-          reproducibilityStandardDeviation: 1.53,
-          reproducibilityStandardError: 0.88,
-          reproducibilityCriticalValue: 4.303,
-          reproducibilityHalfWidth: 3.8,
-          itemSamplingStandardError: 4.2,
-          itemSamplingCriticalValue: 1.96,
-          itemSamplingHalfWidth: 8.23,
-          combinedHalfWidth: 9.07,
-          combinedLower: 62.2,
-          combinedUpper: 80.4,
-          reproducibilityAvailable: true
-        },
-        speed: {
-          runCount: 3,
-          meanSpeedIndex: 55,
-          speedIndexStandardDeviation: 1.0,
-          perRunSpeedIndices: [55, 54, 56],
-          pooledAnswerCount: 54,
-          modelTimeP50Ms: 41000,
-          modelTimeP90Ms: 96000,
-          modelTimeMaxMs: 141000,
-          degraded: false,
-          degradedReason: null,
-          caveat: 'Comparable only within one thinking level and timing mode.'
-        },
-        cost: {
-          runCount: 3,
-          totalCost: 7.59,
-          meanCostPerRun: 2.53,
-          costStandardDeviation: 0.11,
-          totalCostByRole: { candidate: 1.8, assessor: 0.69, claimVerifier: 5.1 },
-          meanCostByRole: { candidate: 0.6, assessor: 0.23, claimVerifier: 1.7 },
-          costPerQuestion: 0.14,
-          costPerIndexPoint: 0.035,
-          degraded: false,
-          degradedReason: null
-        },
-        unstableQuestionIds: [101],
-        pooledIndexReportable: true,
-        varianceDecompositionCaveat:
-          'Run-to-run variance mixes candidate stochasticity with grader stochasticity.'
-      },
-      comparison: null,
+      testedModel: { displayName: 'Claude Luna', id: 'claude-luna', provider: 'Anthropic', thinkingLevel: 'max', reasoningMode: null },
+      firstStartedAtUtc: '2026-10-01T08:00:00Z',
+      lastStartedAtUtc: '2026-10-01T09:30:00Z',
+      seriesIds: [9],
+      meanQualityIndex: 68.25,
       ...overrides
     };
+  }
+
+  function clearStorage(): void {
+    try {
+      localStorage.removeItem(MULTI_RUN_VIEW_STORAGE_KEY);
+      localStorage.removeItem(MULTI_RUN_DISMISSED_STORAGE_KEY);
+      localStorage.removeItem(MULTI_RUN_GROUPS_VIEW_STORAGE_KEY);
+    } catch {
+      // Storage unavailable: nothing to clear.
+    }
+  }
+
+  function create(inputs: { suites?: BenchmarkSuiteDto[]; defaultSuiteId?: number | null } = {}): void {
+    fixture = TestBed.createComponent(MultiRunComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('suites', inputs.suites ?? SUITES);
+    fixture.componentRef.setInput('defaultSuiteId', inputs.defaultSuiteId === undefined ? 5 : inputs.defaultSuiteId);
+    fixture.detectChanges();
+  }
+
+  function el(): HTMLElement {
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  function q<T extends HTMLElement = HTMLElement>(selector: string): T {
+    const found = el().querySelector<T>(selector);
+    expect(found, selector).not.toBeNull();
+    return found!;
+  }
+
+  function text(selector: string): string {
+    const element = el().querySelector(selector) as HTMLElement | null;
+    return (element?.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function click(selector: string): void {
+    q(selector).click();
+    fixture.detectChanges();
   }
 
   beforeEach(async () => {
+    clearStorage();
     serviceMock = {
       getRunGroups: vi.fn().mockName("AdminBenchmarkService.getRunGroups"),
       getRunGroup: vi.fn().mockName("AdminBenchmarkService.getRunGroup"),
+      getRunGroupSuggestions: vi.fn().mockName("AdminBenchmarkService.getRunGroupSuggestions"),
+      createRunGroup: vi.fn().mockName("AdminBenchmarkService.createRunGroup"),
+      deleteRunGroup: vi.fn().mockName("AdminBenchmarkService.deleteRunGroup"),
+      getGroupReportUrl: vi.fn().mockName("AdminBenchmarkService.getGroupReportUrl"),
+      // The hosted dialogs' reads, in case they load anything while the page renders.
       getRuns: vi.fn().mockName("AdminBenchmarkService.getRuns"),
       previewRunGroupTier: vi.fn().mockName("AdminBenchmarkService.previewRunGroupTier"),
-      createRunGroup: vi.fn().mockName("AdminBenchmarkService.createRunGroup"),
-      updateRunGroup: vi.fn().mockName("AdminBenchmarkService.updateRunGroup"),
-      deleteRunGroup: vi.fn().mockName("AdminBenchmarkService.deleteRunGroup"),
-      analyseRunGroup: vi.fn().mockName("AdminBenchmarkService.analyseRunGroup"),
       getRunGroupAnalysis: vi.fn().mockName("AdminBenchmarkService.getRunGroupAnalysis"),
-      getGroupReportUrl: vi.fn().mockName("AdminBenchmarkService.getGroupReportUrl")
+      analyseRunGroup: vi.fn().mockName("AdminBenchmarkService.analyseRunGroup")
     } as unknown as MockedObject<AdminBenchmarkService>;
 
     serviceMock.getRunGroups.mockReturnValue(of([buildGroup()]));
     serviceMock.getRunGroup.mockReturnValue(of(buildGroup()));
-    serviceMock.getRuns.mockReturnValue(of([buildRun(), buildRun({ id: 42 }), buildRun({ id: 43 })]));
-    serviceMock.previewRunGroupTier.mockReturnValue(of({ accepted: true, comparability: null, group: null }));
-    serviceMock.getRunGroupAnalysis.mockReturnValue(of(null));
-    serviceMock.analyseRunGroup.mockReturnValue(of(buildAnalysis()));
+    serviceMock.getRunGroupSuggestions.mockReturnValue(of([]));
     serviceMock.deleteRunGroup.mockReturnValue(of(void 0));
     serviceMock.getGroupReportUrl.mockImplementation((id: number) => `/api/admin/benchmark/runs/groups/${id}/report`);
+    serviceMock.getRuns.mockReturnValue(of([]));
+    serviceMock.previewRunGroupTier.mockReturnValue(of({ accepted: true, comparability: null, group: null }));
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(null));
+
+    vi.spyOn(GroupAnalysisDialogComponent.prototype, 'open').mockImplementation(() => undefined);
+    vi.spyOn(GroupAnalysisDialogComponent.prototype, 'close').mockImplementation(() => undefined);
+    vi.spyOn(GroupBuilderDialogComponent.prototype, 'open').mockImplementation(() => undefined);
+    vi.spyOn(GroupBuilderDialogComponent.prototype, 'close').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
       imports: [MultiRunComponent],
       providers: [{ provide: AdminBenchmarkService, useValue: serviceMock }]
     }).compileComponents();
-
-    fixture = TestBed.createComponent(MultiRunComponent);
-    component = fixture.componentInstance;
   });
 
-  function open(): void {
-    component.suiteId = 5;
-    fixture.detectChanges();
-  }
-
-  function text(selector: string): string {
-    const element = fixture.nativeElement.querySelector(selector) as HTMLElement | null;
-    return (element?.textContent || '').replace(/\s+/g, ' ').trim();
-  }
-
-  function allText(selector: string): string {
-    const elements: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll(selector));
-    return elements.map(e => (e.textContent || '')).join(' ').replace(/\s+/g, ' ').trim();
-  }
-
-  it('should load the groups and the suite runs when a suite is selected', () => {
-    open();
-
-    expect(serviceMock.getRunGroups).toHaveBeenCalled();
-    expect(serviceMock.getRuns).toHaveBeenCalledWith(5, RUN_HISTORY_LIMIT);
-    expect(component.groups.length).toBe(1);
+  afterEach(() => {
+    vi.restoreAllMocks();
+    clearStorage();
   });
 
-  it('should show a group row with its tier badge, run count and stale badge', () => {
-    serviceMock.getRunGroups.mockReturnValue(of([buildGroup({
-      latestAnalysisId: 11,
-      latestAnalysisAtUtc: '2026-09-06T11:00:00Z',
-      analysisStale: true
-    })]));
-    open();
+  // --- The header ---
 
-    expect(text('.mr-group-table .mr-tier')).toContain('Tier A');
-    expect(allText('.mr-group-table tbody td')).toContain('3');
-    expect(allText('.mr-badge-stale')).toContain('Stale analysis');
-  });
+  describe('the header', () => {
+    it('names the page and holds the suite select, About, New group and Refresh', () => {
+      create();
 
-  it('should show the comparability-definition badge only for a group whose key hash is stale', () => {
-    serviceMock.getRunGroups.mockReturnValue(of([
-      buildGroup({ id: 1, name: 'Stale key', comparabilityKeyStale: true, createdAtUtc: '2026-09-07T10:00:00Z' }),
-      buildGroup({ id: 2, name: 'Current key', comparabilityKeyStale: false, createdAtUtc: '2026-09-06T10:00:00Z' })
-    ]));
-    open();
+      const header = q('.tab-header-row.mr-header');
+      expect(text('.mr-header h3')).toBe('Multi-Run Analysis');
 
-    const rows: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.mr-group-table tbody tr'));
-    const badgeText = (row: HTMLElement) =>
-      Array.from(row.querySelectorAll('.mr-badge-stale')).map(e => e.textContent || '').join(' ');
-    expect(badgeText(rows[0])).toContain('Comparability definition changed');
-    expect(badgeText(rows[1])).not.toContain('Comparability definition changed');
-  });
+      const group = q('.mr-suite');
+      expect(group.getAttribute('role')).toBe('group');
+      expect(group.getAttribute('aria-label')).toBe('Suite');
+      const label = q('label[for="mr-suite-select"]');
+      expect(label.classList.contains('visually-hidden')).toBe(true);
+      const select = q<HTMLSelectElement>('#mr-suite-select');
+      expect(select.classList.contains('gh-input')).toBe(true);
+      expect(Array.from(select.options).map(o => o.textContent?.trim())).toEqual(SUITES.map(s => s.name));
 
-  // --- Report download ---
+      expect(header.querySelector('app-info-tip button')?.getAttribute('aria-label')).toBe('About multi-run analysis');
 
-  it('should disable the row download control while the group has no analysis', () => {
-    open();
+      const newGroup = q('.mr-new-group');
+      expect(newGroup.classList.contains('btn-ghost')).toBe(true);
+      expect(newGroup.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(newGroup.textContent?.trim()).toBe('New group');
+      expect(newGroup.querySelector('svg.btn-icon')?.getAttribute('aria-hidden')).toBe('true');
 
-    const button = fixture.nativeElement.querySelector('.mr-download') as HTMLButtonElement;
-    expect(button.getAttribute('aria-disabled')).toBe('true');
-    expect(component.canDownloadReport(component.groups[0])).toBe(false);
-    expect(component.downloadReportTooltip(component.groups[0]))
-      .toContain('No analysis yet');
-
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(undefined as any);
-    button.click();
-    expect(openSpy).not.toHaveBeenCalled();
-  });
-
-  it('should download the group report through window.open once an analysis exists', () => {
-    const analysed = buildGroup({ latestAnalysisId: 11, latestAnalysisAtUtc: '2026-09-06T11:00:00Z' });
-    serviceMock.getRunGroups.mockReturnValue(of([analysed]));
-    open();
-
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(undefined as any);
-    const button = fixture.nativeElement.querySelector('.mr-download') as HTMLButtonElement;
-    expect(button.getAttribute('aria-disabled')).toBe('false');
-    button.click();
-
-    expect(serviceMock.getGroupReportUrl).toHaveBeenCalledWith(7);
-    expect(openSpy).toHaveBeenCalledWith('/api/admin/benchmark/runs/groups/7/report', '_blank');
-  });
-
-  it('should disable the detail download control until the group has been analysed', () => {
-    open();
-    component.selectGroup(buildGroup());
-    fixture.detectChanges();
-
-    const button = fixture.nativeElement.querySelector('.mr-download-detail') as HTMLButtonElement;
-    expect(button.getAttribute('aria-disabled')).toBe('true');
-    expect(text('#mr-tip-download-detail')).toContain('No analysis yet');
-  });
-
-  // --- Tier feedback ---
-
-  it('should render which keys differ and on which runs when a tier is refused', () => {
-    serviceMock.previewRunGroupTier.mockReturnValue(of(buildRefusedPreview()));
-    open();
-
-    component.toggleRun(41);
-    component.toggleRun(43);
-    fixture.detectChanges();
-
-    expect(text('.mr-preview .mr-tier')).toContain('Not comparable');
-    const differences = allText('.mr-differences');
-    expect(differences).toContain('ToolGuidesSha256');
-    expect(differences).toContain('The tool guides differ between the runs.');
-    expect(differences).toContain('#41, #42');
-    expect(differences).toContain('#43');
-  });
-
-  it('should offer the cross-condition checkbox only at Tier C', () => {
-    serviceMock.previewRunGroupTier.mockReturnValue(of(buildRefusedPreview()));
-    open();
-    component.toggleRun(41);
-    component.toggleRun(43);
-    fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('#mr-cross-condition')).toBeNull();
-
-    serviceMock.previewRunGroupTier.mockReturnValue(of(buildCrossConditionPreview()));
-    component.previewTier();
-    fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('#mr-cross-condition')).not.toBeNull();
-  });
-
-  it('should not preview a tier below two selected runs', () => {
-    open();
-    serviceMock.previewRunGroupTier.mockClear();
-
-    component.toggleRun(41);
-
-    expect(serviceMock.previewRunGroupTier).not.toHaveBeenCalled();
-    expect(component.preview).toBeNull();
-  });
-
-  // --- Analysis rendering ---
-
-  function openAnalysed(
-    analysis: BenchmarkGroupAnalysisDto = buildAnalysis(),
-    groupOverrides: Partial<BenchmarkRunGroupDto> = {}
-  ): void {
-    const analysed = buildGroup({ latestAnalysisId: 11, latestAnalysisAtUtc: '2026-09-06T11:00:00Z', ...groupOverrides });
-    serviceMock.getRunGroups.mockReturnValue(of([analysed]));
-    serviceMock.getRunGroup.mockReturnValue(of(analysed));
-    serviceMock.getRunGroupAnalysis.mockReturnValue(of(analysis));
-    open();
-    component.selectGroup(analysed);
-    fixture.detectChanges();
-  }
-
-  function withWithheld(...runIds: number[]): Partial<BenchmarkRunGroupDto> {
-    return {
-      members: buildGroup().members.map(member =>
-        runIds.includes(member.runId) ? { ...member, indexWithheld: true } : member)
-    };
-  }
-
-  it('should show a member withholding its own index as not computed, with a note under the point estimate', () => {
-    openAnalysed(buildAnalysis(), withWithheld(42));
-
-    const members = allText('.mr-member-list li');
-    expect(members).toContain('#42');
-    expect(members).toContain('Index not computed');
-    expect(members).toContain('Index 71');
-    expect(allText('.mr-aggregates [role="note"]')).toContain(
-      'Run #42 withholds its own index (a question failed at the provider); its per-run index here is over its scored answers.');
-  });
-
-  it('should name every analyzed member withholding its own index, ids ascending, and leave out an unanalyzed one', () => {
-    const group = withWithheld(43, 41);
-    group.members = [...group.members!, {
-      runId: 44, startedAtUtc: '2026-09-06T10:10:00Z', status: 'Completed', qualityIndex: null, speedIndex: null,
-      testedModelDisplayName: 'GPT-5.6 Luna', shortFingerprint: 'e9b3e9a7', addedAtUtc: '2026-09-06T10:20:00Z', indexWithheld: true
-    }];
-    openAnalysed(buildAnalysis(), group);
-
-    expect(allText('.mr-aggregates [role="note"]')).toContain(
-      'Runs #41, #43 withhold their own index (a question failed at the provider); their per-run indices here are over their scored answers.');
-  });
-
-  it('should show no withheld-index note and no "not computed" when no member withholds its index', () => {
-    openAnalysed();
-
-    expect(allText('.mr-member-list li')).not.toContain('not computed');
-    expect(allText('.mr-aggregates [role="note"]')).not.toContain('withhold');
-    expect(component.withheldIndexNote).toBeNull();
-  });
-
-  it('should render both interval components with distinct labels, and the item-sampling one with its does-not-shrink note', () => {
-    openAnalysed();
-
-    const repro = text('.mr-interval-repro');
-    const item = text('.mr-interval-item');
-
-    expect(repro).toContain('Reproducibility standard error');
-    expect(repro).toContain('Would a re-run move this?');
-    expect(repro).toContain('Shrinks with R');
-
-    expect(item).toContain('Item-sampling standard error');
-    expect(item).toContain('Would a different set of questions move this?');
-    expect(item).toContain('Does not shrink with R');
-    // The reason, not only the claim: without it a reader takes the label for a defect note.
-    expect(item).toContain('Every run answers the same items');
-
-    // Two distinct components, not one figure rendered twice.
-    expect(repro).not.toBe(item);
-    expect(fixture.nativeElement.querySelectorAll('.mr-interval').length).toBe(2);
-  });
-
-  it('should label the combined interval as covering both sources', () => {
-    openAnalysed();
-
-    const combined = text('.mr-combined');
-    expect(combined).toContain('Combined 95% interval');
-    expect(combined).toContain('both');
-  });
-
-  it('should say the interval covers one source only below three runs', () => {
-    const analysis = buildAnalysis();
-    analysis.result.index.reproducibilityAvailable = false;
-    analysis.result.index.reproducibilityStandardError = null;
-    analysis.result.index.runCount = 2;
-    openAnalysed(analysis);
-
-    expect(text('.mr-interval-repro')).toContain('Not reported below three runs');
-    expect(text('.mr-combined')).toContain('one');
-  });
-
-  it('should always render the variance decomposition caveat', () => {
-    openAnalysed();
-
-    const caveat = text('.mr-caveat');
-    expect(caveat).toContain('What this cannot decompose');
-    expect(caveat).toContain('grader stochasticity');
-  });
-
-  it('should fall back to its own caveat text when the stored result carries none', () => {
-    const analysis = buildAnalysis();
-    analysis.result.varianceDecompositionCaveat = null;
-    openAnalysed(analysis);
-
-    expect(text('.mr-caveat')).toContain('re-grading identical answers');
-  });
-
-  it('should render the per-item table with mean, median, SD, CV, critical-error rate and the stability flag', () => {
-    openAnalysed();
-
-    const row = text('.mr-item-table tbody tr');
-    expect(row).toContain('Q11');
-    expect(row).toContain('62.5');   // mean
-    expect(row).toContain('63.0');   // median
-    expect(row).toContain('17.40');  // sample SD
-    expect(row).toContain('27.8%'); // coefficient of variation
-    expect(row).toContain('33%');   // critical-error rate
-    expect(row).toContain('Unstable');
-  });
-
-  it('should render the speed and cost sections and their degraded flags', () => {
-    const analysis = buildAnalysis();
-    analysis.result.speed.degraded = true;
-    analysis.result.speed.degradedReason = 'Question parallelism differs across members.';
-    analysis.result.cost.degraded = true;
-    analysis.result.cost.degradedReason = 'The pricing snapshot differs across members.';
-    openAnalysed(analysis);
-
-    const panel = allText('.mr-subsection');
-    expect(panel).toContain('Speed aggregates degraded');
-    expect(panel).toContain('Question parallelism differs across members.');
-    expect(panel).toContain('Cost aggregates degraded');
-    expect(panel).toContain('The pricing snapshot differs across members.');
-    expect(panel).toContain('$7.5900');
-  });
-
-  it('should flag speed and cost as degraded when only the comparability tier says so', () => {
-    // The tier reaches the detail view through the read-only preview endpoint, so the test drives
-    // it the same way the component does. Assigning the field from outside would leave the view
-    // unmarked and never re-render, which measures the test harness rather than the component.
-    serviceMock.previewRunGroupTier.mockReturnValue(of({
-      accepted: true,
-      group: null,
-      comparability: {
-        tier: 'QualityComparable',
-        tierLabel: 'Tier B — Quality-comparable',
-        poolingPermitted: true,
-        speedAggregatesDegraded: true,
-        costAggregatesDegraded: true,
-        explanation: 'Question parallelism differs.',
-        comparabilityKeyHash: 'abc',
-        matchedKeys: [],
-        differences: [],
-        runIds: [41, 42, 43]
-      }
-    }));
-
-    // The statistics themselves say nothing is degraded: only the tier does, which is the point.
-    const analysis = buildAnalysis();
-    expect(analysis.result.speed.degraded).toBe(false);
-    expect(analysis.result.cost.degraded).toBe(false);
-    openAnalysed(analysis);
-
-    expect(component.speedDegraded).toBe(true);
-    expect(component.costDegraded).toBe(true);
-
-    const panel = allText('.mr-subsection');
-    expect(panel).toContain('Speed aggregates degraded');
-    expect(panel).toContain('Cost aggregates degraded');
-  });
-  // --- Comparison ---
-
-  it('should analyse against the selected baseline group', () => {
-    openAnalysed();
-    component.compareWithGroupId = 9;
-
-    component.analyse();
-
-    expect(serviceMock.analyseRunGroup).toHaveBeenCalledWith(7, { compareWithGroupId: 9 });
-  });
-
-  it('should label per-item differences as exploratory under Benjamini-Hochberg control', () => {
-    const analysis = buildAnalysis({
-      comparedWithGroupId: 9,
-      comparedWithGroupName: 'Suite 5 · GPT-5.6 · treatment · R=3'
+      const refresh = q('#mr-refresh');
+      expect(refresh.classList.contains('action-btn')).toBe(true);
+      expect(refresh.getAttribute('aria-label')).toBe('Refresh multi-run analysis');
+      expect(refresh.getAttribute('interestfor')).toBe('mr-refresh-tip');
+      expect(text('#mr-refresh-tip')).toBe('Refresh');
+      expect(refresh.hasAttribute('aria-disabled')).toBe(false);
+      expect(header.querySelector('[title]')).toBeNull();
     });
-    analysis.comparison = {
-      baselineRunIds: [41, 42, 43],
-      treatmentRunIds: [51, 52, 53],
-      pairedItemCount: 18,
-      unpairedItemCount: 0,
-      revisionMismatchedItemCount: 0,
-      meanDifference: 2.4,
-      differenceStandardDeviation: 6.1,
-      differenceConfidenceHalfWidth: 3.0,
-      differenceConfidenceLower: -0.6,
-      differenceConfidenceUpper: 5.4,
-      wilcoxon: { sampleSize: 17, zeroDifferenceCount: 1, statistic: 44, pValue: 0.08, method: 'exact', tiesPresent: false },
-      pairedT: { sampleSize: 18, meanDifference: 2.4, tStatistic: 1.67, pValue: 0.11 },
-      cohensDz: 0.39,
-      itemComparisons: [
-        {
-          questionId: 101, orderIndex: 14, questionText: "Master Kaen's exact stats?",
-          baselineMean: 55, treatmentMean: 78, difference: 23,
-          pValue: 0.004, adjustedPValue: 0.041, rejectedAtFdr: true, exploratory: true
-        }
-      ],
-      falseDiscoveryRate: 0.05,
-      exploratoryNote: null
-    };
-    openAnalysed(analysis);
 
-    const comparison = text('.mr-comparison');
-    expect(comparison).toContain('Per-item differences — exploratory');
-    expect(comparison).toContain('Benjamini');
-    expect(comparison).toContain('q-value, not a p-value');
-    expect(comparison).toContain('Wilcoxon');
-    // The primary/secondary ordering is a claim about the method, not a layout choice.
-    expect(comparison.indexOf('Wilcoxon p (primary)')).toBeLessThan(comparison.indexOf('Paired t p (secondary)'));
-    expect(text('.mr-comparison-table tbody tr')).toContain('exploratory');
-    expect(comparison).not.toContain('different rubric revisions');
+    it('marks Refresh aria-disabled with a spinner while a load runs, and refuses a second load', () => {
+      const pending = new Subject<BenchmarkRunGroupDto[]>();
+      serviceMock.getRunGroups.mockReturnValue(pending);
+      create();
+
+      const refresh = q('#mr-refresh');
+      expect(refresh.getAttribute('aria-disabled')).toBe('true');
+      expect(refresh.querySelector('.gh-spinner-small')).not.toBeNull();
+
+      refresh.click();
+      fixture.detectChanges();
+      expect(serviceMock.getRunGroups).toHaveBeenCalledTimes(1);
+
+      pending.next([buildGroup()]);
+      pending.complete();
+      fixture.detectChanges();
+      expect(refresh.hasAttribute('aria-disabled')).toBe(false);
+      expect(refresh.querySelector('.gh-spinner-small')).toBeNull();
+
+      serviceMock.getRunGroups.mockReturnValue(of([buildGroup()]));
+      refresh.click();
+      fixture.detectChanges();
+      expect(serviceMock.getRunGroups).toHaveBeenCalledTimes(2);
+      expect(serviceMock.getRunGroupSuggestions).toHaveBeenCalledTimes(2);
+    });
+
+    it('opens the builder from New group', () => {
+      create();
+      click('.mr-new-group');
+      expect(GroupBuilderDialogComponent.prototype.open).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it('should say how many items were excluded for a rubric revision mismatch, under the unpaired line', () => {
-    const analysis = buildAnalysis({ comparedWithGroupId: 9, comparedWithGroupName: 'Baseline' });
-    analysis.comparison = {
-      baselineRunIds: [41],
-      treatmentRunIds: [51],
-      pairedItemCount: 15,
-      unpairedItemCount: 1,
-      revisionMismatchedItemCount: 2,
-      meanDifference: 1.0,
-      wilcoxon: { sampleSize: 15, zeroDifferenceCount: 0, statistic: 40, pValue: 0.3, method: 'exact', tiesPresent: false },
-      pairedT: { sampleSize: 15, meanDifference: 1.0, tStatistic: 0.9, pValue: 0.38 },
-      itemComparisons: [],
-      falseDiscoveryRate: 0.05,
-      exploratoryNote: null
-    } as any;
-    openAnalysed(analysis);
+  // --- The suite ---
 
-    const note = text('.mr-comparison .section-note');
-    expect(note).toContain('1 item(s) appear on one side only and are excluded.');
-    expect(note).toContain('2 item(s) were graded under different rubric revisions on the two sides and are excluded.');
-    expect(note.indexOf('appear on one side only')).toBeLessThan(note.indexOf('different rubric revisions'));
+  describe('the suite', () => {
+    it('falls back to the launcher\'s suite when this browser remembers none', () => {
+      create({ defaultSuiteId: 5 });
+      expect(component.selectedSuiteId).toBe(5);
+      expect(serviceMock.getRunGroupSuggestions).toHaveBeenCalledWith(5);
+      expect(q<HTMLSelectElement>('#mr-suite-select').value).toBe('5');
+    });
+
+    it('uses the remembered suite over the launcher\'s', () => {
+      localStorage.setItem(MULTI_RUN_VIEW_STORAGE_KEY, JSON.stringify({ version: 1, suiteId: 6 }));
+      create({ defaultSuiteId: 5 });
+      expect(component.selectedSuiteId).toBe(6);
+      expect(serviceMock.getRunGroupSuggestions).toHaveBeenCalledWith(6);
+      expect(q<HTMLSelectElement>('#mr-suite-select').value).toBe('6');
+    });
+
+    it('skips a remembered suite that no longer exists, then an unknown launcher suite, for the first suite', () => {
+      localStorage.setItem(MULTI_RUN_VIEW_STORAGE_KEY, JSON.stringify({ version: 1, suiteId: 99 }));
+      create({ defaultSuiteId: 77, suites: [SUITES[1], SUITES[0]] });
+      expect(component.selectedSuiteId).toBe(6);
+    });
+
+    it('remembers a chosen suite and loads its groups and suggestions', () => {
+      create();
+      const select = q<HTMLSelectElement>('#mr-suite-select');
+      select.value = '6';
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      expect(component.selectedSuiteId).toBe(6);
+      expect(JSON.parse(localStorage.getItem(MULTI_RUN_VIEW_STORAGE_KEY)!)).toEqual({ version: 1, suiteId: 6 });
+      expect(serviceMock.getRunGroupSuggestions).toHaveBeenLastCalledWith(6);
+      // Group 7 belongs to suite 5.
+      expect(el().querySelector('article.mr-group')).toBeNull();
+    });
   });
 
-  // --- Formatting ---
+  // --- Suggested groups ---
 
-  it('should format cost at four decimals at every magnitude', () => {
-    expect(component.formatCost(2.5311)).toBe('$2.5311');
-    expect(component.formatCost(0.0042)).toBe('$0.0042');
-    expect(component.formatCost(null)).toBe('—');
-    expect(component.formatCost(Number.NaN)).toBe('—');
+  describe('suggested groups', () => {
+    it('shows no section while there are no suggestions', () => {
+      create();
+      expect(el().querySelector('.mr-suggestions')).toBeNull();
+    });
+
+    it('renders a suggestion with its model, runs and meta line', () => {
+      serviceMock.getRunGroupSuggestions.mockReturnValue(of([buildSuggestion()]));
+      create();
+
+      expect(text('#mr-suggestions-title')).toBe('Suggested groups');
+      expect(q('#mr-suggestions-title').classList.contains('gh-section-title')).toBe(true);
+      expect(q('.mr-suggestions .mr-count-pill').getAttribute('aria-hidden')).toBe('true');
+      expect(q('.mr-suggestion-list').getAttribute('role')).toBe('list');
+
+      const card = q('article.mr-suggestion');
+      expect(card.getAttribute('aria-labelledby')).toBe('mr-sugg-51-52-53-title');
+      expect(card.querySelector('app-model-identity .model-identity-name')?.textContent?.trim()).toBe('Claude Luna');
+
+      const chips = Array.from(card.querySelectorAll<HTMLButtonElement>('.mr-run-chip'));
+      expect(chips.map(c => c.textContent?.trim())).toEqual(['#51', '#52', '#53']);
+      expect(chips[0].getAttribute('aria-label')).toBe('Open run report #51');
+      expect(chips[0].getAttribute('interestfor')).toBe('mr-sugg-51-52-53-run-51-tip');
+
+      const meta = (card.querySelector('.mr-card-meta')?.textContent || '').replace(/\s+/g, ' ');
+      expect(meta).toContain('Tier A — Replicate');
+      expect(meta).toContain('R = 3');
+      expect(meta).toContain('Series 9');
+      expect(meta).toContain('Mean index 68.3');
+      expect(card.querySelectorAll('.mr-card-meta time').length).toBe(2);
+
+      expect(card.querySelector('.mr-card-actions')?.getAttribute('aria-label'))
+        .toBe('Actions for the suggested group of runs #51, #52, #53');
+      expect(text('.mr-create-group')).toBe('Create group');
+      expect(q('.mr-dismiss-suggestion').getAttribute('aria-label')).toBe('Dismiss suggestion of runs #51, #52, #53');
+    });
+
+    it('leaves the series out when the runs came from several', () => {
+      serviceMock.getRunGroupSuggestions.mockReturnValue(of([buildSuggestion({ seriesIds: [9, 10] })]));
+      create();
+      expect(text('article.mr-suggestion .mr-card-meta')).not.toContain('Series');
+    });
+
+    it('emits openRun from a run chip', () => {
+      serviceMock.getRunGroupSuggestions.mockReturnValue(of([buildSuggestion()]));
+      create();
+      const emitted: number[] = [];
+      component.openRun.subscribe(id => emitted.push(id));
+
+      (el().querySelectorAll<HTMLButtonElement>('article.mr-suggestion .mr-run-chip')[1]).click();
+      expect(emitted).toEqual([52]);
+    });
+
+    it('creates the group without a name, focuses its new card and announces the analysis', () => {
+      serviceMock.getRunGroupSuggestions.mockReturnValue(of([buildSuggestion()]));
+      create();
+
+      const created = buildGroup({ id: 12, memberRunIds: [51, 52, 53], createdAtUtc: '2026-10-02T10:00:00Z', latestAnalysisId: 30 });
+      serviceMock.createRunGroup.mockReturnValue(of({ accepted: true, group: created }));
+      serviceMock.getRunGroups.mockReturnValue(of([buildGroup(), created]));
+      serviceMock.getRunGroupSuggestions.mockReturnValue(of([]));
+
+      click('.mr-create-group');
+
+      expect(serviceMock.createRunGroup).toHaveBeenCalledTimes(1);
+      const request = serviceMock.createRunGroup.mock.calls[0][0];
+      expect(request).toEqual({ runIds: [51, 52, 53] });
+      expect('name' in request).toBe(false);
+
+      expect(el().querySelector('.mr-suggestions')).toBeNull();
+      expect(document.activeElement?.id).toBe('mr-group-12-title');
+      expect(text('#mr-groups-status')).toContain('Created group #12 and analyzed it.');
+    });
+
+    it('announces a created group the server did not analyze', () => {
+      serviceMock.getRunGroupSuggestions.mockReturnValue(of([buildSuggestion()]));
+      create();
+      const created = buildGroup({ id: 12, latestAnalysisId: null });
+      serviceMock.createRunGroup.mockReturnValue(of({ accepted: true, group: created }));
+      serviceMock.getRunGroups.mockReturnValue(of([created]));
+
+      click('.mr-create-group');
+      expect(text('#mr-groups-status')).toContain('Created group #12.');
+      expect(text('#mr-groups-status')).not.toContain('analyzed');
+    });
+
+    it('shows a refusal on the suggestion and keeps it', () => {
+      serviceMock.getRunGroupSuggestions.mockReturnValue(of([buildSuggestion()]));
+      create();
+      serviceMock.createRunGroup.mockReturnValue(of({ accepted: false, error: 'Group #4 already holds these runs.', duplicateOfGroupId: 4 }));
+
+      click('.mr-create-group');
+      expect(text('article.mr-suggestion .mr-card-error')).toBe('Group #4 already holds these runs.');
+      expect(el().querySelector('article.mr-suggestion')).not.toBeNull();
+    });
+
+    it('persists a dismissal, and shows the cluster again once it gains a run', () => {
+      serviceMock.getRunGroupSuggestions.mockReturnValue(of([buildSuggestion()]));
+      create();
+
+      click('.mr-dismiss-suggestion');
+      expect(el().querySelector('article.mr-suggestion')).toBeNull();
+      expect(JSON.parse(localStorage.getItem(MULTI_RUN_DISMISSED_STORAGE_KEY)!))
+        .toEqual({ version: 1, keys: [suggestionKey(buildSuggestion())] });
+      expect(document.activeElement?.id).toBe('mr-groups-title');
+
+      fixture.destroy();
+      create();
+      expect(el().querySelector('article.mr-suggestion')).toBeNull();
+
+      fixture.destroy();
+      serviceMock.getRunGroupSuggestions.mockReturnValue(of([buildSuggestion({ runIds: [51, 52, 53, 54], runCount: 4 })]));
+      create();
+      expect(el().querySelector('article.mr-suggestion')).not.toBeNull();
+    });
   });
 
-  it('should render a p-value below the column resolution as a bound rather than as zero', () => {
-    expect(component.formatPValue(0.0000004)).toBe('< 0.001');
-    expect(component.formatPValue(0.041)).toBe('0.041');
+  // --- Group cards ---
+
+  describe('group cards', () => {
+    it('renders the kicker, the title, the runs row and the metrics', () => {
+      create();
+
+      const card = q('article.mr-group');
+      expect(card.getAttribute('aria-labelledby')).toBe('mr-group-7-title');
+      expect(q('#mr-groups-title').classList.contains('gh-section-title')).toBe(true);
+
+      const kicker = (card.querySelector('.mr-group-kicker')?.textContent || '').replace(/\s+/g, ' ');
+      expect(kicker).toContain('#7');
+      expect(kicker).toContain('Tier A — Replicate');
+      expect(kicker).toContain('Current');
+      expect(kicker).toContain('Series 3');
+      expect(kicker).not.toContain('Definition changed');
+
+      const title = q('#mr-group-7-title');
+      expect(title.tagName).toBe('H5');
+      expect(title.getAttribute('tabindex')).toBe('-1');
+      expect(title.querySelector('app-model-identity .model-identity-name')?.textContent?.trim()).toBe('GPT-5.6 Luna');
+      expect(card.querySelector('.mr-card-meta time')).not.toBeNull();
+
+      const chips = Array.from(card.querySelectorAll('.mr-run-chip')).map(c => c.textContent?.trim());
+      expect(chips).toEqual(['#41', '#42', '#43']);
+
+      // The value and its qualifier are separate lines of the dd.
+      const metric = (name: string) => Array.from(card.querySelector(`[data-metric="${name}"] dd`)?.children ?? [])
+        .map(line => (line.textContent || '').replace(/\s+/g, ' ').trim())
+        .join(' ');
+      expect(metric('intelligence')).toBe('71.3 ± 1.2');
+      expect(metric('speed')).toBe('55.0');
+      expect(metric('cost')).toBe('$0.1234');
+      expect(metric('runs')).toBe('3');
+      expect(Array.from(card.querySelectorAll('.mr-metrics dt')).map(d => d.textContent?.trim()))
+        .toEqual(['Intelligence', 'Speed', 'Cost / run', 'Runs']);
+
+      expect(card.querySelector('.mr-card-actions')?.getAttribute('aria-label')).toBe('Actions for group #7');
+      expect(q('#mr-group-7-open').getAttribute('aria-label')).toBe('Open analysis of group #7');
+      expect(card.querySelector('.mr-download')?.getAttribute('aria-label')).toBe('Download the Markdown report of group #7');
+      expect(q('#mr-group-7-delete').getAttribute('aria-label')).toBe('Delete group #7');
+      expect(q('.mr-groups-section').querySelector('[title]')).toBeNull();
+    });
+
+    it('names a stale analysis with a tooltip, and marks a changed definition', () => {
+      serviceMock.getRunGroups.mockReturnValue(of([buildGroup({ analysisStale: true, comparabilityKeyStale: true })]));
+      create();
+
+      const stale = q('.mr-state-stale');
+      expect(stale.tagName).toBe('BUTTON');
+      expect(stale.textContent?.trim()).toBe('Stale');
+      expect(text('#' + stale.getAttribute('interestfor'))).toContain('a member was re-run');
+      expect(text('.mr-definition-changed')).toBe('Definition changed');
+    });
+
+    it('says Not analyzed, and keeps the download focusable but unavailable', () => {
+      serviceMock.getRunGroups.mockReturnValue(of([buildGroup({
+        latestAnalysisId: null, latestAnalysisAtUtc: null, headlineIndex: null, headlineHalfWidth: null,
+        headlineSpeedIndex: null, headlineCostPerRun: null
+      })]));
+      create();
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+
+      expect(text('.mr-group-kicker .mr-state')).toBe('Not analyzed');
+      expect(text('[data-metric="intelligence"] dd')).toBe('Not analyzed');
+      const download = q('.mr-download');
+      expect(download.getAttribute('aria-disabled')).toBe('true');
+      download.click();
+      expect(openSpy).not.toHaveBeenCalled();
+    });
+
+    it('asks for a re-analysis when an analysis exists without headline figures', () => {
+      serviceMock.getRunGroups.mockReturnValue(of([buildGroup({ headlineIndex: null, headlineHalfWidth: null })]));
+      create();
+      expect(text('[data-metric="intelligence"] dd')).toContain('Re-analyze to show figures');
+    });
+
+    it('downloads the report through window.open once an analysis exists', () => {
+      create();
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      click('.mr-download');
+      expect(openSpy).toHaveBeenCalledWith('/api/admin/benchmark/runs/groups/7/report', '_blank');
+    });
+
+    it('shows a typed name as a caption only when the server did not generate it', () => {
+      serviceMock.getRunGroups.mockReturnValue(of([
+        buildGroup({ id: 7, name: 'Luna baseline after the prompt fix', nameIsGenerated: false }),
+        buildGroup({ id: 8, name: 'Something the server chose', nameIsGenerated: true })
+      ]));
+      create();
+
+      expect(text('[data-group-id="7"] .mr-custom-name')).toBe('“Luna baseline after the prompt fix”');
+      expect(el().querySelector('[data-group-id="8"] .mr-custom-name')).toBeNull();
+    });
+
+    it('emits the originating series from Series N', () => {
+      create();
+      const emitted: number[] = [];
+      component.openSeries.subscribe(id => emitted.push(id));
+      click('.mr-badge-series');
+      expect(emitted).toEqual([3]);
+    });
+
+    it('emits openRun from a group\'s run chip', () => {
+      create();
+      const emitted: number[] = [];
+      component.openRun.subscribe(id => emitted.push(id));
+      (el().querySelectorAll<HTMLButtonElement>('article.mr-group .mr-run-chip')[2]).click();
+      expect(emitted).toEqual([43]);
+    });
+
+    it('opens the analysis dialog from the eye button', () => {
+      create();
+      click('#mr-group-7-open');
+      expect(GroupAnalysisDialogComponent.prototype.open).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
+    });
   });
 
-  it('should show nothing but a prompt when no suite is selected', () => {
-    fixture.detectChanges();
+  // --- Delete ---
 
-    expect(serviceMock.getRunGroups).not.toHaveBeenCalled();
-    expect(text('.multi-run')).toContain('Select a benchmark suite');
+  describe('deleting a group', () => {
+    it('confirms inline, and Keep returns focus to the trash button', () => {
+      create();
+      click('#mr-group-7-delete');
+
+      expect(text('.mr-confirm span')).toBe('Delete group #7? Its runs are kept.');
+      expect(q('.mr-confirm-delete').classList.contains('btn-ghost-danger')).toBe(true);
+      expect(document.activeElement?.id).toBe('mr-group-7-keep');
+      expect(serviceMock.deleteRunGroup).not.toHaveBeenCalled();
+
+      click('#mr-group-7-keep');
+      expect(el().querySelector('.mr-confirm')).toBeNull();
+      expect(document.activeElement?.id).toBe('mr-group-7-delete');
+    });
+
+    it('deletes on Delete and focuses the next card, else the heading', () => {
+      serviceMock.getRunGroups.mockReturnValue(of([
+        buildGroup({ id: 8, createdAtUtc: '2026-09-07T10:00:00Z' }),
+        buildGroup({ id: 7 })
+      ]));
+      create();
+
+      click('#mr-group-8-delete');
+      click('#mr-group-8-confirm-delete');
+      expect(serviceMock.deleteRunGroup).toHaveBeenCalledWith(8);
+      expect(el().querySelector('[data-group-id="8"]')).toBeNull();
+      expect(document.activeElement?.id).toBe('mr-group-7-title');
+      expect(text('#mr-groups-status')).toContain('Deleted group #8.');
+
+      click('#mr-group-7-delete');
+      click('#mr-group-7-confirm-delete');
+      expect(document.activeElement?.id).toBe('mr-groups-title');
+    });
   });
 
-  // --- The analysis modal ---
+  // --- Empty states and the filter bar ---
 
-  it('should open the analysis in the modal from the row eye control, not from the group name', () => {
-    open();
+  describe('empty states and the filter bar', () => {
+    it('shows one dashed card with New group when the suite has no groups', () => {
+      serviceMock.getRunGroups.mockReturnValue(of([]));
+      create();
 
-    // The name is text now. A report is opened by the same eye control the run history uses.
-    expect(fixture.nativeElement.querySelector('.mr-group-name')?.tagName).toBe('SPAN');
+      expect(text('.mr-empty-groups .mr-empty-title')).toBe('No analysis groups for this suite yet');
+      expect(text('.mr-empty-groups .mr-empty-text')).toBe('A completed series or battery creates and analyzes one automatically.');
+      click('.mr-empty-new-group');
+      expect(GroupBuilderDialogComponent.prototype.open).toHaveBeenCalledTimes(1);
+    });
 
-    const view = fixture.nativeElement.querySelector(
-      '.mr-group-table .col-actions .action-btn') as HTMLButtonElement;
-    expect(view.getAttribute('aria-label')).toContain('View analysis for group');
+    it('shows the filter bar only above three groups', () => {
+      serviceMock.getRunGroups.mockReturnValue(of([1, 2, 3].map(id => buildGroup({ id }))));
+      create();
+      expect(el().querySelector('.mr-filter-bar')).toBeNull();
 
-    vi.spyOn(component, 'openGroup');
-    view.click();
-    fixture.detectChanges();
+      fixture.destroy();
+      serviceMock.getRunGroups.mockReturnValue(of([1, 2, 3, 4].map(id => buildGroup({ id }))));
+      create();
+      expect(el().querySelector('.mr-filter-bar')).not.toBeNull();
+      expect(q('#mr-groups-search').getAttribute('type')).toBe('search');
+      expect(Array.from(q<HTMLSelectElement>('#mr-groups-sort').options).map(o => o.textContent?.trim()))
+        .toEqual(['Newest first', 'Oldest first', 'Most runs', 'Highest index', 'Tier (A first)', 'Model (A–Z)']);
+    });
 
-    expect(component.openGroup).toHaveBeenCalled();
-    expect(component.selectedGroup?.id).toBe(7);
-    expect(serviceMock.getRunGroupAnalysis).toHaveBeenCalledWith(7);
+    it('says no groups match, and Clear all filters brings them back', () => {
+      serviceMock.getRunGroups.mockReturnValue(of([1, 2, 3, 4].map(id => buildGroup({ id }))));
+      create();
+
+      component.onFacetChange('tier', ['Tier C — Cross-condition']);
+      fixture.detectChanges();
+      expect(text('.mr-empty-filters .mr-empty-title')).toBe('No groups match these filters.');
+      expect(el().querySelector('article.mr-group')).toBeNull();
+
+      click('.mr-empty-clear');
+      expect(el().querySelectorAll('article.mr-group').length).toBe(4);
+    });
   });
 
-  it('should render the detail inside the dialog and clear it on close', () => {
-    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis()));
-    open();
+  // --- Dialog hand-offs ---
 
-    component.openGroup(component.groups[0]);
-    fixture.detectChanges();
+  describe('openGroupById', () => {
+    it('opens a listed group without fetching it', () => {
+      create();
+      component.openGroupById(7);
+      expect(serviceMock.getRunGroup).not.toHaveBeenCalled();
+      expect(GroupAnalysisDialogComponent.prototype.open).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
+    });
 
-    const dialog = fixture.nativeElement.querySelector('dialog.mr-analysis-dialog') as HTMLElement;
-    expect(dialog).not.toBeNull();
-    expect(dialog.textContent).toContain('Multi-run Intelligence Index');
-
-    component.closeGroup();
-    fixture.detectChanges();
-
-    expect(component.selectedGroup).toBeNull();
-    expect(dialog.textContent).not.toContain('Multi-run Intelligence Index');
+    it('fetches and opens a group absent from the list', () => {
+      create();
+      serviceMock.getRunGroup.mockReturnValue(of(buildGroup({ id: 99, benchmarkSuiteId: 6 })));
+      component.openGroupById(99);
+      expect(serviceMock.getRunGroup).toHaveBeenCalledWith(99);
+      expect(GroupAnalysisDialogComponent.prototype.open).toHaveBeenCalledWith(expect.objectContaining({ id: 99 }));
+    });
   });
 
-  it('should emit the originating series from the group row badge', () => {
-    serviceMock.getRunGroups.mockReturnValue(of([buildGroup({ createdFromSeriesId: 2 })]));
-    open();
-
-    const emitted: number[] = [];
-    component.openSeries.subscribe((id: number) => emitted.push(id));
-
-    const badge = fixture.nativeElement.querySelector('.mr-badge-series') as HTMLButtonElement;
-    expect(badge.tagName).toBe('BUTTON');
-    badge.click();
-
-    expect(emitted).toEqual([2]);
-  });
-
-  it('should not emit a series for a group that was not created from one', () => {
-    open();
-
-    const emitted: number[] = [];
-    component.openSeries.subscribe((id: number) => emitted.push(id));
-    component.viewSeries(buildGroup({ createdFromSeriesId: null }));
-
-    expect(emitted).toEqual([]);
-  });
-
-  // --- The blocks the panel was missing ---
-
-  it('should render the prompt under test, including the divergence from live chat', () => {
-    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
-      result: {
-        ...(buildAnalysis().result as object),
-        promptUnderTest: {
-          recorded: true,
-          divergent: false,
-          overseerMode: 0,
-          verboseMode: false,
-          spoilerFreeMode: false,
-          enableToolUse: true,
-          enableWebSearch: false,
-          enableSubAgents: false,
-          allowSourceCodeReferences: true,
-          isGameOn: false,
-          developerMode: false,
-          hasMessageHistory: false,
-          hasWikiContext: false,
-          hasGameSnapshot: false,
-          parallelMode: 2
-        }
-      }
-    })));
-    open();
-    component.openGroup(component.groups[0]);
-    fixture.detectChanges();
-
-    const body = text('.mr-dialog-body');
-    expect(body).toContain('Prompt under test');
-    expect(body).toContain('Concise');
-    expect(body).toContain('Gameplay Help');
-    expect(body).toContain('Live chat pre-injects wiki articles');
-  });
-
-  it('should say so when the prompt configuration was not recorded', () => {
-    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
-      result: {
-        ...(buildAnalysis().result as object),
-        promptUnderTest: { recorded: false, divergent: false } as unknown
-      }
-    })));
-    open();
-    component.openGroup(component.groups[0]);
-    fixture.detectChanges();
-
-    expect(text('.mr-dialog-body')).toContain('Not recorded for these runs');
-  });
-
-  it('should render the dimension table and name the lowest dimension', () => {
-    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
-      result: {
-        ...(buildAnalysis().result as object),
-        dimensions: [
-          { dimension: 'Accuracy', perRunMeans: [96, 95, 97], mean: 96, standardDeviation: 1, confidenceHalfWidth: 2.5, min: 95, max: 97, itemMeans: { '101': 94 } },
-          { dimension: 'Completeness', perRunMeans: [84, 85, 86], mean: 85, standardDeviation: 1, confidenceHalfWidth: 2.5, min: 84, max: 86, itemMeans: { '101': 80 } },
-          { dimension: 'Conciseness', perRunMeans: [], mean: null },
-          { dimension: 'Readability', perRunMeans: [], mean: null }
-        ]
-      }
-    })));
-    open();
-    component.openGroup(component.groups[0]);
-    fixture.detectChanges();
-
-    const body = text('.mr-dialog-body');
-    expect(body).toContain('Quality dimensions');
-    expect(body).toContain('Completeness');
-    expect(body).toContain('Lowest dimension:');
-    // Q11 is the only item in the fixture, and it is the weakest on both scored dimensions.
-    expect(body).toContain('Q11');
-
-    // An unscored dimension is dropped from the table rather than rendered as zeroes.
-    expect(component.dimensionStats.length).toBe(2);
-  });
-
-  it('should render pooled tool families and what the claim verifier bought', () => {
-    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
-      result: {
-        ...(buildAnalysis().result as object),
-        usage: {
-          runCount: 3,
-          totalInputTokens: 4_210_000,
-          totalOutputTokens: 117_600,
-          totalCacheReadTokens: 3_806_000,
-          cacheReadSharePercentage: 90.4,
-          inputOutputRatio: 35.8,
-          perRunInputTokens: [1_400_000, 1_400_000, 1_410_000],
-          inputTokenStandardDeviation: 5773,
-          totalAssessmentInputTokens: 500_000,
-          totalAssessmentOutputTokens: 20_000,
-          totalClaimVerificationInputTokens: 900_000,
-          totalClaimVerificationOutputTokens: 30_000,
-          totalToolCalls: 281,
-          meanToolCallsPerRun: 93.7,
-          toolCallStandardDeviation: 4.2,
-          toolCallsByFamily: { SourceCode: 158, Wiki: 115, StructuredLookup: 7, KnowledgeBase: 1 },
-          toolFamilyShares: { SourceCode: 56.2, Wiki: 40.9, StructuredLookup: 2.5, KnowledgeBase: 0.4 },
-          claimsSupported: 10,
-          claimsRefuted: 0,
-          claimsIndeterminate: 0,
-          claimsChecked: 10,
-          answersWithVerification: 3
-        }
-      }
-    })));
-    open();
-    component.openGroup(component.groups[0]);
-    fixture.detectChanges();
-
-    const body = text('.mr-dialog-body');
-    expect(body).toContain('Tokens and tool usage');
-    expect(body).toContain('4.21 M');
-    expect(body).toContain('Grader tokens, kept separate');
-    expect(body).toContain('SourceCode');
-    expect(body).toContain('10 claims checked across 3 answers');
-
-    // Families are ordered by call count, so the heaviest is first.
-    expect(component.toolFamilyRows[0].family).toBe('SourceCode');
-  });
-
-  it('should name the role carrying the cost spread', () => {
-    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
-      result: {
-        ...(buildAnalysis().result as object),
-        cost: {
-          runCount: 3,
-          totalCost: 12.37,
-          meanCostPerRun: 4.12,
-          costStandardDeviation: 1.57,
-          totalCostByRole: { claimVerifier: 9.83, assessor: 1.63, candidate: 0.9073 },
-          meanCostByRole: { claimVerifier: 3.28, assessor: 0.5444, candidate: 0.3024 },
-          perRunTotals: [3.4582, 2.9969, 5.9154],
-          costStandardDeviationByRole: { claimVerifier: 1.55, assessor: 0.01, candidate: 0.002 },
-          minCostByRole: { claimVerifier: 2.4, assessor: 0.53, candidate: 0.3 },
-          maxCostByRole: { claimVerifier: 5.4, assessor: 0.55, candidate: 0.31 },
-          costPerQuestion: 0.2291,
-          costPerIndexPoint: 0.0437
-        }
-      }
-    })));
-    open();
-    component.openGroup(component.groups[0]);
-    fixture.detectChanges();
-
-    const body = text('.mr-dialog-body');
-    expect(body).toContain('Per-run totals:');
-    expect(body).toContain('Cost dispersion sits mostly in claimVerifier');
-    expect(component.widestCostRole?.role).toBe('claimVerifier');
-  });
-
-  it('should show a stored analysis\'s legacy Second opinion cost role as Second reader', () => {
-    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
-      result: {
-        ...(buildAnalysis().result as object),
-        cost: {
-          runCount: 2,
-          totalCost: 3,
-          meanCostPerRun: 1.5,
-          costStandardDeviation: 0.1,
-          totalCostByRole: { 'Second opinion': 1, 'Reference reader': 0.5, Assessor: 1.5 },
-          meanCostByRole: { 'Second opinion': 0.5, 'Reference reader': 0.25, Assessor: 0.75 },
-          perRunTotals: [1.4, 1.6]
-        }
-      }
-    })));
-    open();
-    component.openGroup(component.groups[0]);
-    fixture.detectChanges();
-
-    const roleHeaders = Array.from(fixture.nativeElement.querySelectorAll('th[scope="row"]') as NodeListOf<HTMLElement>)
-      .map(th => (th.textContent ?? '').trim());
-    expect(roleHeaders).toContain('Second reader');
-    expect(roleHeaders).toContain('Reference reader');
-    expect(roleHeaders).not.toContain('Second opinion');
-    expect(component.roleLabel('Second opinion')).toBe('Second reader');
-    expect(component.roleLabel('Reference reader')).toBe('Reference reader');
-  });
-
-  it('should name the questions asked beside the cost per question', () => {
-    const base = buildAnalysis().result as {
-      cost: Record<string, unknown>;
-    };
-    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
-      result: {
-        ...(buildAnalysis().result as object),
-        cost: { ...base.cost, questionsAskedPerRun: 18 }
-      }
-    })));
-    open();
-    component.openGroup(component.groups[0]);
-    fixture.detectChanges();
-
-    const body = text('.mr-dialog-body');
-    expect(body).toContain('over 18 questions asked per run');
-    expect(body).not.toContain('over scored items');
-  });
-
-  it('should mark a stored analysis whose cost per question predates the asked count', () => {
-    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis()));
-    open();
-    component.openGroup(component.groups[0]);
-    fixture.detectChanges();
-
-    const body = text('.mr-dialog-body');
-    expect(body).toContain('over scored items; recompute for per question asked');
-    expect(body).not.toContain('asked per run');
-  });
-
-  it('should mark a combined interval that was truncated at the score bound', () => {
-    const base = buildAnalysis().result as {
-      index: Record<string, unknown>;
-    };
-    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
-      result: {
-        ...(buildAnalysis().result as object),
-        index: { ...base.index, combinedUpper: 100, combinedIntervalTruncated: true }
-      }
-    })));
-    open();
-    component.openGroup(component.groups[0]);
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.querySelector('.mr-truncated-marker')).not.toBeNull();
-    expect(text('.mr-dialog-body')).toContain('pinned there');
-  });
-
-  // --- openGroupById ---
-
-  it('should open a listed group through its normal open path, without the id-fetch fallback', () => {
-    open();
-    serviceMock.getRunGroup.mockClear();
-    vi.spyOn(component, 'openGroup');
-
-    component.openGroupById(7);
-
-    expect(component.openGroup).toHaveBeenCalledWith(component.groups[0]);
-    // The one call here is openGroup's own loadGroup, not a second fetch from openGroupById itself.
-    expect(serviceMock.getRunGroup).toHaveBeenCalledTimes(1);
-    expect(serviceMock.getRunGroup).toHaveBeenCalledWith(7);
-  });
-
-  it('should fetch and open a group absent from the current list', () => {
-    open();
-    const other = buildGroup({ id: 99, name: 'Suite 5 · other · R=3' });
-    serviceMock.getRunGroup.mockReturnValue(of(other));
-    vi.spyOn(component, 'openGroup');
-
-    component.openGroupById(99);
-
-    expect(serviceMock.getRunGroup).toHaveBeenCalledWith(99);
-    expect(component.openGroup).toHaveBeenCalledWith(other);
-    expect(component.selectedGroup?.id).toBe(99);
-  });
-
-  it('should report the same groups-list error shape when the id-fetch fallback fails', () => {
-    open();
-    serviceMock.getRunGroup.mockReturnValue(throwError(() => ({ error: { message: 'Group 99 not found.' } })));
-
-    component.openGroupById(99);
-
-    expect(component.groupsError).toBe('Group 99 not found.');
-  });
-
-  // --- Analysis-group table: sorting, filtering, paging ---
-
-  it('should default the group table to Created descending', () => {
-    const older = buildGroup({ id: 1, name: 'Older', createdAtUtc: '2026-09-01T00:00:00Z' });
-    const newer = buildGroup({ id: 2, name: 'Newer', createdAtUtc: '2026-09-06T00:00:00Z' });
-    serviceMock.getRunGroups.mockReturnValue(of([older, newer]));
-    open();
-
-    expect(component.groupTable.sortColumn).toBe('createdAtUtc');
-    expect(component.groupTable.sortDirection).toBe('desc');
-    expect(component.groupTable.view(component.groups)[0].id).toBe(2);
-  });
-
-  it('should order tier by the comparability enum, not alphabetically by label', () => {
-    expect(component.tierOrder('Replicate')).toBeGreaterThan(component.tierOrder('QualityComparable'));
-    expect(component.tierOrder('QualityComparable')).toBeGreaterThan(component.tierOrder('CrossCondition'));
-    expect(component.tierOrder('CrossCondition')).toBeGreaterThan(component.tierOrder('NotComparable'));
-  });
-
-  it('should list a Tier A group before a Tier B group on the first click of the tier header', () => {
-    const tierA = buildGroup({ id: 1, name: 'A', tier: 'Replicate', createdAtUtc: '2026-09-01T00:00:00Z' });
-    const tierB = buildGroup({ id: 2, name: 'B', tier: 'QualityComparable', createdAtUtc: '2026-09-02T00:00:00Z' });
-    serviceMock.getRunGroups.mockReturnValue(of([tierB, tierA]));
-    open();
-
-    component.groupTable.toggleSort('tier');
-    fixture.detectChanges();
-
-    const view = component.groupTable.view(component.groups);
-    expect(view[0].id).toBe(1);
-    expect(view[1].id).toBe(2);
-  });
-
-  it('should list a Tier B group first on the second click of the tier header', () => {
-    const tierA = buildGroup({ id: 1, name: 'A', tier: 'Replicate', createdAtUtc: '2026-09-01T00:00:00Z' });
-    const tierB = buildGroup({ id: 2, name: 'B', tier: 'QualityComparable', createdAtUtc: '2026-09-02T00:00:00Z' });
-    serviceMock.getRunGroups.mockReturnValue(of([tierB, tierA]));
-    open();
-
-    component.groupTable.toggleSort('tier');
-    component.groupTable.toggleSort('tier');
-    fixture.detectChanges();
-
-    const view = component.groupTable.view(component.groups);
-    expect(view[0].id).toBe(2);
-    expect(view[1].id).toBe(1);
-  });
-
-  it('should treat a stale group as Stale only, not also Analysed, under the analysis-state filter', () => {
-    const stale = buildGroup({ id: 1, latestAnalysisId: 11, analysisStale: true });
-    serviceMock.getRunGroups.mockReturnValue(of([stale]));
-    open();
-
-    expect(component.analysisState(stale)).toBe('stale');
-
-    component.groupTable.setFilter('analysisState', 'analysed');
-    expect(component.groupTable.view(component.groups).length).toBe(0);
-
-    component.groupTable.setFilter('analysisState', 'stale');
-    expect(component.groupTable.view(component.groups).length).toBe(1);
-  });
-
-  it('should keep the stale-analysis tooltip working when filtered to Stale', () => {
-    serviceMock.getRunGroups.mockReturnValue(of([buildGroup({
-      latestAnalysisId: 11, latestAnalysisAtUtc: '2026-09-06T11:00:00Z', analysisStale: true
-    })]));
-    open();
-
-    component.groupTable.setFilter('analysisState', 'stale');
-    fixture.detectChanges();
-
-    expect(component.groupTable.view(component.groups).length).toBe(1);
-    expect(allText('.mr-badge-stale')).toContain('Stale analysis');
-    const tooltip = fixture.nativeElement.querySelector('.gh-tooltip-multiline')?.textContent || '';
-    expect(tooltip).toContain('no longer describes this group');
-  });
-
-  // --- Run picker table: sorting, filtering, paging, selection ---
-
-  it('should default the run picker table to ID descending', () => {
-    open();
-
-    expect(component.runPickerTable.sortColumn).toBe('id');
-    expect(component.runPickerTable.sortDirection).toBe('desc');
-    expect(component.runPickerTable.view(component.availableRuns)[0].id).toBe(43);
-  });
-
-  it('should render the Fingerprints column as a plain header over a labelled fingerprint stack', () => {
-    open();
-
-    // Neither sortable nor filterable: five hashes in one cell have no single sort key, and a
-    // substring filter over them would match whichever of the five happened to contain the text.
-    const header = fixture.nativeElement.querySelector('th.col-fingerprint') as HTMLElement;
-    expect(header.textContent?.trim()).toBe('Fingerprints');
-    expect(header.querySelector('.gh-th-sort')).toBeNull();
-
-    const firstCell = fixture.nativeElement.querySelector('td.col-fingerprint') as HTMLElement;
-    const entries = Array.from(firstCell.querySelectorAll('.instrument-fingerprint')) as HTMLElement[];
-    expect(entries.map(e => e.textContent?.trim())).toEqual([
-      'PROMPT bb19dc24',
-      'GUIDES f59d8b30',
-      'KB cccc2222',
-      'WIKI dddd3333',
-      'SRC eeee4444'
-    ]);
-  });
-
-  it('should name each run picker checkbox for the run it selects', () => {
-    open();
-
-    const checkbox = fixture.nativeElement.querySelector('#mr-run-41') as HTMLInputElement;
-    expect(checkbox.getAttribute('aria-label')).toBe('Include run 41 in this group');
-  });
-
-  it('should request up to the run history limit of 1000 runs', () => {
-    open();
-    expect(RUN_HISTORY_LIMIT).toBe(1000);
-    expect(serviceMock.getRuns).toHaveBeenCalledWith(5, RUN_HISTORY_LIMIT);
-  });
-
-  it('should keep a run selected across a page change and a filter change, and still pass it to createGroup', () => {
-    const many = Array.from({ length: 12 }, (_, i) => buildRun({ id: i + 1, testedModelDisplayNameUsed: `Model ${i + 1}` }));
-    serviceMock.getRuns.mockReturnValue(of(many));
-    const created = buildGroup({ id: 50 });
-    serviceMock.createRunGroup.mockReturnValue(of({ accepted: true, error: null, comparability: null, group: created }));
-    open();
-
-    // ID desc by default: run 12 leads page 1.
-    component.toggleRun(12);
-    expect(component.runPickerTable.view(component.availableRuns).some(r => r.id === 12)).toBe(true);
-
-    // Move to a different page and apply a filter — neither touches the selection underneath.
-    component.runPickerTable.setPage(2, component.availableRuns);
-    component.runPickerTable.setFilter('testedModel', 'Model 1');
-    fixture.detectChanges();
-
-    expect(component.selectedRunIds).toContain(12);
-
-    component.toggleRun(1);
-    component.builderName = 'Cross-page group';
-    component.createGroup();
-
-    expect(serviceMock.createRunGroup).toHaveBeenCalledWith(expect.objectContaining({
-      runIds: expect.arrayContaining([12, 1])
-    }));
-  });
-
-  it('should count a selected run as off-page once a page change moves it out of view', () => {
-    const many = Array.from({ length: 15 }, (_, i) => buildRun({ id: i + 1 }));
-    serviceMock.getRuns.mockReturnValue(of(many));
-    open();
-
-    component.toggleRun(15); // ID desc default: run 15 leads page 1.
-    expect(component.selectedOffPageCount).toBe(0);
-    expect(component.selectionSummary).toBe('1 selected');
-
-    component.runPickerTable.setPage(2, component.availableRuns);
-    fixture.detectChanges();
-
-    expect(component.selectedOffPageCount).toBe(1);
-    expect(component.selectionSummary).toBe('1 selected — 1 not on this page');
-  });
-
-  it('should count a selected run as off-page once a filter hides it from the current view', () => {
-    open();
-    component.toggleRun(41);
-    expect(component.selectedOffPageCount).toBe(0);
-
-    component.runPickerTable.setFilter('testedModel', 'nonexistent-model-xyz');
-    fixture.detectChanges();
-
-    expect(component.selectedOffPageCount).toBe(1);
-    expect(component.selectionSummary).toBe('1 selected — 1 not on this page');
-  });
-
-  it('should show Show Selected Only as a real toggle button with aria-pressed', () => {
-    open();
-    const button = Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('button'))
-      .find(b => (b.textContent || '').includes('Show Selected Only')) as HTMLButtonElement;
-
-    expect(button.getAttribute('aria-pressed')).toBe('false');
-
-    button.click();
-    fixture.detectChanges();
-    expect(button.getAttribute('aria-pressed')).toBe('true');
-  });
-
-  it('should filter to only the selected runs when toggled on, and clear only that filter when toggled off', () => {
-    open();
-    component.toggleRun(41);
-    component.runPickerTable.setFilter('testedModel', 'GPT');
-
-    component.toggleShowSelectedOnly();
-    fixture.detectChanges();
-
-    expect(component.runPickerTable.filters['selected']).toBe('yes');
-    expect(component.runPickerTable.filters['testedModel']).toBe('GPT');
-    const view = component.runPickerTable.view(component.availableRuns);
-    expect(view.length).toBe(1);
-    expect(view[0].id).toBe(41);
-
-    component.toggleShowSelectedOnly();
-    expect(component.runPickerTable.filters['selected']).toBe('');
-    expect(component.runPickerTable.filters['testedModel']).toBe('GPT');
+  describe('the builder', () => {
+    it('reloads, focuses and announces a group it created', () => {
+      create();
+      const created = buildGroup({ id: 20, createdAtUtc: '2026-10-03T10:00:00Z', latestAnalysisId: 40 });
+      serviceMock.getRunGroups.mockReturnValue(of([buildGroup(), created]));
+
+      const builder = fixture.debugElement.query(By.directive(GroupBuilderDialogComponent)).componentInstance as GroupBuilderDialogComponent;
+      builder.created.emit(created);
+      fixture.detectChanges();
+
+      expect(document.activeElement?.id).toBe('mr-group-20-title');
+      expect(text('#mr-groups-status')).toContain('Created group #20 and analyzed it.');
+    });
+
+    it('closes the builder and opens the analysis of a duplicate it names', () => {
+      create();
+      const builder = fixture.debugElement.query(By.directive(GroupBuilderDialogComponent)).componentInstance as GroupBuilderDialogComponent;
+      builder.openGroup.emit(7);
+
+      expect(GroupBuilderDialogComponent.prototype.close).toHaveBeenCalled();
+      expect(GroupAnalysisDialogComponent.prototype.open).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
+    });
   });
 });

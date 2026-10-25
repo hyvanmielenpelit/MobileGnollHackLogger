@@ -1,0 +1,371 @@
+<!--
+  No closedby="any": a full-height frame leaves only a thin backdrop ring, and the selection is work
+  in progress. Escape, Cancel and the close button close it.
+-->
+<dialog #dialog class="gh-dialog mr-builder-dialog" aria-labelledby="mr-builder-title">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <!-- The focus target on open, so the close button's tooltip does not open by itself. -->
+        <h3 #title id="mr-builder-title" tabindex="-1">New analysis group</h3>
+      </div>
+      <button type="button" class="btn-icon-action mr-builder-close" aria-label="Close"
+              interestfor="mr-builder-close-tip" [attr.style]="'anchor-name: --mr-builder-close-tip'"
+              (click)="close()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="mr-builder-close-tip" [attr.style]="'position-anchor: --mr-builder-close-tip'">Close</div>
+    </div>
+
+    <div class="dialog-body mr-builder-body">
+      <!-- The selection band: the summary, Clear selection and the selected runs on one line. -->
+      <div class="mr-sel-band" role="region" aria-labelledby="mr-builder-selection-label">
+        <div class="mr-sel-line" [class.mr-sel-line--empty]="selectedRunCount === 0"
+             [class.mr-sel-line--stacked]="chipsExpanded">
+          <div class="mr-sel-lead">
+            <!-- Focused after Clear selection and after the last chip is removed. -->
+            <p #selectionLabel class="mr-sel-label" id="mr-builder-selection-label" role="status" tabindex="-1">
+              <span class="visually-hidden">Your selection — </span>{{ selectionSummary }}
+            </p>
+            @if (selectedRunCount > 0) {
+              <!-- Drops the selection and deletes nothing, as removing one chip does. -->
+              <button type="button" class="btn-ghost mr-sel-clear" id="mr-builder-clear-selection" (click)="clearSelection()">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                Clear selection<span class="visually-hidden"> ({{ selectedRunCount }})</span>
+              </button>
+            }
+          </div>
+          @if (selectedRunCount > 0) {
+            <ul #selectionChips id="mr-builder-selection-chips" class="mr-sel-chips" aria-label="Selected runs"
+                [class.is-expanded]="chipsExpanded" [class.is-overflowing]="chipsOverflow && !chipsExpanded">
+              @for (runId of selectedIdsAscending; track runId; let i = $index) {
+                <li class="mr-sel-chip">
+                  <span class="mr-sel-chip-id">#{{ runId }}</span>
+                  <button type="button" class="action-btn mr-sel-remove"
+                          [attr.aria-label]="'Remove run #' + runId + ' from the selection'"
+                          [attr.interestfor]="'mr-sel-' + runId + '-tip'"
+                          [attr.style]="'anchor-name: --mr-sel-' + runId + '-tip'"
+                          (focus)="revealChip($event)"
+                          (click)="removeFromSelection(runId, i)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'mr-sel-' + runId + '-tip'"
+                       [attr.style]="'position-anchor: --mr-sel-' + runId + '-tip'">Remove from the selection</div>
+                </li>
+              }
+            </ul>
+            @if (chipsOverflow || chipsExpanded) {
+              <button type="button" class="btn-link mr-sel-more"
+                      aria-controls="mr-builder-selection-chips" [attr.aria-expanded]="chipsExpanded"
+                      (click)="toggleChipsExpanded()">{{ chipsExpanded ? 'Show fewer' : 'Show all ' + selectedRunCount }}</button>
+            }
+          } @else {
+            <!-- The one visible message while nothing is selected: a warning line, not an alert box. -->
+            <p class="gh-field-warning mr-sel-empty">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <span><strong>Nothing is selected yet.</strong> Select two or more finished runs of one model below.</span>
+            </p>
+          }
+        </div>
+      </div>
+
+      <!-- The comparability of the selection, recomputed on every change, with its reasons. -->
+      @if (selectedRunCount >= 2) {
+        <section class="mr-preview" aria-labelledby="mr-preview-title" [class.is-refused]="preview?.accepted === false"
+                 [attr.aria-busy]="previewing ? 'true' : null">
+          <h4 class="visually-hidden" id="mr-preview-title">Comparability of the selection</h4>
+
+          @if (previewError) {
+            <p class="gh-field-error mr-preview-error" role="alert">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>{{ previewError }}</span>
+            </p>
+          } @else {
+            @if (previewComparability; as comparability) {
+              <div class="mr-preview-head">
+                <span [class]="'mr-tier ' + tierClass(comparability.tier)">{{ comparability.tierLabel || tierName(comparability.tier) }}</span>
+                @if (comparability.poolingPermitted) {
+                  <span class="mr-badge mr-badge-ok">Pooling permitted</span>
+                } @else {
+                  <span class="mr-badge mr-badge-warn">Never pooled into one index</span>
+                }
+                @if (previewing) {
+                  <span class="mr-preview-busy">Updating&hellip;</span>
+                }
+              </div>
+
+              @if (comparability.explanation) {
+                <p class="mr-preview-explanation">{{ comparability.explanation }}</p>
+              }
+
+              @if (previewRefusal; as refusal) {
+                <p class="mr-preview-refusal">{{ refusal }}</p>
+              }
+
+              <!-- The reasons: which keys differ, each value, and the runs carrying it. -->
+              @if (previewDifferences.length > 0) {
+                <div class="mr-differences">
+                  <h5 class="mr-differences-title">Keys that differ</h5>
+                  <ul class="mr-difference-list" role="list">
+                    @for (difference of previewDifferences; track difference.name) {
+                      <li class="mr-difference">
+                        <div class="mr-difference-name">{{ difference.name }}<span class="mr-difference-kind">{{ difference.kind }}</span></div>
+                        <div class="mr-difference-description">{{ difference.description }}</div>
+                        <ul class="mr-variant-list">
+                          @for (variant of difference.variants; track variant.value) {
+                            <li class="mr-variant">
+                              <span class="mr-variant-value">{{ variant.value }}</span>
+                              <span class="mr-variant-runs">runs {{ runIdsLabel(variant.runIds) }}</span>
+                            </li>
+                          }
+                        </ul>
+                      </li>
+                    }
+                  </ul>
+                </div>
+              }
+
+              @if (comparability.matchedKeys.length > 0) {
+                <details class="gh-disclosure mr-matched-keys">
+                  <summary>{{ matchedKeysLabel(comparability.matchedKeys.length) }}</summary>
+                  <div class="gh-disclosure-body">
+                    <p class="mr-matched-keys-list">{{ comparability.matchedKeys.join(', ') }}</p>
+                  </div>
+                </details>
+              }
+
+              <!-- Offered only at Tier C, where there is something to acknowledge. -->
+              @if (previewIsCrossCondition) {
+                <label class="checkbox-label align-start mr-cross-condition">
+                  <input type="checkbox" id="mr-cross-condition" [checked]="crossCondition" (change)="onCrossConditionChange($event)">
+                  <span>
+                    Persist as a cross-condition group. The candidate is identical and one instrument key
+                    differs deliberately; the set may be <strong>compared</strong> but never pooled into
+                    one index.
+                  </span>
+                </label>
+              }
+
+              @if (duplicateOfGroupId; as duplicateId) {
+                <p class="gh-field-warning mr-duplicate">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  <span>
+                    Group #{{ duplicateId }} already holds exactly these runs.
+                    <button type="button" class="btn-link mr-open-duplicate" (click)="onOpenDuplicate(duplicateId)">Open group #{{ duplicateId }}</button>
+                  </span>
+                </p>
+              }
+            } @else if (previewing) {
+              <p class="mr-preview-busy">Computing the comparability tier&hellip;</p>
+            }
+          }
+        </section>
+      }
+
+      @if (createError) {
+        <p class="gh-field-error mr-create-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ createError }}</span>
+        </p>
+      }
+
+      <!-- The suite's runs as a filterable list of cards shown twenty at a time. -->
+      <section class="mr-runs-section" aria-labelledby="mr-runs-title">
+        <div class="mr-runs-head">
+          <h4 class="gh-section-title mr-runs-title" id="mr-runs-title">Runs</h4>
+          <!-- The list's one polite live region. -->
+          <p class="gh-list-status mr-runs-status" id="mr-runs-status" role="status">{{ listStatus }}</p>
+        </div>
+
+        @if (runsError) {
+          <p class="gh-field-error mr-runs-error" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ runsError }}</span>
+          </p>
+        } @else if (loadingRuns) {
+          <!-- The status line says it is loading. -->
+        } @else if (availableRuns.length === 0) {
+          <p class="mr-runs-empty">No runs recorded for this suite yet.</p>
+        } @else {
+          <!-- Search, Sort by, the facets, Show selected only and the active filters. -->
+          <search class="gh-filter-bar mr-runs-filter-bar">
+            <div class="gh-filter-bar-row">
+              <div class="gh-search-field mr-runs-search">
+                <label class="visually-hidden" for="mr-runs-search">Search runs</label>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="search" class="gh-input" id="mr-runs-search" autocomplete="off"
+                       placeholder="Search #id, model, status or hash"
+                       [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+              </div>
+              <div class="mr-runs-sort">
+                <label class="mr-runs-sort-label" for="mr-runs-sort">Sort by</label>
+                <select class="gh-input mr-runs-sort-select" id="mr-runs-sort" (change)="onSortChange($event)">
+                  @for (sort of sorts; track sort.id) {
+                    <option [value]="sort.id" [selected]="list.sortId === sort.id">{{ sort.label }}</option>
+                  }
+                </select>
+              </div>
+              @if (facets.length > 0) {
+                <div class="gh-facet-row mr-runs-facet-row">
+                  @for (facet of facets; track facet.column) {
+                    <app-filter-facet [facetId]="facet.facetId" [label]="facet.label" [options]="facet.options"
+                                      [selected]="facet.selected" [mode]="facet.mode" [anyLabel]="facet.anyLabel" noun="runs"
+                                      (selectedChange)="onFacetChange(facet.column, $event)"></app-filter-facet>
+                  }
+                </div>
+              }
+              <!-- A view setting, not a filter: no chip, and Clear all keeps it. -->
+              @if (selectedRunCount > 0 || showSelectedOnly) {
+                <button type="button" class="gh-filter-toggle mr-runs-selected-only"
+                        [attr.aria-pressed]="showSelectedOnly"
+                        (click)="toggleShowSelectedOnly()">Show selected only</button>
+              }
+            </div>
+
+            @if (chips.length > 0) {
+              <div class="gh-filter-bar-row mr-runs-chips-row">
+                <ul class="gh-filter-chips mr-runs-chips" role="list" aria-label="Active filters">
+                  @for (chip of chips; track chip.key) {
+                    <li>
+                      <button type="button" class="gh-filter-chip"
+                              [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                              (click)="removeChip(chip)">
+                        <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                        <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      </button>
+                    </li>
+                  }
+                </ul>
+                <button type="button" class="gh-filter-clear mr-runs-clear-filters" (click)="clearFilters()">Clear all</button>
+              </div>
+            }
+          </search>
+
+          @if (noMatches) {
+            <p class="mr-runs-empty mr-runs-no-matches">No runs match these filters.
+              <button type="button" class="gh-filter-clear" (click)="clearAllFilters()">Clear all filters</button>
+            </p>
+          } @else {
+            <ul class="mr-runs" role="list" aria-labelledby="mr-runs-title">
+              @for (run of cards; track run.id) {
+                @let rid = 'mr-run-' + run.id;
+                @let settled = isSettled(run);
+                @let index = runIndexOf(run);
+                <li class="mr-run-item">
+                  <article class="mr-run" [attr.data-run-id]="run.id" [class.is-unsettled]="!settled"
+                           [attr.aria-labelledby]="rid + '-title'">
+                    <!-- aria-disabled, not disabled, while the run has not settled: focusable, its click
+                         refused, and described by why. -->
+                    <div class="mr-run-select">
+                      <input type="checkbox" class="mr-run-check" [id]="rid"
+                             [attr.aria-label]="'Include run ' + run.id + ' in this group'"
+                             [attr.aria-disabled]="isRunBlocked(run) ? 'true' : null"
+                             [attr.aria-describedby]="checkboxDescribedBy(run)"
+                             [checked]="isRunSelected(run.id)"
+                             (click)="preventBlockedToggle($event, run)"
+                             (change)="toggleRun(run.id)">
+                    </div>
+
+                    <div class="mr-run-head">
+                      <!-- Focused after Show more. A click on the title selects the card. -->
+                      <h5 class="mr-run-title" [id]="rid + '-title'" tabindex="-1">
+                        <label [for]="rid">
+                          <app-model-identity [name]="run.testedModelDisplayNameUsed || run.testedModelIdUsed"
+                                              [provider]="run.testedModelProviderUsed"
+                                              [thinkingLevel]="run.testedModelThinkingLevelUsed"
+                                              [reasoningMode]="run.testedModelReasoningModeUsed"></app-model-identity>
+                        </label>
+                      </h5>
+                      <!-- A dot on screen between the parts, a comma for assistive technology. -->
+                      <p class="mr-run-meta">
+                        <span class="mr-run-id">#{{ run.id }}</span>
+                        <span class="mr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                        <span class="mr-run-status">{{ statusLabel(run.status) }}</span>
+                        <span class="mr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                        <time [attr.datetime]="isoDate(run.startedAtUtc)">{{ formatUtc(run.startedAtUtc) }}</time>
+                      </p>
+                    </div>
+
+                    <dl class="mr-run-metrics">
+                      <div class="mr-run-metric" data-metric="intelligence">
+                        <dt>Intelligence</dt>
+                        <dd><span class="mr-run-metric-value">{{ formatIndex(index) }}</span></dd>
+                      </div>
+                      <div class="mr-run-metric" data-metric="speed">
+                        <dt>Speed</dt>
+                        <dd>
+                          <span class="mr-run-metric-value">{{ formatIndex(run.speedIndex) }}</span>
+                          @if (run.speedMeasurementDegraded && run.speedIndex != null) {
+                            <span class="mr-run-metric-note">Advisory timing</span>
+                          }
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <!-- The five instrument hashes, shortened; each one's tooltip names its corpus and the full hash. -->
+                    <ul class="mr-fps" role="list" [attr.aria-label]="'Instrument of run ' + run.id">
+                      @for (entry of fingerprintEntries(run); track entry.label) {
+                        @let tip = fingerprintTipId(run, entry);
+                        <li>
+                          <button type="button" [class]="'mr-fp ' + entry.cssClass"
+                                  [attr.interestfor]="tip" [attr.style]="'anchor-name: --' + tip">
+                            {{ entry.label }}<span class="visually-hidden"> ({{ fingerprintLongName(entry) }}) </span>
+                            <span class="mr-fp-hash">{{ entry.short }}</span>
+                          </button>
+                          <div popover="hint" class="gh-tooltip gh-tooltip-multiline mr-fp-tip" [id]="tip"
+                               [attr.style]="'position-anchor: --' + tip">{{ entry.title }}</div>
+                        </li>
+                      }
+                    </ul>
+
+                    @if (!settled) {
+                      <p class="mr-run-reason" [id]="rid + '-reason'">{{ unsettledReason(run) }}</p>
+                    }
+                  </article>
+                </li>
+              }
+            </ul>
+
+            @if (remainingCount > 0) {
+              <div class="gh-load-more mr-runs-load-more">
+                <button type="button" class="btn-ghost mr-runs-show-more" (click)="showMore()">Show {{ nextBatchCount }} more</button>
+                @if (remainingCount > list.batch) {
+                  <button type="button" class="gh-filter-clear mr-runs-show-all" (click)="showAll()">Show all {{ matchingCount }}</button>
+                }
+              </div>
+            }
+          }
+        }
+      </section>
+
+      <!-- Closed by default: the server names the group, and a note is rarely needed. -->
+      <details #noteDisclosure class="gh-disclosure mr-note-disclosure">
+        <summary>Note (optional)</summary>
+        <div class="gh-disclosure-body mr-note-body">
+          <label class="mr-note-label" for="mr-builder-note">Note</label>
+          <textarea id="mr-builder-note" class="gh-input gh-textarea-autosize" rows="2"
+                    [value]="notes" (input)="onNotesInput($event)"></textarea>
+        </div>
+      </details>
+    </div>
+
+    <div class="dialog-footer">
+      @if (createBlockReason; as reason) {
+        <p class="gh-footer-note mr-builder-footer-note" id="mr-builder-footer-note">
+          <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>{{ reason }}</span>
+        </p>
+      }
+      <button type="button" class="btn-gh btn-gh-cancel mr-builder-cancel" (click)="close()">Cancel</button>
+      <button type="button" class="btn-gh mr-builder-create"
+              [attr.aria-disabled]="canCreateGroup ? null : 'true'"
+              [attr.aria-describedby]="createBlockReason ? 'mr-builder-footer-note' : null"
+              [attr.aria-busy]="creating ? 'true' : null"
+              (click)="createGroup()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        Create Group
+      </button>
+    </div>
+  </div>
+</dialog>

@@ -924,7 +924,11 @@ public class BenchmarkSeriesOrchestrator
     // Completion and the auto-created group
     // ---------------------------------------------------------------------------------------
 
-    private async Task FinishSeriesAsync(
+    /// <summary>
+    /// Marks the series finished and creates its group, then analyzes a group created here. The
+    /// analysis runs after the series row is saved, so its outcome never changes the series'.
+    /// </summary>
+    internal async Task FinishSeriesAsync(
         IServiceProvider services,
         ApplicationDbContext db,
         BenchmarkRunSeries series,
@@ -936,12 +940,54 @@ public class BenchmarkSeriesOrchestrator
         series.CompletedAtUtc = DateTime.UtcNow;
         series.LastProgressAtUtc = DateTime.UtcNow;
 
+        long? createdGroupId = null;
         if (series.AutoCreatedGroupId == null)
         {
-            series.AutoCreatedGroupId = await CreateGroupForSeriesAsync(db, series, ct);
+            createdGroupId = await CreateGroupForSeriesAsync(db, series, ct);
+            series.AutoCreatedGroupId = createdGroupId;
         }
 
         await db.SaveChangesAsync(ct);
+
+        if (createdGroupId.HasValue)
+        {
+            await AnalyseNewGroupAsync(_scopeFactory, _logger, createdGroupId.Value, ct);
+        }
+    }
+
+    /// <summary>
+    /// Analyzes a group an orchestrator has just created, in a scope of its own, through
+    /// <see cref="BenchmarkGroupAnalysisService.TryAnalyseNewGroupAsync"/>. Every failure is logged
+    /// and swallowed, cancellation included: the series or battery run that created the group is
+    /// already saved, and its outcome stands whatever the analysis does.
+    /// </summary>
+    internal static async Task AnalyseNewGroupAsync(
+        IServiceScopeFactory scopeFactory,
+        ILogger logger,
+        long groupId,
+        CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetService<BenchmarkGroupAnalysisService>();
+            if (service == null)
+            {
+                logger.LogWarning(
+                    "Group {GroupId} was not analyzed: no BenchmarkGroupAnalysisService is registered.", groupId);
+                return;
+            }
+
+            await service.TryAnalyseNewGroupAsync(groupId, ct);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException || ex.IsCanceledBy(ct))
+        {
+            logger.LogInformation("The analysis of new group {GroupId} was canceled.", groupId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "The analysis of new group {GroupId} failed.", groupId);
+        }
     }
 
     /// <summary>
@@ -1052,11 +1098,10 @@ public class BenchmarkSeriesOrchestrator
         }
 
         string modelName = members[0].TestedModelSnapshot.Label() ?? "Unknown model";
-        string name = $"{suiteName} · {modelName} · {startedAtUtc:yyyy-MM-dd} · R={members.Count}";
 
         var group = new BenchmarkRunGroup
         {
-            Name = name.Length > 256 ? name.Substring(0, 256) : name,
+            Name = BenchmarkRunGroupNames.Default(suiteName, modelName, startedAtUtc, members.Count),
             BenchmarkSuiteId = suiteId,
             Tier = tier,
             ComparabilityKeyHash = comparability.ComparabilityKeyHash,

@@ -1,624 +1,674 @@
 import {
+  ChangeDetectionStrategy,
   ChangeDetectorRef,
   Component,
   ElementRef,
   EventEmitter,
   Input,
   OnChanges,
+  OnDestroy,
   OnInit,
   Output,
   SimpleChanges,
   ViewChild,
   inject
 } from '@angular/core';
-import { CommonModule, DecimalPipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
-import { parseServerUtcDate } from '../../../utils/date.util';
-import { exactFilter, TableState } from '../../../shared/data-table/table-state';
-import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
-import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
 import {
   AdminBenchmarkService,
-  BenchmarkComparabilityResultDto,
-  BenchmarkComparabilityTier,
-  BenchmarkGroupAnalysisDto,
   BenchmarkRunGroupDto,
-  BenchmarkRunGroupTierPreviewDto,
-  BenchmarkRunSummaryDto
+  BenchmarkRunGroupSuggestionDto,
+  BenchmarkSuiteDto
 } from '../../../services/admin-benchmark.service';
-import { RUN_HISTORY_LIMIT } from '../benchmark.models';
+import { CardListChip, CardListFacet, CardListSort, CardListState } from '../../../shared/data-table/card-list-state';
+import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
+import { TableState, anyOfFilter, customFilter } from '../../../shared/data-table/table-state';
+import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
+import { ModelIdentityComponent } from '../../../shared/model-identity/model-identity.component';
+import { parseServerUtcDate } from '../../../utils/date.util';
+import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { formatCostAmount } from '../benchmark-run-format';
+import { httpErrorText } from '../batteries/battery.models';
+import {
+  groupRunsLabel,
+  isGeneratedGroupName,
+  runGroupAnalysisState,
+  runGroupAnalysisStateLabel,
+  runGroupTierClass,
+  runGroupTierName,
+  runGroupTierOrder
+} from '../shared/run-group-format';
+import { GroupAnalysisDialogComponent } from './group-analysis-dialog/group-analysis-dialog.component';
+import { GroupBuilderDialogComponent } from './group-builder-dialog/group-builder-dialog.component';
 
-// ---------------------------------------------------------------------------------------------
-// The shapes of BenchmarkGroupAnalysisDto.result and .comparison.
-//
-// Those two fields are typed `any` in the service because the server passes its statistics
-// records straight through rather than mirroring them field by field — which is what keeps the
-// two sides from drifting. The cost of that is a client with no types at all, so the render
-// surface declares the subset it reads here. These are *readers*, deliberately: every field is
-// optional or nullable exactly where the C# record says it may be null, and nothing is computed
-// from them that the server did not already compute.
-// ---------------------------------------------------------------------------------------------
+/** The page's own suite, per browser, as `{ version: 1, suiteId }`. */
+export const MULTI_RUN_VIEW_STORAGE_KEY = 'overseer.benchmark.multiRun.view';
 
-/** Cross-run statistics for one suite item. Mirrors `BenchmarkGroupItemStatistics`. */
-export interface MultiRunItemStatistics {
-  questionId: number;
-  orderIndex: number;
-  questionText?: string | null;
-  runCount: number;
-  mean: number;
-  median: number;
-  min: number;
-  max: number;
-  /** Sample SD (n−1). Null below two runs, where it is undefined rather than zero. */
-  standardDeviation?: number | null;
-  interquartileRange?: number | null;
-  /** SD / mean, as a fraction. Null below two runs and at a mean of zero. */
-  coefficientOfVariation?: number | null;
-  meanConfidenceHalfWidth?: number | null;
-  meanConfidenceLower?: number | null;
-  meanConfidenceUpper?: number | null;
-  /** A bound hit the [0, 100] score range and was clamped; the half-width is the honest spread. */
-  meanConfidenceTruncated?: boolean;
-  criticalErrorCount?: number;
-  /** k/R. A rate strictly between 0 and 1 is the signal worth acting on. */
-  criticalErrorRate: number;
-  medianModelTimeMs?: number | null;
-  unstable?: boolean;
-  insufficientRuns?: boolean;
-}
+/** The dismissed suggestions, per browser, as `{ version: 1, keys }`. */
+export const MULTI_RUN_DISMISSED_STORAGE_KEY = 'overseer.benchmark.multiRun.dismissedSuggestions';
 
-/** The pooled index and its two independent uncertainty components. Mirrors `BenchmarkGroupIndexStatistics`. */
-export interface MultiRunIndexStatistics {
-  runCount: number;
-  pointEstimate: number;
-  weightedMeanOfItemMeans?: number;
-  /** False only on a ragged item set, where the two routes to the point estimate diverge. */
-  identityHolds?: boolean;
-  perRunIndices?: number[];
-  meanStoredQualityIndex?: number | null;
-  reproducibilityStandardDeviation?: number | null;
-  reproducibilityStandardError?: number | null;
-  reproducibilityCriticalValue?: number | null;
-  reproducibilityHalfWidth?: number | null;
-  itemSamplingStandardError?: number | null;
-  itemSamplingCriticalValue?: number;
-  itemSamplingHalfWidth?: number | null;
-  combinedHalfWidth?: number | null;
-  combinedLower?: number | null;
-  combinedUpper?: number | null;
-  /** A combined bound hit the [0, 100] score range and was clamped. */
-  combinedIntervalTruncated?: boolean;
-  /** False below three runs, where no reproducibility figure is reported at all. */
-  reproducibilityAvailable?: boolean;
-}
+/** The group list's Sort by order, as `CardListState` stores it. */
+export const MULTI_RUN_GROUPS_VIEW_STORAGE_KEY = 'overseer.benchmark.multiRun.groups.view';
 
-export interface MultiRunSpeedStatistics {
-  runCount: number;
-  meanSpeedIndex?: number | null;
-  speedIndexStandardDeviation?: number | null;
-  perRunSpeedIndices?: number[];
-  pooledAnswerCount?: number;
-  modelTimeP50Ms?: number | null;
-  modelTimeP90Ms?: number | null;
-  modelTimeMaxMs?: number | null;
-  /**
-   * Pooled over the answers carrying a time to first token, which is a subset of
-   * `pooledAnswerCount`: model time is always recorded and TTFT is not, so the two counts differ
-   * and `ttftAnswerCount` is the denominator these three percentiles belong to.
-   */
-  ttftP50Ms?: number | null;
-  ttftP90Ms?: number | null;
-  ttftMaxMs?: number | null;
-  ttftAnswerCount?: number;
-  /**
-   * The candidate's own working time: `modelTimeMeanMs` is pooled over the same answers as the
-   * percentiles above, while the two totals are per member run — `perRunTotalModelTimeMs` in member
-   * order, their mean, and their sample standard deviation, which is null below two runs.
-   */
-  modelTimeMeanMs?: number | null;
-  totalModelTimePerRunMeanMs?: number | null;
-  perRunTotalModelTimeMs?: number[];
-  totalModelTimeStandardDeviationMs?: number | null;
-  degraded?: boolean;
-  degradedReason?: string | null;
-  caveat?: string | null;
-}
+/** The most dismissals kept; the oldest are dropped first. */
+export const MULTI_RUN_DISMISSED_LIMIT = 200;
 
-export interface MultiRunCostStatistics {
-  runCount: number;
-  totalCost: number;
-  meanCostPerRun: number;
-  costStandardDeviation?: number | null;
-  totalCostByRole?: { [role: string]: number };
-  meanCostByRole?: { [role: string]: number };
-  /** The per-run totals. Cost is the least reproducible quantity a replicate set measures. */
-  perRunTotals?: number[];
-  costStandardDeviationByRole?: { [role: string]: number | null };
-  minCostByRole?: { [role: string]: number };
-  maxCostByRole?: { [role: string]: number };
-  costPerQuestion?: number | null;
-  /** Answer rows per costed run, averaged — the per-question cost's denominator. Absent on analyses stored before it existed. */
-  questionsAskedPerRun?: number | null;
-  costPerIndexPoint?: number | null;
-  degraded?: boolean;
-  degradedReason?: string | null;
-}
+/** The filter bar is shown above this many groups, and while a filter is still active. */
+export const MULTI_RUN_FILTER_BAR_MIN_EXCLUSIVE = 3;
+
+const STORAGE_VERSION = 1;
+
+export const MULTI_RUN_GROUP_SORTS: readonly CardListSort[] = [
+  { id: 'newest', label: 'Newest first', column: 'created', direction: 'desc' },
+  { id: 'oldest', label: 'Oldest first', column: 'created', direction: 'asc' },
+  { id: 'runs', label: 'Most runs', column: 'runs', direction: 'desc' },
+  { id: 'index', label: 'Highest index', column: 'index', direction: 'desc' },
+  { id: 'tier', label: 'Tier (A first)', column: 'tier', direction: 'desc' },
+  { id: 'model', label: 'Model (A–Z)', column: 'model', direction: 'asc' }
+];
+
+const TIER_FACET_ORDER = ['Replicate', 'QualityComparable', 'CrossCondition', 'NotComparable'].map(runGroupTierName);
+const ANALYSIS_FACET_ORDER = (['current', 'stale', 'none'] as const).map(runGroupAnalysisStateLabel);
+const ORIGIN_FACET_ORDER = ['Series', 'Other'];
 
 /**
- * One scoring dimension across the runs. Mirrors `BenchmarkGroupDimensionStatistics`.
- *
- * These means are unweighted while the index is difficulty-weighted, so the two are not expected
- * to agree — the template says so wherever it renders them together.
+ * A suggestion's dismissal key: its comparability key hash and its run ids, so a cluster that
+ * gains a run is a new suggestion and shows again.
  */
-export interface MultiRunDimensionStatistics {
-  dimension: string;
-  perRunMeans?: number[];
-  mean?: number | null;
-  standardDeviation?: number | null;
-  /** Null below three runs, on the same rule the index's reproducibility component uses. */
-  confidenceHalfWidth?: number | null;
-  min?: number | null;
-  max?: number | null;
-  /** Question id → cross-run mean on this dimension. */
-  itemMeans?: { [questionId: string]: number };
+export function suggestionKey(suggestion: Pick<BenchmarkRunGroupSuggestionDto, 'keyHash' | 'runIds'>): string {
+  return `${suggestion.keyHash}:${suggestion.runIds.join(',')}`;
 }
 
-/** Pooled token, tool and claim-verification totals. Mirrors `BenchmarkGroupUsageStatistics`. */
-export interface MultiRunUsageStatistics {
-  runCount: number;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  totalCacheReadTokens: number;
-  cacheReadSharePercentage?: number | null;
-  inputOutputRatio?: number | null;
-  perRunInputTokens?: number[];
-  inputTokenStandardDeviation?: number | null;
-  totalAssessmentInputTokens: number;
-  totalAssessmentOutputTokens: number;
-  totalClaimVerificationInputTokens: number;
-  totalClaimVerificationOutputTokens: number;
-  totalToolCalls: number;
-  meanToolCallsPerRun?: number | null;
-  toolCallStandardDeviation?: number | null;
-  /**
-   * Null rather than zero when no answer reported the counter, and a null entry in
-   * `perRunModelCalls` is a member that reported none — neither enters the mean or the SD. Input
-   * cost tracks these rather than the tool-call totals above, because every model call resends the
-   * whole conversation.
-   */
-  totalModelCalls?: number | null;
-  meanModelCallsPerRun?: number | null;
-  modelCallStandardDeviation?: number | null;
-  perRunModelCalls?: (number | null)[];
-  toolCallsByFamily?: { [family: string]: number };
-  toolFamilyShares?: { [family: string]: number };
-  claimsSupported: number;
-  claimsRefuted: number;
-  claimsIndeterminate: number;
-  claimsChecked: number;
-  answersWithVerification: number;
+/** The group's candidate as its card title names it. */
+export function groupModelName(group: BenchmarkRunGroupDto): string {
+  return group.testedModelDisplayName || group.testedModelId || 'Model not recorded';
 }
 
-/**
- * The prompt configuration the group was graded under. Mirrors `BenchmarkGroupPromptUnderTest`.
- *
- * Read from the first member; `divergent` is the server's assertion that the others match, which a
- * poolable group guarantees and a hand-built Tier C group does not.
- */
-export interface MultiRunPromptUnderTest {
-  recorded: boolean;
-  divergent: boolean;
-  overseerMode: number;
-  verboseMode: boolean;
-  spoilerFreeMode: boolean;
-  enableToolUse: boolean;
-  enableWebSearch: boolean;
-  enableSubAgents: boolean;
-  allowSourceCodeReferences: boolean;
-  isGameOn: boolean;
-  developerMode: boolean;
-  hasMessageHistory: boolean;
-  hasWikiContext: boolean;
-  hasGameSnapshot: boolean;
-  /** 0 Disabled, 1 OnRequest, 2 Enabled — the numeric enum as the server serialises it. */
-  parallelMode: number;
+/** The member run ids, ascending. */
+export function groupMemberRunIds(group: BenchmarkRunGroupDto): number[] {
+  if (group.memberRunIds?.length) {
+    return group.memberRunIds;
+  }
+  return (group.members ?? []).map(member => member.runId).sort((a, b) => a - b);
 }
 
-/** Mirrors `BenchmarkGroupStatisticsResult`. */
-export interface MultiRunStatisticsResult {
-  suiteId?: number;
-  suiteName?: string;
-  runIds?: number[];
-  runCount: number;
-  itemCount: number;
-  unansweredItemCount?: number;
-  items?: MultiRunItemStatistics[];
-  index?: MultiRunIndexStatistics;
-  speed?: MultiRunSpeedStatistics;
-  cost?: MultiRunCostStatistics | null;
-  /** Always four entries when present; a dimension nothing scored carries empty `perRunMeans`. */
-  dimensions?: MultiRunDimensionStatistics[];
-  /** Null when no member recorded any token or tool usage. */
-  usage?: MultiRunUsageStatistics | null;
-  promptUnderTest?: MultiRunPromptUnderTest | null;
-  unstableQuestionIds?: number[];
-  pooledIndexReportable?: boolean;
-  varianceDecompositionCaveat?: string | null;
+/** Where a group came from, as the Origin facet lists it. */
+function groupOrigin(group: BenchmarkRunGroupDto): string {
+  return group.createdFromSeriesId != null ? 'Series' : 'Other';
 }
 
-/** One item's exploratory between-group difference. Mirrors `BenchmarkGroupItemComparison`. */
-export interface MultiRunItemComparison {
-  questionId: number;
-  orderIndex: number;
-  questionText?: string | null;
-  baselineRunCount?: number;
-  treatmentRunCount?: number;
-  baselineMean: number;
-  treatmentMean: number;
-  difference: number;
-  pValue?: number | null;
-  /** A Benjamini–Hochberg q-value, not a p-value. */
-  adjustedPValue?: number | null;
-  rejectedAtFdr?: boolean;
-  /** Always true on the server, and present precisely so no surface can render one unlabelled. */
-  exploratory?: boolean;
+/** The stored name, when someone typed it and it says more than the card already does. */
+export function groupCustomName(group: BenchmarkRunGroupDto): string | null {
+  if (group.nameIsGenerated !== false || !group.name?.trim()) {
+    return null;
+  }
+  return isGeneratedGroupName(group.name, group.suiteName, group.testedModelDisplayName) ? null : group.name.trim();
 }
 
-/** Mirrors `BenchmarkGroupComparison`. */
-export interface MultiRunComparison {
-  baselineRunIds?: number[];
-  treatmentRunIds?: number[];
-  pairedItemCount: number;
-  /** Items present on one side only, excluded from pairing. */
-  unpairedItemCount?: number;
-  /** Items on both sides but graded under different rubric revisions, excluded from pairing. */
-  revisionMismatchedItemCount?: number;
-  meanDifference: number;
-  differenceStandardDeviation?: number | null;
-  differenceConfidenceHalfWidth?: number | null;
-  differenceConfidenceLower?: number | null;
-  differenceConfidenceUpper?: number | null;
-  wilcoxon?: {
-    sampleSize?: number;
-    zeroDifferenceCount?: number;
-    statistic?: number;
-    pValue?: number | null;
-    method?: string;
-    tiesPresent?: boolean;
-  };
-  pairedT?: {
-    sampleSize?: number;
-    meanDifference?: number;
-    tStatistic?: number | null;
-    pValue?: number | null;
-  };
-  cohensDz?: number | null;
-  itemComparisons?: MultiRunItemComparison[];
-  falseDiscoveryRate?: number;
-  exploratoryNote?: string | null;
-  varianceDecompositionCaveat?: string | null;
+/** The text the search matches: `#id`, the model, the run ids, the note and a custom name. */
+function groupSearchText(group: BenchmarkRunGroupDto): string {
+  return [
+    `#${group.id}`,
+    groupModelName(group),
+    groupRunsLabel(groupMemberRunIds(group)),
+    group.notes ?? '',
+    groupCustomName(group) ?? ''
+  ].join('\n').toLowerCase();
+}
+
+function timeOf(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const ms = parseServerUtcDate(value).getTime();
+  return Number.isNaN(ms) ? null : ms;
 }
 
 /**
- * One line of a run's instrument fingerprint stack in the run picker: a short visible label, a
- * colour class, the eight-character hash prefix, and the tooltip carrying the corpus name and the
- * full hash.
+ * GnollBench → Multi-Run Analysis: the analysis groups of one suite as a card list, the suite's
+ * replicate clusters that no group holds yet as suggested groups, and the header that chooses the
+ * suite and opens the New group dialog.
  *
- * The label is what makes the stack readable in greyscale and to a colour-blind reader, so the
- * colour class only reinforces it. Declared here rather than imported from the benchmark component,
- * which imports this one; the labels and classes match its own deliberately, so the two surfaces
- * read identically.
- */
-export interface MultiRunFingerprintEntry {
-  label: 'PROMPT' | 'GUIDES' | 'KB' | 'WIKI' | 'SRC';
-  cssClass: 'fp-prompt' | 'fp-guides' | 'fp-kb' | 'fp-wiki' | 'fp-source';
-  short: string;
-  title: string;
-}
-
-/**
- * What multi-run cannot decompose, held here as a fallback so the sentence can never be missing.
- *
- * The server carries the authoritative text on the statistics result itself
- * (`BenchmarkGroupStatisticsResult.VarianceDecompositionCaveat`) for exactly this reason; this
- * copy exists only for the case where the result is present but that field is not — an analysis
- * persisted by an older build, say. Without the sentence an operator reads an unstable item as a
- * fact about the model, when it may be a fact about the grader.
- */
-export const VARIANCE_DECOMPOSITION_CAVEAT =
-  'Run-to-run variance mixes candidate stochasticity with grader stochasticity: each run produces a '
-  + 'new answer, which is then graded once. An unstable item may mean the model answers it '
-  + 'differently each time, or that the grader scores equivalent answers differently. Separating the '
-  + 'two requires re-grading identical answers — a second reading of every answer, or a re-assessment '
-  + 'pass over stored answers.';
-
-/** The standing label on per-item differences. Same reason as above: it may never be absent. */
-export const EXPLORATORY_ITEM_TEST_NOTE =
-  'Per-item differences are exploratory, under Benjamini–Hochberg false-discovery-rate control. '
-  + 'The adjusted column is a q-value, not a p-value. Eighteen simultaneous item tests without '
-  + 'correction would manufacture findings on data with no effect in it.';
-
-/**
- * Multi-Run Analysis: replicate sets and what may be said about them.
- *
- * Three surfaces in one panel — the group list, the group builder, and the group detail with its
- * statistics — because they are three steps of one operation and splitting them would mean an
- * operator switching views to find out why a set was refused.
- *
- * Two display rules here are load-bearing rather than cosmetic, and are the reason this component
- * exists at all instead of a table of numbers:
- *
- * 1. **The two uncertainty components are rendered separately, each labelled with the question it
- *    answers, before the combined interval.** The item-sampling component does **not** shrink with
- *    *R*, because every run answers the same items, and the UI says so in as many words. A reader
- *    who expects the whole interval to fall as √*R* concludes the code is broken; this is a named
- *    risk in the plan, and the label is the mitigation.
- * 2. **A tier verdict always carries its reasons.** A refusal renders which comparability keys
- *    differ and which runs carry each variant. "Not comparable" with no reason is unusable — the
- *    operator cannot tell a suite mismatch from a tool-guide edit, and those want opposite actions.
- *
- * The component writes nothing except through the group endpoints it is given: it creates groups
- * and starts analyses, and never touches a run, an answer or a rubric.
+ * The page owns its suite, remembered per browser; the Run Benchmark launcher's suite is only the
+ * fallback. A group's analysis opens in `app-group-analysis-dialog`, and manual group building is
+ * `app-group-builder-dialog`.
  */
 @Component({
   selector: 'app-benchmark-multi-run',
   standalone: true,
-  imports: [CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent],
+  imports: [FilterFacetComponent, InfoTipComponent, ModelIdentityComponent, GroupBuilderDialogComponent, GroupAnalysisDialogComponent],
   templateUrl: './multi-run.component.html',
-  styleUrls: ['./multi-run.component.scss']
+  styleUrls: ['./multi-run.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class MultiRunComponent implements OnInit, OnChanges {
-  private benchmarkService = inject(AdminBenchmarkService);
+export class MultiRunComponent implements OnInit, OnChanges, OnDestroy {
+  private readonly benchmarkService = inject(AdminBenchmarkService);
+  private readonly cdr = inject(ChangeDetectorRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
-  /** Protected rather than private: the filter-row template calls this directly after `setFilter`. */
-  protected cdr = inject(ChangeDetectorRef);
+  /** The suites the Suite select offers. */
+  @Input() suites: BenchmarkSuiteDto[] = [];
 
-  /**
-   * The suite whose groups and runs are shown. Null means "no suite selected" — the panel then
-   * shows nothing rather than every group on the server, because a group list spanning suites
-   * invites building a set across two of them, which is the one thing tiering must refuse.
-   */
-  @Input() suiteId: number | null = null;
+  /** The suite shown when this browser has none remembered: the Run Benchmark launcher's. */
+  @Input() defaultSuiteId: number | null = null;
 
-  /**
-   * A completed series the host should open its progress dialog for.
-   *
-   * The group table's Series badge is the permanent route to a finished series: the Run Benchmark
-   * banner that used to be the only one disappears when the series ends, and the series dialog is
-   * where both diagnostics captures come from.
-   */
+  /** A completed series the host opens its progress dialog for. */
   @Output() openSeries = new EventEmitter<number>();
 
-  @ViewChild('groupDetailDialog') groupDetailDialog?: ElementRef<HTMLDialogElement>;
+  /** A run whose report the host opens. */
+  @Output() openRun = new EventEmitter<number>();
 
-  // --- Group list ---
+  @ViewChild(GroupBuilderDialogComponent) builderDialog?: GroupBuilderDialogComponent;
+  @ViewChild(GroupAnalysisDialogComponent) analysisDialog?: GroupAnalysisDialogComponent;
+
+  readonly sorts = MULTI_RUN_GROUP_SORTS;
+  readonly tierName = runGroupTierName;
+  readonly tierClass = runGroupTierClass;
+  readonly analysisState = runGroupAnalysisState;
+  readonly analysisStateLabel = runGroupAnalysisStateLabel;
+  readonly runsLabel = groupRunsLabel;
+  readonly modelName = groupModelName;
+  readonly memberRunIds = groupMemberRunIds;
+  readonly customName = groupCustomName;
+  readonly suggestionKey = suggestionKey;
+  readonly staleTooltip = 'The membership changed, or a member was re-run, after this analysis was computed. Re-analyze to bring it up to date.';
+  readonly definitionChangedTooltip = 'The comparability key definition changed after this group was analyzed. Re-analyze to refresh its key hash.';
+
+  selectedSuiteId: number | null = null;
+
   groups: BenchmarkRunGroupDto[] = [];
   loadingGroups = false;
   groupsError: string | null = null;
 
-  /**
-   * Sort, filter and page state for the analysis-group table. Created desc by default, so the
-   * newest set an operator just built is the first row without them having to look for it. Tier
-   * sorts on the comparability enum's own numeric order rather than the label — see
-   * {@link tierOrder}, which puts Tier A first on the first click — and the analysis-state filter
-   * is derived per row by {@link analysisState}.
-   */
-  readonly groupTable = new TableState<BenchmarkRunGroupDto>('createdAtUtc', 'desc').registerAccessors(
+  suggestions: BenchmarkRunGroupSuggestionDto[] = [];
+  loadingSuggestions = false;
+  suggestionsError: string | null = null;
+  /** The suggestion whose Create group request is on its way. */
+  creatingKey: string | null = null;
+  /** A refused or failed Create group, by suggestion key. */
+  suggestionErrors: Readonly<Record<string, string>> = {};
+
+  /** The group whose inline delete confirmation is shown. */
+  confirmDeleteId: number | null = null;
+  deletingId: number | null = null;
+  deleteError: { groupId: number; message: string } | null = null;
+
+  /** What the last action did, read first in the status line until the list changes again. */
+  announcement: string | null = null;
+
+  private dismissedKeys: readonly string[] = [];
+  private initialized = false;
+  private groupsToken = 0;
+  private suggestionsToken = 0;
+  /** The card whose title takes focus once the reloaded list has rendered. */
+  private pendingFocusGroupId: number | null = null;
+  private suggestionMemo: {
+    suggestions: BenchmarkRunGroupSuggestionDto[];
+    dismissed: readonly string[];
+    rows: BenchmarkRunGroupSuggestionDto[];
+  } | null = null;
+
+  readonly table = new TableState<BenchmarkRunGroupDto>('created', 'desc').registerAccessors(
     {
-      name: g => g.name,
-      tier: g => this.tierOrder(g.tier),
-      runCount: g => g.runCount,
-      createdAtUtc: g => parseServerUtcDate(g.createdAtUtc),
-      analysisDate: g => g.latestAnalysisAtUtc ? parseServerUtcDate(g.latestAnalysisAtUtc) : null
+      created: g => timeOf(g.createdAtUtc),
+      runs: g => g.runCount,
+      index: g => g.headlineIndex,
+      tier: g => runGroupTierOrder(g.tier),
+      model: g => groupModelName(g).toLowerCase()
     },
     {
-      name: g => g.name,
-      tier: exactFilter(g => g.tier),
-      analysisState: exactFilter(g => this.analysisState(g))
+      search: customFilter((g, value) => groupSearchText(g).includes(value.trim().toLowerCase())),
+      tier: anyOfFilter(g => runGroupTierName(g.tier)),
+      analysis: anyOfFilter(g => runGroupAnalysisStateLabel(runGroupAnalysisState(g))),
+      origin: anyOfFilter(g => groupOrigin(g)),
+      model: anyOfFilter(g => groupModelName(g))
     }
   );
 
-  // --- Group detail ---
-  selectedGroup: BenchmarkRunGroupDto | null = null;
-  loadingGroup = false;
-  groupError: string | null = null;
-
-  /**
-   * The selected group's comparability, re-derived through the read-only preview endpoint over its
-   * own member run ids. `BenchmarkRunGroupDto` carries the tier but not the reasons behind it, and
-   * the reasons are what the detail view has to show — including which of speed and cost the tier
-   * degrades.
-   */
-  detailComparability: BenchmarkComparabilityResultDto | null = null;
-
-  // --- Analysis ---
-  analysis: BenchmarkGroupAnalysisDto | null = null;
-  loadingAnalysis = false;
-  analysing = false;
-  analysisError: string | null = null;
-  /** The baseline half of a paired comparison. Null computes the group on its own. */
-  compareWithGroupId: number | null = null;
-
-  // --- Group builder ---
-  builderName = '';
-  builderNotes = '';
-  availableRuns: BenchmarkRunSummaryDto[] = [];
-  loadingRuns = false;
-  runsError: string | null = null;
-  selectedRunIds: number[] = [];
-
-  /**
-   * Sort, filter and page state for the run picker. ID desc by default, so the most recently run
-   * candidate leads. The selection column's sort key reads component state rather than the row —
-   * `isRunSelected` — which puts every ticked run first regardless of what else changes about it;
-   * the same accessor doubles as the `Show selected only` filter definition, since both are the
-   * same underlying fact about a run.
-   */
-  readonly runPickerTable = new TableState<BenchmarkRunSummaryDto>('id', 'desc').registerAccessors(
-    {
-      selected: r => this.isRunSelected(r.id) ? 0 : 1,
-      id: r => r.id,
-      testedModel: r => r.testedModelDisplayNameUsed,
-      date: r => parseServerUtcDate(r.startedAtUtc),
-      qualityIndex: r => r.qualityIndex ?? r.finalScore,
-      index: r => r.qualityIndex ?? r.finalScore,
-      speedIndex: r => r.speedIndex
-    },
-    {
-      testedModel: r => r.testedModelDisplayNameUsed,
-      qualityIndex: exactFilter(r => (r.qualityIndex ?? r.finalScore) != null ? 'present' : 'absent'),
-      index: exactFilter(r => (r.qualityIndex ?? r.finalScore) != null ? 'present' : 'absent'),
-      speedIndex: exactFilter(r => r.speedIndex != null ? 'present' : 'absent'),
-      selected: exactFilter(r => this.isRunSelected(r.id) ? 'yes' : 'no')
+  /** The card list over `table`: the search, Sort by, the facets, the chips and the batch. */
+  readonly list = new CardListState<BenchmarkRunGroupDto>(this.table, {
+    idPrefix: 'mr-groups',
+    batch: 10,
+    sorts: MULTI_RUN_GROUP_SORTS,
+    defaultSort: 'newest',
+    storageKey: MULTI_RUN_GROUPS_VIEW_STORAGE_KEY,
+    facets: [
+      { column: 'tier', label: 'Tier', values: g => runGroupTierName(g.tier), order: TIER_FACET_ORDER },
+      { column: 'analysis', label: 'Analysis', values: g => runGroupAnalysisStateLabel(runGroupAnalysisState(g)), order: ANALYSIS_FACET_ORDER },
+      { column: 'origin', label: 'Origin', values: g => groupOrigin(g), order: ORIGIN_FACET_ORDER },
+      { column: 'model', label: 'Model', values: g => groupModelName(g) }
+    ],
+    onChange: () => {
+      this.announcement = null;
+      this.cdr.markForCheck();
     }
-  );
-
-  preview: BenchmarkRunGroupTierPreviewDto | null = null;
-  previewing = false;
-  previewError: string | null = null;
-  /** Only ever offered when the preview says Tier C; a Tier C group is refused without it. */
-  crossCondition = false;
-  creating = false;
-  createError: string | null = null;
-
-  /**
-   * Guards against an out-of-order preview response. Checkboxes can be clicked faster than the
-   * round trip returns, and a stale tier verdict rendered over a newer selection is worse than no
-   * verdict at all — it names keys the operator is no longer looking at.
-   */
-  private previewToken = 0;
-
-  readonly varianceCaveatFallback = VARIANCE_DECOMPOSITION_CAVEAT;
-  readonly exploratoryNoteFallback = EXPLORATORY_ITEM_TEST_NOTE;
+  });
 
   ngOnInit(): void {
-    // Every icon-only control in this panel carries an interestfor tooltip, and three of the
-    // primitives behind those are not yet baseline. Feature-detected inside; a supporting browser
-    // downloads none of them.
     ensureOverlayPolyfills();
-    if (this.suiteId != null) {
-      this.reload();
-    }
+    this.dismissedKeys = this.readDismissed();
+    this.selectedSuiteId = this.resolveSuiteId();
+    this.initialized = true;
+    this.load();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['suiteId']) {
-      this.reset();
-      if (this.suiteId != null) {
-        this.reload();
-      }
+    if (!this.initialized || !(changes['suites'] || changes['defaultSuiteId'])) {
+      return;
+    }
+    if (this.isKnownSuite(this.selectedSuiteId)) {
+      return;
+    }
+    const resolved = this.resolveSuiteId();
+    if (resolved !== this.selectedSuiteId) {
+      this.selectedSuiteId = resolved;
+      this.resetPage();
+      this.load();
     }
   }
 
-  private reset(): void {
-    this.groups = [];
-    this.groupsError = null;
-    this.selectedGroup = null;
-    this.groupError = null;
-    this.detailComparability = null;
-    this.analysis = null;
-    this.analysisError = null;
-    this.compareWithGroupId = null;
-    this.availableRuns = [];
-    this.runsError = null;
-    this.selectedRunIds = [];
-    this.preview = null;
-    this.previewError = null;
-    this.crossCondition = false;
-    this.createError = null;
-    this.builderName = '';
-    this.builderNotes = '';
+  ngOnDestroy(): void {
+    this.list.dispose();
   }
 
-  reload(): void {
+  // --- The suite --------------------------------------------------------------------------------
+
+  get selectedSuite(): BenchmarkSuiteDto | null {
+    return this.suites.find(suite => suite.id === this.selectedSuiteId) ?? null;
+  }
+
+  get suiteName(): string | null {
+    return this.selectedSuite?.name ?? this.groups[0]?.suiteName ?? null;
+  }
+
+  onSuiteChange(event: Event): void {
+    const id = Number((event.target as HTMLSelectElement).value);
+    if (Number.isFinite(id)) {
+      this.selectSuite(id);
+    }
+  }
+
+  /** Shows another suite's groups and remembers the choice; the launcher's suite is left as it is. */
+  selectSuite(id: number): void {
+    if (id === this.selectedSuiteId) return;
+    this.selectedSuiteId = id;
+    this.writeStoredSuite(id);
+    this.resetPage();
+    this.load();
+  }
+
+  /** The remembered suite, else the launcher's, else the first; a suite not in the list is skipped. */
+  private resolveSuiteId(): number | null {
+    const stored = this.readStoredSuite();
+    if (this.isKnownSuite(stored)) return stored;
+    if (this.isKnownSuite(this.defaultSuiteId)) return this.defaultSuiteId;
+    return this.suites[0]?.id ?? null;
+  }
+
+  /** While the suites are not loaded every id counts as known. */
+  private isKnownSuite(id: number | null): id is number {
+    return id != null && (this.suites.length === 0 || this.suites.some(suite => suite.id === id));
+  }
+
+  private readStoredSuite(): number | null {
+    try {
+      const raw = localStorage.getItem(MULTI_RUN_VIEW_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) as { version?: unknown; suiteId?: unknown } | null : null;
+      return parsed && parsed.version === STORAGE_VERSION && typeof parsed.suiteId === 'number' ? parsed.suiteId : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeStoredSuite(suiteId: number): void {
+    try {
+      localStorage.setItem(MULTI_RUN_VIEW_STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, suiteId }));
+    } catch {
+      // Storage full or unavailable: the suite is simply not remembered.
+    }
+  }
+
+  // --- Loading ----------------------------------------------------------------------------------
+
+  get loading(): boolean {
+    return this.loadingGroups || this.loadingSuggestions;
+  }
+
+  /** Reloads the groups and the suggestions; refused while a load runs. */
+  refresh(): void {
+    if (this.loading) return;
+    this.announcement = null;
+    this.load();
+  }
+
+  private load(): void {
     this.loadGroups();
-    this.loadRuns();
+    this.loadSuggestions();
+  }
+
+  private resetPage(): void {
+    this.groups = [];
+    this.groupsError = null;
+    this.suggestions = [];
+    this.suggestionsError = null;
+    this.suggestionErrors = {};
+    this.confirmDeleteId = null;
+    this.deleteError = null;
+    this.announcement = null;
+    this.pendingFocusGroupId = null;
+    this.list.reset();
   }
 
   loadGroups(): void {
+    const suiteId = this.selectedSuiteId;
+    const token = ++this.groupsToken;
+    if (suiteId == null) {
+      this.groups = [];
+      this.loadingGroups = false;
+      this.cdr.markForCheck();
+      return;
+    }
     this.loadingGroups = true;
     this.groupsError = null;
+    this.cdr.markForCheck();
     this.benchmarkService.getRunGroups().subscribe({
       next: (groups) => {
-        // Filtered client-side: the endpoint returns every group, and a group is bound to one
-        // suite by construction, so there is nothing to ask the server for.
-        this.groups = (groups ?? []).filter(g => this.suiteId == null || g.benchmarkSuiteId === this.suiteId);
+        if (token !== this.groupsToken) return;
+        // A group is bound to one suite by construction, so the list is narrowed here.
+        this.groups = (groups ?? []).filter(g => g.benchmarkSuiteId === suiteId);
         this.loadingGroups = false;
-        this.cdr.detectChanges();
+        this.focusPendingGroup();
       },
       error: (err) => {
+        if (token !== this.groupsToken) return;
         this.loadingGroups = false;
-        this.groupsError = err?.error?.message || err?.error || 'Failed to load the run groups.';
-        this.cdr.detectChanges();
+        this.groupsError = httpErrorText(err, 'Failed to load the analysis groups.');
+        this.cdr.markForCheck();
       }
     });
   }
 
-  loadRuns(): void {
-    if (this.suiteId == null) return;
-    this.loadingRuns = true;
-    this.runsError = null;
-    this.benchmarkService.getRuns(this.suiteId, RUN_HISTORY_LIMIT).subscribe({
-      next: (runs) => {
-        this.availableRuns = runs ?? [];
-        this.loadingRuns = false;
-        this.cdr.detectChanges();
+  private loadSuggestions(): void {
+    const suiteId = this.selectedSuiteId;
+    const token = ++this.suggestionsToken;
+    if (suiteId == null) {
+      this.suggestions = [];
+      this.loadingSuggestions = false;
+      this.cdr.markForCheck();
+      return;
+    }
+    this.loadingSuggestions = true;
+    this.suggestionsError = null;
+    this.cdr.markForCheck();
+    this.benchmarkService.getRunGroupSuggestions(suiteId).subscribe({
+      next: (suggestions) => {
+        if (token !== this.suggestionsToken) return;
+        this.suggestions = suggestions ?? [];
+        this.loadingSuggestions = false;
+        this.cdr.markForCheck();
       },
       error: (err) => {
-        this.loadingRuns = false;
-        this.runsError = err?.error?.message || err?.error || 'Failed to load the suite runs.';
-        this.cdr.detectChanges();
+        if (token !== this.suggestionsToken) return;
+        this.loadingSuggestions = false;
+        this.suggestionsError = httpErrorText(err, 'Failed to load the suggested groups.');
+        this.cdr.markForCheck();
       }
     });
   }
 
-  /**
-   * Re-renders after a sort, page or filter change on either table. Neither `SortHeaderComponent`
-   * nor `TablePagerComponent` calls change detection itself, and this component drives its own
-   * throughout, so every `(changed)` output on both tables lands here.
-   */
-  onTableChanged(): void {
+  // --- Suggested groups -------------------------------------------------------------------------
+
+  /** The suggestions not dismissed in this browser, kept as one array until either changes. */
+  get visibleSuggestions(): BenchmarkRunGroupSuggestionDto[] {
+    const memo = this.suggestionMemo;
+    if (memo && memo.suggestions === this.suggestions && memo.dismissed === this.dismissedKeys) {
+      return memo.rows;
+    }
+    const dismissed = new Set(this.dismissedKeys);
+    const rows = this.suggestions.filter(s => !dismissed.has(suggestionKey(s)));
+    this.suggestionMemo = { suggestions: this.suggestions, dismissed: this.dismissedKeys, rows };
+    return rows;
+  }
+
+  /** The id prefix of a suggestion's elements; run ids are unique across suggestions. */
+  suggestionDomId(suggestion: BenchmarkRunGroupSuggestionDto): string {
+    return `mr-sugg-${suggestion.runIds.join('-')}`;
+  }
+
+  suggestionModelName(suggestion: BenchmarkRunGroupSuggestionDto): string {
+    return suggestion.testedModel?.displayName || suggestion.testedModel?.id || 'Model not recorded';
+  }
+
+  /** `#41, #42, #43`, for the actions group's name. */
+  suggestionRunList(suggestion: BenchmarkRunGroupSuggestionDto): string {
+    return suggestion.runIds.map(id => `#${id}`).join(', ');
+  }
+
+  /** The one series the runs came from, or null. */
+  suggestionSeriesId(suggestion: BenchmarkRunGroupSuggestionDto): number | null {
+    return suggestion.seriesIds?.length === 1 ? suggestion.seriesIds[0] : null;
+  }
+
+  /** Creates the group without a name; the server names it and analyzes it at once. */
+  createFromSuggestion(suggestion: BenchmarkRunGroupSuggestionDto): void {
+    const key = suggestionKey(suggestion);
+    if (this.creatingKey != null) return;
+    this.creatingKey = key;
+    this.suggestionErrors = this.withoutKey(this.suggestionErrors, key);
+    this.announcement = null;
+    this.cdr.markForCheck();
+    this.benchmarkService.createRunGroup({ runIds: [...suggestion.runIds] }).subscribe({
+      next: (result) => {
+        this.creatingKey = null;
+        const group = result?.group;
+        if (!result?.accepted || !group) {
+          this.suggestionErrors = { ...this.suggestionErrors, [key]: result?.error || 'The group was refused.' };
+          this.cdr.markForCheck();
+          return;
+        }
+        this.suggestions = this.suggestions.filter(s => suggestionKey(s) !== key);
+        this.onGroupCreated(group);
+      },
+      error: (err) => {
+        this.creatingKey = null;
+        // A refusal (a duplicate, or keys that differ) is a 400 whose body is the tier preview.
+        const refusal = (err as { error?: { error?: unknown } } | null)?.error?.error;
+        const message = typeof refusal === 'string' && refusal.trim() !== ''
+          ? refusal
+          : httpErrorText(err, 'Failed to create the group.');
+        this.suggestionErrors = { ...this.suggestionErrors, [key]: message };
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  /** Hides a suggestion in this browser, then focuses the next suggestion's Create group. */
+  dismissSuggestion(suggestion: BenchmarkRunGroupSuggestionDto): void {
+    const key = suggestionKey(suggestion);
+    const before = this.visibleSuggestions;
+    const index = before.findIndex(s => suggestionKey(s) === key);
+    this.dismissedKeys = [...this.dismissedKeys.filter(k => k !== key), key].slice(-MULTI_RUN_DISMISSED_LIMIT);
+    this.writeDismissed(this.dismissedKeys);
+    this.cdr.detectChanges();
+    const after = this.visibleSuggestions;
+    const next = index >= 0 ? after[index] ?? after[index - 1] : undefined;
+    const target = next ? this.element(`#${this.suggestionDomId(next)}-create`) : null;
+    (target ?? this.element('#mr-groups-title'))?.focus();
+  }
+
+  private readDismissed(): readonly string[] {
+    try {
+      const raw = localStorage.getItem(MULTI_RUN_DISMISSED_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) as { version?: unknown; keys?: unknown } | null : null;
+      if (!parsed || parsed.version !== STORAGE_VERSION || !Array.isArray(parsed.keys)) return [];
+      return parsed.keys.filter((k): k is string => typeof k === 'string').slice(-MULTI_RUN_DISMISSED_LIMIT);
+    } catch {
+      return [];
+    }
+  }
+
+  private writeDismissed(keys: readonly string[]): void {
+    try {
+      localStorage.setItem(MULTI_RUN_DISMISSED_STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, keys }));
+    } catch {
+      // Storage full or unavailable: the dismissal lasts until the page reloads.
+    }
+  }
+
+  private withoutKey(errors: Readonly<Record<string, string>>, key: string): Readonly<Record<string, string>> {
+    if (!(key in errors)) return errors;
+    const copy = { ...errors };
+    delete copy[key];
+    return copy;
+  }
+
+  // --- The group list ---------------------------------------------------------------------------
+
+  get showFilterBar(): boolean {
+    return this.groups.length > MULTI_RUN_FILTER_BAR_MIN_EXCLUSIVE || this.table.hasActiveFilters;
+  }
+
+  get cards(): BenchmarkRunGroupDto[] {
+    return this.list.view(this.groups);
+  }
+
+  get facets(): CardListFacet[] {
+    return this.list.facets(this.groups);
+  }
+
+  get chips(): CardListChip[] {
+    return this.list.chips(this.groups);
+  }
+
+  get noMatches(): boolean {
+    return this.table.noMatches(this.groups);
+  }
+
+  get remainingCount(): number {
+    return this.list.remainingCount(this.groups);
+  }
+
+  get nextBatchCount(): number {
+    return this.list.nextBatchCount(this.groups);
+  }
+
+  get matchingCount(): number {
+    return this.list.matching(this.groups).length;
+  }
+
+  /** The list's one polite live region: the last action, then the count. */
+  get listStatus(): string {
+    const count = this.list.statusText(this.groups, { one: 'group', many: 'groups' });
+    return [this.announcement, count].filter(part => !!part).join(' ');
+  }
+
+  onSearchInput(event: Event): void {
+    this.list.setSearchInput((event.target as HTMLInputElement).value);
+  }
+
+  /** Escape with text clears the search at once; in an empty field it passes through. */
+  onSearchKeydown(event: KeyboardEvent): void {
+    if (this.list.clearSearchOnEscape(event)) {
+      this.announcement = null;
+      this.cdr.detectChanges();
+    }
+  }
+
+  onSortChange(event: Event): void {
+    if (this.list.setSort((event.target as HTMLSelectElement).value)) {
+      this.announcement = null;
+      this.cdr.detectChanges();
+    }
+  }
+
+  onFacetChange(column: string, values: string[]): void {
+    this.list.setFacet(column, values);
+    this.announcement = null;
     this.cdr.detectChanges();
   }
 
-  // ---------------------------------------------------------------------------------------
-  // Group list
-  // ---------------------------------------------------------------------------------------
-
-  /**
-   * Loads a group's detail without showing it. Kept separate from <see cref="openGroup"/> because
-   * the builder's success path selects the group it just created, and opening a modal there would
-   * steal focus from an operator who is still working in the builder.
-   */
-  selectGroup(group: BenchmarkRunGroupDto): void {
-    this.selectedGroup = group;
-    this.groupError = null;
-    this.analysis = null;
-    this.analysisError = null;
-    this.detailComparability = null;
-    this.compareWithGroupId = null;
-    this.loadGroup(group.id);
-    this.loadAnalysis(group.id);
+  /** Removes a chip's filter, then focuses the chip now in its place, else the previous one, else the search. */
+  removeChip(chip: CardListChip): void {
+    const index = this.list.removeChip(chip, this.groups);
+    this.announcement = null;
     this.cdr.detectChanges();
+    const chips = Array.from(this.host.nativeElement.querySelectorAll<HTMLButtonElement>('.mr-filter-chips .gh-filter-chip'));
+    const target = index >= 0 ? chips[index] ?? chips[index - 1] : undefined;
+    (target ?? this.element('#mr-groups-search'))?.focus();
   }
 
-  /** Loads a group and shows its analysis in the modal — what the row's eye control does. */
+  /** Clears the search and every filter, then focuses the search when it is still shown. */
+  clearFilters(): void {
+    this.list.clearFilters();
+    this.announcement = null;
+    this.cdr.detectChanges();
+    (this.element('#mr-groups-search') ?? this.element('#mr-groups-title'))?.focus();
+  }
+
+  showMore(): void {
+    this.focusCard(this.list.showMore(this.groups));
+  }
+
+  showAll(): void {
+    this.focusCard(this.list.showAll(this.groups));
+  }
+
+  /** Renders, then focuses the title of the card at `index` in the view, if there is one. */
+  private focusCard(index: number): void {
+    this.cdr.detectChanges();
+    const group = this.cards[index];
+    if (group) {
+      this.element(`#mr-group-${group.id}-title`)?.focus();
+    }
+  }
+
+  /** After a reload that follows a create: the new card's title, shown in full if the batch hid it. */
+  private focusPendingGroup(): void {
+    const id = this.pendingFocusGroupId;
+    this.pendingFocusGroupId = null;
+    if (id == null) {
+      this.cdr.markForCheck();
+      return;
+    }
+    this.cdr.detectChanges();
+    if (!this.cards.some(g => g.id === id) && this.list.matching(this.groups).some(g => g.id === id)) {
+      this.list.showAll(this.groups);
+      this.cdr.detectChanges();
+    }
+    (this.element(`#mr-group-${id}-title`) ?? this.element('#mr-groups-title'))?.focus();
+  }
+
+  private element(selector: string): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>(selector);
+  }
+
+  // --- Dialogs ----------------------------------------------------------------------------------
+
+  openBuilder(): void {
+    if (this.selectedSuiteId == null) return;
+    this.builderDialog?.open();
+  }
+
+  /** A group created here or in the builder: reload, focus its card and say what happened. */
+  onGroupCreated(group: BenchmarkRunGroupDto): void {
+    this.announcement = group.latestAnalysisId != null
+      ? `Created group #${group.id} and analyzed it.`
+      : `Created group #${group.id}.`;
+    this.pendingFocusGroupId = group.id;
+    this.load();
+  }
+
+  /** The builder named an existing group with the same runs: its analysis opens instead. */
+  onBuilderOpenGroup(groupId: number): void {
+    this.builderDialog?.close();
+    this.openGroupById(groupId);
+  }
+
   openGroup(group: BenchmarkRunGroupDto): void {
-    this.selectGroup(group);
-    // detectChanges first: showModal() on a dialog whose @if content does not exist yet opens an
-    // empty box, and the content is gated on selectedGroup.
-    this.cdr.detectChanges();
-    this.groupDetailDialog?.nativeElement.showModal();
+    this.analysisDialog?.open(group);
   }
 
   /**
-   * Opens a group's analysis by id, for a caller that has an id and not a row — the series
-   * progress dialog's View Report control. Searches the full group list rather than the paged
-   * table view, so a group sitting on a page the operator is not looking at still opens; falls
-   * back to fetching the group when the list does not hold it at all, which is the ordinary case
-   * when the panel is filtered to another suite.
+   * Opens a group's analysis by id, for a caller that has an id and not a card — the series
+   * progress dialog's View Report. Falls back to fetching the group when the loaded list does not
+   * hold it, which is the ordinary case right after the tab opens or for another suite's group.
    */
   openGroupById(groupId: number): void {
     const listed = this.groups.find(g => g.id === groupId);
@@ -629,733 +679,119 @@ export class MultiRunComponent implements OnInit, OnChanges {
     this.benchmarkService.getRunGroup(groupId).subscribe({
       next: (group) => { if (group) this.openGroup(group); },
       error: (err) => {
-        this.groupsError = err?.error?.message || err?.error || 'Failed to load the run groups.';
-        this.cdr.detectChanges();
+        this.groupsError = httpErrorText(err, 'Failed to load the group.');
+        this.cdr.markForCheck();
       }
     });
   }
 
   closeGroup(): void {
-    const dialog = this.groupDetailDialog?.nativeElement;
-    if (dialog?.open) {
-      dialog.close();
-    }
-
-    this.selectedGroup = null;
-    this.analysis = null;
-    this.detailComparability = null;
-    this.cdr.detectChanges();
+    this.analysisDialog?.close();
   }
 
-  /** Hands a group's originating series to the host, which owns the series progress dialog. */
+  /** An analysis was computed in the dialog: the cards' states and figures move with it. */
+  onAnalysisChanged(): void {
+    this.loadGroups();
+  }
+
   viewSeries(group: BenchmarkRunGroupDto): void {
     if (group.createdFromSeriesId == null) return;
     this.openSeries.emit(group.createdFromSeriesId);
   }
 
-  private loadGroup(id: number): void {
-    this.loadingGroup = true;
-    this.benchmarkService.getRunGroup(id).subscribe({
-      next: (group) => {
-        this.selectedGroup = group;
-        this.loadingGroup = false;
-        this.loadDetailComparability(group);
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.loadingGroup = false;
-        this.groupError = err?.error?.message || err?.error || 'Failed to load the group.';
-        this.cdr.detectChanges();
-      }
-    });
+  openRunReport(runId: number): void {
+    this.openRun.emit(runId);
   }
 
-  /** Read-only: the preview endpoint creates nothing, which is what makes it safe to call here. */
-  private loadDetailComparability(group: BenchmarkRunGroupDto): void {
-    const runIds = (group.members ?? []).map(m => m.runId);
-    if (runIds.length === 0) return;
+  // --- A card -----------------------------------------------------------------------------------
 
-    this.benchmarkService.previewRunGroupTier({
-      name: group.name,
-      runIds,
-      crossCondition: group.crossCondition
-    }).subscribe({
-      next: (result) => {
-        this.detailComparability = result?.comparability ?? null;
-        this.cdr.detectChanges();
-      },
-      // A failure here costs the reasons behind the tier, not the tier itself, so it is silent
-      // rather than an error banner over a detail view that is otherwise perfectly usable.
-      error: () => { }
-    });
+  /** The report is built from the stored analysis, so there is nothing to download before one exists. */
+  canDownloadReport(group: BenchmarkRunGroupDto): boolean {
+    return group.latestAnalysisId != null;
   }
 
-  private loadAnalysis(id: number): void {
-    this.loadingAnalysis = true;
-    this.benchmarkService.getRunGroupAnalysis(id).subscribe({
-      next: (analysis) => {
-        this.analysis = analysis;
-        this.compareWithGroupId = analysis?.comparedWithGroupId ?? null;
-        this.loadingAnalysis = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.loadingAnalysis = false;
-        this.analysisError = err?.error?.message || err?.error || 'Failed to load the stored analysis.';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  analyse(): void {
-    const group = this.selectedGroup;
-    if (!group || this.analysing) return;
-
-    this.analysing = true;
-    this.analysisError = null;
-    this.benchmarkService.analyseRunGroup(group.id, {
-      compareWithGroupId: this.compareWithGroupId
-    }).subscribe({
-      next: (analysis) => {
-        this.analysis = analysis;
-        this.analysing = false;
-        // The group row's latestAnalysisId and stale badge move with the analysis, so the list
-        // behind the detail view has to be re-read rather than patched from here.
-        this.loadGroups();
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.analysing = false;
-        this.analysisError = err?.error?.message || err?.error || 'The group analysis failed.';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  deleteGroup(group: BenchmarkRunGroupDto): void {
-    this.benchmarkService.deleteRunGroup(group.id).subscribe({
-      next: () => {
-        if (this.selectedGroup?.id === group.id) this.closeGroup();
-        this.loadGroups();
-      },
-      error: (err) => {
-        this.groupsError = err?.error?.message || err?.error || 'Failed to delete the group.';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  // ---------------------------------------------------------------------------------------
-  // Report download
-  //
-  // window.open against the URL the service builds, exactly as the single-run downloadReport
-  // does. Not an XHR and not an <a download>: the endpoint answers with a Content-Disposition
-  // filename the server chose, and fetching it into a blob would throw that name away.
-  // ---------------------------------------------------------------------------------------
-
-  /**
-   * The report is built from the **persisted** analysis, so there is nothing to download until one
-   * exists. The control stays present and focusable while unavailable — a keyboard user has to be
-   * able to land on it and read why — which is why this gates the handler rather than setting
-   * `disabled`.
-   */
-  canDownloadReport(group: BenchmarkRunGroupDto | null | undefined): boolean {
-    return !!group && group.latestAnalysisId != null;
-  }
-
-  downloadReportTooltip(group: BenchmarkRunGroupDto | null | undefined): string {
-    if (this.canDownloadReport(group)) {
-      return group?.analysisStale
-        ? 'Download the Markdown report. The analysis is stale: the membership changed after it was computed.'
-        : 'Download the Markdown report';
+  downloadTooltip(group: BenchmarkRunGroupDto): string {
+    if (!this.canDownloadReport(group)) {
+      return 'Not analyzed yet: open the analysis and analyze the group first';
     }
-    return 'No analysis yet — run the analysis before downloading a report';
+    return group.analysisStale ? 'Download Markdown report (the analysis is stale)' : 'Download Markdown report';
   }
 
-  downloadGroupReport(group: BenchmarkRunGroupDto | null | undefined): void {
-    if (!group || !this.canDownloadReport(group)) return;
+  downloadGroupReport(group: BenchmarkRunGroupDto): void {
+    if (!this.canDownloadReport(group)) return;
     window.open(this.benchmarkService.getGroupReportUrl(group.id), '_blank');
   }
 
-  // ---------------------------------------------------------------------------------------
-  // Group builder
-  // ---------------------------------------------------------------------------------------
-
-  isRunSelected(runId: number): boolean {
-    return this.selectedRunIds.includes(runId);
-  }
-
-  toggleRun(runId: number): void {
-    this.selectedRunIds = this.isRunSelected(runId)
-      ? this.selectedRunIds.filter(id => id !== runId)
-      : [...this.selectedRunIds, runId];
-
-    // The tier can change on every click, and an operator selecting a fourth run wants to know
-    // before pressing Create whether the fourth one broke the set.
-    this.previewTier();
+  /** Shows the inline confirmation and focuses Keep, so Enter cannot delete at once. */
+  requestDelete(group: BenchmarkRunGroupDto): void {
+    this.confirmDeleteId = group.id;
+    this.deleteError = null;
     this.cdr.detectChanges();
+    this.element(`#mr-group-${group.id}-keep`)?.focus();
   }
 
-  clearSelection(): void {
-    this.selectedRunIds = [];
-    this.preview = null;
-    this.previewError = null;
-    this.crossCondition = false;
+  keepGroup(group: BenchmarkRunGroupDto): void {
+    this.confirmDeleteId = null;
+    this.deleteError = null;
     this.cdr.detectChanges();
+    this.element(`#mr-group-${group.id}-delete`)?.focus();
   }
 
-  get selectedRunCount(): number {
-    return this.selectedRunIds.length;
-  }
-
-  /**
-   * Selected ids absent from the run picker's current page. Selection is by id, so it already
-   * survives paging and filtering underneath — but an operator who filtered the list down to one
-   * ticked row has no way to see the others are still selected without this count.
-   */
-  get selectedOffPageCount(): number {
-    const onPage = new Set(this.runPickerTable.view(this.availableRuns).map(r => r.id));
-    return this.selectedRunIds.filter(id => !onPage.has(id)).length;
-  }
-
-  /** Empty when nothing is selected — the line above the picker is never rendered in that case. */
-  get selectionSummary(): string {
-    const total = this.selectedRunCount;
-    if (total === 0) return '';
-    const offPage = this.selectedOffPageCount;
-    return offPage > 0
-      ? `${total} selected — ${offPage} not on this page`
-      : `${total} selected`;
-  }
-
-  get showSelectedOnly(): boolean {
-    return this.runPickerTable.filters['selected'] === 'yes';
-  }
-
-  /**
-   * Filters the picker down to the ticked runs and back. This is the one column filter driven by
-   * a toggle button rather than a text input or a select, because its two states are "selected"
-   * and "everything" rather than an open set of values — clearing it clears only this column, not
-   * the operator's text or index filters alongside it.
-   */
-  toggleShowSelectedOnly(): void {
-    this.runPickerTable.setFilter('selected', this.showSelectedOnly ? '' : 'yes');
-    this.cdr.detectChanges();
-  }
-
-  previewTier(): void {
-    if (this.selectedRunIds.length < 2) {
-      this.preview = null;
-      this.previewError = null;
-      this.crossCondition = false;
-      return;
-    }
-
-    const token = ++this.previewToken;
-    this.previewing = true;
-    this.previewError = null;
-    this.benchmarkService.previewRunGroupTier({
-      name: this.builderName || 'Preview',
-      runIds: [...this.selectedRunIds],
-      crossCondition: this.crossCondition
-    }).subscribe({
-      next: (result) => {
-        if (token !== this.previewToken) return;
-        this.preview = result;
-        this.previewing = false;
-        // The cross-condition acknowledgement is offered only where it means something. Leaving
-        // it checked after the set stops being Tier C would send a flag the server would then
-        // have to ignore, and a checked box the operator cannot see is a lie about the request.
-        if (!this.previewIsCrossCondition) this.crossCondition = false;
-        this.cdr.detectChanges();
+  /** Deletes the group, keeping its runs; focus goes to the next card, else the previous, else the heading. */
+  confirmDelete(group: BenchmarkRunGroupDto): void {
+    if (this.deletingId != null) return;
+    this.deletingId = group.id;
+    this.deleteError = null;
+    this.cdr.markForCheck();
+    this.benchmarkService.deleteRunGroup(group.id).subscribe({
+      next: () => {
+        const index = this.cards.findIndex(g => g.id === group.id);
+        this.deletingId = null;
+        this.confirmDeleteId = null;
+        this.groups = this.groups.filter(g => g.id !== group.id);
+        this.announcement = `Deleted group #${group.id}. Its runs are kept.`;
+        this.focusAfterDelete(index);
+        this.loadSuggestions();
       },
       error: (err) => {
-        if (token !== this.previewToken) return;
-        this.previewing = false;
-        this.preview = null;
-        this.previewError = err?.error?.message || err?.error || 'Failed to compute the comparability tier.';
-        this.cdr.detectChanges();
+        this.deletingId = null;
+        this.deleteError = { groupId: group.id, message: httpErrorText(err, 'Failed to delete the group.') };
+        this.cdr.markForCheck();
       }
     });
   }
 
-  onCrossConditionChange(): void {
-    this.previewTier();
+  private focusAfterDelete(index: number): void {
+    this.cdr.detectChanges();
+    const cards = this.cards;
+    const next = index >= 0 ? cards[index] ?? cards[index - 1] : undefined;
+    const target = next ? this.element(`#mr-group-${next.id}-title`) : null;
+    (target ?? this.element('#mr-groups-title'))?.focus();
   }
 
-  get previewComparability(): BenchmarkComparabilityResultDto | null {
-    return this.preview?.comparability ?? null;
+  // --- Formatting -------------------------------------------------------------------------------
+
+  /** `2026-09-06 10:00 UTC`, or an em dash. */
+  formatUtc(value: string | null | undefined): string {
+    const iso = this.isoDate(value);
+    return iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : '—';
   }
 
-  get previewIsCrossCondition(): boolean {
-    return this.previewComparability?.tier === 'CrossCondition';
+  isoDate(value: string | null | undefined): string | null {
+    if (!value) return null;
+    const date = parseServerUtcDate(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }
 
-  get previewDifferences() {
-    return this.previewComparability?.differences ?? [];
+  formatIndex(value: number | null | undefined): string {
+    return value == null || !Number.isFinite(value) ? '—' : value.toFixed(1);
   }
 
-  get canCreateGroup(): boolean {
-    if (this.creating) return false;
-    if (this.selectedRunIds.length < 2) return false;
-    if (!this.builderName.trim()) return false;
-    if (!this.preview) return false;
-    return this.preview.accepted === true;
+  formatHalfWidth(value: number | null | undefined): string | null {
+    return value == null || !Number.isFinite(value) ? null : `± ${value.toFixed(1)}`;
   }
 
-  createGroup(): void {
-    if (!this.canCreateGroup) return;
-
-    this.creating = true;
-    this.createError = null;
-    this.benchmarkService.createRunGroup({
-      name: this.builderName.trim(),
-      runIds: [...this.selectedRunIds],
-      notes: this.builderNotes.trim() || null,
-      crossCondition: this.crossCondition
-    }).subscribe({
-      next: (result) => {
-        this.creating = false;
-        if (!result.accepted) {
-          // A refusal is data, not an exception: it arrives with the differing keys, and those
-          // are the whole value of the answer.
-          this.preview = result;
-          this.createError = result.error ?? 'The group was refused.';
-          this.cdr.detectChanges();
-          return;
-        }
-        this.clearSelection();
-        this.builderName = '';
-        this.builderNotes = '';
-        this.loadGroups();
-        if (result.group) this.selectGroup(result.group);
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.creating = false;
-        this.createError = err?.error?.message || err?.error || 'Failed to create the group.';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  // ---------------------------------------------------------------------------------------
-  // Analysis readers
-  // ---------------------------------------------------------------------------------------
-
-  get result(): MultiRunStatisticsResult | null {
-    return (this.analysis?.result as MultiRunStatisticsResult) ?? null;
-  }
-
-  get comparison(): MultiRunComparison | null {
-    return (this.analysis?.comparison as MultiRunComparison) ?? null;
-  }
-
-  get indexStats(): MultiRunIndexStatistics | null {
-    return this.result?.index ?? null;
-  }
-
-  /**
-   * The note on analyzed members that withhold their own index because a question failed at the
-   * provider; null when none does.
-   */
-  get withheldIndexNote(): string | null {
-    const analyzed = new Set(this.analysis?.memberRunIds ?? []);
-    const withheld = (this.selectedGroup?.members ?? [])
-      .filter(member => member.indexWithheld && analyzed.has(member.runId))
-      .map(member => member.runId)
-      .sort((a, b) => a - b);
-    if (withheld.length === 0) return null;
-    const ids = withheld.map(id => `#${id}`).join(', ');
-    return withheld.length === 1
-      ? `Run ${ids} withholds its own index (a question failed at the provider); its per-run index here is over its scored answers.`
-      : `Runs ${ids} withhold their own index (a question failed at the provider); their per-run indices here are over their scored answers.`;
-  }
-
-  get itemStats(): MultiRunItemStatistics[] {
-    return this.result?.items ?? [];
-  }
-
-  get speedStats(): MultiRunSpeedStatistics | null {
-    return this.result?.speed ?? null;
-  }
-
-  get costStats(): MultiRunCostStatistics | null {
-    return this.result?.cost ?? null;
-  }
-
-  /** Only the dimensions something actually scored. An unscored one has nothing to render. */
-  get dimensionStats(): MultiRunDimensionStatistics[] {
-    return (this.result?.dimensions ?? []).filter(d => (d.perRunMeans?.length ?? 0) > 0);
-  }
-
-  get usageStats(): MultiRunUsageStatistics | null {
-    return this.result?.usage ?? null;
-  }
-
-  get promptStats(): MultiRunPromptUnderTest | null {
-    return this.result?.promptUnderTest ?? null;
-  }
-
-  /**
-   * The dimension trailing the strongest one, and by how much — null when there is nothing to
-   * compare. Named separately because a gap is the finding, and a reader scanning four rows for it
-   * is doing the panel's job.
-   */
-  get lowestDimension(): { dimension: string; mean: number; gap: number } | null {
-    const scored = this.dimensionStats.filter(d => d.mean != null);
-    if (scored.length < 2) return null;
-
-    const sorted = [...scored].sort((a, b) => (a.mean ?? 0) - (b.mean ?? 0));
-    const weakest = sorted[0];
-    const strongest = sorted[sorted.length - 1];
-    if (weakest.dimension === strongest.dimension) return null;
-
-    return {
-      dimension: weakest.dimension,
-      mean: weakest.mean!,
-      gap: (strongest.mean ?? 0) - (weakest.mean ?? 0)
-    };
-  }
-
-  /**
-   * The three weakest items on one dimension, labelled with the Q numbers the rest of the panel
-   * uses rather than with raw question ids.
-   */
-  lowestItemsFor(dimension: MultiRunDimensionStatistics): string {
-    const means = dimension.itemMeans ?? {};
-    const entries = Object.keys(means).map(key => ({ questionId: Number(key), mean: means[key] }));
-    if (entries.length === 0) return '—';
-
-    return entries
-      .sort((a, b) => a.mean - b.mean)
-      .slice(0, 3)
-      .map(entry => {
-        const item = this.itemStats.find(i => i.questionId === entry.questionId);
-        const label = item ? `Q${item.orderIndex}` : `id ${entry.questionId}`;
-        return `${label} (${this.formatNumber(entry.mean, 1)})`;
-      })
-      .join(', ');
-  }
-
-  /** Tool families in descending call order, for the usage table. */
-  get toolFamilyRows(): { family: string; calls: number; share: number | null }[] {
-    const usage = this.usageStats;
-    if (!usage?.toolCallsByFamily) return [];
-
-    return Object.keys(usage.toolCallsByFamily)
-      .map(family => ({
-        family,
-        calls: usage.toolCallsByFamily![family],
-        share: usage.toolFamilyShares?.[family] ?? null
-      }))
-      .sort((a, b) => b.calls - a.calls);
-  }
-
-  /** A cost role's display name. Analyses stored before 2026-09-27 key the second reader as 'Second opinion'. */
-  roleLabel(role: string): string {
-    return role === 'Second opinion' ? 'Second reader' : role;
-  }
-
-  /** Cost roles in descending total order, with the dispersion figures beside each. */
-  get costRoleRows(): {
-    role: string; total: number; mean: number | null; sd: number | null;
-    min: number | null; max: number | null; share: number | null;
-  }[] {
-    const cost = this.costStats;
-    if (!cost?.totalCostByRole) return [];
-
-    return Object.keys(cost.totalCostByRole)
-      .map(role => ({
-        role,
-        total: cost.totalCostByRole![role],
-        mean: cost.meanCostByRole?.[role] ?? null,
-        sd: cost.costStandardDeviationByRole?.[role] ?? null,
-        min: cost.minCostByRole?.[role] ?? null,
-        max: cost.maxCostByRole?.[role] ?? null,
-        share: cost.totalCost > 0 ? (cost.totalCostByRole![role] / cost.totalCost) * 100 : null
-      }))
-      .sort((a, b) => b.total - a.total);
-  }
-
-  /**
-   * The role carrying most of the cost spread. A replicate set whose quality reproduces to a tenth
-   * of a point can still spend twice as much on one member as another, and which role did that is
-   * the actionable half.
-   */
-  get widestCostRole(): { role: string; sd: number } | null {
-    const rows = this.costRoleRows.filter(r => r.sd != null && r.sd > 0);
-    if (rows.length === 0) return null;
-
-    const widest = rows.reduce((a, b) => ((b.sd ?? 0) > (a.sd ?? 0) ? b : a));
-    return { role: widest.role, sd: widest.sd! };
-  }
-
-  get itemComparisons(): MultiRunItemComparison[] {
-    return this.comparison?.itemComparisons ?? [];
-  }
-
-  /**
-   * Speed figures mix timing conditions. Either source may say so — the statistics record for the
-   * runs actually aggregated, and the tier for the set as a whole — and either one is enough to
-   * flag the section, because an unflagged degraded aggregate is the failure that matters.
-   */
-  get speedDegraded(): boolean {
-    return this.speedStats?.degraded === true
-      || this.detailComparability?.speedAggregatesDegraded === true;
-  }
-
-  get costDegraded(): boolean {
-    return this.costStats?.degraded === true
-      || this.detailComparability?.costAggregatesDegraded === true;
-  }
-
-  get speedDegradedReason(): string {
-    return this.speedStats?.degradedReason
-      || 'The group is not a replicate set on timing: question parallelism or thinking level differs across members.';
-  }
-
-  get costDegradedReason(): string {
-    return this.costStats?.degradedReason
-      || 'The pricing snapshot or the timing mode differs across members. A cost mismatch degrades cost only — prices cannot move a quality score.';
-  }
-
-  /** Never empty. See {@link VARIANCE_DECOMPOSITION_CAVEAT}. */
-  get varianceCaveat(): string {
-    return this.result?.varianceDecompositionCaveat || this.varianceCaveatFallback;
-  }
-
-  /** Never empty, for the same reason. */
-  get exploratoryNote(): string {
-    return this.comparison?.exploratoryNote || this.exploratoryNoteFallback;
-  }
-
-  /** Groups the selected one may be paired against: same suite, and not itself. */
-  get comparisonCandidates(): BenchmarkRunGroupDto[] {
-    const selected = this.selectedGroup;
-    if (!selected) return [];
-    return this.groups.filter(g => g.id !== selected.id);
-  }
-
-  // ---------------------------------------------------------------------------------------
-  // Formatting
-  // ---------------------------------------------------------------------------------------
-
-  tierClass(tier: BenchmarkComparabilityTier | string | null | undefined): string {
-    switch (tier) {
-      case 'Replicate': return 'tier-replicate';
-      case 'QualityComparable': return 'tier-quality';
-      case 'CrossCondition': return 'tier-cross';
-      default: return 'tier-none';
-    }
-  }
-
-  tierName(tier: BenchmarkComparabilityTier | string | null | undefined): string {
-    switch (tier) {
-      case 'Replicate': return 'Tier A — Replicate';
-      case 'QualityComparable': return 'Tier B — Quality-comparable';
-      case 'CrossCondition': return 'Tier C — Cross-condition';
-      default: return 'Not comparable';
-    }
-  }
-
-  /**
-   * The comparability enum's own numeric order, mirroring `BenchmarkComparabilityTier` on the
-   * server: `NotComparable` 0 through `Replicate` 3. The label happens to sort correctly today
-   * only because the letters A/B/C were chosen to match; a renamed tier would break an
-   * alphabetical sort silently, so the table sorts on this instead.
-   *
-   * Replicate being the highest value is what puts Tier A at the top on the first click, since a
-   * newly sorted column starts descending.
-   */
-  tierOrder(tier: BenchmarkComparabilityTier | string | null | undefined): number {
-    switch (tier) {
-      case 'Replicate': return 3;
-      case 'QualityComparable': return 2;
-      case 'CrossCondition': return 1;
-      default: return 0;
-    }
-  }
-
-  /**
-   * One of three mutually exclusive, exhaustive buckets for the group table's analysis-state
-   * filter. A group with no analysis at all is `notAnalysed`; a group whose latest analysis no
-   * longer describes its current membership is `stale` rather than `analysed` — filtering to
-   * Analysed shows only a group whose stored result still matches what it contains today.
-   */
-  analysisState(group: BenchmarkRunGroupDto): 'analysed' | 'notAnalysed' | 'stale' {
-    if (group.latestAnalysisId == null) return 'notAnalysed';
-    return group.analysisStale ? 'stale' : 'analysed';
-  }
-
-  /**
-   * Money at four decimals fixed, so a sub-cent cost like $0.0007 renders as $0.0007, not $0.00,
-   * and zero renders as $0.0000; a missing or non-finite value renders as a dash. Matches
-   * `formatRunEstimatedCost` on the run cards.
-   */
-  readonly formatCost = (value: number | null | undefined): string => formatCostAmount(value, '—');
-
-  /**
-   * `1 question`, `18 questions`, `17.5 questions`. Kept apart from Model Comparison's copy: the two
-   * admin views share no module.
-   */
-  formatQuestionsAsked(n: number): string {
-    const number = Number.isInteger(n) ? String(n) : n.toFixed(1);
-    return `${number} ${n === 1 ? 'question' : 'questions'}`;
-  }
-
-  /** The first eight hex characters of an instrument hash, as the run list shows them. */
-  shortFingerprint(sha: string | null | undefined): string {
-    return sha ? sha.substring(0, 8) : '—';
-  }
-
-  /**
-   * The five fingerprints of a run's instrument, in the fixed order the picker stacks them.
-   *
-   * The shape is always five rows: a hash that was never recorded shows as a dash under its own
-   * label rather than dropping out, so two runs' stacks line up row for row.
-   */
-  fingerprintEntries(run: BenchmarkRunSummaryDto): MultiRunFingerprintEntry[] {
-    return [
-      {
-        label: 'PROMPT',
-        cssClass: 'fp-prompt',
-        short: this.shortFingerprint(run.candidateSystemPromptSha256),
-        title: run.candidateSystemPromptSha256
-          ? 'Candidate system prompt SHA-256: ' + run.candidateSystemPromptSha256
-          : 'Candidate system prompt SHA-256: not recorded'
-      },
-      {
-        label: 'GUIDES',
-        cssClass: 'fp-guides',
-        short: this.shortFingerprint(run.toolGuidesSha256),
-        title: run.toolGuidesSha256
-          ? 'Tool guides SHA-256: ' + run.toolGuidesSha256
-          : 'Tool guides SHA-256: not recorded'
-      },
-      {
-        label: 'KB',
-        cssClass: 'fp-kb',
-        short: this.shortFingerprint(run.knowledgeBaseHeadSha),
-        title: run.knowledgeBaseHeadSha
-          ? 'Knowledge base Git HEAD SHA: ' + run.knowledgeBaseHeadSha
-          : 'Knowledge base Git HEAD SHA: not recorded'
-      },
-      {
-        label: 'WIKI',
-        cssClass: 'fp-wiki',
-        short: this.shortFingerprint(run.wikiHeadSha),
-        title: run.wikiHeadSha
-          ? 'GnollHack wiki Git HEAD SHA: ' + run.wikiHeadSha
-          : 'GnollHack wiki Git HEAD SHA: not recorded'
-      },
-      {
-        label: 'SRC',
-        cssClass: 'fp-source',
-        short: this.shortFingerprint(run.sourceCodeHeadSha),
-        title: run.sourceCodeHeadSha
-          ? 'GnollHack source Git HEAD SHA: ' + run.sourceCodeHeadSha
-          : 'GnollHack source Git HEAD SHA: not recorded'
-      }
-    ];
-  }
-
-  formatNumber(value: number | null | undefined, digits = 1): string {
-    if (value == null) return '—';
-    const pipe = new DecimalPipe('en-US');
-    return pipe.transform(value, `1.${digits}-${digits}`) ?? '—';
-  }
-
-  /** A coefficient of variation arrives as a fraction and reads as a percentage. */
-  formatPercentFromFraction(value: number | null | undefined): string {
-    if (value == null) return '—';
-    return `${this.formatNumber(value * 100, 1)}%`;
-  }
-
-  formatRate(value: number | null | undefined): string {
-    if (value == null) return '—';
-    return `${this.formatNumber(value * 100, 0)}%`;
-  }
-
-  formatMs(value: number | null | undefined): string {
-    if (value == null) return '—';
-    if (value < 1000) return `${Math.round(value)} ms`;
-    return `${this.formatNumber(value / 1000, 1)} s`;
-  }
-
-  /** A server timestamp in the browser's locale and time zone; one without a zone is UTC. */
-  formatDate(value: string | null | undefined): string {
-    if (!value) return '—';
-    const parsed = parseServerUtcDate(value);
-    return isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString();
-  }
-
-  getScoreBadgeClass(score: number | null | undefined): string {
-    if (score == null) return 'badge-score-na';
-    if (score >= 80) return 'badge-score-high';
-    if (score >= 50) return 'badge-score-mid';
-    return 'badge-score-low';
-  }
-
-  /**
-   * p-values below the smallest figure the column can show are rendered as a bound rather than as
-   * 0.000, which would claim a certainty no test produces.
-   */
-  formatPValue(value: number | null | undefined): string {
-    if (value == null) return '—';
-    if (value < 0.001) return '< 0.001';
-    return this.formatNumber(value, 3);
-  }
-
-  formatSigned(value: number | null | undefined, digits = 1): string {
-    if (value == null) return '—';
-    const formatted = this.formatNumber(value, digits);
-    return value > 0 ? `+${formatted}` : formatted;
-  }
-
-  /** Token counts, abbreviated: a benchmark set runs to millions and raw digits do not read. */
-  formatTokens(value: number | null | undefined): string {
-    if (value == null) return '—';
-    if (value >= 1_000_000) return `${this.formatNumber(value / 1_000_000, 2)} M`;
-    if (value >= 1000) return `${this.formatNumber(value / 1000, 1)} k`;
-    return `${Math.round(value)}`;
-  }
-
-  /** A percentage that arrives already scaled, unlike `formatPercentFromFraction`. */
-  formatPercent(value: number | null | undefined, digits = 1): string {
-    if (value == null) return '—';
-    return `${this.formatNumber(value, digits)}%`;
-  }
-
-  /** The batching mode, whose numeric enum selects a tool policy file and so is prompt text. */
-  parallelModeLabel(mode: number | null | undefined): string {
-    switch (mode) {
-      case 0: return 'Disabled';
-      case 1: return 'On request';
-      case 2: return 'Enabled';
-      default: return '—';
-    }
-  }
-
-  /** Tooltip anchor ids. One per row, so no two anchors in the panel share a name. */
-  downloadTipId(groupId: number): string {
-    return `mr-tip-download-${groupId}`;
-  }
-
-  viewTipId(groupId: number): string {
-    return `mr-tip-view-${groupId}`;
-  }
-
-  seriesTipId(groupId: number): string {
-    return `mr-tip-series-${groupId}`;
-  }
-
-  deleteTipId(groupId: number): string {
-    return `mr-tip-delete-${groupId}`;
-  }
-
-  runIdsLabel(runIds: number[] | null | undefined): string {
-    if (!runIds || runIds.length === 0) return '—';
-    return runIds.map(id => `#${id}`).join(', ');
+  formatCost(value: number | null | undefined): string {
+    return formatCostAmount(value, '—');
   }
 }

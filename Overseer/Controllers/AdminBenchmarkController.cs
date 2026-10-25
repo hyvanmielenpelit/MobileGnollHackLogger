@@ -6065,27 +6065,52 @@ public class AdminBenchmarkController : ControllerBase
     /// pooled index from ever being computed over runs that were never comparable — the worst
     /// failure this feature can have — and they live here rather than in the UI because the UI is
     /// not the thing that must not be bypassed.</para>
+    ///
+    /// <para>A blank name is generated (<see cref="BenchmarkRunGroupNames.Default"/>). A set a group
+    /// of the same suite already holds exactly is refused with <c>duplicateOfGroupId</c>. A Tier A or
+    /// B group is analyzed at once; an analysis that fails leaves the group created without one.</para>
     /// </summary>
     [HttpPost("runs/groups")]
     public async Task<IActionResult> CreateRunGroup([FromBody] CreateBenchmarkRunGroupRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Name))
+        string? requestedName = string.IsNullOrWhiteSpace(request.Name) ? null : request.Name.Trim();
+        if (requestedName != null && requestedName.Length > BenchmarkRunGroupNames.MaxLength)
         {
-            return BadRequest("A group needs a name.");
+            return BadRequest($"A group name can be at most {BenchmarkRunGroupNames.MaxLength} characters.");
         }
 
         var (runs, error) = await LoadGroupCandidateRunsAsync(request.RunIds);
         if (error != null) return BadRequest(error);
 
         var comparability = BenchmarkComparabilityKey.Resolve(runs);
+
+        long? duplicateOf = await FindDuplicateGroupAsync(runs);
+        if (duplicateOf.HasValue)
+        {
+            return BadRequest(new BenchmarkRunGroupTierPreviewDto
+            {
+                Accepted = false,
+                Error = DuplicateGroupMessage(duplicateOf.Value),
+                DuplicateOfGroupId = duplicateOf,
+                Comparability = ToComparabilityDto(comparability)
+            });
+        }
+
         var refusal = RefuseGroupTier(comparability, request.CrossCondition);
         if (refusal != null) return refusal;
 
         string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
 
+        var newestRun = runs.OrderByDescending(r => r.StartedAtUtc).ThenByDescending(r => r.Id).First();
+        string name = requestedName ?? BenchmarkRunGroupNames.Default(
+            newestRun.SuiteName,
+            newestRun.TestedModelSnapshot.Label() ?? "Unknown model",
+            runs.Min(r => r.StartedAtUtc),
+            runs.Count);
+
         var group = new BenchmarkRunGroup
         {
-            Name = request.Name.Trim(),
+            Name = name,
             BenchmarkSuiteId = runs[0].BenchmarkSuiteId,
             Tier = (BenchmarkRunGroupTier)(int)comparability.Tier,
             ComparabilityKeyHash = comparability.ComparabilityKeyHash,
@@ -6112,6 +6137,13 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         await _dbContext.SaveChangesAsync();
+
+        // Not tied to the request: the group is saved, and its analysis is under a second of
+        // arithmetic that should finish even if the client goes away.
+        if (BenchmarkComparabilityKey.IsPoolable(comparability.Tier) && !request.CrossCondition)
+        {
+            await _groupAnalysisService.TryAnalyseNewGroupAsync(group.Id, CancellationToken.None);
+        }
 
         await _dbContext.Entry(group).Collection(g => g.Members).LoadAsync();
 
@@ -6212,13 +6244,69 @@ public class AdminBenchmarkController : ControllerBase
 
         var comparability = BenchmarkComparabilityKey.Resolve(runs);
         var refusal = RefuseGroupTier(comparability, request.CrossCondition);
+        long? duplicateOf = await FindDuplicateGroupAsync(runs);
 
         return Ok(new BenchmarkRunGroupTierPreviewDto
         {
-            Accepted = refusal == null,
-            Error = refusal == null ? null : GroupTierRefusalMessage(comparability, request.CrossCondition),
+            Accepted = refusal == null && duplicateOf == null,
+            Error = duplicateOf.HasValue
+                ? DuplicateGroupMessage(duplicateOf.Value)
+                : refusal == null ? null : GroupTierRefusalMessage(comparability, request.CrossCondition),
+            DuplicateOfGroupId = duplicateOf,
             Comparability = ToComparabilityDto(comparability)
         });
+    }
+
+    /// <summary>
+    /// The lowest-id group of the runs' suite whose members are exactly <paramref name="runs"/>, or
+    /// null. Only groups of the same size holding the lowest requested run are read.
+    /// </summary>
+    private async Task<long?> FindDuplicateGroupAsync(IReadOnlyList<BenchmarkRun> runs)
+    {
+        if (runs.Count == 0) return null;
+
+        var wanted = runs.Select(r => r.Id).Distinct().OrderBy(id => id).ToList();
+        long? suiteId = runs[0].BenchmarkSuiteId;
+        long anchor = wanted[0];
+        int count = wanted.Count;
+
+        var candidates = await _dbContext.BenchmarkRunGroups
+            .AsNoTracking()
+            .Where(g => g.BenchmarkSuiteId == suiteId
+                        && g.Members.Count == count
+                        && g.Members.Any(m => m.BenchmarkRunId == anchor))
+            .OrderBy(g => g.Id)
+            .Select(g => new { g.Id, RunIds = g.Members.Select(m => m.BenchmarkRunId).ToList() })
+            .ToListAsync();
+
+        return candidates
+            .FirstOrDefault(c => c.RunIds.OrderBy(id => id).SequenceEqual(wanted))
+            ?.Id;
+    }
+
+    private static string DuplicateGroupMessage(long groupId)
+        => $"Group #{groupId} already holds exactly these runs.";
+
+    /// <summary>
+    /// Clusters of the suite's settled runs that would form a Tier A group and are not one yet, for
+    /// the page's suggested-group cards. Read-only.
+    /// </summary>
+    [HttpGet("runs/groups/suggestions")]
+    public async Task<IActionResult> GetRunGroupSuggestions(
+        [FromQuery] long suiteId,
+        [FromServices] BenchmarkRunGroupSuggestionService suggestionService,
+        CancellationToken ct)
+    {
+        if (suiteId <= 0) return BadRequest("Name the suite to suggest groups for.");
+
+        try
+        {
+            return Ok(await suggestionService.SuggestAsync(suiteId, ct));
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     private async Task<(List<BenchmarkRun> Runs, string? Error)> LoadGroupCandidateRunsAsync(List<long> runIds)
@@ -6392,6 +6480,7 @@ public class AdminBenchmarkController : ControllerBase
         public string Provider { get; set; } = string.Empty;
         public string? ThinkingLevel { get; set; }
         public string? ReasoningMode { get; set; }
+        public DateTime? RerunCompletedAtUtc { get; set; }
     }
 
     private static IQueryable<GroupNewestRun> SelectGroupNewestRuns(IQueryable<BenchmarkRun> runs)
@@ -6399,6 +6488,7 @@ public class AdminBenchmarkController : ControllerBase
         {
             Id = r.Id,
             StartedAtUtc = r.StartedAtUtc,
+            RerunCompletedAtUtc = r.RerunCompletedAtUtc,
             SuiteName = r.SuiteName,
             DisplayName = r.TestedModelSnapshot.DisplayName,
             ModelId = r.TestedModelSnapshot.ModelId,
@@ -6412,13 +6502,20 @@ public class AdminBenchmarkController : ControllerBase
     /// under, the live suite's only for an empty group; the tested model comes from the same run, since
     /// a persisted group is candidate-identical.
     /// </summary>
+    /// <param name="latestMemberRerunUtc">The latest <c>RerunCompletedAtUtc</c> over the members, for the staleness badge.</param>
     private static BenchmarkRunGroupDto ToGroupDto(
         BenchmarkRunGroup group,
         BenchmarkGroupAnalysis? latest,
-        GroupNewestRun? newest) => new()
+        GroupNewestRun? newest,
+        DateTime? latestMemberRerunUtc) => new()
     {
         Id = group.Id,
         Name = group.Name,
+        NameIsGenerated = BenchmarkRunGroupNames.IsDefault(
+            group.Name,
+            newest?.SuiteName ?? group.BenchmarkSuite?.Name,
+            newest?.DisplayName ?? newest?.ModelId,
+            group.Members.Count),
         BenchmarkSuiteId = group.BenchmarkSuiteId,
         SuiteName = newest?.SuiteName ?? group.BenchmarkSuite?.Name,
         TestedModelDisplayName = newest?.DisplayName ?? newest?.ModelId,
@@ -6436,14 +6533,20 @@ public class AdminBenchmarkController : ControllerBase
         CreatedAtUtc = group.CreatedAtUtc,
         ModifiedAtUtc = group.ModifiedAtUtc,
         RunCount = group.Members.Count,
+        MemberRunIds = group.Members.Select(m => m.BenchmarkRunId).OrderBy(id => id).ToList(),
         LatestAnalysisId = latest?.Id,
         LatestAnalysisAtUtc = latest?.ComputedAtUtc,
-        AnalysisStale = BenchmarkGroupAnalysisService.IsStale(group, latest)
+        HeadlineIndex = latest?.HeadlineIndex,
+        HeadlineHalfWidth = latest?.HeadlineHalfWidth,
+        HeadlineSpeedIndex = latest?.HeadlineSpeedIndex,
+        HeadlineCostPerRun = latest?.HeadlineCostPerRun,
+        AnalysisStale = BenchmarkGroupAnalysisService.IsStale(group, latest, latestMemberRerunUtc)
     };
 
     /// <summary>
     /// The DTOs of many groups, without members, in two set queries: the latest analysis of every
-    /// group (without its result JSON) and the newest member run of every group.
+    /// group (without its result JSON) and every member run's display columns, which also carry the
+    /// re-run time the staleness badge reads. Member run ids come from the loaded memberships.
     /// </summary>
     private async Task<List<BenchmarkRunGroupDto>> BuildGroupListDtosAsync(IReadOnlyList<BenchmarkRunGroup> groups)
     {
@@ -6454,7 +6557,17 @@ public class AdminBenchmarkController : ControllerBase
         var analysisHeads = await _dbContext.BenchmarkGroupAnalyses
             .AsNoTracking()
             .Where(a => groupIds.Contains(a.BenchmarkRunGroupId))
-            .Select(a => new { a.Id, a.BenchmarkRunGroupId, a.ComputedAtUtc, a.MemberRunIdsJson })
+            .Select(a => new
+            {
+                a.Id,
+                a.BenchmarkRunGroupId,
+                a.ComputedAtUtc,
+                a.MemberRunIdsJson,
+                a.HeadlineIndex,
+                a.HeadlineHalfWidth,
+                a.HeadlineSpeedIndex,
+                a.HeadlineCostPerRun
+            })
             .ToListAsync();
 
         // The fields IsStale and the DTO read; the result JSON is never loaded for the list.
@@ -6470,7 +6583,11 @@ public class AdminBenchmarkController : ControllerBase
                         Id = head.Id,
                         BenchmarkRunGroupId = head.BenchmarkRunGroupId,
                         ComputedAtUtc = head.ComputedAtUtc,
-                        MemberRunIdsJson = head.MemberRunIdsJson
+                        MemberRunIdsJson = head.MemberRunIdsJson,
+                        HeadlineIndex = head.HeadlineIndex,
+                        HeadlineHalfWidth = head.HeadlineHalfWidth,
+                        HeadlineSpeedIndex = head.HeadlineSpeedIndex,
+                        HeadlineCostPerRun = head.HeadlineCostPerRun
                     };
                 });
 
@@ -6487,15 +6604,22 @@ public class AdminBenchmarkController : ControllerBase
         var availabilityCards = await ProviderAvailability.LoadCardsAsync(memberRunIds);
 
         var dtos = groups
-            .Select(group => ToGroupDto(
-                group,
-                latestByGroup.TryGetValue(group.Id, out var latest) ? latest : null,
-                group.Members
+            .Select(group =>
+            {
+                var memberRuns = group.Members
                     .Select(m => runById.TryGetValue(m.BenchmarkRunId, out var run) ? run : null)
-                    .Where(run => run != null)
-                    .OrderByDescending(run => run!.StartedAtUtc)
-                    .ThenByDescending(run => run!.Id)
-                    .FirstOrDefault()))
+                    .OfType<GroupNewestRun>()
+                    .ToList();
+
+                return ToGroupDto(
+                    group,
+                    latestByGroup.TryGetValue(group.Id, out var latest) ? latest : null,
+                    memberRuns
+                        .OrderByDescending(run => run.StartedAtUtc)
+                        .ThenByDescending(run => run.Id)
+                        .FirstOrDefault(),
+                    memberRuns.Max(run => run.RerunCompletedAtUtc));
+            })
             .ToList();
 
         foreach (var (group, dto) in groups.Zip(dtos))
@@ -6520,7 +6644,7 @@ public class AdminBenchmarkController : ControllerBase
                     .ThenByDescending(r => r.Id))
                 .FirstOrDefaultAsync();
 
-        var dto = ToGroupDto(group, latest, newest);
+        var dto = ToGroupDto(group, latest, newest, await LatestMemberRerunAsync(memberRunIds));
         BenchmarkProviderAvailabilityService.ApplyCard(dto, await ProviderAvailability.CardForPoolAsync(memberRunIds));
 
         if (includeMembers && group.Members.Count > 0)
@@ -6565,6 +6689,17 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         return dto;
+    }
+
+    /// <summary>The latest <c>RerunCompletedAtUtc</c> over the runs, or null when none was re-run.</summary>
+    private async Task<DateTime?> LatestMemberRerunAsync(IReadOnlyCollection<long> runIds)
+    {
+        if (runIds.Count == 0) return null;
+
+        return await _dbContext.BenchmarkRuns
+            .AsNoTracking()
+            .Where(r => runIds.Contains(r.Id))
+            .MaxAsync(r => r.RerunCompletedAtUtc);
     }
 
     // --- Group analysis ---------------------------------------------------------------------
@@ -6627,7 +6762,8 @@ public class AdminBenchmarkController : ControllerBase
             TierLabel = DescribeTier(group.Tier),
             HarnessVersion = analysis.HarnessVersion,
             ScoringMethodVersion = analysis.ScoringMethodVersion,
-            Stale = BenchmarkGroupAnalysisService.IsStale(group, analysis),
+            Stale = BenchmarkGroupAnalysisService.IsStale(
+                group, analysis, await LatestMemberRerunAsync(group.Members.Select(m => m.BenchmarkRunId).ToList())),
             ComparedWithGroupId = analysis.ComparedWithGroupId,
             ComparedWithGroupName = comparedName,
             Result = BenchmarkGroupAnalysisService.DeserialiseResult(analysis),

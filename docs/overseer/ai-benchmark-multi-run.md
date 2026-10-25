@@ -13,10 +13,14 @@ Implementation:
 |---|---|
 | Which runs may be compared, and at what tier | `Overseer/Services/Benchmarking/BenchmarkComparabilityKey.cs` |
 | Every statistic below | `Overseer/Services/Benchmarking/BenchmarkGroupStatistics.cs` |
+| The crossed (pigeonhole) bootstrap of statistics method 2 | `Overseer/Services/Benchmarking/BenchmarkCrossedBootstrap.cs` |
 | Per-item reuse | `Overseer/Services/Benchmarking/BenchmarkItemAnalysis.cs` |
-| Loading, persisting, and refusing to pool | `Overseer/Services/Benchmarking/BenchmarkGroupAnalysisService.cs` |
+| Loading, persisting, refusing to pool, and analyzing a new group | `Overseer/Services/Benchmarking/BenchmarkGroupAnalysisService.cs` |
+| The generated group name | `Overseer/Services/Benchmarking/BenchmarkRunGroupNames.cs` |
+| Suggested groups | `Overseer/Services/Benchmarking/BenchmarkRunGroupSuggestionService.cs` |
 | The Markdown report | `Overseer/Services/Benchmarking/BenchmarkGroupReportBuilder.cs` |
 | Sequential execution of a series | `Overseer/Services/Benchmarking/BenchmarkSeriesOrchestrator.cs` |
+| The page, the New group dialog and the analysis dialog | `Overseer/ClientApp/src/app/admin/benchmark/multi-run/` |
 
 ---
 
@@ -49,14 +53,14 @@ execution is not merely a constraint imposed by that gate — it is also the tim
 already calls *"Sequential (comparable speed)"*, which is the correct shape for replicate speed
 measurement.
 
-A **group** (`BenchmarkRunGroup`) is an *analysis* concept: a named set of runs to compute statistics
+A **group** (`BenchmarkRunGroup`) is an *analysis* concept: a set of runs to compute statistics
 over. Membership is many-to-many, so one run may sit in several groups — a baseline run belongs both
 to its own replicate set and to the cross-condition pair it anchors — while belonging to at most one
 series.
 
-A completed series with two or more successful members automatically creates a group containing them.
-The code **asserts** that this group resolves Tier A rather than assuming it, logging an error when it
-does not.
+A completed series with two or more successful members automatically creates a group containing them,
+and analyzes it (§ 2.1). The code **asserts** that this group resolves Tier A rather than assuming it,
+logging an error when it does not.
 
 > **Every series before 2026-09-07 failed that assertion, and the assertion was right.** The pricing
 > snapshot embedded `capturedAtUtc` in the JSON the comparability key hashed, so the
@@ -72,8 +76,83 @@ nothing in this document combines them. The cross-suite layer is the **battery**
 ([`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md)): a fixed set of suites with declared
 weights, run for one model one suite after another, whose per-suite figures are this document's
 statistics, reused unchanged, and whose Overall Index is their weighted composite. A battery run with
-two or more rounds also creates one ordinary group per suite, so each suite's replicate analysis stays
-available here.
+two or more rounds also creates one ordinary group per suite, and analyzes each before the battery
+composite, so each suite's replicate analysis stays available here.
+
+### 2.1 Groups are analyzed on creation
+
+Every group that can be pooled is analyzed on the server as soon as it exists, through
+`BenchmarkGroupAnalysisService.TryAnalyseNewGroupAsync`:
+
+- a group created by hand, at Tier A or Tier B (New group, or *Create group* on a suggestion);
+- the group a completed series creates;
+- each per-suite group a battery with *Runs per Suite* ≥ 2 creates, before the battery composite is
+  computed.
+
+A Tier C group is not analyzed — it is compared (§ 8) — and neither is a group recorded below Tier B.
+An analysis that fails or is refused (an unsettled member, say) is logged and changes nothing else:
+the group is still created, and the series or battery run keeps its own outcome. The group then shows
+*Not analyzed*, and **Run analysis** in its analysis dialog computes it later.
+
+Each analysis also writes its headline figures — index, combined half-width, mean Speed Index and mean
+cost per run — to columns of its `BenchmarkGroupAnalysis` row (`HeadlineIndex`, `HeadlineHalfWidth`,
+`HeadlineSpeedIndex`, `HeadlineCostPerRun`), which is what the group cards read; migration
+`GroupAnalysisHeadlines` backfilled them from the stored result JSON. A stored analysis without them
+shows *Re-analyze to show figures*.
+
+An analysis is **stale** when the group's membership changed after it, or when a member was re-run in
+place after it (the member's `RerunCompletedAtUtc` is later than the analysis). A stale analysis is
+badged, not discarded: it is a correct statement about the answers it was computed over.
+
+### 2.2 Group names
+
+A group needs no name. When none is given, the server stores the generated
+`Suite · Model · yyyy-MM-dd · R=n` (`BenchmarkRunGroupNames.Default`, cut to 256 characters): the
+newest member's suite and model, the earliest member's start date in UTC, and the run count. The series,
+the battery and a manual create all name a group through that one function. A name sent with a create
+is kept, trimmed; one over 256 characters is refused.
+
+The UI asks for no name. A group card's title is the model, and its prominent line is the member runs
+(`#41 #42 #43`), each a link to its run report. A name someone typed in the past — one that does not
+have the generated shape for its suite, model and run count (`NameIsGenerated` false) — is shown as a
+quoted caption under the title. The Markdown report's heading still uses the stored name.
+
+### 2.3 Suggested groups, and no duplicates
+
+`GET api/admin/benchmark/runs/groups/suggestions?suiteId=` clusters the suite's newest 300 settled runs
+(`Completed`, `CompletedWithLimits`, `CompletedWithErrors`) by their **full comparability key hash**,
+keeps the clusters of two or more runs that resolve Tier A together, drops every cluster that an
+existing group's members equal or contain, and returns the rest newest first, at most 20. It is
+read-only.
+
+The page shows them above the groups as *Suggested groups* cards: the model, the runs, the tier, *R*,
+the time span, the series and the mean of the runs' stored indices. **Create group** creates the group
+and analyzes it in one click; **Dismiss** hides the suggestion in this browser (`localStorage`, keyed by
+the key hash and the run ids, so a cluster that gains a run shows again). Suggestions are never turned
+into groups automatically: clusters overlap as runs accumulate, and creating each would multiply groups.
+
+A group whose member set **equals** an existing group of the same suite is refused, by the create and
+by the preview alike: *Group #12 already holds exactly these runs.*, with `duplicateOfGroupId`. The New
+group dialog shows the message with a link that opens that group.
+
+### 2.4 The page
+
+GnollBench → **Multi-Run Analysis** has a header card — the title, a **Suite** select remembered per
+browser and independent of Run Benchmark's suite (the launcher's suite is only the fallback for a
+browser with none remembered), an info tip on groups and tiers, **New group** and Refresh — then the
+*Suggested groups* cards and the *Analysis groups* card list, with a search (`#id`, model, run, note or
+name), *Sort by*, and *Tier*, *Analysis*, *Origin* and *Model* facets, ten cards at a time. Each card
+shows the index with its half-width, speed, cost per run and the run count, and offers *Open analysis*,
+the Markdown report download and *Delete group*.
+
+**New group** opens a dialog listing the suite's runs as cards (model, id, status, start, index, speed,
+and the five instrument hashes), with its own search, sort and facets. Selecting two or more runs
+previews their tier with the reasons (§ 3.2); an unsettled run cannot be selected. A Tier C selection
+offers the *Persist as a cross-condition group* acknowledgment. An optional note is the only free text.
+
+The analysis opens in a dialog with section tabs — **Summary**, **Dimensions**, **Items**,
+**Speed & cost**, **Tokens & tools** and **Comparison** — and names the statistics method beside the
+provenance line, so every interval is read by the method that produced it (§ 12).
 
 ---
 
@@ -197,6 +276,12 @@ points) is flagged **unstable**. This is where a single run's verdict is least t
 a suite-health signal at least as much as a model one: an item whose rubric cannot decide a borderline
 answer will swing between runs no matter which model answers it.
 
+Under statistics method 2 an item is flagged unstable **only from three runs**, the same *R* < 3 rule
+the reproducibility figure follows (§ 5.3): a sample SD from two scores is arithmetic rather than evidence, and an item flag
+built on it invites a reader to act on noise. At *R* = 2 the item reads
+*Too few runs* instead (`InsufficientRuns`). Method 1 analyses flagged an item from two runs, and are
+shown as stored.
+
 **A critical-error rate strictly between 0 and 1** is the signal worth acting on. It means the same
 question sometimes does and sometimes does not trip the score ceiling — either a genuinely borderline
 answer or, more often, a rubric that does not decide the case.
@@ -236,10 +321,12 @@ decompositions in the next section coherent. When the item set is **ragged** —
 produce a scored answer to some item — the two routes weight the missing cells differently, the
 `IdentityHolds` flag goes false, and the report says which number it is showing.
 
-### 5.2 Two independent sources of uncertainty
+### 5.2 Two sources of uncertainty, and the combined interval
 
-They are reported **separately and only then combined**, because they answer different questions and
-behave differently as runs are added.
+Two sources of uncertainty sit on the index, and they are always **reported separately**, because they
+answer different questions and behave differently as runs are added. How the combined 95 % interval is
+formed from the data depends on the analysis's statistics method (§ 12): method 2 bootstraps it, and
+keeps the two components as diagnostics; method 1 added the components in quadrature.
 
 **Reproducibility standard error** — *"would a re-run move this?"*
 
@@ -253,8 +340,11 @@ a three-run set says something a one-run set cannot.
 
 **Item-sampling standard error** — *"would a different set of questions move this?"*
 
-This is the existing `BenchmarkScoring.QualityIndexStandardError` — the same function the single-run
-report uses — applied to the **per-item cross-run mean** qualities.
+The weighted standard error of the difficulty-weighted mean of the **per-item cross-run mean**
+qualities. Under method 2 it is `BenchmarkScoring.QualityIndexStandardErrorUnrounded`: the unrounded
+item means and weights, with deviations taken around the unrounded weighted mean. Under method 1 it was
+`BenchmarkScoring.QualityIndexStandardError` — the function the single-run report uses — which rounds the
+means and weights to integers and centers on the rounded index.
 
 ```
 half-width = 1.96 · SE_item
@@ -266,13 +356,49 @@ half-width = 1.96 · SE_item
 > conclude the code is broken. It is not — shrinking that component would require *more questions*,
 > not more runs.
 
-**Combined interval:**
+#### The combined interval: a crossed bootstrap (method 2)
+
+A group's scores form a crossed array: every run answers every question, so a score carries a run
+effect, a question effect and a residual. The combined interval is the **percentile interval of a
+crossed (pigeonhole) bootstrap** over that array (Owen 2007, *The pigeonhole bootstrap*, Ann. Appl.
+Stat. 1(2); Owen & Eckles 2012), computed by `BenchmarkCrossedBootstrap.IndexDistribution`:
+
+- Each replicate draws the questions with replacement **once** and the runs with replacement **once**.
+- Its statistic is the index itself, recomputed on the resampled array: the mean, over the drawn runs,
+  of each run's weighted index `Σ w·score / Σ w` over the drawn questions it answered, with each
+  question's fixed weight from § 5.1. A drawn run that answered none of the drawn questions is left out
+  of that replicate's mean.
+- 10,000 replicates (`DefaultReplicates`) with the fixed seed 20261025 (`DefaultSeed`), so a fixed group
+  gives a fixed interval, reproducible from the stored answers. The question draw and the run draw use
+  separate random streams.
+- The bounds are the 2.5th and 97.5th percentiles of the replicates (`CombinedLower`, `CombinedUpper`),
+  which lie inside [0, 100] by construction. `CombinedHalfWidth` is half their distance; a percentile
+  interval need not be symmetric about the point estimate. `CombinedIntervalMethod` records
+  `crossedBootstrap`, and `BootstrapReplicates` and `BootstrapSeed` the draw.
+
+In such a replicate the run effect, the question effect and the residual are each represented once, so
+the bootstrap variance is **mildly conservative, never anti-conservative**. With three runs the run draw
+has only ten distinct multisets, which is one reason it is conservative rather than tight.
+
+#### Why the components are no longer added
+
+**Under a crossed item × run model, both standard errors contain the residual term.** The
+reproducibility SE is computed from per-run indices, each of which carries the residual averaged over
+the questions; the item-sampling SE is computed from per-item means, each of which carries it averaged
+over the runs. Adding the two in quadrature counted the residual twice, and it also mixed a *t*
+quantile with a *z* quantile. Method 2 therefore reports both as **diagnostics** of where the
+interval's width comes from — the reproducibility SE with its *t* half-width, the item-sampling SE with
+its 1.96 half-width — and adds neither into the interval. The report heads them *What the interval is
+made of*.
+
+#### Method 1's combined interval
+
+Analyses stored before 2026-10-25, and the surfaces that still compute method 1 (§ 12.1), combine the two
+half-widths in quadrature, treating item selection and run-to-run variation as independent sources:
 
 ```
 half-width = √( (t · SE_repro)² + (1.96 · SE_item)² )
 ```
-
-Added in quadrature because item selection and run-to-run variation are independent sources.
 
 ### 5.3 The *R* < 3 rule
 
@@ -283,27 +409,41 @@ invites a reader to act on noise.
 This mirrors conventions already in the codebase: the `n < 3 → null` rule in
 `BenchmarkScoring.QualityIndexStandardError` and `BenchmarkItemAnalysis.MinRunsForMeasurement`.
 
-At *R* < 3 the combined interval is the item-sampling half-width alone, and the report says the
-interval covers one source rather than two.
+Under method 2, below three runs the bootstrap redraws **only the questions** (a *question bootstrap*,
+`CombinedIntervalMethod` = `questionBootstrap`). Run-to-run variation is then not in the interval at
+all: a spread between two runs is no more evidence here than it is in the reproducibility figure, so it
+is not resampled. The dialog and the report say the interval covers the choice of questions only.
+
+Under method 1, at *R* < 3 the combined interval is the item-sampling half-width alone, and the report
+says the interval covers one source rather than two.
 
 ### 5.4 Intervals are clamped to the score range
 
 A quality score is bounded [0, 100], so a reported interval bound outside that range is not a wider
 claim but an impossible one — an item with a mean of 71 and a half-width of 58 does not have an upper
-bound of 129. Reported bounds are clamped and the interval is **marked truncated**, per item and for
-the combined index interval.
+bound of 129. Reported bounds are clamped and the interval is **marked truncated**, per item and, under
+method 1, for the combined index interval. A method 2 combined interval is a set of percentiles of
+indices that are themselves inside the range, so it is never clamped and `CombinedIntervalTruncated` is
+always false.
 
-The **half-widths are never clamped**. They are the quantities that carry the spread and that combine
-in quadrature, and clamping one would corrupt the other. A truncated interval is therefore narrower
-than its own half-width implies, which is exactly why it is marked: read the SD or the half-width, not
-the pinned bound.
+The **half-widths are never clamped**. They are the quantities that carry the spread and, under method
+1, combine in quadrature, and clamping one would corrupt the other. A truncated interval is therefore
+narrower than its own half-width implies, which is exactly why it is marked: read the SD or the
+half-width, not the pinned bound.
 
 ### 5.5 Per-dimension statistics
 
 The index is a composite and cannot say which dimension moved. Each of Accuracy, Completeness,
 Conciseness and Readability is therefore pooled across the runs in its own right: per-run means, their
-mean, sample SD, a *t*-based 95 % half-width under the same *R* < 3 rule as above, min, max, and the
-weakest items on that dimension.
+mean, sample SD, a 95 % interval, min, max, and the weakest items on that dimension.
+
+Under method 2 the interval is the **same bootstrap over the dimension scores**, with every question
+weighted 1, so the statistic on the original data is the mean of the per-run means:
+`BootstrapLower` and `BootstrapUpper`, with `IntervalMethod` `crossedBootstrap` from three runs that
+scored the dimension and `questionBootstrap` below that. `ConfidenceHalfWidth` is half the interval's
+width, and it covers question sampling as well as run-to-run variation. Under method 1 the interval was
+a *t*-based half-width over the per-run means, run-to-run variation alone, under the *R* < 3 rule
+above.
 
 Two properties matter when reading them:
 
@@ -316,6 +456,27 @@ Two properties matter when reading them:
 
 A dimension no member scored is reported present and empty rather than omitted, so a consumer never
 has to distinguish "absent" from "unscored".
+
+### 5.6 Runs or questions, and when the runs were made
+
+Two method 2 figures say what the next round of measurement should buy.
+
+**The planning figure.** `RunsWhereRunComponentMatchesQuestions` is the smallest *R* ≥ 3 at which the
+run component's half-width is no larger than the question component's:
+
+```
+1.96 · SD_repro / √R  ≤  1.96 · SE_item      ⇔      R = max(3, ⌈(SD_repro / SE_item)²⌉)
+```
+
+Past it, more questions narrow the interval more than more runs do. It is null below three runs and
+when the item-sampling SE is zero or unavailable. The dialog and the report state it as *From about
+{n} runs, more questions narrow the interval more than more runs.*
+
+**The time span.** `RunSpanHours` is the time between the earliest and the latest member's start. A
+series runs its members back to back, so its run component measures *re-running now*, not *re-running
+on another day*: a provider-side change between days is not in it. When the span is under 24 hours
+with *R* ≥ 3, the dialog and the report warn: *All runs were made within {n} hours; the run component
+measures re-running now, not on another day.*
 
 ---
 
@@ -397,19 +558,76 @@ is what that policy asks for, not a routing defect.
 ## 8. Comparing Two Groups
 
 This is the verification use case: a baseline replicate set and a treatment replicate set that differ
-on exactly one instrument key.
+on exactly one instrument key. In the analysis dialog's **Comparison** tab the group being analyzed is
+the treatment, and the group chosen under *Compare with* — another Tier A or Tier B group of the same
+suite — is the baseline.
 
-Items are **paired by question** on per-item cross-run mean quality. Differences are **treatment minus
-baseline**, so a positive value means the treatment scored higher. Only items answered on both sides
+Items are **paired by question**. Differences are **treatment minus baseline**, so a positive value
+means the treatment scored higher. Only items answered on both sides, under the same rubric revision,
 are paired; the rest are counted and excluded, because a pair needs two halves and imputing one would
 invent the finding.
 
+**The guard.** A comparison pairs items of one suite, so the analysis refuses a baseline in another
+suite (*Group #{id} is in another suite; a comparison pairs items of one suite.*) and the group itself
+(*A group cannot be compared with itself.*). Both halves are computed under the same statistics method.
+
+**What differs between the groups.** A method 2 comparison records `PairKeyDifferences`: the
+comparability keys whose values split **exactly along the two groups** — one value carried by every
+baseline run, another by every treatment run. A key that also varies inside a group is left out, as is
+any key on which a run sits in both groups. The dialog and the report list each key with its kind,
+description and both values. More than one such key means the difference cannot be attributed to any
+one change, and both say so; none means no recorded change separates the groups.
+
+#### The primary estimand: the weighted index difference (method 2)
+
+The primary result is the **difficulty-weighted index difference**, treatment minus baseline
+(`IndexDifference`): each side's multi-run Intelligence Index (§ 5.1) recomputed over the **paired
+items only**, with the **treatment group's item weights on both sides**. It is the same quantity as the
+headline index, which the unweighted question-level tests below are not. One weighting has to serve
+both sides, because difficulty is re-assessed in every run and the two groups' weights differ;
+using the treatment side's is an arbitrary but fixed choice.
+
+Its 95 % interval (`IndexDifferenceLower`, `IndexDifferenceUpper`) is the percentile interval of a
+**paired crossed bootstrap** (`BenchmarkCrossedBootstrap.DifferenceDistribution`, 10,000 replicates,
+seed 20261025): each replicate draws the questions once and uses that draw for both groups, which keeps
+the pairing, then redraws each group's runs independently. Run-to-run variation is included only when
+**both sides have three runs or more** (`IndexDifferenceMethod` `crossedBootstrap`,
+`RunVarianceIncluded` true); otherwise only the questions are redrawn (`questionBootstrap`), and the
+interval covers the choice of questions only, so it is narrower than a re-run would justify.
+
+Beside it:
+
+- **Bootstrap p** (`IndexDifferenceBootstrapP`) — `2 · min(share of replicates ≤ 0, share ≥ 0)`, capped
+  at 1. It is the inversion of the percentile interval, not an exact test, and its resolution is
+  2 / 10,000 = 0.0002; a value of 0 means below that and is shown as *< 0.001*.
+- **Standard error** (`IndexDifferenceStandardError`) — the sample SD of the replicates.
+- **Minimum detectable difference** (`MinimumDetectableIndexDifference`) —
+  `(z₀.₉₇₅ + z₀.₈₀) · SE ≈ 2.80 · SE`: the smallest true difference this design detects with 80 % power at
+  a two-sided α of 0.05. A true difference smaller than this would be missed more than one time in five,
+  so a non-significant result says only that any effect is probably below it, not that there is none.
+
+#### Secondary, question-level tests
+
+Paired on per-item cross-run mean quality, **unweighted**, one observation per question. They ignore
+run-to-run variation, which is why the index difference is primary under method 2.
+
 | Statistic | Definition | Why this one |
 |---|---|---|
-| Mean paired difference, with 95 % CI | mean ± *t*(*n*−1) · SD / √*n* | The effect, on the scale the reader already understands |
-| **Wilcoxon signed-rank** (primary) | Zero differences discarded (Wilcoxon's own reduction, and the count is reported); tie-corrected average ranks; **exact** conditional-permutation p-value for *n* ≤ 25, tie- and continuity-corrected normal approximation above that | Non-parametric, which is what a bounded 0–100 scale over eighteen items warrants |
-| Paired *t* (secondary) | Standard | Reported for readers who expect it — never *instead* of Wilcoxon, because it assumes a normality nobody has checked |
-| **Cohen's *d*z** | mean difference / SD of the differences | The paired effect size. Not *d*, which uses a pooled between-group SD and would describe a comparison nobody made |
+| Unweighted mean difference, with 95 % *t* interval | mean ± *t*(*n*−1) · SD / √*n* | The effect, on the scale the reader already understands |
+| **Wilcoxon signed-rank** | Zero differences discarded (Wilcoxon's own reduction, and the count is reported); tie-corrected average ranks; **exact** conditional-permutation p-value for *n* ≤ 25, tie- and continuity-corrected normal approximation above that | Non-parametric, which is what a bounded 0–100 scale over eighteen items warrants |
+| **Hodges–Lehmann shift** (method 2) | The Hodges–Lehmann estimate of location over the per-item differences | The location estimate that matches Wilcoxon's hypothesis, which a mean does not |
+| Paired *t* | Standard | Reported for readers who expect it — never *instead* of Wilcoxon, because it assumes a normality nobody has checked |
+| **Cohen's *d*av** (method 2) | mean item difference ÷ the mean of the two groups' **population** SDs over all run × question scores of the paired items (Lakens 2013) | An effect size that does not grow with *R*: duplicating every run leaves it unchanged |
+
+**Why *d*z is no longer shown.** Cohen's *d*z — mean difference ÷ SD of the differences — is computed on
+cross-run item means, which tighten as runs are added, so the same shift reads as a larger effect at
+larger *R*. It stays in the JSON (`CohensDz`) and is shown for method 1 comparisons only.
+
+#### Method 1's comparison
+
+A method 1 comparison has no index difference: its result is the unweighted question-level table above
+with **Wilcoxon as the primary test**, the paired *t* as secondary and *d*z as the effect size, and no
+Hodges–Lehmann shift, *d*av, `PairKeyDifferences` or prior-comparison count.
 
 ### 8.1 Per-item differences are exploratory
 
@@ -420,6 +638,12 @@ adjusted column is a **q-value**, not a p-value.
 Every per-item comparison carries an `Exploratory` flag that is always true, present precisely so that
 no surface can render one without the label. Eighteen simultaneous item tests without correction would
 manufacture findings, reliably, on data with no effect in it at all.
+
+**Untestable items (method 2).** An item with no variance estimate — zero spread on both sides, or fewer
+than two runs on a side — has no Welch test. It is marked **Untestable** (`Untestable`, counted in
+`UntestableItemCount`), carries no p-value, and is left out of the Benjamini–Hochberg step-up and of its
+*m*. Method 1 gave zero spread on both sides with different means p = 0, which on discrete rubric scores
+at small *R* was a guaranteed false rejection.
 
 ### 8.2 The comparison never pools
 
@@ -436,16 +660,30 @@ Since 2026-10-03 two siblings ask the same question elsewhere, and all three are
 
 - The **Model Comparison wizard's Paired tests view** tests runs, groups or battery results of one
   condition against a reference or across all pairs. For run and group entries its Intelligence row
-  **is** `Compare` over each entry's `Compute` result, so for the same two groups it equals *Compare
-  with group*, which a unit test pins; each measure is a family, Holm-adjusted when it holds more than
-  one test.
+  **is** `Compare` over each entry's `Compute` result, at statistics method 1, which a unit test pins.
+  For the same two groups its mean difference, Wilcoxon and paired *t* therefore equal the
+  question-level tests of *Compare with group*; it has no weighted index difference. Each measure is a
+  family, Holm-adjusted when it holds more than one test.
 - The **run report's Paired Test tab** tests one run against another finished run on the same suite,
   without building groups, and names the pair a *model comparison*, a *verification of a change* or a
   *replicate*.
 
 Both add the quality dimensions, and speed and cost as Wilcoxon on log ratios, which *Compare with
-group* does not report. *Compare with group* keeps what they lack: the per-item exploratory comparisons
-of § 8.1 and a persisted comparison inside the group analysis. See `ai-benchmark.md`, *Paired Tests*.
+group* does not report. *Compare with group* keeps what they lack: the weighted index difference with
+its bootstrap interval, the per-item exploratory comparisons of § 8.1 and a persisted comparison inside
+the group analysis. See `ai-benchmark.md`, *Paired Tests*.
+
+### 8.4 Repeated comparisons
+
+Each analysis that carries a comparison counts the earlier analyses of the same group that carried one
+(`PriorComparisonCount`). From **two** earlier comparisons, the dialog adds a note — *This group has been
+compared {n} times before. A difference found after several looks is weaker evidence; decide what
+difference matters before looking.* — and the report a *Compared {n} times before* subsection. Every further comparison is another chance for one of
+them to look significant by luck, and nothing in a single p-value accounts for the looks before it.
+
+The remedy is procedural, not arithmetic: **decide the difference that matters before looking** — state
+the acceptance criterion before the treatment set is run (§ 10), and judge the index difference and its
+interval against it, alongside the minimum detectable difference.
 
 ---
 
@@ -494,8 +732,11 @@ A practical order:
    production does not share.
 3. **Read both interval components before the combined one.** If the reproducibility half-width is
    large relative to the effect you care about, more runs will help. If the item-sampling half-width
-   dominates, more runs will not — you need more questions. An interval marked truncated is narrower
-   than its half-width implies; read the half-width.
+   dominates, more runs will not — you need more questions; under method 2 the planning figure (§ 5.6)
+   says from how many runs that is so. Check which statistics method the analysis carries and, under
+   method 2, whether the interval is a crossed or a question bootstrap and whether the runs were made
+   within one day. An interval marked truncated (method 1) is narrower than its half-width implies;
+   read the half-width.
 4. **Read the dimensions.** Which dimension is lowest, and whether its gap survives across runs, is
    the question a single run cannot answer and this one can.
 5. **Read the unstable items.** They tell you which parts of the suite cannot support a single-run
@@ -505,7 +746,8 @@ A practical order:
 7. **Only then read the point estimate.**
 
 For a verification, the acceptance criterion should be stated **before** the treatment set is run, and
-compared against the paired difference and its interval — not against the two point estimates.
+compared against the paired difference and its interval — under method 2 the weighted index difference,
+and its minimum detectable difference — not against the two point estimates.
 
 ---
 
@@ -525,3 +767,47 @@ while the battery's Markdown report stays arithmetic only. The decision and its 
 [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 7.2, and the mechanics in
 [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 14. A single run already had its own
 AI-written documents (`ai-benchmark-report-pack.md` § 11).
+
+---
+
+## 12. Statistics Method Versions
+
+Every group analysis and comparison records the statistics method it was computed under, as
+`StatisticsMethodVersion` on the result and on the comparison. An absent or null value is method 1. A
+stored analysis is **never rewritten**: the dialog, the Markdown report and every other reader render
+each analysis by its own version, and recomputing an analysis stores a new one under the current
+method.
+
+- **Method 1** — until 2026-10-25. The combined index interval adds the reproducibility and
+  item-sampling half-widths in quadrature (§ 5.2); dimension intervals are *t*-based over the per-run
+  means; an item is flagged unstable from two runs; the comparison is the unweighted question-level one,
+  with Wilcoxon primary and *d*z as the effect size; per-item Welch tests give zero spread with different
+  means p = 0.
+- **Method 2** — from 2026-10-25, on every new Multi-Run Analysis analysis. The crossed bootstrap
+  interval with the components as diagnostics (§ 5.2), the question bootstrap below three runs (§ 5.3),
+  bootstrap dimension intervals (§ 5.5), the planning figure and time span (§ 5.6), *Unstable* only from
+  three runs (§ 4), and the comparison of § 8: the weighted index difference as primary estimand,
+  Hodges–Lehmann and *d*av, untestable items outside Benjamini–Hochberg, *What differs between the
+  groups* and the prior-comparisons note.
+
+The bootstrap draws from a fixed seed, so a method 2 figure is as reproducible from the stored answers
+as a method 1 one (§ 11). The analysis dialog names the method in its provenance line, and the Markdown
+report in its header (*Statistics method: 2*) and its closing line.
+
+### 12.1 Boundary of Method 2
+
+Method 2 is used by **Multi-Run Analysis**: the group analysis, the comparison, the Markdown group
+report, the analysis dialog, and the model batch result of a series member, which reads the group's
+stored analysis ([`ai-benchmark-model-batches.md`](ai-benchmark-model-batches.md) § 6).
+
+Everything else that calls `BenchmarkGroupStatistics` still computes **method 1**, and its figures and
+JSON are unchanged:
+
+- the battery composite and its comparisons, and the battery analysis service
+  ([`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md));
+- Model Comparison, including its Paired tests view (§ 8.3);
+- the run report's Paired Test tab.
+
+One group can therefore show a method 1 interval in Model Comparison and a method 2 interval in its own
+analysis. The two are different estimates of the same uncertainty, not a contradiction, which is why the
+dialog and the report name the method beside every interval.

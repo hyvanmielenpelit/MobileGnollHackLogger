@@ -1,221 +1,324 @@
-// Multi-Run Analysis. Reuses .gh-table, .gh-input, .btn-gh, .action-btn, .alert, .gh-tooltip and
-// .visually-hidden from styles.scss; this file carries only the panel's own layout and the few
-// pieces of vocabulary that exist nowhere else — the tier badge, the two interval cards and the
-// run picker.
-//
-// Nothing here re-declares a shared class. Angular's emulated encapsulation would rewrite such a
-// rule to match this component's elements only, so the button would keep working while quietly
-// looking like nothing else in the application — which is how .gh-table came to be broken in the
-// Suite Health panel before it was promoted to styles.scss.
+@use '../../admin-shared' as shared;
+
+// Multi-Run Analysis: layout and component-local presentation only. Buttons, .gh-tag, the filter
+// bar, .gh-section-title, .gh-field-error, .gh-spinner-small and the tooltips come from styles.scss
+// and are never redefined here.
 
 :host {
   display: block;
-  min-width: 0;
-
-  // The three fingerprint hues the theme has no token for. The candidate prompt takes
-  // --primary-color and the tool guides --nav-color; these three are picked to stay apart from
-  // both, and from the status greens and reds, on the panel's near-black ground. The same three
-  // values as in benchmark.component.scss, which emulated encapsulation keeps out of here.
-  --fp-kb-color: #7fb8e8;
-  --fp-wiki-color: #6fc3c0;
-  --fp-source-color: #c197dd;
+  min-inline-size: 0;
 }
 
-// The panel's type scale and resets. A mixin because the analysis content now renders in two
-// places — inline in the panel and inside the modal — and Angular's emulated encapsulation would
-// not carry a `.multi-run p { }` rule into a dialog that is a sibling of it. The failure is silent:
-// the content renders with the browser's default margins and nobody sees an error.
-@mixin mr-content-typography {
-  .text-muted { color: #888; }
-
-  p { margin: 0; }
-
-  h3 {
-    margin: 0;
-    font-size: 16px;
-    color: #eee;
-  }
-
-  h4 {
-    margin: 0;
-    font-size: 14px;
-    color: #ddd;
-  }
-
-  h5 {
-    margin: 0 0 4px;
-    font-size: 13px;
-    color: #ddd;
-  }
-
-  .section-note {
-    margin: 0;
-    color: #bbb;
-    font-size: 13px;
-    line-height: 1.5;
-    max-width: 110ch;
-    text-wrap: pretty;
-  }
-
-  .alert {
-    max-width: 110ch;
-  }
-}
+@include shared.tab-header-row;
 
 .multi-run {
   display: flex;
   flex-direction: column;
-  gap: 28px;
-  padding: 20px 24px 32px;
-
-  // Layout reacts to the panel's own width rather than the viewport's: this component is embedded
-  // in a tab panel whose width has nothing to do with the window's.
-  container-type: inline-size;
-  container-name: mr-panel-width;
-
-  @include mr-content-typography;
+  gap: 1.5rem;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
 }
 
-// --- The analysis modal -----------------------------------------------------------------------
-//
-// Layout only. The controls themselves — .btn-gh and its variants, .action-btn, .btn-icon-action,
-// .gh-tooltip, .gh-dialog — come from styles.scss and are never redefined here: Angular's emulated
-// encapsulation would rewrite such a rule to match only this component, so the dialog would quietly
-// stop looking like the rest of the application while every other view stayed correct.
-//
-// The .dialog-* vocabulary below is duplicated from benchmark.component.scss and
-// multi-run-progress-dialog.component.scss, which own it as component-scoped styles. It belongs in
-// styles.scss so all three can share one definition; moving it is a change to files this component
-// does not own, so it is left as the same follow-up the progress dialog already records.
-.gh-dialog.mr-analysis-dialog {
-  // Sized for a report.
-  width: min(1150px, 94vw);
-  max-width: min(1150px, 94vw);
-  height: min(88dvh, 900px);
-  max-height: 88dvh;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
-  background: rgba(20, 20, 20, 0.98);
-
-  &[open],
-  &:modal {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .dialog-content {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    width: 100%;
-    min-height: 0;
-    overflow: hidden;
-    padding: 0;
-  }
-
-  .dialog-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 14px 24px;
-    margin: 0;
-    border-bottom: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-    flex-shrink: 0;
-
-    // Deliberately outside mr-content-typography: the heading here is the dialog's title and keeps
-    // the global .gh-dialog h3 treatment rather than the panel's 16px body scale.
-    .dialog-title-group {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 0;
-
-      h3 {
-        margin: 0;
-        font-size: 1.2em;
-        color: var(--title-color);
-      }
-
-      .dialog-subtitle {
-        margin: 0;
-        font-size: 0.85em;
-        color: #888;
-      }
-    }
-  }
-
-  .mr-dialog-header-badges {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  .dialog-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px 24px;
-    min-height: 0;
-
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
-
-  .dialog-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    padding: 14px 24px;
-    border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-    flex-shrink: 0;
-  }
+// GnollBench's sub-tab row is already the sticky element, so this header scrolls with the page.
+.tab-header-row.mr-header {
+  position: static;
+  z-index: auto;
+  margin-bottom: 0;
 }
 
-// The container the moved content still queries. A modal dialog's containing block is the viewport,
-// so it inherits no container from .multi-run however it is nested — and the dialog's own width is
-// the right thing to measure anyway.
-.mr-dialog-body {
-  container-type: inline-size;
-  container-name: mr-panel-width;
-
-  @include mr-content-typography;
+.mr-header-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
 }
+
+.mr-suite {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.mr-suite-select {
+  min-block-size: 32px;
+  max-inline-size: min(24rem, 100%);
+  padding-block: 4px;
+  font-size: var(--text-secondary);
+}
+
+.mr-no-suite,
+.mr-loading {
+  margin: 0;
+}
+
+// --- Sections -------------------------------------------------------------------------------------
 
 .mr-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  min-width: 0;
+  gap: 0.75rem;
+  min-inline-size: 0;
 }
 
+// The heading, its count or status line, on one row over the heading's rule.
 .mr-section-head {
   display: flex;
-  align-items: center;
-  gap: 10px;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding-block-end: 6px;
+  border-bottom: 1px solid var(--border-glass);
+
+  .mr-section-title {
+    margin: 0;
+    padding: 0;
+    border-bottom: 0;
+    text-box: trim-both cap alphabetic;
+
+    &:focus:not(:focus-visible) {
+      outline: none;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 4px;
+      border-radius: 2px;
+    }
+  }
 }
 
-// A table wider than the panel scrolls inside its own box. The page itself must never scroll
-// sideways — a horizontal scrollbar on the document moves every other panel with it.
-.mr-table-scroll {
-  width: 100%;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
+.mr-count-pill {
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.5;
+  color: #bbb;
+  font-variant-numeric: tabular-nums;
 }
 
-// --- Tier badge ---
+.mr-list-status {
+  flex: 1 1 12rem;
+  text-align: end;
+}
+
+.mr-suggestions-error,
+.mr-groups-error {
+  margin: 0;
+}
+
+// --- Filter bar -----------------------------------------------------------------------------------
+
+.mr-filter-bar {
+  padding-block: 4px 2px;
+}
+
+.mr-search {
+  flex: 1 1 16rem;
+}
+
+.mr-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+
+.mr-sort-label {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  white-space: nowrap;
+}
+
+.mr-sort-select {
+  min-block-size: 32px;
+  padding-block: 4px;
+  font-size: var(--text-secondary);
+}
+
+.mr-clear-filters {
+  margin-inline-start: 4px;
+}
+
+// --- Empty states ---------------------------------------------------------------------------------
+
+.mr-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 2rem 1rem;
+  border: 1px dashed var(--border-glass);
+  border-radius: 10px;
+  text-align: center;
+
+  p {
+    margin: 0;
+  }
+
+  .btn-ghost {
+    margin-block-start: 0.5rem;
+  }
+}
+
+.mr-empty-icon {
+  margin-block-end: 0.25rem;
+  color: #a1a1aa;
+}
+
+.mr-empty-title {
+  font-weight: 600;
+  color: #f4f4f5;
+}
+
+.mr-empty-text {
+  color: #a1a1aa;
+}
+
+// --- Cards: shared parts --------------------------------------------------------------------------
+
+.mr-suggestion-list,
+.mr-groups {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mr-card-item {
+  min-inline-size: 0;
+}
+
+.mr-sep {
+  color: #71717a;
+}
+
+// The model and its badges. A group's title is focused after Show more, a create and a delete, so it
+// carries a ring for that focus alone.
+.mr-card-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #f4f4f5;
+  overflow-wrap: anywhere;
+
+  &:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+.mr-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  margin: 0;
+  font-size: var(--text-secondary);
+  line-height: 1.4;
+  color: #a1a1aa;
+
+  > span {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.mr-card-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.mr-custom-name {
+  font-style: italic;
+  color: #a1a1aa;
+}
+
+// The included runs: the card's most prominent line after its title.
+.mr-runs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-inline-size: 0;
+}
+
+.mr-runs-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #888;
+}
+
+.mr-run-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mr-run-chip {
+  min-block-size: 28px;
+  padding: 2px 10px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color) 8%, transparent);
+  color: var(--primary-color);
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 18%, transparent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.mr-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-self: start;
+  justify-content: flex-end;
+  gap: 4px 8px;
+
+  .action-btn {
+    margin: 0;
+  }
+}
+
+.mr-card-error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+// --- Tier badge -----------------------------------------------------------------------------------
 //
-// Colour reinforces the tier; the word carries it. A reader who cannot distinguish the two greens
-// still reads "Tier A — Replicate", which is the only thing that decides whether pooling is legal.
+// Color reinforces the tier; the word carries it.
 .mr-tier {
   display: inline-block;
-  padding: 2px 10px;
+  padding: 1px 8px;
   border-radius: 999px;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-  font-size: 11px;
+  border: 1px solid var(--border-glass);
+  font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -227,9 +330,9 @@
   }
 
   &.tier-quality {
-    border-color: rgba(224, 186, 109, 0.5);
-    background: rgba(224, 186, 109, 0.12);
-    color: var(--primary-color, #e0ba6d);
+    border-color: color-mix(in srgb, var(--primary-color) 50%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+    color: var(--primary-color);
   }
 
   &.tier-cross {
@@ -245,697 +348,314 @@
   }
 }
 
+// --- Suggested groups -----------------------------------------------------------------------------
+
+.mr-suggestion-list {
+  container: mr-suggestions / inline-size;
+}
+
+// The title and the actions on one row; the runs, the meta line and any error under them.
+.mr-suggestion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.625rem 1.5rem;
+  padding: 0.875rem 1.25rem;
+  border: 1px dashed color-mix(in srgb, var(--primary-color) 40%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--primary-color) 4%, transparent);
+
+  .mr-card-title {
+    grid-column: 1;
+    grid-row: 1;
+    font-size: var(--text-body);
+  }
+
+  .mr-card-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .mr-runs,
+  .mr-card-meta {
+    grid-column: 1 / -1;
+  }
+}
+
+@container mr-suggestions (inline-size < 30rem) {
+  .mr-suggestion {
+    grid-template-columns: minmax(0, 1fr);
+
+    .mr-card-actions {
+      grid-column: 1;
+      grid-row: auto;
+      justify-content: flex-start;
+    }
+  }
+}
+
+// --- Analysis groups ------------------------------------------------------------------------------
+
+.mr-groups {
+  container: mr-groups / inline-size;
+}
+
+// The head, the metrics and the actions on one row; the runs, the note and the delete confirmation
+// span the card under them. The metric columns have a fixed width, so they line up down the list.
+.mr-group {
+  --mr-zone-gap: 1.5rem;
+  --mr-row-gap: 0.875rem;
+
+  display: grid;
+  grid-template-columns: minmax(min(100%, 18rem), 1fr) auto auto;
+  grid-template-areas: "head metrics actions";
+  gap: var(--mr-row-gap) var(--mr-zone-gap);
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+
+  > .mr-runs,
+  > .mr-note,
+  > .mr-confirm {
+    grid-column: 1 / -1;
+  }
+}
+
+.mr-group-head {
+  grid-area: head;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-inline-size: 0;
+}
+
+.mr-group-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0 0 calc(var(--mr-row-gap) - 0.375rem);
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+
+  .gh-tag {
+    display: inline-flex;
+    margin: 0;
+  }
+}
+
+.mr-group-id {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-color);
+}
+
+// The analysis state, a word in an outlined tag; Stale and Definition changed are buttons for their
+// tooltips.
+.mr-state {
+  border-color: var(--border-glass);
+  color: #d4d4d8;
+}
+
+.mr-state-current {
+  border-color: rgba(120, 200, 130, 0.45);
+  color: #a8dcb0;
+}
+
+.mr-state-stale {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+}
+
+.mr-definition-changed {
+  border: 1px dashed rgba(245, 158, 11, 0.55);
+  background: transparent;
+  color: #fcd34d;
+}
+
+button.mr-state-stale,
+button.mr-definition-changed {
+  font-family: inherit;
+  cursor: help;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+// The series badge is a control: it opens that series' progress dialog.
 .mr-badge {
   display: inline-block;
-  margin-left: 6px;
   padding: 1px 8px;
   border-radius: 999px;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border: 1px solid var(--border-glass);
   background: rgba(255, 255, 255, 0.04);
-  font-size: 10px;
-  text-transform: uppercase;
+  font: inherit;
+  font-size: 0.6875rem;
   letter-spacing: 0.05em;
-  color: #bbb;
+  text-transform: uppercase;
   white-space: nowrap;
 
-  &.mr-badge-stale {
-    border-color: rgba(224, 186, 109, 0.5);
-    color: var(--primary-color, #e0ba6d);
+  &.mr-badge-series {
+    color: #9fb6d0;
   }
 
-  &.mr-badge-warn {
-    border-color: rgba(214, 150, 90, 0.5);
-    color: #e0a878;
-  }
-
-  &.mr-badge-ok {
-    border-color: rgba(120, 200, 130, 0.4);
-    color: #a8dcb0;
-  }
-
-  &.mr-badge-muted {
-    color: #888;
-  }
-
-  // The series badge is a control: it opens that series' progress dialog, which is the only place
-  // a completed series' diagnostics can be copied from now that the Run Benchmark banner hides
-  // itself on completion.
   &.mr-badge-button {
     cursor: pointer;
-    font: inherit;
-    border-style: solid;
 
     &:hover {
       filter: brightness(1.25);
     }
 
     &:focus-visible {
-      outline: 2px solid var(--primary-color, #e0ba6d);
+      outline: 2px solid var(--primary-color);
       outline-offset: 2px;
     }
   }
-
-  &.mr-badge-series {
-    color: #9fb6d0;
-  }
 }
 
-// --- Group list ---
-
-.mr-group-table {
-  .col-name {
-    text-align: left;
-  }
-
-  .mr-group-name {
-    font-weight: 600;
-  }
-
-  tr.is-selected {
-    background: rgba(224, 186, 109, 0.06);
-  }
-
-  .col-actions {
-    white-space: nowrap;
-  }
-}
-
-// An unavailable action stays visible, focusable and hoverable so its tooltip can explain itself.
-// `disabled` would drop it out of the focus order and take the explanation with it.
-.mr-download.is-unavailable,
-.mr-download-detail.is-unavailable {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-// --- Group builder ---
-
-.mr-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-width: 60ch;
-  width: 100%;
-
-  label {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #999;
-  }
-
-  .mr-field-note {
-    font-size: 12px;
-    color: #999;
-  }
-}
-
-// The member list in the group detail dialog still reads bold, tabular-nums run ids and monospace
-// fingerprints from these two rules, so they stay even though the run picker below no longer uses
-// either class name — its own columns carry widths instead, under .mr-run-picker-table.
-.mr-run-id {
-  font-variant-numeric: tabular-nums;
-  color: #eee;
-  font-weight: 600;
-}
-
-.mr-run-fingerprint,
-.mr-mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  color: #9aa;
-}
-
-.mr-table-heading {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--gh-text, #f0f0f0);
-  margin: 20px 0 10px 0;
-}
-
-// Column widths only: the run picker is a plain sortable, filterable .gh-table like every other
-// one in the panel now, so there is no bordered fieldset box or per-row flex layout to style.
-table.mr-run-picker-table {
-  width: auto;
-
-  .col-center {
-    text-align: center;
-  }
-
-  .col-selected {
-    width: 1%;
-    white-space: nowrap;
-    padding-left: 8px;
-    padding-right: 8px;
-  }
-
-  .col-id { width: 7ch; }
-
-  .col-model {
-    width: 24ch;
-    min-width: 18ch;
-  }
-
-  .col-date { width: 20ch; white-space: nowrap; }
-
-  .col-quality-index,
-  .col-index {
-    width: 20ch;
-    white-space: nowrap;
-
-    .gh-th-label {
-      white-space: nowrap;
-    }
-  }
-
-  .col-speed-index {
-    width: 16ch;
-    white-space: nowrap;
-
-    .gh-th-label {
-      white-space: nowrap;
-    }
-  }
-
-  // Wide enough for the longest entry, "GUIDES" plus a space plus the eight-character prefix, so
-  // the stack never wraps. A plain header, so there is no .gh-th-label inside it — that span comes
-  // only from app-sort-header.
-  .col-fingerprint {
-    width: 24ch;
-    white-space: nowrap;
-  }
-}
-
-// The five instrument fingerprints stack, one per line, in the fixed order PROMPT, GUIDES, KB,
-// WIKI, SRC. Class names and colours match benchmark.component.scss so the picker and the run list
-// read the same; emulated encapsulation means that file's rules cannot reach here, hence the
-// second definition rather than a shared one.
-.instrument-fingerprints {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.instrument-fingerprint {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.25;
-  color: #9aa;
-  cursor: help;
-}
-
-// Colour reinforces the visible label; it never carries the meaning on its own, so the stack reads
-// the same in greyscale and to a colour-blind operator.
-.instrument-fingerprint.fp-prompt { color: var(--primary-color); }
-.instrument-fingerprint.fp-guides { color: var(--nav-color); }
-.instrument-fingerprint.fp-kb { color: var(--fp-kb-color); }
-.instrument-fingerprint.fp-wiki { color: var(--fp-wiki-color); }
-.instrument-fingerprint.fp-source { color: var(--fp-source-color); }
-
-// Always visible once something is selected, regardless of what the picker is filtered or paged
-// to — the whole point of the line is to say so when the selection is not all on screen.
-.mr-selection-summary {
-  font-size: 13px;
-  color: #ccc;
-}
-
-// --- Tier preview ---
-
-.mr-preview {
-  padding: 12px 14px;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
-  max-width: 110ch;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-
-  &.is-refused {
-    border-color: rgba(220, 110, 110, 0.45);
-  }
-}
-
-.mr-preview-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.mr-preview-explanation {
-  font-size: 13px;
-  line-height: 1.5;
-  color: #ccc;
-}
-
-.mr-preview-error {
-  font-size: 13px;
-  color: #e09090;
-}
-
-// The reasons behind a tier verdict. A refusal without them cannot be acted on, so they get the
-// space of a list rather than the space of a sentence.
-.mr-differences {
-  h4 {
-    margin-bottom: 6px;
-  }
-
-  .mr-difference-list {
-    margin: 0;
-    padding-left: 18px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .mr-difference-name {
-    font-weight: 600;
-    color: #eee;
-    font-size: 13px;
-  }
-
-  .mr-difference-kind {
-    margin-left: 8px;
-    font-weight: 400;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #888;
-  }
-
-  .mr-difference-description {
-    font-size: 13px;
-    line-height: 1.5;
-    color: #ccc;
-  }
-
-  .mr-variant-list {
-    margin: 4px 0 0;
-    padding-left: 16px;
-    list-style: circle;
-  }
-
-  .mr-variant {
-    font-size: 12px;
-    color: #bbb;
-  }
-
-  .mr-variant-value {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    color: #ddd;
-  }
-
-  .mr-variant-runs {
-    margin-left: 8px;
-    color: #999;
-  }
-}
-
-.mr-matched-keys {
-  font-size: 12px;
-
-  summary {
-    cursor: pointer;
-    color: #999;
-  }
-
-  &:focus-visible,
-  summary:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-}
-
-.mr-cross-condition {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-
-  label {
-    font-size: 13px;
-    line-height: 1.5;
-    color: #ccc;
-  }
-}
-
-.mr-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-
-  // The engaged state of the Show Selected Only toggle. Layered on top of .btn-gh by an attribute
-  // selector rather than a redefinition of the base class, the same way aria-selected drives a
-  // tab's appearance without a parallel .is-active class.
-  .btn-gh[aria-pressed="true"] {
-    filter: brightness(1.2);
-    box-shadow: 0 0 0 2px rgba(224, 186, 109, 0.4) inset;
-  }
-}
-
-// --- Group detail ---
-
-.mr-manifest {
+// Four metrics, each a small-caps label over its value and a qualifier line, behind a hairline.
+.mr-metrics {
+  grid-area: metrics;
+  display: grid;
+  grid-template-columns: repeat(4, 7.5rem);
+  align-content: start;
+  gap: 0.75rem 1rem;
   margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 110ch;
-
-  .mr-manifest-row {
-    display: flex;
-    gap: 12px;
-    align-items: baseline;
-  }
+  padding-inline-start: var(--mr-zone-gap);
+  border-inline-start: 1px solid rgba(255, 255, 255, 0.08);
 
   dt {
-    flex: 0 0 160px;
-    margin: 0;
-    font-size: 11px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
     color: #888;
   }
 
   dd {
-    margin: 0;
-    font-size: 13px;
-    color: #ddd;
-    min-width: 0;
-  }
-}
-
-.mr-member-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-
-  li {
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    font-size: 12px;
-    color: #bbb;
-  }
-}
-
-.mr-analysis-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.mr-provenance {
-  font-size: 12px;
-  color: #999;
-  max-width: 110ch;
-  line-height: 1.5;
-}
-
-// --- Aggregates ---
-
-.mr-aggregates {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-width: 110ch;
-}
-
-.mr-point {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-
-  .mr-point-value {
-    font-size: 34px;
-    font-weight: 700;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    margin: 0.25rem 0 0;
+    font-size: var(--text-body);
     font-variant-numeric: tabular-nums;
-    color: var(--primary-color, #e0ba6d);
-  }
-
-  .mr-point-label {
-    font-size: 12px;
-    color: #999;
   }
 }
 
-// The two components sit side by side, each with the question it answers and the way it behaves
-// as runs are added. Side by side rather than stacked because the contrast between "shrinks" and
-// "does not shrink" is the whole message, and a reader who scrolls past one of them loses it.
-.mr-interval-components {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+.mr-metric {
+  min-inline-size: 0;
+}
 
-  @container mr-panel-width (max-width: 720px) {
-    grid-template-columns: minmax(0, 1fr);
+.mr-metric-value {
+  font-weight: 700;
+  color: #f4f4f5;
+}
+
+.mr-metric-note {
+  font-size: var(--text-secondary);
+  line-height: 1.3;
+  color: #a1a1aa;
+}
+
+.mr-group > .mr-card-actions {
+  grid-area: actions;
+
+  // Set apart from the actions that only read the group.
+  .mr-delete {
+    margin-inline-start: 8px;
   }
 }
 
-.mr-interval {
-  padding: 12px 14px;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-
-  .mr-interval-question {
-    font-size: 13px;
-    font-style: italic;
-    color: #bbb;
-  }
-
-  .mr-interval-value {
-    font-size: 13px;
-    font-variant-numeric: tabular-nums;
-    color: #ddd;
-  }
-
-  .mr-interval-behaviour {
-    font-size: 12px;
-    line-height: 1.5;
-    color: #bbb;
-    padding-top: 6px;
-    border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.08));
-  }
-
-  .mr-shrinks strong { color: #a8dcb0; }
-
-  .mr-does-not-shrink strong { color: #e0a878; }
+.mr-group > .mr-runs {
+  padding-block-start: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.mr-combined {
-  padding: 12px 14px;
-  border: 1px solid rgba(224, 186, 109, 0.35);
-  border-radius: 8px;
-  background: rgba(224, 186, 109, 0.05);
-
-  .mr-combined-value {
-    font-size: 18px;
-    font-variant-numeric: tabular-nums;
-    color: #eee;
-  }
-
-  .mr-combined-range {
-    margin-left: 8px;
-    font-size: 14px;
-    color: #bbb;
-  }
-
-  .mr-combined-note {
-    margin-top: 6px;
-    font-size: 12px;
-    line-height: 1.5;
-    color: #bbb;
-  }
-}
-
-.mr-cross-check {
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.mr-caveat {
-  max-width: 110ch;
-}
-
-// --- Sub-sections, stat tiles and tables ---
-
-.mr-subsection {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-}
-
-.mr-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+// At most two lines; the analysis dialog shows the whole note.
+.mr-note {
+  display: -webkit-box;
   margin: 0;
-  max-width: 110ch;
-
-  .mr-stat {
-    flex: 1 1 150px;
-    padding: 10px 14px;
-    border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.02);
-
-    dt {
-      margin: 0 0 2px;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #888;
-    }
-
-    dd {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-      font-variant-numeric: tabular-nums;
-      color: #eee;
-    }
-  }
-}
-
-.mr-role-split {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  font-size: 13px;
+  max-inline-size: 70ch;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   color: #ccc;
-
-  .mr-role-name {
-    color: #999;
-    margin-right: 6px;
-  }
+  white-space: pre-wrap;
 }
 
-// --- Prompt under test, in the manifest ---
-.mr-prompt-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.mr-confirm {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  border-radius: 6px;
 
-  li {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
+  > span {
+    flex: 1 1 12rem;
+    overflow-wrap: anywhere;
+  }
+
+  .mr-delete-error {
+    flex-basis: 100%;
+    margin: 0;
   }
 }
 
-.mr-prompt-label {
-  color: #999;
-  min-width: 7ch;
-  flex-shrink: 0;
-}
+// A narrower list: the metrics move under the head, in four equal columns behind a hairline.
+@container mr-groups (inline-size < 60rem) {
+  .mr-group {
+    grid-template-columns: minmax(min(100%, 18rem), 1fr) auto;
+    grid-template-areas:
+      "head actions"
+      "metrics metrics";
+  }
 
-.mr-prompt-note {
-  margin-top: 8px !important;
-  font-size: 12px;
-  color: #bbb;
-  line-height: 1.5;
-  max-width: 100ch;
-  text-wrap: pretty;
-
-  &.mr-prompt-note-warning {
-    color: #fbbf24;
+  .mr-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-inline-start: 0;
+    padding-inline-start: 0;
+    padding-block-start: 0.75rem;
+    border-block-start: 1px solid rgba(255, 255, 255, 0.08);
   }
 }
 
-// --- Quality dimensions, cost roles and tool families ---
-.mr-dimension-table,
-.mr-cost-role-table,
-.mr-tool-family-table {
-  font-size: 13px;
-
-  .col-num {
-    text-align: right;
-    white-space: nowrap;
-  }
-
-  th[scope="row"] {
-    text-align: left;
-    font-weight: 600;
+// Two metrics per row, so none is left alone on the last row.
+@container mr-groups (inline-size < 36rem) {
+  .mr-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-.mr-dimension-gap {
-  font-size: 13px;
-  color: #ddd;
-}
-
-.mr-claim-line {
-  font-size: 13px;
-  color: #ddd;
-
-  strong { color: #eee; }
-}
-
-.mr-run-total {
-  display: inline-block;
-  margin-left: 8px;
-  font-variant-numeric: tabular-nums;
-}
-
-// The truncation marker on a clamped interval. Not decoration: the interval it sits beside is
-// narrower than its own half-width, and this is the only thing that says so.
-.mr-truncated-marker {
-  color: #fbbf24;
-  margin-left: 4px;
-  cursor: help;
-}
-
-.mr-item-table,
-.mr-comparison-table {
-  .col-center { text-align: center; }
-
-  .col-q {
-    text-align: left;
-    max-width: 42ch;
+// A phone: one column, the actions on their own line under the head.
+@container mr-groups (inline-size < 30rem) {
+  .mr-group {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "actions"
+      "metrics";
   }
 
-  .item-order {
-    display: inline-block;
-    margin-right: 8px;
-    font-weight: 600;
-    color: var(--primary-color, #e0ba6d);
-  }
-
-  .item-text {
-    color: #bbb;
-    font-weight: 400;
-  }
-
-  td { font-variant-numeric: tabular-nums; }
-
-  tr.is-unstable {
-    background: rgba(214, 150, 90, 0.06);
-  }
-
-  tr.is-rejected {
-    background: rgba(224, 186, 109, 0.06);
+  .mr-group > .mr-card-actions {
+    justify-content: flex-start;
   }
 }
 
-.mr-exploratory {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
+@media (prefers-reduced-motion: reduce) {
+  .mr-group,
+  .mr-run-chip {
+    transition: none;
+  }
 }

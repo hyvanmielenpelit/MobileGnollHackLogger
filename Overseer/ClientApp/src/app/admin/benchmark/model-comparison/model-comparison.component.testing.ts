@@ -408,7 +408,7 @@ async function createFixture(stubReportPackPanel: boolean): Promise<void> {
     // Step 4 lists its documents and step 3 charts them over HTTP.
     providers: [
       provideCharts({ registerables: APP_CHART_REGISTRABLES }), provideHttpClient(), provideHttpClientTesting(),
-      { provide: AdminAlertService, useValue: { alerts$: mc.alerts.asObservable() } }
+      { provide: AdminAlertService, useValue: { allAlerts$: mc.alerts.asObservable() } }
     ]
   });
   if (stubReportPackPanel) {

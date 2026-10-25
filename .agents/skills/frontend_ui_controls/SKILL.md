@@ -202,14 +202,14 @@ you already read the label, it is noise; drop it.
 
 | Icon | Buttons | Why it carries information |
 |------|---------|----------------------------|
-| plus | New Profile, Create Suite, Add Question | "Something new appears" — recognised without reading |
+| plus | New Profile, Create Suite, Add Question, **New group** (`.btn-ghost`, the Multi-Run Analysis header and its empty state, `aria-haspopup="dialog"`; opens the New analysis group dialog), **Create group** (`.btn-ghost`, each *Suggested groups* card) and the New analysis group dialog's footer **Create Group** (`.btn-gh`) | "Something new appears" — recognised without reading |
 | play | Start Benchmark, Acknowledge & Start Run, **Continue — <reason>** (the battery and series progress dialogs), **Build makedefs** (the Services tab's GnollHack Source dashboard) | "This begins now", and it reinforces the consequence of a button that starts real work |
 | trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center, on each written row of the Model Comparison wizard's step 3 *Documents of this comparison*, and on the run report's AI Reports tab, and the **Delete** of its confirmation), **Delete** a saved Chat Consistency analysis (`.btn-ghost.btn-ghost-danger`, each Analysis History card, and the **Delete** of its confirmation), **Delete the default {provider} key** (icon-only `.action-btn-danger`, each card of the Default API Keys dialog) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | pencil (Feather *edit-3*) | **Edit** (a battery card's actions), **Rename comparison** (icon-only `.action-btn` beside *Comparison #N — name* in the Model Comparison wizard's header; opens the nested rename dialog), **Replace the default {provider} key** (icon-only `.action-btn`, each card of the Default API Keys dialog; reveals the key input), **Edit configuration {name}** (icon-only, each System Configs card; opens the configuration's form), **Edit model {name}** (icon-only, each My Models card; opens the model's form) | "Change this thing's text in place" — it edits a name or a definition and runs nothing |
 | refresh / rotate | Refresh, Re-run failed questions, Re-run question, Re-assess question, **Re-run** (the run report's popover trigger, followed by a chevron state indicator), the icon-only **Recompute** of the Model Comparison, the icon-only **Reload runs** (the Chat Consistency wizard's header, steps 1 and 2), **Re-index Source Files** (`.btn-gh`, the GnollHack Source dashboard) and its load error's **Retry** (`.btn-ghost`), **Re-index wiki** and **Reload articles** (`.btn-gh`, the GnollHack Wiki, NetHack Wiki and Knowledge Base dashboards), **Re-check** (`.btn-ghost`, the Configuration Health dashboard), **Refresh telemetry** (icon-only `.action-btn`, the AI Telemetry header; `aria-disabled` with a spinner while loading) | "This runs again" — the circular-arrow convention is universal; the repair verbs that use it are in §4g |
 | flask | **Try another assessor (does not change the score)** (`.btn-ghost`, each question of the run report) | "An experiment": it records another assessor's verdict beside the score and changes nothing, so it must not look like the repairs beside it |
 | undo (curved arrow back) | Reset a settings section to its defaults, **Reset the order of system-provided models** (icon-only `.action-btn`, Settings → Models) | "Back to where it started" — distinct from rotate, which means "runs again" |
-| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog and the Model Comparison wizard's Write step), **Open Download Center** (`.btn-ghost`, the Model Comparison launcher's *Comparison reports*, `app-report-documents-launcher`), **Download Markdown report** (icon-only, each Run History card), **Documents (N)** (`.btn-ghost`, the Chat Consistency launcher's *Latest analysis*; opens the wizard on step 6, *Documents*) | "A file arrives on your disk" |
+| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog and the Model Comparison wizard's Write step), **Open Download Center** (`.btn-ghost`, the Model Comparison launcher's *Comparison reports*, `app-report-documents-launcher`), **Download Markdown report** (icon-only, each Run History card), **Download the Markdown report of group #N** (icon-only `.action-btn`, each Multi-Run Analysis group card, `aria-disabled` until the group has an analysis) and **Download Report** (`.btn-gh`, the group analysis dialog's action row), **Documents (N)** (`.btn-ghost`, the Chat Consistency launcher's *Latest analysis*; opens the wizard on step 6, *Documents*) | "A file arrives on your disk" |
 | download (one arrow into a tray) | Download one chart (Model Comparison; each tile and the *Single chart* toolbar of the Chat Consistency wizard's Charts step), **Download** a Results section as an image (icon-only, the export group beside the Chat Consistency Results tabs) | "This one image arrives on your disk" |
 | download-all (two arrows into one tray) | Download all charts (the *All charts* toolbar of Model Comparison and of the Chat Consistency Charts step) | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
 | copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header, the report writing progress dialog and the Model Comparison wizard's Write step), **Copy** a chart (icon-only, each tile and the *Single chart* toolbar of the Chat Consistency Charts step), **Copy** a Results section as an image (icon-only, the export group beside the Chat Consistency Results tabs), **Copy build output** and **Copy last build output** (icon-only, the GnollHack Source dashboard) | "Copies to the clipboard" — nothing is saved to disk |
@@ -235,7 +235,7 @@ you already read the label, it is noise; drop it.
 | chevron-left / chevron-right (Feather *chevron-left* `<polyline points="15 18 9 12 15 6">`, *chevron-right* `<polyline points="9 18 15 12 9 6">`) | **Previous figure** / **Next figure** (icon-only, Model Comparison's *Single chart* toolbar), **Previous chart** / **Next chart** (icon-only, the Chat Consistency Charts step's *Single chart* toolbar), **Previous month** / **Next month** (icon-only, the header of `app-date-field`'s calendar, §4h) | **Previous / next** in a sequence: the item before or after this one, of the same kind. Never a state indicator — that is the down/up *chevron* above |
 | calendar (Feather *calendar*: a rounded rectangle, two rings and a rule) | **Choose {label} on a calendar** (icon-only `.action-btn` at the end of every `app-date-field`, §4h) | "Choose a date on a calendar" — the one glyph that opens a date picker, and nothing else |
 | search (a magnifier) | The leading glyph of a search field (the Download Center's *Search documents*); **Search models** (icon-only `.action-btn`, the model pickers' view toolbar, §4e; shows the search field) | "Type to find". In a field it is decorative, `aria-hidden`: the field's label names it. The model pickers' toggle is the one button that carries it, and it still means "type to find": it shows the field where the typing happens |
-| x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar), **Clear selection** (`.btn-ghost`, the Model Comparison wizard's step-1 selection bar, §8i), **Clear search** (icon-only `.action-btn`, the model pickers' view toolbar, §4e) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}*. Clear selection drops every selected source as removing one selection chip drops one, and deletes nothing |
+| x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar), **Clear selection** (`.btn-ghost`, the Model Comparison wizard's step-1 selection bar, §8i), **Clear search** (icon-only `.action-btn`, the model pickers' view toolbar, §4e), **Dismiss suggestion** (icon-only `.action-btn`, each Multi-Run Analysis *Suggested groups* card; hides it in this browser) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}*. Clear selection drops every selected source as removing one selection chip drops one, and deletes nothing |
 | filter (Feather *filter*: a funnel, `<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3">`) | **Filter and sort models** (icon-only `.action-btn`, the model pickers' trigger, just before the chevron, §4e; shows the view toolbar), the Admin System Configs filter button (`config-filter.component.html`; opens its filter panel) | "Show the filter controls" — the controls appear; the button itself narrows nothing |
 | arrow-down-up (Lucide *arrow-down-up* geometry, matching Feather's 24×24 stroke: `<path d="m3 16 4 4 4-4"/>`, `<path d="M7 20V4"/>`, `<path d="m21 8-4-4-4 4"/>`, `<path d="M17 4v16"/>`) | **Sort models** (icon-only `.action-btn`, the model pickers' view toolbar, §4e; opens the Sort popover), **Sort** (`.btn-ghost` with the visible label *Sort: {field}, {order}*, the filter bars of the AI Telemetry breakdown, the Users view and both usage dialogs; opens the Sort popover) | "Change the order of this list" — it reorders and hides nothing; the filters are the provider toggles beside it |
 | arrow-right (Feather: a line and a chevron head, `<line x1="5" y1="12" x2="19" y2="12">`, `<polyline points="12 5 19 12 12 19">`) | The admin alert's call-to-action link (trailing, `aria-hidden`; the one glyph that ends a label rather than leading it) | "Go there": the link opens the page where the alert is dealt with |
@@ -690,6 +690,18 @@ wizard's Paired tests **Reference** is an `app-model-picker` (`benchmark.compari
 instead of a native `<select>`, the baseline model's option tagged *Baseline*. Comparison entries and
 Chat Consistency model axes carry the catalog `releaseDate`, so the Report Pack's Models and Reference
 model pickers and the Chat Consistency subject picker offer the release-date sorts.*
+
+*Changed 2026-10-25 (Multi-Run Analysis cards and dialogs, §8h): no glyph is new. Multi-Run Analysis
+lost its tables: the page is a header card (the Suite select, an info tip, a `.btn-ghost` **New group**
+with* plus*, an icon-only **Refresh**), *Suggested groups* cards and the *Analysis groups* card list, and
+group building and a group's analysis moved into two dialogs, `app-group-builder-dialog` (the runs as
+cards) and `app-group-analysis-dialog` (section tabs, a `.gh-tabs-secondary` row). A suggestion's
+`.btn-ghost` **Create group** and the builder's footer **Create Group** carry* plus*; the group card's
+icon-only report download and the dialog's **Download Report** carry* file-with-arrow*; a suggestion's
+icon-only **Dismiss suggestion** carries* x*, a dismissal that deletes nothing; a group card's **Open
+analysis** is* eye *and **Delete group** is* trash *on `.action-btn-danger`, with an inline
+**Delete** / **Keep** confirmation. The three lists are §8h card lists (the twenty-fourth to
+twenty-sixth), and §8 no longer names a multi-run table.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -2090,11 +2102,11 @@ concerns.
 
 ## 8. Data tables
 
-The benchmark tables — **Runs in this group** and **Analysis groups** (`multi-run.component`), and
-the Model Comparison's entry table — share one implementation of paging, column sorting and
-column filtering. Hand-rolled copies in one tab would be several places for the same bug. **Run
-History** was the first of these tables, and the Model Comparison wizard's step-1 source tables were
-three more; all are now card lists (§8h).
+The benchmark tables — the Model Comparison's entry table among them — share one implementation of
+paging, column sorting and column filtering. Hand-rolled copies in one tab would be several places for
+the same bug. **Run History** was the first of these tables, the Model Comparison wizard's step-1
+source tables were three more, and Multi-Run Analysis's **Runs in this group** and **Analysis groups**
+two more; all are now card lists (§8h).
 
 The layer is deliberately **headless plus presentational**, not a generic `<app-data-table>`.
 These tables' cells carry tier badges, score badges, instrument fingerprints, tooltips and
@@ -2125,7 +2137,8 @@ sorted stays a plain `.gh-table`; adding a pager to it is noise.
 uses `<caption>` in place of the `<legend>` — `<caption>` is a table's native naming
 mechanism — the `<fieldset>` is dropped, and each checkbox carries its own `aria-label`
 naming its subject (*"Include run 21 in this group"*), exactly as §4 requires of any control
-whose visible text is not its name.
+whose visible text is not its name. Since 2026-10-25 those runs are cards in the New analysis group
+dialog (§8h), and each checkbox keeps that `aria-label`.
 
 A list whose every row is a **small form** — selects, several checkboxes, a few actions — is not a
 table at all but a card list; §8h says when and how.
@@ -2269,9 +2282,9 @@ A paged, filtered table can hide the operator's own selection. The rules that ke
 - **No header "select all" checkbox.** Over a filtered, paged list it means one of three
   different things — this page, these filtered rows, or everything — and a set built by
   accident is exactly what a comparability preview exists to prevent.
-- **Every lookup searches the source list.** `openGroupById`, `selectGroup` and `deleteGroup`
-  search `this.groups`, never `groupTable.view(...)`: a row that exists but sits on page 2 must
-  still open.
+- **Every lookup searches the source list.** Multi-Run Analysis's `openGroupById` searches
+  `this.groups`, never the card list's view: a group that exists but sits beyond the shown batch, or
+  is hidden by a filter, must still open.
 
 ### 8g. Where the data-table styles live
 
@@ -2421,6 +2434,57 @@ filter bar adds a *Self-reports* select (*Accepted only* / *Accepted and refused
 *Question*, *Information condition*, *Corpus*, *Experimental Changes*, *Harness*). Its view and selection
 use the same storage and selection bar under the `gnollbench` source, keyed by fingerprint. See
 `docs/overseer/ai-feedback-reports.md` § 11 and § 12.
+
+The **Multi-Run Analysis group cards** (`app-benchmark-multi-run`, `admin/benchmark/multi-run/`,
+2026-10-25) are the twenty-fourth, replacing the *Analysis groups* table. One full-width
+`article.mr-group[aria-labelledby="mr-group-<id>-title"]` per group of the page's suite, in Run History's
+layout: a kicker (`#id`, the tier, the analysis state as a `.gh-tag` word — *Stale* is a `<button>` whose
+`interestfor` tooltip says why, *Definition changed* likewise — and a *Series N* badge button that opens
+the series' progress dialog), the model as the `h5` title (`app-model-identity`, `tabindex="-1"`, the
+focus target after *Show more*, a create and a delete), a meta line (*Created* and, for a name someone
+typed, the name as a quoted caption; a generated name is not shown), a `dl` of four **fixed-width**
+metrics (*Intelligence* with its half-width as the qualifier line, *Speed*, *Cost / run*, *Runs*; four
+equal columns under the head below 60 rem of the list's width, two below 36 rem), a labeled
+`role="group"` of icon-only actions (*Open analysis*, the Markdown report download, *Delete group*), the
+member runs as a `ul role="list"` of `#id` chip buttons that open each run's report, the note, and an
+inline delete confirmation. A dot separates the kicker's and meta line's parts on screen and a
+visually hidden comma for assistive technology. It is a `CardListState` list with the full filter bar,
+shown above three groups or while a filter is active: a search (`#id`, model, run, note or name), *Sort
+by* (*Newest first*, *Oldest first*, *Most runs*, *Highest index*, *Tier (A first)*, *Model (A–Z)*,
+remembered in `overseer.benchmark.multiRun.groups.view`), *Tier*, *Analysis*, *Origin* and *Model*
+facets, chips, batches of 10 with *Show N more* / *Show all M*, one polite status line, and two empty
+states (*No analysis groups for this suite yet* with a **New group** button, and *No groups match these
+filters.* with *Clear all filters*), each a dashed `.mr-empty` card with a 32 px `aria-hidden` glyph.
+
+The **Multi-Run Analysis suggestion cards** (the same component, 2026-10-25) are the twenty-fifth: one
+`article.mr-suggestion` per suggested group, above the group list under a *Suggested groups* section
+title with a count pill. A dashed card faintly tinted with `--primary-color`: the model as the `h5` title, the runs as the same
+chip list, a meta line (tier, *R*, the time span as two `<time>` elements, the series and the mean
+index), and a labeled `role="group"` with a `.btn-ghost` **Create group** (`aria-busy` while its request
+runs, and `aria-disabled` on every card meanwhile) and an icon-only **Dismiss suggestion**; a refused or
+failed create shows as a `role="alert"` line on that card only. Its recorded exception: no
+`CardListState`, no filter bar and no batching, because the server returns at most 20, newest first. A
+dismissal is kept per browser in `overseer.benchmark.multiRun.dismissedSuggestions` as
+`{ version: 1, keys }` (at most 200, every access in `try/catch`), keyed by the comparability key hash and
+the run ids, so a cluster that gains a run is a new suggestion.
+
+The **New analysis group dialog's run cards** (`app-group-builder-dialog`, `multi-run/group-builder-dialog/`,
+2026-10-25) are the twenty-sixth, replacing the *Runs in this group* table. One
+`article.mr-run[aria-labelledby="mr-run-<id>-title"]` per run of the suite: a checkbox top left whose
+`aria-label` is *Include run N in this group*, the model as the `h5` title wrapped in the checkbox's
+`<label>` so a click on the title selects the card, a meta line (`#id`, status, start), *Intelligence*
+and *Speed* metrics (*Advisory timing* as the qualifier), the five instrument hashes as short chip buttons
+(*PROMPT*, *GUIDES*, *KB*, *WIKI*, *SRC*) whose tooltips name the corpus and the full hash, and, for a
+run that has not settled, the reason. That run's checkbox is `aria-disabled`, not `disabled`: it stays
+focusable, is described by the reason, and its click is cancelled (an already selected one can still be
+removed). It is a `CardListState` list: a search (`#id`, model, status or hash), *Sort by* (*Newest
+first*, *Oldest first*, *Highest index*, *Model (A–Z)*, remembered in
+`overseer.benchmark.multiRun.runs.view`), *Model*, *Status* and *Telemetry* facets, chips, a **Show
+selected only** `.gh-filter-toggle` that is a view setting rather than a filter (no chip, and *Clear all*
+keeps it), batches of 20, and one polite status line. The selection is held by id and shown in the
+dialog's §8i selection band; the tier preview with its reasons sits between the band and the list, and
+the footer's **Create Group** stays `aria-disabled` with a footer note naming why until the set can be
+created.
 
 The **charts dialog's Models, Users and Groups tabs** (`app-telemetry-chart-{models,users,groups}`,
 `admin/telemetry-tab/charts/selection/`, 2026-10-21) are a recorded exception too: checkbox lists under a

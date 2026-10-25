@@ -1,1272 +1,433 @@
 <div class="multi-run">
-  @if (suiteId == null) {
-    <p class="text-muted">Select a benchmark suite to see its replicate sets.</p>
+  <!-- The header: the page's own suite, About, New group and Refresh. -->
+  <div class="tab-header-row mr-header">
+    <h3>Multi-Run Analysis</h3>
+    <div class="mr-header-tools">
+      <div class="mr-suite" role="group" aria-label="Suite">
+        <label for="mr-suite-select" class="visually-hidden">Suite</label>
+        <select id="mr-suite-select" class="gh-input mr-suite-select" (change)="onSuiteChange($event)">
+          @if (selectedSuiteId == null) {
+            <option value="" disabled selected>No suites yet</option>
+          }
+          @for (suite of suites; track suite.id) {
+            <option [value]="suite.id" [selected]="suite.id === selectedSuiteId">{{ suite.name }}</option>
+          }
+        </select>
+      </div>
+      <app-info-tip trigger="dialog" tipId="mr-about-tip" subject="multi-run analysis" dialogTitle="About multi-run analysis">
+        <dl>
+          <div>
+            <dt><span class="gh-info-term">Analysis group</span></dt>
+            <dd>A set of runs of one suite and one model that the statistics are computed over: the pooled Intelligence Index with its uncertainty, speed and cost.</dd>
+          </div>
+          <div>
+            <dt><span class="gh-info-term">Tier A — Replicate</span></dt>
+            <dd>The runs repeat one condition exactly, so they are pooled into one index with its interval.</dd>
+          </div>
+          <div>
+            <dt><span class="gh-info-term">Tier B — Quality-comparable</span></dt>
+            <dd>The quality scores are comparable, but timing or pricing differs, so speed and cost are flagged as degraded.</dd>
+          </div>
+          <div>
+            <dt><span class="gh-info-term">Tier C — Cross-condition</span></dt>
+            <dd>The runs span two conditions, so they are compared with each other and never averaged into one index.</dd>
+          </div>
+        </dl>
+        <p>A completed series or battery creates and analyzes its groups automatically.</p>
+      </app-info-tip>
+      <button type="button" class="btn-ghost mr-new-group" aria-haspopup="dialog"
+              [attr.aria-disabled]="selectedSuiteId == null ? 'true' : null"
+              (click)="openBuilder()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        New group
+      </button>
+      <!-- aria-disabled while a load runs, so the button keeps its focus and its tooltip. -->
+      <button type="button" class="action-btn mr-refresh" id="mr-refresh"
+              aria-label="Refresh multi-run analysis"
+              [attr.aria-disabled]="loading ? 'true' : null"
+              interestfor="mr-refresh-tip" style="anchor-name: --mr-refresh-tip"
+              (click)="refresh()">
+        @if (loading) {
+          <span class="gh-spinner-small" aria-hidden="true"></span>
+        } @else {
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+        }
+      </button>
+      <div popover="hint" class="gh-tooltip" id="mr-refresh-tip" style="position-anchor: --mr-refresh-tip">Refresh</div>
+    </div>
+  </div>
+
+  @if (selectedSuiteId == null) {
+    <p class="text-muted mr-no-suite">Create a benchmark suite in Manage Suites to analyze its runs here.</p>
   } @else {
 
-    <!-- ===================================================================================
-         GROUP LIST
-         =================================================================================== -->
-    <section class="mr-section" aria-labelledby="mr-groups-heading">
-      <div class="mr-section-head">
-        <h3 id="mr-groups-heading">Analysis groups</h3>
-        <button type="button" class="action-btn" (click)="loadGroups()"
-                aria-label="Refresh the analysis group list"
-                interestfor="mr-tip-refresh-groups"
-                style="anchor-name: --mr-tip-refresh-groups">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <polyline points="1 20 1 14 7 14"></polyline>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-          </svg>
-        </button>
-        <div popover="hint" class="gh-tooltip" id="mr-tip-refresh-groups"
-             style="position-anchor: --mr-tip-refresh-groups">Reload the group list</div>
-      </div>
-
-      <p class="section-note">
-        A group is a set of runs the statistics may be computed over. Only a
-        <strong>Tier A — Replicate</strong> set may be pooled into one index; a Tier C set is two
-        conditions, and the honest operation on it is a comparison rather than an average.
-      </p>
-
-      @if (loadingGroups) {
-        <p class="text-muted">Loading groups...</p>
-      } @else if (groupsError) {
-        <div class="alert alert-warning" role="alert">
-          <div class="alert-content"><div class="alert-body">{{ groupsError }}</div></div>
+    <!-- Replicate clusters of runs that no group holds yet. -->
+    @if (visibleSuggestions.length > 0) {
+      @let suggestionList = visibleSuggestions;
+      <section class="mr-section mr-suggestions" aria-labelledby="mr-suggestions-title">
+        <div class="mr-section-head">
+          <h4 class="gh-section-title mr-section-title" id="mr-suggestions-title">Suggested groups</h4>
+          <span class="mr-count-pill" aria-hidden="true">{{ suggestionList.length }}</span>
         </div>
-      } @else if (groups.length === 0) {
-        <p class="text-muted">No groups yet for this suite. Build one below, or run a multi-run series — a completed series creates its own group.</p>
-      } @else {
-        <div class="mr-table-scroll gh-datatable-scroll">
-          <app-table-pager [state]="groupTable" [rows]="groups" noun="groups" (changed)="onTableChanged()"></app-table-pager>
-          <table class="gh-table gh-datatable mr-group-table">
-            <caption class="visually-hidden">Analysis groups for this suite: name, comparability tier, run count, creation date and analysis state.</caption>
-            <thead>
-              <tr>
-                <th app-sort-header [state]="groupTable" column="name" label="Group" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="groupTable" column="tier" label="Tier" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="groupTable" column="runCount" label="R" class="col-center" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="groupTable" column="createdAtUtc" label="Created" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="groupTable" column="analysisDate" label="Analysis" (changed)="onTableChanged()"></th>
-                <th scope="col" class="col-actions"><span class="visually-hidden">Actions</span></th>
-              </tr>
-              <tr class="gh-filter-row">
-                <td>
-                  <label class="visually-hidden" for="mr-f-group-name">Filter by group name</label>
-                  <input id="mr-f-group-name" type="text" class="gh-input gh-filter-input" placeholder="Name"
-                         [ngModel]="groupTable.filters['name']" [ngModelOptions]="{ standalone: true }"
-                         (ngModelChange)="groupTable.setFilter('name', $event); cdr.detectChanges()">
-                </td>
-                <td>
-                  <label class="visually-hidden" for="mr-f-group-tier">Filter by tier</label>
-                  <select id="mr-f-group-tier" class="gh-input gh-filter-select"
-                          [ngModel]="groupTable.filters['tier']" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="groupTable.setFilter('tier', $event); cdr.detectChanges()">
-                    <option value="">All</option>
-                    <option value="Replicate">{{ tierName('Replicate') }}</option>
-                    <option value="QualityComparable">{{ tierName('QualityComparable') }}</option>
-                    <option value="CrossCondition">{{ tierName('CrossCondition') }}</option>
-                  </select>
-                </td>
-                <td></td>
-                <td></td>
-                <td>
-                  <label class="visually-hidden" for="mr-f-group-state">Filter by analysis state</label>
-                  <select id="mr-f-group-state" class="gh-input gh-filter-select"
-                          [ngModel]="groupTable.filters['analysisState']" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="groupTable.setFilter('analysisState', $event); cdr.detectChanges()">
-                    <option value="">All</option>
-                    <option value="analysed">Analyzed</option>
-                    <option value="notAnalysed">Not analyzed</option>
-                    <option value="stale">Stale</option>
-                  </select>
-                </td>
-                <td>
-                  @if (groupTable.hasActiveFilters) {
-                    <button type="button" class="gh-filter-clear" (click)="groupTable.clearFilters(); cdr.detectChanges()">Clear filters</button>
+        <ul class="mr-suggestion-list" role="list" aria-labelledby="mr-suggestions-title">
+          @for (suggestion of suggestionList; track suggestionKey(suggestion)) {
+            @let domId = suggestionDomId(suggestion);
+            @let key = suggestionKey(suggestion);
+            @let seriesId = suggestionSeriesId(suggestion);
+            <li class="mr-card-item">
+              <article class="mr-suggestion" [attr.aria-labelledby]="domId + '-title'">
+                <h5 class="mr-card-title" [id]="domId + '-title'">
+                  <app-model-identity [name]="suggestionModelName(suggestion)" [provider]="suggestion.testedModel.provider"
+                                      [thinkingLevel]="suggestion.testedModel.thinkingLevel"
+                                      [reasoningMode]="suggestion.testedModel.reasoningMode"></app-model-identity>
+                </h5>
+
+                <div class="mr-runs">
+                  <span class="mr-runs-label" [id]="domId + '-runs'">Runs</span>
+                  <ul class="mr-run-chips" role="list" [attr.aria-labelledby]="domId + '-runs'">
+                    @for (runId of suggestion.runIds; track runId) {
+                      <li>
+                        <button type="button" class="mr-run-chip" (click)="openRunReport(runId)"
+                                [attr.aria-label]="'Open run report #' + runId"
+                                [attr.interestfor]="domId + '-run-' + runId + '-tip'"
+                                [attr.style]="'anchor-name: --' + domId + '-run-' + runId + '-tip'">#{{ runId }}</button>
+                        <div popover="hint" class="gh-tooltip" [id]="domId + '-run-' + runId + '-tip'"
+                             [attr.style]="'position-anchor: --' + domId + '-run-' + runId + '-tip'">Open run report</div>
+                      </li>
+                    }
+                  </ul>
+                </div>
+
+                <!-- A dot on screen between the parts, a comma for assistive technology. -->
+                <p class="mr-card-meta">
+                  <span class="mr-tier" [class]="'mr-tier ' + tierClass(suggestion.tier)">{{ tierName(suggestion.tier) }}</span>
+                  <span class="mr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span>R = {{ suggestion.runCount }}</span>
+                  <span class="mr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="mr-card-time">
+                    <time [attr.datetime]="isoDate(suggestion.firstStartedAtUtc)">{{ formatUtc(suggestion.firstStartedAtUtc) }}</time>
+                    <span aria-hidden="true"> – </span><span class="visually-hidden"> to </span>
+                    <time [attr.datetime]="isoDate(suggestion.lastStartedAtUtc)">{{ formatUtc(suggestion.lastStartedAtUtc) }}</time>
+                  </span>
+                  @if (seriesId != null) {
+                    <span class="mr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span>Series {{ seriesId }}</span>
                   }
-                </td>
-              </tr>
-            </thead>
-            <tbody>
-              @if (groupTable.noMatches(groups)) {
-                <tr><td colspan="6" class="text-muted">No groups match these filters.</td></tr>
-              }
-              @for (group of groupTable.view(groups); track group.id) {
-                <tr [class.is-selected]="selectedGroup?.id === group.id">
-                  <th scope="row" class="col-name">
-                    <span class="mr-group-name">{{ group.name }}</span>
-                    <!--
-                      The permanent route to a finished series. The Run Benchmark banner that used to
-                      carry the only one disappears when the series ends, and the series dialog is
-                      where both diagnostics captures are copied from.
-                    -->
-                    @if (group.createdFromSeriesId != null) {
-                      <button type="button" class="mr-badge mr-badge-series mr-badge-button"
-                              (click)="viewSeries(group)"
-                              [attr.aria-label]="'Show progress for series ' + group.createdFromSeriesId"
-                              [attr.interestfor]="seriesTipId(group.id)"
-                              [attr.style]="'anchor-name: --' + seriesTipId(group.id)">Series {{ group.createdFromSeriesId }}</button>
-                      <div popover="hint" class="gh-tooltip" [id]="seriesTipId(group.id)"
-                           [attr.style]="'position-anchor: --' + seriesTipId(group.id)">Show this series' progress and diagnostics</div>
-                    }
-                  </th>
-                  <td>
-                    <span class="mr-tier" [class]="'mr-tier ' + tierClass(group.tier)">{{ group.tierLabel || tierName(group.tier) }}</span>
-                  </td>
-                  <td class="col-center">{{ group.runCount }}</td>
-                  <td>{{ formatDate(group.createdAtUtc) }}</td>
-                  <td>
-                    @if (group.latestAnalysisId == null) {
-                      <span class="text-muted">Not analyzed</span>
-                    } @else {
-                      <span>{{ formatDate(group.latestAnalysisAtUtc) }}</span>
-                      @if (group.analysisStale) {
-                        <span class="mr-badge mr-badge-stale"
-                              [attr.interestfor]="'mr-tip-stale-' + group.id"
-                              [attr.style]="'anchor-name: --mr-tip-stale-' + group.id">Stale analysis</span>
-                        <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="'mr-tip-stale-' + group.id"
-                             [attr.style]="'position-anchor: --mr-tip-stale-' + group.id">
-                          The membership changed after this analysis was computed. The stored result is
-                          not wrong — it records the runs it covered — but it no longer describes this group.
-                        </div>
-                      }
-                    }
-                    @if (group.comparabilityKeyStale) {
-                      <span class="mr-badge mr-badge-stale"
-                            [attr.interestfor]="'mr-tip-keystale-' + group.id"
-                            [attr.style]="'anchor-name: --mr-tip-keystale-' + group.id">Comparability definition changed</span>
-                      <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="'mr-tip-keystale-' + group.id"
-                           [attr.style]="'position-anchor: --mr-tip-keystale-' + group.id">
-                        Comparability definition changed — re-analyze to refresh the key hash.
-                      </div>
-                    }
-                  </td>
-                  <td class="col-actions">
-                    <!-- View first, matching the Run History row's order. -->
-                    <button type="button" class="action-btn" (click)="openGroup(group)"
-                            [attr.aria-label]="'View analysis for group ' + group.name"
-                            [attr.interestfor]="viewTipId(group.id)"
-                            [attr.style]="'anchor-name: --' + viewTipId(group.id)">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                        <circle cx="12" cy="12" r="3"></circle>
-                      </svg>
-                      <span class="visually-hidden">View analysis</span>
-                    </button>
-                    <div popover="hint" class="gh-tooltip" [id]="viewTipId(group.id)"
-                         [attr.style]="'position-anchor: --' + viewTipId(group.id)">View analysis</div>
-
-                    <!--
-                      aria-disabled rather than disabled: a disabled control leaves the focus order
-                      entirely, so a keyboard user cannot land on it and read the tooltip that says
-                      why the report is unavailable. The handler refuses independently.
-                    -->
-                    <button type="button" class="action-btn mr-download"
-                            [class.is-unavailable]="!canDownloadReport(group)"
-                            [attr.aria-disabled]="!canDownloadReport(group)"
-                            (click)="downloadGroupReport(group)"
-                            [attr.aria-label]="'Download report for group ' + group.name"
-                            [attr.interestfor]="downloadTipId(group.id)"
-                            [attr.style]="'anchor-name: --' + downloadTipId(group.id)">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7 10 12 15 17 10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                      </svg>
-                      <span class="visually-hidden">Download report</span>
-                    </button>
-                    <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="downloadTipId(group.id)"
-                         [attr.style]="'position-anchor: --' + downloadTipId(group.id)">{{ downloadReportTooltip(group) }}</div>
-
-                    <button type="button" class="action-btn action-btn-danger" (click)="deleteGroup(group)"
-                            [attr.aria-label]="'Delete group ' + group.name"
-                            [attr.interestfor]="deleteTipId(group.id)"
-                            [attr.style]="'anchor-name: --' + deleteTipId(group.id)">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <polyline points="3 6 5 6 21 6"></polyline>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                      </svg>
-                      <span class="visually-hidden">Delete group</span>
-                    </button>
-                    <div popover="hint" class="gh-tooltip" [id]="deleteTipId(group.id)"
-                         [attr.style]="'position-anchor: --' + deleteTipId(group.id)">Delete this group. The runs themselves are untouched.</div>
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-      }
-    </section>
-
-    <!-- ===================================================================================
-         GROUP BUILDER
-         =================================================================================== -->
-    <section class="mr-section" aria-labelledby="mr-builder-heading">
-      <h3 id="mr-builder-heading">Build a group</h3>
-      <p class="section-note">
-        Select two or more runs. The comparability tier is computed as you select, and a refusal
-        names which keys differ and on which runs — a verdict without its reasons cannot be acted on.
-      </p>
-
-      <div class="mr-field">
-        <label for="mr-group-name">Group name</label>
-        <input id="mr-group-name" type="text" class="gh-input" [(ngModel)]="builderName"
-               placeholder="e.g. Suite 5 · GPT-5.6 · baseline · R=3">
-      </div>
-
-      <div class="mr-field">
-        <label for="mr-group-notes">Notes</label>
-        <textarea id="mr-group-notes" class="gh-input" rows="2" [(ngModel)]="builderNotes"></textarea>
-      </div>
-
-      @if (loadingRuns) {
-        <p class="text-muted">Loading runs...</p>
-      } @else if (runsError) {
-        <div class="alert alert-warning" role="alert">
-          <div class="alert-content"><div class="alert-body">{{ runsError }}</div></div>
-        </div>
-      } @else if (availableRuns.length === 0) {
-        <p class="text-muted">No runs recorded for this suite.</p>
-      } @else {
-        <h4 id="mr-runs-table-heading" class="mr-table-heading">Runs in this group</h4>
-        <app-table-pager [state]="runPickerTable" [rows]="availableRuns" noun="runs" (changed)="onTableChanged()"></app-table-pager>
-        <div class="mr-table-scroll">
-          <table class="gh-table gh-datatable mr-run-picker-table">
-            <caption class="visually-hidden">Runs in this group</caption>
-            <thead>
-              <tr>
-                <th app-sort-header [state]="runPickerTable" column="selected" label="Selected" class="col-center col-selected" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="runPickerTable" column="id" label="ID" class="col-center col-id" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="runPickerTable" column="testedModel" label="Tested Model" class="col-model" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="runPickerTable" column="date" label="Date" class="col-date" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="runPickerTable" column="qualityIndex" label="Intelligence Index" class="col-center col-quality-index" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="runPickerTable" column="speedIndex" label="Speed Index" class="col-center col-speed-index" (changed)="onTableChanged()"></th>
-                <th scope="col" class="col-fingerprint">Fingerprints</th>
-              </tr>
-              <tr class="gh-filter-row">
-                <td>
-                  @if (runPickerTable.hasActiveFilters) {
-                    <button type="button" class="gh-filter-clear" (click)="runPickerTable.clearFilters(); cdr.detectChanges()">Clear filters</button>
+                  @if (suggestion.meanQualityIndex != null) {
+                    <span class="mr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span>Mean index {{ formatIndex(suggestion.meanQualityIndex) }}</span>
                   }
-                </td>
-                <td></td>
-                <td>
-                  <label class="visually-hidden" for="mr-f-run-model">Filter by tested model</label>
-                  <input id="mr-f-run-model" type="text" class="gh-input gh-filter-input" placeholder="Tested model"
-                         [ngModel]="runPickerTable.filters['testedModel']" [ngModelOptions]="{ standalone: true }"
-                         (ngModelChange)="runPickerTable.setFilter('testedModel', $event); cdr.detectChanges()">
-                </td>
-                <td></td>
-                <td>
-                  <label class="visually-hidden" for="mr-f-run-intelligence-index">Filter by intelligence index presence</label>
-                  <select id="mr-f-run-intelligence-index" class="gh-input gh-filter-select"
-                          [ngModel]="runPickerTable.filters['qualityIndex']" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="runPickerTable.setFilter('qualityIndex', $event); cdr.detectChanges()">
-                    <option value="">All</option>
-                    <option value="present">Present</option>
-                    <option value="absent">Absent</option>
-                  </select>
-                </td>
-                <td>
-                  <label class="visually-hidden" for="mr-f-run-speed-index">Filter by speed index presence</label>
-                  <select id="mr-f-run-speed-index" class="gh-input gh-filter-select"
-                          [ngModel]="runPickerTable.filters['speedIndex']" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="runPickerTable.setFilter('speedIndex', $event); cdr.detectChanges()">
-                    <option value="">All</option>
-                    <option value="present">Present</option>
-                    <option value="absent">Absent</option>
-                  </select>
-                </td>
-                <td></td>
-              </tr>
-            </thead>
-            <tbody>
-              @if (runPickerTable.noMatches(availableRuns)) {
-                <tr><td colspan="7" class="text-muted">No runs match these filters.</td></tr>
-              } @else {
-                @for (run of runPickerTable.view(availableRuns); track run.id) {
-                  <tr>
-                    <td class="col-center col-selected">
-                      <input type="checkbox" [id]="'mr-run-' + run.id"
-                             [attr.aria-label]="'Include run ' + run.id + ' in this group'"
-                             [checked]="isRunSelected(run.id)" (change)="toggleRun(run.id)">
-                    </td>
-                    <td class="col-center col-id">#{{ run.id }}</td>
-                    <td class="col-model">{{ run.testedModelDisplayNameUsed }}</td>
-                    <td class="col-date">{{ formatDate(run.startedAtUtc) }}</td>
-                    <td class="col-center col-quality-index">
-                      @if (run.qualityIndex != null) {
-                        <span class="score-badge" [class]="getScoreBadgeClass(run.qualityIndex)">
-                          {{ run.qualityIndex }} / 100
-                        </span>
-                      } @else if (run.finalScore != null) {
-                        <span class="score-badge" [class]="getScoreBadgeClass(run.finalScore)">
-                          {{ run.finalScore }} / 100
-                        </span>
-                      } @else {
-                        <span class="text-muted">N/A</span>
-                      }
-                    </td>
-                    <td class="col-center col-speed-index">
-                      @if (run.speedIndex != null) {
-                        <span class="score-badge" [class]="getScoreBadgeClass(run.speedIndex)">
-                          {{ run.speedIndex }} / 100
-                        </span>
-                        @if (run.speedMeasurementDegraded) {
-                          <span class="degraded-indicator" title="Advisory timing — measured under concurrent execution">*</span>
-                        }
-                      } @else {
-                        <span class="text-muted">-</span>
-                      }
-                    </td>
-                    <td class="col-fingerprint">
-                      <span class="instrument-fingerprints">
-                        @for (entry of fingerprintEntries(run); track entry.label) {
-                          <span class="instrument-fingerprint" [class]="entry.cssClass" [attr.title]="entry.title">
-                            {{ entry.label }} {{ entry.short }}
-                          </span>
-                        }
-                      </span>
-                    </td>
-                  </tr>
+                </p>
+
+                <div class="mr-card-actions" role="group"
+                     [attr.aria-label]="'Actions for the suggested group of runs ' + suggestionRunList(suggestion)">
+                  <button type="button" class="btn-ghost mr-create-group" [id]="domId + '-create'"
+                          [attr.aria-disabled]="creatingKey != null ? 'true' : null"
+                          [attr.aria-busy]="creatingKey === key ? 'true' : null"
+                          (click)="createFromSuggestion(suggestion)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    Create group
+                  </button>
+                  <button type="button" class="action-btn mr-dismiss-suggestion"
+                          [attr.aria-label]="'Dismiss suggestion of runs ' + suggestionRunList(suggestion)"
+                          [attr.interestfor]="domId + '-dismiss-tip'"
+                          [attr.style]="'anchor-name: --' + domId + '-dismiss-tip'"
+                          (click)="dismissSuggestion(suggestion)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="domId + '-dismiss-tip'"
+                       [attr.style]="'position-anchor: --' + domId + '-dismiss-tip'">Dismiss suggestion</div>
+                </div>
+
+                @if (suggestionErrors[key]; as error) {
+                  <p class="gh-field-error mr-card-error" role="alert">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <span>{{ error }}</span>
+                  </p>
                 }
-              }
-            </tbody>
-          </table>
-        </div>
-        <app-table-pager [state]="runPickerTable" [rows]="availableRuns" noun="runs" [announce]="false" (changed)="onTableChanged()"></app-table-pager>
+              </article>
+            </li>
+          }
+        </ul>
+      </section>
+    }
 
-        @if (selectedRunCount > 0) {
-          <p class="mr-selection-summary">{{ selectionSummary }}</p>
-        }
+    @if (suggestionsError) {
+      <p class="gh-field-error mr-suggestions-error" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ suggestionsError }}</span>
+      </p>
+    }
+
+    <!-- The suite's analysis groups as a filterable list of full-width cards shown ten at a time. -->
+    <section class="mr-section mr-groups-section" aria-labelledby="mr-groups-title">
+      <div class="mr-section-head">
+        <!-- Focused after a delete that leaves no card to focus. -->
+        <h4 class="gh-section-title mr-section-title" id="mr-groups-title" tabindex="-1">Analysis groups</h4>
+        <!-- The list's one polite live region. -->
+        <p class="gh-list-status mr-list-status" id="mr-groups-status" role="status">{{ listStatus }}</p>
+      </div>
+
+      @if (groupsError) {
+        <p class="gh-field-error mr-groups-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ groupsError }}</span>
+        </p>
       }
 
-      @if (previewing) {
-        <p class="text-muted">Computing the comparability tier...</p>
-      }
-
-      @if (previewError) {
-        <div class="alert alert-warning" role="alert">
-          <div class="alert-content"><div class="alert-body">{{ previewError }}</div></div>
-        </div>
-      }
-
-      @if (previewComparability) {
-        <div class="mr-preview" [class.is-refused]="preview?.accepted === false">
-          <div class="mr-preview-head">
-            <span class="mr-tier" [class]="'mr-tier ' + tierClass(previewComparability.tier)">
-              {{ previewComparability.tierLabel || tierName(previewComparability.tier) }}
-            </span>
-            @if (previewComparability.poolingPermitted) {
-              <span class="mr-badge mr-badge-ok">Pooling permitted</span>
-            } @else {
-              <span class="mr-badge mr-badge-warn">Never pooled into one index</span>
-            }
+      @if (groups.length === 0) {
+        @if (loadingGroups) {
+          <p class="text-muted mr-loading">Loading analysis groups&hellip;</p>
+        } @else if (!groupsError) {
+          <div class="mr-empty mr-empty-groups">
+            <svg class="mr-empty-icon" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+            <p class="mr-empty-title">No analysis groups for this suite yet</p>
+            <p class="mr-empty-text">A completed series or battery creates and analyzes one automatically.</p>
+            <button type="button" class="btn-ghost mr-empty-new-group" aria-haspopup="dialog" (click)="openBuilder()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              New group
+            </button>
           </div>
+        }
+      } @else {
+        @if (showFilterBar) {
+          <!-- Search, Sort by, the facets and the active filters. -->
+          <search class="gh-filter-bar mr-filter-bar">
+            <div class="gh-filter-bar-row">
+              <div class="gh-search-field mr-search">
+                <label class="visually-hidden" for="mr-groups-search">Search groups</label>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="search" class="gh-input" id="mr-groups-search" autocomplete="off"
+                       placeholder="Search #id, model, run, note or name"
+                       [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+              </div>
+              <div class="mr-sort">
+                <label class="mr-sort-label" for="mr-groups-sort">Sort by</label>
+                <select class="gh-input mr-sort-select" id="mr-groups-sort" (change)="onSortChange($event)">
+                  @for (sort of sorts; track sort.id) {
+                    <option [value]="sort.id" [selected]="list.sortId === sort.id">{{ sort.label }}</option>
+                  }
+                </select>
+              </div>
+            </div>
 
-          @if (previewComparability.explanation) {
-            <p class="mr-preview-explanation">{{ previewComparability.explanation }}</p>
-          }
+            @if (facets.length > 0) {
+              <div class="gh-facet-row mr-facet-row">
+                @for (facet of facets; track facet.column) {
+                  <app-filter-facet [facetId]="facet.facetId" [label]="facet.label" [options]="facet.options"
+                                    [selected]="facet.selected" [mode]="facet.mode" [anyLabel]="facet.anyLabel" noun="groups"
+                                    (selectedChange)="onFacetChange(facet.column, $event)"></app-filter-facet>
+                }
+              </div>
+            }
 
-          @if (preview?.error) {
-            <p class="mr-preview-error">{{ preview?.error }}</p>
-          }
+            @if (chips.length > 0) {
+              <div class="gh-filter-bar-row mr-chips-row">
+                <ul class="gh-filter-chips mr-filter-chips" role="list" aria-label="Active filters">
+                  @for (chip of chips; track chip.key) {
+                    <li>
+                      <button type="button" class="gh-filter-chip"
+                              [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                              (click)="removeChip(chip)">
+                        <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                        <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      </button>
+                    </li>
+                  }
+                </ul>
+                <button type="button" class="gh-filter-clear mr-clear-filters" (click)="clearFilters()">Clear all</button>
+              </div>
+            }
+          </search>
+        }
 
-          <!--
-            The reasons. This block is the point of the whole preview: "not comparable" tells an
-            operator nothing they can act on, while "ToolGuidesSha256 differs, runs 41 and 42 on
-            one value and 43 on another" tells them exactly what they built and whether they meant
-            to.
-          -->
-          @if (previewDifferences.length > 0) {
-            <div class="mr-differences">
-              <h4>Keys that differ</h4>
-              <ul class="mr-difference-list">
-                @for (difference of previewDifferences; track difference.name) {
-                  <li class="mr-difference">
-                    <div class="mr-difference-name">{{ difference.name }}<span class="mr-difference-kind">{{ difference.kind }}</span></div>
-                    <div class="mr-difference-description">{{ difference.description }}</div>
-                    <ul class="mr-variant-list">
-                      @for (variant of difference.variants; track variant.value) {
-                        <li class="mr-variant">
-                          <span class="mr-variant-value">{{ variant.value }}</span>
-                          <span class="mr-variant-runs">runs {{ runIdsLabel(variant.runIds) }}</span>
+        @if (noMatches) {
+          <div class="mr-empty mr-empty-filters">
+            <svg class="mr-empty-icon" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+            <p class="mr-empty-title">No groups match these filters.</p>
+            <button type="button" class="gh-filter-clear mr-empty-clear" (click)="clearFilters()">Clear all filters</button>
+          </div>
+        } @else {
+          <ul class="mr-groups" role="list" aria-labelledby="mr-groups-title" [attr.aria-busy]="loadingGroups ? 'true' : null">
+            @for (group of cards; track group.id) {
+              @let state = analysisState(group);
+              @let runIds = memberRunIds(group);
+              @let custom = customName(group);
+              @let gid = 'mr-group-' + group.id;
+              <li class="mr-card-item">
+                <article class="mr-group" [attr.data-group-id]="group.id" [attr.aria-labelledby]="gid + '-title'">
+                  <header class="mr-group-head">
+                    <!-- A dot on screen between the parts, a comma for assistive technology. Every state is a word. -->
+                    <div class="mr-group-kicker">
+                      <span class="mr-group-id">#{{ group.id }}</span>
+                      <span class="mr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="mr-tier" [class]="'mr-tier ' + tierClass(group.tier)">{{ group.tierLabel || tierName(group.tier) }}</span>
+                      <span class="mr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      @if (state === 'stale') {
+                        <button type="button" class="gh-tag mr-state mr-state-stale" [attr.data-state]="state"
+                                [attr.interestfor]="gid + '-stale-tip'"
+                                [attr.style]="'anchor-name: --' + gid + '-stale-tip'">{{ analysisStateLabel(state) }}</button>
+                        <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="gid + '-stale-tip'"
+                             [attr.style]="'position-anchor: --' + gid + '-stale-tip'">{{ staleTooltip }}</div>
+                      } @else {
+                        <span class="gh-tag mr-state" [class.mr-state-current]="state === 'current'"
+                              [class.mr-state-none]="state === 'none'" [attr.data-state]="state">{{ analysisStateLabel(state) }}</span>
+                      }
+                      @if (group.comparabilityKeyStale) {
+                        <span class="mr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                        <button type="button" class="gh-tag mr-definition-changed"
+                                [attr.interestfor]="gid + '-keystale-tip'"
+                                [attr.style]="'anchor-name: --' + gid + '-keystale-tip'">Definition changed</button>
+                        <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="gid + '-keystale-tip'"
+                             [attr.style]="'position-anchor: --' + gid + '-keystale-tip'">{{ definitionChangedTooltip }}</div>
+                      }
+                      @if (group.createdFromSeriesId != null) {
+                        <span class="mr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                        <!-- The permanent route to a finished series and its diagnostics. -->
+                        <button type="button" class="mr-badge mr-badge-series mr-badge-button" (click)="viewSeries(group)"
+                                [attr.aria-label]="'Show progress for series ' + group.createdFromSeriesId"
+                                [attr.interestfor]="gid + '-series-tip'"
+                                [attr.style]="'anchor-name: --' + gid + '-series-tip'">Series {{ group.createdFromSeriesId }}</button>
+                        <div popover="hint" class="gh-tooltip" [id]="gid + '-series-tip'"
+                             [attr.style]="'position-anchor: --' + gid + '-series-tip'">Show this series' progress and diagnostics</div>
+                      }
+                    </div>
+                    <!-- Focused after Show more, after a create and after a delete. -->
+                    <h5 class="mr-card-title mr-group-title" [id]="gid + '-title'" tabindex="-1">
+                      <app-model-identity [name]="modelName(group)" [provider]="group.testedModelProvider"
+                                          [thinkingLevel]="group.testedModelThinkingLevel"
+                                          [reasoningMode]="group.testedModelReasoningMode"></app-model-identity>
+                    </h5>
+                    <p class="mr-card-meta">
+                      <span>Created <time class="mr-card-time" [attr.datetime]="isoDate(group.createdAtUtc)">{{ formatUtc(group.createdAtUtc) }}</time></span>
+                      @if (custom) {
+                        <span class="mr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                        <span class="mr-custom-name">&ldquo;{{ custom }}&rdquo;</span>
+                      }
+                    </p>
+                  </header>
+
+                  <dl class="mr-metrics">
+                    <div class="mr-metric" data-metric="intelligence">
+                      <dt>Intelligence</dt>
+                      <dd>
+                        @if (group.headlineIndex != null) {
+                          <span class="mr-metric-value">{{ formatIndex(group.headlineIndex) }}</span>
+                          @if (formatHalfWidth(group.headlineHalfWidth); as halfWidth) {
+                            <span class="mr-metric-note">{{ halfWidth }}</span>
+                          }
+                        } @else if (state === 'none') {
+                          <span class="text-muted">Not analyzed</span>
+                        } @else {
+                          <span class="text-muted">&mdash;</span>
+                          <span class="mr-metric-note">Re-analyze to show figures</span>
+                        }
+                      </dd>
+                    </div>
+                    <div class="mr-metric" data-metric="speed">
+                      <dt>Speed</dt>
+                      <dd><span class="mr-metric-value">{{ formatIndex(group.headlineSpeedIndex) }}</span></dd>
+                    </div>
+                    <div class="mr-metric" data-metric="cost">
+                      <dt>Cost / run</dt>
+                      <dd><span class="mr-metric-value">{{ formatCost(group.headlineCostPerRun) }}</span></dd>
+                    </div>
+                    <div class="mr-metric" data-metric="runs">
+                      <dt>Runs</dt>
+                      <dd><span class="mr-metric-value">{{ group.runCount }}</span></dd>
+                    </div>
+                  </dl>
+
+                  <div class="mr-card-actions" role="group" [attr.aria-label]="'Actions for group #' + group.id">
+                    <button type="button" class="action-btn mr-open-analysis" [id]="gid + '-open'" aria-haspopup="dialog"
+                            (click)="openGroup(group)"
+                            [attr.aria-label]="'Open analysis of group #' + group.id"
+                            [attr.interestfor]="gid + '-open-tip'"
+                            [attr.style]="'anchor-name: --' + gid + '-open-tip'">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="gid + '-open-tip'"
+                         [attr.style]="'position-anchor: --' + gid + '-open-tip'">Open analysis</div>
+                    <button type="button" class="action-btn mr-download" (click)="downloadGroupReport(group)"
+                            [attr.aria-disabled]="canDownloadReport(group) ? null : 'true'"
+                            [attr.aria-label]="'Download the Markdown report of group #' + group.id"
+                            [attr.interestfor]="gid + '-download-tip'"
+                            [attr.style]="'anchor-name: --' + gid + '-download-tip'">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="gid + '-download-tip'"
+                         [attr.style]="'position-anchor: --' + gid + '-download-tip'">{{ downloadTooltip(group) }}</div>
+                    <button type="button" class="action-btn action-btn-danger mr-delete" [id]="gid + '-delete'"
+                            [attr.aria-expanded]="confirmDeleteId === group.id ? 'true' : 'false'"
+                            (click)="requestDelete(group)"
+                            [attr.aria-label]="'Delete group #' + group.id"
+                            [attr.interestfor]="gid + '-delete-tip'"
+                            [attr.style]="'anchor-name: --' + gid + '-delete-tip'">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="gid + '-delete-tip'"
+                         [attr.style]="'position-anchor: --' + gid + '-delete-tip'">Delete group</div>
+                  </div>
+
+                  <div class="mr-runs">
+                    <span class="mr-runs-label" [id]="gid + '-runs'">Runs</span>
+                    <ul class="mr-run-chips" role="list" [attr.aria-labelledby]="gid + '-runs'">
+                      @for (runId of runIds; track runId) {
+                        <li>
+                          <button type="button" class="mr-run-chip" (click)="openRunReport(runId)"
+                                  [attr.aria-label]="'Open run report #' + runId"
+                                  [attr.interestfor]="gid + '-run-' + runId + '-tip'"
+                                  [attr.style]="'anchor-name: --' + gid + '-run-' + runId + '-tip'">#{{ runId }}</button>
+                          <div popover="hint" class="gh-tooltip" [id]="gid + '-run-' + runId + '-tip'"
+                               [attr.style]="'position-anchor: --' + gid + '-run-' + runId + '-tip'">Open run report</div>
                         </li>
                       }
                     </ul>
-                  </li>
-                }
-              </ul>
+                  </div>
+
+                  @if (group.notes?.trim()) {
+                    <p class="mr-note">{{ group.notes }}</p>
+                  }
+
+                  @if (confirmDeleteId === group.id) {
+                    <div class="mr-confirm" role="group" [attr.aria-labelledby]="gid + '-confirm'">
+                      <span [id]="gid + '-confirm'">Delete group #{{ group.id }}? Its runs are kept.</span>
+                      <button type="button" class="btn-ghost btn-ghost-danger mr-confirm-delete" [id]="gid + '-confirm-delete'"
+                              [attr.aria-disabled]="deletingId != null ? 'true' : null"
+                              [attr.aria-busy]="deletingId === group.id ? 'true' : null"
+                              (click)="confirmDelete(group)">Delete</button>
+                      <button type="button" class="btn-ghost mr-keep" [id]="gid + '-keep'" (click)="keepGroup(group)">Keep</button>
+                      @if (deleteError?.groupId === group.id) {
+                        <p class="gh-field-error mr-delete-error" role="alert">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                          <span>{{ deleteError?.message }}</span>
+                        </p>
+                      }
+                    </div>
+                  }
+                </article>
+              </li>
+            }
+          </ul>
+
+          @if (remainingCount > 0) {
+            <div class="gh-load-more mr-load-more">
+              <button type="button" class="btn-ghost mr-show-more" (click)="showMore()">Show {{ nextBatchCount }} more</button>
+              @if (remainingCount > list.batch) {
+                <button type="button" class="gh-filter-clear mr-show-all" (click)="showAll()">Show all {{ matchingCount }}</button>
+              }
             </div>
           }
-
-          @if (previewComparability.matchedKeys.length > 0) {
-            <details class="mr-matched-keys">
-              <summary>{{ previewComparability.matchedKeys.length }} key(s) matched</summary>
-              <p class="text-muted">{{ previewComparability.matchedKeys.join(', ') }}</p>
-            </details>
-          }
-
-          <!--
-            Offered only at Tier C, because at any other tier there is nothing to acknowledge.
-            An always-visible checkbox would invite an operator to tick it pre-emptively and turn
-            a Tier A set into a cross-condition one by accident.
-          -->
-          @if (previewIsCrossCondition) {
-            <div class="mr-cross-condition">
-              <input type="checkbox" id="mr-cross-condition" [(ngModel)]="crossCondition"
-                     (change)="onCrossConditionChange()">
-              <label for="mr-cross-condition">
-                Persist as a cross-condition group. The candidate is identical and one instrument key
-                differs deliberately; the set may be <strong>compared</strong> but never pooled into
-                one index.
-              </label>
-            </div>
-          }
-        </div>
+        }
       }
-
-      @if (createError) {
-        <div class="alert alert-danger" role="alert">
-          <div class="alert-content"><div class="alert-body">{{ createError }}</div></div>
-        </div>
-      }
-
-      <div class="mr-actions">
-        <button type="button" class="btn-gh" [disabled]="!canCreateGroup" (click)="createGroup()">
-          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-          Create Group
-        </button>
-        <button type="button" class="btn-gh btn-gh-cancel" (click)="clearSelection()">Clear Selection</button>
-        <button type="button" class="btn-gh" [attr.aria-pressed]="showSelectedOnly"
-                (click)="toggleShowSelectedOnly()">Show Selected Only</button>
-      </div>
     </section>
   }
+
+  <app-group-builder-dialog [suiteId]="selectedSuiteId"
+                            (created)="onGroupCreated($event)"
+                            (openGroup)="onBuilderOpenGroup($event)"></app-group-builder-dialog>
+
+  <app-group-analysis-dialog [groups]="groups" [suiteName]="suiteName"
+                             (analysisChanged)="onAnalysisChanged()"></app-group-analysis-dialog>
 </div>
-
-<!--
-  The analysis opens as a modal, like a single run's report, rather than unrolling below the group
-  list: it is a document, and a document that starts three screens down the page is one nobody
-  reads.
-
-  The dialog is a sibling of .multi-run rather than a child. A modal dialog's containing block is
-  the viewport, so it would not inherit the panel's inline-size container even nested — the body
-  below declares its own, which is also the right measurement: the queries want the dialog's width.
--->
-<dialog #groupDetailDialog class="gh-dialog mr-analysis-dialog" (cancel)="closeGroup()">
-  @if (selectedGroup) {
-    <div class="dialog-content flex-col">
-      <div class="dialog-header">
-        <div class="dialog-title-group">
-          <h3 id="mr-detail-heading">{{ selectedGroup.name }}</h3>
-          <p class="dialog-subtitle">
-            {{ selectedGroup.suiteName || 'Suite unknown' }} · R = {{ selectedGroup.runCount }}
-          </p>
-        </div>
-        <div class="mr-dialog-header-badges">
-          <span class="mr-tier" [class]="'mr-tier ' + tierClass(selectedGroup.tier)">
-            {{ selectedGroup.tierLabel || tierName(selectedGroup.tier) }}
-          </span>
-          @if (selectedGroup.analysisStale) {
-            <span class="mr-badge mr-badge-stale">Stale analysis</span>
-          }
-          @if (selectedGroup.comparabilityKeyStale) {
-            <span class="mr-badge mr-badge-stale">Comparability definition changed — re-analyze to refresh the key hash.</span>
-          }
-          <button type="button" class="btn-icon-action" aria-label="Close multi-run analysis" (click)="closeGroup()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <div class="dialog-body mr-dialog-body">
-
-        @if (groupError) {
-          <div class="alert alert-warning" role="alert">
-            <div class="alert-content"><div class="alert-body">{{ groupError }}</div></div>
-          </div>
-        }
-
-        <!-- Manifest. Every figure below is computed over exactly these runs. -->
-        <dl class="mr-manifest">
-          <div class="mr-manifest-row">
-            <dt>Suite</dt>
-            <dd>{{ selectedGroup.suiteName || '—' }}</dd>
-          </div>
-          <div class="mr-manifest-row">
-            <dt>Runs (R)</dt>
-            <dd>{{ selectedGroup.runCount }}</dd>
-          </div>
-          <div class="mr-manifest-row">
-            <dt>Members</dt>
-            <dd>
-              <ul class="mr-member-list">
-                @for (member of selectedGroup.members; track member.runId) {
-                  <li>
-                    <span class="mr-run-id">#{{ member.runId }}</span>
-                    <span>{{ member.testedModelDisplayName || '—' }}</span>
-                    <span>Index {{ member.indexWithheld ? 'not computed' : (member.qualityIndex ?? '—') }}</span>
-                    <span>Speed {{ member.speedIndex ?? '—' }}</span>
-                    <span class="mr-run-fingerprint">{{ shortFingerprint(member.shortFingerprint) }}</span>
-                  </li>
-                }
-              </ul>
-            </dd>
-          </div>
-          <div class="mr-manifest-row">
-            <dt>Comparability key</dt>
-            <dd class="mr-mono">{{ selectedGroup.comparabilityKeyHash ? shortFingerprint(selectedGroup.comparabilityKeyHash) : '—' }}</dd>
-          </div>
-          <!--
-            What the candidate was told to do. Without it a reader cannot tell prompt adherence
-            from a model weakness — a concise response instruction caps Completeness by design —
-            and that attribution check is what every dimensional figure below depends on.
-          -->
-          @if (promptStats; as prompt) {
-            <div class="mr-manifest-row">
-              <dt>Prompt under test</dt>
-              <dd>
-                @if (!prompt.recorded) {
-                  <span class="text-muted">Not recorded for these runs. No figure below can be
-                  attributed to the model until it is: the options that cap a dimension are unknown
-                  for this group.</span>
-                } @else {
-                  <ul class="mr-prompt-list">
-                    <li>
-                      <span class="mr-prompt-label">Style</span>
-                      <span>{{ prompt.verboseMode ? 'Detailed' : 'Concise' }} · Mode {{ prompt.overseerMode }}{{ prompt.overseerMode === 0 ? ' (Gameplay Help)' : '' }}</span>
-                    </li>
-                    <li>
-                      <span class="mr-prompt-label">Tools</span>
-                      <span>
-                        {{ prompt.enableToolUse ? 'enabled' : 'disabled' }} ·
-                        web search {{ prompt.enableWebSearch ? 'on' : 'off' }} ·
-                        subagents {{ prompt.enableSubAgents ? 'on' : 'off' }} ·
-                        source refs {{ prompt.allowSourceCodeReferences ? 'allowed' : 'disallowed' }} ·
-                        batching {{ parallelModeLabel(prompt.parallelMode) }}
-                      </span>
-                    </li>
-                    <li>
-                      <span class="mr-prompt-label">Context</span>
-                      <span>
-                        spoiler-free {{ prompt.spoilerFreeMode ? 'on' : 'off' }} ·
-                        active game {{ prompt.isGameOn ? 'yes' : 'no' }} ·
-                        history {{ prompt.hasMessageHistory ? 'yes' : 'no' }} ·
-                        wiki context {{ prompt.hasWikiContext ? 'yes' : 'no' }} ·
-                        snapshot {{ prompt.hasGameSnapshot ? 'yes' : 'no' }}
-                      </span>
-                    </li>
-                  </ul>
-                  @if (prompt.divergent) {
-                    <p class="mr-prompt-note mr-prompt-note-warning">
-                      <strong>The members disagree on these options.</strong> The values above are
-                      the first member's. A group graded under two prompts cannot support a pooled
-                      dimensional claim, whatever its tier says.
-                    </p>
-                  } @else if (!prompt.hasWikiContext) {
-                    <p class="mr-prompt-note">
-                      Live chat pre-injects wiki articles and the benchmark does not, so every
-                      retrieval and tool-routing figure below was measured under a condition
-                      production does not share.
-                    </p>
-                  }
-                }
-              </dd>
-            </div>
-          }
-          @if (selectedGroup.notes) {
-            <div class="mr-manifest-row">
-              <dt>Notes</dt>
-              <dd>{{ selectedGroup.notes }}</dd>
-            </div>
-          }
-        </dl>
-
-        <!-- Analysis controls -->
-        <div class="mr-analysis-controls">
-          <div class="mr-field">
-            <label for="mr-compare-group">Compare with group</label>
-            <select id="mr-compare-group" class="gh-input" [(ngModel)]="compareWithGroupId">
-              <option [ngValue]="null">No comparison — this group alone</option>
-              @for (candidate of comparisonCandidates; track candidate.id) {
-                <option [ngValue]="candidate.id">{{ candidate.name }} (R = {{ candidate.runCount }})</option>
-              }
-            </select>
-            <p class="mr-field-note">
-              The selected group is the <strong>baseline</strong>; differences are reported as this
-              group minus that one.
-            </p>
-          </div>
-
-          <div class="mr-actions">
-            <!-- Recompute when the group already has an analysis; text-only, as Recompute is. -->
-            <button type="button" class="btn-gh" [disabled]="analysing" (click)="analyse()">
-              {{ analysing ? 'Analyzing…' : (analysis || selectedGroup.latestAnalysisId != null ? 'Recompute analysis' : 'Run analysis') }}
-            </button>
-
-            <!-- Same call the run report uses: window.open on the URL, never an XHR. -->
-            <button type="button" class="btn-gh mr-download-detail"
-                    [class.is-unavailable]="!canDownloadReport(selectedGroup)"
-                    [attr.aria-disabled]="!canDownloadReport(selectedGroup)"
-                    (click)="downloadGroupReport(selectedGroup)"
-                    [attr.interestfor]="'mr-tip-download-detail'"
-                    style="anchor-name: --mr-tip-download-detail">
-              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              Download Report
-            </button>
-            <div popover="hint" class="gh-tooltip gh-tooltip-multiline" id="mr-tip-download-detail"
-                 style="position-anchor: --mr-tip-download-detail">{{ downloadReportTooltip(selectedGroup) }}</div>
-          </div>
-        </div>
-
-        @if (analysisError) {
-          <div class="alert alert-danger" role="alert">
-            <div class="alert-content"><div class="alert-body">{{ analysisError }}</div></div>
-          </div>
-        }
-
-        @if (loadingAnalysis) {
-          <p class="text-muted">Loading the stored analysis...</p>
-        } @else if (!analysis) {
-          <p class="text-muted">This group has not been analyzed yet. Run the analysis to compute its statistics; the report download stays unavailable until then.</p>
-        } @else {
-
-          <p class="mr-provenance">
-            Computed {{ formatDate(analysis.computedAtUtc) }} over
-            {{ analysis.runCount }} run(s) — {{ runIdsLabel(analysis.memberRunIds) }} —
-            at scoring method version {{ analysis.scoringMethodVersion }}@if (analysis.harnessVersion) {<span>, harness {{ analysis.harnessVersion }}</span>}.
-            @if (analysis.stale) {
-              <strong> The membership has changed since; this result describes the runs named above.</strong>
-            }
-          </p>
-
-          <!-- ================= GROUP AGGREGATES ================= -->
-          @if (indexStats) {
-            <div class="mr-aggregates">
-              <h4>Multi-run Intelligence Index</h4>
-
-              <div class="mr-point">
-                <span class="mr-point-value">{{ formatNumber(indexStats.pointEstimate, 1) }}</span>
-                <span class="mr-point-label">mean of {{ indexStats.runCount }} per-run indices</span>
-              </div>
-
-              @if (withheldIndexNote; as note) {
-                <div class="alert alert-warning" role="note">
-                  <div class="alert-content"><div class="alert-body">{{ note }}</div></div>
-                </div>
-              }
-
-              @if (indexStats.identityHolds === false) {
-                <div class="alert alert-warning" role="note">
-                  <div class="alert-content"><div class="alert-body">
-                    The item set is ragged — some run produced no scored answer to some item — so the
-                    mean of the run indices and the weighted mean of the item means
-                    ({{ formatNumber(indexStats.weightedMeanOfItemMeans, 1) }}) are not identical.
-                    The figure above is the mean of the run indices.
-                  </div></div>
-                </div>
-              }
-
-              <!--
-                The two components, separately and each with the question it answers, BEFORE the
-                combined interval. Collapsing them into one number hides that only one of them can
-                be bought down with more runs — which is the single most likely misreading of this
-                whole feature, and a named risk in the plan.
-              -->
-              <div class="mr-interval-components">
-                <div class="mr-interval mr-interval-repro">
-                  <h5>Reproducibility standard error</h5>
-                  <p class="mr-interval-question">“Would a re-run move this?”</p>
-                  @if (indexStats.reproducibilityAvailable && indexStats.reproducibilityStandardError != null) {
-                    <p class="mr-interval-value">
-                      SE = {{ formatNumber(indexStats.reproducibilityStandardError, 2) }}
-                      (SD {{ formatNumber(indexStats.reproducibilityStandardDeviation, 2) }} over R = {{ indexStats.runCount }})
-                    </p>
-                    <p class="mr-interval-value">
-                      Half-width ± {{ formatNumber(indexStats.reproducibilityHalfWidth, 2) }}
-                      at t({{ indexStats.runCount - 1 }}) = {{ formatNumber(indexStats.reproducibilityCriticalValue, 3) }}
-                    </p>
-                  } @else {
-                    <p class="mr-interval-value text-muted">
-                      Not reported below three runs: a run-to-run standard deviation from two points
-                      is arithmetic rather than evidence.
-                    </p>
-                  }
-                  <p class="mr-interval-behaviour mr-shrinks">
-                    <strong>Shrinks with R</strong>, as 1/√R. This is the component multi-run exists
-                    to measure.
-                  </p>
-                </div>
-
-                <div class="mr-interval mr-interval-item">
-                  <h5>Item-sampling standard error</h5>
-                  <p class="mr-interval-question">“Would a different set of questions move this?”</p>
-                  @if (indexStats.itemSamplingStandardError != null) {
-                    <p class="mr-interval-value">
-                      SE = {{ formatNumber(indexStats.itemSamplingStandardError, 2) }}
-                      over {{ result?.itemCount }} item(s)
-                    </p>
-                    <p class="mr-interval-value">
-                      Half-width ± {{ formatNumber(indexStats.itemSamplingHalfWidth, 2) }}
-                      at 1.96 · SE
-                    </p>
-                  } @else {
-                    <p class="mr-interval-value text-muted">Not reported below three items.</p>
-                  }
-                  <!--
-                    Without this sentence an operator watches this figure fail to move as runs are
-                    added and reports the code as broken. Shrinking it would need more *questions*.
-                  -->
-                  <p class="mr-interval-behaviour mr-does-not-shrink">
-                    <strong>Does not shrink with R.</strong> Every run answers the same items, so
-                    more runs sharpen each item's mean and do nothing about the fact that the suite
-                    drew those particular questions. Shrinking this component needs more questions,
-                    not more runs.
-                  </p>
-                </div>
-              </div>
-
-              <div class="mr-combined">
-                <h5>Combined 95% interval</h5>
-                <p class="mr-combined-value">
-                  {{ formatNumber(indexStats.pointEstimate, 1) }}
-                  ± {{ formatNumber(indexStats.combinedHalfWidth, 2) }}
-                  @if (indexStats.combinedLower != null && indexStats.combinedUpper != null) {
-                    <span class="mr-combined-range">({{ formatNumber(indexStats.combinedLower, 1) }} – {{ formatNumber(indexStats.combinedUpper, 1) }})</span>
-                  }
-                  @if (indexStats.combinedIntervalTruncated) {
-                    <span class="mr-truncated-marker" title="Truncated at the score bound">†</span>
-                  }
-                </p>
-                @if (indexStats.combinedIntervalTruncated) {
-                  <p class="mr-combined-note">
-                    † The half-width is the honest one; the interval reaches past 0 or 100, where no
-                    score can go, so the reported bound is pinned there. The interval is not as
-                    tight as it looks.
-                  </p>
-                }
-                <p class="mr-combined-note">
-                  @if (indexStats.reproducibilityAvailable) {
-                    Covers <strong>both</strong> sources — run-to-run variation and item selection —
-                    added in quadrature, because they are independent.
-                  } @else {
-                    Covers <strong>one</strong> source only: item selection. Below three runs no
-                    reproducibility component is reported, so this interval is the item-sampling
-                    half-width alone.
-                  }
-                </p>
-              </div>
-
-              @if (indexStats.meanStoredQualityIndex != null) {
-                <p class="text-muted mr-cross-check">
-                  Cross-check only: the mean of the stored, integer-rounded per-run indices is
-                  {{ formatNumber(indexStats.meanStoredQualityIndex, 1) }}. Nothing is computed from it.
-                </p>
-              }
-            </div>
-          }
-
-          <!--
-            The decomposition caveat, unconditionally. Run-to-run variance mixes candidate
-            stochasticity with grader stochasticity, and an operator who does not read this
-            attributes an unstable item to the model when it may be the grader.
-          -->
-          <div class="alert alert-info mr-caveat" role="note">
-            <div class="alert-content">
-              <div class="alert-heading"><strong>What this cannot decompose</strong></div>
-              <div class="alert-body">{{ varianceCaveat }}</div>
-            </div>
-          </div>
-
-          <!-- ================= QUALITY DIMENSIONS =================
-               A composite index cannot say which dimension moved, and a single run cannot say
-               whether a dimensional gap survives a re-run. This is where a replicate set answers
-               both, which is the reason it was worth adding. -->
-          @if (dimensionStats.length > 0) {
-            <div class="mr-subsection">
-              <h4>Quality dimensions</h4>
-              <p class="section-note">
-                Per-run means, pooled across the group. These are <strong>unweighted</strong> while
-                the index above is difficulty-weighted — there are no per-dimension difficulty
-                weights to apply, so the two are not expected to agree.
-              </p>
-              <div class="mr-table-scroll">
-                <table class="gh-table mr-dimension-table">
-                  <caption class="visually-hidden">Each scoring dimension's mean, spread and weakest items across the group's runs.</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Dimension</th>
-                      <th scope="col" class="col-num">Mean</th>
-                      <th scope="col" class="col-num">SD</th>
-                      <th scope="col" class="col-num">95% ±</th>
-                      <th scope="col" class="col-num">Min</th>
-                      <th scope="col" class="col-num">Max</th>
-                      <th scope="col">Per-run means</th>
-                      <th scope="col">Lowest items</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (dim of dimensionStats; track dim.dimension) {
-                      <tr>
-                        <th scope="row">{{ dim.dimension }}</th>
-                        <td class="col-num">{{ formatNumber(dim.mean, 1) }}</td>
-                        <td class="col-num">{{ formatNumber(dim.standardDeviation, 1) }}</td>
-                        <td class="col-num">{{ formatNumber(dim.confidenceHalfWidth, 1) }}</td>
-                        <td class="col-num">{{ formatNumber(dim.min, 1) }}</td>
-                        <td class="col-num">{{ formatNumber(dim.max, 1) }}</td>
-                        <td>{{ (dim.perRunMeans ?? []).length > 0 ? (dim.perRunMeans ?? []).join(', ') : '—' }}</td>
-                        <td>{{ lowestItemsFor(dim) }}</td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-
-              @if (lowestDimension; as lowest) {
-                <p class="mr-dimension-gap">
-                  <strong>Lowest dimension:</strong> {{ lowest.dimension }} at
-                  {{ formatNumber(lowest.mean, 1) }}, trailing the strongest by
-                  {{ formatNumber(lowest.gap, 1) }} points.
-                </p>
-                <div class="alert alert-info" role="note">
-                  <div class="alert-content">
-                    <div class="alert-body">
-                      A dimension can be low because the prompt instructed the model to answer that
-                      way. Check the response style in the manifest above before reading a low
-                      figure here as a model weakness.
-                    </div>
-                  </div>
-                </div>
-              }
-
-              @if (!(result?.pooledIndexReportable)) {
-                <p class="section-note">
-                  Below three runs no half-width is reported for a dimension, on the same rule the
-                  index uses: a standard deviation over two runs is arithmetic rather than evidence.
-                </p>
-              }
-            </div>
-          }
-
-          <!-- ================= PER-ITEM TABLE ================= -->
-          @if (itemStats.length > 0) {
-            <div class="mr-subsection">
-              <h4>Per-item statistics</h4>
-              <p class="section-note">
-                Sample SD (n−1) here, not the population SD the suite-health table shows over the
-                same numbers: a replicate set estimates the spread of the process that produced the
-                runs, while suite health describes the runs it has.
-              </p>
-              <div class="mr-table-scroll">
-                <table class="gh-table mr-item-table">
-                  <caption class="visually-hidden">Per-item cross-run statistics: mean, median, standard deviation, coefficient of variation, critical-error rate and stability.</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Question</th>
-                      <th scope="col" class="col-center">R</th>
-                      <th scope="col" class="col-center">Mean</th>
-                      <th scope="col" class="col-center">Median</th>
-                      <th scope="col" class="col-center">SD</th>
-                      <th scope="col" class="col-center">CV</th>
-                      <th scope="col" class="col-center">CE rate</th>
-                      <th scope="col" class="col-center">Stability</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (item of itemStats; track item.questionId) {
-                      <tr [class.is-unstable]="item.unstable">
-                        <th scope="row" class="col-q">
-                          <span class="item-order">Q{{ item.orderIndex }}</span>
-                          <span class="item-text">{{ item.questionText }}</span>
-                        </th>
-                        <td class="col-center">{{ item.runCount }}</td>
-                        <td class="col-center">{{ formatNumber(item.mean, 1) }}</td>
-                        <td class="col-center">{{ formatNumber(item.median, 1) }}</td>
-                        <td class="col-center">{{ formatNumber(item.standardDeviation, 2) }}</td>
-                        <td class="col-center">{{ formatPercentFromFraction(item.coefficientOfVariation) }}</td>
-                        <td class="col-center">{{ formatRate(item.criticalErrorRate) }}</td>
-                        <td class="col-center">
-                          @if (item.unstable) {
-                            <span class="mr-badge mr-badge-warn">Unstable</span>
-                          } @else if (item.insufficientRuns) {
-                            <span class="mr-badge mr-badge-muted">Too few runs</span>
-                          } @else {
-                            <span class="mr-badge mr-badge-ok">Stable</span>
-                          }
-                        </td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          }
-
-          <!-- ================= SPEED ================= -->
-          @if (speedStats) {
-            <div class="mr-subsection">
-              <h4>Speed</h4>
-              @if (speedDegraded) {
-                <div class="alert alert-warning" role="note">
-                  <div class="alert-content">
-                    <div class="alert-heading"><strong>Speed aggregates degraded</strong></div>
-                    <div class="alert-body">{{ speedDegradedReason }}</div>
-                  </div>
-                </div>
-              }
-              <dl class="mr-stats">
-                <div class="mr-stat">
-                  <dt>Mean Speed Index</dt>
-                  <dd>{{ formatNumber(speedStats.meanSpeedIndex, 1) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>SD across runs</dt>
-                  <dd>{{ formatNumber(speedStats.speedIndexStandardDeviation, 2) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Model time P50</dt>
-                  <dd>{{ formatMs(speedStats.modelTimeP50Ms) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Model time P90</dt>
-                  <dd>{{ formatMs(speedStats.modelTimeP90Ms) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Slowest answer</dt>
-                  <dd>{{ formatMs(speedStats.modelTimeMaxMs) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Mean model time / answer</dt>
-                  <dd>{{ formatMs(speedStats.modelTimeMeanMs) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Mean total model time / run</dt>
-                  <dd>
-                    {{ formatMs(speedStats.totalModelTimePerRunMeanMs) }}
-                    @if (speedStats.totalModelTimeStandardDeviationMs != null) {
-                      <span> ± {{ formatMs(speedStats.totalModelTimeStandardDeviationMs) }}</span>
-                    }
-                  </dd>
-                </div>
-              </dl>
-              <p class="text-muted">
-                Percentiles are pooled over all {{ speedStats.pooledAnswerCount }} answers of every
-                run, not averaged per run: the question is what a single slow turn looks like.
-                @if (speedStats.caveat) { {{ speedStats.caveat }} }
-              </p>
-            </div>
-          }
-
-          <!-- ================= COST ================= -->
-          @if (costStats) {
-            <div class="mr-subsection">
-              <h4>Cost</h4>
-              @if (costDegraded) {
-                <div class="alert alert-warning" role="note">
-                  <div class="alert-content">
-                    <div class="alert-heading"><strong>Cost aggregates degraded</strong></div>
-                    <div class="alert-body">{{ costDegradedReason }}</div>
-                  </div>
-                </div>
-              }
-              <dl class="mr-stats">
-                <div class="mr-stat">
-                  <dt>Total</dt>
-                  <dd>{{ formatCost(costStats.totalCost) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Mean per run</dt>
-                  <dd>{{ formatCost(costStats.meanCostPerRun) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>SD per run</dt>
-                  <dd>{{ formatCost(costStats.costStandardDeviation) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Per question</dt>
-                  <dd>{{ formatCost(costStats.costPerQuestion) }}
-                    @if (costStats.questionsAskedPerRun != null) {
-                      <span class="text-muted"> over {{ formatQuestionsAsked(costStats.questionsAskedPerRun) }} asked per run</span>
-                    } @else if (costStats.costPerQuestion != null) {
-                      <span class="text-muted"> over scored items; recompute for per question asked</span>
-                    }
-                  </dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Per index point</dt>
-                  <dd>{{ formatCost(costStats.costPerIndexPoint) }}</dd>
-                </div>
-              </dl>
-              @if ((costStats.perRunTotals ?? []).length > 0) {
-                <p class="section-note">
-                  <strong>Per-run totals:</strong>
-                  @for (total of costStats.perRunTotals ?? []; track $index) {
-                    <span class="mr-run-total">{{ formatCost(total) }}</span>
-                  }
-                </p>
-              }
-
-              @if (costRoleRows.length > 0) {
-                <div class="mr-table-scroll">
-                  <table class="gh-table mr-cost-role-table">
-                    <caption class="visually-hidden">Cost by role: total, mean per run, spread and share.</caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">Role</th>
-                        <th scope="col" class="col-num">Total</th>
-                        <th scope="col" class="col-num">Mean per run</th>
-                        <th scope="col" class="col-num">SD</th>
-                        <th scope="col" class="col-num">Min</th>
-                        <th scope="col" class="col-num">Max</th>
-                        <th scope="col" class="col-num">Share</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (row of costRoleRows; track row.role) {
-                        <tr>
-                          <th scope="row">{{ roleLabel(row.role) }}</th>
-                          <td class="col-num">{{ formatCost(row.total) }}</td>
-                          <td class="col-num">{{ formatCost(row.mean) }}</td>
-                          <td class="col-num">{{ formatCost(row.sd) }}</td>
-                          <td class="col-num">{{ formatCost(row.min) }}</td>
-                          <td class="col-num">{{ formatCost(row.max) }}</td>
-                          <td class="col-num">{{ formatPercent(row.share, 0) }}</td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
-              }
-
-              <!--
-                Which role carries the spread is the actionable half. A set whose quality reproduces
-                to a tenth of a point can still spend twice as much on one member as another, and a
-                mean with one SD on the total does not say where that came from.
-              -->
-              @if (widestCostRole; as widest) {
-                <p class="section-note">
-                  <strong>Cost dispersion sits mostly in {{ roleLabel(widest.role) }}</strong>
-                  (SD {{ formatCost(widest.sd) }} across {{ costStats.runCount }} runs). Cost is the
-                  least reproducible quantity a replicate set measures, so a cost difference between
-                  two groups needs the same spread treatment a quality difference gets.
-                </p>
-              }
-            </div>
-          }
-
-          <!-- ================= TOKENS AND TOOLS =================
-               The claim verifier can be most of a set's cost, and a cost table that names it
-               without naming how many claims it checked leaves the reader unable to judge whether
-               the spend bought anything. -->
-          @if (usageStats; as usage) {
-            <div class="mr-subsection">
-              <h4>Tokens and tool usage</h4>
-              <dl class="mr-stats">
-                <div class="mr-stat">
-                  <dt>Candidate input</dt>
-                  <dd>{{ formatTokens(usage.totalInputTokens) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Candidate output</dt>
-                  <dd>{{ formatTokens(usage.totalOutputTokens) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Input : output</dt>
-                  <dd>{{ usage.inputOutputRatio != null ? formatNumber(usage.inputOutputRatio, 1) + ' : 1' : '—' }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Cache-read share</dt>
-                  <dd>{{ formatPercent(usage.cacheReadSharePercentage, 1) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Tool calls</dt>
-                  <dd>{{ usage.totalToolCalls }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Tool calls per run</dt>
-                  <dd>{{ formatNumber(usage.meanToolCallsPerRun, 1) }}</dd>
-                </div>
-              </dl>
-
-              <p class="section-note">
-                <strong>Grader tokens, kept separate:</strong>
-                assessor {{ formatTokens(usage.totalAssessmentInputTokens) }} in /
-                {{ formatTokens(usage.totalAssessmentOutputTokens) }} out ·
-                claim verifier {{ formatTokens(usage.totalClaimVerificationInputTokens) }} in /
-                {{ formatTokens(usage.totalClaimVerificationOutputTokens) }} out.
-                Never folded into the candidate's totals above: those measure the model under test.
-              </p>
-
-              @if (toolFamilyRows.length > 0) {
-                <div class="mr-table-scroll">
-                  <table class="gh-table mr-tool-family-table">
-                    <caption class="visually-hidden">Tool calls by family, pooled across the group's runs.</caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">Tool family</th>
-                        <th scope="col" class="col-num">Calls</th>
-                        <th scope="col" class="col-num">Share</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (row of toolFamilyRows; track row.family) {
-                        <tr>
-                          <th scope="row">{{ row.family }}</th>
-                          <td class="col-num">{{ row.calls }}</td>
-                          <td class="col-num">{{ formatPercent(row.share, 1) }}</td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
-                <p class="section-note">
-                  A family's share is prompt-compliant or not only against the tool preference
-                  hierarchy in <code>_policy.md</code>. A high source-code share on a suite weighted
-                  toward exact mechanics is what that policy asks for, not a routing defect.
-                </p>
-              }
-
-              @if (usage.claimsChecked > 0 || usage.answersWithVerification > 0) {
-                <p class="mr-claim-line">
-                  <strong>Claim verification:</strong>
-                  {{ usage.claimsChecked }} claims checked across
-                  {{ usage.answersWithVerification }} answers —
-                  {{ usage.claimsSupported }} supported,
-                  <strong>{{ usage.claimsRefuted }} refuted</strong>,
-                  {{ usage.claimsIndeterminate }} indeterminate.
-                </p>
-                <p class="section-note">
-                  Read this beside the verifier's share of the cost table above: it is what that
-                  spend bought. A verifier that refutes nothing across a whole replicate set is
-                  either confirming the candidate is accurate or failing to test it, and the claim
-                  count is what separates those.
-                </p>
-              }
-            </div>
-          }
-
-          <!-- ================= COMPARISON ================= -->
-          @if (comparison) {
-            <div class="mr-subsection mr-comparison">
-              <h4>Comparison with {{ analysis.comparedWithGroupName || 'the baseline group' }}</h4>
-              <p class="section-note">
-                Paired by question on per-item cross-run mean quality, over
-                {{ comparison.pairedItemCount }} paired item(s).
-                @if (comparison.unpairedItemCount) {
-                  {{ comparison.unpairedItemCount }} item(s) appear on one side only and are excluded.
-                }
-                @if (comparison.revisionMismatchedItemCount) {
-                  {{ comparison.revisionMismatchedItemCount }} item(s) were graded under different rubric revisions on the two sides and are excluded.
-                }
-                Differences are this group minus the baseline.
-              </p>
-
-              <dl class="mr-stats">
-                <div class="mr-stat">
-                  <dt>Mean paired difference</dt>
-                  <dd>{{ formatSigned(comparison.meanDifference, 2) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>95% CI</dt>
-                  <dd>
-                    @if (comparison.differenceConfidenceLower != null && comparison.differenceConfidenceUpper != null) {
-                      {{ formatSigned(comparison.differenceConfidenceLower, 2) }} – {{ formatSigned(comparison.differenceConfidenceUpper, 2) }}
-                    } @else { — }
-                  </dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Wilcoxon p (primary)</dt>
-                  <dd>{{ formatPValue(comparison.wilcoxon?.pValue) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Paired t p (secondary)</dt>
-                  <dd>{{ formatPValue(comparison.pairedT?.pValue) }}</dd>
-                </div>
-                <div class="mr-stat">
-                  <dt>Cohen's d<sub>z</sub></dt>
-                  <dd>{{ formatNumber(comparison.cohensDz, 2) }}</dd>
-                </div>
-              </dl>
-
-              <p class="text-muted">
-                Wilcoxon signed-rank is the primary test — non-parametric, which is what a bounded
-                0–100 scale over this many items warrants
-                ({{ comparison.wilcoxon?.method }}, n = {{ comparison.wilcoxon?.sampleSize }},
-                {{ comparison.wilcoxon?.zeroDifferenceCount }} zero difference(s) discarded).
-                The paired <i>t</i> is reported beside it, never instead of it.
-              </p>
-
-              @if (itemComparisons.length > 0) {
-                <div class="mr-exploratory">
-                  <h5>Per-item differences — exploratory</h5>
-                  <!-- The label is mandatory: the server sets an Exploratory flag that is always
-                       true precisely so that no surface can render one of these without it. -->
-                  <div class="alert alert-info" role="note">
-                    <div class="alert-content"><div class="alert-body">{{ exploratoryNote }}</div></div>
-                  </div>
-                  <div class="mr-table-scroll">
-                    <table class="gh-table mr-comparison-table">
-                      <caption class="visually-hidden">Exploratory per-item differences between the two groups, under Benjamini-Hochberg false discovery rate control.</caption>
-                      <thead>
-                        <tr>
-                          <th scope="col">Question</th>
-                          <th scope="col" class="col-center">Baseline</th>
-                          <th scope="col" class="col-center">This group</th>
-                          <th scope="col" class="col-center">Difference</th>
-                          <th scope="col" class="col-center">p</th>
-                          <th scope="col" class="col-center">q (BH)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (item of itemComparisons; track item.questionId) {
-                          <tr [class.is-rejected]="item.rejectedAtFdr">
-                            <th scope="row" class="col-q">
-                              <span class="item-order">Q{{ item.orderIndex }}</span>
-                              <span class="item-text">{{ item.questionText }}</span>
-                            </th>
-                            <td class="col-center">{{ formatNumber(item.baselineMean, 1) }}</td>
-                            <td class="col-center">{{ formatNumber(item.treatmentMean, 1) }}</td>
-                            <td class="col-center">{{ formatSigned(item.difference, 1) }}</td>
-                            <td class="col-center">{{ formatPValue(item.pValue) }}</td>
-                            <td class="col-center">
-                              {{ formatPValue(item.adjustedPValue) }}
-                              @if (item.rejectedAtFdr) {
-                                <span class="mr-badge mr-badge-warn">exploratory</span>
-                              }
-                            </td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                  <p class="text-muted">
-                    Controlled at a false discovery rate of {{ comparison.falseDiscoveryRate }}. A
-                    rejection here is a lead to investigate, never a result to report on its own.
-                  </p>
-                </div>
-              }
-            </div>
-          }
-        }
-      </div>
-
-      <div class="dialog-footer">
-        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeGroup()">Close</button>
-      </div>
-    </div>
-  }
-</dialog>

@@ -3,6 +3,7 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -10,6 +11,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
 using Overseer.Tests.Helpers;
 using Xunit;
+using ChatConsistencyStatistics = Overseer.Services.ChatConsistency.ChatConsistencyStatistics;
 
 /// <summary>
 /// The scientific core. Every figure here is arithmetic over a hand-built fixture, and the
@@ -1858,6 +1860,406 @@ public class BenchmarkGroupStatisticsTests
         });
 
         Assert.False(result.PromptUnderTest!.Recorded);
+    }
+
+    // --- Statistics method 2 ----------------------------------------------------------------------
+
+    private static readonly BenchmarkGroupStatisticsOptions V2 = new() { Method = BenchmarkGroupStatisticsMethod.V2 };
+
+    [Fact]
+    public void V2_CombinedInterval_IsTheQuestionBootstrapBelowThreeRuns_AndTheCrossedBootstrapFromThree()
+    {
+        var questions = Questions(20, 50, 80);
+        var two = new[]
+        {
+            Run(1, questions, new[] { 60, 70, 80 }),
+            Run(2, questions, new[] { 70, 80, 90 })
+        };
+        var three = two.Append(Run(3, questions, new[] { 80, 90, 100 })).ToArray();
+
+        var atTwo = BenchmarkGroupStatistics.Compute(Suite(), questions, two, options: V2);
+        var atThree = BenchmarkGroupStatistics.Compute(Suite(), questions, three, options: V2);
+
+        Assert.Equal(2, atTwo.StatisticsMethodVersion);
+        Assert.Equal(BenchmarkGroupStatistics.QuestionBootstrapMethod, atTwo.Index.CombinedIntervalMethod);
+        Assert.Equal(BenchmarkGroupStatistics.CrossedBootstrapMethod, atThree.Index.CombinedIntervalMethod);
+
+        foreach (var index in new[] { atTwo.Index, atThree.Index })
+        {
+            Assert.NotNull(index.CombinedLower);
+            Assert.NotNull(index.CombinedUpper);
+            Assert.True(index.CombinedLower!.Value < index.CombinedUpper!.Value);
+            Assert.Equal((index.CombinedUpper.Value - index.CombinedLower.Value) / 2.0, index.CombinedHalfWidth!.Value, 12);
+            Assert.False(index.CombinedIntervalTruncated);
+            Assert.Equal(BenchmarkCrossedBootstrap.DefaultReplicates, index.BootstrapReplicates);
+            Assert.Equal(BenchmarkCrossedBootstrap.DefaultSeed, index.BootstrapSeed);
+        }
+
+        // The point estimate is the method-1 one.
+        var v1 = BenchmarkGroupStatistics.Compute(Suite(), questions, three);
+        Assert.Equal(v1.Index.PointEstimate, atThree.Index.PointEstimate, 12);
+        Assert.Equal(v1.Index.ReproducibilityHalfWidth, atThree.Index.ReproducibilityHalfWidth);
+        Assert.Null(v1.Index.CombinedIntervalMethod);
+        Assert.Null(v1.StatisticsMethodVersion);
+    }
+
+    [Fact]
+    public void V2_ItemSamplingSE_IsComputedFromTheUnroundedMeansAndWeights()
+    {
+        // Item means 60.5, 71.5 and 92.5; Q1's weight is the mean of the ratings 20 and 21, 20.5.
+        //   centre = (20.5*60.5 + 50*71.5 + 80*92.5) / 150.5 = 12215.25 / 150.5 = 81.16445...
+        //   SE = sqrt(3/2 * sum w^2 (q - centre)^2) / 150.5 = 9.04481552585363
+        // Method 1 rounds the means to 61 / 72 / 93 and the weight to 21 first.
+        var questions = Questions(20, 50, 80);
+        var runs = new[]
+        {
+            Run(1, questions, new[] { 60, 70, 90 }),
+            Run(2, questions, new[] { 61, 73, 95 })
+        };
+        runs[1].Answers[0].AssessedDifficulty = 21;
+
+        var v2 = BenchmarkGroupStatistics.Compute(Suite(), questions, runs, options: V2).Index;
+        var v1 = BenchmarkGroupStatistics.Compute(Suite(), questions, runs).Index;
+
+        double centre = 12215.25 / 150.5;
+        double expected = Math.Sqrt(1.5 * (
+            20.5 * 20.5 * (60.5 - centre) * (60.5 - centre) +
+            50.0 * 50.0 * (71.5 - centre) * (71.5 - centre) +
+            80.0 * 80.0 * (92.5 - centre) * (92.5 - centre))) / 150.5;
+
+        Assert.Equal(9.04481552585363, expected, 10);
+        Assert.Equal(expected, v2.ItemSamplingStandardError!.Value, 10);
+        Assert.Equal(BenchmarkGroupStatistics.NormalCritical95 * expected, v2.ItemSamplingHalfWidth!.Value, 10);
+        Assert.NotEqual(v1.ItemSamplingStandardError!.Value, v2.ItemSamplingStandardError!.Value, 6);
+    }
+
+    [Fact]
+    public void V2_Unstable_IsNotSetAtTwoRuns_EvenWithASpreadAboveTheThreshold()
+    {
+        // Q1 scores 40 and 80: a sample SD of 28.3, above the default 15.
+        var questions = Questions(50, 50, 50);
+        var runs = new[]
+        {
+            Run(1, questions, new[] { 40, 70, 80 }),
+            Run(2, questions, new[] { 80, 72, 82 })
+        };
+
+        var v1 = BenchmarkGroupStatistics.Compute(Suite(), questions, runs);
+        var v2 = BenchmarkGroupStatistics.Compute(Suite(), questions, runs, options: V2);
+
+        Assert.True(v1.Items[0].Unstable);
+        Assert.False(v2.Items[0].Unstable);
+        Assert.True(v2.Items[0].InsufficientRuns);
+        Assert.Empty(v2.UnstableQuestionIds);
+
+        // From three runs the flag is set as before.
+        var three = runs.Append(Run(3, questions, new[] { 40, 71, 81 })).ToArray();
+        Assert.True(BenchmarkGroupStatistics.Compute(Suite(), questions, three, options: V2).Items[0].Unstable);
+    }
+
+    [Fact]
+    public void V2_RunsWhereRunComponentMatchesQuestions_MatchesAHandComputation()
+    {
+        // Run indices 74, 84, 94: SD_repro = 10. Item means 70 / 80 / 90 around the weighted mean 84,
+        // weights 20 / 50 / 80:
+        //   SE_item = sqrt(3/2 * (400*196 + 2500*16 + 6400*36)) / 150 = 4.82217...
+        //   (SD_repro / SE_item)^2 = 4.30, so five runs make the run half-width no larger.
+        var questions = Questions(20, 50, 80);
+        var runs = new[]
+        {
+            Run(1, questions, new[] { 60, 70, 80 }),
+            Run(2, questions, new[] { 70, 80, 90 }),
+            Run(3, questions, new[] { 80, 90, 100 })
+        };
+
+        var index = BenchmarkGroupStatistics.Compute(Suite(), questions, runs, options: V2).Index;
+
+        double itemSe = Math.Sqrt(1.5 * 348800.0) / 150.0;
+        Assert.Equal(itemSe, index.ItemSamplingStandardError!.Value, 10);
+        Assert.Equal(10.0, index.ReproducibilityStandardDeviation!.Value, 9);
+        Assert.Equal(5, index.RunsWhereRunComponentMatchesQuestions);
+        Assert.Equal(Math.Max(3, (int)Math.Ceiling(Math.Pow(10.0 / itemSe, 2))), index.RunsWhereRunComponentMatchesQuestions);
+
+        // Below three runs there is no SD_repro to compare.
+        var two = BenchmarkGroupStatistics.Compute(Suite(), questions, runs.Take(2).ToArray(), options: V2).Index;
+        Assert.Null(two.RunsWhereRunComponentMatchesQuestions);
+    }
+
+    [Fact]
+    public void V2_RunSpanHours_IsTheTimeBetweenTheFirstAndTheLastStart()
+    {
+        var questions = Questions(50, 50, 50);
+        var runs = new[]
+        {
+            Run(1, questions, new[] { 60, 70, 80 }),
+            Run(2, questions, new[] { 62, 72, 82 }),
+            Run(3, questions, new[] { 64, 74, 84 })
+        };
+        runs[0].StartedAtUtc = new DateTime(2026, 10, 1, 10, 30, 0, DateTimeKind.Utc);
+        runs[1].StartedAtUtc = new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc);
+        runs[2].StartedAtUtc = new DateTime(2026, 10, 1, 14, 0, 0, DateTimeKind.Utc);
+
+        var v2 = BenchmarkGroupStatistics.Compute(Suite(), questions, runs, options: V2).Index;
+        var v1 = BenchmarkGroupStatistics.Compute(Suite(), questions, runs).Index;
+
+        Assert.Equal(6.0, v2.RunSpanHours!.Value, 9);
+        Assert.Null(v1.RunSpanHours);
+    }
+
+    [Fact]
+    public void V2_Dimensions_CarryABootstrapIntervalAroundAnUnchangedMean()
+    {
+        var questions = Questions(50, 50);
+
+        var a = Run(1, questions, new[] { 90, 80 });
+        Score(a, accuracy: new[] { 96, 94 }, completeness: new[] { 84, 80 });
+        var b = Run(2, questions, new[] { 92, 82 });
+        Score(b, accuracy: new[] { 98, 96 }, completeness: new[] { 86, 82 });
+        var c = Run(3, questions, new[] { 94, 84 });
+        Score(c, accuracy: new[] { 97, 95 }, completeness: new[] { 88, 84 });
+
+        var v1 = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a, b, c });
+        var v2 = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a, b, c }, options: V2);
+
+        var accuracy1 = v1.Dimensions.Single(d => d.Dimension == "Accuracy");
+        var accuracy2 = v2.Dimensions.Single(d => d.Dimension == "Accuracy");
+
+        Assert.Equal(accuracy1.Mean!.Value, accuracy2.Mean!.Value, 12);
+        Assert.Equal(accuracy1.PerRunMeans, accuracy2.PerRunMeans);
+        Assert.Equal(BenchmarkGroupStatistics.CrossedBootstrapMethod, accuracy2.IntervalMethod);
+        Assert.NotNull(accuracy2.BootstrapLower);
+        Assert.NotNull(accuracy2.BootstrapUpper);
+        Assert.InRange(accuracy2.Mean!.Value, accuracy2.BootstrapLower!.Value, accuracy2.BootstrapUpper!.Value);
+        Assert.Equal((accuracy2.BootstrapUpper.Value - accuracy2.BootstrapLower.Value) / 2.0, accuracy2.ConfidenceHalfWidth!.Value, 12);
+
+        Assert.Null(accuracy1.BootstrapLower);
+        Assert.Null(accuracy1.IntervalMethod);
+
+        // A dimension nothing scored has no interval under either method.
+        var conciseness = v2.Dimensions.Single(d => d.Dimension == "Conciseness");
+        Assert.Null(conciseness.BootstrapLower);
+        Assert.Null(conciseness.IntervalMethod);
+        Assert.Null(conciseness.ConfidenceHalfWidth);
+
+        // Two runs redraw the questions only.
+        var atTwo = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a, b }, options: V2);
+        Assert.Equal(BenchmarkGroupStatistics.QuestionBootstrapMethod, atTwo.Dimensions.Single(d => d.Dimension == "Accuracy").IntervalMethod);
+    }
+
+    /// <summary>Baseline weights 20 / 50 / 80, treatment weights 30 / 50 / 70, three runs each.</summary>
+    private static (BenchmarkGroupStatisticsResult Baseline, BenchmarkGroupStatisticsResult Treatment) WeightedPair(
+        BenchmarkGroupStatisticsOptions? options = null)
+    {
+        var baselineQuestions = Questions(20, 50, 80);
+        var treatmentQuestions = Questions(30, 50, 70);
+
+        var baseline = BenchmarkGroupStatistics.Compute(Suite(), baselineQuestions, new[]
+        {
+            Run(1, baselineQuestions, new[] { 60, 70, 80 }),
+            Run(2, baselineQuestions, new[] { 70, 80, 90 }),
+            Run(3, baselineQuestions, new[] { 80, 90, 100 })
+        }, options: options);
+
+        var treatment = BenchmarkGroupStatistics.Compute(Suite(), treatmentQuestions, new[]
+        {
+            Run(4, treatmentQuestions, new[] { 65, 80, 85 }),
+            Run(5, treatmentQuestions, new[] { 75, 82, 95 }),
+            Run(6, treatmentQuestions, new[] { 70, 88, 99 })
+        }, options: options);
+
+        return (baseline, treatment);
+    }
+
+    [Fact]
+    public void V2_Compare_IndexDifference_IsTheDifferenceOfThePairedIndicesUnderTheTreatmentWeights()
+    {
+        // Treatment weights 30 / 50 / 70 on both sides, total 150:
+        //   baseline runs  (1800+3500+5600, 2100+4000+6300, 2400+4500+7000) / 150, mean 37200 / 450
+        //   treatment runs (1950+4000+5950, 2250+4100+6650, 2100+4400+6930) / 150, mean 38330 / 450
+        //   difference 1130 / 450 = 2.5111...
+        var (baseline, treatment) = WeightedPair(V2);
+
+        var comparison = BenchmarkGroupStatistics.Compare(baseline, treatment, method: BenchmarkGroupStatisticsMethod.V2);
+
+        Assert.Equal(2, comparison.StatisticsMethodVersion);
+        Assert.Equal(1130.0 / 450.0, comparison.IndexDifference!.Value, 9);
+        Assert.Equal(BenchmarkGroupStatistics.CrossedBootstrapMethod, comparison.IndexDifferenceMethod);
+        Assert.True(comparison.RunVarianceIncluded);
+        Assert.True(comparison.IndexDifferenceLower!.Value < comparison.IndexDifferenceUpper!.Value);
+        Assert.InRange(comparison.IndexDifferenceBootstrapP!.Value, 0.0, 1.0);
+        Assert.True(comparison.IndexDifferenceStandardError!.Value > 0.0);
+
+        // The minimum detectable difference at 80% power and a two-sided 0.05.
+        double z = ChatConsistencyStatistics.NormalQuantile(0.975) + ChatConsistencyStatistics.NormalQuantile(0.80);
+        Assert.Equal(z * comparison.IndexDifferenceStandardError!.Value, comparison.MinimumDetectableIndexDifference!.Value, 9);
+        Assert.Equal(2.8016, z, 3);
+
+        // Item differences 0, 10/3 and 3: the shift Wilcoxon tests, beside the mean.
+        var differences = comparison.ItemComparisons.Select(i => i.Difference).ToList();
+        Assert.Equal(ChatConsistencyStatistics.HodgesLehmannShift(differences)!.Value, comparison.HodgesLehmannShift!.Value, 12);
+
+        // The V1 fields keep their meaning: the unweighted mean item difference.
+        Assert.Equal(differences.Average(), comparison.MeanDifference, 9);
+
+        // Below three runs on either side, only the questions are redrawn.
+        var shortTreatment = BenchmarkGroupStatistics.Compute(Suite(), Questions(30, 50, 70), new[]
+        {
+            Run(4, Questions(30, 50, 70), new[] { 65, 80, 85 }),
+            Run(5, Questions(30, 50, 70), new[] { 75, 82, 95 })
+        }, options: V2);
+        var questionOnly = BenchmarkGroupStatistics.Compare(baseline, shortTreatment, method: BenchmarkGroupStatisticsMethod.V2);
+        Assert.Equal(BenchmarkGroupStatistics.QuestionBootstrapMethod, questionOnly.IndexDifferenceMethod);
+        Assert.False(questionOnly.RunVarianceIncluded);
+    }
+
+    [Fact]
+    public void V2_Compare_StandardizedDifferenceDav_IsUnchangedWhenEveryRunIsDuplicated()
+    {
+        var questions = Questions(50, 50, 50, 50);
+        int[][] baselineScores = { new[] { 60, 70, 80, 90 }, new[] { 62, 75, 82, 88 }, new[] { 66, 74, 79, 94 } };
+        int[][] treatmentScores = { new[] { 70, 74, 86, 88 }, new[] { 72, 79, 88, 90 }, new[] { 75, 78, 90, 97 } };
+
+        BenchmarkGroupComparison CompareWithCopies(int copies)
+        {
+            var baselineRuns = Enumerable.Range(0, 3 * copies).Select(i => Run(1 + i, questions, baselineScores[i % 3])).ToArray();
+            var treatmentRuns = Enumerable.Range(0, 3 * copies).Select(i => Run(101 + i, questions, treatmentScores[i % 3])).ToArray();
+            return BenchmarkGroupStatistics.Compare(
+                BenchmarkGroupStatistics.Compute(Suite(), questions, baselineRuns, options: V2),
+                BenchmarkGroupStatistics.Compute(Suite(), questions, treatmentRuns, options: V2),
+                method: BenchmarkGroupStatisticsMethod.V2);
+        }
+
+        var once = CompareWithCopies(1);
+        var twice = CompareWithCopies(2);
+
+        // d_av = mean item difference / mean of the two groups' population SDs over every cell.
+        static double PopulationSd(IEnumerable<int[]> rows)
+        {
+            var cells = rows.SelectMany(r => r).Select(v => (double)v).ToList();
+            double mean = cells.Average();
+            return Math.Sqrt(cells.Sum(v => (v - mean) * (v - mean)) / cells.Count);
+        }
+
+        double expected = once.MeanDifference / ((PopulationSd(baselineScores) + PopulationSd(treatmentScores)) / 2.0);
+        Assert.Equal(expected, once.StandardizedDifferenceDav!.Value, 9);
+        Assert.Equal(once.StandardizedDifferenceDav!.Value, twice.StandardizedDifferenceDav!.Value, 9);
+        Assert.Equal(once.MeanDifference, twice.MeanDifference, 9);
+    }
+
+    [Fact]
+    public void V2_Compare_LeavesUntestableItemsOutOfTheBenjaminiHochbergM()
+    {
+        // Q1 and Q2 have no spread on either side and different means. Method 1 gives them p = 0;
+        // method 2 has no variance estimate for them, so they are untestable and the step-up runs
+        // over Q3 and Q4 alone.
+        var questions = Questions(50, 50, 50, 50);
+        var baselineRuns = new[]
+        {
+            Run(1, questions, new[] { 60, 70, 50, 80 }),
+            Run(2, questions, new[] { 60, 70, 55, 85 }),
+            Run(3, questions, new[] { 60, 70, 62, 81 })
+        };
+        var treatmentRuns = new[]
+        {
+            Run(4, questions, new[] { 70, 75, 58, 90 }),
+            Run(5, questions, new[] { 70, 75, 66, 84 }),
+            Run(6, questions, new[] { 70, 75, 61, 95 })
+        };
+
+        var v1 = BenchmarkGroupStatistics.Compare(
+            BenchmarkGroupStatistics.Compute(Suite(), questions, baselineRuns),
+            BenchmarkGroupStatistics.Compute(Suite(), questions, treatmentRuns));
+        var v2 = BenchmarkGroupStatistics.Compare(
+            BenchmarkGroupStatistics.Compute(Suite(), questions, baselineRuns, options: V2),
+            BenchmarkGroupStatistics.Compute(Suite(), questions, treatmentRuns, options: V2),
+            method: BenchmarkGroupStatisticsMethod.V2);
+
+        Assert.Equal(0.0, v1.ItemComparisons[0].PValue!.Value);
+        Assert.True(v1.ItemComparisons[0].RejectedAtFdr);
+        Assert.All(v1.ItemComparisons, i => Assert.Null(i.Untestable));
+        Assert.Null(v1.UntestableItemCount);
+
+        Assert.Equal(2, v2.UntestableItemCount);
+        foreach (var item in v2.ItemComparisons.Take(2))
+        {
+            Assert.True(item.Untestable);
+            Assert.Null(item.PValue);
+            Assert.Null(item.AdjustedPValue);
+            Assert.False(item.RejectedAtFdr);
+        }
+
+        var tested = v2.ItemComparisons.Skip(2).ToList();
+        Assert.All(tested, i => Assert.False(i.Untestable));
+        var expected = BenchmarkGroupStatistics.BenjaminiHochberg(tested.Select(i => i.PValue!.Value).ToList());
+        Assert.Equal(expected[0].AdjustedPValue, tested[0].AdjustedPValue!.Value, 12);
+        Assert.Equal(expected[1].AdjustedPValue, tested[1].AdjustedPValue!.Value, 12);
+    }
+
+    [Fact]
+    public void V2_WelchTTest_IsUndefinedWithoutSpread_WhileV1KeepsItsDegenerateP()
+    {
+        var a = new double[] { 60, 60, 60 };
+        var b = new double[] { 70, 70, 70 };
+
+        Assert.Equal(0.0, BenchmarkGroupStatistics.WelchTTest(a, b).PValue!.Value);
+        Assert.Equal(1.0, BenchmarkGroupStatistics.WelchTTest(a, a).PValue!.Value);
+        foreach (var other in new[] { b, a })
+        {
+            var (t, df, p) = BenchmarkGroupStatistics.WelchTTest(a, other, BenchmarkGroupStatisticsMethod.V2);
+            Assert.Null(t);
+            Assert.Null(df);
+            Assert.Null(p);
+        }
+    }
+
+    /// <summary>Every property method 2 adds, in the casing either serializer writes it.</summary>
+    private static readonly string[] MethodTwoPropertyNames =
+    {
+        "StatisticsMethodVersion", "CombinedIntervalMethod", "BootstrapReplicates", "BootstrapSeed",
+        "RunsWhereRunComponentMatchesQuestions", "RunSpanHours", "BootstrapLower", "BootstrapUpper",
+        "IntervalMethod", "Untestable", "IndexDifference", "RunVarianceIncluded", "HodgesLehmannShift",
+        "StandardizedDifferenceDav", "MinimumDetectableIndexDifference", "UntestableItemCount",
+        "PairKeyDifferences", "PriorComparisonCount"
+    };
+
+    [Fact]
+    public void V1_Json_CarriesNoneOfTheMethodTwoProperties()
+    {
+        var questions = Questions(20, 50, 80);
+        var baselineRuns = new[]
+        {
+            Run(1, questions, new[] { 60, 70, 80 }),
+            Run(2, questions, new[] { 70, 80, 90 }),
+            Run(3, questions, new[] { 80, 90, 100 })
+        };
+        Score(baselineRuns[0], accuracy: new[] { 90, 80, 70 });
+        var treatmentRuns = new[]
+        {
+            Run(4, questions, new[] { 65, 80, 85 }),
+            Run(5, questions, new[] { 75, 82, 95 }),
+            Run(6, questions, new[] { 70, 88, 99 })
+        };
+
+        var baseline = BenchmarkGroupStatistics.Compute(Suite(), questions, baselineRuns);
+        var treatment = BenchmarkGroupStatistics.Compute(Suite(), questions, treatmentRuns);
+        var comparison = BenchmarkGroupStatistics.Compare(baseline, treatment);
+
+        foreach (var options in new[] { new JsonSerializerOptions(), new JsonSerializerOptions(JsonSerializerDefaults.Web) })
+        {
+            string resultJson = JsonSerializer.Serialize(baseline, options);
+            string comparisonJson = JsonSerializer.Serialize(comparison, options);
+
+            foreach (string name in MethodTwoPropertyNames)
+            {
+                Assert.DoesNotContain(name, resultJson, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(name, comparisonJson, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        // The same records under method 2 do write them.
+        var v2Json = JsonSerializer.Serialize(BenchmarkGroupStatistics.Compute(Suite(), questions, baselineRuns, options: V2));
+        Assert.Contains("\"StatisticsMethodVersion\":2", v2Json);
+        Assert.Contains("\"CombinedIntervalMethod\":\"crossedBootstrap\"", v2Json);
     }
 
     // --- Fixture helpers -------------------------------------------------------------------------

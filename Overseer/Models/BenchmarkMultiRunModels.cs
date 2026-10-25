@@ -197,6 +197,14 @@ public class BenchmarkRunGroupDto : IProviderAvailabilityCardDto
 {
     public long Id { get; set; }
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// <see cref="Name"/> has the shape the server generates for this group's suite, model and run
+    /// count (<c>BenchmarkRunGroupNames.IsDefault</c>; any date), so the UI may show it as a
+    /// description rather than as a name someone chose.
+    /// </summary>
+    public bool NameIsGenerated { get; set; }
+
     public long? BenchmarkSuiteId { get; set; }
     public string? SuiteName { get; set; }
 
@@ -226,15 +234,27 @@ public class BenchmarkRunGroupDto : IProviderAvailabilityCardDto
     public DateTime ModifiedAtUtc { get; set; }
 
     public int RunCount { get; set; }
+
+    /// <summary>The member run ids, ascending. Filled on the list as well as the detail.</summary>
+    public List<long> MemberRunIds { get; set; } = new();
+
     public List<BenchmarkRunGroupMemberDto> Members { get; set; } = new();
 
     /// <summary>Null until an analysis has been computed. The report download is disabled until then.</summary>
     public long? LatestAnalysisId { get; set; }
     public DateTime? LatestAnalysisAtUtc { get; set; }
 
+    // The latest analysis's headline figures, from its row; null without an analysis and on an
+    // analysis stored without them.
+    public double? HeadlineIndex { get; set; }
+    public double? HeadlineHalfWidth { get; set; }
+    public double? HeadlineSpeedIndex { get; set; }
+    public double? HeadlineCostPerRun { get; set; }
+
     /// <summary>
-    /// The group's membership changed after its last analysis, so the stored figures describe a
-    /// different set of runs. Badged rather than discarded: a stale analysis is not wrong.
+    /// The group's membership changed after its last analysis, or a member was re-run after it, so
+    /// the stored figures describe different answers. Badged rather than discarded: a stale
+    /// analysis is not wrong.
     /// </summary>
     public bool AnalysisStale { get; set; }
 
@@ -253,7 +273,11 @@ public class BenchmarkRunGroupDto : IProviderAvailabilityCardDto
 
 public class CreateBenchmarkRunGroupRequest
 {
-    public string Name { get; set; } = string.Empty;
+    /// <summary>
+    /// Optional, at most 256 characters. Blank generates <c>Suite · Model · yyyy-MM-dd · R=n</c> from
+    /// the newest member's suite and model and the earliest member's start.
+    /// </summary>
+    public string? Name { get; set; }
     public List<long> RunIds { get; set; } = new();
     public string? Notes { get; set; }
 
@@ -282,6 +306,47 @@ public class BenchmarkRunGroupTierPreviewDto
     public string? Error { get; set; }
     public BenchmarkComparabilityResultDto? Comparability { get; set; }
     public BenchmarkRunGroupDto? Group { get; set; }
+
+    /// <summary>A group of the same suite that already holds exactly these runs; the set is refused then.</summary>
+    public long? DuplicateOfGroupId { get; set; }
+}
+
+/// <summary>The candidate a suggested group's runs share.</summary>
+public class BenchmarkRunGroupSuggestionModelDto
+{
+    public string DisplayName { get; set; } = string.Empty;
+    public string Id { get; set; } = string.Empty;
+    public string Provider { get; set; } = string.Empty;
+    public string? ThinkingLevel { get; set; }
+    public string? ReasoningMode { get; set; }
+}
+
+/// <summary>
+/// Completed runs of one suite that share a full comparability key hash, so they would form a
+/// Tier A group, and are not already a group or part of one. Read-only: nothing is created until
+/// the operator creates the group.
+/// </summary>
+public class BenchmarkRunGroupSuggestionDto
+{
+    public string KeyHash { get; set; } = string.Empty;
+
+    /// <summary>Ascending.</summary>
+    public List<long> RunIds { get; set; } = new();
+
+    public int RunCount { get; set; }
+
+    /// <summary>Always <c>Replicate</c>, as a group's tier is serialized.</summary>
+    public string Tier { get; set; } = string.Empty;
+
+    public BenchmarkRunGroupSuggestionModelDto TestedModel { get; set; } = new();
+    public DateTime FirstStartedAtUtc { get; set; }
+    public DateTime LastStartedAtUtc { get; set; }
+
+    /// <summary>The series the runs were launched from, ascending; empty for runs launched one by one.</summary>
+    public List<long> SeriesIds { get; set; } = new();
+
+    /// <summary>Mean of the runs' stored Intelligence Indices; null when every one is withheld.</summary>
+    public double? MeanQualityIndex { get; set; }
 }
 
 public class BenchmarkGroupAnalysisRequest

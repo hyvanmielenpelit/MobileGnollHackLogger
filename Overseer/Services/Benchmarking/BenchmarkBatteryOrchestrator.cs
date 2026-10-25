@@ -2142,8 +2142,9 @@ public class BenchmarkBatteryOrchestrator
     /// Every slot is occupied. <c>Completed</c> when every slot holds a usable member, otherwise
     /// <c>CompletedWithErrors</c>, naming the members without a result. A battery run that was
     /// CompletedWithErrors keeps its finish time; any other is stamped now. With two or more runs per
-    /// suite, one ordinary run group per suite with at least two usable members (once per suite);
-    /// then the composite analysis, whose refusal is recorded and does not fail the battery run.
+    /// suite, one ordinary run group per suite with at least two usable members (once per suite),
+    /// each analyzed as it is created; then the composite analysis, whose refusal is recorded and
+    /// does not fail the battery run. A group analysis that fails is logged and changes nothing.
     /// </summary>
     private async Task FinishAsync(
         IServiceProvider services,
@@ -2205,6 +2206,8 @@ public class BenchmarkBatteryOrchestrator
                     groupIds[suite.Index] = groupId.Value;
                     batteryRun.AutoCreatedGroupIdsJson = JsonSerializer.Serialize(groupIds, StateJsonOptions);
                     await db.SaveChangesAsync(ct);
+
+                    await BenchmarkSeriesOrchestrator.AnalyseNewGroupAsync(_scopeFactory, _logger, groupId.Value, ct);
                 }
             }
         }

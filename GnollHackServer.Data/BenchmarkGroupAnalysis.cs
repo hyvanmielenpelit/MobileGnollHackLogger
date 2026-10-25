@@ -52,6 +52,18 @@ public class BenchmarkGroupAnalysis
     /// </summary>
     public string? ComparisonJson { get; set; }
 
+    /// <summary>The result's index point estimate, kept out of the JSON so the group list can show it.</summary>
+    public double? HeadlineIndex { get; set; }
+
+    /// <summary>Half the width of the result's combined 95% index interval.</summary>
+    public double? HeadlineHalfWidth { get; set; }
+
+    /// <summary>The result's mean speed index.</summary>
+    public double? HeadlineSpeedIndex { get; set; }
+
+    /// <summary>The result's mean cost per run.</summary>
+    public double? HeadlineCostPerRun { get; set; }
+
     [MaxLength(450)]
     public string? ComputedByUserId { get; set; }
     public ApplicationUser? ComputedByUser { get; set; }

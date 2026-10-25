@@ -82,7 +82,8 @@ public class BenchmarkBatteryOrchestratorTests
     /// <summary>A scope factory over one shared in-memory database, as the series tests build it.</summary>
     private static (IServiceScopeFactory Factory, string DbName) CreateScopeFactory(
         IConfiguration config,
-        bool denySpendForAnotherReason = false)
+        bool denySpendForAnotherReason = false,
+        Action<IServiceCollection>? configure = null)
     {
         string dbName = Guid.NewGuid().ToString();
 
@@ -119,6 +120,8 @@ public class BenchmarkBatteryOrchestratorTests
             NullLogger<BenchmarkService>.Instance));
         services.AddScoped<BenchmarkRunLauncher>();
 
+        configure?.Invoke(services);
+
         var provider = services.BuildServiceProvider();
         return (provider.GetRequiredService<IServiceScopeFactory>(), dbName);
     }
@@ -153,9 +156,10 @@ public class BenchmarkBatteryOrchestratorTests
         IConfiguration? config = null,
         bool suiteBAssessed = true,
         bool archived = false,
-        bool denySpendForAnotherReason = false)
+        bool denySpendForAnotherReason = false,
+        Action<IServiceCollection>? configure = null)
     {
-        var (factory, dbName) = CreateScopeFactory(config ?? CreateConfig(), denySpendForAnotherReason);
+        var (factory, dbName) = CreateScopeFactory(config ?? CreateConfig(), denySpendForAnotherReason, configure);
         using var db = CreateDbContext(dbName);
 
         var suiteA = Suite("Suite A");
@@ -2155,5 +2159,120 @@ public class BenchmarkBatteryOrchestratorTests
         Assert.Equal("guides", read[0].ToolGuidesSha256);
         Assert.Null(read[0].KnowledgeBaseHeadSha);
         Assert.Empty(BenchmarkBatteryOrchestrator.ReadFingerprints(null));
+    }
+
+    // --- The groups a finished battery run creates are analyzed ------------------------------------
+
+    /// <summary>A group analysis service whose entry point throws, standing in for any failure.</summary>
+    private sealed class ThrowingGroupAnalysisService : BenchmarkGroupAnalysisService
+    {
+        public ThrowingGroupAnalysisService(ApplicationDbContext db)
+            : base(db, NullLogger<BenchmarkGroupAnalysisService>.Instance)
+        {
+        }
+
+        public override Task<bool> TryAnalyseNewGroupAsync(long groupId, CancellationToken ct = default)
+            => throw new InvalidOperationException("The analysis failed.");
+    }
+
+    /// <summary>A scored answer to the suite's one question, which the group's tier resolution reads.</summary>
+    private static async Task AddAnswerAsync(Fixture fixture, long runId, int suiteIndex, int score)
+    {
+        using var db = CreateDbContext(fixture.DbName);
+        var suiteId = suiteIndex == 0 ? fixture.SuiteA.Id : fixture.SuiteB.Id;
+        var question = await db.BenchmarkQuestions.SingleAsync(q => q.BenchmarkSuiteId == suiteId);
+
+        db.BenchmarkRunAnswers.Add(new BenchmarkRunAnswer
+        {
+            BenchmarkRunId = runId,
+            BenchmarkQuestionId = question.Id,
+            BenchmarkQuestionIdUsed = question.Id,
+            ItemRevisionUsed = question.ItemRevision,
+            OrderIndex = question.OrderIndex,
+            QuestionText = question.QuestionText,
+            AnswerText = "An answer.",
+            Difficulty = question.Difficulty,
+            AssessedDifficulty = question.AssessedDifficulty,
+            Status = BenchmarkAnswerStatus.Ok,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            QualityScore = score,
+            SpeedScore = 100,
+            DurationMs = 30000,
+            ToolTimeMs = 0
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// A CompletedWithErrors battery run with two runs per suite and every slot usable, which a
+    /// reconcile finishes: one group per suite.
+    /// </summary>
+    private static async Task<(Fixture Fixture, long BatteryRunId)> SeedFinishableTwoRoundBatteryAsync(Action<IServiceCollection> configure)
+    {
+        var fixture = await CreateFixtureAsync(configure: configure);
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.CompletedWithErrors, runsPerSuite: 2);
+
+        using (var db = CreateDbContext(fixture.DbName))
+        {
+            var row = await db.BenchmarkBatteryRuns.SingleAsync(b => b.Id == batteryRun.Id);
+            row.AutoCreatedGroupIdsJson = null;
+            await db.SaveChangesAsync();
+        }
+
+        foreach (int suiteIndex in new[] { 0, 1 })
+        {
+            foreach (int round in new[] { 1, 2 })
+            {
+                var member = await SeedMemberAsync(fixture, batteryRun, suiteIndex, round);
+                await AddAnswerAsync(fixture, member.BenchmarkRunId, suiteIndex, 60 + 10 * round);
+            }
+        }
+
+        await MarkFinishedAsync(fixture, batteryRun.Id, BenchmarkRunSeriesStatus.CompletedWithErrors,
+            "Without a usable result: one slot.", DateTime.UtcNow.AddHours(-1));
+        return (fixture, batteryRun.Id);
+    }
+
+    [Fact]
+    public async Task FinishingABatteryRunWithTwoRunsPerSuite_AnalyzesEachGroupItCreates()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (fixture, batteryRunId) = await SeedFinishableTwoRoundBatteryAsync(services =>
+            services.AddScoped(sp => new BenchmarkGroupAnalysisService(
+                sp.GetRequiredService<ApplicationDbContext>(), NullLogger<BenchmarkGroupAnalysisService>.Instance)));
+
+        Assert.True(await fixture.Orchestrator.ReconcileBatteryRunAsync(batteryRunId, ct));
+
+        var row = await ReadBatteryRunAsync(fixture, batteryRunId);
+        Assert.Equal(BenchmarkRunSeriesStatus.Completed, row.Status);
+
+        using var readback = CreateDbContext(fixture.DbName);
+        var groups = await readback.BenchmarkRunGroups.ToListAsync(ct);
+        Assert.Equal(2, groups.Count);
+        foreach (var group in groups)
+        {
+            var analysis = await readback.BenchmarkGroupAnalyses.SingleAsync(a => a.BenchmarkRunGroupId == group.Id, ct);
+            Assert.Equal(2, analysis.RunCount);
+            Assert.NotNull(analysis.HeadlineIndex);
+        }
+    }
+
+    [Fact]
+    public async Task AFailingGroupAnalysis_LeavesTheBatteryRunCompleted_WithItsGroups()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (fixture, batteryRunId) = await SeedFinishableTwoRoundBatteryAsync(services =>
+            services.AddScoped<BenchmarkGroupAnalysisService>(sp => new ThrowingGroupAnalysisService(
+                sp.GetRequiredService<ApplicationDbContext>())));
+
+        Assert.True(await fixture.Orchestrator.ReconcileBatteryRunAsync(batteryRunId, ct));
+
+        var row = await ReadBatteryRunAsync(fixture, batteryRunId);
+        Assert.Equal(BenchmarkRunSeriesStatus.Completed, row.Status);
+        Assert.NotNull(row.AutoCreatedGroupIdsJson);
+
+        using var readback = CreateDbContext(fixture.DbName);
+        Assert.Equal(2, await readback.BenchmarkRunGroups.CountAsync(ct));
+        Assert.Empty(await readback.BenchmarkGroupAnalyses.ToListAsync(ct));
     }
 }

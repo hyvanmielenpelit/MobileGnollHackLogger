@@ -423,9 +423,15 @@ id of its battery run's latest analysis, so a repair in place — a re-run of fa
 re-score, a new battery analysis — refreshes the result without a status change:
 
 - **Index** — a battery member's **Overall Index** and its combined half-width from its battery run's
-  latest analysis (`batteryAnalysis`); a series member's pooled **Intelligence Index** from its run group's
-  latest analysis (`groupAnalysis`), else the mean of its runs' indices (`runMean`); a single run's index
-  with 1.96 × its standard error (`run`). A series member also reports `IndexWithheldRunCount`, its
+  latest analysis (`batteryAnalysis`); a series member's pooled **Intelligence Index** and combined
+  half-width from its run group's latest analysis (`groupAnalysis`), else the mean of its runs' indices
+  (`runMean`); a single run's index with 1.96 × its standard error (`run`). The series group is analyzed
+  when the series completes, so `groupAnalysis` is the usual source; `runMean` remains for a series that has
+  no group or whose group was not analyzed. The half-width a series member shows is the group analysis's
+  `CombinedHalfWidth`, read by that analysis's own statistics method: for a **method 2** analysis (every
+  analysis since 2026-10-25) it is half the width of the crossed-bootstrap percentile interval, which need
+  not be symmetric about the index; for a method 1 analysis it is the quadrature sum of the two
+  components ([`ai-benchmark-multi-run.md`](ai-benchmark-multi-run.md) § 5). A series member also reports `IndexWithheldRunCount`, its
   completed runs whose own index is withheld (a question failed at the provider); it is zero for a
   single run or a battery. When the count is above zero and the member has an index, the progress
   dialog adds a note under it: for `groupAnalysis`, *1 run withholds its own index (a question failed at

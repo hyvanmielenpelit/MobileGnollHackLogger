@@ -49,7 +49,9 @@ public class BenchmarkSeriesOrchestratorTests
     /// A scope factory over one shared in-memory database, so the orchestrator's per-member scopes
     /// all see the same rows the test wrote.
     /// </summary>
-    private static (IServiceScopeFactory Factory, string DbName) CreateScopeFactory(IConfiguration config)
+    private static (IServiceScopeFactory Factory, string DbName) CreateScopeFactory(
+        IConfiguration config,
+        Action<IServiceCollection>? configure = null)
     {
         string dbName = Guid.NewGuid().ToString();
 
@@ -91,6 +93,8 @@ public class BenchmarkSeriesOrchestratorTests
         // by, so a request the launcher would reject never creates a series. That resolution happens
         // in the orchestrator's own scope, which is this one.
         services.AddScoped<BenchmarkRunLauncher>();
+
+        configure?.Invoke(services);
 
         var provider = services.BuildServiceProvider();
         return (provider.GetRequiredService<IServiceScopeFactory>(), dbName);
@@ -948,5 +952,88 @@ public class BenchmarkSeriesOrchestratorTests
         {
             await orchestrator.CancelSeriesAsync(series.Id, ct);
         }
+    }
+
+    // --- The group a finished series creates is analyzed ------------------------------------------
+
+    /// <summary>A group analysis service whose entry point throws, standing in for any failure.</summary>
+    private sealed class ThrowingGroupAnalysisService : BenchmarkGroupAnalysisService
+    {
+        public ThrowingGroupAnalysisService(ApplicationDbContext db)
+            : base(db, NullLogger<BenchmarkGroupAnalysisService>.Instance)
+        {
+        }
+
+        public override Task<bool> TryAnalyseNewGroupAsync(long groupId, System.Threading.CancellationToken ct = default)
+            => throw new InvalidOperationException("The analysis failed.");
+    }
+
+    /// <summary>
+    /// A series whose two requested members have completed, with Tier A members that answered every
+    /// question, ready for <c>FinishSeriesAsync</c>.
+    /// </summary>
+    private static async Task<long> SeedFinishedSeriesAsync(string dbName)
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(dbName).Options;
+        var suite = await BenchmarkRunGroupCreationTests.SeedSuiteAsync(options);
+
+        using var db = CreateDbContext(dbName);
+        var series = await SeedSeriesAsync(db, suite, BenchmarkRunSeriesStatus.Running, requested: 2, completed: 2);
+        await BenchmarkRunGroupCreationTests.SeedRunsAsync(
+            options, suite.Id, 2, BenchmarkRunGroupCreationTests.T0, seriesId: series.Id);
+        return series.Id;
+    }
+
+    private static async Task FinishAsync(BenchmarkSeriesOrchestrator orchestrator, IServiceScopeFactory factory, long seriesId)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var scope = factory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var series = await db.BenchmarkRunSeries.SingleAsync(s => s.Id == seriesId, ct);
+        await orchestrator.FinishSeriesAsync(scope.ServiceProvider, db, series, ct);
+    }
+
+    [Fact]
+    public async Task FinishingASeries_AnalyzesTheGroupItCreates()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (factory, dbName) = CreateScopeFactory(CreateConfig(), services =>
+            services.AddScoped(sp => new BenchmarkGroupAnalysisService(
+                sp.GetRequiredService<ApplicationDbContext>(), NullLogger<BenchmarkGroupAnalysisService>.Instance)));
+        long seriesId = await SeedFinishedSeriesAsync(dbName);
+
+        await FinishAsync(CreateOrchestrator(factory, new BenchmarkRunManager()), factory, seriesId);
+
+        using var readback = CreateDbContext(dbName);
+        var series = await readback.BenchmarkRunSeries.SingleAsync(s => s.Id == seriesId, ct);
+        Assert.Equal(BenchmarkRunSeriesStatus.Completed, series.Status);
+        Assert.NotNull(series.AutoCreatedGroupId);
+
+        var group = await readback.BenchmarkRunGroups.SingleAsync(g => g.Id == series.AutoCreatedGroupId, ct);
+        Assert.Equal(BenchmarkRunGroupTier.Replicate, group.Tier);
+        Assert.Equal("Creation Suite · GPT Luna · " + series.StartedAtUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) + " · R=2", group.Name);
+
+        var analysis = await readback.BenchmarkGroupAnalyses.SingleAsync(a => a.BenchmarkRunGroupId == group.Id, ct);
+        Assert.NotNull(analysis.HeadlineIndex);
+        Assert.Equal(2, BenchmarkGroupAnalysisService.DeserialiseResult(analysis)!.StatisticsMethodVersion);
+    }
+
+    [Fact]
+    public async Task AFailingGroupAnalysis_LeavesTheSeriesCompleted_WithItsGroup()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (factory, dbName) = CreateScopeFactory(CreateConfig(), services =>
+            services.AddScoped<BenchmarkGroupAnalysisService>(sp => new ThrowingGroupAnalysisService(
+                sp.GetRequiredService<ApplicationDbContext>())));
+        long seriesId = await SeedFinishedSeriesAsync(dbName);
+
+        await FinishAsync(CreateOrchestrator(factory, new BenchmarkRunManager()), factory, seriesId);
+
+        using var readback = CreateDbContext(dbName);
+        var series = await readback.BenchmarkRunSeries.SingleAsync(s => s.Id == seriesId, ct);
+        Assert.Equal(BenchmarkRunSeriesStatus.Completed, series.Status);
+        Assert.Null(series.ErrorMessage);
+        Assert.NotNull(series.AutoCreatedGroupId);
+        Assert.Empty(await readback.BenchmarkGroupAnalyses.ToListAsync(ct));
     }
 }

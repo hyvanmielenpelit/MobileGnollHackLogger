@@ -463,6 +463,31 @@ public static class BenchmarkScoring
     }
 
     /// <summary>
+    /// <see cref="QualityIndexStandardError(IEnumerable{ValueTuple{double?, int?}})"/> over unrounded
+    /// qualities and weights, around the unrounded weighted mean
+    /// (<see cref="QualityIndexUnrounded(IEnumerable{ValueTuple{double?, int?}})"/>'s value rather than
+    /// the rounded index). Weights below 1 count as 1. Null below 3 items.
+    /// </summary>
+    public static double? QualityIndexStandardErrorUnrounded(IEnumerable<(double QualityScore, double Weight)> items)
+    {
+        if (items == null) return null;
+
+        var rows = items.Select(i => (i.QualityScore, Weight: Math.Max(1.0, i.Weight))).ToList();
+        int n = rows.Count;
+        double weightSum = rows.Sum(r => r.Weight);
+        if (n < 3 || weightSum <= 0.0)
+        {
+            return null;
+        }
+
+        double centre = rows.Sum(r => r.Weight * r.QualityScore) / weightSum;
+        double sumWeightedSqDev = rows.Sum(r => r.Weight * r.Weight * (r.QualityScore - centre) * (r.QualityScore - centre));
+
+        double correction = (double)n / (n - 1);
+        return Math.Sqrt(sumWeightedSqDev * correction) / weightSum;
+    }
+
+    /// <summary>
     /// Equal-weight mean of the per-question speed scores.
     ///
     /// Difficulty enters the speed metric through the per-question target

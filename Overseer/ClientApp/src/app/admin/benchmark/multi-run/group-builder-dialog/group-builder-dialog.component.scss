@@ -1,0 +1,681 @@
+@use '../../benchmark-dialog-frame' as frame;
+
+/* .btn-gh, .btn-ghost, .btn-link, .btn-icon-action, .action-btn, .gh-filter-bar and its parts,
+   .gh-filter-toggle, .gh-disclosure, .gh-textarea-autosize, .gh-field-error, .gh-field-warning,
+   .gh-footer-note, .gh-list-status, .gh-load-more, .checkbox-label and the tooltips are global in
+   styles.scss. Only the frame's size, the selection band, the tier preview and the run cards are here. */
+
+:host {
+  display: contents;
+
+  /* The three fingerprint hues the theme has no token for; the prompt takes --primary-color and the
+     tool guides --nav-color. The same values as Run History's. */
+  --fp-kb-color: #7fb8e8;
+  --fp-wiki-color: #6fc3c0;
+  --fp-source-color: #c197dd;
+}
+
+/* Header, scrolling body and footer, full height. */
+.gh-dialog.mr-builder-dialog {
+  @include frame.frame($width: 76rem, $full-height: true);
+}
+
+.mr-builder-dialog {
+  .dialog-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  h3:focus {
+    outline: none;
+  }
+
+  h3:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.mr-builder-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+/* --- The selection band ------------------------------------------------------------------------ */
+
+/* The summary, Clear selection, the chips and Show all, on one line of 32 px controls; with the chips
+   expanded, the summary over Clear selection. On a phone the chips take a line of their own. */
+.mr-sel-band {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  background: rgba(16, 16, 16, 0.98);
+}
+
+.mr-sel-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-block-size: 32px;
+  min-width: 0;
+}
+
+/* Items of the line itself, or a column while the chips are expanded so the rows get the line's width. */
+.mr-sel-lead {
+  display: contents;
+}
+
+.mr-sel-line--stacked .mr-sel-lead {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.mr-sel-label {
+  flex: none;
+  margin: 0;
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: #c3c2b7;
+  white-space: nowrap;
+
+  /* A programmatic focus target only (tabindex="-1"), ringed like the other ones. */
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.mr-sel-clear {
+  flex: none;
+}
+
+/* Nothing selected: the warning line is the one visible message. The label is clipped rather than
+   given .visually-hidden, which reveals an element holding focus; the label is focused after Clear
+   selection. */
+.mr-sel-line--empty .mr-sel-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.mr-sel-empty {
+  align-items: center;
+}
+
+/* Collapsed, the chips are one row that scrolls sideways, fading at its end while more are out of
+   view; expanded, they wrap in a box of their own. */
+.mr-sel-chips {
+  display: flex;
+  flex: 1 1 12rem;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  list-style: none;
+  margin-inline: 0;
+  /* Room for the remove buttons' focus rings inside the scroll box, taken back from the line's height. */
+  padding: 3px;
+  margin-block: -3px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+
+  > li {
+    flex: none;
+    scroll-snap-align: start;
+  }
+
+  &.is-overflowing {
+    mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+  }
+
+  &.is-expanded {
+    flex-wrap: wrap;
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-block-size: 30dvh;
+  }
+}
+
+.mr-sel-more {
+  flex: none;
+  white-space: nowrap;
+}
+
+.mr-sel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mr-sel-chip-id {
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  color: #e6e6e6;
+  white-space: nowrap;
+}
+
+/* --- The tier preview --------------------------------------------------------------------------- */
+
+.mr-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+
+  &.is-refused {
+    border-color: rgba(220, 110, 110, 0.45);
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+.mr-preview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mr-preview-busy {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.mr-preview-explanation,
+.mr-preview-refusal {
+  max-inline-size: 110ch;
+  font-size: var(--text-secondary);
+  color: #ccc;
+}
+
+/* Color reinforces the tier; the word carries it. */
+.mr-tier {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+
+  &.tier-replicate {
+    border-color: rgba(120, 200, 130, 0.5);
+    background: rgba(120, 200, 130, 0.12);
+    color: #a8dcb0;
+  }
+
+  &.tier-quality {
+    border-color: rgba(224, 186, 109, 0.5);
+    background: rgba(224, 186, 109, 0.12);
+    color: var(--primary-color);
+  }
+
+  &.tier-cross {
+    border-color: rgba(214, 150, 90, 0.5);
+    background: rgba(214, 150, 90, 0.12);
+    color: #e0a878;
+  }
+
+  &.tier-none {
+    border-color: rgba(220, 110, 110, 0.5);
+    background: rgba(220, 110, 110, 0.12);
+    color: #e09090;
+  }
+}
+
+.mr-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.625rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #bbb;
+  white-space: nowrap;
+
+  &.mr-badge-warn {
+    border-color: rgba(214, 150, 90, 0.5);
+    color: #e0a878;
+  }
+
+  &.mr-badge-ok {
+    border-color: rgba(120, 200, 130, 0.4);
+    color: #a8dcb0;
+  }
+}
+
+/* The reasons behind a tier verdict get the space of a list rather than of a sentence. */
+.mr-differences-title {
+  margin: 0 0 6px;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: #eee;
+}
+
+.mr-difference-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding-inline-start: 18px;
+}
+
+.mr-difference-name {
+  font-weight: 600;
+  color: #eee;
+  overflow-wrap: anywhere;
+}
+
+.mr-difference-kind {
+  margin-inline-start: 8px;
+  font-size: var(--text-xs);
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #888;
+}
+
+.mr-difference-description {
+  font-size: var(--text-secondary);
+  color: #ccc;
+}
+
+.mr-variant-list {
+  margin: 4px 0 0;
+  padding-inline-start: 16px;
+  list-style: circle;
+}
+
+.mr-variant {
+  font-size: var(--text-xs);
+  color: #bbb;
+  overflow-wrap: anywhere;
+}
+
+.mr-variant-value {
+  font-family: var(--font-mono);
+  color: #ddd;
+}
+
+.mr-variant-runs {
+  margin-inline-start: 8px;
+  color: #999;
+}
+
+.mr-matched-keys {
+  font-size: var(--text-secondary);
+}
+
+.mr-matched-keys-list {
+  color: #a1a1aa;
+  overflow-wrap: anywhere;
+}
+
+.mr-cross-condition {
+  font-size: var(--text-secondary);
+  color: #ccc;
+}
+
+.mr-duplicate .btn-link {
+  margin-inline-start: 4px;
+}
+
+.mr-create-error {
+  flex-shrink: 0;
+}
+
+/* --- The run list --------------------------------------------------------------------------------- */
+
+.mr-runs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mr-runs-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.mr-runs-title {
+  margin: 0;
+}
+
+.mr-runs-status {
+  margin: 0;
+}
+
+.mr-runs-empty {
+  margin: 0;
+  color: var(--nav-color);
+}
+
+.mr-runs-search {
+  flex: 1 1 14rem;
+}
+
+.mr-runs-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mr-runs-sort-label {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  white-space: nowrap;
+}
+
+.mr-runs-sort-select {
+  min-block-size: 32px;
+  padding-block: 4px;
+  font-size: var(--text-secondary);
+}
+
+.mr-runs-facet-row {
+  min-width: 0;
+}
+
+.mr-runs-clear-filters {
+  margin-inline-start: 4px;
+}
+
+.mr-runs {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: mr-runs / inline-size;
+}
+
+.mr-run-item {
+  min-inline-size: 0;
+}
+
+/* The checkbox, the two-line head and the metrics on one row, the fingerprints under them. A selected
+   card has the tick, a gold border and a tint together; a run that has not settled has a dashed
+   border, a muted title and its reason in words. */
+.mr-run {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "select head    metrics"
+    "select fps     fps"
+    "select reason  reason";
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+
+  &:has(.mr-run-check:checked) {
+    border-color: var(--primary-color);
+    background: rgba(224, 186, 109, 0.06);
+  }
+
+  &.is-unsettled {
+    border-style: dashed;
+
+    .mr-run-title {
+      opacity: 0.65;
+    }
+
+    .mr-run-check {
+      opacity: 0.55;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mr-run {
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+}
+
+.mr-run-select {
+  grid-area: select;
+  align-self: start;
+  display: flex;
+  align-items: center;
+  padding-block-start: 2px;
+}
+
+.mr-run-check {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  margin: 0;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+
+  &[aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.mr-run-head {
+  grid-area: head;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.mr-run-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: 1.35;
+
+  label {
+    display: inline-flex;
+    max-inline-size: 100%;
+    cursor: pointer;
+  }
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+/* `#41 · Completed · 2026-09-06 08:00 UTC`: one line where it fits, wrapping where it does not. */
+.mr-run-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+}
+
+.mr-sep {
+  color: #6b6b70;
+}
+
+.mr-run-id {
+  color: #c3c2b7;
+}
+
+/* Fixed widths, so each metric lines up down the list. */
+.mr-run-metrics {
+  grid-area: metrics;
+  display: grid;
+  grid-template-columns: repeat(2, 7.5rem);
+  gap: 12px;
+  margin: 0;
+
+  dt {
+    font-size: var(--text-xs);
+    font-weight: 400;
+    color: #8b8b90;
+  }
+
+  dd {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.mr-run-metric-note {
+  font-size: var(--text-xs);
+  color: var(--color-warning);
+}
+
+/* The five hashes as compact chips; each one's tooltip carries the corpus and the full hash. */
+.mr-fps {
+  grid-area: fps;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mr-fp {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: #9aa;
+  cursor: help;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  /* Color reinforces the visible label; it never carries the meaning on its own. */
+  &.fp-prompt { color: var(--primary-color); }
+  &.fp-guides { color: var(--nav-color); }
+  &.fp-kb { color: var(--fp-kb-color); }
+  &.fp-wiki { color: var(--fp-wiki-color); }
+  &.fp-source { color: var(--fp-source-color); }
+}
+
+.mr-fp-hash {
+  color: #c3c2b7;
+}
+
+/* A full SHA-256 has no break opportunity. */
+.mr-fp-tip {
+  overflow-wrap: anywhere;
+}
+
+.mr-run-reason {
+  grid-area: reason;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: #c3c2b7;
+}
+
+/* The metrics under the head below 48 rem of the list, and everything in one column below 30 rem. */
+@container mr-runs (max-width: 48rem) {
+  .mr-run {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "select head"
+      "select metrics"
+      "select fps"
+      "select reason";
+  }
+}
+
+@container mr-runs (max-width: 30rem) {
+  .mr-run {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "select"
+      "head"
+      "metrics"
+      "fps"
+      "reason";
+  }
+
+  .mr-run-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+  }
+}
+
+/* --- The note ------------------------------------------------------------------------------------- */
+
+.mr-note-disclosure {
+  flex-shrink: 0;
+}
+
+.mr-note-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mr-note-label {
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: #ccc;
+}

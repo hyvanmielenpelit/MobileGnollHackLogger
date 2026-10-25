@@ -1019,7 +1019,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       void this.loadFigureFont();
     }
     this.unsubscribeReducedMotion = this.reducedMotion.subscribe(() => this.rebuild());
-    this.alertSub = this.alertService.alerts$.subscribe(alerts => {
+    // Every reported alert, so dismissing the chart-storage alert does not hide the condition.
+    this.alertSub = this.alertService.allAlerts$.subscribe(alerts => {
       const missing = alerts.some(alert => alert.id === REPORT_CHARTS_ALERT_ID);
       if (missing !== this.systemChartStorageMissing) {
         this.systemChartStorageMissing = missing;

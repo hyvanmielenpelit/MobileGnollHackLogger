@@ -26,10 +26,10 @@ public class AdminBenchmarkGroupsListTests
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
-    private static AdminBenchmarkController CreateController(ApplicationDbContext db)
+    private static AdminBenchmarkController CreateController(ApplicationDbContext db, BenchmarkGroupAnalysisService? groupAnalysisService = null)
         => new(
             db, null!, null!, new BenchmarkRunManager(), null!, null!, null!, null!, null!, null!,
-            null!, null!, null!, null!, null!, null!, null!, null!, null!);
+            null!, null!, null!, null!, null!, null!, null!, null!, groupAnalysisService!);
 
     private static readonly DateTime T0 = new(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
 
@@ -55,7 +55,11 @@ public class AdminBenchmarkGroupsListTests
             ComputedAtUtc = computedAtUtc,
             MemberRunIdsJson = JsonSerializer.Serialize(runIds),
             RunCount = runIds.Length,
-            ResultJson = "{}"
+            ResultJson = "{}",
+            HeadlineIndex = 70 + id,
+            HeadlineHalfWidth = 2.5,
+            HeadlineSpeedIndex = 60 + id,
+            HeadlineCostPerRun = id == 3 ? null : 0.25 * id
         };
 
     /// <summary>
@@ -138,7 +142,7 @@ public class AdminBenchmarkGroupsListTests
             Analysis(2, 1, T0.AddDays(1).AddHours(2), 11, 12),
             Analysis(3, 2, T0.AddDays(2).AddHours(1), 14));
 
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 
     // --- The per-group algorithm the list replaced, kept as the reference ------------------------------
@@ -179,10 +183,21 @@ public class AdminBenchmarkGroupsListTests
                     })
                     .FirstOrDefaultAsync();
 
+            DateTime? latestRerun = memberRunIds.Count == 0
+                ? null
+                : await db.BenchmarkRuns
+                    .Where(r => memberRunIds.Contains(r.Id))
+                    .MaxAsync(r => r.RerunCompletedAtUtc);
+
             var dto = new BenchmarkRunGroupDto
             {
                 Id = group.Id,
                 Name = group.Name,
+                NameIsGenerated = BenchmarkRunGroupNames.IsDefault(
+                    group.Name,
+                    newest?.SuiteName ?? group.BenchmarkSuite?.Name,
+                    newest?.DisplayName ?? newest?.ModelId,
+                    group.Members.Count),
                 BenchmarkSuiteId = group.BenchmarkSuiteId,
                 SuiteName = newest?.SuiteName ?? group.BenchmarkSuite?.Name,
                 TestedModelDisplayName = newest?.DisplayName ?? newest?.ModelId,
@@ -200,9 +215,14 @@ public class AdminBenchmarkGroupsListTests
                 CreatedAtUtc = group.CreatedAtUtc,
                 ModifiedAtUtc = group.ModifiedAtUtc,
                 RunCount = group.Members.Count,
+                MemberRunIds = memberRunIds.OrderBy(id => id).ToList(),
                 LatestAnalysisId = latest?.Id,
                 LatestAnalysisAtUtc = latest?.ComputedAtUtc,
-                AnalysisStale = BenchmarkGroupAnalysisService.IsStale(group, latest)
+                HeadlineIndex = latest?.HeadlineIndex,
+                HeadlineHalfWidth = latest?.HeadlineHalfWidth,
+                HeadlineSpeedIndex = latest?.HeadlineSpeedIndex,
+                HeadlineCostPerRun = latest?.HeadlineCostPerRun,
+                AnalysisStale = BenchmarkGroupAnalysisService.IsStale(group, latest, latestRerun)
             };
             BenchmarkProviderAvailabilityService.ApplyCard(
                 dto, await new BenchmarkProviderAvailabilityService(db).CardForPoolAsync(memberRunIds));
@@ -257,5 +277,105 @@ public class AdminBenchmarkGroupsListTests
             Assert.IsType<OkObjectResult>(await CreateController(db).GetRunGroups()).Value);
 
         Assert.Empty(actual);
+    }
+
+    private static async Task<List<BenchmarkRunGroupDto>> ListAsync(DbContextOptions<ApplicationDbContext> options)
+    {
+        using var db = new ApplicationDbContext(options);
+        return Assert.IsAssignableFrom<IEnumerable<BenchmarkRunGroupDto>>(
+            Assert.IsType<OkObjectResult>(await CreateController(db).GetRunGroups()).Value).ToList();
+    }
+
+    [Fact]
+    public async Task TheGroupsList_CarriesTheMemberRunIdsAscending_AndTheLatestAnalysisHeadlines()
+    {
+        var options = NewDatabase();
+        await SeedAsync(options);
+
+        var actual = await ListAsync(options);
+
+        var replicates = actual.Single(g => g.Id == 1);
+        Assert.Equal(new long[] { 11, 12, 13 }, replicates.MemberRunIds);
+        Assert.Equal(72.0, replicates.HeadlineIndex);
+        Assert.Equal(2.5, replicates.HeadlineHalfWidth);
+        Assert.Equal(62.0, replicates.HeadlineSpeedIndex);
+        Assert.Equal(0.5, replicates.HeadlineCostPerRun);
+
+        var single = actual.Single(g => g.Id == 2);
+        Assert.Equal(new long[] { 14 }, single.MemberRunIds);
+        Assert.Equal(73.0, single.HeadlineIndex);
+        Assert.Null(single.HeadlineCostPerRun);
+
+        var empty = actual.Single(g => g.Id == 3);
+        Assert.Empty(empty.MemberRunIds);
+        Assert.Null(empty.HeadlineIndex);
+    }
+
+    [Fact]
+    public async Task TheGroupsList_MarksAGeneratedName_AndNotAChosenOne()
+    {
+        var options = NewDatabase();
+        await SeedAsync(options);
+
+        Assert.All(await ListAsync(options), g => Assert.False(g.NameIsGenerated));
+
+        // The newest member of group 1 is run 13: "Suite One (renamed)", "GPT C". Any date matches,
+        // because an auto-created group is dated by its series or battery start.
+        using (var db = new ApplicationDbContext(options))
+        {
+            var group = await db.BenchmarkRunGroups.SingleAsync(g => g.Id == 1, TestContext.Current.CancellationToken);
+            group.Name = BenchmarkRunGroupNames.Default("Suite One (renamed)", "GPT C", T0.AddDays(-3), 3);
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var actual = await ListAsync(options);
+        Assert.True(actual.Single(g => g.Id == 1).NameIsGenerated);
+
+        // The same shape with the wrong run count is a name someone typed.
+        using (var db = new ApplicationDbContext(options))
+        {
+            var group = await db.BenchmarkRunGroups.SingleAsync(g => g.Id == 1, TestContext.Current.CancellationToken);
+            group.Name = BenchmarkRunGroupNames.Default("Suite One (renamed)", "GPT C", T0, 4);
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.False((await ListAsync(options)).Single(g => g.Id == 1).NameIsGenerated);
+    }
+
+    [Fact]
+    public async Task AMemberReRunAfterTheAnalysis_MakesItStale_OnTheListAndTheDetail()
+    {
+        var options = NewDatabase();
+        await SeedAsync(options);
+
+        // Group 2's analysis (T0 + 2 d + 1 h) covers its current membership.
+        Assert.False((await ListAsync(options)).Single(g => g.Id == 2).AnalysisStale);
+
+        using (var db = new ApplicationDbContext(options))
+        {
+            var run = await db.BenchmarkRuns.SingleAsync(r => r.Id == 14, TestContext.Current.CancellationToken);
+            run.RerunCompletedAtUtc = T0.AddDays(2);
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        // A re-run before the analysis is already in it.
+        Assert.False((await ListAsync(options)).Single(g => g.Id == 2).AnalysisStale);
+
+        using (var db = new ApplicationDbContext(options))
+        {
+            var run = await db.BenchmarkRuns.SingleAsync(r => r.Id == 14, TestContext.Current.CancellationToken);
+            run.RerunCompletedAtUtc = T0.AddDays(2).AddHours(2);
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.True((await ListAsync(options)).Single(g => g.Id == 2).AnalysisStale);
+
+        using var detailDb = new ApplicationDbContext(options);
+        var service = new BenchmarkGroupAnalysisService(
+            detailDb, Microsoft.Extensions.Logging.Abstractions.NullLogger<BenchmarkGroupAnalysisService>.Instance);
+        var detail = Assert.IsType<BenchmarkRunGroupDto>(
+            Assert.IsType<OkObjectResult>(await CreateController(detailDb, service).GetRunGroup(2)).Value);
+        Assert.True(detail.AnalysisStale);
+        Assert.Equal(new long[] { 14 }, detail.MemberRunIds);
     }
 }

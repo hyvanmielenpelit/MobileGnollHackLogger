@@ -3,13 +3,39 @@ namespace Overseer.Services.Benchmarking;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 using MobileGnollHackLogger.Data;
+using Overseer.Services.ChatConsistency;
+
+/// <summary>
+/// The statistics method a group analysis or comparison is computed under.
+/// </summary>
+public enum BenchmarkGroupStatisticsMethod
+{
+    /// <summary>
+    /// The original method: the combined index interval adds the reproducibility and item-sampling
+    /// half-widths in quadrature, and the comparison is the unweighted item-paired one alone. Every
+    /// caller other than Multi-Run Analysis uses it, and its figures and JSON are pinned.
+    /// </summary>
+    V1 = 1,
+
+    /// <summary>
+    /// The crossed method: the index, dimension and comparison intervals come from the pigeonhole
+    /// bootstrap over runs and questions (<see cref="BenchmarkCrossedBootstrap"/>), the comparison
+    /// adds the weighted index difference, an item without spread on either side is untestable
+    /// rather than significant, and an item is flagged unstable only from three runs.
+    /// </summary>
+    V2 = 2
+}
 
 /// <summary>
 /// Knobs for a group analysis. Everything here changes what is reported, never what was measured.
 /// </summary>
 public sealed record BenchmarkGroupStatisticsOptions
 {
+    /// <summary>The statistics method. <see cref="BenchmarkGroupStatisticsMethod.V1"/> unless a caller opts in.</summary>
+    public BenchmarkGroupStatisticsMethod Method { get; init; } = BenchmarkGroupStatisticsMethod.V1;
+
     /// <summary>
     /// Sample standard deviation of an item's cross-run quality scores at or above which the item
     /// is flagged unstable. An unstable item is the one where a single run's verdict is least
@@ -196,7 +222,10 @@ public sealed record BenchmarkGroupItemStatistics
 
     /// <summary>
     /// <see cref="StandardDeviation"/> reached
-    /// <see cref="BenchmarkGroupStatisticsOptions.UnstableItemStandardDeviation"/>.
+    /// <see cref="BenchmarkGroupStatisticsOptions.UnstableItemStandardDeviation"/>. Under
+    /// <see cref="BenchmarkGroupStatisticsMethod.V2"/> only from
+    /// <see cref="BenchmarkGroupStatistics.MinRunsForReproducibility"/> runs; below that
+    /// <see cref="InsufficientRuns"/> carries the state.
     /// </summary>
     public bool Unstable { get; init; }
 
@@ -215,11 +244,14 @@ public sealed record BenchmarkGroupItemStatistics
 }
 
 /// <summary>
-/// The pooled Intelligence Index of a group and its two independent uncertainty components.
+/// The pooled Intelligence Index of a group and its two uncertainty components.
 ///
-/// The components are reported separately and only then combined, because they answer different
-/// questions and behave differently as more runs are added. Collapsing them into one number would
-/// hide the fact that only one of them can be bought down with more runs.
+/// The components are reported separately, because they answer different questions and behave
+/// differently as more runs are added. Collapsing them into one number would hide the fact that only
+/// one of them can be bought down with more runs. Under <see cref="BenchmarkGroupStatisticsMethod.V1"/>
+/// the combined interval adds them in quadrature; under <see cref="BenchmarkGroupStatisticsMethod.V2"/>
+/// it is the crossed bootstrap's percentile interval and the components are diagnostics only, because
+/// under a crossed item × run model both contain the residual term and adding them counts it twice.
 /// </summary>
 public sealed record BenchmarkGroupIndexStatistics
 {
@@ -305,7 +337,11 @@ public sealed record BenchmarkGroupIndexStatistics
     /// <summary>
     /// <see cref="BenchmarkScoring.QualityIndexStandardError(IEnumerable{ValueTuple{int?, int?}})"/>
     /// applied to the per-item <b>cross-run mean</b> qualities. Answers <i>"would a different 18
-    /// questions move this?"</i>
+    /// questions move this?"</i> Under <see cref="BenchmarkGroupStatisticsMethod.V1"/> the means and
+    /// weights are rounded to integers and the deviations taken around the rounded index; under
+    /// <see cref="BenchmarkGroupStatisticsMethod.V2"/> it is
+    /// <see cref="BenchmarkScoring.QualityIndexStandardErrorUnrounded"/> over the unrounded means and
+    /// weights.
     ///
     /// <b>It does not shrink with R</b>, because every run answers the same items: adding runs
     /// sharpens the estimate of each item's mean, and does nothing at all about the fact that the
@@ -323,29 +359,70 @@ public sealed record BenchmarkGroupIndexStatistics
     public double? ItemSamplingHalfWidth { get; init; }
 
     /// <summary>
+    /// Under <see cref="BenchmarkGroupStatisticsMethod.V1"/>:
     /// <c>√((t · SE_repro)² + (1.96 · SE_item)²)</c> — the two components combined in quadrature,
-    /// because item selection and run-to-run variation are independent sources.
+    /// treating item selection and run-to-run variation as independent sources. When the
+    /// reproducibility component is unavailable (<i>R</i> &lt; 3) this is the item-sampling
+    /// half-width alone, and <see cref="ReproducibilityAvailable"/> is false so the report can say
+    /// the interval covers one source rather than two.
     ///
-    /// When the reproducibility component is unavailable (<i>R</i> &lt; 3) this is the
-    /// item-sampling half-width alone, and <see cref="ReproducibilityAvailable"/> is false so the
-    /// report can say the interval covers one source rather than two.
+    /// <para>Under <see cref="BenchmarkGroupStatisticsMethod.V2"/>: half the distance between
+    /// <see cref="CombinedLower"/> and <see cref="CombinedUpper"/>, the bootstrap percentile bounds.
+    /// A percentile interval need not be symmetric about the point estimate.</para>
     /// </summary>
     public double? CombinedHalfWidth { get; init; }
 
     /// <summary>
-    /// The combined interval's bounds, clamped to the score range [0, 100] for the same reason the
-    /// per-item bounds are. <see cref="CombinedHalfWidth"/> stays unclamped.
+    /// The combined interval's bounds. Under <see cref="BenchmarkGroupStatisticsMethod.V1"/>
+    /// <c>point ± CombinedHalfWidth</c>, clamped to the score range [0, 100] for the same reason the
+    /// per-item bounds are, with <see cref="CombinedHalfWidth"/> left unclamped. Under
+    /// <see cref="BenchmarkGroupStatisticsMethod.V2"/> the 2.5% and 97.5% percentiles of the
+    /// bootstrap distribution named by <see cref="CombinedIntervalMethod"/>, which lie in the score
+    /// range by construction.
     /// </summary>
     public double? CombinedLower { get; init; }
 
     /// <inheritdoc cref="CombinedLower"/>
     public double? CombinedUpper { get; init; }
 
-    /// <summary>Either combined bound hit the score range and was clamped.</summary>
+    /// <summary>Either combined bound hit the score range and was clamped. Always false under V2.</summary>
     public bool CombinedIntervalTruncated { get; init; }
 
     /// <summary>False below three runs, where no reproducibility figure is reported at all.</summary>
     public bool ReproducibilityAvailable { get; init; }
+
+    /// <summary>
+    /// How the combined interval was computed under <see cref="BenchmarkGroupStatisticsMethod.V2"/>:
+    /// <c>crossedBootstrap</c> (questions and runs redrawn) from three runs, <c>questionBootstrap</c>
+    /// (questions alone) below that. Null under V1.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CombinedIntervalMethod { get; init; }
+
+    /// <summary>Bootstrap replicates drawn for the combined interval. Null under V1.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? BootstrapReplicates { get; init; }
+
+    /// <summary>The bootstrap seed, so the interval can be reproduced exactly. Null under V1.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? BootstrapSeed { get; init; }
+
+    /// <summary>
+    /// The smallest <i>R</i> at which the run component's half-width <c>1.96·SD_repro/√R</c> is no
+    /// larger than the question component's <c>1.96·SE_item</c>: <c>max(3, ⌈(SD_repro/SE_item)²⌉)</c>.
+    /// Beyond it, more runs buy less than more questions would. Null under V1, below three runs, and
+    /// when the item-sampling SE is zero or unavailable.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? RunsWhereRunComponentMatchesQuestions { get; init; }
+
+    /// <summary>
+    /// Hours between the earliest and the latest member's start. Members run back to back measure
+    /// "re-run now", not "re-run next week", and this says which the reproducibility SD describes.
+    /// Null under V1.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? RunSpanHours { get; init; }
 }
 
 /// <summary>Speed across the runs of a group.</summary>
@@ -521,10 +598,14 @@ public sealed record BenchmarkGroupDimensionStatistics
     public double? StandardDeviation { get; init; }
 
     /// <summary>
-    /// <c>t(R−1) · SD / √R</c>. Null below
-    /// <see cref="BenchmarkGroupStatistics.MinRunsForReproducibility"/> runs, matching the
-    /// reproducibility rule on the index: below three runs a standard deviation over runs is
-    /// arithmetic rather than evidence.
+    /// Under <see cref="BenchmarkGroupStatisticsMethod.V1"/>: <c>t(R−1) · SD / √R</c>, run-to-run
+    /// variation alone. Null below <see cref="BenchmarkGroupStatistics.MinRunsForReproducibility"/>
+    /// runs, matching the reproducibility rule on the index: below three runs a standard deviation
+    /// over runs is arithmetic rather than evidence.
+    ///
+    /// <para>Under <see cref="BenchmarkGroupStatisticsMethod.V2"/>: half the distance between
+    /// <see cref="BootstrapLower"/> and <see cref="BootstrapUpper"/>, which cover item sampling as
+    /// well. Null when nothing was scored.</para>
     /// </summary>
     public double? ConfidenceHalfWidth { get; init; }
 
@@ -538,6 +619,25 @@ public sealed record BenchmarkGroupDimensionStatistics
     /// </summary>
     public IReadOnlyDictionary<long, double> ItemMeans { get; init; }
         = new Dictionary<long, double>();
+
+    /// <summary>
+    /// The 95% percentile interval on <see cref="Mean"/> from the bootstrap named by
+    /// <see cref="IntervalMethod"/>, over each answer's dimension score with every question weighted
+    /// equally. Null under V1 and when nothing was scored.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? BootstrapLower { get; init; }
+
+    /// <inheritdoc cref="BootstrapLower"/>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? BootstrapUpper { get; init; }
+
+    /// <summary>
+    /// <c>crossedBootstrap</c> from three runs that scored this dimension, <c>questionBootstrap</c>
+    /// below that. Null under V1 and when nothing was scored.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? IntervalMethod { get; init; }
 }
 
 /// <summary>
@@ -732,6 +832,14 @@ public sealed record BenchmarkGroupStatisticsResult
     /// </summary>
     public string VarianceDecompositionCaveat { get; init; }
         = BenchmarkGroupStatistics.VarianceDecompositionCaveat;
+
+    /// <summary>
+    /// The <see cref="BenchmarkGroupStatisticsMethod"/> this result was computed under: 2 for
+    /// <see cref="BenchmarkGroupStatisticsMethod.V2"/>, null (omitted from JSON) for V1. Readers
+    /// treat a null or absent value as 1.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StatisticsMethodVersion { get; init; }
 }
 
 /// <summary>The Wilcoxon signed-rank test over a vector of paired differences.</summary>
@@ -816,6 +924,15 @@ public sealed record BenchmarkGroupItemComparison
 
     /// <summary>Always true. Present so a UI cannot render one of these without the label.</summary>
     public bool Exploratory { get; init; } = true;
+
+    /// <summary>
+    /// Under <see cref="BenchmarkGroupStatisticsMethod.V2"/>: true when no p-value could be computed —
+    /// either side has fewer than two runs, or neither side has any spread, so there is no variance
+    /// estimate — and the item is left out of the Benjamini–Hochberg step-up and its <i>m</i>.
+    /// Null (omitted from JSON) under V1.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Untestable { get; init; }
 }
 
 /// <summary>One p-value's place in a Benjamini–Hochberg procedure.</summary>
@@ -893,6 +1010,113 @@ public sealed record BenchmarkGroupComparison
 
     public string VarianceDecompositionCaveat { get; init; }
         = BenchmarkGroupStatistics.VarianceDecompositionCaveat;
+
+    // --- Method 2. Every property below is null under V1 and omitted from its JSON. ---
+
+    /// <summary>
+    /// The <see cref="BenchmarkGroupStatisticsMethod"/> this comparison was computed under: 2 for
+    /// <see cref="BenchmarkGroupStatisticsMethod.V2"/>, null (omitted from JSON) for V1. Readers
+    /// treat a null or absent value as 1.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StatisticsMethodVersion { get; init; }
+
+    /// <summary>
+    /// Treatment index minus baseline index, each the multi-run Intelligence Index recomputed over the
+    /// paired items only, with the treatment side's item weights on both sides. The same estimand as
+    /// the headline index, unlike <see cref="MeanDifference"/>, which weights every item equally.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? IndexDifference { get; init; }
+
+    /// <summary>
+    /// The 95% percentile interval on <see cref="IndexDifference"/> from
+    /// <see cref="BenchmarkCrossedBootstrap.DifferenceDistribution(IReadOnlyList{CrossedPair}, IReadOnlyList{long}, IReadOnlyList{long}, bool, int, int)"/>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? IndexDifferenceLower { get; init; }
+
+    /// <inheritdoc cref="IndexDifferenceLower"/>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? IndexDifferenceUpper { get; init; }
+
+    /// <summary>
+    /// <c>crossedBootstrap</c> when both sides have three runs or more, so the runs are redrawn as
+    /// well as the questions; <c>questionBootstrap</c> otherwise.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? IndexDifferenceMethod { get; init; }
+
+    /// <summary>
+    /// The interval includes run-to-run variance. False under <c>questionBootstrap</c>, where a
+    /// run-wide shift common to every item is not reflected in the interval.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? RunVarianceIncluded { get; init; }
+
+    /// <summary>
+    /// The bootstrap two-sided p-value: <c>2 · min(share of replicates ≤ 0, share ≥ 0)</c>, capped
+    /// at 1.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? IndexDifferenceBootstrapP { get; init; }
+
+    /// <summary>The sample standard deviation of the bootstrap replicates of <see cref="IndexDifference"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? IndexDifferenceStandardError { get; init; }
+
+    /// <summary>
+    /// The Hodges–Lehmann estimate of the shift over the per-item differences: the location the
+    /// Wilcoxon signed-rank test is a test of, which a mean is not.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? HodgesLehmannShift { get; init; }
+
+    /// <summary>
+    /// Cohen's <i>d</i><sub>av</sub> (Lakens 2013): <see cref="MeanDifference"/> over the mean of the
+    /// two groups' standard deviations of all their run × question scores on the paired items. The
+    /// SDs are population SDs over the cells, so the figure does not grow with <i>R</i> — duplicating
+    /// every run leaves it unchanged — unlike <see cref="CohensDz"/>, whose cross-run item means
+    /// tighten as runs are added.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? StandardizedDifferenceDav { get; init; }
+
+    /// <summary>
+    /// <c>(z₀.₉₇₅ + z₀.₈₀) · IndexDifferenceStandardError</c>: the smallest true index difference this
+    /// design detects with 80% power at a two-sided α of 0.05.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? MinimumDetectableIndexDifference { get; init; }
+
+    /// <summary>Items with <see cref="BenchmarkGroupItemComparison.Untestable"/> set.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? UntestableItemCount { get; init; }
+
+    /// <summary>
+    /// The comparability keys whose values differ between the two groups. Set by the caller that
+    /// resolves comparability; never by <see cref="BenchmarkGroupStatistics.Compare"/>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<BenchmarkGroupPairKeyDifference>? PairKeyDifferences { get; init; }
+
+    /// <summary>
+    /// Comparisons made before this one, as the caller counts them, so a reader can weigh a finding
+    /// against repeated re-analysis. Set by the caller; never by
+    /// <see cref="BenchmarkGroupStatistics.Compare"/>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? PriorComparisonCount { get; init; }
+}
+
+/// <summary>One comparability key whose value differs between the two groups of a comparison.</summary>
+public sealed record BenchmarkGroupPairKeyDifference
+{
+    public string Key { get; init; } = "";
+    public string Kind { get; init; } = "";
+    public string? Description { get; init; }
+    public string? BaselineValue { get; init; }
+    public string? TreatmentValue { get; init; }
 }
 
 /// <summary>
@@ -913,8 +1137,11 @@ public sealed record BenchmarkGroupComparison
 /// <item>The speed, dimension and usage pools match answers on
 /// <see cref="BenchmarkItemAnalysis.QuestionKey"/> and do not check <c>ItemRevisionUsed</c>: speed
 /// and usage do not depend on the rubric, and the dimension pool keeps its own membership rule.</item>
-/// <item><b>The two uncertainty components are reported separately before they are combined.</b>
-/// One shrinks with more runs and one does not, and a single interval hides which.</item>
+/// <item><b>The two uncertainty components are always reported separately.</b>
+/// One shrinks with more runs and one does not, and a single interval hides which. Under
+/// <see cref="BenchmarkGroupStatisticsMethod.V1"/> the combined interval adds them in quadrature;
+/// under <see cref="BenchmarkGroupStatisticsMethod.V2"/> it comes from
+/// <see cref="BenchmarkCrossedBootstrap"/> instead.</item>
 /// </list>
 /// </summary>
 public static class BenchmarkGroupStatistics
@@ -956,6 +1183,15 @@ public static class BenchmarkGroupStatistics
 
     /// <summary>Default false discovery rate for the exploratory per-item tests.</summary>
     public const double DefaultFalseDiscoveryRate = 0.05;
+
+    /// <summary>Method 2's interval method that redraws the questions and the runs.</summary>
+    public const string CrossedBootstrapMethod = "crossedBootstrap";
+
+    /// <summary>Method 2's interval method that redraws the questions alone.</summary>
+    public const string QuestionBootstrapMethod = "questionBootstrap";
+
+    /// <summary>The power <see cref="BenchmarkGroupComparison.MinimumDetectableIndexDifference"/> is computed for.</summary>
+    public const double MinimumDetectablePower = 0.80;
 
     /// <summary>
     /// The part of the speed caveat that is true of every group. What a <i>particular</i> group's
@@ -1019,6 +1255,7 @@ public static class BenchmarkGroupStatistics
         questions ??= Array.Empty<BenchmarkQuestion>();
         runs ??= Array.Empty<BenchmarkRun>();
         var cfg = options ?? new BenchmarkGroupStatisticsOptions();
+        var method = cfg.Method;
 
         var members = runs.Where(r => r != null).OrderBy(r => r.Id).ToList();
         var runIds = members.Select(r => r.Id).ToList();
@@ -1045,10 +1282,10 @@ public static class BenchmarkGroupStatistics
             items.Add(ComputeItem(question, samples, analysisByQuestion.GetValueOrDefault(question.Id), cfg));
         }
 
-        var index = ComputeIndex(items, members);
+        var index = ComputeIndex(items, members, method);
         var speed = ComputeSpeed(members, items, cfg);
         var cost = ComputeCost(costs, members, index.PointEstimate, cfg);
-        var dimensions = ComputeDimensions(members, items);
+        var dimensions = ComputeDimensions(members, items, method);
         var usage = ComputeUsage(members, items);
         var promptUnderTest = ComputePromptUnderTest(members);
 
@@ -1069,9 +1306,14 @@ public static class BenchmarkGroupStatistics
             PromptUnderTest = promptUnderTest,
             ItemAnalysis = itemAnalysis,
             UnstableQuestionIds = items.Where(i => i.Unstable).Select(i => i.QuestionId).ToList(),
-            PooledIndexReportable = members.Count >= MinRunsForReproducibility
+            PooledIndexReportable = members.Count >= MinRunsForReproducibility,
+            StatisticsMethodVersion = MethodVersion(method)
         };
     }
+
+    /// <summary>The persisted method version: 2 under V2, null under V1 so its JSON is unchanged.</summary>
+    private static int? MethodVersion(BenchmarkGroupStatisticsMethod method)
+        => method == BenchmarkGroupStatisticsMethod.V2 ? 2 : null;
 
     private static BenchmarkGroupItemStatistics ComputeItem(
         BenchmarkQuestion question,
@@ -1136,7 +1378,8 @@ public static class BenchmarkGroupStatistics
             CriticalErrorCount = criticalErrors,
             CriticalErrorRate = criticalErrors / (double)runCount,
             MedianModelTimeMs = Median(modelTimes),
-            Unstable = sd.HasValue && sd.Value >= cfg.UnstableItemStandardDeviation,
+            Unstable = sd.HasValue && sd.Value >= cfg.UnstableItemStandardDeviation
+                       && (cfg.Method != BenchmarkGroupStatisticsMethod.V2 || runCount >= MinRunsForReproducibility),
             InsufficientRuns = runCount < MinRunsForReproducibility,
             Analysis = analysis
         };
@@ -1159,10 +1402,14 @@ public static class BenchmarkGroupStatistics
     /// is rounded to an integer, and it is weighted by that run's own per-answer difficulty
     /// ratings, which the assessor re-derives every run. Either alone would break the identity
     /// between the mean of the run indices and the weighted mean of the item means.
+    ///
+    /// <para>The point estimate is the same under both methods. The combined interval and the
+    /// item-sampling SE differ; see <see cref="BenchmarkGroupIndexStatistics"/>.</para>
     /// </summary>
     private static BenchmarkGroupIndexStatistics ComputeIndex(
         IReadOnlyList<BenchmarkGroupItemStatistics> items,
-        IReadOnlyList<BenchmarkRun> members)
+        IReadOnlyList<BenchmarkRun> members,
+        BenchmarkGroupStatisticsMethod method)
     {
         if (items.Count == 0 || members.Count == 0)
         {
@@ -1234,6 +1481,8 @@ public static class BenchmarkGroupStatistics
         double? itemSe = BenchmarkScoring.QualityIndexStandardError(itemInputs);
         double? itemHalf = itemSe.HasValue ? NormalCritical95 * itemSe.Value : null;
 
+        // Method 1's combined interval: the two half-widths in quadrature. Method 2 replaces the
+        // item-sampling SE and the combined interval below.
         double? combined = null;
         if (reproHalf.HasValue && itemHalf.HasValue)
         {
@@ -1252,7 +1501,7 @@ public static class BenchmarkGroupStatistics
             .DefaultIfEmpty(double.NaN).Average();
         if (storedMean.HasValue && double.IsNaN(storedMean.Value)) storedMean = null;
 
-        return new BenchmarkGroupIndexStatistics
+        var v1 = new BenchmarkGroupIndexStatistics
         {
             RunCount = r,
             PointEstimate = point,
@@ -1274,6 +1523,74 @@ public static class BenchmarkGroupStatistics
             CombinedIntervalTruncated = combined.HasValue && ScoreBoundExceeded(point, combined.Value),
             ReproducibilityAvailable = reproSd.HasValue
         };
+
+        if (method != BenchmarkGroupStatisticsMethod.V2) return v1;
+
+        // Method 2: the item-sampling SE over the unrounded means and weights, around the unrounded
+        // weighted mean. A diagnostic beside the combined interval, never summed into it.
+        double? itemSeV2 = BenchmarkScoring.QualityIndexStandardErrorUnrounded(
+            items.Select(i => (i.Mean, i.Weight)));
+        double? itemHalfV2 = itemSeV2.HasValue ? NormalCritical95 * itemSeV2.Value : null;
+
+        // The combined interval is the percentile interval of the crossed bootstrap over the same
+        // run × question array the point estimate is computed from. Below three runs only the
+        // questions are redrawn.
+        var crossedItems = items.Select(ToCrossedItem).ToList();
+        var indexedRuns = members.Where(m => scoreByRunAndItem.ContainsKey(m.Id)).Select(m => m.Id).ToList();
+        bool crossed = r >= MinRunsForReproducibility;
+        var distribution = BenchmarkCrossedBootstrap.IndexDistribution(
+            crossedItems, indexedRuns, resampleRuns: crossed,
+            BenchmarkCrossedBootstrap.DefaultReplicates, BenchmarkCrossedBootstrap.DefaultSeed);
+
+        double? lower = null;
+        double? upper = null;
+        if (distribution != null && distribution.Replicates.Count > 0)
+        {
+            var interval = distribution.Interval95;
+            lower = interval.Lower;
+            upper = interval.Upper;
+        }
+
+        int? runsToMatch = null;
+        if (reproSd.HasValue && itemSeV2.HasValue && itemSeV2.Value > 0.0)
+        {
+            double ratio = reproSd.Value / itemSeV2.Value;
+            runsToMatch = Math.Max(MinRunsForReproducibility, (int)Math.Ceiling(ratio * ratio - 1e-9));
+        }
+
+        double? runSpanHours = members.Count > 0
+            ? (members.Max(m => m.StartedAtUtc) - members.Min(m => m.StartedAtUtc)).TotalHours
+            : null;
+
+        return v1 with
+        {
+            ItemSamplingStandardError = itemSeV2,
+            ItemSamplingHalfWidth = itemHalfV2,
+            CombinedHalfWidth = lower.HasValue && upper.HasValue ? (upper.Value - lower.Value) / 2.0 : null,
+            CombinedLower = lower,
+            CombinedUpper = upper,
+            CombinedIntervalTruncated = false,
+            CombinedIntervalMethod = crossed ? CrossedBootstrapMethod : QuestionBootstrapMethod,
+            BootstrapReplicates = BenchmarkCrossedBootstrap.DefaultReplicates,
+            BootstrapSeed = BenchmarkCrossedBootstrap.DefaultSeed,
+            RunsWhereRunComponentMatchesQuestions = runsToMatch,
+            RunSpanHours = runSpanHours
+        };
+    }
+
+    /// <summary>An item's run-by-run scores as one question of the crossed array.</summary>
+    private static CrossedItem ToCrossedItem(BenchmarkGroupItemStatistics item)
+        => new(item.Weight, ScoreByRun(item));
+
+    private static IReadOnlyDictionary<long, double> ScoreByRun(BenchmarkGroupItemStatistics item)
+    {
+        var map = new Dictionary<long, double>();
+        for (int i = 0; i < item.Scores.Count && i < item.RunIds.Count; i++)
+        {
+            map[item.RunIds[i]] = item.Scores[i];
+        }
+
+        return map;
     }
 
     /// <summary>
@@ -1404,10 +1721,15 @@ public static class BenchmarkGroupStatistics
     /// Restricted to answered items in the group, exactly as the speed pool is: an item no member
     /// answered is not part of the group's item set, so its absent dimension scores must not enter
     /// a mean either. Every dimension is emitted whether or not it was scored.
+    ///
+    /// <para>Under <see cref="BenchmarkGroupStatisticsMethod.V2"/> each dimension also carries the
+    /// crossed bootstrap's percentile interval over the same answer scores, every question weighted 1,
+    /// so the statistic of the original data is the mean of the per-run means.</para>
     /// </summary>
     private static IReadOnlyList<BenchmarkGroupDimensionStatistics> ComputeDimensions(
         IReadOnlyList<BenchmarkRun> members,
-        IReadOnlyList<BenchmarkGroupItemStatistics> items)
+        IReadOnlyList<BenchmarkGroupItemStatistics> items,
+        BenchmarkGroupStatisticsMethod method)
     {
         var questionIds = new HashSet<long>(items.Select(i => i.QuestionId));
 
@@ -1420,12 +1742,14 @@ public static class BenchmarkGroupStatistics
                     ? BenchmarkScoring.ConstantsFromSnapshot(member.ScoringProfileSnapshotJson).LevelScores
                     : null;
 
-                return (member.Answers ?? new List<BenchmarkRunAnswer>())
+                var answers = (member.Answers ?? new List<BenchmarkRunAnswer>())
                     .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a)
                                 && BenchmarkItemAnalysis.QuestionKey(a) is long key
                                 && questionIds.Contains(key))
                     .Select(a => (QuestionId: BenchmarkItemAnalysis.QuestionKey(a)!.Value, Scores: DimensionScores(a, isPanelRun, levelScores)))
                     .ToList();
+
+                return (RunId: member.Id, Answers: answers);
             })
             .ToList();
 
@@ -1437,13 +1761,19 @@ public static class BenchmarkGroupStatistics
             var perRunMeans = new List<double>();
             var byQuestion = new Dictionary<long, List<double>>();
 
-            foreach (var answers in memberScores)
+            // Method 2's crossed array: per question, per run, the sum and count of its scores, so a
+            // run with two answers to one question contributes their mean.
+            var cells = new Dictionary<long, Dictionary<long, (double Sum, int Count)>>();
+            var scoredRuns = new List<long>();
+
+            foreach (var (runId, answers) in memberScores)
             {
                 var scored = answers.Where(a => a.Scores[d].HasValue).ToList();
 
                 if (scored.Count == 0) continue;
 
                 perRunMeans.Add(scored.Average(a => a.Scores[d]!.Value));
+                scoredRuns.Add(runId);
 
                 foreach (var answer in scored)
                 {
@@ -1454,6 +1784,15 @@ public static class BenchmarkGroupStatistics
                     }
 
                     list.Add(answer.Scores[d]!.Value);
+
+                    if (!cells.TryGetValue(answer.QuestionId, out var byRun))
+                    {
+                        byRun = new Dictionary<long, (double Sum, int Count)>();
+                        cells[answer.QuestionId] = byRun;
+                    }
+
+                    var cell = byRun.GetValueOrDefault(runId);
+                    byRun[runId] = (cell.Sum + answer.Scores[d]!.Value, cell.Count + 1);
                 }
             }
 
@@ -1465,7 +1804,7 @@ public static class BenchmarkGroupStatistics
                 half = StudentTCritical95(perRunMeans.Count - 1) * se;
             }
 
-            result.Add(new BenchmarkGroupDimensionStatistics
+            var dimension = new BenchmarkGroupDimensionStatistics
             {
                 Dimension = name,
                 PerRunMeans = perRunMeans,
@@ -1475,7 +1814,32 @@ public static class BenchmarkGroupStatistics
                 Min = perRunMeans.Count > 0 ? perRunMeans.Min() : null,
                 Max = perRunMeans.Count > 0 ? perRunMeans.Max() : null,
                 ItemMeans = byQuestion.ToDictionary(kv => kv.Key, kv => kv.Value.Average())
-            });
+            };
+
+            if (method == BenchmarkGroupStatisticsMethod.V2 && perRunMeans.Count > 0)
+            {
+                var crossedItems = cells.Values
+                    .Select(byRun => new CrossedItem(1.0, byRun.ToDictionary(kv => kv.Key, kv => kv.Value.Sum / kv.Value.Count)))
+                    .ToList();
+                bool crossed = perRunMeans.Count >= MinRunsForReproducibility;
+                var distribution = BenchmarkCrossedBootstrap.IndexDistribution(
+                    crossedItems, scoredRuns, resampleRuns: crossed,
+                    BenchmarkCrossedBootstrap.DefaultReplicates, BenchmarkCrossedBootstrap.DefaultSeed);
+
+                if (distribution != null && distribution.Replicates.Count > 0)
+                {
+                    var interval = distribution.Interval95;
+                    dimension = dimension with
+                    {
+                        BootstrapLower = interval.Lower,
+                        BootstrapUpper = interval.Upper,
+                        IntervalMethod = crossed ? CrossedBootstrapMethod : QuestionBootstrapMethod,
+                        ConfidenceHalfWidth = (interval.Upper - interval.Lower) / 2.0
+                    };
+                }
+            }
+
+            result.Add(dimension);
         }
 
         return result;
@@ -1733,11 +2097,20 @@ public static class BenchmarkGroupStatistics
     /// Only items answered on both sides, under the same rubric revision, are paired; the rest are
     /// counted and excluded, because a pair needs two halves graded against one answer key and
     /// imputing one would invent the finding.
+    ///
+    /// <para>Under <see cref="BenchmarkGroupStatisticsMethod.V2"/> the comparison also carries the
+    /// difficulty-weighted index difference over the paired items with its crossed-bootstrap interval,
+    /// p-value, standard error and minimum detectable difference, which include run-level variance
+    /// once both sides have three runs; the Hodges–Lehmann shift beside Wilcoxon; Cohen's
+    /// <i>d</i><sub>av</sub> beside <i>d</i><sub>z</sub>; and per-item tests in which an item with no
+    /// variance estimate is untestable and left out of the Benjamini–Hochberg <i>m</i>. Every V1
+    /// figure keeps its meaning.</para>
     /// </summary>
     public static BenchmarkGroupComparison Compare(
         BenchmarkGroupStatisticsResult baseline,
         BenchmarkGroupStatisticsResult treatment,
-        double falseDiscoveryRate = DefaultFalseDiscoveryRate)
+        double falseDiscoveryRate = DefaultFalseDiscoveryRate,
+        BenchmarkGroupStatisticsMethod method = BenchmarkGroupStatisticsMethod.V1)
     {
         ArgumentNullException.ThrowIfNull(baseline);
         ArgumentNullException.ThrowIfNull(treatment);
@@ -1772,9 +2145,10 @@ public static class BenchmarkGroupStatistics
         // Per-item exploratory tests: Welch's t over the two groups' per-run scores for the item,
         // then Benjamini-Hochberg across the items that could be tested at all.
         var rawItems = new List<BenchmarkGroupItemComparison>();
+        bool v2 = method == BenchmarkGroupStatisticsMethod.V2;
         foreach (var (b, t) in ordered)
         {
-            var welch = WelchTTest(b.Scores, t.Scores);
+            var welch = WelchTTest(b.Scores, t.Scores, method);
             rawItems.Add(new BenchmarkGroupItemComparison
             {
                 QuestionId = b.QuestionId,
@@ -1787,7 +2161,8 @@ public static class BenchmarkGroupStatistics
                 Difference = t.Mean - b.Mean,
                 TStatistic = welch.TStatistic,
                 DegreesOfFreedom = welch.DegreesOfFreedom,
-                PValue = welch.PValue
+                PValue = welch.PValue,
+                Untestable = v2 ? !welch.PValue.HasValue : null
             });
         }
 
@@ -1813,7 +2188,7 @@ public static class BenchmarkGroupStatistics
             });
         }
 
-        return new BenchmarkGroupComparison
+        var comparison = new BenchmarkGroupComparison
         {
             BaselineRunIds = baseline.RunIds,
             TreatmentRunIds = treatment.RunIds,
@@ -1831,6 +2206,94 @@ public static class BenchmarkGroupStatistics
             ItemComparisons = itemComparisons,
             FalseDiscoveryRate = falseDiscoveryRate
         };
+
+        if (!v2) return comparison;
+
+        // The weighted index difference over the paired items, with the treatment side's weights on
+        // both sides, and its crossed-bootstrap distribution: one question draw serves both groups.
+        var pairs = ordered
+            .Select(p => new CrossedPair(p.Treatment.Weight, ScoreByRun(p.Baseline), ScoreByRun(p.Treatment)))
+            .ToList();
+        var baselineRuns = ordered.SelectMany(p => p.Baseline.RunIds).Distinct().OrderBy(id => id).ToList();
+        var treatmentRuns = ordered.SelectMany(p => p.Treatment.RunIds).Distinct().OrderBy(id => id).ToList();
+        bool crossed = baselineRuns.Count >= MinRunsForReproducibility && treatmentRuns.Count >= MinRunsForReproducibility;
+
+        var distribution = pairs.Count > 0
+            ? BenchmarkCrossedBootstrap.DifferenceDistribution(
+                pairs, baselineRuns, treatmentRuns, resampleRuns: crossed,
+                BenchmarkCrossedBootstrap.DefaultReplicates, BenchmarkCrossedBootstrap.DefaultSeed)
+            : null;
+
+        double? indexDifference = null;
+        double? lower = null;
+        double? upper = null;
+        double? bootstrapP = null;
+        double? bootstrapSe = null;
+        double? mde = null;
+        if (distribution != null && distribution.Replicates.Count > 0)
+        {
+            var replicates = distribution.Replicates;
+            indexDifference = distribution.Estimate;
+            var interval = distribution.Interval95;
+            lower = interval.Lower;
+            upper = interval.Upper;
+
+            double atOrBelow = replicates.Count(v => v <= 0.0) / (double)replicates.Count;
+            double atOrAbove = replicates.Count(v => v >= 0.0) / (double)replicates.Count;
+            bootstrapP = Math.Min(1.0, 2.0 * Math.Min(atOrBelow, atOrAbove));
+
+            bootstrapSe = SampleStandardDeviation(replicates);
+            if (bootstrapSe.HasValue)
+            {
+                double z = ChatConsistencyStatistics.NormalQuantile(0.975)
+                           + ChatConsistencyStatistics.NormalQuantile(MinimumDetectablePower);
+                mde = z * bootstrapSe.Value;
+            }
+        }
+
+        return comparison with
+        {
+            StatisticsMethodVersion = MethodVersion(method),
+            IndexDifference = indexDifference,
+            IndexDifferenceLower = lower,
+            IndexDifferenceUpper = upper,
+            IndexDifferenceMethod = pairs.Count > 0 ? (crossed ? CrossedBootstrapMethod : QuestionBootstrapMethod) : null,
+            RunVarianceIncluded = pairs.Count > 0 ? crossed : null,
+            IndexDifferenceBootstrapP = bootstrapP,
+            IndexDifferenceStandardError = bootstrapSe,
+            HodgesLehmannShift = differences.Count > 0 ? ChatConsistencyStatistics.HodgesLehmannShift(differences) : null,
+            StandardizedDifferenceDav = AverageVarianceStandardizedDifference(ordered, meanDiff),
+            MinimumDetectableIndexDifference = mde,
+            UntestableItemCount = itemComparisons.Count(i => i.Untestable == true)
+        };
+    }
+
+    /// <summary>
+    /// Cohen's <i>d</i><sub>av</sub>: the mean item difference over the mean of the two groups'
+    /// population standard deviations of their run × question scores on the paired items. Null
+    /// without a pair or when both groups' scores are constant.
+    /// </summary>
+    private static double? AverageVarianceStandardizedDifference(
+        IReadOnlyList<(BenchmarkGroupItemStatistics Baseline, BenchmarkGroupItemStatistics Treatment)> pairs,
+        double meanDifference)
+    {
+        if (pairs.Count == 0) return null;
+
+        double? baselineSd = PopulationStandardDeviation(pairs.SelectMany(p => p.Baseline.Scores).ToList());
+        double? treatmentSd = PopulationStandardDeviation(pairs.SelectMany(p => p.Treatment.Scores).ToList());
+        if (!baselineSd.HasValue || !treatmentSd.HasValue) return null;
+
+        double averageSd = (baselineSd.Value + treatmentSd.Value) / 2.0;
+        return averageSd > 0.0 ? meanDifference / averageSd : null;
+    }
+
+    /// <summary>Population standard deviation (the <i>n</i> denominator). Null over an empty list.</summary>
+    private static double? PopulationStandardDeviation(IReadOnlyList<double> values)
+    {
+        if (values.Count == 0) return null;
+
+        double mean = values.Average();
+        return Math.Sqrt(values.Sum(x => (x - mean) * (x - mean)) / values.Count);
     }
 
     // --- Tests and effect sizes -----------------------------------------------------------------
@@ -2027,12 +2490,15 @@ public static class BenchmarkGroupStatistics
     /// for the exploratory per-item comparisons.
     ///
     /// Null when either side has fewer than two values. When both sides have zero variance the
-    /// test degenerates: identical means give p = 1, different means give p = 0, which is the
-    /// honest reading of "no observed variation and a difference" rather than a division by zero.
+    /// test degenerates. Under <see cref="BenchmarkGroupStatisticsMethod.V1"/> identical means give
+    /// p = 1 and different means give p = 0. Under <see cref="BenchmarkGroupStatisticsMethod.V2"/>
+    /// the result is null throughout: with no variance estimate there is no test, and a p of 0 from
+    /// discrete rubric scores at small <i>R</i> would guarantee a Benjamini–Hochberg rejection.
     /// </summary>
     public static (double? TStatistic, double? DegreesOfFreedom, double? PValue) WelchTTest(
         IReadOnlyList<double>? a,
-        IReadOnlyList<double>? b)
+        IReadOnlyList<double>? b,
+        BenchmarkGroupStatisticsMethod method = BenchmarkGroupStatisticsMethod.V1)
     {
         var x = a ?? Array.Empty<double>();
         var y = b ?? Array.Empty<double>();
@@ -2049,6 +2515,8 @@ public static class BenchmarkGroupStatistics
 
         if (se2 <= 0.0)
         {
+            if (method == BenchmarkGroupStatisticsMethod.V2) return (null, null, null);
+
             double diff = my - mx;
             return (null, null, Math.Abs(diff) < 1e-12 ? 1.0 : 0.0);
         }

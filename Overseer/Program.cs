@@ -368,6 +368,7 @@ builder.Services.AddSingleton<Overseer.Services.Benchmarking.Charts.RootCauseCha
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 Overseer.Services.Benchmarking.Pdf.BenchmarkPdfResources.EnsureRegistered();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkGroupAnalysisService>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRunGroupSuggestionService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkBatteryAnalysisService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkBatteryLeaderboardService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRunCostEstimator>();

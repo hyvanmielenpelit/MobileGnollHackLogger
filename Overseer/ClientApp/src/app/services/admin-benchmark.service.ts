@@ -3379,10 +3379,21 @@ export interface BenchmarkRunGroupDto extends ProviderAvailabilityCardFields {
   latestAnalysisAtUtc?: string | null;
   /** The membership changed after the last analysis. Badged, not discarded: a stale analysis is not wrong. */
   analysisStale: boolean;
+  /** The member run ids, ascending. */
+  memberRunIds: number[];
+  /** The latest analysis's pooled index; null without an analysis, or one stored before headlines were kept. */
+  headlineIndex: number | null;
+  /** The half-width of that index's combined interval. */
+  headlineHalfWidth: number | null;
+  headlineSpeedIndex: number | null;
+  headlineCostPerRun: number | null;
+  /** The server named the group because the request carried no name. */
+  nameIsGenerated: boolean;
 }
 
 export interface CreateBenchmarkRunGroupRequest {
-  name: string;
+  /** Optional: without one the server generates `Suite · Model · yyyy-MM-dd · R=n`. */
+  name?: string;
   runIds: number[];
   notes?: string | null;
   /** Required to persist a Tier C group. Without it a cross-condition set is refused. */
@@ -3404,7 +3415,36 @@ export interface BenchmarkRunGroupTierPreviewDto {
   accepted: boolean;
   error?: string | null;
   comparability?: BenchmarkComparabilityResultDto | null;
+  /** A created group carries `latestAnalysisId` when the server analyzed it at once. */
   group?: BenchmarkRunGroupDto | null;
+  /** The group that already holds exactly these runs; a create naming the same set is refused. */
+  duplicateOfGroupId?: number | null;
+}
+
+/** The candidate a suggested group's runs share. */
+export interface BenchmarkRunGroupSuggestionModelDto {
+  displayName: string | null;
+  id: string | null;
+  provider: string | null;
+  thinkingLevel: string | null;
+  reasoningMode: string | null;
+}
+
+/**
+ * A replicate cluster of a suite's runs that no group holds yet. `keyHash` is the cluster's
+ * comparability key hash; `runIds` are ascending.
+ */
+export interface BenchmarkRunGroupSuggestionDto {
+  keyHash: string;
+  runIds: number[];
+  runCount: number;
+  tier: BenchmarkComparabilityTier;
+  testedModel: BenchmarkRunGroupSuggestionModelDto;
+  firstStartedAtUtc: string;
+  lastStartedAtUtc: string;
+  /** The series the runs came from; one entry when they all came from one series. */
+  seriesIds: number[];
+  meanQualityIndex: number | null;
 }
 
 export interface BenchmarkGroupAnalysisRequest {
@@ -5022,6 +5062,13 @@ export class AdminBenchmarkService {
 
   getRunGroup(id: number): Observable<BenchmarkRunGroupDto> {
     return this.http.get<BenchmarkRunGroupDto>(`/api/admin/benchmark/runs/groups/${id}`);
+  }
+
+  /** The suite's replicate clusters of runs that no group holds yet. */
+  getRunGroupSuggestions(suiteId: number): Observable<BenchmarkRunGroupSuggestionDto[]> {
+    return this.http.get<BenchmarkRunGroupSuggestionDto[]>('/api/admin/benchmark/runs/groups/suggestions', {
+      params: { suiteId: String(suiteId) }
+    });
   }
 
   /**

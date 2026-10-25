@@ -1689,14 +1689,14 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.batteriesPanel).toBeTruthy();
     });
 
-    it('should hand the selected suite to the Multi-Run Analysis panel', () => {
+    it('should hand the selected suite to the Multi-Run Analysis panel as its default', () => {
       ctx.launcher.selectedSuiteId = 5;
       fixture.nativeElement.querySelector('#bm-tab-multirun').click();
       fixture.detectChanges();
 
       const multiRun = fixture.debugElement.query(By.directive(MultiRunComponent));
       expect(multiRun).toBeTruthy();
-      expect((multiRun.componentInstance as MultiRunComponent).suiteId).toBe(5);
+      expect((multiRun.componentInstance as MultiRunComponent).defaultSuiteId).toBe(5);
     });
 
     it('should load history when the history tab is selected', () => {

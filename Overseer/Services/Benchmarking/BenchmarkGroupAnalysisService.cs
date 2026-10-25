@@ -20,8 +20,9 @@ using Overseer.Services;
 /// class does the I/O and, importantly, the one thing neither of them can: it refuses to pool a set
 /// the tier resolution says must not be pooled.</para>
 ///
-/// <para>Admin-initiated only, and it makes no AI calls. A group analysis over twenty runs is
-/// arithmetic and completes in well under a second.</para>
+/// <para>Runs when a group is created (<see cref="TryAnalyseNewGroupAsync"/>) and when an admin asks,
+/// and it makes no AI calls. A group analysis over twenty runs is arithmetic and completes in well
+/// under a second. Every analysis records <see cref="StatisticsMethod"/>.</para>
 /// </summary>
 public class BenchmarkGroupAnalysisService
 {
@@ -121,6 +122,26 @@ public class BenchmarkGroupAnalysisService
             return (null, null, "A group analysis needs at least two member runs.");
         }
 
+        // The comparison pairs items, so its baseline must be another group of the same suite.
+        LoadedGroup? baselineLoaded = null;
+        if (comparedWithGroupId.HasValue)
+        {
+            if (comparedWithGroupId.Value == groupId)
+            {
+                return (null, null, "A group cannot be compared with itself.");
+            }
+
+            baselineLoaded = await LoadGroupAsync(comparedWithGroupId.Value, ct);
+            if (baselineLoaded != null
+                && SuiteIdentity(baselineLoaded) is long baselineSuite
+                && SuiteIdentity(loaded) is long treatmentSuite
+                && baselineSuite != treatmentSuite)
+            {
+                return (null, null,
+                    $"Group #{comparedWithGroupId.Value} is in another suite; a comparison pairs items of one suite.");
+            }
+        }
+
         var unsettledError = UnsettledMemberError(loaded.Runs);
         if (unsettledError != null)
         {
@@ -145,7 +166,8 @@ public class BenchmarkGroupAnalysisService
                 loaded.Comparability.Explanation);
         }
 
-        var options = BenchmarkGroupStatisticsOptions.FromComparability(loaded.Comparability);
+        var options = BenchmarkGroupStatisticsOptions.FromComparability(loaded.Comparability)
+            with { Method = StatisticsMethod };
         var costs = await ResolveCostsAsync(_pricingService, _logger, loaded.Runs);
 
         // The exam the members sat, from their own answers: the live suite may have changed since.
@@ -168,12 +190,19 @@ public class BenchmarkGroupAnalysisService
         // baseline is gone, or is itself unanalysable â€” is not an error for this analysis: the
         // group's own statistics are still valid, and the comparison is simply absent.
         string? comparisonJson = null;
-        if (comparedWithGroupId.HasValue && comparedWithGroupId.Value != groupId)
+        if (comparedWithGroupId.HasValue)
         {
-            var baseline = await ComputeForComparisonAsync(comparedWithGroupId.Value, ct);
+            var baseline = baselineLoaded == null ? null : await ComputeForComparisonAsync(baselineLoaded, ct);
             if (baseline != null)
             {
-                var comparison = BenchmarkGroupStatistics.Compare(baseline, result);
+                int priorComparisons = await _db.BenchmarkGroupAnalyses
+                    .CountAsync(a => a.BenchmarkRunGroupId == groupId && a.ComparisonJson != null, ct);
+
+                var comparison = BenchmarkGroupStatistics.Compare(baseline, result, method: StatisticsMethod) with
+                {
+                    PairKeyDifferences = PairKeyDifferences(baselineLoaded!.Runs, loaded.Runs),
+                    PriorComparisonCount = priorComparisons
+                };
                 comparisonJson = JsonSerializer.Serialize(comparison);
             }
             else
@@ -192,6 +221,10 @@ public class BenchmarkGroupAnalysisService
             MemberRunIdsJson = JsonSerializer.Serialize(result.RunIds),
             RunCount = result.RunCount,
             ResultJson = JsonSerializer.Serialize(result),
+            HeadlineIndex = result.Index.PointEstimate,
+            HeadlineHalfWidth = result.Index.CombinedHalfWidth,
+            HeadlineSpeedIndex = result.Speed.MeanSpeedIndex,
+            HeadlineCostPerRun = result.Cost?.MeanCostPerRun,
             TierAtComputation = (BenchmarkRunGroupTier)tier,
             HarnessVersion = newest.HarnessVersion,
             ScoringMethodVersion = newest.ScoringMethodVersion,
@@ -227,10 +260,9 @@ public class BenchmarkGroupAnalysisService
     /// <see cref="AnalyseAsync"/> refuses: a Tier C set is two conditions, and a comparison against
     /// the average of two conditions describes neither.</para>
     /// </summary>
-    private async Task<BenchmarkGroupStatisticsResult?> ComputeForComparisonAsync(long groupId, CancellationToken ct)
+    private async Task<BenchmarkGroupStatisticsResult?> ComputeForComparisonAsync(LoadedGroup loaded, CancellationToken ct)
     {
-        var loaded = await LoadGroupAsync(groupId, ct);
-        if (loaded == null || loaded.Runs.Count < 2) return null;
+        if (loaded.Runs.Count < 2) return null;
         if (UnsettledMemberError(loaded.Runs) != null) return null;
 
         var tier = loaded.Comparability.Tier;
@@ -240,7 +272,9 @@ public class BenchmarkGroupAnalysisService
             return null;
         }
 
-        var options = BenchmarkGroupStatisticsOptions.FromComparability(loaded.Comparability);
+        // The same method as the treatment side, so the two halves of a comparison are computed alike.
+        var options = BenchmarkGroupStatisticsOptions.FromComparability(loaded.Comparability)
+            with { Method = StatisticsMethod };
         var costs = await ResolveCostsAsync(_pricingService, _logger, loaded.Runs);
 
         var exam = BenchmarkRunExam.Build(loaded.Runs);
@@ -250,6 +284,113 @@ public class BenchmarkGroupAnalysisService
             loaded.Runs,
             costs,
             options);
+    }
+
+    /// <summary>
+    /// Analyzes a group that has just been created, alone, and reports whether an analysis was
+    /// stored. The one entry point the create endpoint and both orchestrators use.
+    ///
+    /// <para>Skips a group recorded below Tier B or as cross-condition: such a group is compared,
+    /// never pooled, and a series resumed over an acknowledged instrument change is recorded Tier C
+    /// even when its members still hash alike. A refusal is logged; every exception except
+    /// cancellation is logged and returns false, so a caller's own outcome never depends on it.</para>
+    /// </summary>
+    public virtual async Task<bool> TryAnalyseNewGroupAsync(long groupId, CancellationToken ct = default)
+    {
+        try
+        {
+            var group = await _db.BenchmarkRunGroups
+                .AsNoTracking()
+                .Where(g => g.Id == groupId)
+                .Select(g => new { g.Tier, g.CrossCondition, g.CreatedByUserId })
+                .FirstOrDefaultAsync(ct);
+
+            if (group == null) return false;
+
+            if (group.CrossCondition
+                || (group.Tier != BenchmarkRunGroupTier.Replicate && group.Tier != BenchmarkRunGroupTier.QualityComparable))
+            {
+                return false;
+            }
+
+            var (analysis, _, error) = await AnalyseAsync(groupId, group.CreatedByUserId, null, ct);
+            if (analysis == null)
+            {
+                _logger.LogInformation("New group {GroupId} was not analyzed: {Error}", groupId, error);
+                return false;
+            }
+
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            throw new OperationCanceledException(ex.Message, ex, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "The analysis of new group {GroupId} failed.", groupId);
+            return false;
+        }
+    }
+
+    /// <summary>The statistics method every analysis computed here records.</summary>
+    internal const BenchmarkGroupStatisticsMethod StatisticsMethod = BenchmarkGroupStatisticsMethod.V2;
+
+    /// <summary>The run statuses a group analysis accepts as settled and poolable.</summary>
+    internal static readonly BenchmarkRunStatus[] PoolableStatuses =
+        Enum.GetValues<BenchmarkRunStatus>().Where(BenchmarkRunFinalizer.IsPoolable).ToArray();
+
+    /// <summary>
+    /// The suite a group's items belong to: its own suite id, else the suite its members were
+    /// launched against. Null when neither is recorded.
+    /// </summary>
+    private static long? SuiteIdentity(LoadedGroup loaded)
+        => loaded.Group.BenchmarkSuiteId
+           ?? loaded.Runs.Select(r => r.BenchmarkSuiteIdUsed ?? r.BenchmarkSuiteId).FirstOrDefault(id => id.HasValue);
+
+    /// <summary>
+    /// The comparability keys that differ between the two groups and split exactly along them: one
+    /// value carried by every baseline run, another by every treatment run. A key that also varies
+    /// within a group is left out, as is any key on which a run sits in both groups.
+    /// </summary>
+    internal static IReadOnlyList<BenchmarkGroupPairKeyDifference> PairKeyDifferences(
+        IReadOnlyList<BenchmarkRun> baselineRuns,
+        IReadOnlyList<BenchmarkRun> treatmentRuns)
+    {
+        var baselineIds = baselineRuns.Select(r => r.Id).ToHashSet();
+        var treatmentIds = treatmentRuns.Select(r => r.Id).ToHashSet();
+
+        var union = baselineRuns
+            .Concat(treatmentRuns)
+            .GroupBy(r => r.Id)
+            .Select(g => g.First())
+            .ToList();
+        var resolution = BenchmarkComparabilityKey.Resolve(union);
+
+        var result = new List<BenchmarkGroupPairKeyDifference>();
+        foreach (var difference in resolution.Differences)
+        {
+            if (difference.Variants.Count != 2) continue;
+
+            var baselineVariant = difference.Variants.FirstOrDefault(v => baselineIds.SetEquals(v.RunIds));
+            var treatmentVariant = difference.Variants.FirstOrDefault(v => treatmentIds.SetEquals(v.RunIds));
+            if (baselineVariant == null || treatmentVariant == null || ReferenceEquals(baselineVariant, treatmentVariant)) continue;
+
+            result.Add(new BenchmarkGroupPairKeyDifference
+            {
+                Key = difference.Name,
+                Kind = difference.Kind.ToString(),
+                Description = BenchmarkComparabilityKey.Describe(difference.Name).Label,
+                BaselineValue = baselineVariant.Value,
+                TreatmentValue = treatmentVariant.Value
+            });
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -276,13 +417,16 @@ public class BenchmarkGroupAnalysisService
             .FirstOrDefaultAsync(ct);
 
     /// <summary>
-    /// True when the group's membership has changed since the analysis was computed. A stale
-    /// analysis is not wrong â€” it is a correct statement about a different set of runs â€” so it is
-    /// badged rather than discarded.
+    /// True when the group's membership has changed since the analysis was computed, or a member
+    /// was re-run in place after it (<paramref name="latestMemberRerunUtc"/>, the latest
+    /// <c>RerunCompletedAtUtc</c> over the members). A stale analysis is not wrong â€” it is a correct
+    /// statement about a different set of runs â€” so it is badged rather than discarded.
     /// </summary>
-    public static bool IsStale(BenchmarkRunGroup group, BenchmarkGroupAnalysis? analysis)
+    public static bool IsStale(BenchmarkRunGroup group, BenchmarkGroupAnalysis? analysis, DateTime? latestMemberRerunUtc = null)
     {
         if (analysis == null) return false;
+
+        if (latestMemberRerunUtc.HasValue && latestMemberRerunUtc.Value > analysis.ComputedAtUtc) return true;
 
         long[] analysed;
         try

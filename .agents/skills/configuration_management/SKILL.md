@@ -81,7 +81,8 @@ if (string.IsNullOrWhiteSpace(_configuration["MyDataPath"]))
 
 ### 3. API & Frontend Alert Pipeline
 - **API Endpoint**: `AdminController.GetSystemAlerts([FromServices] ConfigHealthService configHealthService)` at `/api/admin/system-alerts` returns the active list of `SystemAlert` items.
-- **Frontend Service**: `AdminAlertService` (`Overseer/ClientApp/src/app/services/admin-alert.service.ts`) fetches system alerts periodically and on navigation events, publishing them through `alerts$`.
+- **Frontend Service**: `AdminAlertService` (`Overseer/ClientApp/src/app/services/admin-alert.service.ts`) fetches system alerts when an administrator signs in, and publishes them through two streams: `allAlerts$`, every alert the server reports, dismissed ones included, for code that needs to know a condition (Model Comparison reads it for its chart-storage check); and `alerts$`, the alerts the signed-in user has not dismissed, for code that shows them.
+- **Dismissals persist per user until the alert's condition clears.** They are kept in `localStorage` under `overseer.adminAlerts.dismissed.<user>` (the lowercased user name, since the client has no user id) as `{ version: 1, ids }`. An id is dropped as soon as the server stops reporting that alert, so a condition that clears and later returns shows its alert again. The older per-tab `sessionStorage` key `dismissed_admin_alerts` is merged into the record once and removed. Where storage is blocked or unreadable, a dismissal lasts only as long as the page, and the alerts show again on the next load.
 - **UI Component**: `AdminAlertsComponent` (`Overseer/ClientApp/src/app/chat/admin-alerts.component.ts` / `admin-alerts.component.html`) renders alerts as floating popovers in the main chat window for administrators, allowing them to see missing configurations and dismiss warnings.
 
 ### 4. Configuration Health Report (Admin → Services → Configuration Health)
