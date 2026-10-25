@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, EMPTY, catchError, of, switchMap } from 'rxjs';
+import { BehaviorSubject, EMPTY, Observable, Subject, catchError, exhaustMap, of, startWith, switchMap } from 'rxjs';
 import { AuthService, AuthUser } from './auth.service';
 
 export interface SystemAlert {
@@ -30,9 +30,10 @@ export function dismissedAlertsKey(userName: string | null | undefined): string 
 }
 
 /**
- * The admin alerts of `/api/admin/system-alerts`. Dismissals are kept per user in `localStorage`, and an id
- * the server no longer reports is forgotten, so a condition that clears and later returns shows its alert
- * again. Where storage is blocked or unreadable, a dismissal lasts only as long as the page.
+ * The admin alerts of `/api/admin/system-alerts`, fetched on each `user$` emission and on `refresh()`.
+ * Dismissals are kept per user in `localStorage`, and an id the server no longer reports is forgotten, so a
+ * condition that clears and later returns shows its alert again. Where storage is blocked or unreadable, a
+ * dismissal lasts only as long as the page.
  */
 @Injectable({ providedIn: 'root' })
 export class AdminAlertService {
@@ -50,6 +51,8 @@ export class AdminAlertService {
   /** The signed-in admin's storage key; null when no admin is signed in. */
   private storageKey: string | null = null;
 
+  private refreshRequests = new Subject<void>();
+
   constructor() {
     this.authService.user$.pipe(
       switchMap(user => {
@@ -57,14 +60,15 @@ export class AdminAlertService {
         if (!user?.isAdmin) {
           return of<SystemAlert[]>([]);
         }
-        return this.http.get<SystemAlert[]>('/api/admin/system-alerts').pipe(
-          catchError(err => {
-            console.error('Failed to fetch admin alerts', err);
-            return EMPTY;
-          })
-        );
+        // A refresh requested while a fetch is in flight is ignored.
+        return this.refreshRequests.pipe(startWith(undefined), exhaustMap(() => this.fetch()));
       })
     ).subscribe(alerts => this.receive(alerts ?? []));
+  }
+
+  /** Fetches the alerts again; does nothing while no admin is signed in. */
+  refresh(): void {
+    this.refreshRequests.next();
   }
 
   dismiss(id: string) {
@@ -92,6 +96,16 @@ export class AdminAlertService {
     this.mergeStored();
     this.migrateLegacy();
     this.publish();
+  }
+
+  /** The server's alerts; a failure is logged and completes without a value, so the current list stays. */
+  private fetch(): Observable<SystemAlert[]> {
+    return this.http.get<SystemAlert[]>('/api/admin/system-alerts').pipe(
+      catchError(err => {
+        console.error('Failed to fetch admin alerts', err);
+        return EMPTY;
+      })
+    );
   }
 
   /** Publishes the server's alerts and forgets the dismissals of alerts it no longer reports. */

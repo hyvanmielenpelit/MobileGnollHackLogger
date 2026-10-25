@@ -13,6 +13,17 @@ export interface AdminAlertView {
   severityLabel: string;
 }
 
+/** `dialog:modal` where the browser knows it; elsewhere any open dialog, the safe side. */
+const MODAL_DIALOG_SELECTOR = supportsSelector('dialog:modal') ? 'dialog:modal' : 'dialog[open]';
+
+function supportsSelector(selector: string): boolean {
+  try {
+    return CSS.supports(`selector(${selector})`);
+  } catch {
+    return false;
+  }
+}
+
 @Component({
   selector: 'app-admin-alerts',
   standalone: true,
@@ -34,7 +45,9 @@ export class AdminAlertsComponent implements OnInit, OnDestroy {
   })));
 
   private latestCount = 0;
+  private previousPath: string | null = null;
   private sub = new Subscription();
+  private dialogObserver: MutationObserver | null = null;
 
   ngOnInit() {
     ensureOverlayPolyfills();
@@ -43,11 +56,23 @@ export class AdminAlertsComponent implements OnInit, OnDestroy {
       this.syncPopover();
     }));
     // A reused route's view loses its open popover while detached, so it is shown again on return.
-    this.sub.add(this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => this.syncPopover()));
+    // Entering the chat from another route refetches, since an Admin page may have cleared a condition.
+    this.sub.add(this.router.events.pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd)).subscribe(e => {
+      const path = e.urlAfterRedirects.split(/[?#]/, 1)[0];
+      if (path === '/chat' && this.previousPath !== '/chat') {
+        this.adminAlertService.refresh();
+      }
+      this.previousPath = path;
+      this.syncPopover();
+    }));
+    // A popover shown after a modal dialog sits above it but is inert, so alerts wait for it to close.
+    this.dialogObserver = new MutationObserver(() => this.syncPopover());
+    this.dialogObserver.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['open'] });
   }
 
   ngOnDestroy() {
     this.sub.unsubscribe();
+    this.dialogObserver?.disconnect();
   }
 
   dismiss(id: string) {
@@ -78,14 +103,19 @@ export class AdminAlertsComponent implements OnInit, OnDestroy {
       return;
     }
     const isOpen = el.matches(':popover-open') || el.classList.contains('\\:popover-open');
+    const show = this.latestCount > 0 && !this.modalOpen();
     try {
-      if (this.latestCount > 0 && !isOpen) {
+      if (show && !isOpen) {
         el.showPopover();
-      } else if (this.latestCount === 0 && isOpen) {
+      } else if (!show && isOpen) {
         el.hidePopover();
       }
     } catch {
       // A popover that changed state in between needs nothing more.
     }
+  }
+
+  private modalOpen(): boolean {
+    return document.querySelector(MODAL_DIALOG_SELECTOR) !== null;
   }
 }

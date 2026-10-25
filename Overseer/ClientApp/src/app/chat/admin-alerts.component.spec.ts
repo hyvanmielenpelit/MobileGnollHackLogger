@@ -13,6 +13,8 @@ describe('AdminAlertsComponent', () => {
   let fixture: ComponentFixture<AdminAlertsComponent>;
   let alerts: BehaviorSubject<SystemAlert[]>;
   let dismiss: Mock;
+  let refresh: Mock;
+  let dialogs: HTMLDialogElement[];
 
   const alert = (overrides: Partial<SystemAlert> = {}): SystemAlert => ({
     id: 'missing-config', type: 'warning', message: '2 system configurations use models that are not in the catalog.', ...overrides
@@ -21,21 +23,48 @@ describe('AdminAlertsComponent', () => {
   const el = (): HTMLElement => fixture.nativeElement;
   const items = () => Array.from(el().querySelectorAll<HTMLElement>('.admin-alert'));
   const link = () => el().querySelector<HTMLAnchorElement>('a.admin-alert-link');
+  const container = () => el().querySelector<HTMLElement>('#admin-alerts-popover')!;
+
+  /** A modal dialog on the page, closed and removed after the test. */
+  function openModal(): HTMLDialogElement {
+    const dialog = document.createElement('dialog');
+    document.body.appendChild(dialog);
+    dialogs.push(dialog);
+    dialog.showModal();
+    return dialog;
+  }
+
+  /** Lets the dialog observer's callback run: a native microtask, which zone.js's promise drain would overtake. */
+  const observerTick = () => new Promise<void>(resolve => setTimeout(resolve));
 
   beforeEach(async () => {
     alerts = new BehaviorSubject<SystemAlert[]>([]);
     dismiss = vi.fn((id: string) => alerts.next(alerts.value.filter(a => a.id !== id)));
+    refresh = vi.fn();
+    dialogs = [];
 
     await TestBed.configureTestingModule({
       imports: [AdminAlertsComponent],
       providers: [
-        provideRouter([{ path: 'admin/:tab', component: AdminStubComponent }]),
-        { provide: AdminAlertService, useValue: { alerts$: alerts.asObservable(), dismiss } }
+        provideRouter([
+          { path: 'admin/:tab', component: AdminStubComponent },
+          { path: 'chat', component: AdminStubComponent }
+        ]),
+        { provide: AdminAlertService, useValue: { alerts$: alerts.asObservable(), dismiss, refresh } }
       ]
     }).compileComponents();
 
     fixture = TestBed.createComponent(AdminAlertsComponent);
     fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    dialogs.forEach(dialog => {
+      if (dialog.open) {
+        dialog.close();
+      }
+      dialog.remove();
+    });
   });
 
   it('labels the alert with a hidden glyph, the words "Admin alert" and the severity', () => {
@@ -129,5 +158,44 @@ describe('AdminAlertsComponent', () => {
     items()[0].querySelector<HTMLButtonElement>('.dismiss-btn')!.click();
     fixture.detectChanges();
     expect(container.matches(':popover-open')).toBe(false);
+  });
+
+  it('refreshes the alerts on entering the chat from another route, not within the chat', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/admin/x');
+    expect(refresh).not.toHaveBeenCalled();
+
+    await router.navigateByUrl('/chat');
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    await router.navigateByUrl('/chat?session=2');
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the container while a modal dialog is open and shows it again when it closes', async () => {
+    alerts.next([alert()]);
+    fixture.detectChanges();
+    expect(container().matches(':popover-open')).toBe(true);
+
+    const dialog = openModal();
+    await observerTick();
+    expect(container().matches(':popover-open')).toBe(false);
+
+    dialog.close();
+    await observerTick();
+    expect(container().matches(':popover-open')).toBe(true);
+  });
+
+  it('keeps an alert that arrives while a modal dialog is open hidden until the dialog closes', async () => {
+    const dialog = openModal();
+    await observerTick();
+
+    alerts.next([alert()]);
+    fixture.detectChanges();
+    expect(container().matches(':popover-open')).toBe(false);
+
+    dialog.close();
+    await observerTick();
+    expect(container().matches(':popover-open')).toBe(true);
   });
 });

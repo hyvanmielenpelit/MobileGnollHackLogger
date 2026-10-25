@@ -160,6 +160,61 @@ describe('AdminAlertService', () => {
     expect(ids(latest(next.alerts$))).toEqual([A.id, B.id]);
   });
 
+  it('fetches the alerts again on refresh and drops one the server no longer reports', () => {
+    const service = start(admin('Admin'), [A, B]);
+
+    service.refresh();
+    http.expectOne(ALERTS_URL).flush([B]);
+
+    expect(ids(latest(service.alerts$))).toEqual([B.id]);
+    expect(ids(latest(service.allAlerts$))).toEqual([B.id]);
+  });
+
+  it('forgets on refresh a dismissal of an alert the server no longer reports', () => {
+    const service = start(admin('Admin'), [A, B]);
+    service.dismiss(A.id);
+    expect(storedIds('Admin')).toEqual([A.id]);
+
+    service.refresh();
+    http.expectOne(ALERTS_URL).flush([B]);
+
+    expect(storedIds('Admin')).toBeNull();
+  });
+
+  it('ignores a refresh while a fetch is in flight', () => {
+    const service = start(admin('Admin'), [A, B]);
+
+    service.refresh();
+    service.refresh();
+    const pending = http.match(ALERTS_URL);
+    expect(pending.length).toBe(1);
+    pending[0].flush([B]);
+
+    service.refresh();
+    http.expectOne(ALERTS_URL).flush([A]);
+    expect(ids(latest(service.alerts$))).toEqual([A.id]);
+  });
+
+  it('fetches nothing on refresh while no admin is signed in', () => {
+    const service = start(null, []);
+
+    service.refresh();
+
+    expect(latest(service.alerts$)).toEqual([]);
+  });
+
+  it('fetches again when the same admin is emitted again', () => {
+    const users = new BehaviorSubject<AuthUser | null>(admin('Admin'));
+    auth.user$ = users;
+    const service = TestBed.runInInjectionContext(() => new AdminAlertService());
+    http.expectOne(ALERTS_URL).flush([A, B]);
+
+    users.next(admin('Admin'));
+    http.expectOne(ALERTS_URL).flush([B]);
+
+    expect(ids(latest(service.alerts$))).toEqual([B.id]);
+  });
+
   it('reports dismissed alerts in allAlerts$', () => {
     const service = start(admin('Admin'), [A, B]);
     service.dismiss(A.id);
