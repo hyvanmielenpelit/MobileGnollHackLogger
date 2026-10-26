@@ -157,6 +157,16 @@ namespace MobileGnollHackLogger.Data
                 .HasIndex(l => new { l.AspNetUserId, l.TimestampUtc })
                 .IncludeProperties(l => new { l.SystemAiApiConfigurationId, l.RoleContext, l.InputTokens, l.OutputTokens, l.EstimatedCost });
 
+            // Range queries across all users (admin telemetry) filter on the timestamp alone. Covers every
+            // column those queries read, so it holds most of the table: only ModelDisplayName and PricingSource are left out.
+            modelBuilder.Entity<SystemAiUsageLog>()
+                .HasIndex(l => l.TimestampUtc)
+                .IncludeProperties(l => new
+                {
+                    l.Provider, l.ModelId, l.RoleContext, l.ThinkingLevel, l.AspNetUserId, l.InputTokens, l.OutputTokens,
+                    l.CacheReadInputTokens, l.CacheCreationInputTokens, l.EstimatedCost, l.TotalDurationMs
+                });
+
             modelBuilder.Entity<UserKeyAiUsageLog>(e =>
             {
                 e.HasOne(l => l.AspNetUser).WithMany(u => u.UserKeyAiUsageLogs).HasForeignKey(l => l.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);

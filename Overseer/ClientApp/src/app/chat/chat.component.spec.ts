@@ -114,7 +114,7 @@ import { provideRouter, Router } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { HttpResponse } from '@angular/common/http';
-import { of, Subject, throwError } from 'rxjs';
+import { defer, of, Subject, throwError } from 'rxjs';
 import { ChatService, ChatSessionDetailResponse, PrivateBadge, PrivateBadgeState } from '../services/chat.service';
 import { SettingsService, UserAiSettings, UserAiModel } from '../services/settings.service';
 import { AuthService } from '../services/auth.service';
@@ -792,6 +792,55 @@ describe('ChatComponent session loading and exclusivity', () => {
           component.loadSettings(false);
         }).not.toThrow();
         expect(component.hasApiKey).toBe(true);
+      });
+
+      it('should request the models once, alongside the settings, and apply them after the settings', () => {
+        const mockSettings: UserAiSettings = {
+          hasApiKey: true,
+          hasModel: true,
+          spoilerFreeMode: false,
+          showThoughtsAndTools: 3
+        };
+        const mockModels: UserAiModel[] = [
+          { id: 1, provider: 'google', modelId: 'gemini-3.7-flash', displayName: 'Gemini 3.7 Flash', isSystem: false, modelRole: 1 }
+        ];
+        vi.spyOn(settingsService, 'getSettingsResponse').mockReturnValue(of(new HttpResponse({ body: mockSettings })));
+        let modelRequests = 0;
+        const getUserModels = vi.spyOn(settingsService, 'getUserModels').mockReturnValue(defer(() => {
+          modelRequests++;
+          return of(mockModels);
+        }));
+        const setChatModels = (component as any).setChatModels.bind(component);
+        const stateWhenModelsApplied: { hasModel: boolean; showThoughtsAndTools: number }[] = [];
+        vi.spyOn(component as any, 'setChatModels').mockImplementation((models: unknown) => {
+          stateWhenModelsApplied.push({ hasModel: component.hasModel, showThoughtsAndTools: component.showThoughtsAndTools });
+          setChatModels(models);
+        });
+        component.hasModel = false;
+
+        component.loadSettings(false);
+
+        expect(getUserModels).toHaveBeenCalledTimes(1);
+        expect(modelRequests).toBe(1);
+        expect(stateWhenModelsApplied).toEqual([{ hasModel: true, showThoughtsAndTools: 3 }]);
+        expect(component.userModels.length).toBe(1);
+      });
+
+      it('should request the models once when that request fails', () => {
+        vi.spyOn(settingsService, 'getSettingsResponse').mockReturnValue(
+          of(new HttpResponse({ body: { hasApiKey: true, hasModel: true, spoilerFreeMode: false } as UserAiSettings })));
+        let modelRequests = 0;
+        const getUserModels = vi.spyOn(settingsService, 'getUserModels').mockReturnValue(defer(() => {
+          modelRequests++;
+          return throwError(() => new TypeError('Failed to fetch'));
+        }));
+
+        expect(() => {
+          component.loadSettings(false);
+        }).not.toThrow();
+
+        expect(getUserModels).toHaveBeenCalledTimes(1);
+        expect(modelRequests).toBe(1);
       });
     });
 
@@ -3526,5 +3575,119 @@ describe('ChatComponent rename keys', () => {
     press({ key: 'Escape', isComposing: true });
 
     expect(cancelSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatComponent streaming render batching', () => {
+  let component: ChatComponent;
+  let fixture: ComponentFixture<ChatComponent>;
+  let chatService: ChatService;
+
+  const host = () => fixture.nativeElement as HTMLElement;
+  /** The rendered text of the reply being streamed. */
+  const streamedText = () => host().querySelector('.message-box.assistant .markdown-body')?.textContent ?? '';
+  const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+  const chunks = Array.from({ length: 10 }, (_, i) => `part${i} `);
+  const fullText = chunks.join('');
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ChatComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting()
+      ]
+    }).compileComponents();
+
+    stubSignalRConnection();
+    fixture = TestBed.createComponent(ChatComponent);
+    component = fixture.componentInstance;
+    chatService = TestBed.inject(ChatService);
+    const settingsService = TestBed.inject(SettingsService);
+    (component as any).hubConnection = null;
+    (component as any).hubStartPromise = null;
+    vi.spyOn(component, 'loadSessions').mockReturnValue(undefined);
+    vi.spyOn(settingsService, 'getSettingsResponse').mockReturnValue(of(new HttpResponse({
+      body: { hasApiKey: true, hasModel: true, spoilerFreeMode: false, showThoughtsAndTools: 2 } as UserAiSettings
+    })));
+    vi.spyOn(settingsService, 'getUserModels').mockReturnValue(of([] as UserAiModel[]));
+    fixture.detectChanges();
+    // Avatar transitions render on their own; stubbed so that only streaming renders are counted.
+    vi.spyOn(component as any, 'applyAvatarState').mockImplementation(() => {});
+  });
+
+  it('renders ten chunks of one task once, at the next animation frame', async () => {
+    component.isStreaming = true;
+    component.hasRealContent = true;
+    const render = vi.spyOn(component.cdr, 'detectChanges');
+
+    for (const data of chunks) {
+      component.processChatEvent({ type: 'chunk', data });
+    }
+
+    expect(component.streamingMessage).toBe(fullText);
+    expect(render).not.toHaveBeenCalled();
+
+    await nextFrame();
+
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(streamedText()).toContain(fullText.trim());
+  });
+
+  it('renders the replayed events of a session load once, after the last of them', async () => {
+    const rendered: string[] = [];
+    const detectChanges = component.cdr.detectChanges.bind(component.cdr);
+    vi.spyOn(component.cdr, 'detectChanges').mockImplementation(() => {
+      rendered.push(component.streamingMessage);
+      detectChanges();
+    });
+    vi.spyOn(chatService, 'getSession').mockReturnValue(of(new HttpResponse<ChatSessionDetailResponse>({
+      body: {
+        id: 7,
+        title: 'Ongoing reply',
+        messages: [
+          { id: 1, role: 'user', content: 'Tell me about gnolls.', timestampUtc: '2026-10-26T10:00:00Z' }
+        ],
+        hasOngoingGeneration: true,
+        ongoingGeneration: {
+          events: chunks.map((data, i) => ({ seqNo: i + 1, type: 'chunk' as const, data }))
+        }
+      }
+    })));
+
+    await component.loadSession(7);
+
+    expect(component.streamingMessage).toBe(fullText);
+    expect(rendered.filter(text => text.length > 0)).toEqual([fullText]);
+
+    // The loader gives way to the reply at the repaint frame the load schedules.
+    await nextFrame();
+    expect(streamedText()).toContain(fullText.trim());
+  });
+
+  it('shows the full text at done without waiting for a frame, then commits the reply', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      component.isStreaming = true;
+      component.hasRealContent = true;
+      for (const data of chunks) {
+        component.processChatEvent({ type: 'chunk', data });
+      }
+      expect(streamedText()).not.toContain(fullText.trim());
+
+      component.processChatEvent({ type: 'done', data: '' });
+
+      expect(streamedText()).toContain(fullText.trim());
+      expect((component as any).streamRenderFrame).toBeNull();
+
+      // Past the longest avatar loop, which the done handler waits out before committing the reply.
+      vi.advanceTimersByTime(20000);
+
+      expect(component.isStreaming).toBe(false);
+      expect(component.messages[component.messages.length - 1].content).toBe(fullText);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

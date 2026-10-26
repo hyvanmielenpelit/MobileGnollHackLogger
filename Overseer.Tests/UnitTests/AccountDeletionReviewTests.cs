@@ -470,7 +470,7 @@ public sealed class AccountDeletionReviewTests : IDisposable
     }
 
     [Fact]
-    public void TheAdminAlertCountsPendingAndOverdueRequests()
+    public async Task TheAdminAlertCountsPendingAndOverdueRequests()
     {
         DateTime now = DateTime.UtcNow;
         var old = new AccountDeletionRequest { AspNetUserId = "u-old", UserNameSnapshot = "old", RequestedUtc = now.AddDays(-26), Status = AccountDeletionRequestStatus.Pending, HoldReasons = "Manual hold" };
@@ -479,7 +479,7 @@ public sealed class AccountDeletionReviewTests : IDisposable
         var (health, provider) = HealthWith(old, declined, recent);
         using var _ = provider;
 
-        var alert = Assert.Single(health.GetSystemAlerts(), a => a.Id.StartsWith("account-deletion-review:", StringComparison.Ordinal));
+        var alert = Assert.Single(await health.GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id.StartsWith("account-deletion-review:", StringComparison.Ordinal));
 
         Assert.Equal($"account-deletion-review:{recent.Id}", alert.Id);
         Assert.Equal("2 account deletions await review (1 overdue).", alert.Message);
@@ -488,25 +488,25 @@ public sealed class AccountDeletionReviewTests : IDisposable
     }
 
     [Fact]
-    public void TheAdminAlertForOneRequestThatIsNotOverdueIsAWarning()
+    public async Task TheAdminAlertForOneRequestThatIsNotOverdueIsAWarning()
     {
         var recent = new AccountDeletionRequest { AspNetUserId = "u-new", UserNameSnapshot = "new", RequestedUtc = DateTime.UtcNow.AddDays(-1), Status = AccountDeletionRequestStatus.Pending, HoldReasons = "Manual hold" };
         var (health, provider) = HealthWith(recent);
         using var _ = provider;
 
-        var alert = Assert.Single(health.GetSystemAlerts(), a => a.Id.StartsWith("account-deletion-review:", StringComparison.Ordinal));
+        var alert = Assert.Single(await health.GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id.StartsWith("account-deletion-review:", StringComparison.Ordinal));
 
         Assert.Equal("1 account deletion awaits review.", alert.Message);
         Assert.Equal("warning", alert.Type);
     }
 
     [Fact]
-    public void NoPendingRequestsRaiseNoAlert()
+    public async Task NoPendingRequestsRaiseNoAlert()
     {
         var declined = new AccountDeletionRequest { AspNetUserId = "u", UserNameSnapshot = "x", RequestedUtc = DateTime.UtcNow.AddDays(-60), Status = AccountDeletionRequestStatus.Declined, HoldReasons = "Manual hold" };
         var (health, provider) = HealthWith(declined);
         using var _ = provider;
 
-        Assert.DoesNotContain(health.GetSystemAlerts(), a => a.Id.StartsWith("account-deletion-review:", StringComparison.Ordinal));
+        Assert.DoesNotContain(await health.GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id.StartsWith("account-deletion-review:", StringComparison.Ordinal));
     }
 }

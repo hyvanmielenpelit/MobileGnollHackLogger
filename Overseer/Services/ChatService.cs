@@ -846,12 +846,14 @@ public class ChatService
                prompt assembly, the tool-call digest, snapshot detection -- is written once. */
             var pastMessages = isEphemeralSession
                 ? ephemeralSession!.Messages.Select(m => m.ToChatMessage()).OrderBy(m => m.TimestampUtc).ToList()
-                : dbContext.ChatMessage.Where(m => m.ChatSessionId == currentSessionId).OrderBy(m => m.TimestampUtc).ToList();
+                : await dbContext.ChatMessage.AsNoTracking().Where(m => m.ChatSessionId == currentSessionId).OrderBy(m => m.TimestampUtc).ToListAsync(cancellationToken);
             var recentMessageIds = pastMessages.OrderByDescending(m => m.TimestampUtc).Take(5).Select(m => m.Id).ToHashSet();
 
+            // Only the recent messages' images are sent, so only their attachments are loaded.
+            var recentMessageIdList = recentMessageIds.ToList();
             var pastAttachments = isEphemeralSession
                 ? new List<ChatMessageAttachment>()
-                : dbContext.ChatMessageAttachment.Where(a => pastMessages.Select(m => m.Id).Contains(a.ChatMessageId)).ToList();
+                : await dbContext.ChatMessageAttachment.AsNoTracking().Where(a => recentMessageIdList.Contains(a.ChatMessageId)).ToListAsync(cancellationToken);
             var baseDir = _configuration["ConversationsDataLocation"];
 
             var pastMessageIds = pastMessages.Select(m => m.Id).ToList();
@@ -860,7 +862,7 @@ public class ChatService
                     .SelectMany(m => m.ToolCalls.Select(tc => tc.ToChatMessageToolCall(m.Id)))
                     .ToList()
                 : pastMessageIds.Count > 0
-                ? dbContext.ChatMessageToolCall
+                ? await dbContext.ChatMessageToolCall
                     .AsNoTracking()
                     .Where(tc => pastMessageIds.Contains(tc.ChatMessageId))
                     .Select(tc => new ChatMessageToolCall
@@ -877,7 +879,7 @@ public class ChatService
                         Depth = tc.Depth,
                         BatchIndex = tc.BatchIndex
                     })
-                    .ToList()
+                    .ToListAsync(cancellationToken)
                 : new List<ChatMessageToolCall>();
 
             /* Decrypted IN PLACE, and this is the one place that is safe: pastToolCalls is an
@@ -898,10 +900,10 @@ public class ChatService
             {
                 /* Decrypted into a LOCAL, never onto pm.Content.
 
-                   pastMessages is loaded TRACKED (the only AsNoTracking in this method is on
-                   the tool-call query below). Assigning the plaintext back onto pm.Content
-                   would make the SaveChangesAsync at the end of this turn write plaintext into
-                   a confidential session -- inverting the feature, silently, and only for the
+                   pastMessages is loaded untracked, but the rule stands: if this query were
+                   ever tracked again, assigning the plaintext back onto pm.Content would make
+                   the SaveChangesAsync at the end of this turn write plaintext into a
+                   confidential session -- inverting the feature, silently, and only for the
                    sessions that asked for protection. */
                 var content = (decryptContent ? _contentProtection.Decrypt(session, pm.Content) : pm.Content) ?? "";
                 if (includeToolDigest && pm.Role == "assistant")
@@ -941,7 +943,7 @@ public class ChatService
                             var fullPath = Path.Combine(baseDir, att.RelativePath ?? "");
                             if (System.IO.File.Exists(fullPath))
                             {
-                                var bytes = System.IO.File.ReadAllBytes(fullPath);
+                                var bytes = await System.IO.File.ReadAllBytesAsync(fullPath, cancellationToken);
                                 /* These files are .enc in a confidential session, so without the
                                    decrypt the model is handed ciphertext labelled image/png. */
                                 if (decryptContent)

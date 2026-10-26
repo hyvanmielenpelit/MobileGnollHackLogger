@@ -144,7 +144,7 @@ public class ConfigHealthService
         }
     }
 
-    public IEnumerable<SystemAlert> GetSystemAlerts()
+    public async Task<IReadOnlyList<SystemAlert>> GetSystemAlertsAsync(CancellationToken ct = default)
     {
         var alerts = new List<SystemAlert>();
 
@@ -281,10 +281,10 @@ public class ConfigHealthService
                 var dbContext = endpointScope.ServiceProvider
                     .GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
 
-                var configured = dbContext.SystemAiApiConfigurations
+                var configured = await dbContext.SystemAiApiConfigurations
                     .Where(c => c.BaseUrl != null && c.BaseUrl != "")
                     .Select(c => new { c.Id, c.DisplayName, c.BaseUrl, c.CustomHeadersJson, c.ApiVersion })
-                    .ToList();
+                    .ToListAsync(ct);
 
                 foreach (var c in configured)
                 {
@@ -301,7 +301,7 @@ public class ConfigHealthService
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!ex.IsCanceledBy(ct))
             {
                 _logger?.LogWarning(ex, "Failed to evaluate custom endpoint alerts in ConfigHealthService");
             }
@@ -320,10 +320,10 @@ public class ConfigHealthService
                 var dbContext = retiredScope.ServiceProvider
                     .GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
 
-                var enabled = dbContext.SystemAiApiConfigurations
+                var enabled = await dbContext.SystemAiApiConfigurations
                     .Where(c => c.IsEnabled)
                     .Select(c => new { c.Provider, c.ModelId, c.ModelCatalogMode, c.BaseUrl })
-                    .ToList();
+                    .ToListAsync(ct);
 
                 var retiredGroups = enabled
                     .Where(c => availability.Evaluate(c.Provider, c.ModelId, c.ModelCatalogMode, c.BaseUrl).Kind
@@ -353,7 +353,7 @@ public class ConfigHealthService
                     });
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!ex.IsCanceledBy(ct))
             {
                 _logger?.LogWarning(ex, "Failed to evaluate retired model alerts in ConfigHealthService");
             }
@@ -383,8 +383,8 @@ public class ConfigHealthService
                 var dbContext = holdScope.ServiceProvider.GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
                 var holdOptions = holdScope.ServiceProvider.GetService<GnollHackServer.Data.Security.AccountHoldOptions>()
                     ?? new GnollHackServer.Data.Security.AccountHoldOptions();
-                var (pending, overdue, newestId) = Security.AccountDeletionReviewService
-                    .CountPendingAsync(dbContext, holdOptions, DateTime.UtcNow).GetAwaiter().GetResult();
+                var (pending, overdue, newestId) = await Security.AccountDeletionReviewService
+                    .CountPendingAsync(dbContext, holdOptions, DateTime.UtcNow, ct);
 
                 if (pending > 0)
                 {
@@ -400,7 +400,7 @@ public class ConfigHealthService
                     });
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!ex.IsCanceledBy(ct))
             {
                 _logger?.LogWarning(ex, "Failed to evaluate account deletion review alerts in ConfigHealthService");
             }
@@ -418,12 +418,12 @@ public class ConfigHealthService
                 var now = DateTime.UtcNow;
                 var since = now.AddHours(-24);
 
-                var spenders = dbContext.SystemAiUsageLogs
+                var spenders = (await dbContext.SystemAiUsageLogs
                     .Where(l => l.TimestampUtc >= since && (l.RoleContext == 1 || l.RoleContext == 2 || l.RoleContext == 3))
                     .GroupBy(l => new { l.AspNetUserId, l.AspNetUser.UserName })
                     .Select(g => new { g.Key.UserName, Total = g.Sum(l => l.EstimatedCost ?? 0m) })
                     .Where(s => s.Total >= spendThreshold)
-                    .ToList()
+                    .ToListAsync(ct))
                     .Where(s => !_configuration.IsAdmin(s.UserName))
                     .ToList();
 
@@ -443,13 +443,13 @@ public class ConfigHealthService
                     });
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!ex.IsCanceledBy(ct))
             {
                 _logger?.LogWarning(ex, "Failed to evaluate AI spend alerts in ConfigHealthService");
             }
         }
 
-        AddSnapshotGuardAlerts(alerts);
+        await AddSnapshotGuardAlertsAsync(alerts, ct);
 
         // Database Storage Health Alert
         if (_scopeFactory != null)
@@ -458,7 +458,7 @@ public class ConfigHealthService
             {
                 using var scope = _scopeFactory.CreateScope();
                 var metricsService = scope.ServiceProvider.GetRequiredService<DatabaseStorageMetricsService>();
-                var metrics = metricsService.GetStorageMetricsAsync(CancellationToken.None).GetAwaiter().GetResult();
+                var metrics = await metricsService.GetStorageMetricsAsync(ct);
 
                 if (metrics.StatusLevel == "Critical")
                 {
@@ -479,7 +479,7 @@ public class ConfigHealthService
                     });
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!ex.IsCanceledBy(ct))
             {
                 _logger?.LogWarning(ex, "Failed to evaluate database storage alert in ConfigHealthService");
             }
@@ -492,7 +492,7 @@ public class ConfigHealthService
     /// The snapshot guard's mode while it is not Enforce, game snapshots refused in the last 7 days, and users it
     /// suspended in the last 7 days. The changing part of each id makes a dismissed alert reappear on new events.
     /// </summary>
-    private void AddSnapshotGuardAlerts(List<SystemAlert> alerts)
+    private async Task AddSnapshotGuardAlertsAsync(List<SystemAlert> alerts, CancellationToken ct)
     {
         try
         {
@@ -546,10 +546,10 @@ public class ConfigHealthService
             var since = now.AddDays(-7);
             var invariant = System.Globalization.CultureInfo.InvariantCulture;
 
-            var refusals = dbContext.SecurityEvents.AsNoTracking()
+            var refusals = await dbContext.SecurityEvents.AsNoTracking()
                 .Where(e => e.Kind == MobileGnollHackLogger.Data.SecurityEventKind.SnapshotRejected && e.LastOccurredUtc >= since)
                 .Select(e => new { e.Count, e.AspNetUserId })
-                .ToList();
+                .ToListAsync(ct);
             if (refusals.Count > 0)
             {
                 int count = refusals.Sum(r => r.Count);
@@ -564,10 +564,10 @@ public class ConfigHealthService
                 });
             }
 
-            var blocks = dbContext.SecurityEvents.AsNoTracking()
+            var blocks = await dbContext.SecurityEvents.AsNoTracking()
                 .Where(e => e.Kind == MobileGnollHackLogger.Data.SecurityEventKind.AutoBlocked && e.OccurredUtc >= since)
                 .Select(e => new { e.Id, e.AspNetUserId })
-                .ToList();
+                .ToListAsync(ct);
             if (blocks.Count > 0)
             {
                 int users = blocks.Select(b => b.AspNetUserId).Distinct().Count();
@@ -581,7 +581,7 @@ public class ConfigHealthService
                 });
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(ct))
         {
             _logger?.LogWarning(ex, "Failed to evaluate snapshot guard alerts in ConfigHealthService");
         }

@@ -5613,6 +5613,10 @@ namespace GnollHackServer.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("TimestampUtc");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TimestampUtc"), new[] { "Provider", "ModelId", "RoleContext", "ThinkingLevel", "AspNetUserId", "InputTokens", "OutputTokens", "CacheReadInputTokens", "CacheCreationInputTokens", "EstimatedCost", "TotalDurationMs" });
+
                     b.HasIndex("AspNetUserId", "TimestampUtc");
 
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("AspNetUserId", "TimestampUtc"), new[] { "SystemAiApiConfigurationId", "RoleContext", "InputTokens", "OutputTokens", "EstimatedCost" });

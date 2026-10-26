@@ -45,6 +45,13 @@ namespace Overseer.Services.Tools
 
         public JsonElement ParameterSchema => _parameterSchema;
 
+        private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
         public Task<ToolResult> ExecuteAsync(JsonElement arguments, ToolExecutionContext context, System.Threading.CancellationToken cancellationToken)
         {
             if (!_sourceCodeService.IsIndexingComplete)
@@ -74,12 +81,7 @@ namespace Overseer.Services.Tools
                     _sourceCodeService, _configuration, ObjectConstantOf(result), SourceReferenceIndex.OnamesHeaderPath);
             }
 
-            var options = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            };
+            var options = _jsonOptions;
 
             string jsonResult = JsonSerializer.Serialize(result, options);
 

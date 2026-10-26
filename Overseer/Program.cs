@@ -8,6 +8,10 @@ using Overseer.Middleware;
 using Overseer.Security;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.StaticFiles;
+using System.IO.Compression;
+using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
 string? connectionString = builder.Configuration["ConnectionStrings:SqlDatabaseConnection"];
@@ -597,6 +601,16 @@ builder.Services.AddRateLimiter(options =>
     };
 });
 
+// The ASP.NET Core Module serves every request in-process, so IIS static compression never applies; disable IIS dynamic compression for this app if it is ever installed.
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
+builder.Services.Configure<GzipCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
+
 var app = builder.Build();
 
 app.Lifetime.ApplicationStarted.Register(() =>
@@ -621,9 +635,10 @@ else
 }
 
 app.UseHttpsRedirection();
-// Before UseStaticFiles so the headers cover static assets and the SPA fallback too.
+// Before UseStaticFiles so compression and the headers cover static assets and the SPA fallback too.
+app.UseResponseCompression();
 app.UseSecurityHeaders();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = Program.ApplyStaticFileCacheHeaders });
 app.UseRouting();
 app.UseAuthentication();
 
@@ -745,4 +760,31 @@ using (var benchmarkCleanupScope = app.Services.CreateScope())
 
 app.Run();
 
-public partial class Program { }
+public partial class Program
+{
+    // Angular's content-hashed bundles at the wwwroot root; the hash alphabet includes '_' and '-'.
+    private static readonly Regex HashedBundleName = new(
+        @"^(main|polyfills|styles|chunk)-[A-Za-z0-9_-]{8}\.(js|css)$", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Hashed bundles and <c>/media/</c> files are cached as immutable; a direct <c>/index.html</c>
+    /// is never cached, like the SPA fallback. Unhashed files get no Cache-Control.
+    /// </summary>
+    public static void ApplyStaticFileCacheHeaders(StaticFileResponseContext context)
+    {
+        string path = context.Context.Request.Path.Value ?? "";
+
+        if (path.Equals("/index.html", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Context.Response.Headers.CacheControl = "no-cache, no-store";
+            return;
+        }
+
+        bool isRootFile = path.LastIndexOf('/') == 0;
+        if (path.StartsWith("/media/", StringComparison.OrdinalIgnoreCase)
+            || (isRootFile && HashedBundleName.IsMatch(path.AsSpan(1))))
+        {
+            context.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+        }
+    }
+}

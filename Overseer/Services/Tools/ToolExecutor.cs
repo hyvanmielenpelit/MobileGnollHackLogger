@@ -314,7 +314,7 @@ namespace Overseer.Services.Tools
                         {
                             try
                             {
-                                var doc = JsonDocument.Parse(result.Content);
+                                using var doc = JsonDocument.Parse(result.Content);
                                 _logger.LogWarning("Tool {ToolName} returned large JSON ({Length} bytes). Returning error to force narrower query.", toolName, result.Content.Length);
                                 result = new ToolResult
                                 {

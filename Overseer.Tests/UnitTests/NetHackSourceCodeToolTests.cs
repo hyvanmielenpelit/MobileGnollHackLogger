@@ -148,7 +148,7 @@ enum nethack_types {
     }
 
     [Fact]
-    public void ConfigHealthService_WhenNetHackSourceCodePathMissing_ReturnsAlert()
+    public async Task ConfigHealthService_WhenNetHackSourceCodePathMissing_ReturnsAlert()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
@@ -160,13 +160,13 @@ enum nethack_types {
             .Build();
 
         var healthService = new ConfigHealthService(config);
-        var alerts = healthService.GetSystemAlerts().ToList();
+        var alerts = (await healthService.GetSystemAlertsAsync(TestContext.Current.CancellationToken)).ToList();
 
         Assert.Contains(alerts, a => a.Id == "nethack-source-code-path-missing");
     }
 
     [Fact]
-    public void ConfigHealthService_WhenNetHackSourceCodePathConfigured_NoAlert()
+    public async Task ConfigHealthService_WhenNetHackSourceCodePathConfigured_NoAlert()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
@@ -178,7 +178,7 @@ enum nethack_types {
             .Build();
 
         var healthService = new ConfigHealthService(config);
-        var alerts = healthService.GetSystemAlerts().ToList();
+        var alerts = (await healthService.GetSystemAlertsAsync(TestContext.Current.CancellationToken)).ToList();
 
         Assert.DoesNotContain(alerts, a => a.Id == "nethack-source-code-path-missing");
     }

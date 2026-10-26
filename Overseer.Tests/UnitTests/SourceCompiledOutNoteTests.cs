@@ -1,6 +1,9 @@
 namespace Overseer.Tests.UnitTests;
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
 using Overseer.Services.Tools;
 using Xunit;
 
@@ -243,6 +246,190 @@ public class SourceCompiledOutNoteTests
             + ">>> 8: int real_function(void)\n";
 
         Assert.Null(SourceCompiledOutNote.ForSearchMatches(content, path => SingleBlockFile));
+    }
+
+    // Directive shapes the per-file mask must agree with the per-line scan on, keyed by path.
+    private static readonly Dictionary<string, string[]> MaskFixtures = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["src/nested.c"] = new[]
+        {
+            "live1();",
+            "#if 0",
+            "a();",
+            "#if 0",
+            "b();",
+            "#endif",
+            "c();",
+            "#endif",
+            "live2();",
+        },
+        ["src/zero_else.c"] = new[] { "#if 0", "old();", "#else", "new();", "#endif", "after();" },
+        ["src/elif.c"] = new[] { "#if 0", "old();", "#elif defined(X)", "x();", "#else", "y();", "#endif", "z();" },
+        ["src/ifdef_inside_zero.c"] = new[]
+        {
+            "#if 0",
+            "#ifdef DEBUG",
+            "dbg();",
+            "#else",
+            "nodbg();",
+            "#endif",
+            "gone();",
+            "#endif",
+            "live();",
+        },
+        ["src/unterminated.c"] = new[] { "live();", "#if 0", "a();", "b();" },
+        ["src/indented.c"] = new[]
+        {
+            "x();",
+            "#  if 0",
+            "a();",
+            "#  endif",
+            "y();",
+            "    #if 0",
+            "b();",
+            "    #endif",
+            "  # if 0",
+            "c();",
+            "  #else",
+            "d();",
+            "  #endif",
+            "e();",
+        },
+        ["src/hash_not_directive.c"] = new[]
+        {
+            "char c = '#';",
+            "/* #if 0 */",
+            "#include <stdio.h>",
+            "#define X 1",
+            "#if X",
+            "#if 0",
+            "q();",
+            "s = \"#endif\";",
+            "#endif",
+            "#endif",
+            "r();",
+        },
+        ["src/empty.c"] = Array.Empty<string>(),
+    };
+
+    [Fact]
+    public void BuildMask_AgreesWithIsInsideCompiledOutRegion_OnEveryLine()
+    {
+        foreach (var lines in MaskFixtures.Values)
+        {
+            bool[] perLine = Enumerable.Range(1, lines.Length)
+                .Select(n => SourceCompiledOutNote.IsInsideCompiledOutRegion(lines, n))
+                .ToArray();
+
+            Assert.Equal(perLine, SourceCompiledOutNote.BuildMask(lines));
+        }
+    }
+
+    [Fact]
+    public void ForSearchMatches_EachMarkedLine_MatchesTheReferenceLoop()
+    {
+        foreach (var (path, lines) in MaskFixtures)
+        {
+            for (int n = 0; n <= lines.Length + 1; n++)
+            {
+                string content = $"--- {path}:L{n} ---\n>>> {n}: text\n";
+
+                Assert.Equal(
+                    ReferenceForSearchMatches(content, LookupMaskFixture),
+                    SourceCompiledOutNote.ForSearchMatches(content, LookupMaskFixture));
+            }
+        }
+    }
+
+    [Fact]
+    public void ForSearchMatches_ManyFilesAndMatches_MatchesTheReferenceLoop()
+    {
+        var contents = new List<string>
+        {
+            // Out-of-range lines, an unknown file, then matches in two files.
+            "--- src/nested.c:L1 ---\n>>> 0: x\n>>> 10: x\n"
+                + "--- src/missing.c:L3 ---\n>>> 3: x\n"
+                + "--- src/zero_else.c:L2 ---\r\n    1: #if 0\r\n>>> 2: old();\r\n"
+                + "--- src/NESTED.c:L5 ---\n>>> 5: b();\n>>> 7: c();\n",
+            // A file revisited after another file's header.
+            "--- src/indented.c:L3 ---\n>>> 1: x();\n>>> 3: a();\n"
+                + "--- src/elif.c:L4 ---\n>>> 4: x();\n"
+                + "--- src/indented.c:L10 ---\n>>> 10: c();\n>>> 12: d();\n",
+            // Every line of every fixture, in one result.
+            string.Concat(MaskFixtures.Select(f =>
+                $"--- {f.Key}:L1 ---\n" + string.Concat(Enumerable.Range(1, f.Value.Length).Select(n => $">>> {n}: x\n")))),
+        };
+
+        foreach (string content in contents)
+        {
+            Assert.Equal(
+                ReferenceForSearchMatches(content, LookupMaskFixture),
+                SourceCompiledOutNote.ForSearchMatches(content, LookupMaskFixture));
+        }
+    }
+
+    private static string[]? LookupMaskFixture(string path) =>
+        MaskFixtures.TryGetValue(path, out var lines) ? lines : null;
+
+    // Reference for ForSearchMatches that rescans the file for every marked line through
+    // IsInsideCompiledOutRegion, with the same note composition.
+    private static string? ReferenceForSearchMatches(string? content, Func<string, string[]?> lineLookup)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(content) || lineLookup == null) return null;
+
+            string? path = null;
+            var compiledOut = new List<(string Path, int Line)>();
+            var lineCache = new Dictionary<string, string[]?>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string raw in content.Split('\n'))
+            {
+                string line = raw.TrimEnd('\r');
+                var header = Regex.Match(line, @"^--- (.+?):L\d+ ---\s*$");
+                if (header.Success)
+                {
+                    path = header.Groups[1].Value;
+                    continue;
+                }
+
+                if (path == null) continue;
+                var marked = Regex.Match(line, @"^>>> (\d+): (.*)$");
+                if (!marked.Success) continue;
+
+                if (!lineCache.TryGetValue(path, out var fileLines))
+                {
+                    fileLines = lineLookup(path);
+                    lineCache[path] = fileLines;
+                }
+                if (fileLines == null) continue;
+
+                int matchLine = int.Parse(marked.Groups[1].Value);
+                if (SourceCompiledOutNote.IsInsideCompiledOutRegion(fileLines, matchLine))
+                {
+                    compiledOut.Add((path, matchLine));
+                    if (compiledOut.Count == 2) break;
+                }
+            }
+
+            if (compiledOut.Count == 0) return null;
+            for (int shown = compiledOut.Count; shown >= 1; shown--)
+            {
+                var subset = compiledOut.Take(shown).Select(m => $"{m.Path}:{m.Line}").ToList();
+                string subject = subset.Count == 1 ? "match" : "matches";
+                string verb = subset.Count == 1 ? "is" : "are";
+                string joined = subset.Count == 1 ? subset[0] : $"{subset[0]} and {subset[1]}";
+
+                string note = $"[Not compiled: the {subject} at {joined} {verb} inside #if 0 ... #endif.]";
+                if (note.Length <= SourceCompiledOutNote.MaxLength) return note;
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private const string ReachabilityNote =

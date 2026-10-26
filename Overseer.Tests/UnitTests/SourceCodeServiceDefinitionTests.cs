@@ -486,6 +486,223 @@ public class SourceCodeServiceDefinitionTests : IDisposable
         Assert.Equal(omittedResult, zeroResult);
     }
 
+    /// <summary>
+    /// Builds the service used by the <see cref="SourceCodeService.GetFunctionBody"/> kind tests: one
+    /// definition of each kind get_function_definition looks up, each preceded by a line that names
+    /// the symbol without defining it where the kind allows one, so the first definition in document
+    /// order is the one found.
+    /// </summary>
+    private SourceCodeService CreateServiceWithDefinitionKinds()
+    {
+        File.WriteAllText(Path.Combine(_sourceDir, "src", "kinds.c"),
+            "/* kinds.c */\r\n" +
+            "static int kinds_prototype_style(int);\r\n" +
+            "/* kinds_function is defined below. */\r\n" +
+            "int\r\n" +
+            "kinds_function(int x)\r\n" +
+            "{\r\n" +
+            "    return x + 1;\r\n" +
+            "}\r\n" +
+            "static int kinds_prototype_style(int y)\r\n" +
+            "{\r\n" +
+            "    return kinds_function(y);\r\n" +
+            "}\r\n");
+
+        File.WriteAllText(Path.Combine(_sourceDir, "include", "kinds.h"),
+            "/* kinds.h */\r\n" +
+            "#define KINDS_MACRO(a, b) \\\r\n" +
+            "    ((a) + (b))\r\n" +
+            "struct kinds_struct {\r\n" +
+            "    int field;\r\n" +
+            "};\r\n" +
+            "enum kinds_enum {\r\n" +
+            "    KINDS_ENUM_FIRST,\r\n" +
+            "    KINDS_ENUM_SECOND\r\n" +
+            "};\r\n" +
+            "typedef struct {\r\n" +
+            "    int left;\r\n" +
+            "    int right;\r\n" +
+            "} kinds_pair_t;\r\n" +
+            "typedef struct kinds_struct kinds_type_t;\r\n");
+
+        return CreateService();
+    }
+
+    [Fact]
+    public void GetFunctionBody_FunctionDefinition_ReturnsTheBodyWithTwoLinesOfLeadingContext()
+    {
+        using var service = CreateServiceWithDefinitionKinds();
+
+        string result = service.GetFunctionBody("kinds_function", "function");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- src/kinds.c:L3-L8 (kinds_function, 6 lines) ---",
+            "/* kinds_function is defined below. */",
+            "int",
+            "kinds_function(int x)",
+            "{",
+            "    return x + 1;",
+            "}"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    /// <summary>
+    /// A definition with its return type on the same line is found past the earlier forward
+    /// declaration, which ends in <c>;</c> and so is not a definition.
+    /// </summary>
+    [Fact]
+    public void GetFunctionBody_PrototypeStyleDefinition_SkipsTheForwardDeclaration()
+    {
+        using var service = CreateServiceWithDefinitionKinds();
+
+        string result = service.GetFunctionBody("kinds_prototype_style", "function");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- src/kinds.c:L7-L12 (kinds_prototype_style, 6 lines) ---",
+            "    return x + 1;",
+            "}",
+            "static int kinds_prototype_style(int y)",
+            "{",
+            "    return kinds_function(y);",
+            "}"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void GetFunctionBody_Macro_ReturnsTheDefineWithItsContinuationLine()
+    {
+        using var service = CreateServiceWithDefinitionKinds();
+
+        string result = service.GetFunctionBody("KINDS_MACRO", "macro");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- include/kinds.h:L1-L3 (KINDS_MACRO, 3 lines) ---",
+            "/* kinds.h */",
+            "#define KINDS_MACRO(a, b) \\",
+            "    ((a) + (b))"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    /// <summary>
+    /// The braced block starts at its opening brace, so the text before the brace on the
+    /// <c>struct</c> line is not part of the output.
+    /// </summary>
+    [Fact]
+    public void GetFunctionBody_Struct_ReturnsTheBracedBlockAfterOneLineOfContext()
+    {
+        using var service = CreateServiceWithDefinitionKinds();
+
+        string result = service.GetFunctionBody("kinds_struct", "struct");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- include/kinds.h:L3-L6 (kinds_struct, 4 lines) ---",
+            "    ((a) + (b))",
+            "{",
+            "    int field;",
+            "}"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void GetFunctionBody_Enum_ReturnsTheBracedBlockAfterOneLineOfContext()
+    {
+        using var service = CreateServiceWithDefinitionKinds();
+
+        string result = service.GetFunctionBody("kinds_enum", "enum");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- include/kinds.h:L6-L10 (kinds_enum, 5 lines) ---",
+            "};",
+            "{",
+            "    KINDS_ENUM_FIRST,",
+            "    KINDS_ENUM_SECOND",
+            "}"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    /// <summary>
+    /// A one-line typedef at the end of the file has no braced block after it, so the output is
+    /// its context up to the last line of the file.
+    /// </summary>
+    [Fact]
+    public void GetFunctionBody_Typedef_ReturnsTheLineWithItsContext()
+    {
+        using var service = CreateServiceWithDefinitionKinds();
+
+        string result = service.GetFunctionBody("kinds_type_t", "type");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- include/kinds.h:L14-L15 (kinds_type_t, 2 lines) ---",
+            "} kinds_pair_t;",
+            "typedef struct kinds_struct kinds_type_t;"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    /// <summary>
+    /// The closing line of a multi-line typedef block is the match; the output walks back to its
+    /// <c>typedef struct</c> opener.
+    /// </summary>
+    [Fact]
+    public void GetFunctionBody_MultiLineTypedefClose_ReturnsTheWholeTypedefBlock()
+    {
+        using var service = CreateServiceWithDefinitionKinds();
+
+        string result = service.GetFunctionBody("kinds_pair_t", "type");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- include/kinds.h:L11-L14 (kinds_pair_t, 4 lines) ---",
+            "typedef struct {",
+            "    int left;",
+            "    int right;",
+            "} kinds_pair_t;"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void GetFunctionBody_UnknownName_ReturnsTheNoDefinitionMessage()
+    {
+        using var service = CreateServiceWithDefinitionKinds();
+
+        string result = service.GetFunctionBody("kinds_missing", "any");
+
+        Assert.Equal("No definition found for 'kinds_missing' of kind 'any'.", result);
+    }
+
+    /// <summary>
+    /// An enum member's name appears in the corpus, but no kind's pattern matches its line, so
+    /// the lookup is a miss.
+    /// </summary>
+    [Fact]
+    public void GetFunctionBody_NamePresentButNoPatternMatches_ReturnsTheNoDefinitionMessage()
+    {
+        using var service = CreateServiceWithDefinitionKinds();
+
+        string result = service.GetFunctionBody("KINDS_ENUM_FIRST", "any");
+
+        Assert.Equal("No definition found for 'KINDS_ENUM_FIRST' of kind 'any'.", result);
+    }
+
     private const string ExcerptFile = "src/excerpt.c";
     private const int ExcerptFileLines = 40;
 

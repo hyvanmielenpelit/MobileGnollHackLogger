@@ -89,9 +89,11 @@ namespace Overseer.Services.Tools
                 for (int batch = 0; batch < maxBatches; batch++)
                 {
                     var recentGames = await dbContext.GameLog
+                        .AsNoTracking()
                         .OrderByDescending(g => g.Id)
                         .Skip(batch * batchSize)
                         .Take(batchSize)
+                        .Select(g => new { g.Id, g.Name, g.StartTimeUTC, g.CharacterName, g.Role, g.DeathText })
                         .ToListAsync(cancellationToken);
 
                     foreach (var game in recentGames)

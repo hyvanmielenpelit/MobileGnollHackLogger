@@ -25,7 +25,7 @@ import { parseServerUtcDate } from '../utils/date.util';
 import { formatThinkingLevel, showReasoningBadge } from '../utils/model-badge-format.util';
 import { isImeComposing } from '../utils/ime.util';
 import * as signalR from '@microsoft/signalr';
-import { firstValueFrom, filter, Observable, Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
+import { firstValueFrom, filter, Observable, Subscription, Subject, ReplaySubject, debounceTime, distinctUntilChanged, share } from 'rxjs';
 export interface ToolClientRequest {
     type: string;
     requestId: string;
@@ -372,6 +372,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   realContentTimeout: any = null;
   pendingChunkBuffer: string = '';
   pendingChunkTimeout: any = null;
+  /** The animation frame that renders the streamed text, while one is pending. */
+  private streamRenderFrame: number | null = null;
+  /** Set while buffered events are replayed; the replay renders once when it ends. */
+  private suspendStreamRender = false;
   streamingMessage = '';
   isFinishingAnimation = false;
   finishDoneTimeout: any = null;
@@ -1495,6 +1499,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.cancelKatexPrefetch?.();
     if (this.timeUpdateInterval) clearInterval(this.timeUpdateInterval);
     if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
+    this.cancelStreamRender();
 
     // Restore document overflow and clean up viewport listener
     document.documentElement.style.overflow = '';
@@ -1610,6 +1615,17 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.loadSessions();
     }
 
+    /* The models are requested alongside the settings and applied after them. With every reset
+       off, a late subscriber receives the stored value or error, so the request is sent once. */
+    const tModels0 = performance.now();
+    const models$ = this.settingsService.getUserModels().pipe(share({
+      connector: () => new ReplaySubject<UserAiModel[]>(1),
+      resetOnError: false,
+      resetOnComplete: false,
+      resetOnRefCountZero: false
+    }));
+    models$.subscribe({ error: () => { } });
+
     this.settingsService.getSettingsResponse().subscribe({
       next: (httpResponse) => {
         const settingsDuration = performance.now() - t0;
@@ -1670,8 +1686,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           }
           this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
-          const tModels0 = performance.now();
-          this.settingsService.getUserModels().subscribe({
+          models$.subscribe({
             next: (models) => {
               const modelsDuration = performance.now() - tModels0;
               this.perfLog('Settings', `getUserModels received in ${modelsDuration.toFixed(1)}ms (${models.length} models)`);
@@ -1866,9 +1881,42 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       
       this.updateHasRealContent();
       this.updateDesiredAvatarState();
+      this.scheduleStreamRender();
+    }
+  }
+
+  /** Renders the streamed text and scrolls at the next animation frame, at most once per frame. */
+  private scheduleStreamRender(): void {
+    if (this.suspendStreamRender || this.streamRenderFrame !== null) return;
+    this.streamRenderFrame = requestAnimationFrame(() => {
+      this.streamRenderFrame = null;
+      this.cdr.detectChanges();
+      this.scrollToBottomClamped(false);
+    });
+  }
+
+  /** Renders a pending frame's update now, so it reaches the screen before the next event's. */
+  private flushStreamRender(): void {
+    if (this.cancelStreamRender()) {
       this.cdr.detectChanges();
       this.scrollToBottomClamped(false);
     }
+  }
+
+  /** Drops a pending frame without rendering. Returns whether one was pending. */
+  private cancelStreamRender(): boolean {
+    if (this.streamRenderFrame === null) return false;
+    cancelAnimationFrame(this.streamRenderFrame);
+    this.streamRenderFrame = null;
+    return true;
+  }
+
+  /** Ends a replay: the replayed state renders once, and streamed text renders per frame again. */
+  private resumeStreamRender(): void {
+    this.suspendStreamRender = false;
+    this.cancelStreamRender();
+    this.cdr.detectChanges();
+    this.scrollToBottomClamped(false);
   }
 
   static stripThoughts(text: string | null | undefined): string {
@@ -1988,6 +2036,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             this.debugService.log(`[Frontend] Error: Could not find any user message in the local array.`);
         }
 
+        this.flushStreamRender();
         this.cdr.detectChanges();
       } catch (e) {
         console.error('Failed to process user_message_created event', e);
@@ -2020,6 +2069,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         } else {
           this.attachmentExcerpts = [...this.attachmentExcerpts, notice];
         }
+        this.flushStreamRender();
         this.cdr.detectChanges();
       } catch (e) {
         this.debugService.log('[Frontend] Failed to parse attachment_excerpt event.');
@@ -2027,6 +2077,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     } else if (evt.type === 'status') {
       this.currentStatusText = evt.data;
       this.debugService.log(`[Frontend] status updated to: ${evt.data}`);
+      this.flushStreamRender();
       this.cdr.detectChanges();
     } else if (evt.type === 'thinking_chunk') {
       if (!this.isStreaming) {
@@ -2041,14 +2092,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.streamingMessage += '\n\n<div class="ai-thought">\n\n';
       }
       this.streamingMessage += evt.data;
-      this.cdr.detectChanges();
-      this.scrollToBottomClamped(false);
+      this.scheduleStreamRender();
       this.isThinkingActive = true;
     } else if (evt.type === 'ttft') {
       this.timeToFirstTokenMs = parseInt(evt.data, 10);
+      this.flushStreamRender();
       this.cdr.detectChanges();
     } else if (evt.type === 'duration') {
       this.totalDurationMs = parseInt(evt.data, 10);
+      this.flushStreamRender();
       this.cdr.detectChanges();
     } else if (evt.type === 'cost') {
       try {
@@ -2057,6 +2109,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.liveIsOperatorCost = d.isOperatorCost;
         this.liveOperatorCost = d.operatorCost ?? null;
         this.liveSubAgentCost = d.subAgentCost ?? null;
+        this.flushStreamRender();
         this.cdr.detectChanges();
       } catch { }
     } else if (evt.type === 'context') {
@@ -2070,6 +2123,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           inputLimitTokens: d.inputLimitTokens ?? undefined,
           modelDisplayName: d.modelDisplayName ?? undefined
         };
+        this.flushStreamRender();
         this.cdr.detectChanges();
         refreshAnchorPositioning();
       } catch { }
@@ -2101,8 +2155,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.streamingMessage += evt.data;
         this.updateHasRealContent();
         this.updateDesiredAvatarState();
-        this.cdr.detectChanges();
-        this.scrollToBottomClamped(false);
+        this.scheduleStreamRender();
       }
     } else if (evt.type === 'private_badge') {
       try {
@@ -2114,6 +2167,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         if (evtRef === this.currentSessionId
           && typeof d?.state === 'string' && Array.isArray(d?.controls)) {
           this.privateBadge = d as PrivateBadge;
+          this.flushStreamRender();
           this.cdr.detectChanges();
         } else if (evtRef === this.currentSessionId) {
           this.debugService.log('[Frontend] Ignored a private_badge event of an unexpected shape.');
@@ -2155,6 +2209,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         }
       }
       this.flushPendingChunkBuffer();
+      this.flushStreamRender();
       this.currentStatusText = `Error: ${evt.data}`;
       this.debugService.log(`[Backend Error] ${evt.data}`);
       this.streamingMessage += `\n\n**Error:** ${evt.data}`;
@@ -2213,6 +2268,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           depth: toolInfo.depth || 0
         });
         this.updateDesiredAvatarState();
+        this.flushStreamRender();
         this.cdr.detectChanges();
         this.scrollToBottomClamped(false);
       } catch(e) {}
@@ -2225,6 +2281,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           tc.result = toolInfo.result;
         }
         this.updateDesiredAvatarState();
+        this.flushStreamRender();
         this.cdr.detectChanges();
         this.scrollToBottomClamped(false);
       } catch(e) {}
@@ -2237,6 +2294,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           tc.error = toolInfo.error;
         }
         this.updateDesiredAvatarState();
+        this.flushStreamRender();
         this.cdr.detectChanges();
         this.scrollToBottomClamped(false);
       } catch(e) {}
@@ -2253,6 +2311,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         const s = this.sessions.find(x => String(x.id) === String(data.sessionId));
         if (s) {
           s.title = data.title;
+          this.flushStreamRender();
           this.cdr.detectChanges();
         }
       } catch(e) {}
@@ -2274,6 +2333,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.isGeneratingTitle = true;
           this.titleStatusText = data.status;
         }
+        this.flushStreamRender();
         this.cdr.detectChanges();
       } catch(e) {}
     } else if (evt.type === 'done') {
@@ -2288,6 +2348,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       }
       if (this.isStreaming) {
         this.flushPendingChunkBuffer();
+        this.flushStreamRender();
         if (this.isThinkingActive) {
             this.isThinkingActive = false;
             this.streamingMessage += '\n\n</div>\n\n';
@@ -2739,6 +2800,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       clearTimeout(this.pendingChunkTimeout);
       this.pendingChunkTimeout = null;
     }
+    this.cancelStreamRender();
     this.streamingMessage = '';
     if (this.realContentTimeout) {
       clearTimeout(this.realContentTimeout);
@@ -2921,12 +2983,17 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           const maxSeq = seqNos.length > 0 ? Math.max(...seqNos) : 'none';
           this.debugService.log(`[Frontend] Session ${id} has ongoing generation with ${s.ongoingGeneration.events.length} buffered events (seqNo range: ${minSeq}–${maxSeq}). Replaying...`);
           this.isStreaming = true;
-          for (const evt of s.ongoingGeneration.events) {
-            if (evt.seqNo !== undefined && evt.seqNo !== null && evt.seqNo <= this.lastSeenSeqNo) {
-              this.debugService.log(`[Frontend] Skipping duplicated replayed event seqNo=${evt.seqNo}`);
-              continue;
+          this.suspendStreamRender = true;
+          try {
+            for (const evt of s.ongoingGeneration.events) {
+              if (evt.seqNo !== undefined && evt.seqNo !== null && evt.seqNo <= this.lastSeenSeqNo) {
+                this.debugService.log(`[Frontend] Skipping duplicated replayed event seqNo=${evt.seqNo}`);
+                continue;
+              }
+              this.processChatEvent(evt);
             }
-            this.processChatEvent(evt);
+          } finally {
+            this.resumeStreamRender();
           }
           this.debugService.log(`[Frontend] Replay complete. isStreaming=${this.isStreaming}, streamingMessage length=${this.streamingMessage.length}`);
         }
@@ -2943,11 +3010,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           const minSeq = seqNos.length > 0 ? Math.min(...seqNos) : 'none';
           const maxSeq = seqNos.length > 0 ? Math.max(...seqNos) : 'none';
           this.debugService.log(`[Frontend] Flushing ${this.liveEventBuffer.length} buffered live events (seqNo range: ${minSeq}–${maxSeq}, lastSeenSeqNo=${this.lastSeenSeqNo}).`);
-          for (const evt of this.liveEventBuffer) {
-            if (evt.seqNo !== undefined && evt.seqNo !== null && evt.seqNo <= this.lastSeenSeqNo) {
-              continue;
+          this.suspendStreamRender = true;
+          try {
+            for (const evt of this.liveEventBuffer) {
+              if (evt.seqNo !== undefined && evt.seqNo !== null && evt.seqNo <= this.lastSeenSeqNo) {
+                continue;
+              }
+              this.processChatEvent(evt);
             }
-            this.processChatEvent(evt);
+          } finally {
+            this.resumeStreamRender();
           }
           this.liveEventBuffer = [];
         } else {
@@ -3014,8 +3086,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             (e: any) => e.seqNo != null && e.seqNo > this.lastSeenSeqNo
           );
           this.debugService.log(`[Frontend] Silent sync found ${missedEvents.length} missed events.`);
-          for (const evt of missedEvents) {
-            this.processChatEvent(evt);
+          this.suspendStreamRender = true;
+          try {
+            for (const evt of missedEvents) {
+              this.processChatEvent(evt);
+            }
+          } finally {
+            this.resumeStreamRender();
           }
         }
 

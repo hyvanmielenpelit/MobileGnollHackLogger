@@ -1045,7 +1045,7 @@ namespace Overseer.Services
                 try
                 {
                     var options = caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
-                    regex = new Regex(query, options, UserRegexMatchTimeout);
+                    regex = new Regex(query, options | RegexOptions.Compiled, UserRegexMatchTimeout);
                 }
                 catch (Exception ex)
                 {
@@ -1340,6 +1340,9 @@ namespace Overseer.Services
                 for (int i = 0; i < doc.ContentLines.Length; i++)
                 {
                     string line = doc.ContentLines[i];
+                    // Literal gate ahead of the patterns below: each embeds the escaped name and none
+                    // is case-insensitive, so a line missing the name's exact characters cannot match.
+                    if (!line.Contains(name, StringComparison.Ordinal)) continue;
                     bool match = false;
 
                     if ((kind == "any" || kind == "function") && isCFile)
@@ -1941,16 +1944,18 @@ namespace Overseer.Services
             return message.Length > MonsterStatsMissMaxChars ? message.Substring(0, MonsterStatsMissMaxChars) : message;
         }
 
+        private static readonly Regex MonsterSearchRegex = new(
+            $@"^\s*(?:{MonsterMacroAlternation})\(\s*""([^""]+)""", RegexOptions.IgnoreCase);
+
         public IEnumerable<string> SearchMonsters(string query)
         {
             var doc = Volatile.Read(ref _snapshot).Documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\monst.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/monst.c", StringComparison.OrdinalIgnoreCase));
             if (doc == null) return Enumerable.Empty<string>();
 
             var results = new List<string>();
-            var regex = new Regex($@"^\s*(?:{MonsterMacroAlternation})\(\s*""([^""]+)""", RegexOptions.IgnoreCase);
             foreach (var line in doc.ContentLines)
             {
-                var m = regex.Match(line);
+                var m = MonsterSearchRegex.Match(line);
                 if (m.Success)
                 {
                     string monName = m.Groups[1].Value;
@@ -2223,16 +2228,18 @@ namespace Overseer.Services
             return message.Length > ItemStatsMissMaxChars ? message.Substring(0, ItemStatsMissMaxChars) : message;
         }
 
+        private static readonly Regex ItemSearchRegex = new(
+            @"^\s*(?:WEAPON|ARMOR|POTION|SCROLL|SPELL|WAND|RING|AMULET|TOOL|GEM|ROCK|COIN|MISCELLANEOUSITEM|SUIT|HELM|CLOAK|SHIELD|GLOVES|BOOTS|SHIRT|ROBE|BRACERS|WEAPONSHIELD|WEAPONBOOTS|WEAPONGLOVES|DRGN_ARMR|FOOD|REAGENT|CHARGEDRING|SPELLTOOL|CONTAINER|WEPTOOL|BOW|PROJECTILE|GENERAL_[A-Z_]+)\(\s*""([^""]+)""", RegexOptions.IgnoreCase);
+
         public IEnumerable<string> SearchItems(string query)
         {
             var doc = Volatile.Read(ref _snapshot).Documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("src\\objects.c", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("src/objects.c", StringComparison.OrdinalIgnoreCase));
             if (doc == null) return Enumerable.Empty<string>();
 
             var results = new List<string>();
-            var regex = new Regex(@"^\s*(?:WEAPON|ARMOR|POTION|SCROLL|SPELL|WAND|RING|AMULET|TOOL|GEM|ROCK|COIN|MISCELLANEOUSITEM|SUIT|HELM|CLOAK|SHIELD|GLOVES|BOOTS|SHIRT|ROBE|BRACERS|WEAPONSHIELD|WEAPONBOOTS|WEAPONGLOVES|DRGN_ARMR|FOOD|REAGENT|CHARGEDRING|SPELLTOOL|CONTAINER|WEPTOOL|BOW|PROJECTILE|GENERAL_[A-Z_]+)\(\s*""([^""]+)""", RegexOptions.IgnoreCase);
             foreach (var line in doc.ContentLines)
             {
-                var m = regex.Match(line);
+                var m = ItemSearchRegex.Match(line);
                 if (m.Success)
                 {
                     string itemName = m.Groups[1].Value;
@@ -2393,16 +2400,18 @@ namespace Overseer.Services
             return response;
         }
 
+        private static readonly Regex ArtifactSearchRegex = new(
+            @"^\s*(?:GENERAL_ARTIFACT|A)\(\s*""([^""]+)""", RegexOptions.IgnoreCase);
+
         public IEnumerable<string> SearchArtifacts(string query)
         {
             var doc = Volatile.Read(ref _snapshot).Documents.Values.FirstOrDefault(d => d.FilePath.EndsWith("include\\artilist.h", StringComparison.OrdinalIgnoreCase) || d.FilePath.EndsWith("include/artilist.h", StringComparison.OrdinalIgnoreCase));
             if (doc == null) return Enumerable.Empty<string>();
 
             var results = new List<string>();
-            var regex = new Regex(@"^\s*(?:GENERAL_ARTIFACT|A)\(\s*""([^""]+)""", RegexOptions.IgnoreCase);
             foreach (var line in doc.ContentLines)
             {
-                var m = regex.Match(line);
+                var m = ArtifactSearchRegex.Match(line);
                 if (m.Success)
                 {
                     string artifactName = m.Groups[1].Value;

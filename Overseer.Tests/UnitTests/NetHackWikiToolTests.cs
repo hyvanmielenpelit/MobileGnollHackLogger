@@ -401,7 +401,7 @@ Spellcasters include gnomish wizards and other spell-slinging monsters.
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void ConfigHealthService_WhenNetHackWikiPathMissing_ReturnsAlert(string? path)
+    public async Task ConfigHealthService_WhenNetHackWikiPathMissing_ReturnsAlert(string? path)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
@@ -412,7 +412,7 @@ Spellcasters include gnomish wizards and other spell-slinging monsters.
             .Build();
 
         var healthService = new ConfigHealthService(config);
-        var alerts = healthService.GetSystemAlerts().ToList();
+        var alerts = (await healthService.GetSystemAlertsAsync(TestContext.Current.CancellationToken)).ToList();
 
         var wikiAlert = alerts.FirstOrDefault(a => a.Id == "nethack-wiki-path-missing");
         Assert.NotNull(wikiAlert);
@@ -421,7 +421,7 @@ Spellcasters include gnomish wizards and other spell-slinging monsters.
     }
 
     [Fact]
-    public void ConfigHealthService_WhenNetHackWikiPathConfigured_NoAlert()
+    public async Task ConfigHealthService_WhenNetHackWikiPathConfigured_NoAlert()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
@@ -432,7 +432,7 @@ Spellcasters include gnomish wizards and other spell-slinging monsters.
             .Build();
 
         var healthService = new ConfigHealthService(config);
-        var alerts = healthService.GetSystemAlerts().ToList();
+        var alerts = (await healthService.GetSystemAlertsAsync(TestContext.Current.CancellationToken)).ToList();
 
         Assert.DoesNotContain(alerts, a => a.Id == "nethack-wiki-path-missing");
     }

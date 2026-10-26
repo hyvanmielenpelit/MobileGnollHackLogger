@@ -196,7 +196,7 @@ public class AgentLoopRunner
             }
 
             hasToolsToRun = false;
-            string iterationText = "";
+            StringBuilder iterationText = new();
             bool lastEventWasToolCall = false;
 
             var requestTools = _toolRegistry.BuildToolsForRequest(
@@ -401,14 +401,14 @@ public class AgentLoopRunner
                     if (evt.Type == "thinking_chunk")
                     {
                         thoughtWriter.HandleThinkingChunk(sbFullResponse, evt.Data);
-                        iterationText += evt.Data;
+                        iterationText.Append(evt.Data);
                     }
                     else if (evt.Type == "chunk")
                     {
                         bool needsSpacer = false;
                         if (!string.IsNullOrEmpty(evt.Data))
                         {
-                            if ((toolIterations > 0 && string.IsNullOrEmpty(iterationText)) || lastEventWasToolCall)
+                            if ((toolIterations > 0 && iterationText.Length == 0) || lastEventWasToolCall)
                             {
                                 string cur = sbFullResponse.ToString();
                                 if (!string.IsNullOrWhiteSpace(cur) && !cur.EndsWith("\n") && !cur.EndsWith(" "))
@@ -421,7 +421,7 @@ public class AgentLoopRunner
                         }
 
                         thoughtWriter.HandleChunk(sbFullResponse, evt.Data, needsSpacer);
-                        iterationText += evt.Data;
+                        iterationText.Append(evt.Data);
                     }
 
                     if (evt.Type == "error")
@@ -475,7 +475,7 @@ public class AgentLoopRunner
             {
                 thoughtWriter.WrapPreToolVisibleText(sbFullResponse);
 
-                aiProvider.AppendAssistantToolCallsToHistory(messageHistory, iterationText, currentIterationToolCalls, currentIterationProviderItems);
+                aiProvider.AppendAssistantToolCallsToHistory(messageHistory, iterationText.ToString(), currentIterationToolCalls, currentIterationProviderItems);
 
                 var streamBaseIndex = streamToolCalls.Count;
                 var batchItems = new List<ToolBatchItem>(currentIterationToolCalls.Count);

@@ -58,11 +58,11 @@ public class ConfigHealthServiceTests
         ModelRole = 7
     };
 
-    private List<SystemAlert> RetiredAlerts() =>
-        CreateService().GetSystemAlerts().Where(a => a.Id.StartsWith("retired-model-", StringComparison.Ordinal)).ToList();
+    private async Task<List<SystemAlert>> RetiredAlerts() =>
+        (await CreateService().GetSystemAlertsAsync(TestContext.Current.CancellationToken)).Where(a => a.Id.StartsWith("retired-model-", StringComparison.Ordinal)).ToList();
 
     [Fact]
-    public void TwoEnabledRetiredConfigurations_RaiseOneGroupedAlert_WithALink()
+    public async Task TwoEnabledRetiredConfigurations_RaiseOneGroupedAlert_WithALink()
     {
         AddConfigs(
             Config("Flash", RetiredModelId),
@@ -71,7 +71,7 @@ public class ConfigHealthServiceTests
             Config("Custom flash", RetiredModelId, catalogMode: ModelCatalogModes.Custom),
             Config("Gateway flash", RetiredModelId, baseUrl: "https://llm.example.com/v1"));
 
-        var alert = Assert.Single(RetiredAlerts());
+        var alert = Assert.Single(await RetiredAlerts());
 
         Assert.Equal("retired-model-Google-gemini-3.7-flash", alert.Id);
         Assert.Equal("warning", alert.Type);
@@ -83,17 +83,17 @@ public class ConfigHealthServiceTests
     }
 
     [Fact]
-    public void OneRetiredConfiguration_IsCountedInTheSingular()
+    public async Task OneRetiredConfiguration_IsCountedInTheSingular()
     {
         AddConfigs(Config("Flash", RetiredModelId, catalogMode: null));
 
-        var alert = Assert.Single(RetiredAlerts());
+        var alert = Assert.Single(await RetiredAlerts());
 
         Assert.StartsWith("1 system configuration uses Gemini 3.7 Flash (gemini-3.7-flash)", alert.Message);
     }
 
     [Fact]
-    public void DisabledCustomEndpointAndNotInCatalogConfigurations_RaiseNoAlert()
+    public async Task DisabledCustomEndpointAndNotInCatalogConfigurations_RaiseNoAlert()
     {
         AddConfigs(
             Config("Disabled flash", RetiredModelId, isEnabled: false),
@@ -101,7 +101,7 @@ public class ConfigHealthServiceTests
             Config("Gateway flash", RetiredModelId, baseUrl: "https://llm.example.com/v1"),
             Config("Tuned flash", "my-tuned-flash"));
 
-        var alerts = CreateService().GetSystemAlerts().ToList();
+        var alerts = (await CreateService().GetSystemAlertsAsync(TestContext.Current.CancellationToken)).ToList();
 
         Assert.DoesNotContain(alerts, a => a.Id.StartsWith("retired-model-", StringComparison.Ordinal));
         Assert.DoesNotContain(alerts, a => a.Message.Contains("my-tuned-flash", StringComparison.Ordinal));
@@ -145,11 +145,11 @@ public class ConfigHealthServiceTests
         db.SaveChanges();
     }
 
-    private List<SystemAlert> SpendAlerts(decimal alertThreshold) =>
-        CreateSpendService(alertThreshold).GetSystemAlerts().Where(a => a.Id.StartsWith("ai-spend:", StringComparison.Ordinal)).ToList();
+    private async Task<List<SystemAlert>> SpendAlerts(decimal alertThreshold) =>
+        (await CreateSpendService(alertThreshold).GetSystemAlertsAsync(TestContext.Current.CancellationToken)).Where(a => a.Id.StartsWith("ai-spend:", StringComparison.Ordinal)).ToList();
 
     [Fact]
-    public void AiSpend_AtTheThreshold_RaisesOneAlert_WithTheDateAndCountInItsId()
+    public async Task AiSpend_AtTheThreshold_RaisesOneAlert_WithTheDateAndCountInItsId()
     {
         AddSpend("spender-1", "spender-one", (1, 15m, 1), (3, 5m, 20));
         AddSpend("spender-2", "spender-two", (2, 30m, 2));
@@ -157,7 +157,7 @@ public class ConfigHealthServiceTests
         AddSpend("spender-3", "spender-three", (1, 10m, 1), (4, 100m, 1), (1, 100m, 25));
 
         var before = DateTime.UtcNow;
-        var alert = Assert.Single(SpendAlerts(20m));
+        var alert = Assert.Single(await SpendAlerts(20m));
         var after = DateTime.UtcNow;
 
         var invariant = System.Globalization.CultureInfo.InvariantCulture;
@@ -173,45 +173,56 @@ public class ConfigHealthServiceTests
     }
 
     [Fact]
-    public void AiSpend_OneUser_IsCountedInTheSingular()
+    public async Task AiSpend_OneUser_IsCountedInTheSingular()
     {
         AddSpend("spender-1", "spender-one", (1, 20m, 1));
 
-        var alert = Assert.Single(SpendAlerts(20m));
+        var alert = Assert.Single(await SpendAlerts(20m));
 
         Assert.EndsWith(":1", alert.Id, StringComparison.Ordinal);
         Assert.StartsWith("1 user spent over $20.00", alert.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AiSpend_BelowTheThreshold_RaisesNoAlert()
+    public async Task AiSpend_BelowTheThreshold_RaisesNoAlert()
     {
         AddSpend("spender-1", "spender-one", (1, 19.99m, 1), (1, null, 1));
 
-        Assert.Empty(SpendAlerts(20m));
+        Assert.Empty(await SpendAlerts(20m));
     }
 
     [Fact]
-    public void AiSpend_ByAnAdministrator_RaisesNoAlert()
+    public async Task AiSpend_ByAnAdministrator_RaisesNoAlert()
     {
         AddSpend("boss", "spend-boss", (1, 500m, 1));
 
-        Assert.Empty(SpendAlerts(20m));
+        Assert.Empty(await SpendAlerts(20m));
     }
 
     [Fact]
-    public void AiSpend_WithTheAlertTurnedOff_RaisesNoAlert()
+    public async Task AnAbortedRequest_PropagatesTheCancellation_InsteadOfLoggingAFailedCheck()
+    {
+        AddSpend("spender-1", "spender-one", (1, 500m, 1));
+        using var aborted = new CancellationTokenSource();
+        aborted.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => CreateSpendService(20m).GetSystemAlertsAsync(aborted.Token));
+    }
+
+    [Fact]
+    public async Task AiSpend_WithTheAlertTurnedOff_RaisesNoAlert()
     {
         AddSpend("spender-1", "spender-one", (1, 500m, 1));
 
-        Assert.Empty(SpendAlerts(0m));
+        Assert.Empty(await SpendAlerts(0m));
     }
 
     [Fact]
-    public void AlertsWithoutALink_LeaveTheLinkFieldsNull()
+    public async Task AlertsWithoutALink_LeaveTheLinkFieldsNull()
     {
-        var alert = Assert.Single(new ConfigHealthService(new ConfigurationBuilder().Build())
-            .GetSystemAlerts(), a => a.Id == "sentry-dsn-missing");
+        var alert = Assert.Single(await new ConfigHealthService(new ConfigurationBuilder().Build())
+            .GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id == "sentry-dsn-missing");
 
         Assert.Null(alert.LinkUrl);
         Assert.Null(alert.LinkText);
@@ -245,9 +256,9 @@ public class ConfigHealthServiceTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void SourceCodePathMissing_RaisesAWarning(string? path)
+    public async Task SourceCodePathMissing_RaisesAWarning(string? path)
     {
-        var alert = Assert.Single(new ConfigHealthService(ConfigurationWith(("SourceCodePath", path))).GetSystemAlerts(),
+        var alert = Assert.Single(await new ConfigHealthService(ConfigurationWith(("SourceCodePath", path))).GetSystemAlertsAsync(TestContext.Current.CancellationToken),
             a => a.Id == "source-code-path-missing");
 
         Assert.Equal("warning", alert.Type);
@@ -256,9 +267,9 @@ public class ConfigHealthServiceTests
     }
 
     [Fact]
-    public void SourceCodePathConfigured_RaisesNoAlert()
+    public async Task SourceCodePathConfigured_RaisesNoAlert()
     {
-        var alerts = new ConfigHealthService(ConfigurationWith(("SourceCodePath", @"C:\repos\GnollHack"))).GetSystemAlerts();
+        var alerts = await new ConfigHealthService(ConfigurationWith(("SourceCodePath", @"C:\repos\GnollHack"))).GetSystemAlertsAsync(TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain(alerts, a => a.Id == "source-code-path-missing");
     }
@@ -266,11 +277,11 @@ public class ConfigHealthServiceTests
     [Theory]
     [InlineData(MakedefsOutcomeKind.BuildFailed)]
     [InlineData(MakedefsOutcomeKind.RunFailed)]
-    public void MakedefsFailed_WithAMissingHeader_RaisesAnErrorWithALink(MakedefsOutcomeKind kind)
+    public async Task MakedefsFailed_WithAMissingHeader_RaisesAnErrorWithALink(MakedefsOutcomeKind kind)
     {
         var service = new MakedefsStateHealthService(ConfigurationWith(), MakedefsState(kind, "pm.h"));
 
-        var alert = Assert.Single(service.GetSystemAlerts(), a => a.Id == "gnollhack-makedefs-failed");
+        var alert = Assert.Single(await service.GetSystemAlertsAsync(TestContext.Current.CancellationToken),a => a.Id == "gnollhack-makedefs-failed");
 
         Assert.Equal("error", alert.Type);
         Assert.Equal(
@@ -288,20 +299,20 @@ public class ConfigHealthServiceTests
     [InlineData(MakedefsOutcomeKind.UpToDate, true)]
     [InlineData(MakedefsOutcomeKind.Generated, true)]
     [InlineData(null, true)]
-    public void MakedefsAlert_IsAbsent_UnlessAFailureLeavesAHeaderMissing(MakedefsOutcomeKind? kind, bool headerMissing)
+    public async Task MakedefsAlert_IsAbsent_UnlessAFailureLeavesAHeaderMissing(MakedefsOutcomeKind? kind, bool headerMissing)
     {
         var state = headerMissing ? MakedefsState(kind, "onames.h") : MakedefsState(kind);
         var service = new MakedefsStateHealthService(ConfigurationWith(), state);
 
-        Assert.DoesNotContain(service.GetSystemAlerts(), a => a.Id == "gnollhack-makedefs-failed");
+        Assert.DoesNotContain(await service.GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id == "gnollhack-makedefs-failed");
     }
 
     [Fact]
-    public void MakedefsAlert_IsAbsent_WhenTheSourceServiceIsUnavailable()
+    public async Task MakedefsAlert_IsAbsent_WhenTheSourceServiceIsUnavailable()
     {
-        Assert.DoesNotContain(new MakedefsStateHealthService(ConfigurationWith(), null).GetSystemAlerts(),
+        Assert.DoesNotContain(await new MakedefsStateHealthService(ConfigurationWith(), null).GetSystemAlertsAsync(TestContext.Current.CancellationToken),
             a => a.Id == "gnollhack-makedefs-failed");
-        Assert.DoesNotContain(CreateService().GetSystemAlerts(), a => a.Id == "gnollhack-makedefs-failed");
+        Assert.DoesNotContain(await CreateService().GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id == "gnollhack-makedefs-failed");
     }
 
     // -- The snapshot guard ---------------------------------------------------------------------------
@@ -331,9 +342,9 @@ public class ConfigHealthServiceTests
     [Theory]
     [InlineData("Observe", "snapshot-guard-observe")]
     [InlineData("Off", "snapshot-guard-off")]
-    public void TheGuardMode_IsAnAlertWhileItIsNotEnforce(string mode, string id)
+    public async Task TheGuardMode_IsAnAlertWhileItIsNotEnforce(string mode, string id)
     {
-        var alert = Assert.Single(CreateGuardService(mode).GetSystemAlerts(), a => a.Id.StartsWith("snapshot-guard-", StringComparison.Ordinal));
+        var alert = Assert.Single(await CreateGuardService(mode).GetSystemAlertsAsync(TestContext.Current.CancellationToken),a => a.Id.StartsWith("snapshot-guard-", StringComparison.Ordinal));
 
         Assert.Equal(id, alert.Id);
         Assert.Equal("warning", alert.Type);
@@ -342,19 +353,19 @@ public class ConfigHealthServiceTests
     }
 
     [Fact]
-    public void Enforce_RaisesNoModeAlert()
+    public async Task Enforce_RaisesNoModeAlert()
     {
-        Assert.DoesNotContain(CreateGuardService("Enforce").GetSystemAlerts(), a => a.Id.StartsWith("snapshot-", StringComparison.Ordinal));
+        Assert.DoesNotContain(await CreateGuardService("Enforce").GetSystemAlertsAsync(TestContext.Current.CancellationToken),a => a.Id.StartsWith("snapshot-", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void RefusalsInTheLastSevenDays_AreCounted_WithTheCountInTheId()
+    public async Task RefusalsInTheLastSevenDays_AreCounted_WithTheCountInTheId()
     {
         AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-1", DateTime.UtcNow.AddDays(-1), count: 2);
         AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-2", DateTime.UtcNow.AddHours(-1));
         AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-3", DateTime.UtcNow.AddDays(-8));
 
-        var alert = Assert.Single(CreateGuardService("Enforce").GetSystemAlerts(), a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal));
+        var alert = Assert.Single(await CreateGuardService("Enforce").GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal));
 
         Assert.EndsWith(":3", alert.Id);
         Assert.Equal("warning", alert.Type);
@@ -364,7 +375,7 @@ public class ConfigHealthServiceTests
     }
 
     [Fact]
-    public void AnAutomaticBlock_IsAnErrorAlert_KeyedByTheNewestEvent()
+    public async Task AnAutomaticBlock_IsAnErrorAlert_KeyedByTheNewestEvent()
     {
         AddSecurityEvent(SecurityEventKind.AutoBlocked, "u-1", DateTime.UtcNow.AddDays(-2));
         long newest;
@@ -373,7 +384,7 @@ public class ConfigHealthServiceTests
             newest = db.SecurityEvents.Max(e => e.Id);
         }
 
-        var alerts = CreateGuardService("Enforce").GetSystemAlerts().ToList();
+        var alerts = (await CreateGuardService("Enforce").GetSystemAlertsAsync(TestContext.Current.CancellationToken)).ToList();
 
         var alert = Assert.Single(alerts, a => a.Id.StartsWith("snapshot-autoblock:", StringComparison.Ordinal));
         Assert.Equal($"snapshot-autoblock:{newest}", alert.Id);

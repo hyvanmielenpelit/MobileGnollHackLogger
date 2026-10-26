@@ -72,6 +72,9 @@ namespace Overseer.Services.Tools
                 int lineNumber = i + 1;
                 string line = lines[i];
 
+                // Every directive pattern requires a literal '#'.
+                if (line.IndexOf('#') < 0) continue;
+
                 if (ZeroIfRegex.IsMatch(line))
                 {
                     stack.Push(true);
@@ -119,6 +122,20 @@ namespace Overseer.Services.Tools
         /// <summary>Whether a single file line lies inside a "#if 0" region.</summary>
         public static bool IsInsideCompiledOutRegion(IReadOnlyList<string> lines, int line) =>
             FindRanges(lines, line, line).Count > 0;
+
+        /// <summary>
+        /// One flag per file line (index = line - 1): whether that line lies inside a "#if 0"
+        /// region. Built from the raw lines, so a directive inside a comment still counts.
+        /// </summary>
+        internal static bool[] BuildMask(IReadOnlyList<string> lines)
+        {
+            var mask = new bool[lines.Count];
+            foreach (var (start, end) in FindRanges(lines, 1, lines.Count))
+            {
+                for (int n = start; n <= end; n++) mask[n - 1] = true;
+            }
+            return mask;
+        }
 
         /// <summary>
         /// The "[Not compiled: ...]" note for a range of a file's lines, or null when none of it
@@ -219,6 +236,7 @@ namespace Overseer.Services.Tools
                 string? path = null;
                 var compiledOut = new List<(string Path, int Line)>();
                 var lineCache = new Dictionary<string, string[]?>(StringComparer.OrdinalIgnoreCase);
+                var maskCache = new Dictionary<string, bool[]>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (string raw in content.Split('\n'))
                 {
@@ -241,8 +259,16 @@ namespace Overseer.Services.Tools
                     }
                     if (fileLines == null) continue;
 
+                    if (!maskCache.TryGetValue(path, out var mask))
+                    {
+                        mask = BuildMask(fileLines);
+                        maskCache[path] = mask;
+                    }
+
+                    // A line outside the file lies in no region.
                     int matchLine = int.Parse(marked.Groups[1].Value);
-                    if (IsInsideCompiledOutRegion(fileLines, matchLine))
+                    bool insideRegion = matchLine >= 1 && matchLine <= mask.Length && mask[matchLine - 1];
+                    if (insideRegion)
                     {
                         compiledOut.Add((path, matchLine));
                         if (compiledOut.Count == MaxMatchesNamed) break;

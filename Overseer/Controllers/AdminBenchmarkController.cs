@@ -812,11 +812,26 @@ public class AdminBenchmarkController : ControllerBase
     [HttpGet("suites")]
     public async Task<IActionResult> GetSuites()
     {
+        // Mirrors ToSuiteDto, with the counts computed in SQL so no question or board text is loaded.
         var suites = await _dbContext.BenchmarkSuites
-            .Include(s => s.Questions)
-            .Include(s => s.GameSnapshot)
             .OrderBy(s => s.Name)
-            .Select(s => ToSuiteDto(s))
+            .Select(s => new BenchmarkSuiteDto
+            {
+                Id = s.Id,
+                Name = s.Name,
+                Description = s.Description,
+                CreatedAtUtc = s.CreatedAtUtc,
+                ModifiedAtUtc = s.ModifiedAtUtc,
+                QuestionCount = s.Questions.Count(),
+                AssessedQuestionCount = s.Questions.Count(q => q.AssessedDifficulty != null),
+                DifficultyFullyAssessed = s.Questions.Any() && s.Questions.All(q => q.AssessedDifficulty != null),
+                GameSnapshotId = s.GameSnapshotId,
+                GameSnapshotName = s.GameSnapshot != null ? s.GameSnapshot.Name : null,
+                GameSnapshotCharCount = s.GameSnapshot != null ? (int?)s.GameSnapshot.CharCount : null,
+                HasGeneratedQuestions = s.HasGeneratedQuestions,
+                ReviewedQuestionCount = s.Questions.Count(q => !q.IsGenerated || (q.ReviewedAtRevision != null && q.ReviewedAtRevision == q.ItemRevision)),
+                DefaultSuiteKey = s.DefaultSuiteKey
+            })
             .ToListAsync();
 
         return Ok(suites);
@@ -1350,6 +1365,7 @@ public class AdminBenchmarkController : ControllerBase
             .Where(r => r.BenchmarkSuiteId == suiteId)
             .Include(r => r.Answers)
             .AsNoTracking()
+            .AsSplitQuery()
             .ToListAsync();
 
         var analysis = BenchmarkItemAnalysis.Compute(
@@ -3481,6 +3497,8 @@ public class AdminBenchmarkController : ControllerBase
             .Include(r => r.Answers)
             .Include(r => r.StartedByUser)
             .Include(r => r.ScoringProfile)
+            .AsNoTracking()
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (run == null) return NotFound();

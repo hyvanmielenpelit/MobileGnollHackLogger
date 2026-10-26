@@ -4070,6 +4070,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   startDetailPolling(runId: number) {
     this.stopDetailPolling();
     this.detailPollInterval = setInterval(() => {
+      // A hidden tab skips its ticks; the first tick after it is shown again refreshes.
+      if (document.hidden) return;
       this.refreshRunDetail(runId);
     }, 2000);
   }

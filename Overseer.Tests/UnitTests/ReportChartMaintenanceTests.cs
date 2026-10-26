@@ -179,11 +179,11 @@ public class ReportChartMaintenanceTests
 
     [Theory]
     [MemberData(nameof(UnusableRoots))]
-    public void ConfigHealthService_WhenChartsLocationUnusable_ReturnsAlert(string? root)
+    public async Task ConfigHealthService_WhenChartsLocationUnusable_ReturnsAlert(string? root)
     {
         var healthService = new ConfigHealthService(TestChartStores.ConfigurationFor(root));
 
-        var alert = healthService.GetSystemAlerts().FirstOrDefault(a => a.Id == "report-charts-location-missing");
+        var alert = (await healthService.GetSystemAlertsAsync(TestContext.Current.CancellationToken)).FirstOrDefault(a => a.Id == "report-charts-location-missing");
 
         Assert.NotNull(alert);
         Assert.Equal("warning", alert.Type);
@@ -191,11 +191,11 @@ public class ReportChartMaintenanceTests
     }
 
     [Fact]
-    public void ConfigHealthService_WhenChartsLocationAbsolute_NoAlert()
+    public async Task ConfigHealthService_WhenChartsLocationAbsolute_NoAlert()
     {
         var root = Path.Combine(Path.GetTempPath(), "OverseerChartAlertTest");
         var healthService = new ConfigHealthService(TestChartStores.ConfigurationFor(root));
 
-        Assert.DoesNotContain(healthService.GetSystemAlerts(), a => a.Id == "report-charts-location-missing");
+        Assert.DoesNotContain(await healthService.GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id == "report-charts-location-missing");
     }
 }

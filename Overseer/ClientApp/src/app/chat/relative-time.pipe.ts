@@ -9,7 +9,7 @@ import { parseServerUtcDate } from '../utils/date.util';
   pure: false
 })
 export class RelativeTimePipe implements PipeTransform, OnDestroy {
-  private rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  private static readonly rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
   private tickerSub: Subscription | null = null;
   private lastFormattedTime = '';
   private lastValue: string | Date | null | undefined = undefined;
@@ -21,9 +21,6 @@ export class RelativeTimePipe implements PipeTransform, OnDestroy {
 
   transform(value: string | Date | null | undefined): string {
     if (!value) return '';
-    
-    // Store the value so the ticker can re-evaluate it
-    this.lastValue = value;
     
     // Subscribe to the ticker on first use
     if (!this.tickerSub) {
@@ -38,7 +35,14 @@ export class RelativeTimePipe implements PipeTransform, OnDestroy {
       });
     }
 
+    // The ticker keeps the cached text current for an unchanged value
+    if (value === this.lastValue && this.lastFormattedTime !== '') {
+      return this.lastFormattedTime;
+    }
+
     const currentFormattedTime = this.calculateRelativeTime(value);
+    // Store the value so the ticker can re-evaluate it
+    this.lastValue = value;
     this.lastFormattedTime = currentFormattedTime;
     return currentFormattedTime;
   }
@@ -55,31 +59,31 @@ export class RelativeTimePipe implements PipeTransform, OnDestroy {
     
     const diffInMinutes = Math.floor(diffInSeconds / 60);
     if (diffInMinutes < 60) {
-      return this.rtf.format(-diffInMinutes, 'minute');
+      return RelativeTimePipe.rtf.format(-diffInMinutes, 'minute');
     }
     
     const diffInHours = Math.floor(diffInMinutes / 60);
     if (diffInHours < 24) {
-      return this.rtf.format(-diffInHours, 'hour');
+      return RelativeTimePipe.rtf.format(-diffInHours, 'hour');
     }
     
     const diffInDays = Math.floor(diffInHours / 24);
     if (diffInDays < 7) {
-      return this.rtf.format(-diffInDays, 'day');
+      return RelativeTimePipe.rtf.format(-diffInDays, 'day');
     }
     
     const diffInWeeks = Math.floor(diffInDays / 7);
     if (diffInDays < 30) {
-      return this.rtf.format(-diffInWeeks, 'week');
+      return RelativeTimePipe.rtf.format(-diffInWeeks, 'week');
     }
 
     const diffInMonths = Math.floor(diffInDays / 30);
     if (diffInDays < 365) {
-      return this.rtf.format(-diffInMonths, 'month');
+      return RelativeTimePipe.rtf.format(-diffInMonths, 'month');
     }
 
     const diffInYears = Math.floor(diffInDays / 365);
-    return this.rtf.format(-diffInYears, 'year');
+    return RelativeTimePipe.rtf.format(-diffInYears, 'year');
   }
 
   ngOnDestroy(): void {

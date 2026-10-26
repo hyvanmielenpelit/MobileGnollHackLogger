@@ -1592,9 +1592,16 @@ public class AdminController : ControllerBase
         => $"There is no default {provider} key. Add one with API Keys in System Configs, or choose Custom.";
 
     [HttpGet("system-alerts")]
-    public IActionResult GetSystemAlerts([FromServices] ConfigHealthService configHealthService)
+    public async Task<IActionResult> GetSystemAlerts([FromServices] ConfigHealthService configHealthService, CancellationToken ct)
     {
-        return Ok(configHealthService.GetSystemAlerts());
+        try
+        {
+            return Ok(await configHealthService.GetSystemAlertsAsync(ct));
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     // --- Database Storage & Maintenance ---
