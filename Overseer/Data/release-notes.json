@@ -1,5 +1,28 @@
 [
   {
+    "version": "1.4.1",
+    "date": "2026-10-26T14:43:10Z",
+    "summary": "A performance release that makes the Overseer quicker to open and smoother to use, with no changes to how it answers.",
+    "changes": [
+      {
+        "type": "improvement",
+        "text": "Streaming responses are smoother: the text being written now updates once per screen refresh instead of on every fragment, which keeps the page responsive during long answers and when you return to a chat that is still being answered."
+      },
+      {
+        "type": "improvement",
+        "text": "The chat opens faster: your settings and your list of models are now loaded at the same time instead of one after the other."
+      },
+      {
+        "type": "improvement",
+        "text": "Pages load faster and use less data: the Overseer is now sent to your browser compressed, and its files are kept in your browser's cache between visits."
+      },
+      {
+        "type": "improvement",
+        "text": "Sending a message in a long chat is quicker, because the server now loads only the attachments the AI actually needs, and game lookups such as monster, item, artifact and source code searches run faster."
+      }
+    ]
+  },
+  {
     "version": "1.4.0",
     "date": "2026-10-25T18:39:45Z",
     "summary": "A release that gives you more say over how the Overseer answers and helps it learn from its own gaps: a new Verbose Responses setting, settings that now apply to every chat, and a feedback tool the AI can use to tell the developers what it could not find. It also introduces Terms of Service, easier model pickers and more accurate game lookups.",
