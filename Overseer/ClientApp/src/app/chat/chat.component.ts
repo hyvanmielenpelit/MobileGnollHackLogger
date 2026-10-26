@@ -393,6 +393,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   titleStatusText = '';
   lastSeenSeqNo: number = -1;
   private hasOngoingGeneration = false;
+  /** A GnollHack hand-off chat whose hidden greeting is running; the only state the "Consulting" overlay is shown for. */
+  private awaitingHandoffGreeting = false;
+  /** The `sessionId` query parameter the page was opened with, or null for a new chat. */
+  private openedWithSessionId: string | null = null;
   isLoadingSession = false;
   private liveEventBuffer: any[] = [];
   private handoffTimeoutHandle: any = null;
@@ -1439,6 +1443,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   timeUpdateInterval: any;
 
   get isHandoffWaiting(): boolean {
+    if (!this.awaitingHandoffGreeting) return false;
     if (this.messages.length > 0) return false;
     if (this.streamingMessage) return false;
     if (this.currentStatusText.startsWith('Error')) return false;
@@ -1710,9 +1715,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           // Handle route AFTER settings are loaded to avoid
           // showThoughtsAndTools race condition (defaulting to 0 before settings arrive)
           this.debugService.log(`[Overseer] Settings loaded, now subscribing to route. showThoughtsAndTools=${this.showThoughtsAndTools}`);
+          let initialEmission = true;
           this.route.queryParams.subscribe(params => {
             this.applyRouteGameOnParam(params['gameOn']);
-            this.applyRouteSessionParam(params['sessionId'], true);
+            this.applyRouteSessionParam(params['sessionId'], true, initialEmission);
+            initialEmission = false;
           });
         }
       },
@@ -1720,9 +1727,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         const settingsDuration = performance.now() - t0;
         this.perfLog('Settings', `getSettings FAILED in ${settingsDuration.toFixed(1)}ms: ${err.message || err}`);
         if (isInit) {
+          let initialEmission = true;
           this.route.queryParams.subscribe(params => {
             this.applyRouteGameOnParam(params['gameOn']);
-            this.applyRouteSessionParam(params['sessionId'], false);
+            this.applyRouteSessionParam(params['sessionId'], false, initialEmission);
+            initialEmission = false;
           });
         }
       }
@@ -1742,7 +1751,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
    * unrecoverably — that case asks first and carries the requested destination through the
    * confirmation instead.
    */
-  private applyRouteSessionParam(idParam: any, verbose: boolean): void {
+  private applyRouteSessionParam(idParam: any, verbose: boolean, initialEmission = false): void {
+    /* The first emission waits for the settings, so the user may already have started a chat on
+       this page. That chat is newer than the URL the page was opened with, which is all this
+       emission describes. */
+    if (initialEmission && this.hasChatStartedOnPage
+        && (idParam ? String(idParam) : null) === this.openedWithSessionId) {
+      return;
+    }
     if (idParam) {
       const id = Number(idParam);
       if (isNaN(id)) {
@@ -1767,6 +1783,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     } else {
       this.loadDraft();
     }
+  }
+
+  private get hasChatStartedOnPage(): boolean {
+    return this.currentSessionId !== null || this.messages.length > 0 || this.isStreaming;
   }
 
   ngOnInit() {
@@ -1827,6 +1847,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       import("@oddbird/popover-polyfill").catch(err => console.warn('Failed to load popover polyfill', err));
     }
     
+    this.openedWithSessionId = this.route.snapshot?.queryParamMap?.get('sessionId') || null;
     this.loadSettings(true);
     this.perfLog('Init', 'ChatComponent ngOnInit initial dispatch finished', tInit0);
 
@@ -2755,6 +2776,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
     if (this.currentSessionId === String(id)) return;
     if (this.guardEphemeralNavigation({ kind: 'session', id })) return;
+    /* A same-URL navigation emits nothing (the router's default `onSameUrlNavigation`), so a chat
+       the URL already names is loaded directly. */
+    if (this.route.snapshot?.queryParamMap?.get('sessionId') === String(id)) {
+      this.loadSession(id);
+      return;
+    }
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { sessionId: id },
@@ -2822,6 +2849,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.totalDurationMs = null;
     this.contextUsage = null;
     this.hasOngoingGeneration = false;
+    this.awaitingHandoffGreeting = false;
     this.isLoadingSession = false;
     this.liveEventBuffer = [];
     if (this.handoffTimeoutHandle) { clearTimeout(this.handoffTimeoutHandle); this.handoffTimeoutHandle = null; }
@@ -2960,6 +2988,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         setSentryConfidentialSession(this.isConfidentialSession);
         this.sessionTotalCost = s.totalEstimatedCost ?? null;
         this.hasOngoingGeneration = s.hasOngoingGeneration === true;
+        this.awaitingHandoffGreeting = s.isGnollHackSession === true
+          && this.hasOngoingGeneration && this.messages.length === 0;
         this.formatMessageToolCalls(this.messages);
         this.recomputeContextUsage();
 
@@ -3058,6 +3088,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         if (this.isHandoffWaiting) {
           this.debugService.log('[Frontend] Handoff timeout reached (60s). Dismissing consulting overlay.');
           this.hasOngoingGeneration = false;
+          this.awaitingHandoffGreeting = false;
           this.isStreaming = false;
           this.showSpinner = false;
           this.currentStatusText = '';
@@ -4213,6 +4244,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if (event.greetingStarted && gateSessionId !== null && this.currentSessionId === String(gateSessionId)
         && this.messages.length === 0 && !this.isLoadingSession) {
       this.hasOngoingGeneration = true;
+      this.awaitingHandoffGreeting = true;
       this.armHandoffTimeout();
     }
     this.refreshTermsStatus(false);
