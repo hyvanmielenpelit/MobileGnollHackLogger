@@ -134,6 +134,11 @@ public class GameApiAuthenticationTests : IClassFixture<WebsiteWebApplicationFac
             .Select(c => c.Column + ": " + c.Value)
             .ToList();
         Assert.Empty(leaks);
+
+        var logMessages = _factory.Logs.Messages;
+        Assert.NotEmpty(logMessages);
+        var logLeaks = logMessages.Where(m => secrets.Any(s => m.Contains(s, StringComparison.Ordinal))).ToList();
+        Assert.Empty(logLeaks);
     }
 
     [Theory]

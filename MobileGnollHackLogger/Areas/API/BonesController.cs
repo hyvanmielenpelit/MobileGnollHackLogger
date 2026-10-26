@@ -113,11 +113,13 @@ namespace MobileGnollHackLogger.Areas.API
                     //Sign in succeeded
 
                     //Check next whether the user is not banned
+                    ApplicationUser dbUser;
                     try
                     {
-                        var user = await _userManager.FindByNameAsync(model.UserName);
+                        var user = auth.User;
                         if (user != null)
                         {
+                            dbUser = user;
                             if (user.IsBanned == true)
                             {
                                 int responseCode = 423;
@@ -153,6 +155,8 @@ namespace MobileGnollHackLogger.Areas.API
                         Response.StatusCode = responseCode; //Server Error
                         return Content(msg);
                     }
+
+                    string userName = dbUser.UserName!;
 
                     //OK, now check command and data
                     if (!string.IsNullOrEmpty(model.Command) && !string.IsNullOrEmpty(model.Data))
@@ -203,7 +207,6 @@ namespace MobileGnollHackLogger.Areas.API
 
                             int userBoneCount = 0;
                             int allBoneCount = 0;
-                            ApplicationUser dbUser = (ApplicationUser)_dbContext.Users.First(u => u.UserName == model.UserName);
                             string aspNetUserId = dbUser.Id;
 
                             try
@@ -234,7 +237,16 @@ namespace MobileGnollHackLogger.Areas.API
                             if (userBoneCount < ServerUserBoneLimit && allBoneCount < ServerAllBoneLimit)
                             {
                                 // Write Bones Files
-                                string dir = Path.Combine(_bonesBasePath, model.UserName);
+                                string dir = Path.Combine(_bonesBasePath, userName);
+                                if (!BonesFileNames.IsInsideDirectory(dir, _bonesBasePath))
+                                {
+                                    int responseCode = 400;
+                                    string msg = "User name is not valid for file storage.";
+                                    await _dbLogger.LogRequestAsync($"{msg} Rejected name: {userName}", Data.LogLevel.Error, responseCode);
+                                    Response.StatusCode = responseCode; //Bad Request
+                                    return Content(msg);
+                                }
+
                                 if (!System.IO.Directory.Exists(dir))
                                 {
                                     Directory.CreateDirectory(dir);
@@ -265,7 +277,7 @@ namespace MobileGnollHackLogger.Areas.API
 
                                 try
                                 {
-                                    Data.Bones bone = new Data.Bones(model.UserName,
+                                    Data.Bones bone = new Data.Bones(userName,
                                         model.GetPlatform(),
                                         model.GetPlatformVersion(),
                                         model.GetPort(),
@@ -281,7 +293,7 @@ namespace MobileGnollHackLogger.Areas.API
                                     await _dbContext.Bones.AddAsync(bone);
                                     await _dbContext.SaveChangesAsync();
 
-                                    Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Upload, bone, dbUser);
+                                    Data.BonesTransaction transaction = new Data.BonesTransaction(userName, TransactionType.Upload, bone, dbUser);
                                     await _dbContext.BonesTransactions.AddAsync(transaction);
                                     await _dbContext.SaveChangesAsync();
 
@@ -408,7 +420,7 @@ namespace MobileGnollHackLogger.Areas.API
                                                     await _dbLogger.LogRequestAsync($"Sending back to user {model.UserName} a bones file with ID {bonesid}, original name of {originalfilename} and server path {bonespath}. File length is {bytes.LongLength}.",
                                                         Data.LogLevel.Info, 200);
 
-                                                    Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Download, null, dbUser)
+                                                    Data.BonesTransaction transaction = new Data.BonesTransaction(userName, TransactionType.Download, null, dbUser)
                                                     {
                                                         BonesId = bonesid,
                                                         DifficultyLevel = difficulty,
@@ -501,7 +513,6 @@ namespace MobileGnollHackLogger.Areas.API
                                 var availableBones = _dbContext.Bones.Where(b => b.BonesFilePath == model.Data);
                                 var list = availableBones.ToList();
                                 bool didremoveentry = false, diddeletefile = false;
-                                ApplicationUser dbUser = (ApplicationUser)_dbContext.Users.First(u => u.UserName == model.UserName);
                                 string dbUserId = dbUser.Id;
 
                                 // Only a player the bones file was sent to may confirm its receipt
@@ -538,7 +549,7 @@ namespace MobileGnollHackLogger.Areas.API
                                     await _dbLogger.LogRequestAsync($"Deleted a database bones entry ID {bonesid}.",
                                         Data.LogLevel.Info);
 
-                                    Data.BonesTransaction transaction = new Data.BonesTransaction(model.UserName, TransactionType.Deletion, null, dbUser)
+                                    Data.BonesTransaction transaction = new Data.BonesTransaction(userName, TransactionType.Deletion, null, dbUser)
                                     {
                                         BonesId = bonesid,
                                         DifficultyLevel = difficulty,

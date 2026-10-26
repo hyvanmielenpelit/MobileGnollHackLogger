@@ -221,6 +221,43 @@ public class SaveFileTrackingApiTests : IClassFixture<WebsiteWebApplicationFacto
     }
 
     [Fact]
+    public async Task Use_AnotherAccountsTrackingWithWrongTimeStamp_Returns403UserNamesDoNotMatch()
+    {
+        var owner = await CreateUserAsync(_factory, "sftOwnerTs");
+        var other = await CreateUserAsync(_factory, "sftOtherTs");
+        using var client = _factory.CreateGameClient();
+        string encryptedId = await CreateTrackingAsync(client, owner, 700, 800, OtherSha256);
+
+        var response = await PostAsync(client, UseRoute, other, UseFields(encryptedId, 701, 800, OtherSha256));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("User names do not match.", await response.Content.ReadAsStringAsync(Ct));
+        Assert.Null(await UsedDateAsync(DecryptId(encryptedId)));
+    }
+
+    [Fact]
+    public async Task CreateAndUse_OwnerNameInUpperCase_Succeed()
+    {
+        var user = await CreateUserAsync(_factory, "sftUpper");
+        string upperName = user.UserName!.ToUpperInvariant();
+        Assert.NotEqual(user.UserName, upperName);
+        using var client = _factory.CreateGameClient();
+
+        var create = await PostAsync(client, CreateRoute, upperName, WebsiteTestData.SaveFileTrackingFields(900, 1000, DefaultSha256));
+
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        string encryptedId = await create.Content.ReadAsStringAsync(Ct);
+        long id = DecryptId(encryptedId);
+        Assert.Equal(user.Id, await QueryAsync(db => db.SaveFileTrackings.Where(t => t.Id == id).Select(t => t.AspNetUserId).SingleAsync(Ct)));
+
+        var use = await PostAsync(client, UseRoute, upperName, UseFields(encryptedId, 900, 1000, DefaultSha256));
+
+        Assert.Equal(HttpStatusCode.OK, use.StatusCode);
+        Assert.Equal("", await use.Content.ReadAsStringAsync(Ct));
+        Assert.NotNull(await UsedDateAsync(id));
+    }
+
+    [Fact]
     public async Task Use_UnknownId_Returns410()
     {
         var user = await CreateUserAsync(_factory, "sftUnknown");
@@ -260,18 +297,36 @@ public class SaveFileTrackingApiTests : IClassFixture<WebsiteWebApplicationFacto
         Assert.Null(await UsedDateAsync(DecryptId(encryptedId)));
     }
 
+    /// <summary>
+    /// A ciphertext of id 1 with its final byte flipped, and a well-formed ciphertext of text that is not a number.
+    /// </summary>
+    public static TheoryData<string> EncryptedIdsThatDoNotDecryptToANumber
+    {
+        get
+        {
+            byte[] tampered = Convert.FromBase64String(EncryptId(1));
+            tampered[^1] ^= 0xFF;
+            return new TheoryData<string>
+            {
+                Convert.ToBase64String(tampered),
+                EncryptText("not a number")
+            };
+        }
+    }
+
     [Theory]
     [InlineData("not base64!")] // Not Base64 at all
     [InlineData("AQIDBAU=")] // Five bytes: not a whole AES block
-    public async Task Use_EncryptedIdNotValidCiphertext_Returns500(string encryptedId)
+    [MemberData(nameof(EncryptedIdsThatDoNotDecryptToANumber))]
+    public async Task Use_EncryptedIdNotValidCiphertext_Returns400(string encryptedId)
     {
         var user = await CreateUserAsync(_factory, "sftBadCipher");
         using var client = _factory.CreateGameClient();
 
         var response = await PostAsync(client, UseRoute, user, UseFields(encryptedId, 500, 600, DefaultSha256));
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal("Decryption failed. Exception", await response.Content.ReadAsStringAsync(Ct));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("EncryptedId is invalid.", await response.Content.ReadAsStringAsync(Ct));
     }
 
     [Fact]
@@ -355,14 +410,16 @@ public class SaveFileTrackingApiTests : IClassFixture<WebsiteWebApplicationFacto
         return aes;
     }
 
-    private static string EncryptId(long id)
+    private static string EncryptId(long id) => EncryptText(id.ToString(CultureInfo.InvariantCulture));
+
+    private static string EncryptText(string text)
     {
         using var aes = CreateAes();
         using var ms = new MemoryStream();
         using (var cs = new CryptoStream(ms, aes.CreateEncryptor(aes.Key, aes.IV), CryptoStreamMode.Write))
         using (var writer = new StreamWriter(cs, new UTF8Encoding(false)))
         {
-            writer.Write(id.ToString(CultureInfo.InvariantCulture));
+            writer.Write(text);
         }
         return Convert.ToBase64String(ms.ToArray());
     }
@@ -386,10 +443,14 @@ public class SaveFileTrackingApiTests : IClassFixture<WebsiteWebApplicationFacto
     private static Task<ApplicationUser> CreateUserAsync(WebsiteWebApplicationFactory factory, string prefix) =>
         factory.WithScopeAsync(sp => WebsiteTestData.CreateUserAsync(sp, WebsiteTestData.UniqueUserName(prefix)));
 
-    private static async Task<HttpResponseMessage> PostAsync(HttpClient client, string route, ApplicationUser user,
+    private static Task<HttpResponseMessage> PostAsync(HttpClient client, string route, ApplicationUser user,
+        IDictionary<string, string> fields) =>
+        PostAsync(client, route, user.UserName!, fields);
+
+    private static async Task<HttpResponseMessage> PostAsync(HttpClient client, string route, string userName,
         IDictionary<string, string> fields)
     {
-        using var form = WebsiteTestData.GameApiForm(user.UserName!, WebsiteTestData.Password, fields: fields);
+        using var form = WebsiteTestData.GameApiForm(userName, WebsiteTestData.Password, fields: fields);
         return await client.PostAsync(route, form, Ct);
     }
 

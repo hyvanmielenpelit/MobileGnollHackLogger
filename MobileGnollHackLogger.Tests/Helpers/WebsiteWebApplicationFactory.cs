@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Mvc.Testing.Handlers;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -43,6 +44,9 @@ public class WebsiteWebApplicationFactory : WebApplicationFactory<Program>
 
     /// <summary>Every email the host sent.</summary>
     public RecordingEmailSender Emails { get; } = new();
+
+    /// <summary>Every message the host logged.</summary>
+    public RecordingLoggerProvider Logs { get; } = new();
 
     /// <summary>The SQLite provider cannot translate comparisons of <c>ulong</c> columns; the InMemory provider can.</summary>
     protected virtual bool UseInMemoryProvider => false;
@@ -89,6 +93,8 @@ public class WebsiteWebApplicationFactory : WebApplicationFactory<Program>
         {
             logging.ClearProviders();
             logging.AddProvider(new TestContextLoggerProvider());
+            logging.AddProvider(Logs);
+            logging.AddFilter<RecordingLoggerProvider>(_ => true);
         });
 
         // Requests run in the calling test's execution context, so TestContext.Current names that test.
@@ -139,6 +145,12 @@ public class WebsiteWebApplicationFactory : WebApplicationFactory<Program>
         BaseAddress = new Uri("https://localhost"),
         AllowAutoRedirect = false
     });
+
+    /// <summary>
+    /// A client for the Razor pages: cookies kept, every request from <paramref name="remoteIp"/>, no redirects followed.
+    /// </summary>
+    public HttpClient CreateBrowserClient(string remoteIp, string baseAddress = "https://localhost") =>
+        CreateDefaultClient(new Uri(baseAddress), new RemoteIpHandler(remoteIp), new CookieContainerHandler());
 
     public async Task<T> WithScopeAsync<T>(Func<IServiceProvider, Task<T>> action)
     {

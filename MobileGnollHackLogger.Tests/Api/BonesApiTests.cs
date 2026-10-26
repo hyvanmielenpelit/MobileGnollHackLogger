@@ -450,6 +450,23 @@ public class BonesApiTests : IClassFixture<InMemoryWebsiteWebApplicationFactory>
         Assert.Equal(filesBefore, FilesUnder(_factory.TempRoot));
     }
 
+    [Fact]
+    public async Task SendBonesFile_UserNameDotDot_Returns400FromModelValidationAndWritesNothing()
+    {
+        ulong version = NewPoolVersion();
+        using var client = _factory.CreateGameClient();
+        string[] entriesBefore = EntriesUnder(_factory.TempRoot);
+        long failuresBefore = await UserNameModelStateFailureCountAsync();
+        var files = new[] { ("BonesFile", DefaultFileName, UploadContent) };
+        using var form = WebsiteTestData.GameApiForm("..", WebsiteTestData.Password, fields: SendFields(2, version, version), files: files);
+
+        var response = await client.PostAsync("/bones", form, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(failuresBefore + 1, await UserNameModelStateFailureCountAsync());
+        Assert.Equal(entriesBefore, EntriesUnder(_factory.TempRoot));
+    }
+
     [Theory]
     [InlineData("bon-2D0.15")]
     [InlineData("bon3-1QBar.n")]
@@ -504,6 +521,26 @@ public class BonesApiTests : IClassFixture<InMemoryWebsiteWebApplicationFactory>
         Directory.Exists(directory)
             ? Directory.GetFiles(directory, "*", SearchOption.AllDirectories).OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray()
             : Array.Empty<string>();
+
+    /// <summary>Every file and directory under <paramref name="directory"/>, sorted.</summary>
+    private static string[] EntriesUnder(string directory) =>
+        Directory.GetFileSystemEntries(directory, "*", SearchOption.AllDirectories)
+            .OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
+
+    /// <summary>
+    /// How many <c>UserName</c> model-validation failures were logged for <c>/bones</c>. The request log merges
+    /// identical entries into one row with a count, so the total of the counts is compared.
+    /// </summary>
+    private async Task<long> UserNameModelStateFailureCountAsync()
+    {
+        var rows = await QueryAsync(db => db.RequestLogs
+            .Where(r => r.Type == LogType.Bones && r.SubType == RequestLogSubType.ModelStateFailed)
+            .ToListAsync(Ct));
+        return rows
+            .Where(r => r.RequestPath != null && r.RequestPath.EndsWith("/bones", StringComparison.OrdinalIgnoreCase)
+                && r.Message != null && r.Message.Contains("UserName", StringComparison.Ordinal))
+            .Sum(r => r.Count);
+    }
 
     private Task<ApplicationUser> CreateUserAsync(string prefix, Action<ApplicationUser>? configure = null) =>
         _factory.WithScopeAsync(sp => WebsiteTestData.CreateUserAsync(sp, WebsiteTestData.UniqueUserName(prefix), configure));

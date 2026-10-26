@@ -100,7 +100,15 @@ namespace MobileGnollHackLogger.Areas.API
             }
 
             string dumpLogFileName = $"gnollhack.{gameLog.Name}.{gameLog.StartTimeUTC}.{ext}";
-            string dumpLogPath = Path.Combine(_dumplogBasePath, gameLog.Name, dumpLogFileName);
+            string dumpLogDirectory = Path.Combine(_dumplogBasePath, gameLog.Name);
+            string dumpLogPath = Path.Combine(dumpLogDirectory, dumpLogFileName);
+
+            // Only files in a player directory strictly inside the dumplog store are served
+            if (!BonesFileNames.IsInsideDirectory(dumpLogDirectory, _dumplogBasePath)
+                || !BonesFileNames.IsInsideDirectory(dumpLogPath, dumpLogDirectory))
+            {
+                return StatusCode(404); //Not Found
+            }
 
             if (!System.IO.File.Exists(dumpLogPath))
             {
@@ -108,6 +116,10 @@ namespace MobileGnollHackLogger.Areas.API
             }
 
             var contents = System.IO.File.ReadAllText(dumpLogPath);
+
+            // A dumplog is player-supplied content: it runs sandboxed, in no frame, as the declared type only
+            Response.Headers["Content-Security-Policy"] = "sandbox; frame-ancestors 'none'";
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
 
             return Content(contents, mimeType, encoding);
         }

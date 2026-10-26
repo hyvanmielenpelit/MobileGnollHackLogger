@@ -20,6 +20,8 @@ namespace MobileGnollHackLogger.Areas.API
     [ApiController]
     public class SaveFileTrackingController : ControllerBase
     {
+        private const string InvalidEncryptedIdMessage = "EncryptedId is invalid.";
+
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IConfiguration _configuration;
@@ -85,7 +87,7 @@ namespace MobileGnollHackLogger.Areas.API
                         return await LogAndReturnErrorAsyncNonNull(400, $"File Length {model.FileLength} must be positive.");
                     }
 
-                    SaveFileTracking sft = new SaveFileTracking(model!.UserName!, _dbContext);
+                    SaveFileTracking sft = new SaveFileTracking { AspNetUserId = _user!.Id, AspNetUser = _user };
                     sft.CreatedDate = DateTime.UtcNow;
                     sft.TimeStamp = model.TimeStamp;
                     sft.Sha256 = model.Sha256;
@@ -159,6 +161,17 @@ namespace MobileGnollHackLogger.Areas.API
                         return await LogAndReturnErrorAsyncNonNull(410, $"SaveFileTracking not found.", $"SaveFileTracking with the model Id {id} not found.");
                     }
 
+                    if (sft.AspNetUserId == null)
+                    {
+                        return await LogAndReturnErrorAsyncNonNull(500, $"AspNetUserId is null in database.");
+                    }
+
+                    // Ownership is checked before any field of the entry is compared
+                    if (sft.AspNetUserId != _user!.Id)
+                    {
+                        return await LogAndReturnErrorAsyncNonNull(403, $"User names do not match.", $"User names do not match. Requesting account: '{_user.Id}'. Owning account: '{sft.AspNetUserId}'.");
+                    }
+
                     if(sft.TimeStamp!= model.TimeStamp)
                     {
                         return await LogAndReturnErrorAsyncNonNull(403, $"Time Stamp '{model.TimeStamp}' is not correct.");
@@ -197,22 +210,6 @@ namespace MobileGnollHackLogger.Areas.API
                     if (sft.Sha256 != model.Sha256)
                     {
                         return await LogAndReturnErrorAsyncNonNull(403, $"Sha256 hashes do not match.", $"Sha256 hashes do not match. Model: {model.Sha256}. Database: {sft.Sha256}.");
-                    }
-
-                    if (sft.AspNetUserId == null)
-                    {
-                        return await LogAndReturnErrorAsyncNonNull(500, $"AspNetUserId is null in database.");
-                    }
-
-                    var aspNetUser = _dbContext.Users.FirstOrDefault(u => u.Id == sft.AspNetUserId);
-                    if (aspNetUser == null)
-                    {
-                        return await LogAndReturnErrorAsyncNonNull(500, $"AspNetUser not found.", $"AspNetUser '{sft.AspNetUserId}' not found in database.");
-                    }
-
-                    if (aspNetUser.UserName != model.UserName)
-                    {
-                        return await LogAndReturnErrorAsyncNonNull(403, $"User names do not match.", $"User names do not match. Model: '{model.UserName}'. Database: '{aspNetUser.UserName}'.");
                     }
 
                     sft.UsedDate = DateTime.UtcNow;
@@ -271,7 +268,7 @@ namespace MobileGnollHackLogger.Areas.API
                     //Check next whether the user is not banned
                     try
                     {
-                        _user = await _userManager.FindByNameAsync(model.UserName);
+                        _user = auth.User;
                         if (_user != null)
                         {
                             if (_user.IsBanned == true)
@@ -336,6 +333,7 @@ namespace MobileGnollHackLogger.Areas.API
             }
             else
             {
+                // A ciphertext that does not decrypt and one that decrypts to a non-number get the same answer
                 string? idString = null;
                 try
                 {
@@ -350,7 +348,7 @@ namespace MobileGnollHackLogger.Areas.API
                 catch (Exception ex)
                 {
                     _dbLogger.DecryptionSucceeded = false;
-                    return LogAndReturnError(500, "Decryption failed. Exception", "Exception: " + ex.Message);
+                    return LogAndReturnError(400, InvalidEncryptedIdMessage, "Decryption failed. Exception: " + ex.Message);
                 }
 
                 _dbLogger.DecryptionSucceeded = true;
@@ -358,7 +356,7 @@ namespace MobileGnollHackLogger.Areas.API
                 bool ok = long.TryParse(idString, out result);
                 if(!ok)
                 {
-                    return LogAndReturnError(400, "Decrypted content is invalid.", $"Decrypted content is invalid: '{idString}'.");
+                    return LogAndReturnError(400, InvalidEncryptedIdMessage, $"Decrypted content is invalid: '{idString}'.");
                 }
 
                 id = result;

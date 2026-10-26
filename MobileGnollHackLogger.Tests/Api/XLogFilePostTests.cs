@@ -74,6 +74,49 @@ public class XLogFilePostTests : IClassFixture<WebsiteWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Post_UserNameInUpperCase_StoresTheAccountsNameAndWritesFilesUnderIt()
+    {
+        string userName = WebsiteTestData.UniqueUserName("xpost_case");
+        string upperName = userName.ToUpperInvariant();
+        Assert.NotEqual(userName, upperName);
+        var user = await _factory.WithScopeAsync(sp => WebsiteTestData.CreateUserAsync(sp, userName));
+        long startUtc = NextStartTimeUtc();
+        using var client = _factory.CreateGameClient();
+
+        var response = await PostGameAsync(client, upperName, WebsiteTestData.XLogEntry(upperName, 100, startUtc),
+            Encoding.ASCII.GetBytes("plain"), Encoding.ASCII.GetBytes("<html></html>"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var info = await ReadResponseInfoAsync(response);
+        var game = Assert.Single(await GamesOfAsync(user.Id));
+        Assert.Equal(info.DatabaseRowId, game.Id);
+        Assert.Equal(userName, game.Name);
+
+        // The file system may ignore case, so the names are compared as they were created.
+        string dir = Assert.Single(Directory.GetDirectories(_factory.DumpLogPath, userName));
+        Assert.Equal(userName, Path.GetFileName(dir));
+        string[] fileNames = Directory.GetFiles(dir).Select(f => Path.GetFileName(f)!).OrderBy(f => f, StringComparer.Ordinal).ToArray();
+        Assert.Equal(new[] { "gnollhack." + userName + "." + startUtc + ".html", "gnollhack." + userName + "." + startUtc + ".txt" },
+            fileNames);
+    }
+
+    [Fact]
+    public async Task Post_UserNameDotDot_Returns400FromModelValidationAndWritesNothing()
+    {
+        string[] entriesBefore = EntriesUnder(_factory.TempRoot);
+        long failuresBefore = await UserNameModelStateFailureCountAsync();
+        long startUtc = NextStartTimeUtc();
+        using var client = _factory.CreateGameClient();
+
+        var response = await PostGameAsync(client, "..", WebsiteTestData.XLogEntry("..", 100, startUtc),
+            Encoding.ASCII.GetBytes("plain"), Encoding.ASCII.GetBytes("<html></html>"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(failuresBefore + 1, await UserNameModelStateFailureCountAsync());
+        Assert.Equal(entriesBefore, EntriesUnder(_factory.TempRoot));
+    }
+
+    [Fact]
     public async Task Post_TopScorePosition_CountsOnlyOtherScoringGamesInTheSameMode()
     {
         // A host of its own, so the games the other tests of this class post do not move the position.
@@ -353,4 +396,25 @@ public class XLogFilePostTests : IClassFixture<WebsiteWebApplicationFactory>
 
     private Task<List<RequestInfo>> RequestLogsOfAsync(string userName) => _factory.WithScopeAsync(sp =>
         sp.GetRequiredService<ApplicationDbContext>().RequestLogs.AsNoTracking().Where(r => r.RequestUserName == userName).ToListAsync());
+
+    /// <summary>Every file and directory under <paramref name="directory"/>, sorted.</summary>
+    private static string[] EntriesUnder(string directory) =>
+        Directory.GetFileSystemEntries(directory, "*", SearchOption.AllDirectories)
+            .OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
+
+    /// <summary>
+    /// How many <c>UserName</c> model-validation failures were logged for <c>/xlogfile</c>. The request log merges
+    /// identical entries into one row with a count, so the total of the counts is compared.
+    /// </summary>
+    private async Task<long> UserNameModelStateFailureCountAsync()
+    {
+        var rows = await _factory.WithScopeAsync(sp => sp.GetRequiredService<ApplicationDbContext>().RequestLogs
+            .AsNoTracking()
+            .Where(r => r.Type == LogType.GameLog && r.SubType == RequestLogSubType.ModelStateFailed)
+            .ToListAsync());
+        return rows
+            .Where(r => r.RequestPath != null && r.RequestPath.EndsWith("/xlogfile", StringComparison.OrdinalIgnoreCase)
+                && r.Message != null && r.Message.Contains("UserName", StringComparison.Ordinal))
+            .Sum(r => r.Count);
+    }
 }

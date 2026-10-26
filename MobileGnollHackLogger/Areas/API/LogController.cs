@@ -454,12 +454,14 @@ namespace MobileGnollHackLogger.Areas.API
 
                     //Check next whether the user is not banned
                     string userId;
+                    string userName;
                     try
                     {
-                        var user = await _userManager.FindByNameAsync(model.UserName);
+                        var user = auth.User;
                         if (user != null)
                         {
                             userId = user.Id;
+                            userName = user.UserName!;
                             if (user.IsBanned == true)
                             {
                                 int responseCode = 423;
@@ -505,7 +507,7 @@ namespace MobileGnollHackLogger.Areas.API
                         XLogFileLine xLogFileLine = new XLogFileLine(model.XLogEntry);
 
                         //Change user name to the account name
-                        xLogFileLine.Name = model.UserName;
+                        xLogFileLine.Name = userName;
 
                         //A game already stored for this account with the same starttimeUTC is a repeat when its points and turns match
                         var storedGameLogs = await _dbContext.GameLog
@@ -531,7 +533,16 @@ namespace MobileGnollHackLogger.Areas.API
                         }
 
                         // Write Dumplog Files; files left without a row by an earlier failed attempt are replaced
-                        string dir = Path.Combine(_dumplogBasePath, xLogFileLine.Name);
+                        string dir = Path.Combine(_dumplogBasePath, userName);
+                        if (!BonesFileNames.IsInsideDirectory(dir, _dumplogBasePath))
+                        {
+                            int responseCode = 400;
+                            string msg = "User name is not valid for file storage.";
+                            await _dbLogger.LogRequestAsync($"{msg} Rejected name: {userName}", Data.LogLevel.Error, responseCode);
+                            Response.StatusCode = responseCode; //Bad Request
+                            return Content(msg);
+                        }
+
                         if (!System.IO.Directory.Exists(dir))
                         {
                             Directory.CreateDirectory(dir);

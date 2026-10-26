@@ -5,6 +5,7 @@ using MobileGnollHackLogger.Data;
 using GnollHackServer.Data;
 using GnollHackServer.Data.Legal;
 using MobileGnollHackLogger.Filters;
+using MobileGnollHackLogger.Security;
 using System.Configuration;
 using Azure.Communication.Email;
 using Azure.Core.Extensions;
@@ -144,6 +145,9 @@ builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<LegalDocumentReader>();
 builder.Services.AddScoped<TermsAcceptanceStore>();
 
+// The site-wide X-Frame-Options: DENY (UseWebsiteSecurityHeaders) replaces antiforgery's SAMEORIGIN.
+builder.Services.AddAntiforgery(o => o.SuppressXFrameOptionsHeader = true);
+
 builder.Services.AddRazorPages()
     // Signed-in users who have not accepted the current account Terms are sent to the acceptance page.
     .AddMvcOptions(o => o.Filters.Add<RequireAccountTermsPageFilter>())
@@ -217,6 +221,8 @@ else
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
+
+app.UseWebsiteSecurityHeaders();
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();

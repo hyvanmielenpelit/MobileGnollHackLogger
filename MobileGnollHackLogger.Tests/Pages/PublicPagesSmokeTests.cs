@@ -38,6 +38,22 @@ public class PublicPagesSmokeTests : IClassFixture<WebsiteWebApplicationFactory>
         Assert.Equal("text/html", response.Content.Headers.ContentType?.MediaType);
     }
 
+    [Theory]
+    [InlineData("/Test")]
+    [InlineData("/TestBones")]
+    [InlineData("/TestSFTCreate")]
+    [InlineData("/TestSFTUse")]
+    public async Task AnonymousGet_TestPage_Returns200WithoutGameApiToken(string url)
+    {
+        using var client = _factory.CreateGameClient();
+
+        var response = await client.GetAsync(url, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.DoesNotContain(WebsiteWebApplicationFactory.AntiForgeryToken,
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+    }
+
     /// <summary>
     /// Games in both display modes, an ascension, a game without <c>mode</c> and one in a mode the site does not
     /// know, once per factory.

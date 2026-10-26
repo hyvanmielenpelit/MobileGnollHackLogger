@@ -117,6 +117,62 @@ public class DumpLogApiTests : IClassFixture<WebsiteWebApplicationFactory>
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("/html")]
+    [InlineData("/plain")]
+    public async Task GetById_SetsSandboxPolicyAndNoSniff(string typeSuffix)
+    {
+        var game = await SeedGameAsync();
+        using var client = _factory.CreateGameClient();
+
+        var response = await client.GetAsync("/dumplog/" + game.Id + typeSuffix, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("sandbox; frame-ancestors 'none'", Assert.Single(response.Headers.GetValues("Content-Security-Policy")));
+        Assert.Equal("nosniff", Assert.Single(response.Headers.GetValues("X-Content-Type-Options")));
+    }
+
+    [Fact]
+    public async Task GetById_HtmlWithScript_IsReturnedUnchangedUnderTheSandboxPolicy()
+    {
+        var game = await SeedGameAsync();
+        string html = "<html><head><style>body { color: red; }</style></head><body><script>alert(document.cookie)</script>dumplog</body></html>";
+        await File.WriteAllTextAsync(DumpLogFile(game.UserName, game.StartTimeUtc, "html"), html, TestContext.Current.CancellationToken);
+        using var client = _factory.CreateGameClient();
+
+        var response = await client.GetAsync("/dumplog/" + game.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/html", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(html, await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("sandbox; frame-ancestors 'none'", Assert.Single(response.Headers.GetValues("Content-Security-Policy")));
+    }
+
+    [Fact]
+    public async Task GetById_GameNamedDotDot_Returns404AndDoesNotServeTheFileAboveTheStore()
+    {
+        string userName = WebsiteTestData.UniqueUserName("dumplog_dots");
+        long startUtc = Interlocked.Add(ref _startTimeUtc, 10_000);
+        GameLog game = await _factory.WithScopeAsync(async sp =>
+        {
+            var user = await WebsiteTestData.CreateUserAsync(sp, userName);
+            return await WebsiteTestData.AddGameLogAsync(sp, user, WebsiteTestData.XLogEntry("..", 100, startUtc));
+        });
+        Assert.Equal("..", game.Name);
+        // Where DumpLogPath\..\gnollhack.<name>.<starttimeUTC>.<ext> resolves for the name "..".
+        string baseName = Path.Combine(_factory.TempRoot, "gnollhack." + ".." + "." + startUtc);
+        await File.WriteAllTextAsync(baseName + ".html", "<html>outside the store</html>", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(baseName + ".txt", "outside the store", TestContext.Current.CancellationToken);
+        using var client = _factory.CreateGameClient();
+
+        var html = await client.GetAsync("/dumplog/" + game.Id, TestContext.Current.CancellationToken);
+        var plain = await client.GetAsync("/dumplog/" + game.Id + "/plain", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NotFound, html.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, plain.StatusCode);
+    }
+
     [Fact]
     public async Task GetById_GameWithoutDumplogFile_Returns410()
     {
@@ -152,12 +208,13 @@ public class DumpLogApiTests : IClassFixture<WebsiteWebApplicationFactory>
         string html = "<html><body>dumplog of " + userName + "</body></html>";
         if (writeFiles)
         {
-            string dir = Path.Combine(_factory.DumpLogPath, userName);
-            Directory.CreateDirectory(dir);
-            string baseName = "gnollhack." + userName + "." + startUtc;
-            await File.WriteAllTextAsync(Path.Combine(dir, baseName + ".txt"), plain, TestContext.Current.CancellationToken);
-            await File.WriteAllTextAsync(Path.Combine(dir, baseName + ".html"), html, TestContext.Current.CancellationToken);
+            Directory.CreateDirectory(Path.Combine(_factory.DumpLogPath, userName));
+            await File.WriteAllTextAsync(DumpLogFile(userName, startUtc, "txt"), plain, TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(DumpLogFile(userName, startUtc, "html"), html, TestContext.Current.CancellationToken);
         }
         return new SeededGame(game.Id, userName, startUtc, startLocal, plain, html);
     }
+
+    private string DumpLogFile(string userName, long startUtc, string extension) =>
+        Path.Combine(_factory.DumpLogPath, userName, "gnollhack." + userName + "." + startUtc + "." + extension);
 }
