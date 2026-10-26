@@ -290,6 +290,98 @@ public class BenchmarkReportChartStoreTests
         AssertNoStagingLeft(charts.Root);
     }
 
+    /// <summary>
+    /// Refuses the first <see cref="BlockMoves"/> folder moves and the first <see cref="BlockDeletes"/>
+    /// folder deletes, as a virus scanner holding a file open does; <see cref="int.MaxValue"/> refuses always.
+    /// </summary>
+    private sealed class BlockingChartStore : BenchmarkReportChartStore
+    {
+        public BlockingChartStore(IConfiguration configuration)
+            : base(configuration)
+        {
+        }
+
+        public int BlockMoves { get; set; }
+
+        public int BlockDeletes { get; set; }
+
+        public int MoveAttempts { get; private set; }
+
+        public int DeleteAttempts { get; private set; }
+
+        protected override void MoveDirectory(string source, string target)
+        {
+            if (++MoveAttempts <= BlockMoves)
+            {
+                throw new IOException("Access to the path is denied.");
+            }
+
+            base.MoveDirectory(source, target);
+        }
+
+        protected override void DeleteDirectory(string path)
+        {
+            if (++DeleteAttempts <= BlockDeletes)
+            {
+                throw new IOException("The directory is not empty.");
+            }
+
+            base.DeleteDirectory(path);
+        }
+    }
+
+    [Fact]
+    public async Task SetCharts_RetriesAMoveThatAScannerBrieflyBlocks()
+    {
+        using var charts = TestChartStores.InTempFolder(configuration => new BlockingChartStore(configuration));
+        var store = (BlockingChartStore)charts.Store;
+        store.BlockMoves = 2;
+
+        await SetAsync(store, 21, Upload("p1a-quality"));
+
+        string folder = Path.Combine(charts.Root, "21");
+        Assert.True(File.Exists(Path.Combine(folder, "p1a-quality.named.png")));
+        Assert.True(File.Exists(Path.Combine(folder, BenchmarkReportChartStore.ManifestFileName)));
+        // A real scanner on the test machine can block one more attempt.
+        Assert.True(store.MoveAttempts >= 3, $"Expected at least 3 move attempts, got {store.MoveAttempts}.");
+        AssertNoStagingLeft(charts.Root);
+    }
+
+    /// <summary>
+    /// The old folder is deleted before the move, so a move that never succeeds leaves the document with
+    /// no set; the staging folder is still removed.
+    /// </summary>
+    [Fact]
+    public async Task SetCharts_AMoveThatStaysBlocked_Fails_AndLeavesNoStaging()
+    {
+        using var charts = TestChartStores.InTempFolder(configuration => new BlockingChartStore(configuration));
+        var store = (BlockingChartStore)charts.Store;
+        await SetAsync(store, 22, Upload("p1a-quality"));
+
+        store.BlockMoves = int.MaxValue;
+        int movesBefore = store.MoveAttempts;
+        await Assert.ThrowsAsync<IOException>(() => SetAsync(store, 22, Upload("p1b-speed", hash: HashB)));
+
+        Assert.Equal(6, store.MoveAttempts - movesBefore);
+        Assert.Null(store.ReadSummary(22));
+        AssertNoStagingLeft(charts.Root);
+    }
+
+    [Fact]
+    public async Task DeleteCharts_RetriesADeleteThatAScannerBrieflyBlocks()
+    {
+        using var charts = TestChartStores.InTempFolder(configuration => new BlockingChartStore(configuration));
+        var store = (BlockingChartStore)charts.Store;
+        await SetAsync(store, 23, Upload("p1a-quality"));
+
+        store.BlockDeletes = 1;
+        Assert.True(await store.DeleteChartsAsync(23, TestContext.Current.CancellationToken));
+
+        Assert.False(Directory.Exists(Path.Combine(charts.Root, "23")));
+        // A real scanner on the test machine can block one more attempt.
+        Assert.True(store.DeleteAttempts >= 2, $"Expected at least 2 delete attempts, got {store.DeleteAttempts}.");
+    }
+
     [Fact]
     public async Task DeleteCharts_RemovesTheFolder_AndAMissingFolderIsFine()
     {

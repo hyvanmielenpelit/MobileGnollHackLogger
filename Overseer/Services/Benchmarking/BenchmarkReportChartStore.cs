@@ -26,7 +26,7 @@ using Overseer.Models;
 /// through a staging folder, under a per-document lock. The set holds two kinds of chart, told apart by
 /// each manifest entry's <c>origin</c>: browser uploads (<see cref="SetChartsAsync(long, IReadOnlyList{ValidatedChart}, BenchmarkReportChartLayout?, CancellationToken)"/>)
 /// and the charts Overseer draws itself (<see cref="SetServerChartsAsync"/>); each write replaces its own
-/// kind and carries the other over.
+/// kind and carries the other over. A folder move or delete that a virus scanner briefly blocks is retried.
 /// </summary>
 public class BenchmarkReportChartStore
 {
@@ -515,6 +515,50 @@ public class BenchmarkReportChartStore
     protected virtual Task WriteFileAsync(string path, byte[] contents, CancellationToken cancellationToken)
         => File.WriteAllBytesAsync(path, contents, cancellationToken);
 
+    /// <summary>Moves a folder. Overridable so tests can block a move.</summary>
+    protected virtual void MoveDirectory(string source, string target) => Directory.Move(source, target);
+
+    /// <summary>Deletes a folder and its contents. Overridable so tests can block a delete.</summary>
+    protected virtual void DeleteDirectory(string path) => Directory.Delete(path, recursive: true);
+
+    private static readonly TimeSpan[] FolderRetryDelays =
+    {
+        TimeSpan.FromMilliseconds(25), TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(100),
+        TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(400)
+    };
+
+    /// <summary>
+    /// Runs a folder move or delete, retrying an <see cref="IOException"/> or
+    /// <see cref="UnauthorizedAccessException"/> after each of <see cref="FolderRetryDelays"/>: on Windows a
+    /// real-time virus scanner holds a just-written file open for a moment, and a folder holding an open
+    /// file can be neither renamed nor removed. The last failure is thrown.
+    /// </summary>
+    private static async Task RetryFolderOperationAsync(Action operation, CancellationToken cancellationToken)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                operation();
+                return;
+            }
+            catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && attempt < FolderRetryDelays.Length)
+            {
+                await Task.Delay(FolderRetryDelays[attempt], cancellationToken);
+            }
+        }
+    }
+
+    /// <summary>Deletes a document's folder if it exists, retrying a briefly blocked delete.</summary>
+    private Task DeleteDocumentFolderAsync(string target, CancellationToken cancellationToken)
+        => RetryFolderOperationAsync(() =>
+        {
+            if (Directory.Exists(target))
+            {
+                DeleteDirectory(target);
+            }
+        }, cancellationToken);
+
     /// <summary>
     /// Replaces a document's browser-drawn charts: everything is written into a staging folder, the old
     /// folder is deleted and the staging folder moved into its place. The server-drawn charts already
@@ -624,10 +668,7 @@ public class BenchmarkReportChartStore
 
             if (manifest.Charts.Count == 0)
             {
-                if (Directory.Exists(target))
-                {
-                    Directory.Delete(target, recursive: true);
-                }
+                await DeleteDocumentFolderAsync(target, cancellationToken);
                 return new ReportDocumentChartsSummaryDto { DocumentId = documentId };
             }
 
@@ -764,12 +805,8 @@ public class BenchmarkReportChartStore
             byte[] manifestBytes = Utf8NoBom.GetBytes(JsonSerializer.Serialize(manifest, ManifestJsonOptions));
             await WriteFileAsync(Contain(Path.Combine(staging, ManifestFileName)), manifestBytes, cancellationToken);
 
-            if (Directory.Exists(target))
-            {
-                Directory.Delete(target, recursive: true);
-            }
-
-            Directory.Move(staging, target);
+            await DeleteDocumentFolderAsync(target, cancellationToken);
+            await RetryFolderOperationAsync(() => MoveDirectory(staging, target), cancellationToken);
         }
         catch
         {
@@ -792,7 +829,7 @@ public class BenchmarkReportChartStore
                 return false;
             }
 
-            Directory.Delete(target, recursive: true);
+            await DeleteDocumentFolderAsync(target, cancellationToken);
             return true;
         }
         finally

@@ -3087,8 +3087,10 @@ the folder.
 
 **Atomic replace.** A `PUT` replaces the document's whole browser-drawn set, all or nothing, under a
 per-document lock: the files and the manifest are written to a staging folder, the old folder is
-deleted, and the staging folder is moved into place in one `Directory.Move`. Two writers share that
-path: `SetChartsAsync` (a browser upload) carries the server-drawn entries it does not replace into the
+deleted, and the staging folder is moved into place in one `Directory.Move`. A move or delete that
+fails with an I/O error, as it does on Windows while a real-time virus scanner still holds a
+just-written file open, is retried up to five times over about 0.8 s before the failure is reported.
+Two writers share that path: `SetChartsAsync` (a browser upload) carries the server-drawn entries it does not replace into the
 new set, and `SetServerChartsAsync` (the server's drawing) replaces only the server-drawn entries, so
 neither wipes the other's images. A render reads the manifest and skips, with a logged
 warning, an image that is missing or whose SHA-256 differs from the manifest; **a render never fails
