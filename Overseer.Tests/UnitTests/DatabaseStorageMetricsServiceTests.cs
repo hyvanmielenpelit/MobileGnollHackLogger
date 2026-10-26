@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
@@ -9,6 +10,7 @@ using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Overseer.Tests.Helpers;
 using Xunit;
+using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace Overseer.Tests.UnitTests;
 
@@ -53,7 +55,8 @@ public class DatabaseStorageMetricsServiceTests
         ApplicationDbContext db,
         IMemoryCache cache,
         IConfiguration? configuration = null,
-        BenchmarkReportChartStore? chartStore = null)
+        BenchmarkReportChartStore? chartStore = null,
+        ILogger<DatabaseStorageMetricsService>? logger = null)
     {
         var services = new ServiceCollection();
         if (chartStore != null)
@@ -65,7 +68,7 @@ public class DatabaseStorageMetricsServiceTests
             db,
             configuration ?? CreateConfiguration(),
             cache,
-            NullLogger<DatabaseStorageMetricsService>.Instance,
+            logger ?? NullLogger<DatabaseStorageMetricsService>.Instance,
             services.BuildServiceProvider());
     }
 
@@ -370,6 +373,54 @@ public class DatabaseStorageMetricsServiceTests
         Assert.Equal(2, metrics.ChatProviderAttemptPrunableCount);
     }
 
+    /// <summary>
+    /// SqlClient reports a query canceled mid-execution as a provider exception. The service must let it
+    /// propagate as the cancellation it is, not log it as a failed check.
+    /// </summary>
+    [Fact]
+    public async Task AnAbortedRequest_MidQuery_PropagatesTheCancellation_AndLogsNoError()
+    {
+        using var cts = new CancellationTokenSource();
+        var interceptor = new CanceledQueryInterceptor(cts);
+        using var connection = SqliteSchemaTemplate.OpenCopy();
+        using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connection).AddInterceptors(interceptor).Options);
+        using var cache = (MemoryCache)CreateSizeLimitedCache();
+        var logger = new RecordingLogger();
+        var service = CreateService(db, cache, logger: logger);
+
+        interceptor.Arm();
+        var ex = await Assert.ThrowsAnyAsync<Exception>(() => service.GetStorageMetricsAsync(cts.Token));
+
+        Assert.True(interceptor.Fired);
+        Assert.True(ex.IsCanceledBy(cts.Token));
+        Assert.DoesNotContain(logger.Entries, e => e.Level >= LogLevel.Error);
+    }
+
+    /// <summary>
+    /// The edition probe is a raw ADO.NET command that no EF Core interceptor sees, so the connection itself
+    /// cancels it. An abort there must not cache the conservative fallback.
+    /// </summary>
+    [Fact]
+    public async Task AnAbortedRequest_DuringEditionDetection_CachesNoFallback()
+    {
+        using var cts = new CancellationTokenSource();
+        using var connection = new CancelingSqliteConnection(cts, text => text.Contains("SERVERPROPERTY", StringComparison.Ordinal));
+        connection.Open();
+        SqliteSchemaTemplate.CopyInto(connection);
+        using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connection).Options);
+        using var cache = (MemoryCache)CreateSizeLimitedCache();
+        var service = CreateService(db, cache);
+
+        var ex = await Assert.ThrowsAnyAsync<Exception>(() => service.GetStorageMetricsAsync(cts.Token));
+
+        Assert.True(connection.Fired);
+        Assert.True(ex.IsCanceledBy(cts.Token));
+        // The service's private EditionCacheKey.
+        Assert.False(cache.TryGetValue("SqlServerEditionInfo", out _));
+    }
+
     [Fact]
     public void ComputeNextRunUtc_RollsToTomorrowWhenHourHasPassed()
     {
@@ -391,5 +442,19 @@ public class DatabaseStorageMetricsServiceTests
 
         Assert.Equal(new DateTime(2026, 9, 15, 3, 0, 0, DateTimeKind.Utc),
             DatabaseStorageMetricsService.ComputeNextRunUtc(now, 3));
+    }
+
+    private sealed class RecordingLogger : ILogger<DatabaseStorageMetricsService>
+    {
+        public List<(LogLevel Level, Exception? Exception)> Entries { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add((logLevel, exception));
+        }
     }
 }

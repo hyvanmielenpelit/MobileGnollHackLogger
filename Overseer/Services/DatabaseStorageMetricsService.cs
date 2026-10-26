@@ -216,7 +216,7 @@ public class DatabaseStorageMetricsService
                     info.Edition, info.EngineEdition, info.ProductVersion, info.ProductLevel);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to detect SQL Server edition via SERVERPROPERTY; assuming the conservative Express limit");
             info = null;
@@ -273,7 +273,7 @@ public class DatabaseStorageMetricsService
                 dto.LastMaintenanceRunUtc = _lastMaintenanceRunUtc > recordedUtc ? _lastMaintenanceRunUtc : recordedUtc;
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to read the last maintenance run from MaintenanceRunLog");
         }
@@ -301,7 +301,7 @@ public class DatabaseStorageMetricsService
                 dto.UsedDataSizeMb = ReadDouble(reader["UsedMb"]);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to query database file sizes from sys.database_files");
         }
@@ -326,7 +326,7 @@ public class DatabaseStorageMetricsService
                 dto.LogUsedMb = Math.Round(ReadDouble(reader["UsedMb"]), 2);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to query transaction log size from sys.database_files");
         }
@@ -398,7 +398,7 @@ public class DatabaseStorageMetricsService
             dto.OtherTablesTotalSpaceMb = Math.Round(others.Sum(t => t.TotalSpaceMb), 2);
             dto.AllTablesTotalSpaceMb = Math.Round(allTables.Sum(t => t.TotalSpaceMb), 2);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to query table storage stats from sys.partitions");
         }
@@ -423,7 +423,7 @@ public class DatabaseStorageMetricsService
                 dto.EstimatedReclaimableMb = Math.Round(avgSessionMb * dto.SoftDeletedSessionCount, 2);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to query chat session counts");
         }
@@ -436,7 +436,7 @@ public class DatabaseStorageMetricsService
             dto.ImmediatePurgeSessionCount = await _dbContext.ChatSession.CountAsync(s => !s.IsDeleted && s.ImmediatePurgeOnDelete, cancellationToken);
             dto.EphemeralSessionCount = _ephemeralSessionStore?.Count ?? 0;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to query privacy framework session counts");
         }
@@ -482,7 +482,7 @@ public class DatabaseStorageMetricsService
             dto.ContentKeyVersions = rows.Values.OrderBy(r => r.Version, StringComparer.Ordinal).ToList();
             dto.SessionsWithUnknownKeyVersionCount = dto.ContentKeyVersions.Where(r => !r.InRing).Sum(r => r.SessionCount);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to query content key version usage");
         }
@@ -496,7 +496,7 @@ public class DatabaseStorageMetricsService
             dto.AuditLogPrunableCount = await GnollHackServer.Data.Privacy.ChatAccessAudit.CountPrunableAsync(
                 _dbContext, _settings.AuditLogRetentionDays, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to query access journal counts");
         }
@@ -514,7 +514,7 @@ public class DatabaseStorageMetricsService
                     .CountAsync(e => e.IsDismissed && e.DismissedAtUtc < aiErrorCutoff, cancellationToken);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to query AI error log counts");
         }
@@ -533,7 +533,7 @@ public class DatabaseStorageMetricsService
                     .CountAsync(cancellationToken);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to query security event counts");
         }
@@ -552,7 +552,7 @@ public class DatabaseStorageMetricsService
                     .CountAsync(a => a.StartedAtUtc < attemptCutoff, cancellationToken);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to query chat provider attempt counts");
         }
@@ -574,7 +574,7 @@ public class DatabaseStorageMetricsService
                 .CountAsync(tc => tc.BenchmarkRunAnswer!.BenchmarkRun.StartedAtUtc < benchmarkCutoff
                     && (tc.Result != null || tc.ArgsText != null), cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to query next maintenance pass preview counts");
         }
@@ -590,7 +590,7 @@ public class DatabaseStorageMetricsService
             dto.PendingMigrations = pending;
             dto.SchemaStatusAvailable = true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to read EF Core migration status");
             dto.SchemaStatusAvailable = false;
@@ -816,7 +816,7 @@ public class DatabaseStorageMetricsService
             _logger.LogInformation("Dispatched storage report email to {ToAddress}", toAddress);
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
             _logger.LogError(ex, "Failed to send storage report email to {ToAddress}", toAddress);
             return false;
