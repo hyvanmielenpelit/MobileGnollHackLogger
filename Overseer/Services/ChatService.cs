@@ -1413,6 +1413,7 @@ public class ChatService
                 Data = JsonSerializer.Serialize(new
                 {
                     messageId = userMsg.Id,
+                    isHidden,
                     attachments = savedDbAttachments.Select(a => new { id = a.Id, fileName = a.FileName }).ToList()
                 })
             };

@@ -2024,37 +2024,40 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         console.log(`[Frontend Debug] Parsed data. messageId: ${data.messageId}, attachments:`, data.attachments);
         this.debugService.log(`[Frontend] Parsed data. messageId: ${data.messageId}, attachments count: ${data.attachments ? data.attachments.length : 0}`);
         
-        let messageFound = false;
-        for (let i = this.messages.length - 1; i >= 0; i--) {
-          if (this.messages[i].role === 'user') {
-            messageFound = true;
-            this.messages[i].id = data.messageId;
-            console.log(`[Frontend Debug] Found latest user message at index ${i}. Updated id to ${data.messageId}`);
-            
-            if (data.attachments && this.messages[i].attachments) {
-              for (const serverAtt of data.attachments) {
-                const localAtt = this.messages[i].attachments!.find(
-                  a => a.fileName === serverAtt.fileName && !a.id
-                );
-                if (localAtt) {
-                  localAtt.id = serverAtt.id;
-                  console.log(`[Frontend Debug] Successfully matched and updated attachment: ${serverAtt.fileName} with id ${serverAtt.id}`);
-                  this.debugService.log(`[Frontend] Updated attachment: ${serverAtt.fileName} (id: ${serverAtt.id})`);
-                } else {
-                  console.warn(`[Frontend Debug] Failed to find local attachment matching fileName: ${serverAtt.fileName} without an id.`);
-                  this.debugService.log(`[Frontend] Warning: Failed to find matching local attachment for: ${serverAtt.fileName}`);
-                }
+        /* Only the latest user message can be this page's own send; an older one without an id
+           is a send that failed earlier and must not take a newer turn's id. */
+        let i = this.messages.length - 1;
+        while (i >= 0 && this.messages[i].role !== 'user') i--;
+        const latestUser = i >= 0 ? this.messages[i] : undefined;
+
+        if (data.isHidden === true) {
+          this.debugService.log(`[Frontend] user_message_created ${data.messageId} is a hidden turn; nothing to show.`);
+        } else if (this.messages.some(m => m.role === 'user' && m.id === data.messageId)) {
+          this.debugService.log(`[Frontend] User message ${data.messageId} is already shown.`);
+        } else if (latestUser && !latestUser.id) {
+          latestUser.id = data.messageId;
+          console.log(`[Frontend Debug] Found latest user message at index ${i}. Updated id to ${data.messageId}`);
+
+          if (data.attachments && latestUser.attachments) {
+            for (const serverAtt of data.attachments) {
+              const localAtt = latestUser.attachments.find(
+                a => a.fileName === serverAtt.fileName && !a.id
+              );
+              if (localAtt) {
+                localAtt.id = serverAtt.id;
+                console.log(`[Frontend Debug] Successfully matched and updated attachment: ${serverAtt.fileName} with id ${serverAtt.id}`);
+                this.debugService.log(`[Frontend] Updated attachment: ${serverAtt.fileName} (id: ${serverAtt.id})`);
+              } else {
+                console.warn(`[Frontend Debug] Failed to find local attachment matching fileName: ${serverAtt.fileName} without an id.`);
+                this.debugService.log(`[Frontend] Warning: Failed to find matching local attachment for: ${serverAtt.fileName}`);
               }
-            } else {
-                console.log(`[Frontend Debug] No attachments to process. Data attachments: ${!!data.attachments}, Local attachments: ${!!this.messages[i].attachments}`);
             }
-            break;
+          } else {
+            console.log(`[Frontend Debug] No attachments to process. Data attachments: ${!!data.attachments}, Local attachments: ${!!latestUser.attachments}`);
           }
-        }
-        
-        if (!messageFound) {
-            console.warn(`[Frontend Debug] Could not find any user message in the local array! Array length: ${this.messages.length}`);
-            this.debugService.log(`[Frontend] Error: Could not find any user message in the local array.`);
+        } else {
+          this.debugService.log(`[Frontend] User message ${data.messageId} was not sent by this page; fetching it.`);
+          this.recoverMissingUserMessage(data.messageId);
         }
 
         this.flushStreamRender();
@@ -3096,6 +3099,32 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         }
       }, 60000);
     }
+  }
+
+  /**
+   * Fetches a user message the page never had, because the chat was loaded before the server
+   * saved it or another tab sent it, and inserts it where the page stood when its
+   * `user_message_created` event arrived.
+   */
+  private recoverMissingUserMessage(messageId: number): void {
+    const sessionId = this.currentSessionId;
+    const list = this.messages;
+    const insertAt = list.length;
+    if (!sessionId) return;
+    this.chatService.getSession(sessionId).subscribe({
+      next: (httpResponse) => {
+        const s = httpResponse.body;
+        /* A session switch or a reload replaced the list; a list loaded after the save already
+           holds the message. */
+        if (!s || this.currentSessionId !== sessionId || this.messages !== list) return;
+        if (list.some(m => m.role === 'user' && m.id === messageId)) return;
+        const msg = s.messages?.find(m => m.role === 'user' && m.id === messageId);
+        if (!msg) return;
+        list.splice(Math.min(insertAt, list.length), 0, msg);
+        this.cdr.detectChanges();
+      },
+      error: (err) => this.debugService.log(`[Frontend] Could not recover user message ${messageId}: ${err.message || err}`)
+    });
   }
 
   async syncSessionSilently(sessionRef: string | number) {
