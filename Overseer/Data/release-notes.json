@@ -1,5 +1,24 @@
 [
   {
+    "version": "1.4.2",
+    "date": "2026-10-26T18:13:11Z",
+    "summary": "A small reliability release for the chat: starting a conversation is more dependable, and the chat no longer shows a misleading waiting screen.",
+    "changes": [
+      {
+        "type": "fix",
+        "text": "The \"Consulting the Overseer...\" screen now appears only when you open a chat from GnollHack. Opening or reloading an ordinary chat that is still being answered no longer shows it."
+      },
+      {
+        "type": "fix",
+        "text": "If you send your first message very soon after opening the chat, it is no longer wiped from the screen when the page finishes loading."
+      },
+      {
+        "type": "fix",
+        "text": "When you open a chat while your question is still being saved, for example in another tab or right after reloading the page, your question now appears above the answer instead of being missing."
+      }
+    ]
+  },
+  {
     "version": "1.4.1",
     "date": "2026-10-26T14:43:10Z",
     "summary": "A performance release that makes the Overseer quicker to open and smoother to use, with no changes to how it answers.",
