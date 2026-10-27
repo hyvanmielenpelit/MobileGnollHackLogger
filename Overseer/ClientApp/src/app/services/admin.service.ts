@@ -40,6 +40,174 @@ export interface SecurityEvent {
   modelId?: string | null;
   code?: string | null;
   detail?: string | null;
+  /** The refused game texts kept for the event in the snapshot guard's quarantine. */
+  quarantineCount: number;
+}
+
+/** One game text the snapshot guard refused, decrypted for an administrator's review. */
+export interface SecurityQuarantineItem {
+  id: number;
+  occurredUtc: string;
+  /** `create`, `history`, `manifest`, `attach` or `tool-<name>`. */
+  channel: string;
+  /** A `SnapshotGuardSubject` name. */
+  subject: string;
+  /** A `SnapshotGuardTextKind` name. */
+  textKind: string;
+  /** `Suspicious` or `Injection`. */
+  level: string;
+  /** The finding's scanner codes, e.g. `authority`. */
+  codes: string[];
+  playerAuthored: boolean;
+  /** False when the text was delivered in Observe mode. */
+  withheld: boolean;
+  /** `normal`, `confidential` or `incognito`. */
+  sessionMode: string;
+  /** A decimal session id or an `eph_` reference, when the caller knew it. */
+  sessionRef?: string | null;
+  /** Characters of the full text. */
+  plainLength: number;
+  /** Characters kept; less than `plainLength` when `truncated`. */
+  storedLength: number;
+  truncated: boolean;
+  /** SHA-256 of the full text's UTF-8, lower-case hex. */
+  sha256: string;
+  /** The kept text, or the unreadable notice when it cannot be decrypted. */
+  text: string;
+}
+
+/** A terms document the user accepted. */
+export interface SecurityTermsAcceptance {
+  documentKey: string;
+  version: string;
+  acceptedUtc: string;
+  source: string;
+}
+
+/** An admin-log entry with the event's user as its subject. */
+export interface SecurityRelatedAdminAction {
+  id: number;
+  occurredUtc: string;
+  /** An `AdminUserActionKind` name. */
+  kind: string;
+  actorUserName?: string | null;
+  reason?: string | null;
+  detail?: string | null;
+  bulkOperationId?: number | null;
+}
+
+/** The user's active account hold. */
+export interface SecurityRelatedHold {
+  id: number;
+  reason: string;
+  placedByUserName?: string | null;
+  placedUtc: string;
+}
+
+/** The user's newest account deletion request. */
+export interface SecurityRelatedDeletionRequest {
+  id: number;
+  /** An `AccountDeletionRequestStatus` name. */
+  status: string;
+  requestedUtc: string;
+  holdReasons: string;
+}
+
+/** A session of the user whose snapshot was refused in the event's window. Never its title. */
+export interface SecurityRelatedSession {
+  id: number;
+  createdUtc: string;
+  snapshotRefusedUtc?: string | null;
+  snapshotRefusalCode?: string | null;
+  isConfidential: boolean;
+}
+
+/** The message a `ChatReported` event names. Never its content. */
+export interface SecurityReportedMessage {
+  messageId: number;
+  sessionId?: number | null;
+  timestampUtc?: string | null;
+  role?: string | null;
+  /** False once the message has been deleted. */
+  exists: boolean;
+}
+
+/** One provider call attempt of the user on the event's configuration. */
+export interface SecurityRelatedProviderAttempt {
+  startedAtUtc: string;
+  roleContext: number;
+  requestedModelId: string;
+  httpStatus?: number | null;
+  providerErrorCode?: string | null;
+  /** A `ProviderAttemptOutcome` name. */
+  outcome: string;
+  retried: boolean;
+}
+
+/** One usage row of the user. */
+export interface SecurityRelatedUsageRow {
+  timestampUtc: string;
+  modelId: string;
+  roleContext: number;
+  tokens?: number | null;
+  cost?: number | null;
+}
+
+/** Another security event from the same IP address. */
+export interface SecurityRelatedIpEvent {
+  id: number;
+  kind: string;
+  code?: string | null;
+  count: number;
+}
+
+/** A website request-log row of the event's IP address. Never its message or request data. */
+export interface SecurityRelatedRequestLog {
+  lastDate: string;
+  count: number;
+  requestPath?: string | null;
+  requestMethod?: string | null;
+  responseCode?: number | null;
+  requestUserName?: string | null;
+}
+
+/** Another event of the same user. */
+export interface SecurityRelatedUserEvent {
+  id: number;
+  kind: string;
+  code?: string | null;
+  detail?: string | null;
+}
+
+/**
+ * The records linked to an event by user, address and time, each list the newest 20 in the event's
+ * run window widened by ten minutes a side (the terms acceptances are not windowed). A list that does
+ * not apply to the event's kind is empty.
+ */
+export interface SecurityRelated {
+  termsAcceptances: SecurityTermsAcceptance[];
+  adminActions: SecurityRelatedAdminAction[];
+  hold?: SecurityRelatedHold | null;
+  deletionRequest?: SecurityRelatedDeletionRequest | null;
+  sessions: SecurityRelatedSession[];
+  reportedMessage?: SecurityReportedMessage | null;
+  providerAttempts: SecurityRelatedProviderAttempt[];
+  usageRows: SecurityRelatedUsageRow[];
+  ipEvents: SecurityRelatedIpEvent[];
+  requestLogs: SecurityRelatedRequestLog[];
+  sameUserEvents: SecurityRelatedUserEvent[];
+}
+
+/** One event with its explanation, its related records and its quarantined texts (the newest 50). */
+export interface SecurityEventDetail extends SecurityEvent {
+  quarantine: SecurityQuarantineItem[];
+  /** Every quarantined text of the event; more than `quarantine.length` when capped. */
+  quarantineTotalCount: number;
+  related: SecurityRelated;
+  /** What the kind means, who writes it, and what its code and detail are. */
+  explanation: string;
+  /** The name of `systemAiApiConfigurationId`; null when it is gone. */
+  systemConfigurationName?: string | null;
 }
 
 export interface SecurityEventsPage {
@@ -78,6 +246,12 @@ export interface AdminSnapshotGuard {
   autoBlockDistinctDays: number;
   autoBlockWindowDays: number;
   notificationEmailConfigured: boolean;
+  /** Whether refused game text is kept, encrypted, for review. */
+  quarantineEnabled: boolean;
+  /** The longest text kept; a longer one is truncated. */
+  quarantineMaxChars: number;
+  /** `ChatRetentionSettings:PruneSnapshotQuarantineDays`. */
+  quarantineRetentionDays: number;
 }
 
 export type AccountDeletionRequestStatus = 'Pending' | 'Completed' | 'Declined';
@@ -990,6 +1164,7 @@ export interface RetentionPolicy {
   auditLogRetentionDays: number;
   pruneDismissedAiErrorLogDays: number;
   pruneSecurityEventDays: number;
+  pruneSnapshotQuarantineDays: number;
   pruneChatProviderAttemptDays: number;
   maintenanceHistoryRetentionDays: number;
   maintenanceRunHourUtc: number;
@@ -1210,6 +1385,11 @@ export class AdminService {
     if (query.skip) params.skip = query.skip;
     if (query.take) params.take = query.take;
     return this.http.get<SecurityEventsPage>('/api/admin/security/events', { params });
+  }
+
+  /** 404 for an unknown id. Reading quarantined text writes an access-journal row. */
+  getSecurityEventDetail(id: number): Observable<SecurityEventDetail> {
+    return this.http.get<SecurityEventDetail>(`/api/admin/security/events/${id}`);
   }
 
   /** 404 when no user has the identifier. */

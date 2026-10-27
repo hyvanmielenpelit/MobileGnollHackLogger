@@ -553,6 +553,28 @@ public class ChatRetentionService
     }
 
     /// <summary>
+    /// Deletes snapshot guard quarantine rows (encrypted game text) kept more than <paramref name="daysOld"/> days,
+    /// or only counts them on a dry run. Rows of held users are not exempt: their events stay for the review, the
+    /// text does not need to. Zero or negative days returns zero.
+    /// </summary>
+    public async Task<int> PruneSnapshotQuarantineAsync(int daysOld, bool isDryRun = false, CancellationToken cancellationToken = default)
+    {
+        if (daysOld <= 0)
+            return 0;
+
+        var cutoff = DateTime.UtcNow.AddDays(-daysOld);
+        var query = _dbContext.SnapshotGuardQuarantines.Where(q => q.OccurredUtc < cutoff);
+
+        int count = await query.CountAsync(cancellationToken);
+        if (count > 0 && !isDryRun)
+        {
+            await query.ExecuteDeleteAsync(cancellationToken);
+            _logger.LogInformation("Pruned {Count} quarantined game texts older than {Days} days", count, daysOld);
+        }
+        return count;
+    }
+
+    /// <summary>
     /// Deletes chat provider attempt rows started more than <paramref name="daysOld"/> days ago, or only counts
     /// them on a dry run. Zero or negative days returns zero.
     /// </summary>
@@ -783,7 +805,18 @@ public class ChatRetentionService
                 result.Logs.Add("Dismissed AI error log pruning is disabled; no rows were pruned.");
             }
 
-            // 9. Prune security events; events of users with an active hold or a pending deletion request are kept
+            // 9. Prune quarantined game texts, then security events; events of users with an active hold or a pending deletion request are kept
+            int quarantineDays = _settings.PruneSnapshotQuarantineDays;
+            if (quarantineDays > 0)
+            {
+                int prunedQuarantine = await PruneSnapshotQuarantineAsync(quarantineDays, isDryRun, cancellationToken);
+                result.Logs.Add($"Quarantined game texts pruned (> {quarantineDays}d): {prunedQuarantine}");
+            }
+            else
+            {
+                result.Logs.Add("Quarantined game text pruning is disabled; no rows were pruned.");
+            }
+
             int securityEventDays = _settings.PruneSecurityEventDays;
             if (securityEventDays > 0)
             {

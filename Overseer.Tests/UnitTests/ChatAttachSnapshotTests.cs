@@ -325,6 +325,95 @@ public class ChatAttachSnapshotTests
         Assert.Empty(await db.ChatMessage.ToListAsync(ct));
     }
 
+    private static Overseer.Services.Security.SecurityEventQuarantineItem QuarantinedText(Overseer.Tests.Helpers.SnapshotGuardTestServices guard)
+    {
+        var entry = Assert.Single(guard.Events.Entries, e => e.Kind == SecurityEventKind.SnapshotRejected);
+        return Assert.Single(entry.Quarantine!);
+    }
+
+    [Fact]
+    public async Task AttachSnapshot_ANewIncognitoAttachRefused_QuarantinesAsIncognitoWithoutAReference_AndWritesNoRow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        using var guard = new Overseer.Tests.Helpers.SnapshotGuardTestServices("Enforce");
+        var controller = CreateController(db, "user-1");
+
+        var result = await controller.AttachSnapshot(
+            new AttachGameSnapshotRequest { SnapshotText = PlantedBoard, IsConfidential = true, IsEphemeral = true }, snapshotGuard: guard.Guard);
+
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, Assert.IsType<ObjectResult>(result).StatusCode);
+        var item = QuarantinedText(guard);
+        Assert.Equal(Overseer.Services.Security.SnapshotGuardScope.ModeIncognito, item.SessionMode);
+        Assert.Null(item.SessionRef);
+        Assert.Equal("attach", item.Channel);
+        Assert.Empty(await db.ChatSession.ToListAsync(ct));
+        Assert.Empty(await db.ChatMessage.ToListAsync(ct));
+    }
+
+    [Fact]
+    public async Task AttachSnapshot_ARefusedAttachToAnEphemeralSession_CarriesItsReference()
+    {
+        using var db = CreateInMemoryDbContext();
+        using var guard = new Overseer.Tests.Helpers.SnapshotGuardTestServices("Enforce");
+        var controller = CreateController(db, "user-1");
+        dynamic created = Assert.IsType<OkObjectResult>(await controller.AttachSnapshot(
+            new AttachGameSnapshotRequest { SnapshotText = "Incognito board", IsConfidential = true, IsEphemeral = true })).Value!;
+        string sessionRef = (string)created.sessionId;
+
+        var result = await controller.AttachSnapshot(
+            new AttachGameSnapshotRequest { SessionId = sessionRef, SnapshotText = PlantedBoard }, snapshotGuard: guard.Guard);
+
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, Assert.IsType<ObjectResult>(result).StatusCode);
+        var item = QuarantinedText(guard);
+        Assert.Equal(Overseer.Services.Security.SnapshotGuardScope.ModeIncognito, item.SessionMode);
+        Assert.Equal(sessionRef, item.SessionRef);
+    }
+
+    [Fact]
+    public async Task AttachSnapshot_ARefusedAttachToTheUsersConfidentialSession_IsConfidential_ThoughTheFlagsAreFalse()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        using var guard = new Overseer.Tests.Helpers.SnapshotGuardTestServices("Enforce");
+        var controller = CreateController(db, "user-1");
+        db.ChatSession.Add(new ChatSession
+        {
+            Id = 50, AspNetUserId = "user-1", Title = "Confidential chat", IsConfidential = true,
+            CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync(ct);
+
+        var result = await controller.AttachSnapshot(
+            new AttachGameSnapshotRequest { SessionId = "50", SnapshotText = PlantedBoard }, snapshotGuard: guard.Guard);
+
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, Assert.IsType<ObjectResult>(result).StatusCode);
+        var item = QuarantinedText(guard);
+        Assert.Equal(Overseer.Services.Security.SnapshotGuardScope.ModeConfidential, item.SessionMode);
+        Assert.Equal("50", item.SessionRef);
+    }
+
+    [Fact]
+    public async Task AttachSnapshot_ARefusedAttachToAnotherUsersSession_NamesNoSession()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        using var guard = new Overseer.Tests.Helpers.SnapshotGuardTestServices("Enforce");
+        var controller = CreateController(db, "user-1");
+        db.ChatSession.Add(new ChatSession
+        {
+            Id = 51, AspNetUserId = "other-user", Title = "Other's chat", IsConfidential = true,
+            CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync(ct);
+
+        await controller.AttachSnapshot(new AttachGameSnapshotRequest { SessionId = "51", SnapshotText = PlantedBoard }, snapshotGuard: guard.Guard);
+
+        var item = QuarantinedText(guard);
+        Assert.Equal(Overseer.Services.Security.SnapshotGuardScope.ModeNormal, item.SessionMode);
+        Assert.Null(item.SessionRef);
+    }
+
     [Fact]
     public async Task AttachSnapshot_AnAcceptedSnapshot_ClearsAnEarlierRefusal_AndGetSessionReportsIt()
     {

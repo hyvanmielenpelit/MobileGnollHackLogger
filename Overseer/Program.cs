@@ -591,12 +591,18 @@ builder.Services.AddRateLimiter(options =>
         context.HttpContext.Response.Headers.RetryAfter =
             ((int)Math.Ceiling(window.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
+        // The route template, not the path: a path carries session ids and eph_ references.
+        string? target = (context.HttpContext.GetEndpoint() as Microsoft.AspNetCore.Routing.RouteEndpoint)?.RoutePattern.RawText
+            ?? context.HttpContext.Request.Path.Value;
+        if (target != null && target.Length > 256) target = target.Substring(0, 256);
+
         context.HttpContext.RequestServices.GetService<Overseer.Services.Security.ISecurityEventRecorder>()?.Record(
             new Overseer.Services.Security.SecurityEventEntry(
                 MobileGnollHackLogger.Data.SecurityEventKind.RateLimitRejected,
                 UserId: context.HttpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
                 IpAddress: context.HttpContext.Connection.RemoteIpAddress?.ToString(),
-                Code: policy ?? "unknown"));
+                Code: policy ?? "unknown",
+                Detail: target));
 
         await context.HttpContext.Response.WriteAsync(RateLimitPolicies.RejectionMessage(policy), token);
     };

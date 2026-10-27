@@ -169,7 +169,9 @@ public class SessionController : ControllerBase
                     Overseer.Services.Security.SnapshotGuardTextKind.MessageHistory, request.MessageHistory),
                 new Overseer.Services.Security.SnapshotGuardInput("manifest", Overseer.Services.Security.SnapshotGuardSubject.Manifest,
                     Overseer.Services.Security.SnapshotGuardTextKind.Manifest, request.DirectoryManifest)
-            });
+            },
+            // No incognito form, and the session row does not exist yet, so there is no reference.
+            Overseer.Services.Security.SnapshotGuardScope.For(false, request.IsConfidential, null));
         bool snapshotWithheld = guard.IsWithheld("create");
         bool historyWithheld = guard.IsWithheld("history");
         bool manifestWithheld = guard.IsWithheld("manifest");

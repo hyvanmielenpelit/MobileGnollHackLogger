@@ -1290,7 +1290,7 @@
              (change)="setNewChatPrivacyMode('confidential')" />
       <span class="privacy-option-body">
         <span class="privacy-option-title"><svg class="privacy-option-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Confidential</span>
-        <span class="privacy-option-note">Encrypted where it is stored. Internet tools off. No AI-made title. Deleting it is final.</span>
+        <span class="privacy-option-note">Encrypted where it is stored. Internet tools off. No AI-made title. Deleting it is final. Game text the snapshot guard flags is kept for 30 days for abuse review, encrypted under Overseer's key, not this chat's.</span>
       </span>
     </label>
 
@@ -1300,7 +1300,7 @@
              (change)="setNewChatPrivacyMode('incognito')" />
       <span class="privacy-option-body">
         <span class="privacy-option-title"><svg class="privacy-option-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.06 13c-1.86 0-3.42 1.33-3.82 3.1-.95-.41-1.82-.3-2.48-.01-.39-1.77-1.96-3.09-3.82-3.09-2.17 0-3.94 1.77-3.94 3.94S4.77 20.88 6.94 20.88c2.06 0 3.74-1.59 3.9-3.6.3-.2 1.15-.63 2.32 0 .16 2.01 1.85 3.6 3.9 3.6 2.17 0 3.94-1.77 3.94-3.94S19.23 13 17.06 13zM6.94 19.86c-1.61 0-2.92-1.31-2.92-2.92s1.31-2.92 2.92-2.92 2.92 1.31 2.92 2.92-1.31 2.92-2.92 2.92zm10.12 0c-1.61 0-2.92-1.31-2.92-2.92s1.31-2.92 2.92-2.92 2.92 1.31 2.92 2.92-1.31 2.92-2.92 2.92zM22 10.5H2V12h20v-1.5zm-6.47-7.87c-.22-.49-.78-.75-1.31-.58L12 2.79l-2.23-.74-.03-.01c-.53-.15-1.1.11-1.3.58l-2.5 6.5h12.1l-2.51-6.49z"/></svg>Incognito</span>
-        <span class="privacy-option-note">Nothing is saved. Held in memory until you close it or it goes idle, then gone. No trash, no recovery.</span>
+        <span class="privacy-option-note">Nothing is saved, except game text the snapshot guard flags, which is kept for 30 days for abuse review. Held in memory until you close it or it goes idle, then gone. No trash, no recovery.</span>
       </span>
     </label>
   </fieldset>
@@ -1439,7 +1439,7 @@
     Incognito chat
   </h3>
 
-  <p class="pb-explanation">This chat is <strong>Incognito</strong>: nothing in it is saved, and it ends on its own after {{ ephemeralTimeoutMinutes }} minutes without activity. When it ends, everything in it is gone.</p>
+  <p class="pb-explanation">This chat is <strong>Incognito</strong>: nothing in it is saved, except game text the snapshot guard flags (below), and it ends on its own after {{ ephemeralTimeoutMinutes }} minutes without activity. When it ends, everything in it is gone.</p>
 
   <h4 class="pb-section-title">What is not saved</h4>
   <ul class="pb-controls">
@@ -1447,7 +1447,7 @@
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="pb-control-glyph" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
       <span class="pb-control-body">
         <span class="pb-control-title">Messages, tool results and attachments</span>
-        <span class="pb-control-desc">Nothing is written to Overseer's database or file store.</span>
+        <span class="pb-control-desc">Nothing is written to Overseer's database or file store, except a game tool result the snapshot guard flags.</span>
       </span>
     </li>
     <li class="pb-control">
@@ -1462,6 +1462,7 @@
   <h4 class="pb-section-title">What still happens</h4>
   <ul class="privacy-limits">
     <li>The conversation is still sent to the AI provider to be answered. Incognito changes what Overseer keeps, not what is sent away for inference.</li>
+    <li>A game snapshot, file listing, message history or game-tool result that the snapshot guard flags is kept encrypted for 30 days so an administrator can review it.</li>
   </ul>
 
   <h4 class="pb-section-title">When it ends</h4>

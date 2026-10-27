@@ -61,6 +61,12 @@ public static class SnapshotGuardScanner
     /// <summary>A scan that ran out of time; read as a finding, so a text that cannot be checked is not delivered.</summary>
     public const string ScanTimeout = "scan-timeout";
 
+    /// <summary>The first line of the client's directory manifest, written by <c>GHGame.GenerateDirectoryManifest</c>.</summary>
+    public const string ClientManifestHeader = "=== Game Directory Manifest ===";
+
+    /// <summary>The first line of the client's message history, written by <c>GHGame.ExportFullMessageHistory</c>.</summary>
+    public const string ClientHistoryHeader = "=== Full Message History ===";
+
     /// <summary>Every code in the order a verdict lists them.</summary>
     public static readonly IReadOnlyList<string> AllCodes = new[] { Address, Override, Authority, Tool, ExfilImage, ExfilUrl, HiddenTag, Hidden, Directive };
 
@@ -194,12 +200,19 @@ public static class SnapshotGuardScanner
     /// <summary>
     /// Scans <paramref name="text"/>. <paramref name="toolNames"/> are the registered tool names a tool-coercion
     /// finding looks for. For <see cref="SnapshotGuardTextKind.Snapshot"/> the text before the first known heading
-    /// (the version lines and the character's own line) counts as the player's.
+    /// (the version lines and the character's own line) counts as the player's. A manifest or message history whose
+    /// first line is the client's own header for that kind is scanned without that line.
     /// </summary>
     public static SnapshotGuardVerdict Scan(string? text, SnapshotGuardTextKind kind, IReadOnlyCollection<string> toolNames)
     {
         if (string.IsNullOrEmpty(text)) return SnapshotGuardVerdict.Clean;
         if (text[0] == '\uFEFF') text = text[1..];
+        text = kind switch
+        {
+            SnapshotGuardTextKind.Manifest => StripFirstLine(text, ClientManifestHeader),
+            SnapshotGuardTextKind.MessageHistory => StripFirstLine(text, ClientHistoryHeader),
+            _ => text,
+        };
 
         string playerText;
         string otherText;
@@ -233,6 +246,15 @@ public static class SnapshotGuardScanner
         if (codes.Count == 0) return SnapshotGuardLevel.Clean;
         if (codes.Count >= 2 || codes.Any(StrongCodes.Contains)) return SnapshotGuardLevel.Injection;
         return SnapshotGuardLevel.Suspicious;
+    }
+
+    /// <summary><paramref name="text"/> without its first line when that line, less a trailing carriage return, is exactly <paramref name="header"/>.</summary>
+    private static string StripFirstLine(string text, string header)
+    {
+        int newline = text.IndexOf('\n');
+        string firstLine = newline < 0 ? text : text[..newline];
+        if (!string.Equals(firstLine.TrimEnd('\r'), header, StringComparison.Ordinal)) return text;
+        return newline < 0 ? string.Empty : text[(newline + 1)..];
     }
 
     private static (string Player, string Other) SplitByAuthor(string text)

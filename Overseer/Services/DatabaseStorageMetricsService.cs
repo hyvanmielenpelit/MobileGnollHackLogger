@@ -701,6 +701,7 @@ public class DatabaseStorageMetricsService
         AuditLogRetentionDays = _settings.AuditLogRetentionDays,
         PruneDismissedAiErrorLogDays = _settings.PruneDismissedAiErrorLogDays,
         PruneSecurityEventDays = _settings.PruneSecurityEventDays,
+        PruneSnapshotQuarantineDays = _settings.PruneSnapshotQuarantineDays,
         PruneChatProviderAttemptDays = _settings.PruneChatProviderAttemptDays,
         MaintenanceHistoryRetentionDays = _settings.MaintenanceHistoryRetentionDays,
         MaintenanceRunHourUtc = _settings.MaintenanceRunHourUtc,

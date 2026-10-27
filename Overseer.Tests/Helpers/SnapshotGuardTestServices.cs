@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
@@ -25,19 +26,31 @@ internal sealed class SnapshotGuardTestServices : IDisposable
 
     /// <param name="mode">The seeded mode: Off, Observe or Enforce.</param>
     /// <param name="configure">More services, such as the ephemeral session store.</param>
-    public SnapshotGuardTestServices(string mode, Action<IServiceCollection>? configure = null, string? databaseName = null)
+    /// <param name="withKeyRing">Whether a content keyring with a random key is registered, so the quarantine can seal.</param>
+    public SnapshotGuardTestServices(string mode, Action<IServiceCollection>? configure = null, string? databaseName = null, bool withKeyRing = true)
     {
-        Configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        var settings = new Dictionary<string, string?>
         {
             ["SnapshotGuard:Mode"] = mode,
             ["SnapshotGuard:AutoBlockEnabled"] = "false",
             ["SnapshotGuard:NotificationEmail"] = ""
-        }).Build();
+        };
+        if (withKeyRing)
+        {
+            settings["PrivacySettings:KeyRing:v1"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+            settings["PrivacySettings:ActiveKeyVersion"] = "v1";
+        }
+        Configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
 
         string name = databaseName ?? "snapshot-guard-" + Guid.NewGuid().ToString("N");
         var services = new ServiceCollection();
         services.AddDbContext<ApplicationDbContext>(o => o.UseInMemoryDatabase(name));
         services.AddSingleton(Configuration);
+        if (withKeyRing)
+        {
+            KeyRing = new ConfigurationContentKeyRing(Configuration);
+            services.AddSingleton<IContentKeyRing>(KeyRing);
+        }
         services.AddSingleton<IToolHandler>(new FakeChangeToolHandler("report_feedback"));
         services.AddSingleton<IToolHandler>(new FakeChangeToolHandler("wiki_search"));
         configure?.Invoke(services);
@@ -51,6 +64,9 @@ internal sealed class SnapshotGuardTestServices : IDisposable
     public IConfiguration Configuration { get; }
     public ServiceProvider Provider { get; }
     public RecordingEvents Events { get; } = new();
+
+    /// <summary>The registered keyring, to open what the guard sealed; null without one.</summary>
+    public ConfigurationContentKeyRing? KeyRing { get; }
     public SnapshotGuardService Guard { get; }
 
     public void Dispose()

@@ -61,7 +61,9 @@ when it was not.
   about a person and stay behind the admin sign-in.
 - **No content in events.** `SecurityEvent` holds identifiers and codes — never message text, attempted
   user names, passwords or headers — and an IP address only on authentication and rate-limit events. A
-  new event kind obeys the same rule.
+  new event kind obeys the same rule. The one exception is the snapshot guard's quarantine
+  (`SnapshotGuardQuarantine`, `data-privacy-framework.md` § 8.7): the game text a guard finding was
+  about, sealed under the content keyring in a row of its own beside the event, never on the event row.
 - **Telemetry rows outside the four chat tables hold no content either.** `UserKeyAiUsageLog`,
   `ChatProviderAttempt` and `OverseerDailyActivity` (`ai-telemetry.md`) are not written for an incognito
   turn on a user's own key, and incognito activity is counted only on an anonymous daily row; each is
@@ -185,6 +187,8 @@ and the client compares it as one — the stale-event guard used to be
 No `ChatSession`, `ChatMessage`, `ChatMessageToolCall` or `ChatMessageAttachment` row, and no file
 in `ConversationsDataLocation`. Nothing is added to the `DbContext` and `SaveChangesAsync` is
 never called on that path — "zero rows" is a property of the code, not a promise about it.
+The one exception is the snapshot guard's quarantine of game text it flagged, a security-event row
+outside the four chat tables, disclosed where the mode is chosen.
 
 **Including no RAG sidecar, because a sidecar is a file.** `RagSidecarStore.TryWriteAsync` returns
 null for an ephemeral session as the *same* rule, not as an exception to it. Anything new that
@@ -334,8 +338,9 @@ them less true changes the framework doc and the UI copy with it, in the same co
   recognisable shape passes straight through. This is stated *first* wherever masking is described,
   not last.
 - **RAM is not a legal or forensic boundary.** "Not saved" means "not written to Overseer's
-  database or its file store" and nothing stronger; process memory can be paged out or captured in
-  a dump. And an ephemeral conversation **still reaches the AI provider**. Both halves are in the
+  database or its file store" — except the game text the snapshot guard flags, which is kept
+  encrypted for 30 days in every mode and said so where the mode is chosen — and nothing stronger;
+  process memory can be paged out or captured in a dump. And an ephemeral conversation **still reaches the AI provider**. Both halves are in the
   product where the mode is chosen, not in a tooltip.
 - **Crypto-shredding does not reach a backup taken before the shred.** That backup holds the
   wrapped key and the master key is still in configuration. This is the single most tempting

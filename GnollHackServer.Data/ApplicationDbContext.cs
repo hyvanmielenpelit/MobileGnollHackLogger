@@ -68,6 +68,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<ChatConsistencyAnalysis> ChatConsistencyAnalyses { get; set; } = null!;
         public DbSet<ChatConsistencyAnnotation> ChatConsistencyAnnotations { get; set; } = null!;
         public DbSet<SecurityEvent> SecurityEvents { get; set; } = null!;
+        public DbSet<SnapshotGuardQuarantine> SnapshotGuardQuarantines { get; set; } = null!;
         public DbSet<UserSystemModelOrder> UserSystemModelOrders { get; set; } = null!;
         public DbSet<AccountHold> AccountHolds { get; set; } = null!;
         public DbSet<AccountDeletionRequest> AccountDeletionRequests { get; set; } = null!;
@@ -208,6 +209,17 @@ namespace MobileGnollHackLogger.Data
                 e.HasIndex(s => s.OccurredUtc);
                 e.HasIndex(s => new { s.AspNetUserId, s.OccurredUtc });
                 e.HasIndex(s => new { s.Kind, s.OccurredUtc });
+            });
+
+            /* Goes with its event: a database cascade, so the event prune's bulk delete takes these rows too.
+               AspNetUserId is a plain column: the user cascade reaches these rows through SecurityEvents, and a
+               second cascade path from AspNetUsers is refused by SQL Server. */
+            modelBuilder.Entity<SnapshotGuardQuarantine>(e =>
+            {
+                e.HasOne(q => q.SecurityEvent).WithMany().HasForeignKey(q => q.SecurityEventId).OnDelete(DeleteBehavior.Cascade);
+                e.HasIndex(q => q.SecurityEventId);
+                e.HasIndex(q => q.OccurredUtc);
+                e.HasIndex(q => new { q.AspNetUserId, q.OccurredUtc });
             });
 
             modelBuilder.Entity<UserSystemModelOrder>(e =>

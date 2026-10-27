@@ -22,7 +22,10 @@ public enum ChatAccessAction
     Export,
 
     /// <summary>A conversation and its files were permanently destroyed.</summary>
-    Erasure
+    Erasure,
+
+    /// <summary>Quarantined game text behind a security event was read by an administrator.</summary>
+    SecurityContentRead
 }
 
 /// <summary>

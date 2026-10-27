@@ -152,6 +152,7 @@
       <div><dt>Access journal kept</dt><dd>{{ daysLabel(storageMetrics.policy.auditLogRetentionDays) }}</dd></div>
       <div><dt>Dismissed AI errors kept</dt><dd>{{ daysLabel(storageMetrics.policy.pruneDismissedAiErrorLogDays) }}</dd></div>
       <div><dt>Security events kept</dt><dd>{{ daysLabel(storageMetrics.policy.pruneSecurityEventDays) }}</dd></div>
+      <div><dt>Snapshot guard texts kept</dt><dd>{{ daysLabel(storageMetrics.policy.pruneSnapshotQuarantineDays) }}</dd></div>
       <div><dt>Chat provider attempts kept</dt><dd>{{ daysLabel(storageMetrics.policy.pruneChatProviderAttemptDays) }}</dd></div>
       <div><dt>Maintenance history kept</dt><dd>{{ daysLabel(storageMetrics.policy.maintenanceHistoryRetentionDays) }}</dd></div>
       <div><dt>Nightly pass</dt><dd>{{ storageMetrics.policy.maintenanceRunHourUtc }}:00 UTC</dd></div>
@@ -344,7 +345,7 @@
             <li>Sweeps orphaned disk folders</li>
             <li>Deletes access journal rows over {{ daysLabel(storageMetrics.policy.auditLogRetentionDays) }}</li>
             <li>Deletes dismissed AI errors over {{ daysLabel(storageMetrics.policy.pruneDismissedAiErrorLogDays) }} since dismissal</li>
-            <li>Prunes security events over {{ daysLabel(storageMetrics.policy.pruneSecurityEventDays) }}, keeping those of users with an account hold or a pending deletion request</li>
+            <li>Prunes security events over {{ daysLabel(storageMetrics.policy.pruneSecurityEventDays) }}, keeping those of users with an account hold or a pending deletion request, and refused game text over {{ daysLabel(storageMetrics.policy.pruneSnapshotQuarantineDays) }}</li>
             <li>Prunes chat provider attempts over {{ daysLabel(storageMetrics.policy.pruneChatProviderAttemptDays) }}</li>
             <li>Deletes maintenance history over {{ daysLabel(storageMetrics.policy.maintenanceHistoryRetentionDays) }}</li>
           </ol>
@@ -426,7 +427,7 @@
 
         <div class="granular-card">
           <h5>Prune Security Events</h5>
-          <p class="text-muted">Deletes security events older than the threshold. Events of users with an active account hold or a pending deletion request are kept.</p>
+          <p class="text-muted">Deletes security events older than the threshold. Events of users with an active account hold or a pending deletion request are kept. Refused game text over {{ daysLabel(storageMetrics.policy.pruneSnapshotQuarantineDays) }} is deleted with the same run.</p>
           <select id="maintenance-security-event-days" class="gh-input mt-10" [(ngModel)]="securityEventPruneDays" aria-label="Security event age" style="width: 100%;">
             @for (d of dayOptions([30, 90, 180, 365], storageMetrics.policy.pruneSecurityEventDays); track d) {
               <option [ngValue]="d">Older than {{ d }}d</option>
@@ -600,7 +601,7 @@
           <li>Sweeps orphaned disk folders</li>
           <li>Deletes access journal rows over {{ daysLabel(storageMetrics.policy.auditLogRetentionDays) }}</li>
           <li>Deletes dismissed AI errors over {{ daysLabel(storageMetrics.policy.pruneDismissedAiErrorLogDays) }} since dismissal</li>
-          <li>Prunes security events over {{ daysLabel(storageMetrics.policy.pruneSecurityEventDays) }}, keeping those of users with an account hold or a pending deletion request</li>
+          <li>Prunes security events over {{ daysLabel(storageMetrics.policy.pruneSecurityEventDays) }}, keeping those of users with an account hold or a pending deletion request, and refused game text over {{ daysLabel(storageMetrics.policy.pruneSnapshotQuarantineDays) }}</li>
           <li>Prunes chat provider attempts over {{ daysLabel(storageMetrics.policy.pruneChatProviderAttemptDays) }}</li>
           <li>Deletes maintenance history over {{ daysLabel(storageMetrics.policy.maintenanceHistoryRetentionDays) }}</li>
         </ol>

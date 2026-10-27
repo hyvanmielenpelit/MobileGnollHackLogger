@@ -42,6 +42,13 @@ public class ChatRetentionSettings
     public int PruneSecurityEventDays { get; set; } = 180;
 
     /// <summary>
+    /// Days a <c>SnapshotGuardQuarantine</c> row (encrypted game text the snapshot guard refused) is
+    /// kept. Shorter than <see cref="PruneSecurityEventDays"/>; a row also goes with its event. Zero
+    /// or negative disables pruning.
+    /// </summary>
+    public int PruneSnapshotQuarantineDays { get; set; } = 30;
+
+    /// <summary>
     /// Days a <c>ChatProviderAttempt</c> row (one provider attempt of a chat or title-generation call)
     /// is kept. Zero or negative disables pruning.
     /// </summary>
@@ -114,6 +121,7 @@ public class RetentionPolicyDto
     public int AuditLogRetentionDays { get; set; }
     public int PruneDismissedAiErrorLogDays { get; set; }
     public int PruneSecurityEventDays { get; set; }
+    public int PruneSnapshotQuarantineDays { get; set; }
     public int PruneChatProviderAttemptDays { get; set; }
     public int MaintenanceHistoryRetentionDays { get; set; }
     public int MaintenanceRunHourUtc { get; set; }

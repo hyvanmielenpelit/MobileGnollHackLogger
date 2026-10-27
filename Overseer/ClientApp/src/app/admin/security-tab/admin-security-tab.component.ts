@@ -27,7 +27,7 @@ import { CardListChip, CardListSort, CardListState } from '../../shared/data-tab
 import { FilterFacetComponent, FilterFacetOption } from '../../shared/data-table/filter-facet.component';
 import { TableState, anyOfFilter, customFilter } from '../../shared/data-table/table-state';
 import { InfoTipComponent } from '../../shared/info-tip/info-tip.component';
-import { elapsedMsBetween, parseServerUtcDate } from '../../utils/date.util';
+import { parseServerUtcDate } from '../../utils/date.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { rovingTabIndex } from '../../utils/roving-tab.util';
 import {
@@ -37,6 +37,10 @@ import {
   TELEMETRY_TIME_SPAN_LABELS,
   TelemetryTimeSpan
 } from '../admin-page.store';
+import { SecurityEventDialogComponent, SecurityUserEventsRequest } from './security-event-dialog.component';
+import { securityKindLabel, securityRunSpanText, securityTimeText, securityUserLabel } from './security-event-archive';
+
+export { securityKindLabel };
 
 /** Where the events list's view settings are kept, per browser. */
 export const SECURITY_EVENTS_VIEW_STORAGE_KEY = 'overseer.admin.security.events.view';
@@ -55,40 +59,6 @@ export const SECURITY_EVENT_KINDS: readonly string[] = [
   'AdminLockedOut', 'AdminUnlocked', 'AdminBanned', 'AdminUnbanned', 'AdminSignedOut', 'AdminEmailConfirmed',
   'AdminTwoFactorReset', 'AdminEmailChanged'
 ];
-
-const KIND_LABELS: Readonly<Record<string, string>> = {
-  LoginFailed: 'Sign-in failed',
-  LoginLockedOut: 'Locked out',
-  TwoFactorFailed: 'Two-factor failed',
-  RateLimitRejected: 'Rate limit',
-  QuotaRefused: 'Quota refused',
-  AccessDenied: 'Access denied',
-  ProviderRefusal: 'Provider refusal',
-  ProviderSafetyBlock: 'Provider safety block',
-  ProviderPolicyRejection: 'Provider policy rejection',
-  AttachmentRejected: 'Attachment rejected',
-  ChatReported: 'Chat reported',
-  SnapshotRejected: 'Snapshot refused',
-  AutoBlocked: 'Blocked automatically',
-  AdminBlocked: 'Blocked by admin',
-  AdminUnblocked: 'Unblocked by admin',
-  AccountHoldPlaced: 'Deletion hold placed',
-  AccountHoldReleased: 'Deletion hold released',
-  AccountDeletionHeld: 'Deletion held for review',
-  AdminLockedOut: 'Locked out by admin',
-  AdminUnlocked: 'Unlocked by admin',
-  AdminBanned: 'Banned by admin',
-  AdminUnbanned: 'Unbanned by admin',
-  AdminSignedOut: 'Signed out by admin',
-  AdminEmailConfirmed: 'Email confirmed by admin',
-  AdminTwoFactorReset: 'Two-factor reset by admin',
-  AdminEmailChanged: 'Email changed by admin'
-};
-
-/** What a security event kind reads as; an unknown kind reads as its name. */
-export function securityKindLabel(kind: string): string {
-  return KIND_LABELS[kind] ?? kind;
-}
 
 const NO_KINDS: readonly string[] = [];
 
@@ -136,13 +106,13 @@ interface SecurityUserFilter {
 /**
  * The Admin page's Security tab, in three sub-tabs that share the AI Telemetry date range: Summary
  * (the counts of security events), Events (a lookup of the user behind a provider safety identifier,
- * and a server-paged card list of the events with a search, a Kind facet, Block / Unblock and AI
- * usage per user) and Settings (the snapshot guard).
+ * and a server-paged card list of the events with a search, a Kind facet, Details per event, and
+ * Block / Unblock and AI usage per user) and Settings (the snapshot guard).
  */
 @Component({
   selector: 'app-admin-security-tab',
   standalone: true,
-  imports: [FormsModule, FilterFacetComponent, InfoTipComponent],
+  imports: [FormsModule, FilterFacetComponent, InfoTipComponent, SecurityEventDialogComponent],
   templateUrl: './admin-security-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
   styleUrl: './admin-security-tab.component.scss'
@@ -156,6 +126,7 @@ export class AdminSecurityTabComponent implements OnInit, AfterViewInit, OnDestr
 
   @ViewChild('blockDialog') blockDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('secHead') private secHead?: ElementRef<HTMLElement>;
+  @ViewChild('eventDialog') eventDialog?: SecurityEventDialogComponent;
 
   readonly kindLabel = securityKindLabel;
   readonly reasonMax = SECURITY_BLOCK_REASON_MAX;
@@ -443,6 +414,15 @@ export class AdminSecurityTabComponent implements OnInit, AfterViewInit, OnDestr
     return `Automatic block: ${block}; e-mail to the operator mailbox: ${guard.notificationEmailConfigured ? 'on' : 'off'}.`;
   }
 
+  /** Whether refused game text is kept, and for how long. */
+  get guardQuarantineText(): string {
+    const guard = this.guard;
+    if (!guard) return '';
+    return guard.quarantineEnabled
+      ? `Refused game text is kept encrypted for ${guard.quarantineRetentionDays} days for review, in every chat mode.`
+      : 'Refused game text is not kept (QuarantineEnabled is off).';
+  }
+
   /** `24 Oct 2026 14:02`, in local time. */
   static formatChangedAt(d: Date): string {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -698,26 +678,22 @@ export class AdminSecurityTabComponent implements OnInit, AfterViewInit, OnDestr
 
   /** The user name, else *Unknown user* for an id without one, else *No user*. */
   userLabel(event: SecurityEvent): string {
-    return event.userName?.trim() || (event.userId ? 'Unknown user' : 'No user');
+    return securityUserLabel(event);
   }
 
   /** `2026-10-13 09:15 UTC`. */
   timeText(event: SecurityEvent): string {
-    const date = parseServerUtcDate(event.occurredUtc);
-    if (isNaN(date.getTime())) return event.occurredUtc;
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} `
-      + `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())} UTC`;
+    return securityTimeText(event.occurredUtc);
   }
 
   /** How long a run of repeats lasted: `in 4 min`, `in under a minute`, `in 2 h 5 min`. */
   runSpanText(event: SecurityEvent): string {
-    const minutes = Math.round(elapsedMsBetween(event.occurredUtc, event.lastOccurredUtc) / 60000);
-    if (minutes < 1) return 'in under a minute';
-    if (minutes < 60) return `in ${minutes} min`;
-    const hours = Math.floor(minutes / 60);
-    const rest = minutes % 60;
-    return rest === 0 ? `in ${hours} h` : `in ${hours} h ${rest} min`;
+    return securityRunSpanText(event.occurredUtc, event.lastOccurredUtc);
+  }
+
+  /** `, 2 texts kept`, for assistive technology after the *Text kept* tag. */
+  keptText(event: SecurityEvent): string {
+    return `, ${event.quarantineCount} ${event.quarantineCount === 1 ? 'text' : 'texts'} kept`;
   }
 
   modelText(event: SecurityEvent): string {
@@ -725,6 +701,16 @@ export class AdminSecurityTabComponent implements OnInit, AfterViewInit, OnDestr
   }
 
   // --- Actions ---
+
+  /** Opens the event's details; focus returns to `opener` when they close. */
+  openDetails(event: SecurityEvent, opener: HTMLElement): void {
+    this.eventDialog?.open(event.id, opener);
+  }
+
+  /** *Events of this user* in the details dialog. */
+  onUserEventsRequested(request: SecurityUserEventsRequest): void {
+    this.showUserEvents(request.userId, request.userName);
+  }
 
   /** Opens the reason step for a Block. */
   requestBlock(event: SecurityEvent, button: HTMLElement): void {
@@ -832,7 +818,12 @@ export class AdminSecurityTabComponent implements OnInit, AfterViewInit, OnDestr
   showLookupEvents(): void {
     const result = this.lookupResult;
     if (!result) return;
-    this.userFilter = { id: result.userId, name: result.userName };
+    this.showUserEvents(result.userId, result.userName);
+  }
+
+  /** Narrows the events list to one user, and focuses the list's heading. */
+  showUserEvents(userId: string, userName: string): void {
+    this.userFilter = { id: userId, name: userName };
     this.reloadEvents();
     this.element('#sec-events-title')?.focus();
   }

@@ -178,6 +178,16 @@ public class AdminController : ControllerBase
         [FromServices] Overseer.Services.Security.SecurityQueryService security)
         => Ok(await security.GetEventsAsync(startDate, endDate, kinds, userId, search, skip, take));
 
+    /// <summary>One event with its kept game texts and related records; reading texts is journaled. 404 when none.</summary>
+    [HttpGet("security/events/{id:long}")]
+    public async Task<IActionResult> GetSecurityEvent(long id, [FromServices] Overseer.Services.Security.SecurityQueryService security)
+    {
+        var detail = await security.GetEventDetailAsync(id, AdminUserId ?? string.Empty, User.Identity?.Name,
+            HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.RequestAborted);
+        if (detail == null) return NotFound(new { message = "No security event has that id." });
+        return Ok(detail);
+    }
+
     /// <summary>The user a provider safety identifier belongs to; 404 when none.</summary>
     [HttpGet("security/safety-identifier/{identifier}")]
     public async Task<IActionResult> LookupSafetyIdentifier(string identifier,
@@ -210,6 +220,8 @@ public class AdminController : ControllerBase
     private async Task<AdminSnapshotGuardDto> SnapshotGuardDtoAsync(Overseer.Services.Security.SnapshotGuardModeState state)
     {
         var options = SnapshotGuardOptions.Read(_configuration);
+        var retention = new ChatRetentionSettings();
+        _configuration.GetSection("ChatRetentionSettings").Bind(retention);
         string? setBy = state.SetByUserId == null
             ? null
             : await _dbContext.Users.AsNoTracking().Where(u => u.Id == state.SetByUserId).Select(u => u.UserName).FirstOrDefaultAsync() ?? state.SetByUserId;
@@ -222,7 +234,10 @@ public class AdminController : ControllerBase
             AutoBlockEnabled = options.AutoBlockEnabled,
             AutoBlockDistinctDays = options.AutoBlockDistinctDays,
             AutoBlockWindowDays = options.AutoBlockWindowDays,
-            NotificationEmailConfigured = options.NotificationEmail != null
+            NotificationEmailConfigured = options.NotificationEmail != null,
+            QuarantineEnabled = options.QuarantineEnabled,
+            QuarantineMaxChars = options.QuarantineMaxChars,
+            QuarantineRetentionDays = retention.PruneSnapshotQuarantineDays
         };
     }
 
@@ -1826,10 +1841,16 @@ public class AdminController : ControllerBase
         if (days <= 0)
             return BadRequest(new { message = "The security event window must be a positive number of days." });
 
+        // The quarantine has no count column of its own; its count is carried by the log line.
+        int quarantineDays = retentionService.Settings.PruneSnapshotQuarantineDays;
         return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.PruneSecurityEvents, isDryRun, async result =>
         {
+            int prunedQuarantine = await retentionService.PruneSnapshotQuarantineAsync(quarantineDays, isDryRun);
             result.PrunedSecurityEventCount = await retentionService.PruneSecurityEventsAsync(days, isDryRun);
-            result.Logs.Add($"{DryRunPrefix(isDryRun)}Pruned {result.PrunedSecurityEventCount} security events last seen over {days} days ago. Events of users with an active account hold or a pending deletion request are kept.");
+            string quarantine = quarantineDays > 0
+                ? $" and {prunedQuarantine} quarantined game texts older than {quarantineDays} days."
+                : "; quarantined game text pruning is disabled.";
+            result.Logs.Add($"{DryRunPrefix(isDryRun)}Pruned {result.PrunedSecurityEventCount} security events last seen over {days} days ago{quarantine} Events of users with an active account hold or a pending deletion request are kept.");
         });
     }
 

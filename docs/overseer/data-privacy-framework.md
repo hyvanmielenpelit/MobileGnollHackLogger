@@ -1231,7 +1231,9 @@ added for them. Usage rows now also carry an **estimated cost** and the thinking
 | `OverseerDailyActivity` | per user per UTC day: chats created and messages sent and received | incognito chats and messages are counted **only on an anonymous daily row** that names nobody | cascades with the account (a deletion held for review keeps it until approved) |
 
 The incognito promise covers the four chat tables; these rows are outside them, hold no content, and
-are disclosed in the privacy notice (*Cost and token accounting*, *Activity counts*).
+are disclosed in the privacy notice (*Cost and token accounting*, *Activity counts*). The one table
+outside the four that does hold content is the snapshot guard quarantine below, a bounded and
+disclosed exception (§8.7).
 
 **Security events, the block and account-deletion holds** (`security-monitoring.md`):
 
@@ -1239,6 +1241,11 @@ are disclosed in the privacy notice (*Cost and token accounting*, *Activity coun
   passwords or headers; the IP address only on authentication and rate-limit events. Kept 180 days
   (`PruneSecurityEventDays`), except the events of a user with an active hold or a pending deletion
   request, which are kept until it is decided; cascades with the account.
+- **The snapshot guard quarantine is the one exception to "no content".** `SnapshotGuardQuarantine`
+  keeps the game text the snapshot guard found something in, encrypted under the content keyring, in a
+  row of its own linked to its `SnapshotRejected` event, in every chat mode, for 30 days
+  (`PruneSnapshotQuarantineDays`, held users included) or until its event is deleted. The event row
+  itself still holds only codes. §8.7 has the details.
 - **The provider safety identifier is a new outbound field.** A pseudonym derived by HMAC from the
   user id with a key derived from `AesEncryptionKey`, sent to OpenAI (`safety_identifier`) and Anthropic
   (`metadata.user_id`) with operator-funded calls to official endpoints, incognito and confidential
@@ -1434,9 +1441,10 @@ Two callers, one implementation:
 3. Run a re-wrap pass over existing sessions: `TryRewrapSessionKey` unwraps each DEK under the
    version the row records and re-wraps it under the active one. **Not one row of content is
    rewritten** — the DEK is the same bytes.
-4. Retire `v1` only when no session references it. **Retiring a version while any session still
-   names it is the one rotation mistake that loses data**, and the failure is visible rather
-   than silent: those rows read as the unreadable notice.
+4. Retire `v1` only when no session references it, and no snapshot guard quarantine row does, which
+   is at most `PruneSnapshotQuarantineDays` after it stopped being active (§8.7). **Retiring a
+   version while any session still names it is the one rotation mistake that loses data**, and the
+   failure is visible rather than silent: those rows read as the unreadable notice.
 
 `AesEncryptionKey`, which protects API-key material, is *not* part of this and does not rotate.
 
@@ -1450,6 +1458,11 @@ blocked, the title model is not called, the prompt cache is disabled, telemetry 
 is dropped — because those all follow from the session being confidential, and an ephemeral
 session is confidential by construction. `isEphemeral` without `isConfidential` is a **400**
 rather than a silent correction.
+
+**One bounded exception:** a game snapshot, file listing, message history or game-tool result the
+snapshot guard finds something in is kept encrypted for 30 days in a security-event row outside the
+four chat tables, in an incognito chat too, and the mode's descriptions say so where it is chosen
+(§8.7).
 
 There is **no upgrade path**, and there cannot be: an existing chat's rows are already written,
 so "make this chat incognito" could only ever mean "delete it and start again". The choice
@@ -1760,7 +1773,8 @@ the mode without opening each chat, and it reveals nothing about what any of the
 logging said a URL was fetched and cost accounting said tokens were spent, but nothing recorded
 an access — so a suspected incident could not be investigated at all.
 
-Four actions are recorded: a conversation read, an attachment read, an export, and an erasure.
+Five actions are recorded: a conversation read, an attachment read, an export, an erasure, and an
+administrator's read of the game text kept behind a security event (`SecurityContentRead`, §8.7).
 Each row carries the actor, their user name at the time, whether they held administrator rights,
 the subject, the session and attachment identifiers, the session reference, whether the session
 was confidential, the caller's address and a short detail.
@@ -1834,6 +1848,11 @@ Both entry points also carry `termsAcceptances`: every Terms of Service acceptan
 user (§8.5), oldest first, with its document, version, time and source
 (`ChatDataExport.BuildTermsAcceptancesAsync`).
 
+**The snapshot guard quarantine (§8.7) is not in either export.** It is game text the user's client
+uploaded, kept up to 30 days for an administrator's review; whether an access or portability request
+must include it is for counsel, and including it would be one more section of the export, decrypted
+under the user's own request.
+
 ### 8.3 The in-product notice
 
 `/privacy` in Overseer renders the ladder, the data map, the limitations matrix, the readable-metadata
@@ -1882,7 +1901,12 @@ and is deliberately out of scope: it needs its own migration and its own re-wrap
 3. Run a re-wrap pass: `TryRewrapSessionKey` unwraps each session's DEK under the version its row
    records and re-wraps it under the active one. **Not one row of content is rewritten** — the DEK
    is the same bytes. There is **no background job driving this today**; step 3 is manual.
-4. Retire `v1` only when no session references it.
+4. Retire `v1` only when no session references it, and no snapshot guard quarantine row does, which
+   is at most `PruneSnapshotQuarantineDays` after it stopped being active. Quarantine rows are sealed
+   directly under the version they name and are never re-wrapped, so step 3 does not reach them: their
+   rotation is the wait. The wait ends at the first maintenance pass after that many days, and never
+   while the setting is `0`. The Database tab's key-ring panel counts sessions only; `SELECT KeyVersion,
+   COUNT(*) FROM SnapshotGuardQuarantines GROUP BY KeyVersion` counts the quarantine (§8.7).
 
 > **Retiring a version while any session still names it is the one rotation mistake that loses
 > data.** The failure is at least visible rather than silent: those rows read as the unreadable
@@ -1955,3 +1979,80 @@ A report's text is **content**: model-written text derived from the conversation
 The notice's data map lists the reports (§8.3): what is stored, that credentials, card and account
 numbers, e-mail addresses and phone numbers are removed first, that the text is also kept unredacted with
 the conversation's tool calls, and both lifetimes.
+
+### 8.7 Snapshot guard quarantine
+
+The snapshot guard scans the game text the GnollHack client uploads (the AI snapshot, the message
+history, the directory manifest and client tool results) before it is stored or reaches the model, and
+keeps each text it found something in so an administrator can check the finding. How the guard works is
+in [`security-monitoring.md`](security-monitoring.md) § 3a; what matters here is what is stored and for
+how long. A kept text is **content**: game data the user's client sent, which can hold names, labels and
+notes the user or another player wrote.
+
+| Stored | Where | How long | Shared with |
+|---|---|---|---|
+| The text, cut to `SnapshotGuard:QuarantineMaxChars` (100,000 characters by default), encrypted; in clear beside it: the channel (`create`, `history`, `manifest`, `attach` or `tool-<name>`), the subject and text kind, the verdict and its codes, whether the text was the player's own, whether it was withheld, the chat mode (`normal`, `confidential` or `incognito`), the session reference when the caller knew one, the full and kept lengths, the SHA-256 of the full text, the key version, the time and the user id | `SnapshotGuardQuarantines`, one row per text with a finding, linked to its `SnapshotRejected` security event | `ChatRetentionSettings:PruneSnapshotQuarantineDays` (30) after it was received, removed by the next maintenance pass, held users included; sooner when its event is deleted (the event prune, the account's erasure, an administrator's SQL), by a database cascade | Overseer administrators, on Admin → Security → Events → *Details*, and in the event's download (one `.txt` per text, or the event's ZIP) |
+
+- **Written in every chat mode.** Normal, confidential and incognito alike: an incognito turn's refused
+  tool result and an incognito chat's refused snapshot attach are kept like any other. That makes it an
+  exception to the incognito promise (§5.8) and to the rule that tables outside the four chat tables
+  hold no content (§5.6), and it is disclosed where the mode is chosen (the new-chat dialog's
+  *Confidential* and *Incognito* notes, the incognito chat's details panel, the Settings page's
+  *Default for New Chats* hint for Incognito) and in the notice (§8.3). The reason: enforcement already rests on content-free events written
+  in every mode, but the snapshot guard's automatic block rests on a heuristic scanner's codes alone,
+  and the scanner has been wrong; a contested block cannot be re-verified without the text. The mode is
+  stored on the row (`SnapshotGuardScope`) so an administrator sees which promise the text came from. It
+  decides nothing: restricting the quarantine to some modes would be one condition in
+  `SnapshotGuardService` plus the wording.
+- **Only flagged game text, only with a user.** Never a message the user typed, never an attachment,
+  never a clean text. The quarantine is built when `SnapshotGuard:QuarantineEnabled` is on (the default;
+  an unparseable value is on), the request has a user id, and the guard found something. Turning the
+  setting off makes the notice's sentence untrue, so the notice changes with it.
+- **Observe mode keeps the text too.** In `Observe` the guard withholds nothing: a flagged text is
+  delivered as usual (to the model, and in a persistent chat to its stored rows) and is also kept, with
+  `Withheld = false`. The product's wording, *game text the snapshot guard flags*, holds in both modes:
+  in `Enforce` the flagged text is also refused, in `Observe` it is delivered. `Off` scans and keeps
+  nothing.
+- **Under the content keyring, not a session key and not `AesEncryptionKey`.** `SnapshotQuarantineCipher`
+  seals the text with AES-GCM (a 12-byte nonce, a 16-byte tag) under the keyring's active version, with
+  the associated data `snapshot-quarantine:v1:` plus the user id, so a row re-pointed at another user
+  does not decrypt and the bytes cannot be mistaken for any other use of the ring. Not a session's key:
+  a refusal at session create or at a new snapshot attach comes before any session exists, and an
+  incognito chat keeps no key at rest; it is under the operator's keyring on purpose, so that a review is
+  possible, which the *Confidential* note says. Not `AesEncryptionKey`, which stays API-key material and
+  does not rotate (§5.7). No per-row data key: envelope encryption exists so rotation re-wraps one key
+  instead of rewriting content, and a row lives only as long as the retention, so its rotation is
+  waiting that out before retiring a version (§8.4).
+- **The plaintext never enters the event queue.** The guard seals each text before it hands the event to
+  `SecurityEventRecorder`, whose queue holds at most 64 MB (UTF-16) of quarantine ciphertext; an event
+  over that budget is recorded without its texts, with a warning logged at most once a minute.
+- **No keyring, no quarantine.** When the keyring is not registered or cannot encrypt, the event is
+  recorded without its texts and a warning is logged once per process; the guard's decision is
+  unchanged. `ConfigHealthService` already raises the `content-keyring-unusable` alert for the ring
+  itself.
+- **Cut, but hashed whole.** A text over `QuarantineMaxChars` (1,000 to 1,000,000; a value outside that
+  range is the default) is cut and marked truncated; its SHA-256 is of the full text's UTF-8, so it
+  matches the client's original even when the kept text is shorter.
+- **Every read is journaled.** `GET api/admin/security/events/{id}` returns the newest 50 texts of the
+  event, decrypted, with the total count. When it returns any, it writes one access journal row (§8.1)
+  with the action `SecurityContentRead`: the administrator, the subject user, the session reference when
+  every returned text shares one, whether any came from a confidential or incognito chat, the address,
+  and the detail `security-event:{id}; texts:{n}`. Identifiers only, and, as with every journal write, a
+  failure is logged and does not fail the read. The texts' download, one `.txt` or the event's ZIP, is
+  built in the browser from that response and is not journaled again. The admin view never renders a
+  text as HTML or Markdown: it is untrusted game text, shown in the Snapshot Viewer as plain monospace.
+- **An unreadable row reads as a notice.** A row whose key version has been retired, whose associated
+  data names another user, or whose value is corrupt reads as *"[This content could not be decrypted.]"*;
+  the read never throws.
+- **Not in the personal-data export** (§8.2).
+- **The honest limit: the 30 days do not reach a backup.** A database backup taken before the prune
+  keeps the ciphertext, and the keyring that opens it is in configuration, so the text stays readable
+  from that backup, the same limit as crypto-shredding (§5.7).
+
+The notice says it in four places (§8.3): the *Security events* row of the data map lists snapshot guard
+refusals and states that game text the snapshot guard flagged is kept encrypted in every chat mode and
+deleted after 30 days, also while a review keeps its event; the *The message you type* row names it as
+the one exception in every mode; the incognito row of the limitations matrix points at it; and the
+*Acceptable use* section says the flagged text is kept encrypted for 30 days for an administrator's
+review, in incognito and confidential chats too. The chat's mode notes, its incognito panel and the
+Incognito default-mode hint use the same word, *flags*, because `Observe` keeps texts it does not refuse.

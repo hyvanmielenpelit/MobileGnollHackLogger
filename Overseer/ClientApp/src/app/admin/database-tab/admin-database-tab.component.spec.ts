@@ -36,7 +36,7 @@ describe('AdminDatabaseTabComponent', () => {
         maxActiveSessionsPerUser: 50, maxPinnedSessionsPerUser: 5, inactivityTtlDays: 90,
         softDeleteGracePeriodDays: 30, pruneToolCallResultsDays: 30, pruneBenchmarkToolCallResultsDays: 90,
         auditLogRetentionDays: 365, pruneDismissedAiErrorLogDays: 90, pruneSecurityEventDays: 180,
-        pruneChatProviderAttemptDays: 400, maintenanceHistoryRetentionDays: 180,
+        pruneSnapshotQuarantineDays: 30, pruneChatProviderAttemptDays: 400, maintenanceHistoryRetentionDays: 180,
         maintenanceRunHourUtc: 3,
         enableStorageWarningEmails: true, emailSenderConfigured: false
       }
@@ -292,6 +292,20 @@ describe('AdminDatabaseTabComponent', () => {
         .find(box => box.querySelector('.stat-label')?.textContent?.trim() === statLabel);
       expect((statBox?.querySelector('.stat-value')?.textContent ?? '').replace(/\s+/g, ' ').trim())
         .toBe(statValue);
+      fixture.destroy();
+    });
+
+    it('lists how long refused game text is kept, and names its prune in the maintenance pass', async () => {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      const policyRow = Array.from(host.querySelectorAll('.policy-list dt'))
+        .find(dt => dt.textContent?.trim() === 'Snapshot guard texts kept');
+      expect(policyRow?.nextElementSibling?.textContent?.trim()).toBe('30 days');
+      const steps = Array.from(host.querySelectorAll('.pass-steps li')).map(li => (li.textContent ?? '').replace(/\s+/g, ' ').trim());
+      expect(steps).toContain('Prunes security events over 180 days, keeping those of users with an account hold or a pending deletion request, and refused game text over 30 days');
       fixture.destroy();
     });
 

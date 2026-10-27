@@ -3,7 +3,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subject, of, throwError } from 'rxjs';
-import { AdminService, AdminSnapshotGuard, SecurityEvent, SecurityEventsPage, SecuritySummary } from '../../services/admin.service';
+import {
+  AdminService,
+  AdminSnapshotGuard,
+  SecurityEvent,
+  SecurityEventDetail,
+  SecurityEventsPage,
+  SecuritySummary
+} from '../../services/admin.service';
 import { AdminUserActionResult, AdminUsersService } from '../../services/admin-users.service';
 import { FilterFacetComponent } from '../../shared/data-table/filter-facet.component';
 import { AdminPageStore } from '../admin-page.store';
@@ -33,7 +40,22 @@ function securityEvent(id: number, overrides: Partial<SecurityEvent> = {}): Secu
     userName: 'Alice',
     userIsOverseerBlocked: false,
     ipAddress: '203.0.113.5',
+    quarantineCount: 0,
     ...overrides
+  };
+}
+
+function eventDetail(event: SecurityEvent): SecurityEventDetail {
+  return {
+    ...event,
+    quarantine: [],
+    quarantineTotalCount: 0,
+    explanation: 'A sign-in failed.',
+    systemConfigurationName: null,
+    related: {
+      termsAcceptances: [], adminActions: [], hold: null, deletionRequest: null, sessions: [], reportedMessage: null,
+      providerAttempts: [], usageRows: [], ipEvents: [], requestLogs: [], sameUserEvents: []
+    }
   };
 }
 
@@ -72,6 +94,7 @@ function guardState(overrides: Partial<AdminSnapshotGuard> = {}): AdminSnapshotG
   return {
     mode: 'Observe', setAtUtc: null, setByUserName: null, seeded: true,
     autoBlockEnabled: true, autoBlockDistinctDays: 3, autoBlockWindowDays: 30, notificationEmailConfigured: true,
+    quarantineEnabled: true, quarantineMaxChars: 100000, quarantineRetentionDays: 30,
     ...overrides
   };
 }
@@ -208,6 +231,20 @@ describe('AdminSecurityTabComponent', () => {
         'Automatic block: on, after injection-level refusals on 3 separate days within 30 days; e-mail to the operator mailbox: on.');
     });
 
+    it('says in its own paragraph that refused game text is kept, for how long and in every chat mode', () => {
+      create();
+
+      expect(textOf(el.querySelector('.sec-guard-quarantine'))).toBe(
+        'Refused game text is kept encrypted for 30 days for review, in every chat mode.');
+    });
+
+    it('says refused game text is not kept when the quarantine is off', () => {
+      guardSpy.mockReturnValue(of(guardState({ quarantineEnabled: false })));
+      create();
+
+      expect(textOf(el.querySelector('.sec-guard-quarantine'))).toBe('Refused game text is not kept (QuarantineEnabled is off).');
+    });
+
     it('posts the chosen mode and shows who changed it', () => {
       const setSpy = vi.spyOn(adminService, 'setSnapshotGuardMode').mockReturnValue(of(guardState({
         mode: 'Enforce', seeded: false, setAtUtc: '2026-10-24T12:02:00Z', setByUserName: 'tommi'
@@ -299,7 +336,58 @@ describe('AdminSecurityTabComponent', () => {
       expect(textOf(card(2).querySelector('h5.sec-title'))).toBe('Unknown user');
       expect(factsOf(card(2))).toEqual({ IP: '203.0.113.5' });
       expect(textOf(card(1).querySelector('h5.sec-title'))).toBe('No user');
-      expect(card(1).querySelector('.sec-actions')).toBeNull();
+      const noUserActions = card(1).querySelector('.sec-actions')!;
+      expect(noUserActions).not.toBeNull();
+      expect(noUserActions.getAttribute('aria-label')).toBe('Actions for No user');
+      expect(noUserActions.querySelector('.sec-details')).not.toBeNull();
+      expect(noUserActions.querySelector('.sec-block, .sec-unblock, .sec-usage')).toBeNull();
+    });
+
+    it('names each card\'s Details after the kind and the user, and opens the event dialog for that event', () => {
+      eventsSpy.mockReturnValue(of(page([securityEvent(3, { kind: 'SnapshotRejected', ipAddress: null })])));
+      const detailSpy = vi.spyOn(adminService, 'getSecurityEventDetail')
+        .mockReturnValue(of(eventDetail(securityEvent(3, { kind: 'SnapshotRejected', ipAddress: null }))));
+      create();
+
+      const details = card(3).querySelector<HTMLButtonElement>('.sec-details')!;
+      expect(details.getAttribute('aria-label')).toBe('Details of Snapshot refused for Alice');
+      expect(details.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(details.getAttribute('interestfor')).toBe('sec-3-details-tip');
+      expect(details.hasAttribute('title')).toBe(false);
+      expect(textOf(el.querySelector('#sec-3-details-tip'))).toBe('Details');
+      expect(card(3).querySelector('.sec-actions')!.firstElementChild).toBe(details);
+
+      details.click();
+      fixture.detectChanges();
+
+      expect(detailSpy).toHaveBeenCalledWith(3);
+      expect(el.querySelector<HTMLDialogElement>('dialog.sev-dialog')!.open).toBe(true);
+      expect(textOf(el.querySelector('#sev-title'))).toBe('Snapshot refused · Alice');
+    });
+
+    it('tags a card whose refused text was kept, and only that card', () => {
+      eventsSpy.mockReturnValue(of(page([
+        securityEvent(2, { kind: 'SnapshotRejected', quarantineCount: 2 }),
+        securityEvent(1, { kind: 'SnapshotRejected', quarantineCount: 0 })
+      ])));
+      create();
+
+      expect(textOf(card(2).querySelector('.sec-kept-tag'))).toBe('Text kept');
+      expect(textOf(card(2).querySelector('.sec-kicker'))).toContain('2 texts kept');
+      expect(card(1).querySelector('.sec-kept-tag')).toBeNull();
+    });
+
+    it('narrows the list to the user when the event dialog asks for the user\'s events', () => {
+      create();
+      eventsSpy.mockClear();
+
+      component.onUserEventsRequested({ userId: 'u4', userName: 'Bob' });
+      fixture.detectChanges();
+
+      expect(eventsSpy).toHaveBeenCalledTimes(1);
+      expect(lastQuery()).toEqual(expect.objectContaining({ userId: 'u4', skip: 0 }));
+      expect(textOf(el.querySelector('.sec-user-filter'))).toContain('Showing events of Bob');
+      expect(document.activeElement?.id).toBe('sec-events-title');
     });
 
     it('offers Unblock for a blocked user and says so in words', () => {

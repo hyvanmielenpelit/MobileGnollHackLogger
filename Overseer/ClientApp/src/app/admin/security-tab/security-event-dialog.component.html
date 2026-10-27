@@ -1,0 +1,203 @@
+<!-- EVENT DETAILS: header / body (what it means, stored fields, refused game text, related records) /
+     footer. Its own close and cancel events stop here, so the tab never hears them. No light dismiss:
+     the full-screen frame leaves no honest backdrop target. Refused text is never rendered as HTML or
+     Markdown: it is untrusted game text, shown as plain text in the Snapshot Viewer. -->
+<dialog #dialog class="gh-dialog gh-dialog-fullscreen sev-dialog" aria-labelledby="sev-title"
+        (cancel)="onCancel($event)" (close)="onDialogClose($event)">
+  <div class="dialog-content">
+    <div class="dialog-header sev-header">
+      <div class="dialog-title-group sev-title-group">
+        <!-- The focus target on open, so the Close button's tooltip does not open by itself. -->
+        <h3 #title id="sev-title" tabindex="-1">{{ titleText }}</h3>
+        @if (detail; as d) {
+          <p class="dialog-subtitle sev-subtitle">
+            <time [attr.datetime]="d.occurredUtc">{{ timeText(d.occurredUtc) }}</time>
+            @if (d.count > 1) {
+              <span class="sev-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+              <span class="sev-run"><span aria-hidden="true">&times;{{ d.count }}</span><span class="visually-hidden">{{ d.count }} times</span> {{ runSpanText(d) }}</span>
+            }
+          </p>
+        }
+      </div>
+      <button type="button" class="btn-icon-action sev-close-icon" aria-label="Close event details"
+              interestfor="sev-tip-close" [attr.style]="'anchor-name: --sev-tip-close'"
+              (click)="close()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="sev-tip-close"
+           [attr.style]="'position-anchor: --sev-tip-close'">Close</div>
+    </div>
+
+    <div class="dialog-body sev-body" [attr.aria-busy]="loading ? 'true' : null">
+      @if (loading && !detail) {
+        <p class="sev-loading">
+          <svg class="dc-ring" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+            <circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle>
+            <circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle>
+          </svg>
+          <span class="visually-hidden">Loading the event…</span>
+        </p>
+      } @else if (error) {
+        <div class="sev-error">
+          <p class="gh-field-error sev-error-text" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ error }}</span>
+          </p>
+          <button type="button" class="btn-ghost sev-retry" (click)="retry()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+            Retry
+          </button>
+        </div>
+      } @else if (detail; as d) {
+        <section class="sev-section sev-explanation" aria-labelledby="sev-explanation-title">
+          <h4 class="gh-section-title" id="sev-explanation-title">What this means</h4>
+          <p class="sev-explanation-text">{{ d.explanation }}</p>
+        </section>
+
+        <section class="sev-section" aria-labelledby="sev-fields-title">
+          <h4 class="gh-section-title" id="sev-fields-title">Stored fields</h4>
+          <dl class="sev-fields">
+            @for (field of fields; track field.label) {
+              <div><dt>{{ field.label }}</dt><dd [class.sev-mono]="field.mono">{{ field.value }}</dd></div>
+            }
+          </dl>
+        </section>
+
+        @if (d.quarantine.length > 0) {
+          <section class="sev-section sev-quarantine" aria-labelledby="sev-quarantine-title">
+            <h4 class="gh-section-title" id="sev-quarantine-title">Refused game text</h4>
+            @if (capText) {
+              <p class="sev-cap">{{ capText }}</p>
+            }
+            <ul class="sev-q-list" role="list" aria-labelledby="sev-quarantine-title">
+              @for (item of d.quarantine; track item.id; let i = $index) {
+                <li>
+                  <article class="sev-q-item" [attr.data-quarantine-id]="item.id" [attr.aria-labelledby]="'sev-q-' + item.id + '-title'">
+                    <!-- Verdict, author, delivery and chat mode; every state is a word. -->
+                    <div class="sev-q-tags">
+                      @for (tag of tags(item); track $index) {
+                        <span class="gh-tag sev-q-tag" [class.sev-q-tag-injection]="$first && item.level === 'Injection'">{{ tag }}</span>
+                      }
+                    </div>
+                    <h5 class="sev-q-title" [id]="'sev-q-' + item.id + '-title'">{{ i + 1 }}. {{ item.channel }} <span class="sev-q-kind">({{ item.textKind }})</span></h5>
+                    <ul class="sev-q-codes" role="list" [attr.aria-label]="'Codes of text ' + (i + 1)">
+                      @for (code of item.codes; track code) {
+                        <li class="sev-q-code"><code class="sev-mono">{{ code }}</code> <span class="sev-q-code-meaning">{{ codeMeaning(code) }}</span></li>
+                      }
+                    </ul>
+                    <dl class="sev-q-facts">
+                      <div><dt>Length</dt><dd>{{ lengthText(item) }}</dd></div>
+                      <div class="sev-q-sha">
+                        <dt>SHA-256</dt>
+                        <dd>
+                          <code class="sev-mono">{{ item.sha256.slice(0, 12) }}&hellip;</code>
+                          <button type="button" class="action-btn sev-q-copy"
+                                  [attr.aria-label]="'Copy the SHA-256 of text ' + (i + 1)"
+                                  [attr.interestfor]="'sev-q-' + item.id + '-copy-tip'"
+                                  [attr.style]="'anchor-name: --sev-q-' + item.id + '-copy-tip'"
+                                  (click)="copySha(item)">
+                            @if (copiedItemId === item.id) {
+                              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            } @else {
+                              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            }
+                          </button>
+                          <div popover="hint" class="gh-tooltip" [id]="'sev-q-' + item.id + '-copy-tip'"
+                               [attr.style]="'position-anchor: --sev-q-' + item.id + '-copy-tip'">Copy SHA-256 of the full text</div>
+                          <span class="visually-hidden" aria-live="polite">{{ copiedItemId === item.id ? 'Copied' : '' }}</span>
+                        </dd>
+                      </div>
+                      @if (item.sessionRef) {
+                        <div><dt>Session</dt><dd class="sev-mono">{{ item.sessionRef }}</dd></div>
+                      }
+                      <div><dt>Received</dt><dd><time [attr.datetime]="item.occurredUtc">{{ timeText(item.occurredUtc) }}</time></dd></div>
+                    </dl>
+                    @if (unreadable(item)) {
+                      <p class="sev-q-unreadable">{{ item.text }}</p>
+                    } @else {
+                      <div class="sev-q-actions">
+                        <button type="button" class="btn-ghost sev-q-view" aria-haspopup="dialog"
+                                [attr.aria-describedby]="'sev-q-' + item.id + '-title'"
+                                (click)="openInViewer(item)">
+                          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
+                          Open in viewer
+                        </button>
+                        <button type="button" class="btn-ghost sev-q-download"
+                                [attr.aria-describedby]="'sev-q-' + item.id + '-title'"
+                                (click)="downloadText(item, i)">
+                          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                          Download .txt
+                        </button>
+                      </div>
+                    }
+                  </article>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (d.userId || relatedSections.length > 0) {
+          <section class="sev-section sev-related" aria-labelledby="sev-related-title">
+            <h4 class="gh-section-title" id="sev-related-title">Related records</h4>
+            <!-- Each link closes this dialog and goes where it leads. -->
+            @if (d.userId) {
+              <div class="sev-links" role="group" [attr.aria-label]="'Links for ' + userLabel">
+                <button type="button" class="btn-ghost sev-link-usage" (click)="showUsage()">Usage</button>
+                <button type="button" class="btn-ghost sev-link-log" (click)="showAdminLog()">Admin log</button>
+                <button type="button" class="btn-ghost sev-link-events" (click)="showUserEvents()">Events of this user</button>
+                @if (hasDeletionRecords) {
+                  <button type="button" class="btn-ghost sev-link-deletions" (click)="showDeletionRequests()">Deletion requests</button>
+                }
+              </div>
+            }
+            @for (section of relatedSections; track section.id) {
+              <section class="sev-related-section" [attr.data-section]="section.id" [attr.aria-labelledby]="'sev-rel-' + section.id">
+                <h5 class="sev-related-title" [id]="'sev-rel-' + section.id">{{ section.title }}</h5>
+                <div class="gh-datatable-scroll">
+                  <table class="gh-table sev-table">
+                    <thead>
+                      <tr>
+                        @for (header of section.headers; track $index) {
+                          <th scope="col">{{ header }}</th>
+                        }
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of section.rows; track $index) {
+                        <tr>
+                          @for (cell of row; track $index) {
+                            <td>{{ cell }}</td>
+                          }
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            }
+          </section>
+        }
+      }
+    </div>
+
+    <div class="dialog-footer sev-footer">
+      <p class="sev-status" id="sev-status" role="status">{{ status }}</p>
+      <button type="button" class="btn-gh btn-gh-cancel sev-close" (click)="close()">Close</button>
+      <!-- aria-disabled until the event has loaded and while the ZIP is built, so the button keeps its focus. -->
+      <button type="button" class="btn-gh sev-download"
+              [attr.aria-disabled]="!detail || zipping ? 'true' : null"
+              [attr.aria-busy]="zipping ? 'true' : null"
+              (click)="downloadEvent()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+        Download event (.zip)
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<!-- The reader of a refused text, opened over this dialog; outside its element, so a closed dialog never contains it. -->
+<app-snapshot-viewer #viewer></app-snapshot-viewer>

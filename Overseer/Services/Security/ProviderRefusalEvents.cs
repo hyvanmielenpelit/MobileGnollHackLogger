@@ -5,7 +5,7 @@ namespace Overseer.Services.Security;
 
 /// <summary>
 /// Turns what an operator-funded agent run's model calls reported — refusals, safety blocks and policy
-/// rejections — into security events. Kinds, codes and the model only; never content.
+/// rejections — into security events. Kinds, codes, the model and the provider's request id only; never content.
 /// </summary>
 public static class ProviderRefusalEvents
 {
@@ -23,6 +23,10 @@ public static class ProviderRefusalEvents
 
         foreach (var call in run.ModelCalls)
         {
+            // The provider's request id, which an operator quotes to the provider.
+            string? requestId = ProviderAttemptClassifier.SanitizeErrorCode(call.RequestId);
+            string? detail = requestId == null ? null : "req:" + requestId;
+
             if (call.IsRefusal)
             {
                 bool google = string.Equals(call.Provider, "Google", StringComparison.OrdinalIgnoreCase);
@@ -32,7 +36,8 @@ public static class ProviderRefusalEvents
                     SystemAiApiConfigurationId: systemConfigurationId,
                     Provider: call.Provider,
                     ModelId: call.RequestedModelId,
-                    Code: ProviderAttemptClassifier.SanitizeErrorCode(call.FinishReason) ?? "refusal"));
+                    Code: ProviderAttemptClassifier.SanitizeErrorCode(call.FinishReason) ?? "refusal",
+                    Detail: detail));
             }
 
             var last = call.Attempts.Count > 0 ? call.Attempts[^1] : null;
@@ -45,7 +50,8 @@ public static class ProviderRefusalEvents
                     SystemAiApiConfigurationId: systemConfigurationId,
                     Provider: call.Provider,
                     ModelId: call.RequestedModelId,
-                    Code: ProviderAttemptClassifier.SanitizeErrorCode(last.ProviderErrorCode)));
+                    Code: ProviderAttemptClassifier.SanitizeErrorCode(last.ProviderErrorCode),
+                    Detail: detail));
             }
         }
         return events;

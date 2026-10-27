@@ -154,7 +154,7 @@ export class PrivacyComponent {
   readonly dataMap: readonly DataMapRow[] = [
     {
       what: 'The message you type',
-      storedWhere: 'A row in Overseer’s database. In a normal chat it is plain text. In a chat you mark confidential it is enveloped under a key belonging to that chat alone. In an incognito chat it is held in server memory only and no row is ever written.',
+      storedWhere: 'A row in Overseer’s database. In a normal chat it is plain text. In a chat you mark confidential it is enveloped under a key belonging to that chat alone. In an incognito chat it is held in server memory only and no row is ever written. Game text the snapshot guard flags is the one exception in every mode: see Security events.',
       howLong: 'A normal chat: 90 days by default, and deleting it moves it to a 30-day trash first. A confidential chat: 30 days by default, and deleting it purges it straight away. An incognito chat: until you close it, or until it times out through inactivity — 60 minutes by default.',
       sharedWith: 'The AI provider that answers the turn.'
     },
@@ -190,8 +190,8 @@ export class PrivacyComponent {
     },
     {
       what: 'Security events',
-      storedWhere: 'A row in Overseer’s database for each sign-in failure and lockout, rate-limit and quota refusal, provider refusal and policy rejection, rejected attachment, report, and administrator block or hold. It holds identifiers and codes only, never message content. An IP address is recorded only on sign-in and rate-limit events.',
-      howLong: '180 days by default. Deleting your account deletes them, except that the events behind a pending account-deletion review are kept until the review is decided.',
+      storedWhere: 'A row in Overseer’s database for each sign-in failure and lockout, rate-limit and quota refusal, provider refusal and policy rejection, rejected attachment, snapshot guard refusal, report, and administrator block or hold. It holds identifiers and codes only, never message content, except that a game snapshot, message history, file listing or game-tool result the snapshot guard flagged is kept encrypted so an administrator can review it, in every chat mode. An IP address is recorded only on sign-in and rate-limit events.',
+      howLong: '180 days by default. Deleting your account deletes them, except that the events behind a pending account-deletion review are kept until the review is decided. The flagged game text is deleted after 30 days, also while a review keeps its event.',
       sharedWith: 'Nobody outside Overseer.'
     },
     {
@@ -232,7 +232,7 @@ export class PrivacyComponent {
       limit: 'Crypto-shredding does not reach a backup taken before the shred. That backup still contains the wrapped key, and the master key is still in configuration, so it stays readable. Any claim that shredding reaches existing backup media is false.'
     },
     {
-      protection: 'Incognito, which writes no chat, message, tool-call or attachment row and puts no file on disk',
+      protection: 'Incognito, which writes no chat, message, tool-call or attachment row and puts no file on disk; game text the snapshot guard flags is kept as a security event, see above',
       limit: 'An incognito chat is not saved by Overseer; that does not make it private. The conversation still reaches the AI provider, and RAM is not a legal or forensic boundary — process memory can be paged out by the operating system, captured in a crash dump, or read by anything with sufficient access to the server.'
     },
     {

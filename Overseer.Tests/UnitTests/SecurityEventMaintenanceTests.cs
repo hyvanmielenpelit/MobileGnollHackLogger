@@ -109,6 +109,25 @@ public class SecurityEventMaintenanceTests
         DecidedUtc = status == AccountDeletionRequestStatus.Pending ? null : DateTime.UtcNow.AddDays(-1)
     };
 
+    /// <summary>A quarantine row of <paramref name="securityEvent"/>; the sealed columns are placeholders the prune never reads.</summary>
+    private static SnapshotGuardQuarantine Quarantine(SecurityEvent securityEvent, int daysAgo) => new()
+    {
+        SecurityEvent = securityEvent,
+        OccurredUtc = DateTime.UtcNow.AddDays(-daysAgo),
+        AspNetUserId = securityEvent.AspNetUserId,
+        Channel = "create",
+        Subject = "Board",
+        TextKind = "Snapshot",
+        Level = "Injection",
+        Codes = "authority",
+        SessionMode = "normal",
+        Sha256 = new string('0', 64),
+        KeyVersion = "v1",
+        Ciphertext = "placeholder",
+        Nonce = "placeholder",
+        Tag = "placeholder"
+    };
+
     private static MaintenanceResultDto ResultOf(IActionResult actionResult)
     {
         var ok = Assert.IsType<OkObjectResult>(actionResult);
@@ -135,7 +154,7 @@ public class SecurityEventMaintenanceTests
         Assert.Equal(MaintenanceTriggers.PruneSecurityEvents, result.Trigger);
         Assert.Equal("Manual:PruneSecurityEvents", result.Trigger);
         Assert.Equal(2, result.PrunedSecurityEventCount);
-        Assert.Contains(result.Logs, l => l.StartsWith("[DRY RUN] Pruned 2 security events last seen over 180 days ago.", StringComparison.Ordinal));
+        Assert.Contains(result.Logs, l => l.StartsWith("[DRY RUN] Pruned 2 security events last seen over 180 days ago and 0 quarantined game texts older than 30 days.", StringComparison.Ordinal));
         Assert.Equal(3, await db.SecurityEvents.CountAsync(ct));
 
         var row = Assert.Single(await db.MaintenanceRunLogs.AsNoTracking().ToListAsync(ct));
@@ -269,5 +288,121 @@ public class SecurityEventMaintenanceTests
         var row = Assert.Single(await db.MaintenanceRunLogs.AsNoTracking().ToListAsync(ct));
         Assert.False(row.IsDryRun);
         Assert.Equal(2, row.PrunedSecurityEventCount);
+    }
+
+    [Fact]
+    public async Task PruneSnapshotQuarantine_DeletesRowsByTheirOwnAge_IncludingThoseOfHeldUsers()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (db, connection) = NewRelationalDb();
+        using var _ = connection;
+        using var __ = db;
+        var retention = CreateTestController(db).retention;
+        await SeedUsersAsync(db, HeldUser, OtherUser);
+
+        db.AccountHolds.Add(Hold(HeldUser, released: false));
+        // Recent events: only the texts' own age decides.
+        var held = Event(HeldUser, 1);
+        var other = Event(OtherUser, 1);
+        db.SecurityEvents.AddRange(held, other);
+        db.SnapshotGuardQuarantines.AddRange(
+            Quarantine(held, 40),
+            Quarantine(other, 31),
+            Quarantine(other, 5));
+        await db.SaveChangesAsync(ct);
+
+        Assert.Equal(2, await retention.PruneSnapshotQuarantineAsync(30, isDryRun: true, ct));
+        Assert.Equal(3, await db.SnapshotGuardQuarantines.CountAsync(ct));
+
+        Assert.Equal(2, await retention.PruneSnapshotQuarantineAsync(30, isDryRun: false, ct));
+        var remaining = Assert.Single(await db.SnapshotGuardQuarantines.AsNoTracking().ToListAsync(ct));
+        Assert.Equal(other.Id, remaining.SecurityEventId);
+        Assert.Equal(2, await db.SecurityEvents.CountAsync(ct));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public async Task PruneSnapshotQuarantine_NonPositiveDays_IsDisabled(int days)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (db, connection) = NewRelationalDb();
+        using var _ = connection;
+        using var __ = db;
+        var retention = CreateTestController(db).retention;
+
+        var securityEvent = Event(null, 1);
+        db.SecurityEvents.Add(securityEvent);
+        db.SnapshotGuardQuarantines.Add(Quarantine(securityEvent, 400));
+        await db.SaveChangesAsync(ct);
+
+        Assert.Equal(0, await retention.PruneSnapshotQuarantineAsync(days, isDryRun: false, ct));
+        Assert.Equal(1, await db.SnapshotGuardQuarantines.CountAsync(ct));
+    }
+
+    [Fact]
+    public async Task PruneSecurityEvents_AlsoPrunesTheQuarantine_AndSaysSoInItsLogLine()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (db, connection) = NewRelationalDb();
+        using var _ = connection;
+        using var __ = db;
+        var (controller, retention) = CreateTestController(db);
+
+        var recent = Event(null, 1);
+        db.SecurityEvents.AddRange(recent, Event(null, 400));
+        db.SnapshotGuardQuarantines.AddRange(Quarantine(recent, 40), Quarantine(recent, 2));
+        await db.SaveChangesAsync(ct);
+
+        var result = ResultOf(await controller.PruneSecurityEvents(new MaintenanceRequestDto { DryRun = false }, retention));
+
+        Assert.Equal(1, result.PrunedSecurityEventCount);
+        Assert.Contains("Pruned 1 security events last seen over 180 days ago and 1 quarantined game texts older than 30 days. Events of users with an active account hold or a pending deletion request are kept.", result.Logs);
+        Assert.Equal(1, await db.SnapshotGuardQuarantines.CountAsync(ct));
+    }
+
+    [Fact]
+    public async Task PruneSecurityEvents_WithTheQuarantinePruneDisabled_SaysSo()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (db, connection) = NewRelationalDb();
+        using var _ = connection;
+        using var __ = db;
+        var controller = CreateTestController(db).controller;
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { { "ChatRetentionSettings:PruneSnapshotQuarantineDays", "0" } })
+            .Build();
+        var retention = new ChatRetentionService(db, config, NullLogger<ChatRetentionService>.Instance);
+
+        var securityEvent = Event(null, 1);
+        db.SecurityEvents.Add(securityEvent);
+        db.SnapshotGuardQuarantines.Add(Quarantine(securityEvent, 400));
+        await db.SaveChangesAsync(ct);
+
+        var result = ResultOf(await controller.PruneSecurityEvents(new MaintenanceRequestDto { DryRun = true }, retention));
+
+        Assert.Contains("[DRY RUN] Pruned 0 security events last seen over 180 days ago; quarantined game text pruning is disabled. Events of users with an active account hold or a pending deletion request are kept.", result.Logs);
+        Assert.Equal(1, await db.SnapshotGuardQuarantines.CountAsync(ct));
+    }
+
+    [Fact]
+    public async Task PruningAnEvent_DeletesItsQuarantineRows()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (db, connection) = NewRelationalDb();
+        using var _ = connection;
+        using var __ = db;
+        var retention = CreateTestController(db).retention;
+
+        var old = Event(null, 400);
+        var recent = Event(null, 1);
+        db.SecurityEvents.AddRange(old, recent);
+        db.SnapshotGuardQuarantines.AddRange(Quarantine(old, 2), Quarantine(old, 3), Quarantine(recent, 2));
+        await db.SaveChangesAsync(ct);
+
+        Assert.Equal(1, await retention.PruneSecurityEventsAsync(180, isDryRun: false, ct));
+
+        var remaining = Assert.Single(await db.SnapshotGuardQuarantines.AsNoTracking().ToListAsync(ct));
+        Assert.Equal(recent.Id, remaining.SecurityEventId);
     }
 }

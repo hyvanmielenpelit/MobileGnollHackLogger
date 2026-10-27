@@ -5176,6 +5176,108 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("SecurityEvents");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.SnapshotGuardQuarantine", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AspNetUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Ciphertext")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Codes")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("KeyVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Nonce")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("OccurredUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("PlainLength")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("PlayerAuthored")
+                        .HasColumnType("bit");
+
+                    b.Property<long>("SecurityEventId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SessionMode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("SessionRef")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("StoredLength")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Tag")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("TextKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<bool>("Truncated")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("Withheld")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccurredUtc");
+
+                    b.HasIndex("SecurityEventId");
+
+                    b.HasIndex("AspNetUserId", "OccurredUtc");
+
+                    b.ToTable("SnapshotGuardQuarantines");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.SnapshotGuardSetting", b =>
                 {
                     b.Property<long>("Id")
@@ -7042,6 +7144,17 @@ namespace GnollHackServer.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("AspNetUser");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.SnapshotGuardQuarantine", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.SecurityEvent", "SecurityEvent")
+                        .WithMany()
+                        .HasForeignKey("SecurityEventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("SecurityEvent");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.SystemAiErrorLog", b =>

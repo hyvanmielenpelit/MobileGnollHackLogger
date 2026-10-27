@@ -1,0 +1,275 @@
+/* The event details dialog. `.gh-dialog-fullscreen`, `.gh-section-title`, `.gh-tag`, `.gh-table`,
+ * `.gh-datatable-scroll`, `.dc-ring` and the button and tooltip classes are global.
+ */
+
+// The dialog lives in the top layer, so the host takes no box of its own.
+:host {
+  display: contents;
+}
+
+.sev-dialog {
+  .dialog-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .dialog-header {
+    flex-shrink: 0;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 0;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border-glass);
+  }
+
+  .dialog-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 16px 24px 20px;
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+  }
+
+  .dialog-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    flex-shrink: 0;
+    gap: 12px;
+    padding: 14px 24px;
+    border-top: 1px solid var(--border-glass);
+    background: rgba(16, 16, 16, 0.98);
+  }
+
+  @media (max-width: 600px) {
+    .dialog-header,
+    .dialog-body,
+    .dialog-footer {
+      padding-inline: 16px;
+    }
+  }
+}
+
+// --- Header --------------------------------------------------------------------------------------
+
+.sev-title-group {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+
+  h3 {
+    margin: 0;
+    overflow-wrap: anywhere;
+
+    &:focus {
+      outline: none;
+    }
+  }
+}
+
+.sev-subtitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+}
+
+.sev-sep {
+  color: #71717a;
+}
+
+// --- Body ----------------------------------------------------------------------------------------
+
+.sev-loading {
+  display: flex;
+  justify-content: center;
+  margin: 48px 0;
+}
+
+.sev-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.sev-error-text {
+  margin: 0;
+}
+
+.sev-section + .sev-section {
+  margin-block-start: 22px;
+}
+
+.sev-section > .gh-section-title {
+  margin-block-end: 8px;
+}
+
+.sev-explanation-text {
+  margin: 0;
+  max-inline-size: 72ch;
+}
+
+.sev-fields,
+.sev-q-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.25rem 1.5rem;
+  margin: 0;
+  font-size: var(--text-secondary);
+
+  > div {
+    display: flex;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  dt {
+    flex: none;
+    color: var(--nav-color);
+  }
+
+  dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.sev-mono {
+  font-family: var(--font-mono, monospace);
+}
+
+// --- Refused game text ---------------------------------------------------------------------------
+
+.sev-cap {
+  margin: 0 0 8px;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.sev-q-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sev-q-item {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem 0.875rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.sev-q-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+
+  .gh-tag {
+    border-color: var(--border-glass);
+    color: #d4d4d8;
+  }
+
+  .sev-q-tag-injection {
+    border-color: rgba(239, 83, 80, 0.55);
+    color: #fca5a5;
+  }
+}
+
+.sev-q-title {
+  margin: 0;
+  font-size: 1rem;
+  color: #e4e4e7;
+  overflow-wrap: anywhere;
+}
+
+.sev-q-kind {
+  font-weight: 400;
+  color: #a1a1aa;
+}
+
+.sev-q-codes {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-secondary);
+
+  code {
+    color: var(--primary-color);
+  }
+}
+
+.sev-q-code-meaning {
+  color: #a1a1aa;
+}
+
+.sev-q-sha dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sev-q-unreadable {
+  margin: 0;
+  font-style: italic;
+  color: #fca5a5;
+}
+
+.sev-q-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+// --- Related records -----------------------------------------------------------------------------
+
+.sev-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block-end: 12px;
+}
+
+.sev-related-section + .sev-related-section {
+  margin-block-start: 14px;
+}
+
+.sev-related-title {
+  margin: 0 0 6px;
+  font-size: 0.9375rem;
+  color: #e4e4e7;
+}
+
+.sev-table td {
+  overflow-wrap: anywhere;
+}
+
+// --- Footer --------------------------------------------------------------------------------------
+
+.sev-status {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+  margin: 0;
+  margin-inline-end: auto;
+  font-size: var(--text-secondary);
+  color: #aaa;
+  overflow-wrap: anywhere;
+}

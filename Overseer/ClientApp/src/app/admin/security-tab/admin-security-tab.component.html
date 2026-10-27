@@ -208,6 +208,9 @@
                 @if (event.userId && event.userIsOverseerBlocked) {
                   <span class="gh-tag sec-blocked-tag">Blocked</span>
                 }
+                @if (event.quarantineCount > 0) {
+                  <span class="gh-tag sec-kept-tag">Text kept</span><span class="visually-hidden">{{ keptText(event) }}</span>
+                }
               </div>
 
               <!-- Focused after Show more. -->
@@ -230,8 +233,17 @@
                 </dl>
               }
 
-              @if (event.userId; as userId) {
-                <div class="sec-actions" role="group" [attr.aria-label]="'Actions for ' + userLabel(event)">
+              <div class="sec-actions" role="group" [attr.aria-label]="'Actions for ' + userLabel(event)">
+                <button #detailsButton type="button" class="action-btn sec-details" aria-haspopup="dialog"
+                        [attr.aria-label]="'Details of ' + kindLabel(event.kind) + ' for ' + userLabel(event)"
+                        [attr.interestfor]="'sec-' + event.id + '-details-tip'"
+                        [attr.style]="'anchor-name: --sec-' + event.id + '-details-tip'"
+                        (click)="openDetails(event, detailsButton)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'sec-' + event.id + '-details-tip'"
+                     [attr.style]="'position-anchor: --sec-' + event.id + '-details-tip'">Details</div>
+                @if (event.userId; as userId) {
                   @if (event.userIsOverseerBlocked) {
                     <button type="button" class="action-btn sec-unblock"
                             [attr.aria-label]="'Unblock ' + userLabel(event)"
@@ -263,8 +275,8 @@
                   </button>
                   <div popover="hint" class="gh-tooltip" [id]="'sec-' + event.id + '-usage-tip'"
                        [attr.style]="'position-anchor: --sec-' + event.id + '-usage-tip'">AI usage</div>
-                </div>
-              }
+                }
+              </div>
             </article>
           </li>
         }
@@ -278,6 +290,8 @@
       }
     }
   </section>
+
+  <app-security-event-dialog #eventDialog (userEventsRequested)="onUserEventsRequested($event)"></app-security-event-dialog>
 </div>
 
 <!-- Settings: the snapshot guard. -->
@@ -303,6 +317,7 @@
       <div class="sec-guard-meta">
         <p class="sec-guard-status" id="sec-guard-status" role="status">{{ guardStatusText }}</p>
         <p class="sec-guard-rule">{{ guardRuleText }}</p>
+        <p class="sec-guard-quarantine">{{ guardQuarantineText }}</p>
       </div>
     } @else if (!guardError) {
       <p class="sec-guard-status" id="sec-guard-status" role="status">Loading the snapshot guard…</p>

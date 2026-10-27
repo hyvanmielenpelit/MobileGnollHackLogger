@@ -9,7 +9,8 @@ using Xunit;
 namespace Overseer.Tests.UnitTests;
 
 /// <summary>
-/// The queued security event recorder: run aggregation, grouping, failure handling and the bounded queue; and
+/// The queued security event recorder: run aggregation, grouping, failure handling, the bounded queue, and the
+/// snapshot guard's quarantine rows with their byte budget; and
 /// <see cref="ProviderRefusalEvents.FromRun"/>, which turns a run's model calls into events.
 /// </summary>
 public class SecurityEventRecorderTests
@@ -44,6 +45,13 @@ public class SecurityEventRecorderTests
             return await db.SecurityEvents.AsNoTracking().OrderBy(e => e.Id).ToListAsync(TestContext.Current.CancellationToken);
         }
 
+        public async Task<List<SnapshotGuardQuarantine>> QuarantineRowsAsync()
+        {
+            using var scope = Provider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            return await db.SnapshotGuardQuarantines.AsNoTracking().OrderBy(q => q.Id).ToListAsync(TestContext.Current.CancellationToken);
+        }
+
         public void Dispose()
         {
             Recorder.Dispose();
@@ -51,14 +59,14 @@ public class SecurityEventRecorderTests
         }
     }
 
-    private static Harness CreateHarness(TimeProvider? time = null)
+    private static Harness CreateHarness(TimeProvider? time = null, long quarantineBudgetBytes = SecurityEventRecorder.QuarantineQueueBudgetBytes)
     {
         string dbName = Guid.NewGuid().ToString();
         var services = new ServiceCollection();
         services.AddDbContext<ApplicationDbContext>(o => o.UseInMemoryDatabase(dbName));
         var provider = services.BuildServiceProvider();
         var recorder = new SecurityEventRecorder(
-            provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<SecurityEventRecorder>.Instance, time);
+            provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<SecurityEventRecorder>.Instance, time, quarantineBudgetBytes);
         return new Harness { Provider = provider, Recorder = recorder };
     }
 
@@ -258,16 +266,135 @@ public class SecurityEventRecorderTests
         Assert.Equal(T0.AddMilliseconds(SecurityEventRecorder.QueueCapacity), row.LastOccurredUtc);
     }
 
+    // --- The snapshot guard's quarantine ---------------------------------------------------------------
+
+    private static SecurityEventQuarantineItem Item(string channel, int ciphertextChars = 16)
+        => new(channel, "Snapshot", "Snapshot", "Injection", "address,tool", PlayerAuthored: true, Withheld: true,
+            SessionMode: SnapshotGuardScope.ModeIncognito, SessionRef: null, PlainLength: 12, StoredLength: 12, Truncated: false,
+            Sha256: new string('0', 64), KeyVersion: "v1", Ciphertext: new string('A', ciphertextChars), Nonce: "nonce", Tag: "tag");
+
+    private static SecurityEventEntry Refused(DateTime at, params SecurityEventQuarantineItem[] items)
+        => new(SecurityEventKind.SnapshotRejected, UserId: "user-1", Code: "injection-own", Detail: "create:address,tool",
+            OccurredUtc: at, Quarantine: items.Length == 0 ? null : items);
+
+    [Fact]
+    public async Task AnEntryWithTwoTexts_WritesOneEventAndTwoRowsLinkedToIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var harness = CreateHarness();
+
+        harness.Recorder.Record(Refused(T0, Item("create"), Item("history")));
+        await harness.Recorder.ProcessPendingAsync(ct);
+
+        var ev = Assert.Single(await harness.RowsAsync());
+        var rows = await harness.QuarantineRowsAsync();
+        Assert.Equal(new[] { "create", "history" }, rows.Select(r => r.Channel));
+        Assert.All(rows, r =>
+        {
+            Assert.Equal(ev.Id, r.SecurityEventId);
+            Assert.Equal(T0, r.OccurredUtc);
+            Assert.Equal("user-1", r.AspNetUserId);
+            Assert.Equal("Snapshot", r.Subject);
+            Assert.Equal("Injection", r.Level);
+            Assert.Equal("address,tool", r.Codes);
+            Assert.True(r.PlayerAuthored);
+            Assert.True(r.Withheld);
+            Assert.Equal(SnapshotGuardScope.ModeIncognito, r.SessionMode);
+            Assert.Null(r.SessionRef);
+            Assert.Equal("v1", r.KeyVersion);
+            Assert.Equal(new string('A', 16), r.Ciphertext);
+        });
+    }
+
+    [Fact]
+    public async Task AnIdenticalEntryWithinTheRunWindow_ExtendsTheEvent_AndAddsItsRowsToIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var harness = CreateHarness();
+
+        harness.Recorder.Record(Refused(T0, Item("create")));
+        await harness.Recorder.ProcessPendingAsync(ct);
+        // A later batch: the run is found in the database, not among this batch's rows.
+        harness.Recorder.Record(Refused(T0.AddMinutes(3), Item("tool-get_directory_listing")));
+        await harness.Recorder.ProcessPendingAsync(ct);
+
+        var ev = Assert.Single(await harness.RowsAsync());
+        Assert.Equal(2, ev.Count);
+        var rows = await harness.QuarantineRowsAsync();
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => Assert.Equal(ev.Id, r.SecurityEventId));
+        Assert.Equal(new[] { T0, T0.AddMinutes(3) }, rows.Select(r => r.OccurredUtc));
+    }
+
+    [Fact]
+    public async Task AnEntryOverTheBudget_IsWrittenWithoutItsTexts_AndTheBudgetIsReleasedWhenProcessed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var harness = CreateHarness(quarantineBudgetBytes: 1000);
+
+        harness.Recorder.Record(Refused(T0, Item("create", ciphertextChars: 100)));
+        Assert.Equal(200L, harness.Recorder.QueuedQuarantineBytes);
+
+        harness.Recorder.Record(new SecurityEventEntry(SecurityEventKind.SnapshotRejected, UserId: "user-2", Code: "injection-own",
+            OccurredUtc: T0, Quarantine: new[] { Item("attach", ciphertextChars: 1000) }));
+        Assert.Equal(200L, harness.Recorder.QueuedQuarantineBytes);
+
+        await harness.Recorder.ProcessPendingAsync(ct);
+
+        Assert.Equal(0L, harness.Recorder.QueuedQuarantineBytes);
+        var events = await harness.RowsAsync();
+        Assert.Equal(2, events.Count);
+        var row = Assert.Single(await harness.QuarantineRowsAsync());
+        Assert.Equal("create", row.Channel);
+        Assert.Equal(events.Single(e => e.AspNetUserId == "user-1").Id, row.SecurityEventId);
+    }
+
+    [Fact]
+    public async Task AnEntryDroppedFromAFullQueue_ReleasesItsBytes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var harness = CreateHarness();
+
+        for (int i = 0; i <= SecurityEventRecorder.QueueCapacity; i++)
+        {
+            harness.Recorder.Record(Refused(T0.AddMilliseconds(i), Item("create", ciphertextChars: 10)));
+        }
+        Assert.Equal(SecurityEventRecorder.QueueCapacity * 20L, harness.Recorder.QueuedQuarantineBytes);
+
+        for (int pass = 0; pass < 10; pass++)
+        {
+            await harness.Recorder.ProcessPendingAsync(ct);
+        }
+
+        Assert.Equal(0L, harness.Recorder.QueuedQuarantineBytes);
+        Assert.Equal(SecurityEventRecorder.QueueCapacity, (await harness.QuarantineRowsAsync()).Count);
+    }
+
+    [Fact]
+    public async Task AFailedWrite_StillReleasesTheBudget()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var recorder = new SecurityEventRecorder(new ThrowingScopeFactory(), NullLogger<SecurityEventRecorder>.Instance);
+
+        recorder.Record(Refused(T0, Item("create", ciphertextChars: 50)));
+        Assert.Equal(100L, recorder.QueuedQuarantineBytes);
+
+        await recorder.ProcessPendingAsync(ct);
+
+        Assert.Equal(0L, recorder.QueuedQuarantineBytes);
+    }
+
     // --- ProviderRefusalEvents.FromRun --------------------------------------------------------------
 
     private static ModelCallRecord Call(string provider, bool isRefusal = false, string? finishReason = null,
-        ProviderAttemptRecord[]? attempts = null)
+        ProviderAttemptRecord[]? attempts = null, string? requestId = null)
         => new()
         {
             Provider = provider,
             RequestedModelId = provider.ToLowerInvariant() + "-model",
             IsRefusal = isRefusal,
             FinishReason = finishReason,
+            RequestId = requestId,
             Attempts = (attempts ?? Array.Empty<ProviderAttemptRecord>()).ToList()
         };
 
@@ -288,6 +415,7 @@ public class SecurityEventRecorderTests
         Assert.Equal("Anthropic", entry.Provider);
         Assert.Equal("anthropic-model", entry.ModelId);
         Assert.Equal("refusal", entry.Code);
+        Assert.Null(entry.Detail);
     }
 
     [Fact]
@@ -304,7 +432,8 @@ public class SecurityEventRecorderTests
     [Fact]
     public void FromRun_FinalBadRequestWithAPolicyCode_IsAProviderPolicyRejection()
     {
-        var call = Call("OpenAI", attempts: new[] { Attempt(ProviderAttemptOutcome.OurRequest, 400, "invalid_prompt") });
+        var call = Call("OpenAI", attempts: new[] { Attempt(ProviderAttemptOutcome.OurRequest, 400, "invalid_prompt") },
+            requestId: "req_test_123");
 
         var events = ProviderRefusalEvents.FromRun(Run(call), "user-1", null);
 
@@ -314,6 +443,7 @@ public class SecurityEventRecorderTests
         Assert.Null(entry.SystemAiApiConfigurationId);
         Assert.Equal("OpenAI", entry.Provider);
         Assert.Equal("invalid_prompt", entry.Code);
+        Assert.Equal("req:req_test_123", entry.Detail);
     }
 
     [Fact]

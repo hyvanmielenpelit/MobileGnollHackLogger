@@ -134,6 +134,13 @@ describe('PrivacyComponent', () => {
     expect(security).toContain('identifiers and codes only, never message content');
     expect(security).toContain('An IP address is recorded only on sign-in and rate-limit events.');
     expect(security).toContain('180 days by default.');
+    expect(security).toContain('rejected attachment, snapshot guard refusal, report,');
+    expect(security).toContain('never message content, except that a game snapshot, message history, file listing or ' +
+      'game-tool result the snapshot guard flagged is kept encrypted so an administrator can review it, in every chat mode.');
+    expect(security).toContain('The flagged game text is deleted after 30 days, also while a review keeps its event.');
+
+    const message = textOf(row('The message you type')!);
+    expect(message).toContain('Game text the snapshot guard flags is the one exception in every mode: see Security events.');
 
     const safety = textOf(row('Provider safety identifier')!);
     expect(safety).toContain('OpenAI and Anthropic');
@@ -182,7 +189,8 @@ describe('PrivacyComponent', () => {
       'deletion is completed or declined.');
 
     expect(textOf(section.querySelector('.snapshot-guard-use') as HTMLElement)).toBe('Game snapshots that contain text addressed to the AI ' +
-      'assistant are not delivered to it and are recorded as security events; repeated cases can suspend AI chat access automatically.');
+      'assistant are not delivered to it and are recorded as security events; the flagged text is kept encrypted for 30 days for an ' +
+      'administrator’s review, in incognito and confidential chats too, and repeated cases can suspend AI chat access automatically.');
   });
 
   it('should link the acceptable use section to the Terms of Service page', () => {
@@ -228,6 +236,12 @@ describe('PrivacyComponent', () => {
     const text = textOf(host.querySelector('#limitations') as HTMLElement);
     expect(text).toContain('RAM is not a legal or forensic boundary');
     expect(text).toContain('The conversation still reaches the AI provider');
+  });
+
+  it('should name the snapshot guard exception on the incognito protection', () => {
+    const text = textOf(host.querySelector('#limitations') as HTMLElement);
+    expect(text).toContain('Incognito, which writes no chat, message, tool-call or attachment row and puts no file on disk; ' +
+      'game text the snapshot guard flags is kept as a security event, see above');
   });
 
   it('should state the plaintext rule and name the most consequential readable category first', () => {

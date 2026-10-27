@@ -1210,11 +1210,39 @@ public class ChatController : ControllerBase
         // Before anything is written or superseded: a refused snapshot changes nothing.
         if (snapshotGuard != null)
         {
+            /* The request's flags describe only a session created here, so an existing session's mode comes from its
+               reference: an ephemeral one is incognito, a persistent one is read from the caller's own row. A
+               reference that names no session of the caller's scans as normal, and the 404 below follows. */
+            Overseer.Services.Security.SnapshotGuardScope guardScope;
+            if (string.IsNullOrEmpty(request.SessionId))
+            {
+                guardScope = Overseer.Services.Security.SnapshotGuardScope.For(request.IsEphemeral, request.IsConfidential, null);
+            }
+            else if (!Overseer.Services.Privacy.SessionRef.TryParse(request.SessionId, out var target))
+            {
+                guardScope = Overseer.Services.Security.SnapshotGuardScope.For(false, false, null);
+            }
+            else if (target.IsEphemeral)
+            {
+                guardScope = Overseer.Services.Security.SnapshotGuardScope.For(true, true, target.ToWireString());
+            }
+            else
+            {
+                long targetId = target.PersistentId;
+                bool? targetConfidential = await _dbContext.ChatSession.AsNoTracking()
+                    .Where(s => s.Id == targetId && s.AspNetUserId == userId)
+                    .Select(s => (bool?)s.IsConfidential)
+                    .FirstOrDefaultAsync();
+                guardScope = targetConfidential == null
+                    ? Overseer.Services.Security.SnapshotGuardScope.For(false, false, null)
+                    : Overseer.Services.Security.SnapshotGuardScope.For(false, targetConfidential.Value, target.ToWireString());
+            }
+
             var guard = await snapshotGuard.EvaluateAsync(userId, new[]
             {
                 new Overseer.Services.Security.SnapshotGuardInput("attach", Overseer.Services.Security.SnapshotGuardSubject.Snapshot,
                     Overseer.Services.Security.SnapshotGuardTextKind.Snapshot, normalized)
-            });
+            }, guardScope);
             if (guard.Refuse)
             {
                 return StatusCode(StatusCodes.Status422UnprocessableEntity,
@@ -1805,10 +1833,10 @@ public class ChatController : ControllerBase
                 .SetSize(1);
             _memoryCache.Set(cacheKey, reportCount + 1, cacheEntryOptions);
 
-            // The report itself is not stored: the event names the reporter, never the conversation.
+            // The report itself is not stored; the event names the reporter and the reported message's id, never its content.
             HttpContext?.RequestServices.GetService<Overseer.Services.Security.ISecurityEventRecorder>()?.Record(
                 new Overseer.Services.Security.SecurityEventEntry(SecurityEventKind.ChatReported, UserId: userId,
-                    Provider: message.ProviderUsed, ModelId: message.ModelUsed));
+                    Provider: message.ProviderUsed, ModelId: message.ModelUsed, Code: "msg:" + message.Id));
             return Ok(showDebugLog ? (object)new { debugLogs } : new { });
         }
         catch (Exception ex)

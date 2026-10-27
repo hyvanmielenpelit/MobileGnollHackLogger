@@ -155,10 +155,43 @@ public sealed class SnapshotGuardModeServiceTests : IDisposable
             ["SnapshotGuard:AutoBlockEnabled"] = "maybe",
             ["SnapshotGuard:AutoBlockDistinctDays"] = "99",
             ["SnapshotGuard:AutoBlockWindowDays"] = "x",
-            ["SnapshotGuard:NotificationEmail"] = "  "
+            ["SnapshotGuard:NotificationEmail"] = "  ",
+            ["SnapshotGuard:QuarantineEnabled"] = "perhaps",
+            ["SnapshotGuard:QuarantineMaxChars"] = "999"
         }).Build());
 
-        Assert.Equal(new SnapshotGuardOptions(SnapshotGuardMode.Enforce, true, 3, 30, null), options);
+        Assert.Equal(new SnapshotGuardOptions(SnapshotGuardMode.Enforce, true, 3, 30, null, true, 100_000), options);
         Assert.Null(SnapshotGuardOptions.ParseMode("1"));
+    }
+
+    [Theory]
+    [InlineData("999", 100_000)]
+    [InlineData("1000", 1_000)]
+    [InlineData("1000000", 1_000_000)]
+    [InlineData("1000001", 100_000)]
+    [InlineData("lots", 100_000)]
+    public void TheQuarantineMaxChars_OutsideItsRange_IsTheDefault(string value, int expected)
+    {
+        var options = SnapshotGuardOptions.Read(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["SnapshotGuard:QuarantineMaxChars"] = value
+        }).Build());
+
+        Assert.Equal(expected, options.QuarantineMaxChars);
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("perhaps", true)]
+    [InlineData(" false ", false)]
+    [InlineData("True", true)]
+    public void TheQuarantine_IsOnUnlessExplicitlyTurnedOff(string? value, bool expected)
+    {
+        var options = SnapshotGuardOptions.Read(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["SnapshotGuard:QuarantineEnabled"] = value
+        }).Build());
+
+        Assert.Equal(expected, options.QuarantineEnabled);
     }
 }

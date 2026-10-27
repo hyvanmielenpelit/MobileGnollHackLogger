@@ -357,7 +357,9 @@ namespace Overseer.Services.Tools
         private async Task<ToolResult> GuardClientResultAsync(string toolName, ToolResult result, ToolExecutionContext context, CancellationToken ct)
         {
             var input = Security.SnapshotGuardService.ClientToolInput(toolName, result.Content);
-            var decision = await _snapshotGuard!.EvaluateAsync(context.UserId, new[] { input }, ct);
+            var scope = Security.SnapshotGuardScope.For(context.SessionId.IsEphemeral, Privacy.ConfidentialExecutionScope.IsConfidential,
+                context.SessionId.IsValid ? context.SessionId.ToWireString() : null);
+            var decision = await _snapshotGuard!.EvaluateAsync(context.UserId, new[] { input }, scope, ct);
             if (!decision.Refuse)
             {
                 if (input.Subject == Security.SnapshotGuardSubject.Refresh)

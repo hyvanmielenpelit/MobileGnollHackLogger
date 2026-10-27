@@ -48,6 +48,202 @@ public class SecurityEventDto
     public string? ModelId { get; set; }
     public string? Code { get; set; }
     public string? Detail { get; set; }
+
+    /// <summary>Game texts the snapshot guard kept for this event.</summary>
+    public int QuarantineCount { get; set; }
+}
+
+/// <summary>One security event with its kept game texts, its related records and what its kind means.</summary>
+public class SecurityEventDetailDto : SecurityEventDto
+{
+    /// <summary>The newest kept texts, at most 50, decrypted.</summary>
+    public List<SecurityQuarantineItemDto> Quarantine { get; set; } = new();
+
+    /// <summary>Every kept text of the event, of which <see cref="Quarantine"/> holds the newest.</summary>
+    public int QuarantineTotalCount { get; set; }
+
+    public SecurityRelatedDto Related { get; set; } = new();
+
+    /// <summary>What the kind means, who writes it, and what its code and detail are.</summary>
+    public string Explanation { get; set; } = string.Empty;
+
+    /// <summary>The display name of <see cref="SecurityEventDto.SystemAiApiConfigurationId"/>; null when it is gone.</summary>
+    public string? SystemConfigurationName { get; set; }
+}
+
+/// <summary>One game text the snapshot guard kept.</summary>
+public class SecurityQuarantineItemDto
+{
+    public long Id { get; set; }
+    public DateTime OccurredUtc { get; set; }
+    public string Channel { get; set; } = string.Empty;
+    public string Subject { get; set; } = string.Empty;
+    public string TextKind { get; set; } = string.Empty;
+    public string Level { get; set; } = string.Empty;
+    public string[] Codes { get; set; } = Array.Empty<string>();
+    public bool PlayerAuthored { get; set; }
+    public bool Withheld { get; set; }
+
+    /// <summary>normal, confidential or incognito.</summary>
+    public string SessionMode { get; set; } = string.Empty;
+
+    public string? SessionRef { get; set; }
+    public int PlainLength { get; set; }
+    public int StoredLength { get; set; }
+    public bool Truncated { get; set; }
+
+    /// <summary>Lower-case hex SHA-256 of the full text's UTF-8.</summary>
+    public string Sha256 { get; set; } = string.Empty;
+
+    /// <summary>The kept text, or the unreadable notice when it cannot be decrypted.</summary>
+    public string Text { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Records around one security event, each list the newest 20 and filled only for the kinds it applies to. Holds
+/// identifiers and metadata, never message content or session titles.
+/// </summary>
+public class SecurityRelatedDto
+{
+    public List<SecurityTermsAcceptanceDto> TermsAcceptances { get; set; } = new();
+    public List<SecurityAdminActionDto> AdminActions { get; set; } = new();
+    public SecurityHoldDto? Hold { get; set; }
+    public SecurityDeletionRequestDto? DeletionRequest { get; set; }
+    public List<SecuritySessionDto> Sessions { get; set; } = new();
+    public SecurityReportedMessageDto? ReportedMessage { get; set; }
+    public List<SecurityProviderAttemptDto> ProviderAttempts { get; set; } = new();
+    public List<SecurityUsageRowDto> UsageRows { get; set; } = new();
+    public List<SecurityIpEventDto> IpEvents { get; set; } = new();
+    public List<SecurityRequestLogDto> RequestLogs { get; set; } = new();
+    public List<SecuritySameUserEventDto> SameUserEvents { get; set; } = new();
+}
+
+public class SecurityTermsAcceptanceDto
+{
+    public string DocumentKey { get; set; } = string.Empty;
+    public string Version { get; set; } = string.Empty;
+    public DateTime AcceptedUtc { get; set; }
+    public string Source { get; set; } = string.Empty;
+}
+
+public class SecurityAdminActionDto
+{
+    public long Id { get; set; }
+    public DateTime OccurredUtc { get; set; }
+
+    /// <summary>The <c>AdminUserActionKind</c> name.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    public string ActorUserName { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+    public string? Detail { get; set; }
+    public long? BulkOperationId { get; set; }
+}
+
+public class SecurityHoldDto
+{
+    public long Id { get; set; }
+    public string Reason { get; set; } = string.Empty;
+
+    /// <summary>The placing administrator's user name, or their id when the account is gone.</summary>
+    public string PlacedByUserName { get; set; } = string.Empty;
+
+    public DateTime PlacedUtc { get; set; }
+}
+
+public class SecurityDeletionRequestDto
+{
+    public long Id { get; set; }
+
+    /// <summary>"Pending", "Completed" or "Declined".</summary>
+    public string Status { get; set; } = string.Empty;
+
+    public DateTime RequestedUtc { get; set; }
+    public string HoldReasons { get; set; } = string.Empty;
+}
+
+public class SecuritySessionDto
+{
+    public long Id { get; set; }
+    public DateTime CreatedUtc { get; set; }
+    public DateTime? SnapshotRefusedUtc { get; set; }
+    public string? SnapshotRefusalCode { get; set; }
+    public bool IsConfidential { get; set; }
+}
+
+/// <summary>The message a <c>ChatReported</c> event names; never its content.</summary>
+public class SecurityReportedMessageDto
+{
+    public long MessageId { get; set; }
+
+    /// <summary>Null when the message no longer exists.</summary>
+    public long? SessionId { get; set; }
+
+    public DateTime? TimestampUtc { get; set; }
+    public string? Role { get; set; }
+
+    /// <summary>Whether the message row still exists.</summary>
+    public bool Exists { get; set; }
+}
+
+public class SecurityProviderAttemptDto
+{
+    public DateTime StartedAtUtc { get; set; }
+    public int RoleContext { get; set; }
+    public string RequestedModelId { get; set; } = string.Empty;
+    public int? HttpStatus { get; set; }
+    public string? ProviderErrorCode { get; set; }
+
+    /// <summary>The <c>ProviderAttemptOutcome</c> name.</summary>
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool Retried { get; set; }
+}
+
+public class SecurityUsageRowDto
+{
+    public DateTime TimestampUtc { get; set; }
+    public string ModelId { get; set; } = string.Empty;
+    public int RoleContext { get; set; }
+
+    /// <summary>Input plus output tokens.</summary>
+    public int Tokens { get; set; }
+
+    /// <summary>Estimated cost in USD; null when unpriced.</summary>
+    public decimal? Cost { get; set; }
+}
+
+public class SecurityIpEventDto
+{
+    public long Id { get; set; }
+
+    /// <summary>The <c>SecurityEventKind</c> name.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    public string? Code { get; set; }
+    public int Count { get; set; }
+}
+
+/// <summary>A website request log row; never its message or request data.</summary>
+public class SecurityRequestLogDto
+{
+    public DateTime LastDate { get; set; }
+    public long Count { get; set; }
+    public string? RequestPath { get; set; }
+    public string? RequestMethod { get; set; }
+    public int? ResponseCode { get; set; }
+    public string? RequestUserName { get; set; }
+}
+
+public class SecuritySameUserEventDto
+{
+    public long Id { get; set; }
+
+    /// <summary>The <c>SecurityEventKind</c> name.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    public string? Code { get; set; }
+    public string? Detail { get; set; }
 }
 
 public class SecurityEventsPageDto
@@ -80,6 +276,14 @@ public class AdminSnapshotGuardDto
     public int AutoBlockDistinctDays { get; set; }
     public int AutoBlockWindowDays { get; set; }
     public bool NotificationEmailConfigured { get; set; }
+
+    /// <summary>Whether a refused game text is kept, encrypted, for an administrator's review.</summary>
+    public bool QuarantineEnabled { get; set; }
+
+    public int QuarantineMaxChars { get; set; }
+
+    /// <summary><c>ChatRetentionSettings:PruneSnapshotQuarantineDays</c>; zero or negative keeps the texts with their event.</summary>
+    public int QuarantineRetentionDays { get; set; }
 }
 
 public class AdminSnapshotGuardUpdateDto

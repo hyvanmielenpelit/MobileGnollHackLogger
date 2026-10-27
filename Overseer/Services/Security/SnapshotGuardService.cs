@@ -4,6 +4,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Identity.UI.Services;
@@ -38,6 +40,23 @@ public enum SnapshotGuardSubject
 /// <summary>One text to scan, the channel its finding is recorded under, and what it is.</summary>
 public sealed record SnapshotGuardInput(string Channel, SnapshotGuardSubject Subject, SnapshotGuardTextKind Kind, string? Text);
 
+/// <summary>
+/// The chat mode and session a scan is for, stored on each quarantined text so an administrator sees which promise the
+/// text came from. The quarantine keeps texts in every mode; the mode decides nothing.
+/// </summary>
+/// <param name="SessionMode"><see cref="SnapshotGuardScope.ModeNormal"/>, <see cref="SnapshotGuardScope.ModeConfidential"/> or <see cref="SnapshotGuardScope.ModeIncognito"/>.</param>
+/// <param name="SessionRef">The session's wire form, when the caller knows it.</param>
+public sealed record SnapshotGuardScope(string SessionMode, string? SessionRef)
+{
+    public const string ModeNormal = "normal";
+    public const string ModeConfidential = "confidential";
+    public const string ModeIncognito = "incognito";
+
+    /// <summary>Ephemeral is incognito; otherwise confidential is confidential; otherwise normal.</summary>
+    public static SnapshotGuardScope For(bool isEphemeral, bool isConfidential, string? sessionRef)
+        => new(isEphemeral ? ModeIncognito : isConfidential ? ModeConfidential : ModeNormal, sessionRef);
+}
+
 /// <summary>The scan of one input. <see cref="Withheld"/> is true when the caller must not store or deliver it.</summary>
 public sealed record SnapshotGuardItem(SnapshotGuardInput Input, SnapshotGuardVerdict Verdict, bool Withheld);
 
@@ -71,7 +90,8 @@ public sealed record SnapshotGuardDecision(
 /// </summary>
 /// <remarks>
 /// Detection is heuristic (<see cref="SnapshotGuardScanner"/>): the guard bounds injected game text, it does not
-/// prevent it. Only the codes of a finding are stored, never the text.
+/// prevent it. The codes of a finding are stored on the event; the text itself is kept only in the encrypted
+/// quarantine, for a short retention, in every chat mode, as the privacy notice states.
 /// </remarks>
 public sealed class SnapshotGuardService
 {
@@ -114,6 +134,8 @@ public sealed class SnapshotGuardService
     private readonly IServiceProvider _services;
     private readonly TimeProvider _time;
     private IReadOnlyCollection<string>? _toolNames;
+    // Singleton, so the quarantine's unavailability is logged once per process.
+    private int _quarantineWarned;
 
     public SnapshotGuardService(IServiceScopeFactory scopeFactory, SnapshotGuardModeService mode, OverseerAccessService access,
         IConfiguration configuration, ILogger<SnapshotGuardService> logger, IServiceProvider services, ISecurityEventRecorder? securityEvents = null)
@@ -144,9 +166,13 @@ public sealed class SnapshotGuardService
     /// <summary>
     /// Scans <paramref name="inputs"/> for <paramref name="userId"/>, records the finding, and in
     /// <see cref="SnapshotGuardMode.Enforce"/> withholds every input with one and runs the automatic block.
-    /// <see cref="SnapshotGuardDecision.Allow"/> in <see cref="SnapshotGuardMode.Off"/> and for clean texts.
+    /// <see cref="SnapshotGuardDecision.Allow"/> in <see cref="SnapshotGuardMode.Off"/> and for clean texts. With
+    /// <see cref="SnapshotGuardOptions.QuarantineEnabled"/> and a user, each text with a finding is sealed onto the
+    /// event, in <see cref="SnapshotGuardMode.Observe"/> too.
     /// </summary>
-    public async Task<SnapshotGuardDecision> EvaluateAsync(string? userId, IReadOnlyList<SnapshotGuardInput> inputs, CancellationToken ct = default)
+    /// <param name="scope">The chat mode and session the texts are for; stored with each quarantined text.</param>
+    public async Task<SnapshotGuardDecision> EvaluateAsync(string? userId, IReadOnlyList<SnapshotGuardInput> inputs, SnapshotGuardScope scope,
+        CancellationToken ct = default)
     {
         var mode = _mode.Mode();
         if (mode == SnapshotGuardMode.Off) return SnapshotGuardDecision.Allow;
@@ -168,7 +194,12 @@ public sealed class SnapshotGuardService
             + string.Join(";", found.Select(f => f.Input.Channel + ":" + string.Join(",", f.Verdict.Codes)));
         if (detail.Length > 256) detail = detail[..256];
 
-        _securityEvents?.Record(new SecurityEventEntry(SecurityEventKind.SnapshotRejected, UserId: userId, Code: code, Detail: detail));
+        if (_securityEvents != null)
+        {
+            var quarantine = QuarantineOf(userId, found, enforce, scope);
+            _securityEvents.Record(new SecurityEventEntry(SecurityEventKind.SnapshotRejected, UserId: userId, Code: code, Detail: detail,
+                Quarantine: quarantine));
+        }
 
         var items = found.Select(f => new SnapshotGuardItem(f.Input, f.Verdict, Withheld: enforce)).ToList();
         if (!enforce)
@@ -220,6 +251,76 @@ public sealed class SnapshotGuardService
         {
             _logger.LogWarning(ex, "Could not record the snapshot guard's refusal state on a session.");
         }
+    }
+
+    // --- The quarantine ---
+
+    /// <summary>
+    /// One sealed item per text with a finding, each cut to <see cref="SnapshotGuardOptions.QuarantineMaxChars"/> and
+    /// hashed whole; null when the quarantine is off, there is no user, or the keyring cannot seal. Never throws.
+    /// </summary>
+    private IReadOnlyList<SecurityEventQuarantineItem>? QuarantineOf(string? userId,
+        List<(SnapshotGuardInput Input, SnapshotGuardVerdict Verdict)> found, bool withheld, SnapshotGuardScope scope)
+    {
+        var options = Options;
+        if (!options.QuarantineEnabled || string.IsNullOrEmpty(userId) || found.Count == 0) return null;
+
+        try
+        {
+            var ring = _services.GetService<IContentKeyRing>();
+            if (ring == null)
+            {
+                WarnQuarantineUnavailable(null);
+                return null;
+            }
+
+            var items = new List<SecurityEventQuarantineItem>(found.Count);
+            foreach (var (input, verdict) in found)
+            {
+                string text = input.Text ?? string.Empty;
+                string kept = Truncate(text, options.QuarantineMaxChars);
+                var sealedText = SnapshotQuarantineCipher.Seal(ring, userId, kept);
+                items.Add(new SecurityEventQuarantineItem(
+                    Channel: input.Channel,
+                    Subject: input.Subject.ToString(),
+                    TextKind: input.Kind.ToString(),
+                    Level: verdict.Level.ToString(),
+                    Codes: string.Join(",", verdict.Codes),
+                    PlayerAuthored: verdict.PlayerAuthored,
+                    Withheld: withheld,
+                    SessionMode: scope.SessionMode,
+                    SessionRef: scope.SessionRef,
+                    PlainLength: text.Length,
+                    StoredLength: kept.Length,
+                    Truncated: kept.Length < text.Length,
+                    Sha256: Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text))),
+                    KeyVersion: sealedText.KeyVersion,
+                    Ciphertext: sealedText.Ciphertext,
+                    Nonce: sealedText.Nonce,
+                    Tag: sealedText.Tag));
+            }
+            return items;
+        }
+        catch (Exception ex)
+        {
+            WarnQuarantineUnavailable(ex);
+            return null;
+        }
+    }
+
+    /// <summary>The first <paramref name="maxChars"/> characters, one fewer when the cut would split a surrogate pair.</summary>
+    private static string Truncate(string text, int maxChars)
+    {
+        if (text.Length <= maxChars) return text;
+        int length = maxChars > 0 && char.IsHighSurrogate(text[maxChars - 1]) ? maxChars - 1 : maxChars;
+        return text[..length];
+    }
+
+    private void WarnQuarantineUnavailable(Exception? ex)
+    {
+        if (Interlocked.Exchange(ref _quarantineWarned, 1) != 0) return;
+        _logger.LogWarning(ex, "The snapshot guard cannot keep refused game text: the content keyring is not registered or cannot encrypt. "
+            + "Events are recorded without the quarantine.");
     }
 
     // --- The automatic block ---

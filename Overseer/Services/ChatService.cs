@@ -1157,9 +1157,16 @@ public class ChatService
                     /* The picker's five-file limit is a client convenience; this is the
                        enforcement. MaxRequestBodySize bounds the aggregate, not the count. */
                     var attachmentEvents = OptionalSingleton<Overseer.Services.Security.ISecurityEventRecorder>();
-                    void RecordAttachmentRejected(string verdict) =>
+                    /* Detail is "{type};{size}": the declared media type and the decoded byte
+                       count, each empty when the verdict has not reached it, null when neither.
+                       Never the file name or the scanner's text. */
+                    void RecordAttachmentRejected(string verdict, string? contentType = null, long? size = null)
+                    {
+                        var type = SanitizeMediaType(contentType);
+                        var detail = type == null && size == null ? null : $"{type};{size}";
                         attachmentEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
-                            SecurityEventKind.AttachmentRejected, UserId: userId, Code: verdict));
+                            SecurityEventKind.AttachmentRejected, UserId: userId, Code: verdict, Detail: detail));
+                    }
 
                     var acceptedAttachments = attachments;
                     var countCheck = _attachmentValidator.ValidateCount(attachments.Count);
@@ -1184,7 +1191,7 @@ public class ChatService
                             if (!preCheck.IsValid)
                             {
                                 attachmentErrors.Add(preCheck.Error!);
-                                RecordAttachmentRejected("validation");
+                                RecordAttachmentRejected("validation", att.ContentType);
                                 continue;
                             }
 
@@ -1194,7 +1201,7 @@ public class ChatService
                             if (!byteCheck.IsValid)
                             {
                                 attachmentErrors.Add(byteCheck.Error!);
-                                RecordAttachmentRejected("content");
+                                RecordAttachmentRejected("content", att.ContentType, bytes.Length);
                                 continue;
                             }
 
@@ -1205,7 +1212,7 @@ public class ChatService
                                     "Attachment {FileName} in session {SessionId} was refused by {Scanner}: {Detail}",
                                     displayName, wireRef, _malwareScanner.Name, scan.Detail);
                                 attachmentErrors.Add($"\"{displayName}\" was refused by the malware scanner.");
-                                RecordAttachmentRejected("malware");
+                                RecordAttachmentRejected("malware", att.ContentType, bytes.Length);
                                 continue;
                             }
 
@@ -1216,7 +1223,7 @@ public class ChatService
                                     "Attachment {FileName} in session {SessionId} could not be scanned by {Scanner}: {Detail}",
                                     displayName, wireRef, _malwareScanner.Name, scan.Detail);
                                 attachmentErrors.Add($"\"{displayName}\" could not be scanned for malware and was not accepted.");
-                                RecordAttachmentRejected("scan-failed");
+                                RecordAttachmentRejected("scan-failed", att.ContentType, bytes.Length);
                                 continue;
                             }
 
@@ -2505,6 +2512,22 @@ public class ChatService
             wikiContext, spoilerFreeMode, verboseMode, isGameOn, developerMode, overseerMode,
             hasGameSnapshot, hasMessageHistory, clientSettings, enableToolUse,
             enableWebSearch, allowSourceCodeReferences, enableSubAgents, parallelMode);
+    }
+
+    /// <summary>Keeps letters, digits, <c>/</c>, <c>.</c>, <c>+</c> and <c>-</c>, at most 64 characters; null when nothing is left.</summary>
+    private static string? SanitizeMediaType(string? contentType)
+    {
+        if (string.IsNullOrEmpty(contentType)) return null;
+        var sb = new StringBuilder(Math.Min(contentType.Length, 64));
+        foreach (char c in contentType)
+        {
+            if (sb.Length >= 64) break;
+            if (char.IsAsciiLetterOrDigit(c) || c == '/' || c == '.' || c == '+' || c == '-')
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.Length == 0 ? null : sb.ToString();
     }
 
     private static int EstimateTokens(object msg)

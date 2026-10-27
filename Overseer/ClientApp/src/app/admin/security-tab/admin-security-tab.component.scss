@@ -210,9 +210,14 @@
   color: #e4e4e7;
 }
 
-.sec-guard-rule {
+.sec-guard-rule,
+.sec-guard-quarantine {
   font-size: var(--text-secondary);
   color: var(--nav-color);
+}
+
+.sec-guard-quarantine {
+  margin: 0;
 }
 
 .sec-guard-error {
@@ -399,6 +404,11 @@ time,
   border-style: dashed;
   border-color: rgba(239, 83, 80, 0.55);
   color: #fca5a5;
+}
+
+.sec-kept-tag {
+  border-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
+  color: var(--primary-color);
 }
 
 .sec-title {

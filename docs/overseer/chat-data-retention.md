@@ -56,6 +56,7 @@ All retention policies are configured under `"ChatRetentionSettings"` in `appset
   "AuditLogRetentionDays": 365,
   "PruneDismissedAiErrorLogDays": 90,
   "PruneSecurityEventDays": 180,
+  "PruneSnapshotQuarantineDays": 30,
   "PruneChatProviderAttemptDays": 400,
   "MaintenanceHistoryRetentionDays": 180,
   "MaintenanceRunHourUtc": 3,
@@ -79,6 +80,7 @@ All retention policies are configured under `"ChatRetentionSettings"` in `appset
 | **Access Journal Retention** | `AuditLogRetentionDays` | `365` | `ChatAccessAuditLog` rows older than this are deleted. `0` disables pruning. The only setting that removes an audit row; the Admin **Prune Access Journal** button applies the same window on demand. |
 | **Dismissed AI Error Pruning** | `PruneDismissedAiErrorLogDays` | `90` | `SystemAiErrorLog` rows dismissed more than this many days ago are deleted. `0` disables pruning. **Undismissed errors are never pruned**: an alert nobody acknowledged is not expired silently, and the Database tab shows their count instead. |
 | **Security Event Retention** | `PruneSecurityEventDays` | `180` | `SecurityEvent` runs last seen more than this many days ago are deleted. `0` disables pruning. **Events of a user with an active `AccountHold` or a pending `AccountDeletionRequest` are kept** until it is decided: they are the evidence an administrator is reviewing (see `security-monitoring.md`). |
+| **Snapshot Guard Quarantine Retention** | `PruneSnapshotQuarantineDays` | `30` | `SnapshotGuardQuarantine` rows (the encrypted game text the snapshot guard found something in, `security-monitoring.md` § 3a) received more than this many days ago (`OccurredUtc`) are deleted. `0` disables pruning. **Rows of held users are not exempt**: the event stays for the review, the text does not need to. A row is also deleted with its `SecurityEvent`, by a database cascade. The privacy notice states 30 days, so changing this value changes what the notice must say. |
 | **Chat Provider Attempt Retention** | `PruneChatProviderAttemptDays` | `400` | `ChatProviderAttempt` rows (one provider attempt of a chat or title-generation call) older than this are deleted. `0` disables pruning. See `ai-telemetry.md`. |
 | **Maintenance History Retention** | `MaintenanceHistoryRetentionDays` | `180` | `MaintenanceRunLog` rows older than this are deleted. `0` disables pruning. |
 | **Daily Schedule** | `MaintenanceRunHourUtc` | `3` (03:00 UTC) | Automated maintenance pass runs daily at 03:00 UTC (and 60 seconds after server startup). |
@@ -209,8 +211,9 @@ When executed (either automatically by the background service or manually from t
    - Deletes `ChatAccessAuditLog` rows older than `AuditLogRetentionDays`. The predicate lives in `GnollHackServer.Data.Privacy.ChatAccessAudit`, whose `CountPrunableAsync` backs the dry run and the tab's preview, so the count and the deletion cannot disagree.
 8. **Prune Dismissed AI Errors** (`PruneDismissedAiErrorLogsAsync`):
    - Deletes `SystemAiErrorLog` rows where `IsDismissed && DismissedAtUtc < (Now - PruneDismissedAiErrorLogDays)`. Undismissed rows are never touched.
-9. **Prune Security Events** (`PruneSecurityEventsAsync`):
-   - Deletes `SecurityEvent` rows where `LastOccurredUtc < (Now - PruneSecurityEventDays)`, except those of a user with an active `AccountHold` or a pending `AccountDeletionRequest`. The predicate is `ChatRetentionService.PrunableSecurityEvents`, which the dry run and the tab's preview count with, so the count and the deletion cannot disagree.
+9. **Prune Quarantined Game Texts, then Security Events** (`PruneSnapshotQuarantineAsync`, `PruneSecurityEventsAsync`):
+   - First deletes `SnapshotGuardQuarantine` rows where `OccurredUtc < (Now - PruneSnapshotQuarantineDays)`, held users included, and logs *"Quarantined game texts pruned (> 30d): N"*, or that the pruning is disabled when the setting is `0`. The count is carried by that log line only; `MaintenanceResultDto` and `MaintenanceRunLog` have no column for it.
+   - Then deletes `SecurityEvent` rows where `LastOccurredUtc < (Now - PruneSecurityEventDays)`, except those of a user with an active `AccountHold` or a pending `AccountDeletionRequest`. The predicate is `ChatRetentionService.PrunableSecurityEvents`, which the dry run and the tab's preview count with, so the count and the deletion cannot disagree.
 10. **Prune Chat Provider Attempts** (`PruneChatProviderAttemptsAsync`):
    - Deletes `ChatProviderAttempt` rows where `StartedAtUtc < (Now - PruneChatProviderAttemptDays)`.
 11. **Prune Maintenance History** (`PruneMaintenanceHistoryAsync`):
@@ -299,7 +302,7 @@ The Admin **Database** tab exposes:
 | `POST` | `/api/admin/maintenance/prune-benchmark-tool-results` | Phase 5 with a chosen day count |
 | `POST` | `/api/admin/maintenance/prune-audit-log` | Phase 7; a window of zero or less is refused with 400 |
 | `POST` | `/api/admin/maintenance/prune-ai-error-log` | Phase 8; a window of zero or less is refused with 400 |
-| `POST` | `/api/admin/maintenance/prune-security-events` | Phase 9; a window of zero or less is refused with 400 |
+| `POST` | `/api/admin/maintenance/prune-security-events` | Phase 9; a window of zero or less is refused with 400. It also prunes the snapshot guard quarantine over the configured `PruneSnapshotQuarantineDays` (not the request's day count) and reports that count in its log line |
 | `POST` | `/api/admin/maintenance/prune-chat-provider-attempts` | Phase 10; a window of zero or less is refused with 400 |
 | `POST` | `/api/admin/maintenance/sweep-orphans` | Phase 6 |
 | `POST` | `/api/admin/maintenance/clear-report-charts` | Clear Report Chart Files (not a phase of the full pass); 400 when chart storage is not configured |

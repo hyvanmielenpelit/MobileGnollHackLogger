@@ -219,7 +219,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     {
       value: 'Incognito',
       label: 'Incognito',
-      hint: 'Nothing is saved; the chat lives in memory until closed.'
+      hint: 'Nothing is saved but game text the snapshot guard flags; the chat lives in memory until closed.'
     }
   ];
 
