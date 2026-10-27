@@ -518,6 +518,19 @@ To find specific popups, look in the corresponding component's `.html` template:
     `closedby="any"`): *1. Users · 2. Action · 3. Review · 4. Results*. Opened by the tab's **Bulk Actions**
     with the list's criteria, or by the Admin log's **Open results** on step 4 through the page store's
     `requestBulkWizard`. Its state is discarded on close; a running operation continues.
+  - `app-feedback-triage-dialog` (`feedback-tab/shared/`): *Triage issue*, opened by **Edit triage** on a
+    card of either Feedback sub-tab (`dialog.gh-dialog.ftd-dialog` in the benchmark dialog frame at
+    640px, like the feedback export dialog: header with a close button, scrolling body, footer;
+    `showModal()`, focus on *Status*, no `closedby="any"`) — the issue in a gold-ruled panel (*Issue*, the
+    subject, its category, status and count), *Status* and *Fixed in version* side by side from 32 rem of
+    the body (a container query), then *Note* and *Resolution* with character counts. Save
+    checks the fields and says what is wrong at the field (`aria-invalid`, focus on the first), hands the
+    trimmed values to the host's `submit` observable, closes when it completes and keeps the values and
+    the server's message inline when it fails. *Cancel* and *Save* never wrap (the footer rule is scoped
+    `.gh-dialog.ftd-dialog .ftd-footer` to outrank the frame's `flex-wrap: wrap`). Escape, *Cancel* or
+    the close button on a changed form first shows *You have unsaved changes.* and a **Discard changes**
+    `.btn-link` in the footer's leftover space, reserved with `visibility` so no button moves; a second
+    Escape or Discard closes. *Delete issue* stays on the Overseer card, not here.
   - `#editConfigOverrideDialog`: Edit Config Override (`admin-dialogs/admin-config-override-dialog.component.html`)
   - `#rateLimitsDialog`: Rate Limits (`admin-dialogs/admin-rate-limits-dialog.component.html`)
   - `#analyticsDialog`: Analytics (`configs-tab/`)

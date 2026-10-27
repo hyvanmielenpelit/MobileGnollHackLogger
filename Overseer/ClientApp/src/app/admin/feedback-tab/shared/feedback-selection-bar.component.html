@@ -22,7 +22,11 @@
     }
   </div>
 
+  <!-- Why Export… waits shares the buttons' line, so it adds no row while shown and removes none when it goes. -->
   <div class="fsb-actions">
+    @if (exportBlockedReason) {
+      <span class="form-hint fsb-export-reason" [id]="idPrefix + '-export-reason'">{{ exportBlockedReason }}</span>
+    }
     <button type="button" class="btn-ghost fsb-export" aria-haspopup="dialog"
             [attr.aria-disabled]="exportBlockedReason ? 'true' : null"
             [attr.aria-describedby]="exportBlockedReason ? idPrefix + '-export-reason' : null"
@@ -35,10 +39,6 @@
       Import resolutions…
     </button>
   </div>
-
-  @if (exportBlockedReason) {
-    <p class="form-hint fsb-export-reason" [id]="idPrefix + '-export-reason'">{{ exportBlockedReason }}</p>
-  }
 </div>
 <p class="fsb-status" role="status">{{ statusMessage }}</p>
 

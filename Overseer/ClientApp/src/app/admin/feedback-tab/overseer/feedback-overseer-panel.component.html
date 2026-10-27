@@ -97,13 +97,12 @@
   } @else if (rows().length > 0) {
     <ul class="tl-fb-cards" role="list" aria-labelledby="tl-fb-issues-title">
       @for (issue of rows(); track issue.id) {
-        @let form = draft(issue);
         @let result = triageResult(issue.id);
         @let occ = occurrenceState(issue.id);
         <li class="tl-fb-item">
           <article class="tl-fb-card" [attr.data-issue-id]="issue.id" [attr.data-status]="issue.status"
                    [attr.aria-labelledby]="'tl-fb-' + issue.id + '-title'">
-            <!-- The selection checkbox, top left; the title is its label. -->
+            <!-- The selection checkbox, in a gutter at the start; the title is its label. -->
             <div class="tl-fb-select">
               <input type="checkbox" class="tl-fb-select-input" [id]="'tl-fb-' + issue.id + '-select'"
                      [attr.aria-label]="'Select issue: ' + issue.subject"
@@ -138,7 +137,7 @@
               }
             </div>
 
-            <!-- Fixed-width columns that line up down the list. -->
+            <!-- Fixed-width columns that line up down the list; a date's time is a qualifier line under it. -->
             <dl class="tl-fb-metrics">
               <div class="tl-fb-metric tl-fb-metric-occurrences">
                 <dt>Occurrences</dt>
@@ -154,10 +153,12 @@
               <div class="tl-fb-metric tl-fb-metric-first">
                 <dt>First seen</dt>
                 <dd><time [attr.datetime]="issue.firstSeenUtc">{{ dateText(issue.firstSeenUtc) }}</time></dd>
+                <dd class="tl-fb-metric-note">{{ timeText(issue.firstSeenUtc) }}</dd>
               </div>
               <div class="tl-fb-metric tl-fb-metric-last">
                 <dt>Last seen</dt>
-                <dd><time [attr.datetime]="issue.lastSeenUtc">{{ dateTimeText(issue.lastSeenUtc) }}</time></dd>
+                <dd><time [attr.datetime]="issue.lastSeenUtc">{{ dateText(issue.lastSeenUtc) }}</time></dd>
+                <dd class="tl-fb-metric-note">{{ timeText(issue.lastSeenUtc) }}</dd>
               </div>
             </dl>
 
@@ -176,7 +177,8 @@
               </div>
               <div class="tl-fb-fact tl-fb-fact-version">
                 <dt>Latest version</dt>
-                <dd class="tl-fb-mono">{{ issue.latestAppVersion || 'Not recorded' }}</dd>
+                @let shortVersion = versionShort(issue.latestAppVersion);
+                <dd class="tl-fb-mono" [attr.title]="shortVersion !== issue.latestAppVersion ? issue.latestAppVersion : null">{{ shortVersion || 'Not recorded' }}</dd>
               </div>
               <div class="tl-fb-fact tl-fb-fact-providers">
                 <dt>Providers</dt>
@@ -190,6 +192,12 @@
                 <div class="tl-fb-fact tl-fb-fact-fixed">
                   <dt>Fixed in version</dt>
                   <dd class="tl-fb-mono">{{ issue.fixedInVersion }}</dd>
+                </div>
+              }
+              @if (issue.triageNote) {
+                <div class="tl-fb-fact tl-fb-fact-note">
+                  <dt>Note</dt>
+                  <dd class="tl-fb-note-text">{{ issue.triageNote }}</dd>
                 </div>
               }
               @if (issue.resolution) {
@@ -309,54 +317,26 @@
               </div>
             </details>
 
-            <!-- The triage form, under a hairline. -->
-            <div class="tl-fb-triage" role="group" [attr.aria-label]="'Triage of ' + issue.subject">
-              <div class="tl-fb-field tl-fb-field-status">
-                <div class="tl-fb-label-row">
-                  <label [for]="'tl-fb-' + issue.id + '-status'">Status</label>
-                  <app-info-tip [tipId]="'tl-fb-' + issue.id + '-status-help'" subject="Status">A resolved issue that recurs becomes Regressed; a dismissed one stays dismissed.</app-info-tip>
-                </div>
-                <select class="gh-input tl-fb-status-select" [id]="'tl-fb-' + issue.id + '-status'"
-                        [attr.aria-describedby]="'tl-fb-' + issue.id + '-status-help'"
-                        (change)="onDraftStatus(issue, $event)">
-                  @if (form.status === '') {
-                    <option value="" disabled selected>Choose a status</option>
-                  }
-                  @for (status of triageStatuses; track status) {
-                    <option [value]="status" [selected]="form.status === status">{{ statusLabel(status) }}</option>
-                  }
-                </select>
+            <!-- Under a hairline: who triaged it and the last result at the start, the actions at the end. The
+                 triage form is a dialog. -->
+            <div class="tl-fb-footer">
+              <div class="tl-fb-footer-text">
+                <p class="tl-fb-triaged">{{ triagedText(issue) || 'Not triaged yet' }}</p>
+                <p class="tl-fb-result" [id]="'tl-fb-' + issue.id + '-result'" role="status">{{ result?.message ?? '' }}</p>
+                @if (result?.error; as triageError) {
+                  <p class="gh-field-error tl-fb-triage-error" [id]="'tl-fb-' + issue.id + '-error'">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <span>{{ triageError }}</span>
+                  </p>
+                }
               </div>
-              <div class="tl-fb-field tl-fb-field-note">
-                <label [for]="'tl-fb-' + issue.id + '-note'">Note</label>
-                <textarea class="gh-input gh-textarea-autosize tl-fb-note-input" rows="2" [id]="'tl-fb-' + issue.id + '-note'"
-                          [attr.maxlength]="noteMax" [value]="form.note"
-                          (input)="onDraftText(issue, 'note', $event)"></textarea>
-              </div>
-              <div class="tl-fb-field tl-fb-field-fixed">
-                <div class="tl-fb-label-row">
-                  <label [for]="'tl-fb-' + issue.id + '-fixed'">Fixed in version</label>
-                  <app-info-tip [tipId]="'tl-fb-' + issue.id + '-fixed-help'" subject="Fixed in version">The Overseer version that has the fix, such as 1.4.1. Leave it empty while no release has it.</app-info-tip>
-                </div>
-                <input type="text" class="gh-input tl-fb-fixed-input" [id]="'tl-fb-' + issue.id + '-fixed'"
-                       autocomplete="off" spellcheck="false"
-                       [attr.aria-describedby]="'tl-fb-' + issue.id + '-fixed-help'"
-                       [attr.maxlength]="fixedInVersionMax" [value]="form.fixedInVersion"
-                       (input)="onDraftText(issue, 'fixedInVersion', $event)">
-              </div>
-              <div class="tl-fb-field tl-fb-field-resolution">
-                <label [for]="'tl-fb-' + issue.id + '-resolution'">Resolution</label>
-                <textarea class="gh-input gh-textarea-autosize tl-fb-resolution-input" rows="2" [id]="'tl-fb-' + issue.id + '-resolution'"
-                          placeholder="What was changed, where, and how it was verified"
-                          [attr.maxlength]="resolutionMax" [value]="form.resolution"
-                          (input)="onDraftText(issue, 'resolution', $event)"></textarea>
-              </div>
-              <div class="tl-fb-triage-actions">
-                <button type="button" class="btn-gh tl-fb-save"
-                        [disabled]="savingId() === issue.id"
+              <div class="tl-fb-actions" role="group" [attr.aria-label]="'Actions for ' + issue.subject">
+                <button type="button" class="btn-ghost tl-fb-edit" aria-haspopup="dialog"
                         [attr.aria-busy]="savingId() === issue.id ? 'true' : null"
-                        [attr.aria-describedby]="result?.error ? 'tl-fb-' + issue.id + '-error' : null"
-                        (click)="save(issue)">Save</button>
+                        (click)="editTriage(issue)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                  Edit triage<span class="visually-hidden">: {{ issue.subject }}</span>
+                </button>
                 <button type="button" class="action-btn action-btn-danger tl-fb-delete"
                         [attr.aria-label]="'Delete issue: ' + issue.subject"
                         [attr.aria-busy]="deletingId() === issue.id ? 'true' : null"
@@ -369,16 +349,6 @@
                 <div popover="hint" class="gh-tooltip" [id]="'tl-fb-' + issue.id + '-delete-tip'"
                      [attr.style]="'position-anchor: --tl-fb-' + issue.id + '-delete-tip'">Delete issue</div>
               </div>
-              @if (triagedText(issue); as triaged) {
-                <p class="tl-fb-triaged">{{ triaged }}</p>
-              }
-              <p class="tl-fb-result" [id]="'tl-fb-' + issue.id + '-result'" role="status">{{ result?.message ?? '' }}</p>
-              @if (result?.error; as triageError) {
-                <p class="gh-field-error tl-fb-triage-error" [id]="'tl-fb-' + issue.id + '-error'">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                  <span>{{ triageError }}</span>
-                </p>
-              }
             </div>
           </article>
         </li>
@@ -395,3 +365,4 @@
 </section>
 
 <app-admin-confirm-dialog />
+<app-feedback-triage-dialog />

@@ -14,7 +14,7 @@ import {
   signal
 } from '@angular/core';
 import { ActivatedRoute, NavigationEnd, ParamMap, Router, RouterLink } from '@angular/router';
-import { Subscription, filter } from 'rxjs';
+import { Observable, Subscription, catchError, defer, filter, finalize, map, tap, throwError } from 'rxjs';
 import {
   ADMIN_FEEDBACK_CATEGORIES,
   ADMIN_FEEDBACK_FIXED_IN_VERSION_MAX,
@@ -46,7 +46,6 @@ import { adminApiError } from '../../../services/admin-users.service';
 import { CardListChip, CardListFacetSpec, CardListSort, CardListState } from '../../../shared/data-table/card-list-state';
 import { FilterFacetComponent, FilterFacetOption } from '../../../shared/data-table/filter-facet.component';
 import { TableState, anyOfFilter, customFilter } from '../../../shared/data-table/table-state';
-import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { AdminConfirmDialogComponent } from '../../admin-dialogs/admin-confirm-dialog.component';
@@ -55,6 +54,7 @@ import { ADMIN_TAB_SLUGS, adminCommands, adminQueryList, clearedFeedbackQueryPar
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
 import { FeedbackSelectionBarComponent, FeedbackSelectionId } from '../shared/feedback-selection-bar.component';
 import { hiddenCharactersOf } from '../shared/feedback-hidden-characters';
+import { FeedbackTriageDialogComponent, FeedbackTriageValues } from '../shared/feedback-triage-dialog.component';
 import {
   FEEDBACK_SELECTION_CAP,
   FeedbackExportOptions,
@@ -175,13 +175,30 @@ export function feedbackDateText(utc: string | null | undefined): string {
   return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
+/** `14:02`, local time; empty when the value does not parse. */
+export function feedbackTimeText(utc: string | null | undefined): string {
+  if (!utc) return '';
+  const date = parseServerUtcDate(utc);
+  if (isNaN(date.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 /** `21 Oct 2026 14:02`, local time; the raw value when it does not parse. */
 export function feedbackDateTimeText(utc: string | null | undefined): string {
   if (!utc) return '';
   const date = parseServerUtcDate(utc);
   if (isNaN(date.getTime())) return utc;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${feedbackDateText(utc)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${feedbackDateText(utc)} ${feedbackTimeText(utc)}`;
+}
+
+/** `1.4.1+d4452568e4` for `1.4.1+d4452568…`: build metadata of 12 characters or more cut to its first 10. */
+export function feedbackVersionShort(version: string | null | undefined): string {
+  if (!version) return '';
+  const plus = version.indexOf('+');
+  if (plus < 0) return version;
+  const metadata = version.slice(plus + 1);
+  return metadata.length >= 12 ? `${version.slice(0, plus)}+${metadata.slice(0, 10)}` : version;
 }
 
 /**
@@ -264,14 +281,6 @@ interface OccurrenceState {
   error: string | null;
 }
 
-/** An issue's triage form as edited; `status` is empty while a regressed issue has no new status chosen. */
-interface TriageDraft {
-  status: AdminFeedbackTriageStatus | '';
-  note: string;
-  resolution: string;
-  fixedInVersion: string;
-}
-
 /** The last Save or Delete of one issue. */
 interface TriageResult {
   message: string;
@@ -285,12 +294,13 @@ interface TriageResult {
  * Version, Tool and Has resolution facets, and chips, which also show an `ids` filter a link from the
  * GnollBench sub-tab sets (`status=all` is no status filter); the facets and the search live in the address and,
  * with the sort and the range, in the remembered view. Each issue has its figures, latest facts,
- * occurrences on demand, a selection checkbox and a triage form; the selection bar exports and imports
- * the selection. Report text is model output and is rendered as plain text only.
+ * occurrences on demand, a selection checkbox, and Edit triage and Delete, which open the triage dialog
+ * and a confirmation; the selection bar exports and imports the selection. Report text is model output
+ * and is rendered as plain text only.
  */
 @Component({
   selector: 'app-feedback-overseer-panel',
-  imports: [FilterFacetComponent, AdminConfirmDialogComponent, InfoTipComponent, FeedbackSelectionBarComponent, RouterLink],
+  imports: [FilterFacetComponent, AdminConfirmDialogComponent, FeedbackTriageDialogComponent, FeedbackSelectionBarComponent, RouterLink],
   templateUrl: './feedback-overseer-panel.component.html',
   styleUrl: './feedback-overseer-panel.component.scss'
 })
@@ -312,18 +322,17 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   @Output() readonly loadingChange = new EventEmitter<boolean>();
 
   @ViewChild(AdminConfirmDialogComponent, { static: true }) confirmDialog!: AdminConfirmDialogComponent;
+  @ViewChild(FeedbackTriageDialogComponent, { static: true }) triageDialog!: FeedbackTriageDialogComponent;
 
   readonly sorts = FEEDBACK_SORTS;
-  readonly triageStatuses = ADMIN_FEEDBACK_TRIAGE_STATUSES;
-  readonly noteMax = FEEDBACK_NOTE_MAX;
-  readonly resolutionMax = FEEDBACK_RESOLUTION_MAX;
-  readonly fixedInVersionMax = FEEDBACK_FIXED_IN_VERSION_MAX;
   readonly searchMax = SEARCH_MAX;
   readonly statusLabel = feedbackStatusLabel;
   readonly categoryLabel = feedbackCategoryLabel;
   readonly causeLabel = feedbackCauseLabel;
   readonly dateText = feedbackDateText;
+  readonly timeText = feedbackTimeText;
   readonly dateTimeText = feedbackDateTimeText;
+  readonly versionShort = feedbackVersionShort;
   readonly modelSourceText = feedbackModelSourceText;
   readonly formatInteger = formatInteger;
 
@@ -366,9 +375,6 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   readonly notShownCount = signal(0);
   /** The export dialog's options, as the bar last reported them. */
   exportOptions: FeedbackExportOptions | undefined;
-
-  /** Each issue's triage form as edited, by issue id. */
-  drafts: Record<number, TriageDraft> = {};
 
   /** The server filters, sorts and pages; the table carries the filter values and the sort. */
   readonly table = new TableState<AdminFeedbackIssue>(DEFAULT_SORT, 'desc').registerAccessors(
@@ -474,7 +480,6 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   /** Refetches the facets and the first page of issues, and checks the selection; open occurrence lists start again. */
   reload(): void {
     if (!this.initialized) return;
-    this.drafts = {};
     this.triageResults.set({});
     this.resetOccurrences();
     this.loadFacets();
@@ -948,9 +953,6 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
         } else {
           this.rows.set(page.rows);
         }
-        for (const issue of page.rows) {
-          if (!this.drafts[issue.id]) this.drafts[issue.id] = FeedbackOverseerPanelComponent.draftOf(issue);
-        }
         this.totalCount.set(page.totalCount);
         this.table.setRemoteTotal(page.totalCount);
         this.setLoading(false);
@@ -1384,73 +1386,63 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
 
   // --- Triage ---
 
-  draft(issue: AdminFeedbackIssue): TriageDraft {
-    return this.drafts[issue.id] ??= FeedbackOverseerPanelComponent.draftOf(issue);
-  }
-
   triageResult(issueId: number): TriageResult | undefined {
     return this.triageResults()[issueId];
   }
 
-  onDraftStatus(issue: AdminFeedbackIssue, event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    this.draft(issue).status = (ADMIN_FEEDBACK_TRIAGE_STATUSES as readonly string[]).includes(value) ? value as AdminFeedbackTriageStatus : '';
-  }
-
-  onDraftText(issue: AdminFeedbackIssue, field: 'note' | 'resolution' | 'fixedInVersion', event: Event): void {
-    this.draft(issue)[field] = (event.target as HTMLInputElement | HTMLTextAreaElement).value;
+  /** Opens the triage dialog on the issue's stored triage; it saves through `saveTriage`. */
+  editTriage(issue: AdminFeedbackIssue): void {
+    if (this.savingId() !== null || this.deletingId() !== null) return;
+    this.triageDialog.open({
+      idPrefix: `tl-fb-${issue.id}-triage`,
+      subject: issue.subject,
+      details: [
+        feedbackCategoryLabel(issue.category),
+        `Status: ${feedbackStatusLabel(issue.status)}`,
+        issue.occurrenceCount === 1 ? '1 occurrence' : `${formatInteger(issue.occurrenceCount)} occurrences`
+      ],
+      values: FeedbackOverseerPanelComponent.triageValuesOf(issue),
+      statuses: ADMIN_FEEDBACK_TRIAGE_STATUSES.map(status => ({ value: status, label: feedbackStatusLabel(status) })),
+      statusHelp: 'A resolved issue that recurs becomes Regressed; a dismissed one stays dismissed.',
+      limits: { note: FEEDBACK_NOTE_MAX, resolution: FEEDBACK_RESOLUTION_MAX, fixedInVersion: FEEDBACK_FIXED_IN_VERSION_MAX },
+      fixedInVersionPattern: ADMIN_FEEDBACK_FIXED_IN_VERSION_PATTERN,
+      fixedInVersionError: `Fixed in version takes letters, digits, periods, plus and minus signs only, at most ${FEEDBACK_FIXED_IN_VERSION_MAX} characters.`,
+      submit: values => this.saveTriage(issue, values)
+    });
   }
 
   /**
    * Saves the status and every text field that differs from the stored one: a field left as it was is
    * kept, an emptied one is cleared. The card takes the server's copy, the result is announced and the
-   * counts refetched.
+   * counts refetched. A failure reaches the dialog as an error with the message to show.
    */
-  save(issue: AdminFeedbackIssue): void {
-    if (this.savingId() !== null || this.deletingId() !== null) return;
-    const draft = this.draft(issue);
-    if (!draft.status) {
-      this.setTriageResult(issue.id, { message: '', error: 'Choose a status first.' });
-      return;
-    }
-    const fixedInVersion = draft.fixedInVersion.trim();
-    if (fixedInVersion !== '' && !ADMIN_FEEDBACK_FIXED_IN_VERSION_PATTERN.test(fixedInVersion)) {
-      this.setTriageResult(issue.id, {
-        message: '',
-        error: `Fixed in version takes letters, digits, periods, plus and minus signs only, at most ${FEEDBACK_FIXED_IN_VERSION_MAX} characters.`
-      });
-      return;
-    }
-    const status = draft.status;
-    const note = draft.note.trim().slice(0, FEEDBACK_NOTE_MAX);
-    const resolution = draft.resolution.trim().slice(0, FEEDBACK_RESOLUTION_MAX);
-    const changes: AdminFeedbackTriageChanges = {};
-    if (note !== (issue.triageNote ?? '')) changes.note = note;
-    if (resolution !== (issue.resolution ?? '')) changes.resolution = resolution;
-    if (fixedInVersion !== (issue.fixedInVersion ?? '')) changes.fixedInVersion = fixedInVersion;
-    this.savingId.set(issue.id);
-    this.setTriageResult(issue.id, { message: '', error: null });
-    this.feedback.updateStatus(issue.id, status, changes).subscribe({
-      next: updated => {
-        this.savingId.set(null);
-        const saved: AdminFeedbackIssue = updated && updated.id === issue.id
+  saveTriage(issue: AdminFeedbackIssue, values: FeedbackTriageValues): Observable<AdminFeedbackIssue> {
+    return defer(() => {
+      const status = values.status as AdminFeedbackTriageStatus;
+      const changes: AdminFeedbackTriageChanges = {};
+      if (values.note !== (issue.triageNote ?? '')) changes.note = values.note;
+      if (values.resolution !== (issue.resolution ?? '')) changes.resolution = values.resolution;
+      if (values.fixedInVersion !== (issue.fixedInVersion ?? '')) changes.fixedInVersion = values.fixedInVersion;
+      this.savingId.set(issue.id);
+      this.setTriageResult(issue.id, { message: '', error: null });
+      return this.feedback.updateStatus(issue.id, status, changes).pipe(
+        map((updated): AdminFeedbackIssue => updated && updated.id === issue.id
           ? updated
           : {
             ...issue, status, triagedUtc: new Date().toISOString(),
             triageNote: changes.note !== undefined ? changes.note || null : issue.triageNote,
             resolution: changes.resolution !== undefined ? changes.resolution || null : issue.resolution,
             fixedInVersion: changes.fixedInVersion !== undefined ? changes.fixedInVersion || null : issue.fixedInVersion
-          };
-        this.rows.set(this.rows().map(i => i.id === issue.id ? saved : i));
-        this.drafts[issue.id] = FeedbackOverseerPanelComponent.draftOf(saved);
-        this.list.invalidate();
-        this.setTriageResult(issue.id, { message: `Saved. The issue is ${feedbackStatusLabel(saved.status)}.`, error: null });
-        this.store.loadFeedbackCounts();
-      },
-      error: err => {
-        this.savingId.set(null);
-        this.setTriageResult(issue.id, { message: '', error: 'The issue could not be saved: ' + adminApiError(err).message });
-      }
+          }),
+        tap(saved => {
+          this.rows.set(this.rows().map(i => i.id === issue.id ? saved : i));
+          this.list.invalidate();
+          this.setTriageResult(issue.id, { message: `Saved. The issue is ${feedbackStatusLabel(saved.status)}.`, error: null });
+          this.store.loadFeedbackCounts();
+        }),
+        catchError(err => throwError(() => new Error('The issue could not be saved: ' + adminApiError(err).message))),
+        finalize(() => this.savingId.set(null))
+      );
     });
   }
 
@@ -1476,7 +1468,6 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
         const index = before.findIndex(i => i.id === issue.id);
         const after = before.filter(i => i.id !== issue.id);
         this.rows.set(after);
-        delete this.drafts[issue.id];
         this.totalCount.set(Math.max(0, this.totalCount() - 1));
         this.table.setRemoteTotal(this.totalCount());
         this.list.invalidate();
@@ -1499,7 +1490,8 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     this.triageResults.set({ ...this.triageResults(), [issueId]: result });
   }
 
-  private static draftOf(issue: AdminFeedbackIssue): TriageDraft {
+  /** The stored triage as the dialog takes it; a regressed issue has no status until one is chosen. */
+  private static triageValuesOf(issue: AdminFeedbackIssue): FeedbackTriageValues {
     return {
       status: issue.status === 'regressed' ? '' : issue.status,
       note: issue.triageNote ?? '',

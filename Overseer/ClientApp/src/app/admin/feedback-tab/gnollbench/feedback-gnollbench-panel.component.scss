@@ -135,7 +135,7 @@ time {
 
 .tl-gbfb-cards {
   display: grid;
-  gap: 0.75rem;
+  gap: 1rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -147,7 +147,7 @@ time {
 }
 
 /* The checkbox in a gutter at the start; head and metrics side by side from 60 rem of the list, the
-   metrics under the head below it; the facts, the self-reports and the triage form each take a row. */
+   metrics under the head below it; the facts, the self-reports and the footer each take a row. */
 .tl-gbfb-card {
   @include cards.card-surface;
 
@@ -156,7 +156,7 @@ time {
     "select head        metrics"
     "select facts       facts"
     "select occurrences occurrences"
-    "select triage      triage";
+    "select footer      footer";
   gap: var(--tl-row-gap) var(--tl-zone-gap);
   column-gap: 0.875rem;
   transition: border-color 0.15s ease, background-color 0.15s ease;
@@ -286,6 +286,7 @@ time {
   }
 }
 
+/* A step below the title and the summary: small terms over secondary-size values. */
 .tl-gbfb-facts {
   grid-area: facts;
   display: grid;
@@ -294,16 +295,27 @@ time {
   margin: 0;
 
   dt {
-    font-size: var(--text-secondary);
+    font-size: var(--text-xs);
     font-weight: 500;
     color: #a1a1aa;
   }
 
   dd {
     margin: 0;
+    font-size: var(--text-secondary);
     color: #e4e4e7;
     overflow-wrap: anywhere;
   }
+
+  .tl-gbfb-fact-note,
+  .tl-gbfb-fact-resolution {
+    grid-column: 1 / -1;
+  }
+}
+
+/* The note and what was done, as the administrator wrote them: plain text with its line breaks. */
+.tl-gbfb-plain-text {
+  white-space: pre-wrap;
 }
 
 /* --- Self-reports --------------------------------------------------------------------------------- */
@@ -449,62 +461,37 @@ time {
   color: var(--nav-color);
 }
 
-/* --- Triage --------------------------------------------------------------------------------------- */
+/* --- Footer --------------------------------------------------------------------------------------- */
 
-/* Under a hairline: Status and Fixed in version on the start, Note and Resolution beside them, then the actions. */
-.tl-gbfb-triage {
-  grid-area: triage;
-  display: grid;
-  grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
-  gap: 0.5rem 1.25rem;
+/* Under a hairline: the triaged line and the last result at the start, Edit triage at the end. It sits
+   here rather than top right because the triage summary it acts on is here. */
+.tl-gbfb-footer {
+  grid-area: footer;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
   padding-block-start: var(--tl-row-gap);
   border-block-start: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.tl-gbfb-field {
+.tl-gbfb-footer-text {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-inline-size: 0;
-
-  label {
-    margin: 0;
-    font-weight: 600;
-  }
 }
 
-/* A label followed by its (i) button. */
-.tl-gbfb-label-row {
+.tl-gbfb-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.tl-gbfb-note-input {
-  --autosize-min: 2lh;
-  --autosize-max: 8lh;
-}
-
-.tl-gbfb-resolution-input {
-  --autosize-min: 2lh;
-  --autosize-max: 12lh;
-}
-
-.tl-gbfb-version-input {
-  font-family: var(--font-mono);
-}
-
-.tl-gbfb-triage-actions {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  gap: 8px;
+  margin-inline-start: auto;
 }
 
 .tl-gbfb-triaged,
-.tl-gbfb-result,
-.tl-gbfb-triage-error {
-  grid-column: 1 / -1;
+.tl-gbfb-result {
   margin: 0;
 }
 
@@ -522,8 +509,7 @@ time {
   }
 }
 
-/* Below 60 rem of the list the metrics move under the head; below 40 rem two per row, and the triage
-   form stacks. */
+/* Below 60 rem of the list the metrics move under the head; below 40 rem two per row. */
 @container tl-gbfb-cards (inline-size < 60rem) {
   .tl-gbfb-card {
     grid-template-columns: auto minmax(0, 1fr);
@@ -532,7 +518,7 @@ time {
       "select metrics"
       "select facts"
       "select occurrences"
-      "select triage";
+      "select footer";
   }
 
   .tl-gbfb-metrics {
@@ -546,10 +532,6 @@ time {
 @container tl-gbfb-cards (inline-size < 40rem) {
   .tl-gbfb-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .tl-gbfb-triage {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 

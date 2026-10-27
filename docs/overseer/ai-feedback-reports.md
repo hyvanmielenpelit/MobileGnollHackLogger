@@ -392,10 +392,11 @@ the chosen sub-tab (`AdminPageStore.feedbackSubTab`). The query parameters of bo
   parameter, so the shared names never leak from one sub-tab into the other. The sort key used before the
   sub-tabs, `overseer.admin.telemetry.feedback.view`, is read once as the Overseer sort when the new record
   is absent, and is left in place.
-- **The selection.** Each card has a checkbox, top left, whose label is the card's title. The selection is
-  held by id (§ 8f of the `frontend_ui_controls` skill), at most 500, and is remembered across paging,
-  filtering and reloads in `overseer.admin.feedback.overseer.selection` (`{ version: 1, ids }`; the
-  GnollBench sub-tab keeps `fingerprints` in `…gnollbench.selection`). The selection bar
+- **The selection.** Each card has a checkbox in a gutter at its start, whose label is the card's title.
+  The selection is held by id (§ 8f of the `frontend_ui_controls` skill), at most 500, and is remembered
+  across paging, filtering and reloads in `overseer.admin.feedback.overseer.selection`
+  (`{ version: 1, ids }`; the GnollBench sub-tab keeps `fingerprints` in `…gnollbench.selection`). The
+  selection bar
   (`app-feedback-selection-bar`, `shared/`) under the filters shows the count, *Show selected only* (which
   sends the ids to the server and prunes those it no longer returns), *Clear selection*, *Select all N
   matching* (`GET issues/ids`; it keeps at most 500 and says *Selected the first 500 of N* when a cap cuts
@@ -410,15 +411,30 @@ the chosen sub-tab (`AdminPageStore.feedbackSubTab`). The query parameters of bo
   its title and the summary under it, and, when an accepted GnollBench self-report has the same
   fingerprint, how often and its status with an *Open in GnollBench* link (it opens the GnollBench sub-tab
   searched by the subject, because the Overseer issue DTO carries no fingerprint); four aligned metrics —
-  *Occurrences* (with *N retained* when fewer remain), *Users*, *First seen*, *Last seen*; the latest
-  expected location, related tools, *Model's suspected cause (hypothesis)* and version, the providers, the
-  model sources, and the fixed-in version and resolution when set; an *Occurrences* disclosure that loads
-  the occurrences newest first, ten at a time, filtered by the occurrence-level facets with a *Show all
-  occurrences* toggle; and the triage form — a *Status* select without *Regressed*, whose (i) beside the
-  label, which also describes the select, reads *A resolved issue that recurs becomes Regressed; a
-  dismissed one stays dismissed*, a *Note*, a *Fixed in version* (with an (i)), a *Resolution* (*What was
-  changed, where, and how it was verified*), *Save*, and
-  *Delete issue*, whose confirmation says the occurrences go with it.
+  *Occurrences* (with *N retained* when fewer remain), *Users*, *First seen* and *Last seen*, each date with
+  its time on a qualifier line under it; the latest expected location, related tools, *Model's suspected
+  cause (hypothesis)* and version (a build hash of 12 characters or more cut to its first 10, the whole
+  version in the value's tooltip), the providers, the model sources, and the fixed-in version, the triage
+  *Note* and the resolution when set, the note and the resolution as plain text with their line breaks; an
+  *Occurrences* disclosure that loads the occurrences newest first, ten at a time, filtered by the
+  occurrence-level facets with a *Show all occurrences* toggle; and a footer under a hairline with
+  *Triaged … by …* (or *Not triaged yet*) and the last save's result at the start, and at the end a group
+  named *Actions for {subject}* holding **Edit triage** and the icon-only *Delete issue*, whose
+  confirmation says the occurrences go with it. The card holds no form.
+- **The triage dialog** (`app-feedback-triage-dialog`, `shared/`), opened by *Edit triage* with focus on
+  *Status*, in the feedback export dialog's frame (a header with *Triage issue* and a close button, a
+  scrolling body, a footer). The body starts with the issue in a panel — *Issue*, the subject, and its
+  category, current status and count — then a *Status* select without *Regressed* (a regressed issue opens on *Choose a status*), whose (i)
+  beside the label, which also describes the select, reads *A resolved issue that recurs becomes Regressed;
+  a dismissed one stays dismissed*, and *Fixed in version* (with an (i)) side by side where the dialog has
+  room; then *Note* and *Resolution* (*What was changed, where, and how it was verified*) across its width,
+  each with a character count. *Save* checks the fields first and says what is wrong at the field — *Choose
+  a status.*, or the version format — without sending anything; it then sends the status and only the
+  texts that changed, closes on success, and keeps the values with the server's message when the save
+  fails. *Cancel* and *Save* share one row at the end of the footer. Escape, *Cancel* or the close button
+  on a changed form first shows *You have unsaved changes.* with a **Discard changes** link before them;
+  a second Escape or Discard closes without saving. *Delete issue* stays on the card, away from
+  *Save*, and is refused while a save runs.
 - **An occurrence** shows its time, user, groups, provider and model, model source (with the system
   configuration's name), version, the session and message ids as text, the summary,
   what was searched for, the expected location, how the mistake was noticed, the cause note, the details,
@@ -517,14 +533,16 @@ only an administrator's triage is stored.
   numerically). The facet options count self-reports whose own time is in the range. The view, the
   selection and the address follow the Overseer sub-tab's rules (§ 10).
 - **The cards** show the category and derived status, the models, the subject and summary, four metrics
-  (*Self-reports* with the run count, *Models*, *First seen*, *Last seen*), the providers, suites and the
-  fingerprint's first 12 characters, and, when an `OverseerFeedbackIssue` has the fingerprint, *Also
-  reported in the Overseer chat* with a link to that issue (`/admin/feedback?ids=<id>&status=all`) and its
-  status. A *Self-reports* disclosure lists them newest first: run (a link that opens the run report
-  download, since no route opens one run), suite, model and provider, information condition, Experimental
-  Changes, corpus, harness, *Refused because* for a refused call, the question, and the report's text
-  fields. The triage form is the Overseer sub-tab's, without *Delete*: self-reports are run records and
-  leave with their run.
+  (*Self-reports* with the run count, *Models*, *First seen*, *Last seen*, the dates with their times on a
+  qualifier line), the providers, suites and the fingerprint's first 12 characters, when an
+  `OverseerFeedbackIssue` has the fingerprint *Also reported in the Overseer chat* with a link to that issue
+  (`/admin/feedback?ids=<id>&status=all`) and its status, and the stored *Fixed in version*, *Note* and
+  *Resolution* when set. A *Self-reports* disclosure lists them newest first: run (a link that opens the run
+  report download, since no route opens one run), suite, model and provider, information condition,
+  Experimental Changes, corpus, harness, *Refused because* for a refused call, the question, and the
+  report's text fields. The footer and the triage dialog are the Overseer sub-tab's, with this sub-tab's
+  Status (i) (*A resolved issue that a run reports again becomes Regressed; a dismissed one stays
+  dismissed.*) and without *Delete*: self-reports are run records and leave with their run.
 - **The API** (`AdminGnollBenchFeedbackController`, `api/admin/feedback/gnollbench`, `AdminOnly`). The
   filters, every list comma-separated: `startDate`, `endDate`, `status`, `accepted`, `category`, `model`,
   `provider`, `run`, `series`, `group`, `battery`, `batch`, `suite`, `question`, `condition`
@@ -549,7 +567,10 @@ the diagnostic consequence in the `server_benchmark_tool_diagnostics` skill.
 The selection bar of either sub-tab hands selected issues to an AI coding assistant as a Markdown file and
 takes its answer back as a YAML resolution file. The assistant's method is the project skill
 `server-feedback-resolution` (`.agents/skills/server_feedback_resolution/SKILL.md`). The controller is
-`AdminFeedbackTransferController` (`api/admin/feedback`, `AdminOnly`).
+`AdminFeedbackTransferController` (`api/admin/feedback`, `AdminOnly`). While *Export…* is unavailable, why
+(*Select issues to export.*, or the 200-issue limit) shows just before it on the buttons' row, and the
+line under the bar that reports a saved file keeps its height while empty, so neither a selection nor an
+export moves the list.
 
 ### The export
 

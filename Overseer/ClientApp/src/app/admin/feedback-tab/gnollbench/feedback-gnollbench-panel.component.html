@@ -102,7 +102,6 @@
     <ul class="tl-gbfb-cards" role="list" aria-labelledby="tl-gbfb-issues-title">
       @for (issue of rows(); track issue.fingerprint) {
         @let cid = 'tl-gbfb-' + idOf(issue.fingerprint);
-        @let form = draft(issue);
         @let result = triageResult(issue.fingerprint);
         @let occ = occurrenceState(issue.fingerprint);
         <li class="tl-gbfb-item">
@@ -134,7 +133,7 @@
               <p class="tl-gbfb-summary">{{ issue.summary }}</p>
             </div>
 
-            <!-- Fixed-width columns that line up down the list. -->
+            <!-- Fixed-width columns that line up down the list; a date's time is a qualifier line under it. -->
             <dl class="tl-gbfb-metrics">
               <div class="tl-gbfb-metric tl-gbfb-metric-reports">
                 <dt>Self-reports</dt>
@@ -148,10 +147,12 @@
               <div class="tl-gbfb-metric tl-gbfb-metric-first">
                 <dt>First seen</dt>
                 <dd><time [attr.datetime]="issue.firstSeenUtc">{{ dateText(issue.firstSeenUtc) }}</time></dd>
+                <dd class="tl-gbfb-metric-note">{{ timeText(issue.firstSeenUtc) }}</dd>
               </div>
               <div class="tl-gbfb-metric tl-gbfb-metric-last">
                 <dt>Last seen</dt>
-                <dd><time [attr.datetime]="issue.lastSeenUtc">{{ dateTimeText(issue.lastSeenUtc) }}</time></dd>
+                <dd><time [attr.datetime]="issue.lastSeenUtc">{{ dateText(issue.lastSeenUtc) }}</time></dd>
+                <dd class="tl-gbfb-metric-note">{{ timeText(issue.lastSeenUtc) }}</dd>
               </div>
             </dl>
 
@@ -176,6 +177,24 @@
                     <span class="tl-gbfb-sep"><span aria-hidden="true"> &middot; </span><span class="visually-hidden">, </span></span>
                     <span class="tl-gbfb-overseer-status">{{ statusLabel(overseer.status) }}</span>
                   </dd>
+                </div>
+              }
+              @if (issue.fixedInVersion) {
+                <div class="tl-gbfb-fact tl-gbfb-fact-fixed">
+                  <dt>Fixed in version</dt>
+                  <dd class="tl-gbfb-mono">{{ issue.fixedInVersion }}</dd>
+                </div>
+              }
+              @if (issue.triageNote) {
+                <div class="tl-gbfb-fact tl-gbfb-fact-note">
+                  <dt>Note</dt>
+                  <dd class="tl-gbfb-plain-text">{{ issue.triageNote }}</dd>
+                </div>
+              }
+              @if (issue.resolution) {
+                <div class="tl-gbfb-fact tl-gbfb-fact-resolution">
+                  <dt>Resolution</dt>
+                  <dd class="tl-gbfb-plain-text">{{ issue.resolution }}</dd>
                 </div>
               }
             </dl>
@@ -329,61 +348,21 @@
               </div>
             </details>
 
-            <!-- The triage form, under a hairline. -->
-            <div class="tl-gbfb-triage" role="group" [attr.aria-label]="'Triage of ' + issue.subject">
-              <div class="tl-gbfb-field tl-gbfb-field-status">
-                <div class="tl-gbfb-label-row">
-                  <label [for]="cid + '-status'">Status</label>
-                  <app-info-tip [tipId]="cid + '-status-help'" subject="Status">A resolved issue that a run reports again becomes Regressed; a dismissed one stays dismissed.</app-info-tip>
-                </div>
-                <select class="gh-input tl-gbfb-status-select" [id]="cid + '-status'"
-                        [attr.aria-describedby]="cid + '-status-help'"
-                        (change)="onDraftStatus(issue, $event)">
-                  @if (form.status === '') {
-                    <option value="" disabled selected>Choose a status</option>
-                  }
-                  @for (status of triageStatuses; track status) {
-                    <option [value]="status" [selected]="form.status === status">{{ statusLabel(status) }}</option>
-                  }
-                </select>
+            <!-- Under a hairline: who triaged it and the last result at the start, Edit triage at the end. The
+                 triage form is a dialog. -->
+            <div class="tl-gbfb-footer">
+              <div class="tl-gbfb-footer-text">
+                <p class="tl-gbfb-triaged">{{ triagedText(issue) || 'Not triaged yet' }}</p>
+                <p class="tl-gbfb-result" [id]="cid + '-result'" role="status">{{ result?.message ?? '' }}</p>
               </div>
-              <div class="tl-gbfb-field tl-gbfb-field-note">
-                <label [for]="cid + '-note'">Note</label>
-                <textarea class="gh-input gh-textarea-autosize tl-gbfb-note-input" rows="2" [id]="cid + '-note'"
-                          [attr.maxlength]="noteMax" [value]="form.note"
-                          (input)="onDraftText(issue, 'note', $event)"></textarea>
-              </div>
-              <div class="tl-gbfb-field tl-gbfb-field-version">
-                <label [for]="cid + '-version'">Fixed in version</label>
-                <input type="text" class="gh-input tl-gbfb-version-input" [id]="cid + '-version'"
-                       autocomplete="off" spellcheck="false" placeholder="1.4.1"
-                       [attr.maxlength]="versionMax" [value]="form.fixedInVersion"
-                       (input)="onDraftText(issue, 'fixedInVersion', $event)">
-              </div>
-              <div class="tl-gbfb-field tl-gbfb-field-resolution">
-                <label [for]="cid + '-resolution'">Resolution</label>
-                <textarea class="gh-input gh-textarea-autosize tl-gbfb-resolution-input" rows="2" [id]="cid + '-resolution'"
-                          [attr.maxlength]="resolutionMax" [value]="form.resolution"
-                          placeholder="What was changed, where, and how it was verified"
-                          (input)="onDraftText(issue, 'resolution', $event)"></textarea>
-              </div>
-              <div class="tl-gbfb-triage-actions">
-                <button type="button" class="btn-gh tl-gbfb-save"
-                        [disabled]="savingFingerprint() === issue.fingerprint"
+              <div class="tl-gbfb-actions" role="group" [attr.aria-label]="'Actions for ' + issue.subject">
+                <button type="button" class="btn-ghost tl-gbfb-edit" aria-haspopup="dialog"
                         [attr.aria-busy]="savingFingerprint() === issue.fingerprint ? 'true' : null"
-                        [attr.aria-describedby]="result?.error ? cid + '-error' : null"
-                        (click)="save(issue)">Save</button>
+                        (click)="editTriage(issue)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                  Edit triage<span class="visually-hidden">: {{ issue.subject }}</span>
+                </button>
               </div>
-              @if (triagedText(issue); as triaged) {
-                <p class="tl-gbfb-triaged">{{ triaged }}</p>
-              }
-              <p class="tl-gbfb-result" [id]="cid + '-result'" role="status">{{ result?.message ?? '' }}</p>
-              @if (result?.error; as triageError) {
-                <p class="gh-field-error tl-gbfb-triage-error" [id]="cid + '-error'">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                  <span>{{ triageError }}</span>
-                </p>
-              }
             </div>
           </article>
         </li>
@@ -398,3 +377,5 @@
     }
   }
 </section>
+
+<app-feedback-triage-dialog />

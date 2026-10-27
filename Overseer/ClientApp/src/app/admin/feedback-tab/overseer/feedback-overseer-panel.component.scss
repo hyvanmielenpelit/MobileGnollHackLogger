@@ -136,7 +136,7 @@ time {
 
 .tl-fb-cards {
   display: grid;
-  gap: 0.75rem;
+  gap: 1rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -147,24 +147,26 @@ time {
   min-inline-size: 0;
 }
 
-/* The checkbox, the head and the metrics side by side from 60 rem of the list, the metrics under the
-   head below it; the facts, the occurrences and the triage form each take a row across the card. */
+/* The checkbox in a gutter at the start; head and metrics side by side from 60 rem of the list, the
+   metrics under the head below it; the facts, the occurrences and the footer each take a row. */
 .tl-fb-card {
   @include cards.card-surface;
 
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    "select      head        metrics"
-    "facts       facts       facts"
-    "occurrences occurrences occurrences"
-    "triage      triage      triage";
+    "select head        metrics"
+    "select facts       facts"
+    "select occurrences occurrences"
+    "select footer      footer";
   gap: var(--tl-row-gap) var(--tl-zone-gap);
-}
+  column-gap: 0.875rem;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 
-/* A selected card: the tick, a gold border and a tint together, never color alone. */
-.tl-fb-card:has(.tl-fb-select-input:checked) {
-  border-color: color-mix(in srgb, var(--primary-color) 70%, transparent);
-  background-color: color-mix(in srgb, var(--primary-color) 6%, rgba(0, 0, 0, 0.25));
+  /* A selected card: the tick, a gold border and a tint together, never color alone. */
+  &:has(.tl-fb-select-input:checked) {
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 7%, rgba(14, 14, 16, 0.72));
+  }
 }
 
 .tl-fb-select {
@@ -172,7 +174,6 @@ time {
   display: flex;
   align-items: flex-start;
   padding-block-start: 2px;
-  margin-inline-end: calc(var(--tl-zone-gap) * -0.5);
 
   input {
     inline-size: 18px;
@@ -299,6 +300,7 @@ time {
   }
 }
 
+/* A step below the title and the summary: small terms over secondary-size values. */
 .tl-fb-facts {
   grid-area: facts;
   display: grid;
@@ -307,23 +309,26 @@ time {
   margin: 0;
 
   dt {
-    font-size: var(--text-secondary);
+    font-size: var(--text-xs);
     font-weight: 500;
     color: #a1a1aa;
   }
 
   dd {
     margin: 0;
+    font-size: var(--text-secondary);
     color: #e4e4e7;
     overflow-wrap: anywhere;
   }
 
+  .tl-fb-fact-note,
   .tl-fb-fact-resolution {
     grid-column: 1 / -1;
   }
 }
 
-/* What was done, as the administrator wrote it: plain text with its line breaks. */
+/* The note and what was done, as the administrator wrote them: plain text with its line breaks. */
+.tl-fb-note-text,
 .tl-fb-resolution-text {
   white-space: pre-wrap;
 }
@@ -461,51 +466,31 @@ time {
   color: var(--nav-color);
 }
 
-/* The triage form under a hairline: Status beside Note, Fixed in version beside Resolution where they
-   fit, then the actions. */
-.tl-fb-triage {
-  grid-area: triage;
-  display: grid;
-  grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
-  gap: 0.5rem 1.25rem;
+/* Under a hairline: the triaged line and the last result at the start, the actions at the end. The
+   actions sit here rather than top right because the triage summary they act on is here. */
+.tl-fb-footer {
+  grid-area: footer;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
   padding-block-start: var(--tl-row-gap);
   border-block-start: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.tl-fb-field {
+.tl-fb-footer-text {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-inline-size: 0;
-
-  label {
-    margin: 0;
-    font-weight: 600;
-  }
 }
 
-/* A label followed by its (i) button. */
-.tl-fb-label-row {
+.tl-fb-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.tl-fb-note-input,
-.tl-fb-resolution-input {
-  --autosize-min: 2lh;
-  --autosize-max: 8lh;
-}
-
-.tl-fb-fixed-input {
-  font-family: var(--font-mono);
-}
-
-.tl-fb-triage-actions {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  gap: 8px;
+  margin-inline-start: auto;
 
   .action-btn {
     margin: 0;
@@ -515,7 +500,6 @@ time {
 .tl-fb-triaged,
 .tl-fb-result,
 .tl-fb-triage-error {
-  grid-column: 1 / -1;
   margin: 0;
 }
 
@@ -533,17 +517,16 @@ time {
   }
 }
 
-/* Below 60 rem of the list the metrics move under the head; below 40 rem two per row, and the triage
-   form stacks. */
+/* Below 60 rem of the list the metrics move under the head; below 40 rem two per row. */
 @container tl-fb-cards (inline-size < 60rem) {
   .tl-fb-card {
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
-      "select      head"
-      "metrics     metrics"
-      "facts       facts"
-      "occurrences occurrences"
-      "triage      triage";
+      "select head"
+      "select metrics"
+      "select facts"
+      "select occurrences"
+      "select footer";
   }
 
   .tl-fb-metrics {
@@ -558,14 +541,16 @@ time {
   .tl-fb-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .tl-fb-triage {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 @container tl-fb-cards (inline-size < 30rem) {
   .tl-fb-card {
     --tl-pad-inline: 0.875rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tl-fb-card {
+    transition: none;
   }
 }

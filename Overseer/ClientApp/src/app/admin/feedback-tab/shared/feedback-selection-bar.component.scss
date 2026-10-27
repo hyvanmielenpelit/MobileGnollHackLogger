@@ -5,6 +5,7 @@
   display: block;
   flex: 1 1 100%;
   min-inline-size: 0;
+  container: fsb / inline-size;
 }
 
 .fsb {
@@ -31,23 +32,27 @@
 .fsb-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin-inline-start: auto;
 }
 
+/* Why Export… waits, just before it on the same line. */
 .fsb-export-reason {
-  flex-basis: 100%;
   margin: 0;
-  text-align: end;
 }
 
-/* The polite status line: always rendered, so a screen reader hears it fill; empty, it has no height. */
+@container fsb (inline-size >= 36rem) {
+  .fsb-export-reason {
+    white-space: nowrap;
+  }
+}
+
+/* The polite status line: always rendered, so a screen reader hears it fill, and always one line tall,
+   so the list under the bar does not move when it fills. */
 .fsb-status {
-  margin: 0;
+  min-block-size: 1lh;
+  margin: 6px 0 0;
   font-size: 13px;
   color: var(--primary-color);
-
-  &:not(:empty) {
-    margin-top: 6px;
-  }
 }

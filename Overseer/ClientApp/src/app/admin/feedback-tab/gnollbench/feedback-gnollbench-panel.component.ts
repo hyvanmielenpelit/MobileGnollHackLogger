@@ -7,12 +7,13 @@ import {
   OnDestroy,
   OnInit,
   SimpleChanges,
+  ViewChild,
   computed,
   inject,
   signal
 } from '@angular/core';
 import { ActivatedRoute, ParamMap, Router, RouterLink } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { Observable, Subscription, catchError, defer, finalize, map, tap, throwError } from 'rxjs';
 import { AdminBenchmarkService } from '../../../services/admin-benchmark.service';
 import {
   AdminGnollBenchFeedbackService,
@@ -45,6 +46,7 @@ import { adminQueryList, readAdminQueryList } from '../../admin-url';
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
 import { FeedbackSelectionBarComponent } from '../shared/feedback-selection-bar.component';
 import { hiddenCharactersOf } from '../shared/feedback-hidden-characters';
+import { FeedbackTriageDialogComponent, FeedbackTriageValues } from '../shared/feedback-triage-dialog.component';
 import {
   FEEDBACK_SELECTION_CAP,
   FeedbackExportOptions,
@@ -243,13 +245,21 @@ export function gnollBenchDateText(utc: string | null | undefined): string {
   return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
+/** `14:02`, local time; empty when the value does not parse. */
+export function gnollBenchTimeText(utc: string | null | undefined): string {
+  if (!utc) return '';
+  const date = parseServerUtcDate(utc);
+  if (isNaN(date.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 /** `21 Oct 2026 14:02`, local time; the raw value when it does not parse. */
 export function gnollBenchDateTimeText(utc: string | null | undefined): string {
   if (!utc) return '';
   const date = parseServerUtcDate(utc);
   if (isNaN(date.getTime())) return utc;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${gnollBenchDateText(utc)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${gnollBenchDateText(utc)} ${gnollBenchTimeText(utc)}`;
 }
 
 /** The part of a fingerprint safe in an element id. */
@@ -381,14 +391,6 @@ interface OccurrenceState {
   all: boolean;
 }
 
-/** An issue's triage form as edited; `status` is empty while a regressed issue has no new status chosen. */
-interface TriageDraft {
-  status: GnollBenchFeedbackTriageStatus | '';
-  note: string;
-  resolution: string;
-  fixedInVersion: string;
-}
-
 /** The last Save of one issue. */
 interface TriageResult {
   message: string;
@@ -401,13 +403,14 @@ interface TriageResult {
  * the base set (accepted, all or refused calls), a facet for every run fact (status, category, model,
  * provider, run, series, analysis group, battery run, model batch, suite, question, information condition,
  * corpus, Experimental Changes and harness) and chips; its selection bar holds a selection by fingerprint for
- * the export and the resolution import. Each card has the issue's figures, its self-reports on demand and a
- * triage form. The shell supplies the date range and a Refresh token. The view is remembered per browser
- * and the filters are kept in the address. Report text is model output and is rendered as plain text only.
+ * the export and the resolution import. Each card has the issue's figures, its self-reports on demand and
+ * Edit triage, which opens the triage dialog. The shell supplies the date range and a Refresh token. The view
+ * is remembered per browser and the filters are kept in the address. Report text is model output and is
+ * rendered as plain text only.
  */
 @Component({
   selector: 'app-feedback-gnollbench-panel',
-  imports: [FilterFacetComponent, InfoTipComponent, RouterLink, FeedbackSelectionBarComponent],
+  imports: [FilterFacetComponent, InfoTipComponent, RouterLink, FeedbackSelectionBarComponent, FeedbackTriageDialogComponent],
   templateUrl: './feedback-gnollbench-panel.component.html',
   styleUrl: './feedback-gnollbench-panel.component.scss'
 })
@@ -425,13 +428,11 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   /** Incremented by the shell's Refresh; a change after the first value refetches everything. */
   @Input() refreshToken = 0;
 
+  @ViewChild(FeedbackTriageDialogComponent, { static: true }) triageDialog!: FeedbackTriageDialogComponent;
+
   readonly sorts = GNOLLBENCH_SORTS;
   readonly acceptedScopes = GNOLLBENCH_ACCEPTED_SCOPES;
   readonly acceptedLabels = ACCEPTED_LABELS;
-  readonly triageStatuses = GNOLLBENCH_FEEDBACK_TRIAGE_STATUSES;
-  readonly noteMax = GNOLLBENCH_NOTE_MAX;
-  readonly resolutionMax = GNOLLBENCH_RESOLUTION_MAX;
-  readonly versionMax = GNOLLBENCH_FIXED_IN_VERSION_MAX;
   readonly searchMax = GNOLLBENCH_SEARCH_MAX;
   readonly selectionCap = FEEDBACK_SELECTION_CAP;
   readonly statusLabel = gnollBenchStatusLabel;
@@ -441,6 +442,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   /** An Experimental Changes spec in words, with the catalog's titles once it has arrived. */
   readonly variantLabel = (value: string | null | undefined): string => gnollBenchVariantLabel(value, this.changeTitles());
   readonly dateText = gnollBenchDateText;
+  readonly timeText = gnollBenchTimeText;
   readonly dateTimeText = gnollBenchDateTimeText;
   readonly formatInteger = formatInteger;
   readonly idOf = idPart;
@@ -546,9 +548,6 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     return this.searchTerm() !== '' || GNOLLBENCH_FACETS.some(spec => spec.key !== 'status' && filters[spec.key].length > 0);
   });
 
-  /** Each issue's triage form as edited, by fingerprint. */
-  drafts: Record<string, TriageDraft> = {};
-
   /** The server filters, sorts and pages; the table carries the search and the sort. */
   readonly table = new TableState<GnollBenchFeedbackIssue>('lastSeen', 'desc').registerAccessors(
     {
@@ -632,7 +631,6 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
 
   /** Refetches the facets, the counts and the first page; open self-report lists start again and the selection is checked. */
   reload(): void {
-    this.drafts = {};
     this.triageResults.set({});
     this.resetOccurrences();
     this.loadFacets();
@@ -921,9 +919,6 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
           this.rows.set([...this.rows(), ...page.rows.filter(i => !known.has(i.fingerprint))]);
         } else {
           this.rows.set(page.rows);
-        }
-        for (const issue of page.rows) {
-          if (!this.drafts[issue.fingerprint]) this.drafts[issue.fingerprint] = FeedbackGnollBenchPanelComponent.draftOf(issue);
         }
         this.totalCount.set(page.totalCount);
         this.table.setRemoteTotal(page.totalCount);
@@ -1287,57 +1282,49 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
 
   // --- Triage ---
 
-  draft(issue: GnollBenchFeedbackIssue): TriageDraft {
-    return this.drafts[issue.fingerprint] ??= FeedbackGnollBenchPanelComponent.draftOf(issue);
-  }
-
   triageResult(fingerprint: string): TriageResult | undefined {
     return this.triageResults()[fingerprint];
   }
 
-  onDraftStatus(issue: GnollBenchFeedbackIssue, event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    this.draft(issue).status = (GNOLLBENCH_FEEDBACK_TRIAGE_STATUSES as readonly string[]).includes(value) ? value as GnollBenchFeedbackTriageStatus : '';
-  }
-
-  onDraftText(issue: GnollBenchFeedbackIssue, field: 'note' | 'resolution' | 'fixedInVersion', event: Event): void {
-    this.draft(issue)[field] = (event.target as HTMLInputElement | HTMLTextAreaElement).value;
+  /** Opens the triage dialog on the issue's stored triage; it saves through `saveTriage`. */
+  editTriage(issue: GnollBenchFeedbackIssue): void {
+    if (this.savingFingerprint() !== null) return;
+    this.triageDialog.open({
+      idPrefix: `tl-gbfb-${idPart(issue.fingerprint)}-triage`,
+      subject: issue.subject,
+      details: [
+        gnollBenchCategoryLabel(issue.category),
+        `Status: ${gnollBenchStatusLabel(issue.status)}`,
+        issue.selfReportCount === 1 ? '1 self-report' : `${formatInteger(issue.selfReportCount)} self-reports`
+      ],
+      values: FeedbackGnollBenchPanelComponent.triageValuesOf(issue),
+      statuses: GNOLLBENCH_FEEDBACK_TRIAGE_STATUSES.map(status => ({ value: status, label: gnollBenchStatusLabel(status) })),
+      statusHelp: 'A resolved issue that a run reports again becomes Regressed; a dismissed one stays dismissed.',
+      limits: { note: GNOLLBENCH_NOTE_MAX, resolution: GNOLLBENCH_RESOLUTION_MAX, fixedInVersion: GNOLLBENCH_FIXED_IN_VERSION_MAX },
+      fixedInVersionPattern: GNOLLBENCH_FIXED_IN_VERSION_PATTERN,
+      fixedInVersionError: 'Fixed in version takes letters, digits, dots, plus and minus signs only, up to 64 characters.',
+      submit: values => this.saveTriage(issue, values)
+    });
   }
 
   /**
    * Saves the status, and each text that differs from the stored one: an unchanged text is left out, which
    * keeps it, and an emptied one is sent empty, which clears it. The card takes the server's copy, the result
-   * is announced and the Status counts are fetched again.
+   * is announced and the Status counts are fetched again. A failure reaches the dialog as an error with the
+   * message to show.
    */
-  save(issue: GnollBenchFeedbackIssue): void {
-    if (this.savingFingerprint() !== null) return;
-    const fingerprint = issue.fingerprint;
-    const draft = this.draft(issue);
-    if (!draft.status) {
-      this.setTriageResult(fingerprint, { message: '', error: 'Choose a status first.' });
-      return;
-    }
-    const note = draft.note.trim().slice(0, GNOLLBENCH_NOTE_MAX);
-    const resolution = draft.resolution.trim().slice(0, GNOLLBENCH_RESOLUTION_MAX);
-    const fixedInVersion = draft.fixedInVersion.trim();
-    if (fixedInVersion !== '' && !GNOLLBENCH_FIXED_IN_VERSION_PATTERN.test(fixedInVersion)) {
-      this.setTriageResult(fingerprint, {
-        message: '',
-        error: 'Fixed in version takes letters, digits, dots, plus and minus signs only, up to 64 characters.'
-      });
-      return;
-    }
-    const update: GnollBenchFeedbackStatusUpdate = { status: draft.status };
-    if (note !== (issue.triageNote ?? '')) update.note = note;
-    if (resolution !== (issue.resolution ?? '')) update.resolution = resolution;
-    if (fixedInVersion !== (issue.fixedInVersion ?? '')) update.fixedInVersion = fixedInVersion;
+  saveTriage(issue: GnollBenchFeedbackIssue, values: FeedbackTriageValues): Observable<GnollBenchFeedbackIssue> {
+    return defer(() => {
+      const fingerprint = issue.fingerprint;
+      const update: GnollBenchFeedbackStatusUpdate = { status: values.status as GnollBenchFeedbackTriageStatus };
+      if (values.note !== (issue.triageNote ?? '')) update.note = values.note;
+      if (values.resolution !== (issue.resolution ?? '')) update.resolution = values.resolution;
+      if (values.fixedInVersion !== (issue.fixedInVersion ?? '')) update.fixedInVersion = values.fixedInVersion;
 
-    this.savingFingerprint.set(fingerprint);
-    this.setTriageResult(fingerprint, { message: '', error: null });
-    this.feedback.updateStatus(fingerprint, update).subscribe({
-      next: updated => {
-        this.savingFingerprint.set(null);
-        const saved: GnollBenchFeedbackIssue = updated && updated.fingerprint === fingerprint
+      this.savingFingerprint.set(fingerprint);
+      this.setTriageResult(fingerprint, { message: '', error: null });
+      return this.feedback.updateStatus(fingerprint, update).pipe(
+        map((updated): GnollBenchFeedbackIssue => updated && updated.fingerprint === fingerprint
           ? updated
           : {
             ...issue, status: update.status,
@@ -1345,17 +1332,16 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
             resolution: update.resolution !== undefined ? update.resolution || null : issue.resolution,
             fixedInVersion: update.fixedInVersion !== undefined ? update.fixedInVersion || null : issue.fixedInVersion,
             triagedUtc: new Date().toISOString()
-          };
-        this.rows.set(this.rows().map(i => i.fingerprint === fingerprint ? saved : i));
-        this.drafts[fingerprint] = FeedbackGnollBenchPanelComponent.draftOf(saved);
-        this.list.invalidate();
-        this.setTriageResult(fingerprint, { message: `Saved. The issue is ${gnollBenchStatusLabel(saved.status)}.`, error: null });
-        this.loadCounts();
-      },
-      error: err => {
-        this.savingFingerprint.set(null);
-        this.setTriageResult(fingerprint, { message: '', error: 'The issue could not be saved: ' + adminApiError(err).message });
-      }
+          }),
+        tap(saved => {
+          this.rows.set(this.rows().map(i => i.fingerprint === fingerprint ? saved : i));
+          this.list.invalidate();
+          this.setTriageResult(fingerprint, { message: `Saved. The issue is ${gnollBenchStatusLabel(saved.status)}.`, error: null });
+          this.loadCounts();
+        }),
+        catchError(err => throwError(() => new Error('The issue could not be saved: ' + adminApiError(err).message))),
+        finalize(() => this.savingFingerprint.set(null))
+      );
     });
   }
 
@@ -1363,7 +1349,8 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     this.triageResults.set({ ...this.triageResults(), [fingerprint]: result });
   }
 
-  private static draftOf(issue: GnollBenchFeedbackIssue): TriageDraft {
+  /** The stored triage as the dialog takes it; a regressed issue has no status until one is chosen. */
+  private static triageValuesOf(issue: GnollBenchFeedbackIssue): FeedbackTriageValues {
     return {
       status: issue.status === 'regressed' ? '' : issue.status,
       note: issue.triageNote ?? '',

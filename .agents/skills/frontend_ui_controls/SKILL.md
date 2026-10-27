@@ -2434,6 +2434,21 @@ filter bar adds a *Self-reports* select (*Accepted only* / *Accepted and refused
 use the same storage and selection bar under the `gnollbench` source, keyed by fingerprint. See
 `docs/overseer/ai-feedback-reports.md` § 11 and § 12.
 
+*Changed 2026-10-27 (triage dialog):* on both Feedback sub-tabs the inline triage form is gone. Each card
+ends in a **footer** under a hairline: the *Triaged … by …* line (or *Not triaged yet*) and the last
+save's `role="status"` result at the start, and at the end a `role="group"` named *Actions for {subject}*
+holding **Edit triage** (`.btn-ghost`, pencil icon, a visually hidden *: {subject}* so every card's button
+has a distinct name, `aria-haspopup="dialog"`) and, on the Overseer sub-tab only, the icon-only *Delete
+issue*. The footer is a **deliberate exception** to "actions top right": the triage summary the actions
+work on lives there, and *Delete* stays on the card, away from the dialog's *Save*. *Edit triage* opens the
+shared `app-feedback-triage-dialog` (`feedback-tab/shared/`; see `overseer_frontend` § *Popups*), whose
+label rows are all 24 px tall, with or without an (i), so fields that share a row start level. Both
+sub-tabs keep the checkbox in a **gutter** column at the card's start, with every zone aligned to the
+title; the stored note, resolution and fixed-in version show as facts; *First seen* and *Last seen* put
+the time on a qualifier line under the date. In `app-feedback-selection-bar` the reason *Export…* is
+unavailable sits inside the actions cluster just before it, on the buttons' row, and the status line under
+the bar keeps one line of height while empty, so neither a selection nor an export moves the list.
+
 The **Multi-Run Analysis group cards** (`app-benchmark-multi-run`, `admin/benchmark/multi-run/`,
 2026-10-25) are the twenty-fourth, replacing the *Analysis groups* table. One full-width
 `article.mr-group[aria-labelledby="mr-group-<id>-title"]` per group of the page's suite, in Run History's

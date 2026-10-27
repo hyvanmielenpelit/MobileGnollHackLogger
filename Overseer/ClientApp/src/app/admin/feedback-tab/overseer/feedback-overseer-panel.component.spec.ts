@@ -35,7 +35,9 @@ import {
   FeedbackOverseerPanelComponent,
   feedbackDateText,
   feedbackDateTimeText,
-  feedbackModelSourceText
+  feedbackModelSourceText,
+  feedbackTimeText,
+  feedbackVersionShort
 } from './feedback-overseer-panel.component';
 
 const settle = (ms = 0): Promise<void> => new Promise<void>(resolve => setTimeout(resolve, ms));
@@ -245,6 +247,8 @@ describe('FeedbackOverseerPanelComponent', () => {
       const local = new Date(2026, 9, 21, 14, 2).toISOString();
       expect(feedbackDateText(local)).toBe('21 Oct 2026');
       expect(feedbackDateTimeText(local)).toBe('21 Oct 2026 14:02');
+      expect(feedbackTimeText(local)).toBe('14:02');
+      expect(feedbackTimeText('not a date')).toBe('');
       expect(feedbackDateText(null)).toBe('');
     });
 
@@ -256,6 +260,15 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(feedbackModelSourceText({ modelSource: 'user', systemConfigurationId: null, systemConfigurationName: null }))
         .toBe('User\'s own model');
       expect(feedbackModelSourceText({ modelSource: null, systemConfigurationId: null, systemConfigurationName: null })).toBe('Unknown');
+    });
+
+    it('cuts long build metadata of a version to its first 10 characters, and leaves short ones whole', () => {
+      expect(feedbackVersionShort('1.4.1+d4452568e4f0a1b2c3d4e5f6a7b8c9d0dca4d1384')).toBe('1.4.1+d4452568e4');
+      expect(feedbackVersionShort('1.4.1+d4452568e4f0')).toBe('1.4.1+d4452568e4');
+      expect(feedbackVersionShort('1.4.1+d4452568e4f')).toBe('1.4.1+d4452568e4f');
+      expect(feedbackVersionShort('1.4.2+abc')).toBe('1.4.2+abc');
+      expect(feedbackVersionShort('1.4.2')).toBe('1.4.2');
+      expect(feedbackVersionShort(null)).toBe('');
     });
   });
 
@@ -355,8 +368,12 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(metrics.map(m => textOf(m.querySelector('dt')))).toEqual(['Occurrences', 'Users', 'First seen', 'Last seen']);
       expect(Array.from(card.querySelectorAll('.tl-fb-metric-occurrences dd')).map(d => textOf(d))).toEqual(['12', '9 retained']);
       expect(textOf(card.querySelector('.tl-fb-metric-users dd'))).toBe('3');
-      expect(textOf(card.querySelector('.tl-fb-metric-first dd'))).toBe(feedbackDateText('2026-09-02T08:00:00Z'));
-      expect(textOf(card.querySelector('.tl-fb-metric-last dd'))).toBe(feedbackDateTimeText('2026-10-20T12:30:00Z'));
+      expect(Array.from(card.querySelectorAll('.tl-fb-metric-first dd')).map(d => textOf(d))).toEqual(
+        [feedbackDateText('2026-09-02T08:00:00Z'), feedbackTimeText('2026-09-02T08:00:00Z')]);
+      expect(Array.from(card.querySelectorAll('.tl-fb-metric-last dd')).map(d => textOf(d))).toEqual(
+        [feedbackDateText('2026-10-20T12:30:00Z'), feedbackTimeText('2026-10-20T12:30:00Z')]);
+      expect(card.querySelector('.tl-fb-metric-last time')!.getAttribute('datetime')).toBe('2026-10-20T12:30:00Z');
+      expect(card.querySelector('.tl-fb-metric-last .tl-fb-metric-note')).not.toBeNull();
 
       const facts = Array.from(card.querySelectorAll('.tl-fb-facts > div')).map(f => [textOf(f.querySelector('dt')), textOf(f.querySelector('dd'))]);
       expect(facts).toEqual([
@@ -393,6 +410,34 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(resolution.textContent).toBe('Added the page.\n<b>Verified</b> in the chat.');
       expect(resolution.querySelector('b')).toBeNull();
       expect(getComputedStyle(resolution).whiteSpace).toBe('pre-wrap');
+    });
+
+    it('shows the triage note as a fact only when there is one, between the fixed-in version and the resolution', async () => {
+      nextPage = page([
+        issue(1, { triageNote: 'Wiki page coming.\nCheck the guide.', fixedInVersion: '1.4.3', resolution: 'Added the page.' }),
+        issue(2)
+      ], 2);
+      await create();
+      const [first, second] = cards();
+
+      expect(Array.from(first.querySelectorAll('.tl-fb-facts dt')).slice(-3).map(d => textOf(d))).toEqual(['Fixed in version', 'Note', 'Resolution']);
+      const note = first.querySelector<HTMLElement>('.tl-fb-fact-note dd')!;
+      expect(note.textContent).toBe('Wiki page coming.\nCheck the guide.');
+      expect(getComputedStyle(note).whiteSpace).toBe('pre-wrap');
+      expect(second.querySelector('.tl-fb-fact-note')).toBeNull();
+    });
+
+    it('shows a long build hash of the latest version cut short, with the whole version in its title', async () => {
+      const version = '1.4.1+d4452568e4f0a1b2c3d4e5f6a7b8c9d0dca4d1384';
+      nextPage = page([issue(1, { latestAppVersion: version }), issue(2)], 2);
+      await create();
+      const [first, second] = cards();
+
+      const value = first.querySelector('.tl-fb-fact-version dd')!;
+      expect(textOf(value)).toBe('1.4.1+d4452568e4');
+      expect(value.getAttribute('title')).toBe(version);
+      expect(textOf(second.querySelector('.tl-fb-fact-version dd'))).toBe('1.4.2+abc');
+      expect(second.querySelector('.tl-fb-fact-version dd')!.getAttribute('title')).toBeNull();
     });
 
     it('links an issue also reported in GnollBench to that sub-tab, searched for its subject in its status', async () => {
@@ -1090,108 +1135,136 @@ describe('FeedbackOverseerPanelComponent', () => {
   });
 
   describe('triage', () => {
-    it('offers New, Acknowledged, Resolved and Dismissed under a visible label, with the recurrence rule in its (i)', async () => {
+    const triageDialog = (): HTMLDialogElement => q<HTMLDialogElement>('dialog.ftd-dialog')!;
+    const field = <T extends HTMLElement>(name: string): T => triageDialog().querySelector<T>(`#tl-fb-1-triage-${name}`)!;
+
+    /** Clicks the card's Edit triage, focused first as a real click leaves it. */
+    function editTriage(card: HTMLElement): HTMLDialogElement {
+      const button = card.querySelector<HTMLButtonElement>('.tl-fb-edit')!;
+      button.focus();
+      button.click();
+      fixture.detectChanges();
+      return triageDialog();
+    }
+
+    function saveTriage(): void {
+      triageDialog().querySelector<HTMLButtonElement>('.ftd-save')!.click();
+      fixture.detectChanges();
+    }
+
+    it('ends each card in a footer: the triaged line, then Edit triage and Delete in a group named for the issue; no form in the card', async () => {
       await create();
       const card = cards()[0];
-      const select = card.querySelector<HTMLSelectElement>('#tl-fb-1-status')!;
 
-      expect(textOf(card.querySelector('label[for="tl-fb-1-status"]'))).toBe('Status');
-      expect(Array.from(select.options).map(o => o.value)).toEqual(['new', 'acknowledged', 'resolved', 'dismissed']);
-      expect(select.value).toBe('new');
-      const help = card.querySelector('#' + select.getAttribute('aria-describedby'))!;
-      expect(textOf(help)).toBe('A resolved issue that recurs becomes Regressed; a dismissed one stays dismissed.');
-      expect(help.closest('app-info-tip')).not.toBeNull();
-      expect(card.querySelector('.tl-fb-field-status .tl-fb-label-row app-info-tip button')!.getAttribute('aria-label')).toBe('About Status');
-      expect(card.querySelector('.form-hint')).toBeNull();
-      expect(textOf(card.querySelector('label[for="tl-fb-1-note"]'))).toBe('Note');
-      expect(card.querySelector('#tl-fb-1-note')!.classList.contains('gh-textarea-autosize')).toBe(true);
+      expect(textOf(card.querySelector('.tl-fb-footer .tl-fb-triaged'))).toBe('Not triaged yet');
+      const group = card.querySelector('.tl-fb-footer [role="group"]')!;
+      expect(group.getAttribute('aria-label')).toBe('Actions for Dilithium crystal');
+      const edit = group.querySelector<HTMLButtonElement>('.tl-fb-edit')!;
+      expect(edit.classList.contains('btn-ghost')).toBe(true);
+      expect(textOf(edit)).toBe('Edit triage: Dilithium crystal');
+      expect(edit.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(group.querySelector('.tl-fb-delete')).not.toBeNull();
+      expect(card.querySelector('select, textarea, input[type="text"]')).toBeNull();
+      expect(triageDialog().open).toBe(false);
     });
 
-    it('has a Resolution and a Fixed in version field, filled from the issue', async () => {
-      nextPage = page([issue(1, { resolution: 'Added the page.', fixedInVersion: '1.4.3' })]);
+    it('opens the triage dialog on the issue\'s values, with the recurrence rule in the Status (i)', async () => {
+      nextPage = page([issue(1, { status: 'acknowledged', triageNote: 'Seen', resolution: 'Added the page.', fixedInVersion: '1.4.3' })]);
       await create();
-      const card = cards()[0];
+      const dialog = editTriage(cards()[0]);
 
-      expect(textOf(card.querySelector('label[for="tl-fb-1-resolution"]'))).toBe('Resolution');
-      const resolution = card.querySelector<HTMLTextAreaElement>('#tl-fb-1-resolution')!;
-      expect(resolution.value).toBe('Added the page.');
-      expect(resolution.getAttribute('maxlength')).toBe('4000');
-      expect(resolution.classList.contains('gh-textarea-autosize')).toBe(true);
-      expect(textOf(card.querySelector('label[for="tl-fb-1-fixed"]'))).toBe('Fixed in version');
-      const fixed = card.querySelector<HTMLInputElement>('#tl-fb-1-fixed')!;
-      expect(fixed.value).toBe('1.4.3');
-      expect(fixed.getAttribute('maxlength')).toBe('64');
-      expect(textOf(card.querySelector('#' + fixed.getAttribute('aria-describedby')))).toContain('The Overseer version that has the fix');
+      expect(dialog.open).toBe(true);
+      expect(textOf(dialog.querySelector('.ftd-issue-subject'))).toBe('Dilithium crystal');
+      expect(textOf(dialog.querySelector('.ftd-issue-details'))).toBe('Missing information · , Status: Acknowledged · , 12 occurrences');
+      const select = field<HTMLSelectElement>('status');
+      expect(Array.from(select.options).map(o => o.value)).toEqual(['new', 'acknowledged', 'resolved', 'dismissed']);
+      expect(Array.from(select.options).map(o => textOf(o))).toEqual(['New', 'Acknowledged', 'Resolved', 'Dismissed']);
+      expect(select.value).toBe('acknowledged');
+      expect(textOf(dialog.querySelector('#' + select.getAttribute('aria-describedby')))).toBe(
+        'A resolved issue that recurs becomes Regressed; a dismissed one stays dismissed.');
+      expect(field<HTMLTextAreaElement>('note').value).toBe('Seen');
+      expect(field<HTMLTextAreaElement>('resolution').value).toBe('Added the page.');
+      expect(field<HTMLTextAreaElement>('resolution').getAttribute('maxlength')).toBe('4000');
+      expect(field<HTMLInputElement>('fixed').value).toBe('1.4.3');
+      expect(field<HTMLInputElement>('fixed').getAttribute('maxlength')).toBe('64');
+      expect(document.activeElement).toBe(select);
     });
 
     it('never offers Regressed: a regressed issue asks for a new status before it saves', async () => {
       nextPage = page([issue(1, { status: 'regressed', regressionCount: 1 })]);
       const updateSpy = vi.spyOn(service, 'updateStatus');
       await create();
-      const card = cards()[0];
-      const select = card.querySelector<HTMLSelectElement>('#tl-fb-1-status')!;
+      editTriage(cards()[0]);
+      const select = field<HTMLSelectElement>('status');
 
       expect(Array.from(select.options).map(o => o.value)).toEqual(['', 'new', 'acknowledged', 'resolved', 'dismissed']);
       expect(select.options[0].disabled).toBe(true);
       expect(Array.from(select.options).some(o => o.value === 'regressed')).toBe(false);
 
-      card.querySelector<HTMLButtonElement>('.tl-fb-save')!.click();
-      fixture.detectChanges();
+      saveTriage();
 
       expect(updateSpy).not.toHaveBeenCalled();
-      expect(textOf(card.querySelector('.tl-fb-triage-error'))).toBe('Choose a status first.');
+      expect(textOf(triageDialog().querySelector('.ftd-status-error'))).toBe('Choose a status.');
+      expect(triageDialog().open).toBe(true);
     });
 
-    it('saves the status and the note, takes the server\'s copy, announces it and refetches the counts', async () => {
+    it('saves the status and the note, takes the server\'s copy, announces it, refetches the counts and gives focus back', async () => {
       const updated = issue(1, { status: 'acknowledged', triageNote: 'Wiki page coming', triagedByUserName: 'tommi', triagedUtc: '2026-10-21T12:05:00Z' });
       const updateSpy = vi.spyOn(service, 'updateStatus').mockReturnValue(of(updated));
       await create();
       const loadCounts = vi.spyOn(store, 'loadFeedbackCounts');
       const card = cards()[0];
 
-      selectValue(card.querySelector<HTMLSelectElement>('#tl-fb-1-status')!, 'acknowledged');
-      typeInto(card.querySelector<HTMLTextAreaElement>('#tl-fb-1-note')!, '  Wiki page coming ');
-      card.querySelector<HTMLButtonElement>('.tl-fb-save')!.click();
-      fixture.detectChanges();
+      editTriage(card);
+      selectValue(field<HTMLSelectElement>('status'), 'acknowledged');
+      typeInto(field<HTMLTextAreaElement>('note'), '  Wiki page coming ');
+      saveTriage();
 
       expect(updateSpy).toHaveBeenCalledWith(1, 'acknowledged', { note: 'Wiki page coming' });
+      expect(triageDialog().open).toBe(false);
+      expect(document.activeElement).toBe(card.querySelector('.tl-fb-edit'));
       const result = card.querySelector('#tl-fb-1-result')!;
       expect(result.getAttribute('role')).toBe('status');
       expect(textOf(result)).toBe('Saved. The issue is Acknowledged.');
       expect(textOf(card.querySelector('.tl-fb-status-badge [aria-hidden="true"]'))).toBe('Acknowledged');
       expect(textOf(card.querySelector('.tl-fb-triaged'))).toBe(`Triaged ${feedbackDateTimeText('2026-10-21T12:05:00Z')} by tommi`);
+      expect(textOf(card.querySelector('.tl-fb-fact-note dd'))).toBe('Wiki page coming');
       expect(loadCounts).toHaveBeenCalledTimes(1);
       expect(card.querySelector('.tl-fb-triage-error')).toBeNull();
     });
 
     it('keeps the fields left as they were and clears the ones emptied', async () => {
       nextPage = page([issue(1, { status: 'resolved', triageNote: 'Seen', resolution: 'Added the page.', fixedInVersion: '1.4.3' })]);
-      const updateSpy = vi.spyOn(service, 'updateStatus').mockReturnValue(of(issue(1, { status: 'resolved' })));
+      const updateSpy = vi.spyOn(service, 'updateStatus').mockImplementation(
+        (_id: number, _status: string, changes?: { resolution?: string | null; fixedInVersion?: string | null }) => of(issue(1, {
+          status: 'resolved', triageNote: 'Seen',
+          resolution: changes?.resolution ?? 'Added the page.',
+          fixedInVersion: changes?.fixedInVersion !== undefined ? changes.fixedInVersion || null : '1.4.3'
+        })));
       await create();
-      const card = cards()[0];
 
-      card.querySelector<HTMLButtonElement>('.tl-fb-save')!.click();
-      fixture.detectChanges();
+      editTriage(cards()[0]);
+      saveTriage();
       expect(updateSpy).toHaveBeenLastCalledWith(1, 'resolved', {});
 
-      const again = cards()[0];
-      typeInto(again.querySelector<HTMLInputElement>('#tl-fb-1-fixed')!, '');
-      typeInto(again.querySelector<HTMLTextAreaElement>('#tl-fb-1-resolution')!, ' Rewrote the guide. ');
-      again.querySelector<HTMLButtonElement>('.tl-fb-save')!.click();
-      fixture.detectChanges();
-      expect(updateSpy).toHaveBeenLastCalledWith(1, 'resolved', { resolution: 'Rewrote the guide.' });
+      editTriage(cards()[0]);
+      typeInto(field<HTMLInputElement>('fixed'), '');
+      typeInto(field<HTMLTextAreaElement>('resolution'), ' Rewrote the guide. ');
+      saveTriage();
+      expect(updateSpy).toHaveBeenLastCalledWith(1, 'resolved', { resolution: 'Rewrote the guide.', fixedInVersion: '' });
+      expect(textOf(cards()[0].querySelector('.tl-fb-fact-resolution dd'))).toBe('Rewrote the guide.');
+      expect(cards()[0].querySelector('.tl-fb-fact-fixed')).toBeNull();
     });
 
     it('sends an emptied stored field as empty, so the server clears it', async () => {
       nextPage = page([issue(1, { status: 'resolved', resolution: 'Added the page.', fixedInVersion: '1.4.3' })]);
       const updateSpy = vi.spyOn(service, 'updateStatus').mockReturnValue(of(issue(1, { status: 'resolved' })));
       await create();
-      const card = cards()[0];
 
-      typeInto(card.querySelector<HTMLInputElement>('#tl-fb-1-fixed')!, '');
-      typeInto(card.querySelector<HTMLTextAreaElement>('#tl-fb-1-resolution')!, '   ');
-      card.querySelector<HTMLButtonElement>('.tl-fb-save')!.click();
-      fixture.detectChanges();
+      editTriage(cards()[0]);
+      typeInto(field<HTMLInputElement>('fixed'), '');
+      typeInto(field<HTMLTextAreaElement>('resolution'), '   ');
+      saveTriage();
 
       expect(updateSpy).toHaveBeenCalledWith(1, 'resolved', { resolution: '', fixedInVersion: '' });
     });
@@ -1199,30 +1272,55 @@ describe('FeedbackOverseerPanelComponent', () => {
     it('refuses a fixed-in version the server would refuse, before sending anything', async () => {
       const updateSpy = vi.spyOn(service, 'updateStatus');
       await create();
-      const card = cards()[0];
 
-      typeInto(card.querySelector<HTMLInputElement>('#tl-fb-1-fixed')!, '1.4 beta');
-      card.querySelector<HTMLButtonElement>('.tl-fb-save')!.click();
-      fixture.detectChanges();
+      editTriage(cards()[0]);
+      typeInto(field<HTMLInputElement>('fixed'), '1.4 beta');
+      saveTriage();
 
       expect(updateSpy).not.toHaveBeenCalled();
-      expect(textOf(card.querySelector('.tl-fb-triage-error'))).toContain('Fixed in version takes letters, digits, periods, plus and minus signs only');
+      expect(textOf(triageDialog().querySelector('.ftd-fixed-error'))).toBe(
+        'Fixed in version takes letters, digits, periods, plus and minus signs only, at most 64 characters.');
     });
 
-    it('shows a failed save under the form and refetches no counts', async () => {
+    it('keeps a failed save in the dialog, leaves the card as it was and refetches no counts', async () => {
       vi.spyOn(service, 'updateStatus').mockReturnValue(throwError(() => ({ status: 400, error: { message: 'Unknown status.' } })));
       await create();
       const loadCounts = vi.spyOn(store, 'loadFeedbackCounts');
       const card = cards()[0];
 
-      card.querySelector<HTMLButtonElement>('.tl-fb-save')!.click();
+      editTriage(card);
+      selectValue(field<HTMLSelectElement>('status'), 'dismissed');
+      saveTriage();
+
+      expect(triageDialog().open).toBe(true);
+      expect(textOf(triageDialog().querySelector('.ftd-error'))).toBe('The issue could not be saved: Unknown status.');
+      expect(field<HTMLSelectElement>('status').value).toBe('dismissed');
+      expect(textOf(card.querySelector('.tl-fb-status-badge [aria-hidden="true"]'))).toBe('New');
+      expect(textOf(card.querySelector('#tl-fb-1-result'))).toBe('');
+      expect(card.querySelector('.tl-fb-triage-error')).toBeNull();
+      expect(loadCounts).not.toHaveBeenCalled();
+      expect(component.savingId()).toBeNull();
+    });
+
+    it('refuses Delete while a save runs', async () => {
+      const response = new Subject<AdminFeedbackIssue>();
+      vi.spyOn(service, 'updateStatus').mockReturnValue(response.asObservable());
+      const deleteSpy = vi.spyOn(service, 'deleteIssue');
+      await create();
+      const card = cards()[0];
+
+      editTriage(card);
+      saveTriage();
+      expect(card.querySelector('.tl-fb-edit')!.getAttribute('aria-busy')).toBe('true');
+      component.confirmDelete(component.rows()[0]);
       fixture.detectChanges();
 
-      const error = card.querySelector('.tl-fb-triage-error.gh-field-error')!;
-      expect(textOf(error)).toBe('The issue could not be saved: Unknown status.');
-      expect(card.querySelector('.tl-fb-save')!.getAttribute('aria-describedby')).toBe(error.id);
-      expect(textOf(card.querySelector('#tl-fb-1-result'))).toBe('');
-      expect(loadCounts).not.toHaveBeenCalled();
+      expect((el.querySelector('app-admin-confirm-dialog dialog') as HTMLDialogElement).open).toBe(false);
+      expect(deleteSpy).not.toHaveBeenCalled();
+      response.next(issue(1));
+      response.complete();
+      fixture.detectChanges();
+      expect(component.savingId()).toBeNull();
     });
 
     it('deletes an issue after a confirmation that names it and its occurrences, then refetches the counts', async () => {

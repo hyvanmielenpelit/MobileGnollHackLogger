@@ -34,6 +34,7 @@ import {
   gnollBenchDateTimeText,
   gnollBenchQueryParams,
   gnollBenchStateFromQuery,
+  gnollBenchTimeText,
   gnollBenchVariantLabel
 } from './feedback-gnollbench-panel.component';
 
@@ -366,8 +367,11 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         expect(metrics.map(m => textOf(m.querySelector('dt')))).toEqual(['Self-reports', 'Models', 'First seen', 'Last seen']);
         expect(Array.from(card.querySelectorAll('.tl-gbfb-metric-reports dd')).map(d => textOf(d))).toEqual(['12', 'in 3 runs']);
         expect(textOf(card.querySelector('.tl-gbfb-metric-models dd'))).toBe('2');
-        expect(textOf(card.querySelector('.tl-gbfb-metric-first dd'))).toBe(gnollBenchDateText('2026-09-02T08:00:00Z'));
-        expect(textOf(card.querySelector('.tl-gbfb-metric-last dd'))).toBe(gnollBenchDateTimeText('2026-10-20T12:30:00Z'));
+        expect(Array.from(card.querySelectorAll('.tl-gbfb-metric-first dd')).map(d => textOf(d))).toEqual(
+          [gnollBenchDateText('2026-09-02T08:00:00Z'), gnollBenchTimeText('2026-09-02T08:00:00Z')]);
+        expect(Array.from(card.querySelectorAll('.tl-gbfb-metric-last dd')).map(d => textOf(d))).toEqual(
+          [gnollBenchDateText('2026-10-20T12:30:00Z'), gnollBenchTimeText('2026-10-20T12:30:00Z')]);
+        expect(card.querySelector('.tl-gbfb-metric-last time')!.getAttribute('datetime')).toBe('2026-10-20T12:30:00Z');
         const facts = Array.from(card.querySelectorAll('.tl-gbfb-facts > div')).map(f => [textOf(f.querySelector('dt')), textOf(f.querySelector('dd'))]);
         expect(facts).toEqual([
           ['Providers', 'Anthropic, OpenAI'],
@@ -386,6 +390,25 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         expect(textOf(link)).toBe('Overseer issue #42');
         expect(link.getAttribute('href')).toBe('/admin/feedback?ids=42&status=all');
         expect(textOf(fact.querySelector('.tl-gbfb-overseer-status'))).toBe('Resolved');
+      });
+
+      it('shows a stored fixed-in version, note and resolution as facts, the texts with their line breaks', async () => {
+        nextPage = page([
+          issue(1, { fixedInVersion: '1.4.3', triageNote: 'Seen.\nWiki page coming.', resolution: 'Added the page.\n<b>Verified</b>.' }),
+          issue(2)
+        ]);
+        await create();
+        const [first, second] = cards();
+
+        expect(Array.from(first.querySelectorAll('.tl-gbfb-facts dt')).slice(-3).map(d => textOf(d))).toEqual(['Fixed in version', 'Note', 'Resolution']);
+        expect(textOf(first.querySelector('.tl-gbfb-fact-fixed dd'))).toBe('1.4.3');
+        const note = first.querySelector<HTMLElement>('.tl-gbfb-fact-note dd')!;
+        expect(note.textContent).toBe('Seen.\nWiki page coming.');
+        expect(getComputedStyle(note).whiteSpace).toBe('pre-wrap');
+        const resolution = first.querySelector<HTMLElement>('.tl-gbfb-fact-resolution dd')!;
+        expect(resolution.textContent).toBe('Added the page.\n<b>Verified</b>.');
+        expect(resolution.querySelector('b')).toBeNull();
+        expect(second.querySelector('.tl-gbfb-fact-fixed, .tl-gbfb-fact-note, .tl-gbfb-fact-resolution')).toBeNull();
       });
 
       it('badges Regressed and Resolved with the shared tones, in words', async () => {
@@ -809,30 +832,60 @@ describe('FeedbackGnollBenchPanelComponent', () => {
     });
 
     describe('triage', () => {
+      const triageDialog = (): HTMLDialogElement => q<HTMLDialogElement>('dialog.ftd-dialog')!;
+      const field = <T extends HTMLElement>(name: string): T => triageDialog().querySelector<T>(`#${cid(1)}-triage-${name}`)!;
+
+      /** Clicks the card's Edit triage, focused first as a real click leaves it. */
+      function editTriage(card: HTMLElement): HTMLDialogElement {
+        const button = card.querySelector<HTMLButtonElement>('.tl-gbfb-edit')!;
+        button.focus();
+        button.click();
+        fixture.detectChanges();
+        return triageDialog();
+      }
+
+      function saveTriage(): void {
+        triageDialog().querySelector<HTMLButtonElement>('.ftd-save')!.click();
+        fixture.detectChanges();
+      }
+
+      it('ends each card in a footer: the triaged line, then Edit triage alone in a group named for the issue; no form in the card', async () => {
+        await create();
+        const card = cards()[0];
+
+        expect(textOf(card.querySelector('.tl-gbfb-footer .tl-gbfb-triaged'))).toBe('Not triaged yet');
+        const group = card.querySelector('.tl-gbfb-footer [role="group"]')!;
+        expect(group.getAttribute('aria-label')).toBe('Actions for Dilithium crystal');
+        expect(Array.from(group.querySelectorAll('button')).map(b => textOf(b))).toEqual(['Edit triage: Dilithium crystal']);
+        expect(group.querySelector('.tl-gbfb-edit')!.getAttribute('aria-haspopup')).toBe('dialog');
+        expect(card.querySelector('select, textarea, input[type="text"]')).toBeNull();
+      });
+
       it('offers New, Acknowledged, Resolved and Dismissed, never Regressed, with the recurrence rule in its (i), and the three texts', async () => {
         nextPage = page([issue(1, { status: 'regressed' })]);
         const updateSpy = vi.spyOn(service, 'updateStatus');
         await create();
-        const card = cards()[0];
-        const select = card.querySelector<HTMLSelectElement>(`#${cid(1)}-status`)!;
+        const dialog = editTriage(cards()[0]);
+        const select = field<HTMLSelectElement>('status');
 
-        expect(textOf(card.querySelector(`label[for="${cid(1)}-status"]`))).toBe('Status');
+        expect(dialog.open).toBe(true);
+        expect(textOf(dialog.querySelector(`label[for="${cid(1)}-triage-status"]`))).toBe('Status');
         expect(Array.from(select.options).map(o => o.value)).toEqual(['', 'new', 'acknowledged', 'resolved', 'dismissed']);
         expect(select.options[0].disabled).toBe(true);
-        const help = card.querySelector('#' + select.getAttribute('aria-describedby'))!;
+        const help = dialog.querySelector('#' + select.getAttribute('aria-describedby'))!;
         expect(textOf(help)).toBe('A resolved issue that a run reports again becomes Regressed; a dismissed one stays dismissed.');
-        expect(textOf(card.querySelector(`label[for="${cid(1)}-note"]`))).toBe('Note');
-        expect(textOf(card.querySelector(`label[for="${cid(1)}-resolution"]`))).toBe('Resolution');
-        expect(textOf(card.querySelector(`label[for="${cid(1)}-version"]`))).toBe('Fixed in version');
-        expect(card.querySelector(`#${cid(1)}-note`)!.getAttribute('maxlength')).toBe('1000');
-        expect(card.querySelector(`#${cid(1)}-resolution`)!.getAttribute('maxlength')).toBe('4000');
-        expect(card.querySelector(`#${cid(1)}-version`)!.getAttribute('maxlength')).toBe('64');
+        expect(textOf(dialog.querySelector(`label[for="${cid(1)}-triage-note"]`))).toBe('Note');
+        expect(textOf(dialog.querySelector(`label[for="${cid(1)}-triage-resolution"]`))).toBe('Resolution');
+        expect(textOf(dialog.querySelector(`label[for="${cid(1)}-triage-fixed"]`))).toBe('Fixed in version');
+        expect(field('note').getAttribute('maxlength')).toBe('1000');
+        expect(field('resolution').getAttribute('maxlength')).toBe('4000');
+        expect(field('fixed').getAttribute('maxlength')).toBe('64');
+        expect(textOf(dialog.querySelector('#' + field('fixed').getAttribute('aria-describedby')))).toContain('The Overseer version that has the fix');
 
-        card.querySelector<HTMLButtonElement>('.tl-gbfb-save')!.click();
-        fixture.detectChanges();
+        saveTriage();
 
         expect(updateSpy).not.toHaveBeenCalled();
-        expect(textOf(card.querySelector('.tl-gbfb-triage-error'))).toBe('Choose a status first.');
+        expect(textOf(dialog.querySelector('.ftd-status-error'))).toBe('Choose a status.');
       });
 
       it('sends the status and only the texts that changed, an emptied one as empty, then takes the server\'s copy and refetches the counts', async () => {
@@ -846,49 +899,56 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         countsSpy.mockClear();
         const card = cards()[0];
 
-        expect(card.querySelector<HTMLSelectElement>(`#${cid(1)}-status`)!.value).toBe('acknowledged');
-        expect(card.querySelector<HTMLTextAreaElement>(`#${cid(1)}-resolution`)!.value).toBe('Old fix');
-        selectValue(card.querySelector<HTMLSelectElement>(`#${cid(1)}-status`)!, 'resolved');
-        typeInto(card.querySelector<HTMLTextAreaElement>(`#${cid(1)}-note`)!, '  New note ');
-        typeInto(card.querySelector<HTMLTextAreaElement>(`#${cid(1)}-resolution`)!, '  ');
-        card.querySelector<HTMLButtonElement>('.tl-gbfb-save')!.click();
-        fixture.detectChanges();
+        editTriage(card);
+        expect(field<HTMLSelectElement>('status').value).toBe('acknowledged');
+        expect(field<HTMLTextAreaElement>('resolution').value).toBe('Old fix');
+        selectValue(field<HTMLSelectElement>('status'), 'resolved');
+        typeInto(field<HTMLTextAreaElement>('note'), '  New note ');
+        typeInto(field<HTMLTextAreaElement>('resolution'), '  ');
+        saveTriage();
 
         expect(updateSpy).toHaveBeenCalledWith(fp(1), { status: 'resolved', note: 'New note', resolution: '' });
+        expect(triageDialog().open).toBe(false);
+        expect(document.activeElement).toBe(card.querySelector('.tl-gbfb-edit'));
         const result = card.querySelector(`#${cid(1)}-result`)!;
         expect(result.getAttribute('role')).toBe('status');
         expect(textOf(result)).toBe('Saved. The issue is Resolved.');
         expect(textOf(card.querySelector('.tl-gbfb-status-badge'))).toBe('Resolved');
         expect(textOf(card.querySelector('.tl-gbfb-triaged'))).toBe(
           `Triaged ${gnollBenchDateTimeText('2026-10-21T12:05:00Z')} by tommi · resolved ${gnollBenchDateTimeText('2026-10-21T12:05:00Z')}`);
+        expect(textOf(card.querySelector('.tl-gbfb-fact-note dd'))).toBe('New note');
+        expect(card.querySelector('.tl-gbfb-fact-resolution')).toBeNull();
         expect(countsSpy).toHaveBeenCalledTimes(1);
       });
 
       it('refuses a malformed fixed-in version before any request', async () => {
         const updateSpy = vi.spyOn(service, 'updateStatus');
         await create();
-        const card = cards()[0];
 
-        typeInto(card.querySelector<HTMLInputElement>(`#${cid(1)}-version`)!, '1.4 beta');
-        card.querySelector<HTMLButtonElement>('.tl-gbfb-save')!.click();
-        fixture.detectChanges();
+        editTriage(cards()[0]);
+        typeInto(field<HTMLInputElement>('fixed'), '1.4 beta');
+        saveTriage();
 
         expect(updateSpy).not.toHaveBeenCalled();
-        expect(textOf(card.querySelector('.tl-gbfb-triage-error'))).toBe(
+        expect(textOf(triageDialog().querySelector('.ftd-fixed-error'))).toBe(
           'Fixed in version takes letters, digits, dots, plus and minus signs only, up to 64 characters.');
       });
 
-      it('shows a failed save under the form', async () => {
+      it('keeps a failed save in the dialog and leaves the card as it was', async () => {
         vi.spyOn(service, 'updateStatus').mockReturnValue(throwError(() => ({ status: 400, error: { message: 'regressed is derived.' } })));
         await create();
+        countsSpy.mockClear();
         const card = cards()[0];
 
-        card.querySelector<HTMLButtonElement>('.tl-gbfb-save')!.click();
-        fixture.detectChanges();
+        editTriage(card);
+        saveTriage();
 
-        const error = card.querySelector('.tl-gbfb-triage-error.gh-field-error')!;
-        expect(textOf(error)).toBe('The issue could not be saved: regressed is derived.');
-        expect(card.querySelector('.tl-gbfb-save')!.getAttribute('aria-describedby')).toBe(error.id);
+        expect(triageDialog().open).toBe(true);
+        expect(textOf(triageDialog().querySelector('.ftd-error'))).toBe('The issue could not be saved: regressed is derived.');
+        expect(textOf(card.querySelector('.tl-gbfb-status-badge'))).toBe('New');
+        expect(textOf(card.querySelector(`#${cid(1)}-result`))).toBe('');
+        expect(countsSpy).not.toHaveBeenCalled();
+        expect(component.savingFingerprint()).toBeNull();
       });
     });
 

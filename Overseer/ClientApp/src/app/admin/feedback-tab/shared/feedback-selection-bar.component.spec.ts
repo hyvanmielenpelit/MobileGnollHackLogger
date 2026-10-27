@@ -1,4 +1,5 @@
 import type { Mock } from 'vitest';
+import { ChangeDetectorRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 import { FeedbackTransferService } from '../../../services/feedback-transfer.service';
@@ -66,6 +67,36 @@ describe('FeedbackSelectionBarComponent', () => {
     expect(text(q('.fsb-clear'))).toBe('Clear selection (3)');
     expect(q('.fsb-export')!.getAttribute('aria-disabled')).toBeNull();
     expect(q('.fsb-export-reason')).toBeNull();
+  });
+
+  it('puts the export reason on the buttons\' line, just before Export…', () => {
+    const reason = q('.fsb-export-reason')!;
+    const exportButton = q('.fsb-export')!;
+    expect(reason.parentElement).toBe(q('.fsb-actions'));
+    expect(reason.nextElementSibling).toBe(exportButton);
+    expect(exportButton.getAttribute('aria-describedby')).toBe(reason.id);
+    expect(Math.abs(reason.getBoundingClientRect().top + reason.getBoundingClientRect().height / 2
+      - (exportButton.getBoundingClientRect().top + exportButton.getBoundingClientRect().height / 2))).toBeLessThan(2);
+  });
+
+  it('keeps its height, and the status line\'s, when a selection is made and an export reports', () => {
+    host.style.display = 'block';
+    host.style.width = '1100px';
+    const bar = q('.fsb')!;
+    const status = q('.fsb-status')!;
+    const emptyBar = bar.offsetHeight;
+    const emptyStatus = status.offsetHeight;
+    expect(emptyStatus).toBeGreaterThan(0);
+
+    set({ selectedIds: [1] });
+    expect(q('.fsb-export-reason')).toBeNull();
+    expect(bar.offsetHeight).toBe(emptyBar);
+
+    component.statusMessage = 'Saved overseer-feedback-20261027-1200.md with 1 issue.';
+    fixture.componentRef.injector.get(ChangeDetectorRef).markForCheck();
+    fixture.detectChanges();
+    expect(text(status)).toBe('Saved overseer-feedback-20261027-1200.md with 1 issue.');
+    expect(status.offsetHeight).toBe(emptyStatus);
   });
 
   it('reports the selection requests to the host', () => {

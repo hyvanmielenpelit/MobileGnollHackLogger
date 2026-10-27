@@ -1,0 +1,128 @@
+<!-- No closedby="any": a click beside a form must not throw its changes away. -->
+<dialog #dialog class="gh-dialog ftd-dialog"
+        [attr.aria-labelledby]="id + '-dialog-title'"
+        [attr.aria-describedby]="options ? id + '-dialog-issue' : null"
+        (cancel)="onCancel($event)" (close)="onClose()">
+  @if (options; as o) {
+    <form class="dialog-content ftd-form" novalidate (submit)="submit($event)">
+      <div class="dialog-header">
+        <div class="dialog-title-group">
+          <h3 [id]="id + '-dialog-title'">Triage issue</h3>
+        </div>
+        <button type="button" class="btn-icon-action ftd-close" aria-label="Close triage" (click)="cancel()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <div class="dialog-body ftd-body">
+        <!-- The issue being triaged; also the dialog's description. -->
+        <div class="ftd-issue" [id]="id + '-dialog-issue'">
+          <p class="ftd-issue-label">Issue</p>
+          <p class="ftd-issue-subject">{{ o.subject }}</p>
+          @if (o.details?.length) {
+            <p class="ftd-issue-details">
+              @for (detail of o.details; track $index) {
+                @if (!$first) {
+                  <span class="ftd-sep"><span aria-hidden="true"> &middot; </span><span class="visually-hidden">, </span></span>
+                }
+                <span>{{ detail }}</span>
+              }
+            </p>
+          }
+        </div>
+
+        <div class="ftd-grid">
+          <div class="ftd-field ftd-field-status">
+            <div class="ftd-label-row">
+              <label [for]="id + '-status'">Status</label>
+              <app-info-tip [tipId]="id + '-status-help'" subject="Status">{{ o.statusHelp }}</app-info-tip>
+            </div>
+            <select class="gh-input ftd-status" [id]="id + '-status'"
+                    [attr.aria-invalid]="statusError ? 'true' : null"
+                    [attr.aria-describedby]="id + '-status-help' + (statusError ? ' ' + id + '-status-error' : '')"
+                    (change)="onStatus($event)">
+              @if (values.status === '') {
+                <option value="" disabled selected>Choose a status</option>
+              }
+              @for (status of o.statuses; track status.value) {
+                <option [value]="status.value" [selected]="values.status === status.value">{{ status.label }}</option>
+              }
+            </select>
+            @if (statusError) {
+              <p class="gh-field-error ftd-status-error" [id]="id + '-status-error'">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span>{{ statusError }}</span>
+              </p>
+            }
+          </div>
+
+          <div class="ftd-field ftd-field-fixed">
+            <div class="ftd-label-row">
+              <label [for]="id + '-fixed'">Fixed in version</label>
+              <app-info-tip [tipId]="id + '-fixed-help'" subject="Fixed in version">The Overseer version that has the fix, such as 1.4.1. Leave it empty while no release has it.</app-info-tip>
+            </div>
+            <input type="text" class="gh-input ftd-fixed" [id]="id + '-fixed'"
+                   autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="1.4.1"
+                   [attr.maxlength]="o.limits.fixedInVersion" [value]="values.fixedInVersion"
+                   [attr.aria-invalid]="versionError ? 'true' : null"
+                   [attr.aria-describedby]="id + '-fixed-help' + (versionError ? ' ' + id + '-fixed-error' : '')"
+                   (input)="onText('fixedInVersion', $event)">
+            @if (versionError) {
+              <p class="gh-field-error ftd-fixed-error" [id]="id + '-fixed-error'">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span>{{ versionError }}</span>
+              </p>
+            }
+          </div>
+
+          <div class="ftd-field ftd-field-note">
+            <div class="ftd-label-row">
+              <label [for]="id + '-note'">Note</label>
+            </div>
+            <textarea class="gh-input gh-textarea-autosize ftd-note" rows="2" [id]="id + '-note'"
+                      [attr.maxlength]="o.limits.note" [value]="values.note"
+                      [attr.aria-describedby]="id + '-note-count'"
+                      (input)="onText('note', $event)"></textarea>
+            <span class="form-hint ftd-count" [id]="id + '-note-count'">{{ formatInteger(values.note.length) }} of {{ formatInteger(o.limits.note) }} characters</span>
+          </div>
+
+          <div class="ftd-field ftd-field-resolution">
+            <div class="ftd-label-row">
+              <label [for]="id + '-resolution'">Resolution</label>
+            </div>
+            <textarea class="gh-input gh-textarea-autosize ftd-resolution" rows="3" [id]="id + '-resolution'"
+                      placeholder="What was changed, where, and how it was verified"
+                      [attr.maxlength]="o.limits.resolution" [value]="values.resolution"
+                      [attr.aria-describedby]="id + '-resolution-count'"
+                      (input)="onText('resolution', $event)"></textarea>
+            <span class="form-hint ftd-count" [id]="id + '-resolution-count'">{{ formatInteger(values.resolution.length) }} of {{ formatInteger(o.limits.resolution) }} characters</span>
+          </div>
+        </div>
+
+        @if (error) {
+          <p class="gh-field-error ftd-error" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ error }}</span>
+          </p>
+        }
+      </div>
+
+      <!-- Cancel and Save on one row at the end. The unsaved-changes prompt takes the space before them,
+           kept while hidden, so no button moves when it shows. -->
+      <div class="dialog-footer ftd-footer">
+        <p class="ftd-unsaved" [class.is-shown]="confirmingDiscard">
+          <svg class="ftd-unsaved-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <span [id]="id + '-unsaved'">You have unsaved changes.</span>
+          <button type="button" class="btn-link ftd-discard"
+                  [attr.aria-describedby]="id + '-unsaved'"
+                  (click)="discard()">Discard changes</button>
+        </p>
+        <button type="button" class="btn-gh btn-gh-cancel ftd-cancel"
+                [attr.aria-disabled]="busy ? 'true' : null"
+                (click)="cancel()">Cancel</button>
+        <button type="submit" class="btn-gh ftd-save"
+                [attr.aria-busy]="busy ? 'true' : null">{{ busy ? 'Saving…' : 'Save' }}</button>
+      </div>
+    </form>
+  }
+</dialog>

@@ -1,0 +1,185 @@
+/* The header / body / footer frame is the feedback export dialog's. `.gh-dialog` (backdrop, scroll
+   containment), `.btn-gh`, `.btn-link`, `.btn-icon-action`, `.form-hint`, `.gh-field-error` and the
+   autosizing textarea are global in styles.scss. */
+@use '../../benchmark/benchmark-dialog-frame' as frame;
+
+:host {
+  display: contents;
+}
+
+.gh-dialog.ftd-dialog {
+  @include frame.frame(640px);
+}
+
+/* The form is the frame's content column; the body is the container its grid follows. */
+.ftd-body {
+  container: ftd-body / inline-size;
+}
+
+/* The issue being triaged: a quiet panel with a gold rule, a small label, the subject and its facts. */
+.ftd-issue {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-inline-start: 3px solid var(--primary-color);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+
+  p {
+    margin: 0;
+  }
+}
+
+.ftd-issue-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a1a1aa;
+}
+
+.ftd-issue-subject {
+  margin-block-start: 2px;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #f4f4f5;
+  overflow-wrap: anywhere;
+}
+
+.ftd-issue-details {
+  margin-block-start: 4px;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.ftd-sep {
+  color: #71717a;
+}
+
+.ftd-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.125rem 1.25rem;
+}
+
+.ftd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-inline-size: 0;
+
+  label {
+    margin: 0;
+    font-size: var(--text-secondary);
+    font-weight: 600;
+    color: #e4e4e7;
+  }
+
+  .gh-input {
+    inline-size: 100%;
+    font-family: inherit;
+    font-size: var(--text-body);
+  }
+
+  .gh-input::placeholder {
+    color: #71717a;
+  }
+}
+
+/* Every label row is as tall as an (i) button, with or without one, so the controls of fields that
+   share a row start at the same height. */
+.ftd-label-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-block-size: 24px;
+}
+
+.ftd-field .ftd-fixed {
+  font-family: var(--font-mono);
+}
+
+.ftd-note {
+  --autosize-min: 2lh;
+  --autosize-max: 8lh;
+}
+
+.ftd-resolution {
+  --autosize-min: 3lh;
+  --autosize-max: 12lh;
+}
+
+/* A field's character count, under its end edge. */
+.ftd-count {
+  align-self: flex-end;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: #71717a;
+}
+
+.ftd-error {
+  margin-block-start: 1rem;
+}
+
+/* Cancel and Save never wrap; the prompt before them takes only the space left and wraps within itself.
+   Scoped like the frame's own footer rule, which would otherwise win. */
+.gh-dialog.ftd-dialog .ftd-footer {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.ftd-unsaved {
+  display: flex;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-inline-size: 0;
+  margin: 0;
+  margin-inline-end: auto;
+  font-size: var(--text-secondary);
+  line-height: var(--leading-body);
+  color: #fbbf24;
+  visibility: hidden;
+
+  &.is-shown {
+    visibility: visible;
+  }
+
+  .btn-link {
+    font-size: var(--text-secondary);
+  }
+}
+
+.ftd-unsaved-icon {
+  flex-shrink: 0;
+}
+
+/* Status and Fixed in version side by side where the dialog has room for both; Note and Resolution
+   always take the whole width. */
+@container ftd-body (inline-size >= 32rem) {
+  .ftd-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ftd-field-note,
+  .ftd-field-resolution {
+    grid-column: 1 / -1;
+  }
+}
+
+/* On a phone the prompt takes a row of its own above the buttons, and no row while hidden. */
+@media (max-width: 500px) {
+  .gh-dialog.ftd-dialog .ftd-footer {
+    flex-wrap: wrap;
+  }
+
+  .ftd-unsaved {
+    flex-basis: 100%;
+
+    &:not(.is-shown) {
+      display: none;
+    }
+  }
+}
