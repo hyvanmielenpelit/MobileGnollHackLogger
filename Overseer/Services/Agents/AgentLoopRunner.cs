@@ -255,7 +255,7 @@ public class AgentLoopRunner
                 StartedAtUtc = DateTime.UtcNow,
                 Provider = aiProvider.ProviderName,
                 RequestedModelId = request.ModelId,
-                ThinkingLevelSent = request.ThinkingLevel,
+                ThinkingLevelSent = aiProvider.EffectiveThinkingLevel(request.ThinkingLevel),
                 ReasoningSummarySent = request.ReasoningSummary,
                 ServiceTierRequested = request.ServiceTier,
                 MaxOutputTokensSent = effectiveMaxOutputTokens,

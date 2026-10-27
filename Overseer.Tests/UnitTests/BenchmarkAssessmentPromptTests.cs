@@ -224,11 +224,11 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsSixtyOne()
+    public void HarnessVersion_IsSixtyTwo()
     {
-        // Harness 61: get_monster_stats resolves a monster's female and common names and lists near
-        // names on a miss; its name parameter says so.
-        Assert.Equal("61", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 62: call telemetry records the thinking level each request carried; the run
+        // report names it beside Default.
+        Assert.Equal("62", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     private static readonly IReadOnlyList<string> ConfiguredCandidateTools = new[]

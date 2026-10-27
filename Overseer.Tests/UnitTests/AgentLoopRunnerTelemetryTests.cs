@@ -55,6 +55,12 @@ public class AgentLoopRunnerTelemetryTests
 
         public string ProviderName { get; }
 
+        /// <summary>The level this provider sends when none is configured; null sends none.</summary>
+        public string? DefaultThinkingLevel { get; init; }
+
+        public string? EffectiveThinkingLevel(string? configuredLevel)
+            => string.IsNullOrEmpty(configuredLevel) ? DefaultThinkingLevel : configuredLevel;
+
         public IReadOnlyList<string> SupportedServiceTiers => new[] { "default" };
 
         public void AppendAssistantToolCallsToHistory(List<object> messageHistory, string iterationText, List<JsonElement> toolCalls, List<JsonElement>? providerHistoryItems = null)
@@ -226,10 +232,11 @@ public class AgentLoopRunnerTelemetryTests
             governor);
     }
 
-    private static AgentRunRequest Request(IAiProvider provider, string modelId = "mock-model", bool showDebugLog = false) => new()
+    private static AgentRunRequest Request(IAiProvider provider, string modelId = "mock-model", bool showDebugLog = false, string? thinkingLevel = null) => new()
     {
         ProviderName = provider.ProviderName,
         ModelId = modelId,
+        ThinkingLevel = thinkingLevel,
         ApiKey = "test-key",
         CredentialKey = CredentialKey,
         ShowDebugLog = showDebugLog,
@@ -301,6 +308,47 @@ public class AgentLoopRunnerTelemetryTests
         Assert.True(result.ModelCalls[0].StartedAtUtc <= result.ModelCalls[1].StartedAtUtc);
         Assert.Equal(0, result.RetryAttemptCount);
         Assert.DoesNotContain(events, e => e.Type == "call_meta" || e.CallMeta != null);
+    }
+
+    /// <summary>A two-call turn (a tool call, then the answer) on a provider with the given default level.</summary>
+    private static async Task<AgentRunResult> RunTwoCallTurnAsync(string? defaultThinkingLevel, string? configuredLevel)
+    {
+        var provider = new ScriptedProvider(callIndex => callIndex == 0
+            ? new[] { new ChatEvent { Type = "tool_call_complete", Data = JsonSerializer.Serialize(new { id = "call_1", name = "mock_tool", arguments = "{}" }) } }
+            : AnswerScript(callIndex))
+        {
+            DefaultThinkingLevel = defaultThinkingLevel
+        };
+        var handler = new ScriptedHandler(() => Status(HttpStatusCode.OK));
+        var runner = CreateRunner(new[] { provider }, handler, FastRetryConfig());
+
+        var (result, _) = await RunAsync(runner, Request(provider, thinkingLevel: configuredLevel));
+        Assert.Equal(2, result.ModelCalls.Count);
+        return result;
+    }
+
+    [Fact]
+    public async Task ThinkingLevelSent_IsTheProvidersSubstituteForAnUnsetLevel()
+    {
+        var result = await RunTwoCallTurnAsync(defaultThinkingLevel: "high", configuredLevel: null);
+
+        Assert.All(result.ModelCalls, c => Assert.Equal("high", c.ThinkingLevelSent));
+    }
+
+    [Fact]
+    public async Task ThinkingLevelSent_IsTheConfiguredLevelWhenOneIsSet()
+    {
+        var result = await RunTwoCallTurnAsync(defaultThinkingLevel: "high", configuredLevel: "low");
+
+        Assert.All(result.ModelCalls, c => Assert.Equal("low", c.ThinkingLevelSent));
+    }
+
+    [Fact]
+    public async Task ThinkingLevelSent_IsNullWhenNothingIsSent()
+    {
+        var result = await RunTwoCallTurnAsync(defaultThinkingLevel: null, configuredLevel: null);
+
+        Assert.All(result.ModelCalls, c => Assert.Null(c.ThinkingLevelSent));
     }
 
     [Fact]

@@ -56,6 +56,10 @@ public class ModelCallTelemetry
     [MaxLength(128)]
     public string RequestedModelId { get; set; } = default!;
 
+    /// <summary>
+    /// The thinking level the request carried, a provider's substitute for an unset level included; null for
+    /// none. Runs before harness 62 recorded the configured level here.
+    /// </summary>
     [MaxLength(32)]
     public string? ThinkingLevelSent { get; set; }
 

@@ -324,6 +324,8 @@ public static class HarnessImpactLedger
                 "report_feedback is offered to the candidate outside the tool budget and the allow-list; self-reports are stored apart from tool calls; the tool guides hash moves."),
             new("61", CI,
                 "get_monster_stats resolves a monster's female and common names and lists near names on a miss; its name parameter says so."),
+            new("62", R,
+                "Call telemetry records the thinking level each request carried, an Anthropic default for an unset level included; the run report names it beside \"Default\" and Profile Fit reads it."),
         };
 
         return table.OrderBy(e => e.Number).ToList();

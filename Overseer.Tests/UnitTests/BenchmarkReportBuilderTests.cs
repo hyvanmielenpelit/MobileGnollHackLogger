@@ -916,6 +916,101 @@ public class BenchmarkReportBuilderTests
         Assert.DoesNotContain("**Profile Fit:**", report);
     }
 
+    /// <summary>A call telemetry row: a candidate call, or a grader call when a role is given.</summary>
+    private static ModelCallTelemetry CallRow(int callIndex, string? thinkingLevelSent, ModelCallGraderRole? graderRole = null) => new()
+    {
+        Source = graderRole.HasValue ? ModelCallSource.BenchmarkGrader : ModelCallSource.BenchmarkCandidate,
+        GraderRole = graderRole,
+        CallIndex = callIndex,
+        Provider = "Anthropic",
+        RequestedModelId = "claude-test",
+        ThinkingLevelSent = thinkingLevelSent
+    };
+
+    /// <summary>A one-answer run of an Anthropic candidate with the given configured level, carrying the given call rows.</summary>
+    private static BenchmarkRun ThinkingLevelRun(string harnessVersion, string? configuredLevel, params ModelCallTelemetry[] calls)
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25);
+        answer.ModelCalls.AddRange(calls);
+        var run = HarnessV6Run(answer);
+        run.HarnessVersion = harnessVersion;
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-test", displayName: "Claude Test", thinkingLevel: configuredLevel);
+        return run;
+    }
+
+    /// <summary>The report text from a heading to the next heading of any level.</summary>
+    private static string ReportSection(string report, string heading)
+    {
+        int start = report.IndexOf(heading, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"Heading '{heading}' not found.");
+        int next = report.IndexOf("\n#", start + heading.Length, StringComparison.Ordinal);
+        return next < 0 ? report[start..] : report[start..next];
+    }
+
+    [Fact]
+    public void ThinkingLevel_UnsetCandidate_NamesTheLevelSent()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            ThinkingLevelRun("62", null, CallRow(0, "high"), CallRow(1, "high")));
+
+        Assert.Contains("- **Thinking Level:** Default (sent: high)", ReportSection(report, "### Model Under Test"));
+        Assert.Contains("thinking level **Default (sent: high)**", report);
+    }
+
+    [Fact]
+    public void ThinkingLevel_UnsetCandidateBeforeHarness62_ReadsDefault()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            ThinkingLevelRun("61", null, CallRow(0, "high"), CallRow(1, "high")));
+
+        Assert.Contains("- **Thinking Level:** Default", ReportSection(report, "### Model Under Test"));
+        Assert.Contains("thinking level **Default**", report);
+        Assert.DoesNotContain("sent:", report);
+    }
+
+    [Fact]
+    public void ThinkingLevel_ConfiguredLevel_IsPrintedAsIs()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            ThinkingLevelRun("62", "low", CallRow(0, "low")));
+
+        Assert.Contains("- **Thinking Level:** low", ReportSection(report, "### Model Under Test"));
+        Assert.Contains("thinking level **low**", report);
+        Assert.DoesNotContain("sent:", report);
+    }
+
+    [Fact]
+    public void ThinkingLevel_UnsetAssessor_NamesTheLevelItsCallsSent()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            ThinkingLevelRun("62", null, CallRow(0, "high", ModelCallGraderRole.Assessor)));
+
+        Assert.Contains("- **Thinking Level:** Default (sent: high)", ReportSection(report, "### Assessment Model"));
+        string candidateSection = ReportSection(report, "### Model Under Test");
+        Assert.Contains("- **Thinking Level:** Default", candidateSection);
+        Assert.DoesNotContain("sent:", candidateSection);
+    }
+
+    [Fact]
+    public void ThinkingLevel_CallsThatDiffer_AreCounted()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            ThinkingLevelRun("62", null, CallRow(0, "medium"), CallRow(1, "high"), CallRow(2, "high")));
+
+        Assert.Contains("- **Thinking Level:** Default (sent: high ×2, medium ×1)", ReportSection(report, "### Model Under Test"));
+        Assert.DoesNotContain("**Profile Fit:**", report);
+    }
+
+    [Fact]
+    public void ProfileFit_WarnsOnTheLevelSentForAnUnsetCandidate()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            ThinkingLevelRun("62", null, CallRow(0, "high"), CallRow(1, "high")));
+
+        Assert.Contains("**Profile Fit:**", report);
+        Assert.Contains("thinking level **high**", report);
+    }
+
     [Fact]
     public void NonMonotonicNote_NamesTheBandWhenEveryCriticalErrorLandedInOne()
     {

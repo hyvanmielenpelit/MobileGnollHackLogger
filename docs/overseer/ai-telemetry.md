@@ -63,8 +63,9 @@ provider sends in place of an unset level (`IAiProvider.EffectiveThinkingLevel`)
 record the title model's configured level; a title never applies the Anthropic default, so *None sent*
 on a title row means that model has no level configured and the provider used its own default. Rows
 written before 2026-10-27 recorded the configured level, so Anthropic chat rows from before then show
-*None sent* where `high` was sent. GnollBench's `ModelCallTelemetry.ThinkingLevelSent` still records
-the configured level.
+*None sent* where `high` was sent. GnollBench's `ModelCallTelemetry.ThinkingLevelSent` records the
+level sent from harness 62 (the configured level before); its comparability keys and configuration
+snapshots record the configured level.
 
 ## 5. Model names
 

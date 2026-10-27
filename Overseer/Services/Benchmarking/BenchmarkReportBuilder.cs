@@ -2051,6 +2051,64 @@ public static class BenchmarkReportBuilder
     /// <summary>The first harness version whose candidate is offered <c>report_feedback</c>.</summary>
     internal const int SelfReportsHarnessVersion = 60;
 
+    /// <summary>The first harness whose call telemetry records the thinking level sent rather than the configured one.</summary>
+    internal const int ThinkingLevelSentHarnessVersion = 62;
+
+    /// <summary>
+    /// The configured level; for an unset one, on a run that records sent levels, "Default (sent: high)", or
+    /// "Default (sent: high ×12, medium ×3)" when the calls differ. "Default" when nothing was recorded.
+    /// </summary>
+    private static string ThinkingLevelText(BenchmarkRun run, string? configuredLevel, IEnumerable<ModelCallTelemetry> calls)
+    {
+        if (!string.IsNullOrEmpty(configuredLevel)) return configuredLevel;
+        var sent = SentThinkingLevels(run, calls);
+        return sent.Count switch
+        {
+            0 => "Default",
+            1 => $"Default (sent: {sent[0].Level})",
+            _ => $"Default (sent: {string.Join(", ", sent.Select(s => $"{s.Level} ×{Inv(s.Count, "N0")}"))})",
+        };
+    }
+
+    /// <summary>
+    /// The level a role ran at: the configured level, or the one level its calls sent on a run that records
+    /// sent levels; null when unset and that is not known.
+    /// </summary>
+    private static string? RanAtThinkingLevel(BenchmarkRun run, string? configuredLevel, IEnumerable<ModelCallTelemetry> calls)
+    {
+        if (!string.IsNullOrEmpty(configuredLevel)) return configuredLevel;
+        var sent = SentThinkingLevels(run, calls);
+        return sent.Count == 1 ? sent[0].Level : null;
+    }
+
+    /// <summary>
+    /// The calls' non-empty sent levels with their counts, most frequent first. Empty before
+    /// <see cref="ThinkingLevelSentHarnessVersion"/> or with an unparseable harness, whose rows hold the
+    /// configured level.
+    /// </summary>
+    private static List<(string Level, int Count)> SentThinkingLevels(BenchmarkRun run, IEnumerable<ModelCallTelemetry> calls)
+    {
+        if (!int.TryParse(run.HarnessVersion, out int version) || version < ThinkingLevelSentHarnessVersion)
+        {
+            return new List<(string Level, int Count)>();
+        }
+        return calls
+            .Where(c => !string.IsNullOrEmpty(c.ThinkingLevelSent))
+            .GroupBy(c => c.ThinkingLevelSent!, StringComparer.Ordinal)
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => (g.Key, g.Count()))
+            .ToList();
+    }
+
+    /// <summary>The answers' grader calls in one role; synthesis rows hang off the run and are not among them.</summary>
+    private static IEnumerable<ModelCallTelemetry> GraderCalls(IEnumerable<BenchmarkRunAnswer> answers, ModelCallGraderRole role)
+    {
+        return answers
+            .SelectMany(a => a.ModelCalls ?? Enumerable.Empty<ModelCallTelemetry>())
+            .Where(c => c.Source == ModelCallSource.BenchmarkGrader && c.GraderRole == role);
+    }
+
     /// <summary>
     /// The Self-Reports section closing § 2: the candidate's <c>report_feedback</c> calls, counted,
     /// listed by question and grouped by fingerprint. A run before harness 60, or with an
@@ -2375,7 +2433,8 @@ public static class BenchmarkReportBuilder
         // Speed Index that describes the profile more than the model: the 2026-09-03 run scored
         // a max-thinking model 65 on speed beside 91 on intelligence. Say so where the reader
         // meets the number, rather than leaving it to be inferred from the thinking level.
-        string candidateThinking = run.TestedModelSnapshot.ThinkingLevel ?? string.Empty;
+        var candidateCallsForThinking = answers.SelectMany(a => CallTelemetryMeasures.CandidateCalls(a)).ToList();
+        string candidateThinking = RanAtThinkingLevel(run, run.TestedModelSnapshot.ThinkingLevel, candidateCallsForThinking) ?? string.Empty;
         bool deliberatingCandidate =
             candidateThinking.Equals("high", StringComparison.OrdinalIgnoreCase) ||
             candidateThinking.Equals("max", StringComparison.OrdinalIgnoreCase);
@@ -2527,7 +2586,7 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Provider:** {run.TestedModelSnapshot.Provider}");
         sb.AppendLine($"- **Model ID:** {run.TestedModelSnapshot.ModelId}");
         sb.AppendLine($"- **Endpoint:** {SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.TestedModelSnapshot)}");
-        sb.AppendLine($"- **Thinking Level:** {run.TestedModelSnapshot.ThinkingLevel ?? "Default"}");
+        sb.AppendLine($"- **Thinking Level:** {ThinkingLevelText(run, run.TestedModelSnapshot.ThinkingLevel, candidateCallsForThinking)}");
         sb.AppendLine($"- **Reasoning Mode:** {run.TestedModelSnapshot.ReasoningMode ?? "Default"}");
         sb.AppendLine($"- **Reasoning Summary:** {run.TestedModelSnapshot.ReasoningSummary ?? "Default"}");
         sb.AppendLine($"- **Requested Service Tier:** {run.TestedModelSnapshot.ServiceTier ?? "Default"}");
@@ -2596,7 +2655,7 @@ public static class BenchmarkReportBuilder
         {
             sb.AppendLine($"- **Endpoint:** {assessorEndpoint}");
         }
-        sb.AppendLine($"- **Thinking Level:** {run.AssessorModelSnapshot.ThinkingLevel ?? "Default"}");
+        sb.AppendLine($"- **Thinking Level:** {ThinkingLevelText(run, run.AssessorModelSnapshot.ThinkingLevel, GraderCalls(answers, ModelCallGraderRole.Assessor))}");
         sb.AppendLine($"- **Reasoning Mode:** {run.AssessorModelSnapshot.ReasoningMode ?? "Default"}");
         if (isPanelRun)
         {
@@ -2615,7 +2674,7 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"- **Endpoint:** {coAssessorEndpoint}");
             }
-            sb.AppendLine($"- **Thinking Level:** {run.CoAssessorModelSnapshot?.ThinkingLevel ?? "Default"}");
+            sb.AppendLine($"- **Thinking Level:** {ThinkingLevelText(run, run.CoAssessorModelSnapshot?.ThinkingLevel, GraderCalls(answers, ModelCallGraderRole.CoAssessor))}");
             sb.AppendLine($"- **Reasoning Mode:** {run.CoAssessorModelSnapshot?.ReasoningMode ?? "Default"}");
             sb.AppendLine($"- **Role:** Panel member B ({memberBRelation} to the candidate) — grades every answer blind to member A, with the identical prompt, and writes its own synthesis from its own verdicts.");
             sb.AppendLine();
@@ -2634,7 +2693,7 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"- **Endpoint:** {secondOpinionEndpoint}");
             }
-            sb.AppendLine($"- **Thinking Level:** {run.SecondOpinionAssessorModelSnapshot?.ThinkingLevel ?? "Default"}");
+            sb.AppendLine($"- **Thinking Level:** {ThinkingLevelText(run, run.SecondOpinionAssessorModelSnapshot?.ThinkingLevel, GraderCalls(answers, ModelCallGraderRole.SecondOpinion))}");
             sb.AppendLine($"- **Reasoning Mode:** {run.SecondOpinionAssessorModelSnapshot?.ReasoningMode ?? "Default"}");
             var configuredMode = ModeOf(run);
             if (isPanelRun)
@@ -2719,7 +2778,7 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"- **Endpoint:** {claimVerifierEndpoint}");
             }
-            sb.AppendLine($"- **Thinking Level:** {run.ClaimVerifierModelSnapshot?.ThinkingLevel ?? "Default"}");
+            sb.AppendLine($"- **Thinking Level:** {ThinkingLevelText(run, run.ClaimVerifierModelSnapshot?.ThinkingLevel, GraderCalls(answers, ModelCallGraderRole.ClaimVerifier))}");
             sb.AppendLine($"- **Reasoning Mode:** {run.ClaimVerifierModelSnapshot?.ReasoningMode ?? "Default"}");
             sb.AppendLine("- **Role:** Verifies unverified factual claims against source code and wiki using read-only tools. Advisory throughout: nothing here is read by any scoring path.");
             if (!string.IsNullOrWhiteSpace(run.TestedModelSnapshot.Provider) &&
@@ -5894,7 +5953,7 @@ public static class BenchmarkReportBuilder
         sb.AppendLine("- **Intelligence Index:** $\\Sigma(\\text{Difficulty}(q) \\cdot \\text{Quality}(q)) / \\Sigma(\\text{Difficulty}(q))$ over answered questions and unanswered questions alike, the latter at 0 — an unanswered question is a failed question. Quality only: the Speed Index is reported separately by design and is not folded in.");
         sb.AppendLine("- **Speed Index:** equal-weight mean of $Speed(q)$ over answered questions only, since an answer that does not exist has no latency. Difficulty enters through $Target(q)$, not through the weight; weighting here as well would count difficulty twice and pull the index toward the floor.");
         sb.AppendLine();
-        sb.AppendLine($"> **Comparing Speed Indices:** thinking level dominates model time, so a Speed Index is comparable between runs at the same thinking level and misleading across levels. This run used thinking level **{run.TestedModelSnapshot.ThinkingLevel ?? "Default"}**.");
+        sb.AppendLine($"> **Comparing Speed Indices:** thinking level dominates model time, so a Speed Index is comparable between runs at the same thinking level and misleading across levels. This run used thinking level **{ThinkingLevelText(run, run.TestedModelSnapshot.ThinkingLevel, candidateCallsForThinking)}**.");
         sb.AppendLine();
         if (run.SpeedMeasurementDegraded)
         {

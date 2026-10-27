@@ -838,8 +838,13 @@ public static class BenchmarkAssessmentPrompt
     /// v61: get_monster_stats resolves a monster's female and common names after its base name, with a
     ///     "Resolved '…' to '…'" note, and a miss lists up to five near names; its name parameter says so.
     ///     ScoringMethodVersion stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
+    /// v62: per-call telemetry records the thinking level each request carried
+    ///     (IAiProvider.EffectiveThinkingLevel), so an unset Anthropic level records the
+    ///     ExplicitDefaultEffort it sent; the run report names that level beside "Default" and Profile Fit
+    ///     reads it. ScoringMethodVersion stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do
+    ///     not move.
     /// </summary>
-    public const string HarnessVersion = "61";
+    public const string HarnessVersion = "62";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
