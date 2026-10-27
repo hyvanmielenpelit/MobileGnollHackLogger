@@ -44,6 +44,7 @@ export function buildAdminUser(overrides: Partial<AdminUser> = {}): AdminUser {
     accountHoldPlacedUtc: null,
     accountHoldPlacedByUserName: null,
     pendingDeletionRequestId: null,
+    gameSignInBlocks: [],
     gameLogCount: 0,
     bonesCount: 0,
     chatSessionCount: 0,

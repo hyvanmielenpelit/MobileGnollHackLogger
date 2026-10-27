@@ -9,6 +9,7 @@ import { AdminUser } from '../../../services/admin-users.service';
 export type AdminUserActionId =
   | 'lockout'
   | 'unlock'
+  | 'clearGameSignInBlock'
   | 'ban'
   | 'unban'
   | 'restrictions'
@@ -65,6 +66,7 @@ export function accountActionGroups(user: AdminUser): AdminUserActionGroup[] {
     lockedOut
       ? item('unlock', 'Unlock', guard(user, 'You cannot unlock your own account.', ADMIN_UNCHANGED_REASON))
       : item('lockout', 'Lock out…', guard(user, 'You cannot lock out your own account.', ADMIN_PROTECTED_REASON)),
+    ...(user.statuses.includes('GameSignInBlocked') ? [item('clearGameSignInBlock', 'Clear game sign-in block', null)] : []),
     banned
       ? item('unban', 'Unban', guard(user, 'You cannot unban your own account.', ADMIN_UNCHANGED_REASON))
       : item('ban', 'Ban…', guard(user, 'You cannot ban your own account.', ADMIN_PROTECTED_REASON)),

@@ -13,6 +13,7 @@ public enum AdminUserActionKind : short
     HoldPlaced = 12, HoldReleased = 13,
     DeletionRequestApproved = 14, DeletionRequestDeclined = 15,
     EmailChanged = 16,
+    GameSignInBlockCleared = 17,
 }
 
 /// <summary>

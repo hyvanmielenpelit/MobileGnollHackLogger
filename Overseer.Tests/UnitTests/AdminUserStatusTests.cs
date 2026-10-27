@@ -11,7 +11,7 @@ namespace Overseer.Tests.UnitTests;
 
 /// <summary>
 /// The status rules of the admin Users tab: the in-memory evaluator and the SQL criteria agree for every status
-/// on a fixture of every combination, "In good standing" is exactly the absence of the eight problems, and an
+/// on a fixture of every combination, "In good standing" is exactly the absence of the nine problems, and an
 /// estimated registration date never satisfies an age criterion earlier than the true date would.
 /// </summary>
 public sealed class AdminUserStatusTests : IDisposable
@@ -39,12 +39,13 @@ public sealed class AdminUserStatusTests : IDisposable
         Pending = 1 << 6,
         Unconfirmed = 1 << 7,
         Administrator = 1 << 8,
-        All = (1 << 9) - 1
+        GameSignInBlocked = 1 << 9,
+        All = (1 << 10) - 1
     }
 
     private sealed record Fixture(Dictionary<string, Problem> Problems, List<string> AdminNames);
 
-    /// <summary>One account per combination of the nine raw conditions, 512 in all.</summary>
+    /// <summary>One account per combination of the ten raw conditions, 1,024 in all.</summary>
     private async Task<Fixture> SeedEveryCombinationAsync()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -82,6 +83,17 @@ public sealed class AdminUserStatusTests : IDisposable
                 // A released hold is not a hold.
                 _db.AccountHolds.Add(new AccountHold { AspNetUserId = id, Reason = "Old", PlacedByUserId = "x", PlacedUtc = Now.AddDays(-9), ReleasedUtc = Now.AddDays(-8) });
             }
+            // An ended or a cleared block is not a block.
+            _db.GameSignInBlocks.Add(new GameSignInBlock
+            {
+                AspNetUserId = id,
+                Source = GameSignInBlockSource.Website,
+                Kind = GameSignInBlockKind.Pair,
+                IpAddress = "203.0.113.7",
+                BlockedUtc = Now.AddMinutes(-15),
+                BlockedUntilUtc = p.HasFlag(Problem.GameSignInBlocked) || i % 2 == 1 ? Now.AddHours(1) : Now.AddMinutes(-1),
+                ClearedUtc = !p.HasFlag(Problem.GameSignInBlocked) && i % 2 == 1 ? Now.AddMinutes(-5) : null
+            });
             _db.AccountDeletionRequests.Add(new AccountDeletionRequest
             {
                 AspNetUserId = id,
@@ -102,8 +114,11 @@ public sealed class AdminUserStatusTests : IDisposable
         var holds = (await _db.AccountHolds.Where(h => h.ReleasedUtc == null).Select(h => h.AspNetUserId).ToListAsync(ct)).ToHashSet();
         var pending = (await _db.AccountDeletionRequests.Where(r => r.Status == AccountDeletionRequestStatus.Pending)
             .Select(r => r.AspNetUserId!).ToListAsync(ct)).ToHashSet();
+        var blockEnds = (await _db.GameSignInBlocks.Where(b => b.ClearedUtc == null && b.BlockedUntilUtc > Now).ToListAsync(ct))
+            .GroupBy(b => b.AspNetUserId).ToDictionary(g => g.Key, g => g.Max(b => b.BlockedUntilUtc));
         return users.ToDictionary(u => u.Id,
-            u => AdminUserStatus.Evaluate(u, new AdminUserFacts(holds.Contains(u.Id), pending.Contains(u.Id)), fixture.AdminNames, Now));
+            u => AdminUserStatus.Evaluate(u, new AdminUserFacts(holds.Contains(u.Id), pending.Contains(u.Id),
+                blockEnds.TryGetValue(u.Id, out var until) ? until : null), fixture.AdminNames, Now));
     }
 
     [Fact]
@@ -142,15 +157,15 @@ public sealed class AdminUserStatusTests : IDisposable
     }
 
     [Fact]
-    public async Task InGoodStandingIsExactlyTheAbsenceOfTheEightProblems()
+    public async Task InGoodStandingIsExactlyTheAbsenceOfTheNineProblems()
     {
         var fixture = await SeedEveryCombinationAsync();
         var evaluated = await EvaluateAllAsync(fixture);
-        const Problem eight = Problem.All & ~Problem.Administrator;
+        const Problem nine = Problem.All & ~Problem.Administrator;
 
         foreach (var (id, set) in evaluated)
         {
-            bool none = (fixture.Problems[id] & eight) == Problem.None;
+            bool none = (fixture.Problems[id] & nine) == Problem.None;
             Assert.Equal(none, set.Has(AdminUserStatusKind.GoodStanding));
         }
         // With and without the administrator badge.
@@ -163,11 +178,27 @@ public sealed class AdminUserStatusTests : IDisposable
         await SeedEveryCombinationAsync();
         var user = await Users.AsNoTracking().SingleAsync(u => u.Id == "combo-1", TestContext.Current.CancellationToken);
 
-        var set = AdminUserStatus.Evaluate(user, new AdminUserFacts(true, false), Array.Empty<string>(), Now);
+        var set = AdminUserStatus.Evaluate(user, new AdminUserFacts(true, false, null), Array.Empty<string>(), Now);
 
         Assert.Equal(new[] { AdminUserStatusKind.LockedOut, AdminUserStatusKind.DeletionHold }, set.Statuses);
         Assert.Equal(new DateTimeOffset(Now.AddDays(3)), set.LockedOutUntil);
         Assert.Equal("Locked out until 2026-10-16 12:00 UTC, Deletion hold", set.Text);
+    }
+
+    [Fact]
+    public async Task AGameSignInBlockShowsItsEndAndEndsWithIt()
+    {
+        await SeedEveryCombinationAsync();
+        var user = await Users.AsNoTracking().SingleAsync(u => u.Id == "combo-0", TestContext.Current.CancellationToken);
+
+        var blocked = AdminUserStatus.Evaluate(user, new AdminUserFacts(false, false, Now.AddMinutes(20)), Array.Empty<string>(), Now);
+        var ended = AdminUserStatus.Evaluate(user, new AdminUserFacts(false, false, Now), Array.Empty<string>(), Now);
+
+        Assert.Equal(new[] { AdminUserStatusKind.GameSignInBlocked }, blocked.Statuses);
+        Assert.Equal(new DateTimeOffset(Now.AddMinutes(20)), blocked.GameSignInBlockedUntil);
+        Assert.Equal("Game sign-in blocked until 2026-10-13 12:20 UTC", blocked.Text);
+        Assert.Equal(new[] { AdminUserStatusKind.GoodStanding }, ended.Statuses);
+        Assert.Null(ended.GameSignInBlockedUntil);
     }
 
     [Fact]

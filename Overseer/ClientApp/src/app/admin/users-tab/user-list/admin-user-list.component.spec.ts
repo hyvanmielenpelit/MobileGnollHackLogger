@@ -164,6 +164,7 @@ describe('AdminUserListComponent', () => {
       fixture.detectChanges();
       expect(confirmDialog().open).toBe(true);
       expect(confirmDialog().textContent).toContain('Failed sign-ins are reset.');
+      expect(confirmDialog().textContent).toContain('is separate: clear it with Clear game sign-in block.');
       expect(unlock).not.toHaveBeenCalled();
 
       confirmButton('Unlock').click();
@@ -176,6 +177,34 @@ describe('AdminUserListComponent', () => {
       expect(card('u-1').querySelector('.gh-account-badge')!.classList.contains('is-new')).toBe(true);
       expect(store.showToast).toHaveBeenCalledWith('alice can sign in again.', 'success', 'Account Updated');
       expect(document.activeElement?.id).toBe('au-u-1-actions-btn');
+    });
+
+    it('Clear game sign-in block asks for confirmation, then clears it and shows the change', () => {
+      const blocked = buildAdminUser({
+        statuses: ['GameSignInBlocked'],
+        gameSignInBlocks: [{ source: 'Website', kind: 'Pair', ipAddress: '203.0.113.7', blockedUntilUtc: '2026-10-27T19:20:00Z' }]
+      });
+      listSpy.mockReturnValue(of(buildUsersPage([blocked])));
+      const clear = vi.spyOn(usersService, 'clearGameSignInBlock').mockReturnValue(of(buildActionResult(buildAdminUser(),
+        ['GameSignInBlocked'], 'Game sign-in blocked until 2026-10-27 19:20 UTC', ['GoodStanding'], 'In good standing',
+        'Game sign-in block cleared. GnollHack can sign in again within 15 seconds.')));
+      create();
+
+      actionItem('u-1', 'clearGameSignInBlock').click();
+      fixture.detectChanges();
+      expect(confirmDialog().open).toBe(true);
+      expect(confirmDialog().textContent).toContain('Clear the game sign-in block of alice');
+      expect(confirmDialog().textContent).toContain(
+        'GnollHack can sign in as alice again within 15 seconds. If the stored password is still wrong, the block returns after 10 more failures.');
+      expect(clear).not.toHaveBeenCalled();
+
+      confirmButton('Clear Block').click();
+      fixture.detectChanges();
+
+      expect(clear).toHaveBeenCalledWith('u-1');
+      expect(textOf(card('u-1').querySelector('.gh-change-note-text')))
+        .toBe('Changed just now by you: Game sign-in blocked until 2026-10-27 19:20 UTC → In good standing');
+      expect(Array.from(card('u-1').querySelectorAll('.gh-account-badge')).map(b => textOf(b))).toEqual(['In good standing']);
     });
 
     it('Block asks for a reason of at most 256 characters, shown to the user', () => {

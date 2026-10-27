@@ -150,6 +150,16 @@ describe('AdminUserCardComponent', () => {
     expect(Array.from(el.querySelectorAll('.gh-action-popover-heading')).map(h => textOf(h))).toEqual(['Access', 'Account', 'Deletion']);
   });
 
+  it('offers Clear game sign-in block only while the account has one, to anyone', () => {
+    render();
+    expect(item('clearGameSignInBlock')).toBeNull();
+
+    render(buildAdminUser({ statuses: ['GameSignInBlocked'], isSelf: true, isAdministrator: true }));
+    const labels = Array.from(el.querySelectorAll('.gh-action-popover-item > span:first-child')).map(s => textOf(s));
+    expect(labels.slice(0, 3)).toEqual(['Lock out…', 'Clear game sign-in block', 'Ban…']);
+    expect(item('clearGameSignInBlock').getAttribute('aria-disabled')).not.toBe('true');
+  });
+
   it('makes refused items aria-disabled with their reason on a second line', () => {
     render(buildAdminUser({ isSelf: true, isAdministrator: true, statuses: ['GoodStanding', 'Administrator'] }));
     expect(item('lockout').getAttribute('aria-disabled')).toBe('true');

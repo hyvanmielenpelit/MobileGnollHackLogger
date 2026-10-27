@@ -100,12 +100,14 @@ public class AdminUserManagementService
     private readonly TimeProvider _time;
     private readonly EphemeralSessionStore? _ephemeralSessions;
     private readonly IServiceProvider? _services;
+    private readonly GnollHackServer.Data.Security.GameSignInBlockSync? _signInBlocks;
 
     /// <param name="services">Resolves the email sender only when an email is sent: its constructor throws when email is not configured.</param>
     public AdminUserManagementService(ApplicationDbContext db, UserManager<ApplicationUser> userManager, IConfiguration configuration,
         AdminUserManagementOptions options, AccountDeletionReviewService review, OverseerAccessService access,
         ILogger<AdminUserManagementService> logger, ISecurityEventRecorder? securityEvents = null, TimeProvider? time = null,
-        EphemeralSessionStore? ephemeralSessions = null, IServiceProvider? services = null)
+        EphemeralSessionStore? ephemeralSessions = null, IServiceProvider? services = null,
+        GnollHackServer.Data.Security.GameSignInBlockSync? signInBlocks = null)
     {
         _db = db;
         _userManager = userManager;
@@ -118,6 +120,7 @@ public class AdminUserManagementService
         _time = time ?? TimeProvider.System;
         _ephemeralSessions = ephemeralSessions;
         _services = services;
+        _signInBlocks = signInBlocks;
     }
 
     private DateTime UtcNow => _time.GetUtcNow().UtcDateTime;
@@ -201,7 +204,10 @@ public class AdminUserManagementService
         return new(AdminResultStatus.Ok, (await BuildDtosAsync(actor, new List<ApplicationUser> { user }, UtcNow, ct))[0]);
     }
 
-    /// <summary>The cards of a page: groups, holds with the placer's name, pending requests and data counts, one query each.</summary>
+    /// <summary>
+    /// The cards of a page: groups, holds with the placer's name, pending requests, active game sign-in blocks and data
+    /// counts, one query each.
+    /// </summary>
     private async Task<List<AdminUserDto>> BuildDtosAsync(AdminActor actor, List<ApplicationUser> users, DateTime now, CancellationToken ct)
     {
         var ids = users.Select(u => u.Id).ToList();
@@ -221,6 +227,11 @@ public class AdminUserManagementService
         var pending = await _db.AccountDeletionRequests.AsNoTracking()
             .Where(r => r.AspNetUserId != null && ids.Contains(r.AspNetUserId) && r.Status == AccountDeletionRequestStatus.Pending)
             .Select(r => new { r.AspNetUserId, r.Id })
+            .ToListAsync(ct);
+        var signInBlocks = await _db.GameSignInBlocks.AsNoTracking()
+            .Where(b => ids.Contains(b.AspNetUserId) && b.ClearedUtc == null && b.BlockedUntilUtc > now)
+            .OrderByDescending(b => b.BlockedUntilUtc)
+            .Select(b => new { b.AspNetUserId, b.Source, b.Kind, b.IpAddress, b.BlockedUntilUtc })
             .ToListAsync(ct);
         var gameLogs = await _db.GameLog.AsNoTracking()
             .Where(g => g.AspNetUserId != null && ids.Contains(g.AspNetUserId))
@@ -250,7 +261,9 @@ public class AdminUserManagementService
         {
             var hold = holds.FirstOrDefault(h => h.AspNetUserId == u.Id);
             long? pendingId = pending.Where(r => r.AspNetUserId == u.Id).Select(r => (long?)r.Id).FirstOrDefault();
-            var set = AdminUserStatus.Evaluate(u, new AdminUserFacts(hold != null, pendingId != null), admins, now);
+            var blocks = signInBlocks.Where(b => b.AspNetUserId == u.Id).ToList();
+            var set = AdminUserStatus.Evaluate(u, new AdminUserFacts(hold != null, pendingId != null,
+                blocks.Count == 0 ? null : blocks.Max(b => b.BlockedUntilUtc)), admins, now);
             bool lockedOut = set.Has(AdminUserStatusKind.LockedOut);
             bool adminSet = lockedOut && u.AdminLockoutEndUtc != null && u.AdminLockoutEndUtc == u.LockoutEnd;
 
@@ -288,6 +301,13 @@ public class AdminUserManagementService
                 AccountHoldPlacedUtc = hold == null ? null : Utc(hold.PlacedUtc),
                 AccountHoldPlacedByUserName = hold?.PlacedBy,
                 PendingDeletionRequestId = pendingId,
+                GameSignInBlocks = blocks.Select(b => new AdminGameSignInBlockDto
+                {
+                    Source = b.Source.ToString(),
+                    Kind = b.Kind.ToString(),
+                    IpAddress = b.IpAddress,
+                    BlockedUntilUtc = DateTime.SpecifyKind(b.BlockedUntilUtc, DateTimeKind.Utc)
+                }).ToList(),
                 GameLogCount = gameLogs.Where(g => g.UserId == u.Id).Select(g => g.Count).FirstOrDefault(),
                 BonesCount = bones.Where(g => g.UserId == u.Id).Select(g => g.Count).FirstOrDefault(),
                 ChatSessionCount = chats.Where(g => g.UserId == u.Id).Select(g => g.Count).FirstOrDefault(),
@@ -410,9 +430,17 @@ public class AdminUserManagementService
         return reason.Length > MaxReasonLength ? $"The reason can be at most {MaxReasonLength} characters." : null;
     }
 
-    private async Task<AdminUserFacts> FactsAsync(string userId, CancellationToken ct) => new(
-        await _db.AccountHolds.AnyAsync(h => h.AspNetUserId == userId && h.ReleasedUtc == null, ct),
-        await _db.AccountDeletionRequests.AnyAsync(r => r.AspNetUserId == userId && r.Status == AccountDeletionRequestStatus.Pending, ct));
+    private async Task<AdminUserFacts> FactsAsync(string userId, CancellationToken ct)
+    {
+        DateTime now = UtcNow;
+        return new(
+            await _db.AccountHolds.AnyAsync(h => h.AspNetUserId == userId && h.ReleasedUtc == null, ct),
+            await _db.AccountDeletionRequests.AnyAsync(r => r.AspNetUserId == userId && r.Status == AccountDeletionRequestStatus.Pending, ct),
+            await ActiveSignInBlocks(userId, now).MaxAsync(b => (DateTime?)b.BlockedUntilUtc, ct));
+    }
+
+    private IQueryable<GameSignInBlock> ActiveSignInBlocks(string userId, DateTime nowUtc) =>
+        _db.GameSignInBlocks.Where(b => b.AspNetUserId == userId && b.ClearedUtc == null && b.BlockedUntilUtc > nowUtc);
 
     private AdminUserStatusSet StatusOf(ApplicationUser user, AdminUserFacts facts) =>
         AdminUserStatus.Evaluate(user, facts, AdminNormalizedNames, UtcNow);
@@ -509,6 +537,45 @@ public class AdminUserManagementService
 
         return await FinishAsync(actor, user, facts, before, AdminUserActionKind.Unlocked, null,
             "Unlocked. The failed sign-in count is reset.", SecurityEventKind.AdminUnlocked, bulkOperationId, ct);
+    }
+
+    /// <summary>
+    /// Clears the account's active game sign-in blocks, in the website and in Overseer. Overseer's own blocks end at
+    /// once; the website releases its blocks on GnollHack's next retry, within <see cref="GnollHackServer.Data.Security.GameSignInBlockSync.LookupInterval"/>.
+    /// Allowed on any account: it only lifts a temporary throttle. Not a bulk action.
+    /// </summary>
+    public async Task<AdminResult<AdminUserActionResultDto>> ClearGameSignInBlocksAsync(AdminActor actor, string id,
+        CancellationToken ct = default)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+        if (user == null) return NotFoundResult();
+        if (Guard(actor, user, GuardPolicy.AllowAll) is { } refused) return refused;
+        DateTime now = UtcNow;
+        var rows = await ActiveSignInBlocks(user.Id, now).ToListAsync(ct);
+        if (rows.Count == 0)
+            return Refuse(AdminResultStatus.Conflict, "The account has no active game sign-in block.", AdminRefusalCodes.AlreadyDone);
+        var facts = await FactsAsync(user.Id, ct);
+        var before = StatusOf(user, facts);
+
+        foreach (var row in rows)
+        {
+            row.ClearedUtc = now;
+            row.ClearedByUserId = actor.UserId;
+        }
+
+        var result = await FinishAsync(actor, user, facts with { GameSignInBlockedUntil = null }, before,
+            AdminUserActionKind.GameSignInBlockCleared, null,
+            "Game sign-in block cleared. GnollHack can sign in again within 15 seconds.",
+            SecurityEventKind.AdminGameSignInBlockCleared, null, ct);
+
+        if (_signInBlocks != null)
+        {
+            foreach (var row in rows.Where(r => r.Source == _signInBlocks.Source))
+            {
+                _signInBlocks.ReleaseLocal(row.Kind, user.UserName ?? string.Empty, row.IpAddress);
+            }
+        }
+        return result;
     }
 
     /// <summary>Bans the account indefinitely: no sign-in anywhere, and signed-in sessions end.</summary>

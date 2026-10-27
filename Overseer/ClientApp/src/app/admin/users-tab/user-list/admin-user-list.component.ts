@@ -352,10 +352,18 @@ export class AdminUserListComponent implements OnInit, OnDestroy {
       case 'unlock':
         this.confirmDialog.open({
           title: `Unlock ${name}`,
-          message: `${name} can sign in again on the website, in Overseer and in GnollHack. Failed sign-ins are reset. A game sign-in block after repeated wrong passwords can last up to 15 more minutes.`,
+          message: `${name} can sign in again on the website, in Overseer and in GnollHack. Failed sign-ins are reset. A game sign-in block after repeated wrong passwords is separate: clear it with Clear game sign-in block.`,
           buttonText: 'Unlock',
           buttonClass: 'btn-gh'
         }, () => this.run(user, this.usersService.unlock(user.id)));
+        return;
+      case 'clearGameSignInBlock':
+        this.confirmDialog.open({
+          title: `Clear the game sign-in block of ${name}`,
+          message: `GnollHack can sign in as ${name} again within 15 seconds. If the stored password is still wrong, the block returns after 10 more failures.`,
+          buttonText: 'Clear Block',
+          buttonClass: 'btn-gh'
+        }, () => this.run(user, this.usersService.clearGameSignInBlock(user.id)));
         return;
       case 'unban':
         this.confirmDialog.open({

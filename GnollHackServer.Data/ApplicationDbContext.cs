@@ -86,6 +86,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkRunAnswerSelfReport> BenchmarkRunAnswerSelfReports { get; set; } = null!;
         public DbSet<BenchmarkFeedbackTriage> BenchmarkFeedbackTriages { get; set; } = null!;
         public DbSet<BenchmarkExperimentalChange> BenchmarkExperimentalChanges { get; set; } = null!;
+        public DbSet<GameSignInBlock> GameSignInBlocks { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -242,6 +243,14 @@ namespace MobileGnollHackLogger.Data
                 e.HasOne(a => a.AspNetUser).WithMany().HasForeignKey(a => a.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
                 e.HasIndex(a => new { a.AspNetUserId, a.DocumentKey, a.Version }).IsUnique();
                 e.HasIndex(a => new { a.DocumentKey, a.Version });
+            });
+
+            /* Goes with the account. Not unique on (user, source, kind, address): SQL Server and SQLite treat a NULL
+               address differently in unique indexes, so the writer updates every matching row instead. */
+            modelBuilder.Entity<GameSignInBlock>(e =>
+            {
+                e.HasOne(b => b.AspNetUser).WithMany().HasForeignKey(b => b.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
+                e.HasIndex(b => new { b.AspNetUserId, b.Source, b.Kind });
             });
 
             // No foreign key to the user: the decision outlives the deleted account.

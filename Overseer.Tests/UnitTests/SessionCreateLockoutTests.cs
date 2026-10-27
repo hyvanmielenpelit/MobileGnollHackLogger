@@ -28,7 +28,8 @@ namespace Overseer.Tests.UnitTests;
 /// /api/session/create, which GnollHack calls with its stored credentials and retries: its failures count toward the
 /// game-style throttle, never toward Identity lockout; the pair limit leaves the player's own address alone; a banned
 /// or unconfirmed account is told so only with the correct password and is not counted; every refusal is a 401 with a
-/// code. The real <see cref="GnollHackSignInManager"/> over SQLite in memory.
+/// code. A block of an existing account is mirrored to <c>GameSignInBlocks</c>, and an administrator's clear there
+/// lets the correct password in. The real <see cref="GnollHackSignInManager"/> over SQLite in memory.
 /// </summary>
 public sealed class SessionCreateLockoutTests : IDisposable
 {
@@ -126,6 +127,8 @@ public sealed class SessionCreateLockoutTests : IDisposable
         };
     }
 
+    private static GameSignInBlockSync NewBlocks() => new(new GameApiSignInThrottle(), GameSignInBlockSource.Overseer);
+
     private static CreateSessionRequest Request(string userName, string password) => new()
     {
         UserName = userName,
@@ -135,9 +138,9 @@ public sealed class SessionCreateLockoutTests : IDisposable
         IsGnollHackSession = true
     };
 
-    private async Task<IActionResult> CreateAsync(string userName, string password, string ip, GameApiSignInThrottle? throttle,
+    private async Task<IActionResult> CreateAsync(string userName, string password, string ip, GameSignInBlockSync? blocks,
         RecordingSecurityEvents? events = null)
-        => await CreateController(ip).Create(Request(userName, password), securityEvents: events, signInThrottle: throttle);
+        => await CreateController(ip).Create(Request(userName, password), securityEvents: events, signInBlocks: blocks);
 
     private static string? Code(IActionResult result)
     {
@@ -157,25 +160,25 @@ public sealed class SessionCreateLockoutTests : IDisposable
 
         for (int i = 0; i < 20; i++)
         {
-            Assert.Equal("invalid_credentials", Code(await CreateAsync(user.UserName!, WrongPassword, Ip, throttle: null)));
+            Assert.Equal("invalid_credentials", Code(await CreateAsync(user.UserName!, WrongPassword, Ip, blocks: null)));
         }
 
         var stored = await ReloadAsync(user.Id);
         Assert.Equal(0, stored.AccessFailedCount);
         Assert.Null(stored.LockoutEnd);
 
-        Assert.IsType<OkObjectResult>(await CreateAsync(user.UserName!, Password, Ip, throttle: null));
+        Assert.IsType<OkObjectResult>(await CreateAsync(user.UserName!, Password, Ip, blocks: null));
     }
 
     [Fact]
     public async Task TwentyWrongPasswordsThroughTheThrottleNeverTouchIdentityLockoutEither()
     {
         var user = await CreateUserAsync("throttled_player");
-        var throttle = new GameApiSignInThrottle();
+        var blocks = NewBlocks();
 
         for (int i = 0; i < 20; i++)
         {
-            await CreateAsync(user.UserName!, WrongPassword, Ip, throttle);
+            await CreateAsync(user.UserName!, WrongPassword, Ip, blocks);
         }
 
         var stored = await ReloadAsync(user.Id);
@@ -187,51 +190,51 @@ public sealed class SessionCreateLockoutTests : IDisposable
     public async Task TheThrottleRefusesOneAddressAfterTenWhileAnotherAddressWithTheRightPasswordSucceeds()
     {
         var user = await CreateUserAsync("targeted_player");
-        var throttle = new GameApiSignInThrottle();
+        var blocks = NewBlocks();
         var events = new RecordingSecurityEvents();
 
         for (int i = 0; i < 10; i++)
         {
-            Assert.Equal("invalid_credentials", Code(await CreateAsync(user.UserName!, WrongPassword, Ip, throttle)));
+            Assert.Equal("invalid_credentials", Code(await CreateAsync(user.UserName!, WrongPassword, Ip, blocks)));
         }
 
         // The eleventh is refused before the password is looked at, even when it is correct.
-        Assert.Equal("throttled", Code(await CreateAsync(user.UserName!, Password, Ip, throttle, events)));
+        Assert.Equal("throttled", Code(await CreateAsync(user.UserName!, Password, Ip, blocks, events)));
         Assert.Contains(events.Entries, e => e.Kind == SecurityEventKind.RateLimitRejected && e.Code == "session-create");
 
-        Assert.IsType<OkObjectResult>(await CreateAsync(user.UserName!, Password, OtherIp, throttle));
+        Assert.IsType<OkObjectResult>(await CreateAsync(user.UserName!, Password, OtherIp, blocks));
         Assert.Single(await _db.ChatSession.ToListAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task UnknownNamesCountTowardTheThrottle()
     {
-        var throttle = new GameApiSignInThrottle();
+        var blocks = NewBlocks();
 
         for (int i = 0; i < 10; i++)
         {
-            Assert.Equal("invalid_credentials", Code(await CreateAsync("nobody_here", WrongPassword, Ip, throttle)));
+            Assert.Equal("invalid_credentials", Code(await CreateAsync("nobody_here", WrongPassword, Ip, blocks)));
         }
 
-        Assert.Equal("throttled", Code(await CreateAsync("nobody_here", WrongPassword, Ip, throttle)));
+        Assert.Equal("throttled", Code(await CreateAsync("nobody_here", WrongPassword, Ip, blocks)));
     }
 
     [Fact]
     public async Task ABannedUserWithTheRightPasswordIsToldBannedAndIsNotCounted()
     {
         var user = await CreateUserAsync("banned_player", isBanned: true);
-        var throttle = new GameApiSignInThrottle();
+        var blocks = NewBlocks();
         var events = new RecordingSecurityEvents();
 
         for (int i = 0; i < 15; i++)
         {
-            var result = await CreateAsync(user.UserName!, Password, Ip, throttle, events);
+            var result = await CreateAsync(user.UserName!, Password, Ip, blocks, events);
             Assert.Equal("banned", Code(result));
             var value = ((UnauthorizedObjectResult)result).Value!;
             Assert.Equal("This account has been banned.", value.GetType().GetProperty("message")!.GetValue(value));
         }
 
-        Assert.True(throttle.Check(user.UserName!, Ip).Allowed);
+        Assert.True(blocks.Throttle.Check(user.UserName!, Ip).Allowed);
         Assert.DoesNotContain(events.Entries, e => e.Kind == SecurityEventKind.LoginFailed);
         Assert.Equal(0, (await ReloadAsync(user.Id)).AccessFailedCount);
         Assert.Empty(await _db.ChatSession.ToListAsync(TestContext.Current.CancellationToken));
@@ -241,27 +244,27 @@ public sealed class SessionCreateLockoutTests : IDisposable
     public async Task ABannedUserWithAWrongPasswordIsToldNothingAndIsCounted()
     {
         var user = await CreateUserAsync("banned_target", isBanned: true);
-        var throttle = new GameApiSignInThrottle();
+        var blocks = NewBlocks();
         var events = new RecordingSecurityEvents();
 
-        Assert.Equal("invalid_credentials", Code(await CreateAsync(user.UserName!, WrongPassword, Ip, throttle, events)));
+        Assert.Equal("invalid_credentials", Code(await CreateAsync(user.UserName!, WrongPassword, Ip, blocks, events)));
 
         Assert.Contains(events.Entries, e => e.Kind == SecurityEventKind.LoginFailed && e.UserId == user.Id);
         for (int i = 0; i < 9; i++)
         {
-            await CreateAsync(user.UserName!, WrongPassword, Ip, throttle);
+            await CreateAsync(user.UserName!, WrongPassword, Ip, blocks);
         }
-        Assert.False(throttle.Check(user.UserName!, Ip).Allowed);
+        Assert.False(blocks.Throttle.Check(user.UserName!, Ip).Allowed);
     }
 
     [Fact]
     public async Task AnUnconfirmedUserWithTheRightPasswordIsToldToConfirm()
     {
         var user = await CreateUserAsync("unconfirmed_player", emailConfirmed: false);
-        var throttle = new GameApiSignInThrottle();
+        var blocks = NewBlocks();
 
-        Assert.Equal("email_not_confirmed", Code(await CreateAsync(user.UserName!, Password, Ip, throttle)));
-        Assert.Equal("invalid_credentials", Code(await CreateAsync(user.UserName!, WrongPassword, Ip, throttle)));
+        Assert.Equal("email_not_confirmed", Code(await CreateAsync(user.UserName!, Password, Ip, blocks)));
+        Assert.Equal("invalid_credentials", Code(await CreateAsync(user.UserName!, WrongPassword, Ip, blocks)));
     }
 
     [Fact]
@@ -271,7 +274,7 @@ public sealed class SessionCreateLockoutTests : IDisposable
         await _userManager.SetLockoutEndDateAsync(user, DateTimeOffset.UtcNow.AddHours(1));
         var events = new RecordingSecurityEvents();
 
-        Assert.Equal("locked_out", Code(await CreateAsync(user.UserName!, Password, Ip, new GameApiSignInThrottle(), events)));
+        Assert.Equal("locked_out", Code(await CreateAsync(user.UserName!, Password, Ip, NewBlocks(), events)));
 
         Assert.Contains(events.Entries, e => e.Kind == SecurityEventKind.LoginLockedOut && e.UserId == user.Id);
         Assert.Empty(await _db.ChatSession.ToListAsync(TestContext.Current.CancellationToken));
@@ -281,19 +284,61 @@ public sealed class SessionCreateLockoutTests : IDisposable
     public async Task ASuccessStampsLastSignInAndClearsThePairsFailures()
     {
         var user = await CreateUserAsync("returning_player");
-        var throttle = new GameApiSignInThrottle();
+        var blocks = NewBlocks();
 
         for (int i = 0; i < 9; i++)
         {
-            await CreateAsync(user.UserName!, WrongPassword, Ip, throttle);
+            await CreateAsync(user.UserName!, WrongPassword, Ip, blocks);
         }
-        Assert.IsType<OkObjectResult>(await CreateAsync(user.UserName!, Password, Ip, throttle));
+        Assert.IsType<OkObjectResult>(await CreateAsync(user.UserName!, Password, Ip, blocks));
         Assert.NotNull((await ReloadAsync(user.Id)).LastSignInUtc);
 
         for (int i = 0; i < 9; i++)
         {
-            await CreateAsync(user.UserName!, WrongPassword, Ip, throttle);
+            await CreateAsync(user.UserName!, WrongPassword, Ip, blocks);
         }
-        Assert.True(throttle.Check(user.UserName!, Ip).Allowed);
+        Assert.True(blocks.Throttle.Check(user.UserName!, Ip).Allowed);
+    }
+
+    [Fact]
+    public async Task ABlockOfAnExistingAccountIsRecordedNamedInItsEventsAndClearingItLetsTheRightPasswordIn()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var user = await CreateUserAsync("cleared_player");
+        var blocks = NewBlocks();
+        var events = new RecordingSecurityEvents();
+
+        for (int i = 0; i < 10; i++)
+        {
+            await CreateAsync(user.UserName!, WrongPassword, Ip, blocks);
+        }
+        var row = Assert.Single(await _db.GameSignInBlocks.AsNoTracking().ToListAsync(ct));
+        Assert.Equal((GameSignInBlockSource.Overseer, GameSignInBlockKind.Pair, user.Id, Ip),
+            (row.Source, row.Kind, row.AspNetUserId, row.IpAddress));
+        Assert.Null(row.ClearedUtc);
+
+        Assert.Equal("throttled", Code(await CreateAsync(user.UserName!, Password, Ip, blocks, events)));
+        Assert.Contains(events.Entries, e => e.Kind == SecurityEventKind.RateLimitRejected && e.UserId == user.Id && e.Code == "session-create");
+
+        await _db.GameSignInBlocks.Where(b => b.Id == row.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(b => b.ClearedUtc, DateTime.UtcNow), ct);
+        // An administrator's clear in this process releases the block at once, without waiting for the lookup interval.
+        blocks.ReleaseLocal(GameSignInBlockKind.Pair, user.UserName!, Ip);
+
+        Assert.IsType<OkObjectResult>(await CreateAsync(user.UserName!, Password, Ip, blocks));
+    }
+
+    [Fact]
+    public async Task UnknownNamesWriteNoBlockRow()
+    {
+        var blocks = NewBlocks();
+
+        for (int i = 0; i < 10; i++)
+        {
+            await CreateAsync("nobody_at_all", WrongPassword, Ip, blocks);
+        }
+
+        Assert.False(blocks.Throttle.Check("nobody_at_all", Ip).Allowed);
+        Assert.Empty(await _db.GameSignInBlocks.ToListAsync(TestContext.Current.CancellationToken));
     }
 }

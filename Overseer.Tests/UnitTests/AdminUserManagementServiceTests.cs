@@ -69,8 +69,9 @@ internal sealed class RecordingBulkQueue : IAdminBulkOperationQueue
 
 /// <summary>
 /// The container the admin user-management tests share: SQLite in memory (the erasure runs set-based updates),
-/// Identity with token providers, the review and access services, the bulk runner, and the incognito session store.
-/// The acting administrator is "boss"; "deputy" is another administrator.
+/// Identity with token providers, the review and access services, the bulk runner, the incognito session store, and
+/// Overseer's game sign-in block sync over a throttle of its own. The acting administrator is "boss"; "deputy" is
+/// another administrator.
 /// </summary>
 internal sealed class AdminUserTestHost : IDisposable
 {
@@ -91,6 +92,7 @@ internal sealed class AdminUserTestHost : IDisposable
     public AdminUserManagementOptions Options { get; } = new();
     public IConfiguration Configuration { get; }
     public EphemeralSessionStore Ephemeral { get; }
+    public GameSignInBlockSync SignInBlocks { get; }
 
     public AdminUserTestHost(bool erasurePaths = true, bool registerEmailSender = true)
     {
@@ -107,6 +109,7 @@ internal sealed class AdminUserTestHost : IDisposable
         }
         Configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
         Ephemeral = new EphemeralSessionStore(Configuration, startSweeper: false);
+        SignInBlocks = new GameSignInBlockSync(new GameApiSignInThrottle(time: Time), GameSignInBlockSource.Overseer, Time);
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -121,6 +124,7 @@ internal sealed class AdminUserTestHost : IDisposable
         services.AddSingleton<IMemoryCache>(new MemoryCache(new MemoryCacheOptions { SizeLimit = 10000 }));
         services.AddSingleton<OverseerAccessService>();
         services.AddSingleton(Ephemeral);
+        services.AddSingleton(SignInBlocks);
         if (registerEmailSender) services.AddSingleton<IEmailSender>(Emails);
         services.AddScoped<AccountDeletionReviewService>();
         services.AddScoped<AdminUserManagementService>();
@@ -203,6 +207,23 @@ internal sealed class AdminUserTestHost : IDisposable
     public async Task AddHoldAsync(string userId)
     {
         Db.AccountHolds.Add(new AccountHold { AspNetUserId = userId, Reason = "Abuse report", PlacedByUserId = ActorId, PlacedUtc = NowUtc });
+        await Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        Db.ChangeTracker.Clear();
+    }
+
+    public async Task AddSignInBlockAsync(string userId, GameSignInBlockSource source, GameSignInBlockKind kind, string? ip,
+        DateTime blockedUntilUtc, DateTime? clearedUtc = null)
+    {
+        Db.GameSignInBlocks.Add(new GameSignInBlock
+        {
+            AspNetUserId = userId,
+            Source = source,
+            Kind = kind,
+            IpAddress = ip,
+            BlockedUtc = blockedUntilUtc.AddMinutes(-15),
+            BlockedUntilUtc = blockedUntilUtc,
+            ClearedUtc = clearedUtc
+        });
         await Db.SaveChangesAsync(TestContext.Current.CancellationToken);
         Db.ChangeTracker.Clear();
     }
@@ -457,6 +478,108 @@ public sealed class AdminUserManagementServiceTests : IDisposable
         Assert.Equal(AdminResultStatus.Conflict, result.Status);
         Assert.Equal(AdminRefusalCodes.AlreadyDone, result.Code);
         Assert.Empty(await _host.AuditRowsAsync(TargetId));
+    }
+
+    // --- Game sign-in block ---
+
+    [Fact]
+    public async Task TheCardListsOnlyTheActiveGameSignInBlocks_LatestEndFirst()
+    {
+        await _host.SeedAdministratorsAsync();
+        await SeedTargetAsync();
+        DateTime now = _host.NowUtc;
+        await _host.AddSignInBlockAsync(TargetId, GameSignInBlockSource.Website, GameSignInBlockKind.Pair, "203.0.113.7", now.AddMinutes(10));
+        await _host.AddSignInBlockAsync(TargetId, GameSignInBlockSource.Overseer, GameSignInBlockKind.Account, null, now.AddMinutes(20));
+        await _host.AddSignInBlockAsync(TargetId, GameSignInBlockSource.Website, GameSignInBlockKind.Pair, "198.51.100.1", now.AddMinutes(-1));
+        await _host.AddSignInBlockAsync(TargetId, GameSignInBlockSource.Website, GameSignInBlockKind.Account, null, now.AddMinutes(30), clearedUtc: now);
+
+        var card = (await _host.Users.GetAsync(_host.Actor, TargetId, TestContext.Current.CancellationToken)).Value!;
+
+        Assert.Equal(new[] { ("Overseer", "Account", (string?)null), ("Website", "Pair", (string?)"203.0.113.7") },
+            card.GameSignInBlocks.Select(b => (b.Source, b.Kind, b.IpAddress)).ToArray());
+        Assert.Equal(DateTimeKind.Utc, card.GameSignInBlocks[0].BlockedUntilUtc.Kind);
+        Assert.Equal(new[] { AdminUserStatusKind.GameSignInBlocked }, card.Statuses);
+        Assert.Equal("Game sign-in blocked until " + AdminUserStatus.FormatUtc(new DateTimeOffset(now.AddMinutes(20), TimeSpan.Zero)),
+            card.StatusText);
+    }
+
+    [Fact]
+    public async Task ClearingTheGameSignInBlockClearsEveryActiveRow_ReleasesOverseersOwnBlockAtOnce_AndWritesOneRowAndItsEvent()
+    {
+        await _host.SeedAdministratorsAsync();
+        await SeedTargetAsync();
+        var ct = TestContext.Current.CancellationToken;
+        DateTime now = _host.NowUtc;
+        const string Ip = "203.0.113.7";
+        const string OtherIp = "198.51.100.250";
+
+        // The host's throttle holds a pair block on Ip and an account block; the rows say the pair block is the website's.
+        var throttle = _host.SignInBlocks.Throttle;
+        for (int i = 0; i < 10; i++) throttle.RecordFailure(TargetName, Ip);
+        for (int i = 0; i < 40; i++) throttle.RecordFailure(TargetName, $"198.51.100.{i}");
+        Assert.Equal("pair", throttle.Check(TargetName, Ip).Reason);
+        Assert.Equal("account", throttle.Check(TargetName, OtherIp).Reason);
+        await _host.AddSignInBlockAsync(TargetId, GameSignInBlockSource.Website, GameSignInBlockKind.Pair, Ip, now.AddMinutes(15));
+        await _host.AddSignInBlockAsync(TargetId, GameSignInBlockSource.Overseer, GameSignInBlockKind.Account, null, now.AddMinutes(30));
+        await _host.AddSignInBlockAsync(TargetId, GameSignInBlockSource.Website, GameSignInBlockKind.Pair, OtherIp, now.AddMinutes(-1));
+
+        var result = await _host.Users.ClearGameSignInBlocksAsync(_host.Actor, TargetId, ct);
+
+        Assert.Equal(AdminResultStatus.Ok, result.Status);
+        Assert.Contains(AdminUserStatusKind.GameSignInBlocked, result.Value!.Before.Statuses);
+        Assert.Equal(new[] { AdminUserStatusKind.GoodStanding }, result.Value.After.Statuses);
+        Assert.Empty(result.Value.User!.GameSignInBlocks);
+        Assert.Equal(new[] { AdminUserStatusKind.GoodStanding }, result.Value.User.Statuses);
+
+        var rows = await _host.Db.GameSignInBlocks.AsNoTracking().OrderBy(b => b.Id).ToListAsync(ct);
+        Assert.All(rows.Take(2), r => Assert.Equal((now, AdminUserTestHost.ActorId), (r.ClearedUtc!.Value, r.ClearedByUserId!)));
+        Assert.Null(rows[2].ClearedUtc);
+
+        Assert.True(throttle.Check(TargetName, OtherIp).Allowed);
+        Assert.Equal("pair", throttle.Check(TargetName, Ip).Reason);
+
+        var audit = Assert.Single(await _host.AuditRowsAsync(TargetId));
+        Assert.Equal(AdminUserActionKind.GameSignInBlockCleared, audit.Kind);
+        Assert.StartsWith("Before: Game sign-in blocked until ", audit.Detail);
+        Assert.EndsWith("After: In good standing.", audit.Detail);
+        var recorded = Assert.Single(_host.Events.Entries);
+        Assert.Equal((SecurityEventKind.AdminGameSignInBlockCleared, TargetId), (recorded.Kind, recorded.UserId));
+    }
+
+    [Fact]
+    public async Task ClearingWithoutAnActiveGameSignInBlockIsAlreadyDone()
+    {
+        await _host.SeedAdministratorsAsync();
+        await SeedTargetAsync();
+        await _host.AddSignInBlockAsync(TargetId, GameSignInBlockSource.Website, GameSignInBlockKind.Pair, "203.0.113.7", _host.NowUtc.AddSeconds(-1));
+
+        var result = await _host.Users.ClearGameSignInBlocksAsync(_host.Actor, TargetId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.Conflict, result.Status);
+        Assert.Equal(AdminRefusalCodes.AlreadyDone, result.Code);
+        Assert.Empty(await _host.AuditRowsAsync(TargetId));
+        Assert.Empty(_host.Events.Entries);
+    }
+
+    [Theory]
+    [InlineData(AdminUserTestHost.ActorId)]
+    [InlineData(AdminUserTestHost.OtherAdminId)]
+    public async Task ClearingTheGameSignInBlockIsAllowedOnSelfAndOnAdministrators(string id)
+    {
+        await _host.SeedAdministratorsAsync();
+        await _host.AddSignInBlockAsync(id, GameSignInBlockSource.Website, GameSignInBlockKind.Account, null, _host.NowUtc.AddMinutes(5));
+
+        var result = await _host.Users.ClearGameSignInBlocksAsync(_host.Actor, id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.Ok, result.Status);
+    }
+
+    [Fact]
+    public async Task ClearingTheGameSignInBlockOfAMissingUserIsNotFound()
+    {
+        var result = await _host.Users.ClearGameSignInBlocksAsync(_host.Actor, "nobody", TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.NotFound, result.Status);
     }
 
     // --- Ban ---

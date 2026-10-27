@@ -37,7 +37,8 @@ const KIND_LABELS: Readonly<Record<string, string>> = {
   AdminSignedOut: 'Signed out by admin',
   AdminEmailConfirmed: 'Email confirmed by admin',
   AdminTwoFactorReset: 'Two-factor reset by admin',
-  AdminEmailChanged: 'Email changed by admin'
+  AdminEmailChanged: 'Email changed by admin',
+  AdminGameSignInBlockCleared: 'Game sign-in block cleared by admin'
 };
 
 /** What a security event kind reads as; an unknown kind reads as its name. */

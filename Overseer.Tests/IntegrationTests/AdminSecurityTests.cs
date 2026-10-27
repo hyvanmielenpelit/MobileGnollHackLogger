@@ -122,6 +122,7 @@ namespace Overseer.Tests.IntegrationTests
             { "GET", "/api/admin/users/user-1" },
             { "POST", "/api/admin/users/user-1/lockout" },
             { "DELETE", "/api/admin/users/user-1/lockout" },
+            { "DELETE", "/api/admin/users/user-1/game-sign-in-block" },
             { "POST", "/api/admin/users/user-1/ban" },
             { "DELETE", "/api/admin/users/user-1/ban" },
             { "PUT", "/api/admin/users/user-1/game-restrictions" },

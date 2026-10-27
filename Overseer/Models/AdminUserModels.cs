@@ -53,6 +53,9 @@ public class AdminUserDto
     public string? AccountHoldPlacedByUserName { get; set; }
     public long? PendingDeletionRequestId { get; set; }
 
+    /// <summary>The active game sign-in blocks, the latest end first; empty when none.</summary>
+    public List<AdminGameSignInBlockDto> GameSignInBlocks { get; set; } = new();
+
     public int GameLogCount { get; set; }
     public int BonesCount { get; set; }
     public int ChatSessionCount { get; set; }
@@ -72,6 +75,19 @@ public class AdminTermsAcceptanceDto
 
     /// <summary>"Web", "GnollHackApp" or "AccountSite".</summary>
     public string Source { get; set; } = string.Empty;
+}
+
+/// <summary>An active game sign-in block of an account, after too many wrong passwords from GnollHack.</summary>
+public class AdminGameSignInBlockDto
+{
+    /// <summary>"Website" or "Overseer": the process that holds the block.</summary>
+    public string Source { get; set; } = string.Empty;
+
+    /// <summary>"Pair" (this account from <see cref="IpAddress"/>) or "Account" (this account from every address).</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    public string? IpAddress { get; set; }
+    public DateTime BlockedUntilUtc { get; set; }
 }
 
 public class AdminUsersPageDto

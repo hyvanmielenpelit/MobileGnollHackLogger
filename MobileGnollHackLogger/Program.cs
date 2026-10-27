@@ -87,9 +87,13 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
 builder.Services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval =
     TimeSpan.FromMinutes(builder.Configuration.GetValue("IdentityLockout:SecurityStampValidationMinutes", 5)));
 
-// Game API sign-in throttle: in memory and per process, separate from Identity lockout.
-builder.Services.AddSingleton(new GnollHackServer.Data.Security.GameApiSignInThrottle(
-    GnollHackServer.Data.Security.GameApiSignInThrottleOptions.FromConfiguration(builder.Configuration)));
+// Game API sign-in throttle: in memory and per process, separate from Identity lockout. The blocks of existing
+// accounts are mirrored to GameSignInBlocks, where Overseer's administrators can see and clear them.
+var gameApiSignInThrottle = new GnollHackServer.Data.Security.GameApiSignInThrottle(
+    GnollHackServer.Data.Security.GameApiSignInThrottleOptions.FromConfiguration(builder.Configuration));
+builder.Services.AddSingleton(gameApiSignInThrottle);
+builder.Services.AddSingleton(new GnollHackServer.Data.Security.GameSignInBlockSync(
+    gameApiSignInThrottle, GameSignInBlockSource.Website));
 builder.Services.AddScoped<MobileGnollHackLogger.Areas.API.GameApiAuthenticator>();
 builder.Services.AddSingleton(sp => builder.Configuration.GetSection("AccountHold").Get<GnollHackServer.Data.Security.AccountHoldOptions>()
     ?? new GnollHackServer.Data.Security.AccountHoldOptions());
@@ -209,6 +213,15 @@ builder.WebHost.UseSentry(options =>
 });
 
 var app = builder.Build();
+
+// A restart has cleared every in-memory game sign-in block, so the website's rows of them end now.
+try
+{
+    using var signInBlockScope = app.Services.CreateScope();
+    await app.Services.GetRequiredService<GnollHackServer.Data.Security.GameSignInBlockSync>()
+        .EndAllOwnAsync(signInBlockScope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+}
+catch (Exception ex) { app.Logger.LogWarning(ex, "Ending the website's game sign-in block rows failed."); }
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

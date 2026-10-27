@@ -11,7 +11,8 @@ namespace Overseer.Tests.UnitTests;
 
 /// <summary>
 /// The game API sign-in throttle: sliding failure windows per account and address, per account across addresses and
-/// per IP, fixed-length blocks, refused checks that count nothing, and the tracked-key cap.
+/// per IP, fixed-length blocks, refused checks that count nothing, the tracked-key cap, the blocks a failure reports
+/// opening, and releasing one block.
 /// </summary>
 public class GameApiSignInThrottleTests
 {
@@ -404,6 +405,95 @@ public class GameApiSignInThrottleTests
             name => throttle.RecordFailure(name, Ip));
 
         Assert.All(names, name => Assert.False(throttle.Check(name, Ip).Allowed));
+    }
+
+    // ── Opened blocks and release ───────────────────────────────────────────────
+
+    [Fact]
+    public void FailuresBelowTheLimitOpenNothingAndTheTenthReportsThePairBlock()
+    {
+        var clock = new FakeClock();
+        var throttle = new GameApiSignInThrottle(time: clock);
+        DateTime now = clock.GetUtcNow().UtcDateTime;
+
+        for (int i = 0; i < 9; i++)
+        {
+            Assert.Empty(throttle.RecordFailure("alice", Ip));
+        }
+        var opened = Assert.Single(throttle.RecordFailure("alice", Ip));
+
+        Assert.Equal(new ThrottleBlockOpened("pair", now, now + TimeSpan.FromMinutes(15)), opened);
+        Assert.Equal(now + TimeSpan.FromMinutes(15), throttle.BlockEnd("pair", "alice", Ip));
+        Assert.Null(throttle.BlockEnd("account", "alice", Ip));
+    }
+
+    [Fact]
+    public void TheFiftiethFailureAcrossAddressesReportsTheAccountBlock()
+    {
+        var clock = new FakeClock();
+        var throttle = new GameApiSignInThrottle(time: clock);
+        DateTime now = clock.GetUtcNow().UtcDateTime;
+
+        for (int i = 0; i < 49; i++)
+        {
+            Assert.Empty(throttle.RecordFailure("alice", $"198.51.100.{i}"));
+        }
+        var opened = Assert.Single(throttle.RecordFailure("alice", "198.51.100.200"));
+
+        Assert.Equal(new ThrottleBlockOpened("account", now, now + TimeSpan.FromMinutes(30)), opened);
+    }
+
+    [Fact]
+    public void FailuresDuringABlockReportNothing()
+    {
+        var throttle = new GameApiSignInThrottle(time: new FakeClock());
+        Fail(throttle, "alice", Ip, 10);
+
+        Assert.Empty(throttle.RecordFailure("alice", Ip));
+    }
+
+    [Fact]
+    public void ReleaseEndsAPairBlockAndTheNextFailureStartsAFreshWindow()
+    {
+        var throttle = new GameApiSignInThrottle(time: new FakeClock());
+        Fail(throttle, "alice", Ip, 10);
+
+        Assert.True(throttle.Release("pair", "ALICE", Ip));
+
+        Assert.True(throttle.Check("alice", Ip).Allowed);
+        Assert.Null(throttle.BlockEnd("pair", "alice", Ip));
+        Fail(throttle, "alice", Ip, 9);
+        Assert.True(throttle.Check("alice", Ip).Allowed);
+        throttle.RecordFailure("alice", Ip);
+        Assert.Equal("pair", throttle.Check("alice", Ip).Reason);
+    }
+
+    [Fact]
+    public void ReleaseEndsAnAccountBlockAndLeavesThePairBlock()
+    {
+        var throttle = new GameApiSignInThrottle(time: new FakeClock());
+        Fail(throttle, "alice", Ip, 10);
+        for (int i = 0; i < 40; i++)
+        {
+            throttle.RecordFailure("alice", $"198.51.100.{i}");
+        }
+        Assert.Equal("account", throttle.Check("alice", OtherIp).Reason);
+
+        Assert.True(throttle.Release("account", "alice", null));
+
+        Assert.True(throttle.Check("alice", OtherIp).Allowed);
+        Assert.Equal("pair", throttle.Check("alice", Ip).Reason);
+    }
+
+    [Fact]
+    public void ReleaseReturnsFalseWhenNothingIsBlocked()
+    {
+        var throttle = new GameApiSignInThrottle(time: new FakeClock());
+        Fail(throttle, "alice", Ip, 3);
+
+        Assert.False(throttle.Release("pair", "alice", Ip));
+        Assert.False(throttle.Release("account", "bob", null));
+        Assert.Throws<ArgumentOutOfRangeException>(() => throttle.Release("everything", "alice", Ip));
     }
 
     // ── Options from configuration ──────────────────────────────────────────────

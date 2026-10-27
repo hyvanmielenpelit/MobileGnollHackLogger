@@ -15,6 +15,7 @@ public enum SecurityEventKind : short
     AdminLockedOut = 45, AdminUnlocked = 46, AdminBanned = 47, AdminUnbanned = 48,
     AdminSignedOut = 49, AdminEmailConfirmed = 50, AdminTwoFactorReset = 51,
     AdminEmailChanged = 52,
+    AdminGameSignInBlockCleared = 53,
 }
 
 /// <summary>

@@ -83,6 +83,7 @@ describe('AdminUsersService', () => {
     const calls: [() => void, string, string, unknown][] = [
       [() => service.lockOut(id, { until: '2026-10-20T15:00:00.000Z', reason: 'Spam' }).subscribe(), 'POST', '/lockout', { until: '2026-10-20T15:00:00.000Z', reason: 'Spam' }],
       [() => service.unlock(id).subscribe(), 'DELETE', '/lockout', null],
+      [() => service.clearGameSignInBlock(id).subscribe(), 'DELETE', '/game-sign-in-block', null],
       [() => service.ban(id, 'Cheating').subscribe(), 'POST', '/ban', { reason: 'Cheating' }],
       [() => service.unban(id).subscribe(), 'DELETE', '/ban', null],
       [() => service.setGameRestrictions(id, { gameLogBanned: true, bonesBanned: false, reason: 'x' }).subscribe(), 'PUT', '/game-restrictions', { gameLogBanned: true, bonesBanned: false, reason: 'x' }],

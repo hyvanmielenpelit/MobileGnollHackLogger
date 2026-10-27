@@ -44,6 +44,7 @@ export type AdminUserBadgeSource = Pick<AdminUser, 'statuses'> & Partial<Omit<Ad
 const STATUS_LABELS: Readonly<Record<AdminUserStatus, string>> = {
   GoodStanding: 'In good standing',
   LockedOut: 'Locked out',
+  GameSignInBlocked: 'Game sign-in blocked',
   Banned: 'Banned',
   GameLogBanned: 'Game log uploads banned',
   BonesBanned: 'Bones banned',
@@ -57,6 +58,7 @@ const STATUS_LABELS: Readonly<Record<AdminUserStatus, string>> = {
 const STATUS_TONES: Readonly<Record<AdminUserStatus, AdminUserBadgeTone>> = {
   GoodStanding: 'ok',
   LockedOut: 'danger',
+  GameSignInBlocked: 'warning',
   Banned: 'danger',
   GameLogBanned: 'warning',
   BonesBanned: 'warning',
@@ -70,6 +72,7 @@ const STATUS_TONES: Readonly<Record<AdminUserStatus, AdminUserBadgeTone>> = {
 const STATUS_GLYPHS: Readonly<Record<AdminUserStatus, AdminUserBadgeGlyph>> = {
   GoodStanding: 'check-circle',
   LockedOut: 'lock',
+  GameSignInBlocked: 'lock',
   Banned: 'slash-circle',
   GameLogBanned: 'upload-cloud-off',
   BonesBanned: 'upload-cloud-off',
@@ -165,6 +168,15 @@ function tooltipFor(status: AdminUserStatus, user: AdminUserBadgeSource): string
       return failed > 0
         ? `Locked out after ${failed} failed sign-in${failed === 1 ? '' : 's'}${untilPart}.`
         : `Locked out automatically${untilPart}.`;
+    }
+    case 'GameSignInBlocked': {
+      if (!user.gameSignInBlocks?.length) return null;
+      const sentences = user.gameSignInBlocks.map(block => {
+        const from = block.kind === 'Pair' && block.ipAddress ? `from ${block.ipAddress}` : 'from every address';
+        const until = formatUtcDateTime(block.blockedUntilUtc);
+        return `${block.source}: too many wrong passwords ${from}${until ? `, blocked until ${until}` : ''}.`;
+      });
+      return `${sentences.join(' ')} Clearing lets GnollHack sign in again within 15 seconds.`;
     }
     case 'Banned': {
       if (user.bannedUtc === undefined && user.banReason === undefined) return null;

@@ -371,7 +371,7 @@ the request's context, at most 30 writes per IP address a minute.
 | Kind | Written by | User | IP |
 |---|---|---|---|
 | `LoginFailed` (`Detail` `unknown-user` when no account matched), `LoginLockedOut`, `TwoFactorFailed` | Overseer `AuthController` login and 2FA; `SessionController.Create`; website `Login`; game APIs | when matched | yes |
-| `RateLimitRejected` (`Code` = policy) | Overseer and website rate limiters, Overseer's with `Detail` = the endpoint's route template (the path without its query string when no route matched; never the raw path, which carries session ids and `eph_` references); the game API sign-in throttle (`game-api-signin`) and the session-create throttle (`session-create`), `Detail` = the limit (`pair`, `account` or `ip`); the `session/create` initial-turn limiter (`session-create-turn`) | when signed in | yes |
+| `RateLimitRejected` (`Code` = policy) | Overseer and website rate limiters, Overseer's with `Detail` = the endpoint's route template (the path without its query string when no route matched; never the raw path, which carries session ids and `eph_` references); the game API sign-in throttle (`game-api-signin`) and the session-create throttle (`session-create`), `Detail` = the limit (`pair`, `account` or `ip`); the `session/create` initial-turn limiter (`session-create-turn`) | when signed in, or when a game sign-in block belongs to an existing account (§ 8) | yes |
 | `QuotaRefused` (`Code` user / group / system), `AccessDenied` (`Code` disabled / not-assigned) | `SystemAiConfigService` | yes | no |
 | `QuotaRefused` (`Code` guard-cost / guard-runs) | `AiUsageGuard`, through `SystemAiConfigService` and `delegate_to_subagent` | yes | no |
 | `ProviderRefusal`, `ProviderSafetyBlock` (`Code` = finish / block reason), `ProviderPolicyRejection` (`Code` = sanitized error code of a final 4xx attempt naming a policy); `Detail` = `req:<provider request id>` when the call reported one, the id an operator quotes to the provider (`[A-Za-z0-9_.-]`, at most 64) | after every operator-funded chat turn and sub-agent run (`ProviderRefusalEvents`), incognito included; never for titles | yes | no |
@@ -381,7 +381,7 @@ the request's context, at most 30 writes per IP address a minute.
 | `AutoBlocked` (`Code` snapshot-injection, `Detail` = the reason) | `OverseerAccessService.BlockAutomaticallyAsync`, for the snapshot guard (§ 3a) | the blocked user | no |
 | `AdminBlocked`, `AdminUnblocked` | `OverseerAccessService` | the blocked user | no |
 | `AccountHoldPlaced`, `AccountHoldReleased` (`Detail` = reason), `AccountDeletionHeld` (`Code` manual / automatic) | holds and the website deletion page | the account's user | no |
-| `AdminLockedOut`, `AdminUnlocked`, `AdminBanned`, `AdminUnbanned`, `AdminSignedOut`, `AdminEmailConfirmed`, `AdminTwoFactorReset`, `AdminEmailChanged` (`Detail` = reason) | the Users tab's per-user actions and the Bulk Actions runner (`AdminUserManagementService`); the durable record naming the administrator is the admin log | the account's user | no |
+| `AdminLockedOut`, `AdminUnlocked`, `AdminBanned`, `AdminUnbanned`, `AdminSignedOut`, `AdminEmailConfirmed`, `AdminTwoFactorReset`, `AdminEmailChanged` (`Detail` = reason), `AdminGameSignInBlockCleared` | the Users tab's per-user actions and the Bulk Actions runner (`AdminUserManagementService`); the durable record naming the administrator is the admin log | the account's user | no |
 
 **Retention:** `ChatRetentionSettings:PruneSecurityEventDays` (180) prunes runs last seen before the
 window (full-pass phase 9, `POST api/admin/maintenance/prune-security-events`, the Database tab), except
@@ -549,8 +549,14 @@ section) and answers every refusal with 401 `{ code, message }`: `throttled`, `l
 
 The throttle is per process: the website and Overseer keep separate windows, so do several instances
 (the deployment is a single instance), and a restart clears them. **An administrator's Unlock in
-Overseer does not clear it**, since the website's windows are out of Overseer's reach; a pair block lasts
-at most 15 minutes and an account block 30. `ReplayController` is not implemented after sign-in and
+Overseer does not clear it**; the Users tab's *Clear game sign-in block* does. The pair and account
+blocks of existing accounts are mirrored to the `GameSignInBlocks` table (`GameSignInBlockSync`), which
+the Users tab reads for its *Game sign-in blocked* status. A cleared row reaches the website through
+the table: a refused request reads its block's row at most once per 15 seconds and, when it is cleared,
+releases the block and goes on to the password check. Overseer releases its own blocks at once. Blocks
+of unknown names and address blocks are never written, as attempted user names are never stored; they
+last at most 15 minutes (pair and address) or 30 (account). A `RateLimitRejected` event of a block the
+table knows names its account. `ReplayController` is not implemented after sign-in and
 answers a correct password with the same 403. Details and the full response tables are in
 [`admin-user-management.md`](admin-user-management.md) § 7.
 
@@ -726,8 +732,10 @@ standard, and whether a statement-of-reasons duty applies, is for the owners and
 `SecurityEventMaintenanceTests`, `GameApiSignInThrottleTests`, `GameApiSignInResponsesTests`,
 `GameApiSignInClassifierTests`, `GnollHackSignInManagerTests`, `SessionCreateLockoutTests`,
 `AccountHoldEvaluatorTests`, `AccountErasureTests`, `AccountDeletionReviewTests` and
-`AccountDeletionReviewEmailTests` in `Overseer.Tests/UnitTests/`. No test project hosts the website,
-so the game API controllers, the account pages and the deletion page are checked manually.
+`AccountDeletionReviewEmailTests` and `GameSignInBlockSyncTests` in `Overseer.Tests/UnitTests/`.
+`MobileGnollHackLogger.Tests` hosts the website: `Api/` covers the game API controllers and their
+sign-in (`GameApiAuthenticationTests`, the account named in a throttled request's event and a cleared
+block among them), and `Pages/` the account pages and the deletion page.
 
 The snapshot guard: `SnapshotGuardScannerTests` (against the two real exports in
 `Overseer.Tests/Fixtures/Snapshots/`, each family, a negative corpus and attribution, and the client's own

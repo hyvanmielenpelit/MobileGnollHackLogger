@@ -17,8 +17,9 @@ namespace MobileGnollHackLogger.Areas.API
 
     /// <summary>
     /// The antiforgery check, the sign-in throttle and the password check every game API repeats. The password is
-    /// checked without issuing a cookie; failures count toward <see cref="GameApiSignInThrottle"/>, never toward
-    /// Identity lockout. A throttled request costs no password hash and writes no request-log row. Every refusal a
+    /// checked without issuing a cookie; failures count toward <see cref="GameApiSignInThrottle"/> through
+    /// <see cref="GameSignInBlockSync"/>, which also lets an administrator's clear through, never toward Identity
+    /// lockout. A throttled request costs no password hash and writes no request-log row. Every refusal a
     /// player can trigger is a 403 with a plain-text body (<see cref="GameApiSignInResponses"/>). A banned or
     /// unconfirmed account is told so only after the correct password, and is not counted as a failure.
     /// </summary>
@@ -27,18 +28,18 @@ namespace MobileGnollHackLogger.Areas.API
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IConfiguration _configuration;
-        private readonly GameApiSignInThrottle _throttle;
+        private readonly GameSignInBlockSync _blocks;
         private readonly ApplicationDbContext _dbContext;
         private readonly ILogger<GameApiAuthenticator> _logger;
 
         public GameApiAuthenticator(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager,
-            IConfiguration configuration, GameApiSignInThrottle throttle, ApplicationDbContext dbContext,
+            IConfiguration configuration, GameSignInBlockSync blocks, ApplicationDbContext dbContext,
             ILogger<GameApiAuthenticator> logger)
         {
             _signInManager = signInManager;
             _userManager = userManager;
             _configuration = configuration;
-            _throttle = throttle;
+            _blocks = blocks;
             _dbContext = dbContext;
             _logger = logger;
         }
@@ -59,10 +60,10 @@ namespace MobileGnollHackLogger.Areas.API
                 return Fail(http, mismatch);
             }
 
-            var decision = _throttle.Check(userName, ip);
+            var decision = await _blocks.CheckAsync(_dbContext, userName, _userManager.NormalizeName(userName), ip, _logger);
             if (!decision.Allowed)
             {
-                await SecurityEventWriter.RecordAsync(_dbContext, SecurityEventKind.RateLimitRejected, ipAddress: ip,
+                await SecurityEventWriter.RecordAsync(_dbContext, SecurityEventKind.RateLimitRejected, decision.UserId, ip,
                     code: "game-api-signin", detail: decision.Reason);
                 return Fail(http, GameApiSignInResponses.For(GameApiSignInOutcome.Throttled, decision.RetryAfter));
             }
@@ -105,7 +106,7 @@ namespace MobileGnollHackLogger.Areas.API
                 return await FailedPasswordAsync(http, dbLogger, userName, user.Id, ip, route);
             }
 
-            _throttle.RecordSuccess(userName, ip);
+            _blocks.RecordSuccess(userName, ip);
 
             // As PasswordSignInAsync decides RequiresTwoFactor: 2FA enabled and a valid provider.
             if (await _userManager.GetTwoFactorEnabledAsync(user)
@@ -130,7 +131,7 @@ namespace MobileGnollHackLogger.Areas.API
             string? ip, string route)
         {
             dbLogger.LoginSucceeded = false;
-            _throttle.RecordFailure(userName, ip);
+            await _blocks.RecordFailureAsync(_dbContext, userName, ip, userId, _logger);
             await SecurityEventWriter.RecordAsync(_dbContext, SecurityEventKind.LoginFailed, userId, ip,
                 code: "game-api:" + route, detail: userId == null ? "unknown-user" : null);
 

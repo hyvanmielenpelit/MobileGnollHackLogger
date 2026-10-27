@@ -15,7 +15,7 @@ describe('admin-user-status', () => {
   it('labels every status with the word the client shows', () => {
     const labels = ADMIN_USER_STATUSES.map(statusLabel);
     expect(labels).toEqual([
-      'In good standing', 'Locked out', 'Banned', 'Game log uploads banned', 'Bones banned',
+      'In good standing', 'Locked out', 'Game sign-in blocked', 'Banned', 'Game log uploads banned', 'Bones banned',
       'Blocked from AI chat', 'Deletion hold', 'Deletion pending', 'Email not confirmed', 'Administrator'
     ]);
   });
@@ -26,6 +26,7 @@ describe('admin-user-status', () => {
     expect(badges.map(b => b.status)).toEqual([...ADMIN_USER_STATUSES]);
     expect(badges.find(b => b.status === 'GoodStanding')).toEqual(expect.objectContaining({ tone: 'ok', glyph: 'check-circle' }));
     expect(badges.find(b => b.status === 'LockedOut')).toEqual(expect.objectContaining({ tone: 'danger', glyph: 'lock' }));
+    expect(badges.find(b => b.status === 'GameSignInBlocked')).toEqual(expect.objectContaining({ tone: 'warning', glyph: 'lock' }));
     expect(badges.find(b => b.status === 'Banned')).toEqual(expect.objectContaining({ tone: 'danger', glyph: 'slash-circle' }));
     expect(badges.find(b => b.status === 'GameLogBanned')).toEqual(expect.objectContaining({ tone: 'warning', glyph: 'upload-cloud-off' }));
     expect(badges.find(b => b.status === 'BonesBanned')).toEqual(expect.objectContaining({ glyph: 'upload-cloud-off' }));
@@ -66,6 +67,24 @@ describe('admin-user-status', () => {
     expect(badgesFor(buildAdminUser({
       statuses: ['AiChatBlocked'], isOverseerBlocked: true, overseerBlockedUtc: '2026-10-03T10:00:00Z', overseerBlockReason: 'Abuse'
     }))[0].tooltip).toBe('Blocked from starting AI work in Overseer since 2026-10-03 10:00 UTC. Reason shown to the user: Abuse');
+  });
+
+  it('tells where, from which address and until when each game sign-in block holds', () => {
+    const user = buildAdminUser({
+      statuses: ['GameSignInBlocked'],
+      gameSignInBlocks: [
+        { source: 'Website', kind: 'Pair', ipAddress: '203.0.113.7', blockedUntilUtc: '2026-10-27T19:20:00Z' },
+        { source: 'Overseer', kind: 'Account', ipAddress: null, blockedUntilUtc: '2026-10-27T19:10:00Z' }
+      ]
+    });
+    const badge = badgesFor(user)[0];
+    expect(badge.label).toBe('Game sign-in blocked');
+    expect(badge.tooltip).toBe(
+      'Website: too many wrong passwords from 203.0.113.7, blocked until 2026-10-27 19:20 UTC. '
+      + 'Overseer: too many wrong passwords from every address, blocked until 2026-10-27 19:10 UTC. '
+      + 'Clearing lets GnollHack sign in again within 15 seconds.');
+    expect(goodStanding(user)).toBe(false);
+    expect(badgesFor({ statuses: ['GameSignInBlocked'] })[0].tooltip).toBeNull();
   });
 
   it('gives a preview item, which has only statuses, badges without tooltips', () => {

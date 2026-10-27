@@ -218,6 +218,13 @@ public class AdminBulkUserOperationService
 
         var holdIds = await IdsAsync(new AdminUserCriteria { Statuses = new() { AdminUserStatusKind.DeletionHold } });
         var pendingIds = await IdsAsync(new AdminUserCriteria { Statuses = new() { AdminUserStatusKind.DeletionPending } });
+        // Active game sign-in blocks are few: every one is read, and the latest end kept per account.
+        var signInBlockEnds = (await _db.GameSignInBlocks.AsNoTracking()
+                .Where(b => b.ClearedUtc == null && b.BlockedUntilUtc > now)
+                .Select(b => new { b.AspNetUserId, b.BlockedUntilUtc })
+                .ToListAsync(ct))
+            .GroupBy(b => b.AspNetUserId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Max(b => b.BlockedUntilUtc), StringComparer.Ordinal);
         bool delete = request.Action == AdminBulkActionKind.Delete;
         var gameIds = delete ? await IdsAsync(new AdminUserCriteria { HasGameData = "yes" }) : new HashSet<string>();
         var overseerIds = delete ? await IdsAsync(new AdminUserCriteria { HasOverseerData = "yes" }) : new HashSet<string>();
@@ -289,7 +296,8 @@ public class AdminBulkUserOperationService
 
         AdminBulkPreviewItemDto Item((ApplicationUser User, bool Advanced) t)
         {
-            var set = AdminUserStatus.Evaluate(t.User, new AdminUserFacts(holdIds.Contains(t.User.Id), pendingIds.Contains(t.User.Id)), admins, now);
+            var set = AdminUserStatus.Evaluate(t.User, new AdminUserFacts(holdIds.Contains(t.User.Id), pendingIds.Contains(t.User.Id),
+                signInBlockEnds.TryGetValue(t.User.Id, out var blockedUntil) ? blockedUntil : null), admins, now);
             return new AdminBulkPreviewItemDto
             {
                 UserId = t.User.Id,

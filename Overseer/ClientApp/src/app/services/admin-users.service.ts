@@ -11,6 +11,7 @@ export const ADMIN_USERS_ENDPOINT = '/api/admin/users';
 export type AdminUserStatus =
   | 'GoodStanding'
   | 'LockedOut'
+  | 'GameSignInBlocked'
   | 'Banned'
   | 'GameLogBanned'
   | 'BonesBanned'
@@ -24,6 +25,7 @@ export type AdminUserStatus =
 export const ADMIN_USER_STATUSES: readonly AdminUserStatus[] = [
   'GoodStanding',
   'LockedOut',
+  'GameSignInBlocked',
   'Banned',
   'GameLogBanned',
   'BonesBanned',
@@ -78,6 +80,16 @@ export interface AdminTermsAcceptance {
   source: string;
 }
 
+/** An active game sign-in block, after too many wrong passwords from GnollHack (`AdminGameSignInBlockDto`). */
+export interface AdminGameSignInBlock {
+  /** The app that holds the block. */
+  source: 'Website' | 'Overseer';
+  /** `Pair`: this account from `ipAddress`; `Account`: this account from every address. */
+  kind: 'Pair' | 'Account';
+  ipAddress: string | null;
+  blockedUntilUtc: string;
+}
+
 /** One account as the Users tab shows it (`AdminUserDto`). Dates are UTC ISO strings. */
 export interface AdminUser {
   id: string;
@@ -115,6 +127,8 @@ export interface AdminUser {
   accountHoldPlacedUtc: string | null;
   accountHoldPlacedByUserName: string | null;
   pendingDeletionRequestId: number | null;
+  /** The active game sign-in blocks, the latest end first. */
+  gameSignInBlocks: AdminGameSignInBlock[];
   gameLogCount: number;
   bonesCount: number;
   chatSessionCount: number;
@@ -383,7 +397,8 @@ export type AdminUserActionKind =
   | 'HoldReleased'
   | 'DeletionRequestApproved'
   | 'DeletionRequestDeclined'
-  | 'EmailChanged';
+  | 'EmailChanged'
+  | 'GameSignInBlockCleared';
 
 /** Every kind, in the order of the stored enum. */
 export const ADMIN_USER_ACTION_KINDS: readonly AdminUserActionKind[] = [
@@ -402,7 +417,8 @@ export const ADMIN_USER_ACTION_KINDS: readonly AdminUserActionKind[] = [
   'HoldReleased',
   'DeletionRequestApproved',
   'DeletionRequestDeclined',
-  'EmailChanged'
+  'EmailChanged',
+  'GameSignInBlockCleared'
 ];
 
 export interface AdminUserLogEntry {
@@ -527,6 +543,11 @@ export class AdminUsersService {
   /** Ends any lockout, automatic ones included, and resets the failed sign-in count. */
   unlock(id: string): Observable<AdminUserActionResult> {
     return this.http.delete<AdminUserActionResult>(this.userUrl(id, '/lockout'));
+  }
+
+  /** Clears the account's game sign-in blocks in the website and Overseer; 409 `already-done` when there is none. */
+  clearGameSignInBlock(id: string): Observable<AdminUserActionResult> {
+    return this.http.delete<AdminUserActionResult>(this.userUrl(id, '/game-sign-in-block'));
   }
 
   /** `reason` (1–512 characters) is for administrators only. */

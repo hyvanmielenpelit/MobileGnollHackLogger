@@ -54,7 +54,7 @@ public class SessionController : ControllerBase
         [FromServices] Overseer.Services.Security.OverseerAccessService? overseerAccess = null,
         [FromServices] Overseer.Services.Security.ISecurityEventRecorder? securityEvents = null,
         [FromServices] Overseer.Services.Telemetry.IActivityCounter? activityCounter = null,
-        [FromServices] GnollHackServer.Data.Security.GameApiSignInThrottle? signInThrottle = null,
+        [FromServices] GnollHackServer.Data.Security.GameSignInBlockSync? signInBlocks = null,
         [FromServices] Microsoft.Extensions.Options.IOptions<Overseer.Models.AiUsageGuardOptions>? guardOptions = null,
         [FromServices] Overseer.Security.UserTurnRateLimiter? turnLimiter = null,
         [FromServices] Overseer.Security.UserTurnConcurrencyGate? turnGate = null,
@@ -78,11 +78,14 @@ public class SessionController : ControllerBase
         /* GnollHack calls this with its stored credentials and retries, so failures count toward
            the game-style throttle and never toward Identity lockout. Checked before the user is
            looked up: a throttled request costs no lookup and no password hash. */
-        var decision = signInThrottle?.Check(request.UserName, remoteIp);
+        var decision = signInBlocks == null ? (GnollHackServer.Data.Security.GameSignInCheck?)null
+            : await signInBlocks.CheckAsync(_dbContext, request.UserName,
+                _signInManager.UserManager.NormalizeName(request.UserName), remoteIp, _logger);
         if (decision is { Allowed: false } throttled)
         {
             securityEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
-                SecurityEventKind.RateLimitRejected, IpAddress: remoteIp, Code: "session-create", Detail: throttled.Reason));
+                SecurityEventKind.RateLimitRejected, UserId: throttled.UserId, IpAddress: remoteIp, Code: "session-create",
+                Detail: throttled.Reason));
             return SignInRefused("throttled", GnollHackServer.Data.Security.GameApiSignInResponses.For(
                 GnollHackServer.Data.Security.GameApiSignInOutcome.Throttled, throttled.RetryAfter).Body);
         }
@@ -90,7 +93,10 @@ public class SessionController : ControllerBase
         var user = await _signInManager.UserManager.FindByNameAsync(request.UserName);
         if (user == null)
         {
-            signInThrottle?.RecordFailure(request.UserName, remoteIp);
+            if (signInBlocks != null)
+            {
+                await signInBlocks.RecordFailureAsync(_dbContext, request.UserName, remoteIp, null, _logger);
+            }
             // The attempted name is never stored.
             securityEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
                 SecurityEventKind.LoginFailed, IpAddress: remoteIp, Code: "session-create", Detail: "unknown-user"));
@@ -109,9 +115,9 @@ public class SessionController : ControllerBase
 
         if (outcome != GnollHackServer.Data.Security.GameApiSignInOutcome.Success)
         {
-            if (countsAsFailure)
+            if (countsAsFailure && signInBlocks != null)
             {
-                signInThrottle?.RecordFailure(request.UserName, remoteIp);
+                await signInBlocks.RecordFailureAsync(_dbContext, request.UserName, remoteIp, user.Id, _logger);
             }
 
             switch (outcome)
@@ -136,7 +142,7 @@ public class SessionController : ControllerBase
             }
         }
 
-        signInThrottle?.RecordSuccess(request.UserName, remoteIp);
+        signInBlocks?.RecordSuccess(request.UserName, remoteIp);
         await GnollHackServer.Data.Security.AccountActivity.TouchSignInAsync(_dbContext, user.Id, DateTime.UtcNow, _logger);
 
         // Anonymous until the password passes, so the block is checked here rather than by a filter.

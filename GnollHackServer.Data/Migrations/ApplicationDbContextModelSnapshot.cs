@@ -4324,6 +4324,49 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("GameLog");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.GameSignInBlock", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AspNetUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("BlockedUntilUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("BlockedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ClearedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("ClearedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("nvarchar(45)");
+
+                    b.Property<short>("Kind")
+                        .HasColumnType("smallint");
+
+                    b.Property<short>("Source")
+                        .HasColumnType("smallint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AspNetUserId", "Source", "Kind");
+
+                    b.ToTable("GameSignInBlocks");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.Group", b =>
                 {
                     b.Property<long>("Id")
@@ -7061,6 +7104,17 @@ namespace GnollHackServer.Data.Migrations
                     b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
                         .WithMany("GameLogs")
                         .HasForeignKey("AspNetUserId");
+
+                    b.Navigation("AspNetUser");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.GameSignInBlock", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
+                        .WithMany()
+                        .HasForeignKey("AspNetUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("AspNetUser");
                 });

@@ -222,7 +222,7 @@ describe('AdminUserLogComponent', () => {
     it('lists the actions with entries in the Action facet, with their counts', () => {
       create();
 
-      expect(countQueries().length).toBe(16);
+      expect(countQueries().length).toBe(17);
       expect(countQueries()).toContainEqual(expect.objectContaining({ kinds: ['Banned'], take: 1 }));
       const f = facet();
       expect(f.facetId).toBe('aul-facet-kind');
@@ -346,6 +346,7 @@ describe('AdminUserLogComponent', () => {
     expect(adminLogKindLabel('HoldPlaced')).toBe('Deletion hold placed');
     expect(adminLogKindLabel('DeletionRequestDeclined')).toBe('Deletion request declined');
     expect(adminLogKindLabel('EmailChanged')).toBe('Email changed');
+    expect(adminLogKindLabel('GameSignInBlockCleared')).toBe('Game sign-in block cleared');
     expect(adminLogKindLabel('SomethingNew')).toBe('SomethingNew');
   });
 });

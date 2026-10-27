@@ -11,7 +11,8 @@ namespace MobileGnollHackLogger.Tests.Api;
 
 /// <summary>
 /// The sign-in shared by the four game API POST endpoints (<c>GameApiAuthenticator</c>): antiforgery check, throttle,
-/// password check and the refusals, with the request-log rows and security events they leave.
+/// password check and the refusals, with the request-log rows and security events they leave, and the game sign-in
+/// block rows an administrator clears.
 /// </summary>
 public class GameApiAuthenticationTests : IClassFixture<WebsiteWebApplicationFactory>,
     IClassFixture<GameApiAuthenticationTests.ThrottleFactory>
@@ -319,10 +320,40 @@ public class GameApiAuthenticationTests : IClassFixture<WebsiteWebApplicationFac
             e => e.Kind == SecurityEventKind.RateLimitRejected);
         Assert.Equal("game-api-signin", securityEvent.Code);
         Assert.Equal("pair", securityEvent.Detail);
+        Assert.Equal((await FindUserAsync(_throttleFactory, userName)).Id, securityEvent.AspNetUserId);
 
         var fromOtherIp = await PostAsync(client, "/xlogfile", Form("/xlogfile", userName, WebsiteTestData.Password), otherIp);
 
         Assert.Equal(HttpStatusCode.OK, fromOtherIp.StatusCode);
+    }
+
+    [Fact]
+    public async Task XLogFile_ClearedGameSignInBlock_LetsTheCorrectPasswordThrough()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        string userName = WebsiteTestData.UniqueUserName("auth_cleared");
+        await _throttleFactory.WithScopeAsync(sp => WebsiteTestData.CreateUserAsync(sp, userName));
+        string userId = (await FindUserAsync(_throttleFactory, userName)).Id;
+        using var client = _throttleFactory.CreateGameClient();
+        string ip = NextIp();
+
+        for (int i = 0; i < 3; i++)
+        {
+            await PostAsync(client, "/xlogfile", Form("/xlogfile", userName, "Wrong-Passw0rd"), ip);
+        }
+        var row = Assert.Single(await _throttleFactory.WithScopeAsync(sp =>
+            sp.GetRequiredService<ApplicationDbContext>().GameSignInBlocks.AsNoTracking()
+                .Where(b => b.AspNetUserId == userId).ToListAsync(ct)));
+        Assert.Equal((GameSignInBlockSource.Website, GameSignInBlockKind.Pair, ip), (row.Source, row.Kind, row.IpAddress));
+        Assert.Null(row.ClearedUtc);
+
+        await _throttleFactory.WithScopeAsync(sp => sp.GetRequiredService<ApplicationDbContext>().GameSignInBlocks
+            .Where(b => b.Id == row.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(b => b.ClearedUtc, DateTime.UtcNow), ct));
+
+        var response = await PostAsync(client, "/xlogfile", Form("/xlogfile", userName, WebsiteTestData.Password), ip);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     /// <summary>A game API form; <c>api/savefiletracking/create</c> also gets the fields its model validation requires.</summary>

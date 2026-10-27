@@ -24,7 +24,7 @@ public class SecurityQueryService
         SecurityEventKind.AccountHoldPlaced, SecurityEventKind.AccountHoldReleased, SecurityEventKind.AccountDeletionHeld,
         SecurityEventKind.AdminLockedOut, SecurityEventKind.AdminUnlocked, SecurityEventKind.AdminBanned,
         SecurityEventKind.AdminUnbanned, SecurityEventKind.AdminSignedOut, SecurityEventKind.AdminEmailConfirmed,
-        SecurityEventKind.AdminTwoFactorReset, SecurityEventKind.AdminEmailChanged,
+        SecurityEventKind.AdminTwoFactorReset, SecurityEventKind.AdminEmailChanged, SecurityEventKind.AdminGameSignInBlockCleared,
     };
 
     private static readonly HashSet<SecurityEventKind> ProviderKinds = new()
@@ -45,7 +45,7 @@ public class SecurityQueryService
         [SecurityEventKind.LoginFailed] = "A sign-in failed: a wrong password, or a user name no account has (Detail unknown-user). Written by Overseer's login and session create, the website login and the game APIs; the IP address is kept, the attempted user name is not.",
         [SecurityEventKind.LoginLockedOut] = "A sign-in was refused because the account is locked out after repeated failures. Written by the same sign-in paths as LoginFailed; the IP address is kept.",
         [SecurityEventKind.TwoFactorFailed] = "A wrong two-factor code was entered at sign-in. The IP address is kept.",
-        [SecurityEventKind.RateLimitRejected] = "A rate limiter refused a request. Code is the limiter's policy (for example game-api-signin, session-create or session-create-turn) and Detail, where given, the limit that tripped: pair, account or ip.",
+        [SecurityEventKind.RateLimitRejected] = "A rate limiter refused a request. Code is the limiter's policy (for example game-api-signin, session-create or session-create-turn) and Detail, where given, the limit that tripped: pair, account or ip. A game-api-signin or session-create refusal names the account when the pair or account block belongs to an existing one.",
         [SecurityEventKind.QuotaRefused] = "A usage limit refused an AI call before it reached the provider. Code is the limit: user, group or system for a configuration's quota, guard-cost or guard-runs for the AI usage guard.",
         [SecurityEventKind.AccessDenied] = "An AI call was refused because the user may not use the configuration. Code is disabled (the configuration is switched off) or not-assigned (the user has no access to it).",
         [SecurityEventKind.ProviderRefusal] = "The provider ended an operator-funded chat turn or sub-agent run with a refusal. Code is the provider's finish reason; incognito turns are included, title generation never.",
@@ -68,6 +68,7 @@ public class SecurityQueryService
         [SecurityEventKind.AdminEmailConfirmed] = "An administrator confirmed the account's email address, from the Users tab or a bulk action. Detail is the reason; the admin log names the administrator.",
         [SecurityEventKind.AdminTwoFactorReset] = "An administrator reset the account's two-factor authentication, from the Users tab or a bulk action. Detail is the reason; the admin log names the administrator.",
         [SecurityEventKind.AdminEmailChanged] = "An administrator changed the account's email address, from the Users tab. Detail is the reason; the admin log names the administrator.",
+        [SecurityEventKind.AdminGameSignInBlockCleared] = "An administrator cleared the account's game sign-in block, from the Users tab. The admin log names the administrator.",
     };
 
     private readonly ApplicationDbContext _db;

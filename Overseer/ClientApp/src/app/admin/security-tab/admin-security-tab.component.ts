@@ -57,7 +57,7 @@ export const SECURITY_EVENT_KINDS: readonly string[] = [
   'ProviderRefusal', 'ProviderSafetyBlock', 'ProviderPolicyRejection', 'AttachmentRejected', 'ChatReported',
   'SnapshotRejected', 'AutoBlocked', 'AdminBlocked', 'AdminUnblocked', 'AccountHoldPlaced', 'AccountHoldReleased', 'AccountDeletionHeld',
   'AdminLockedOut', 'AdminUnlocked', 'AdminBanned', 'AdminUnbanned', 'AdminSignedOut', 'AdminEmailConfirmed',
-  'AdminTwoFactorReset', 'AdminEmailChanged'
+  'AdminTwoFactorReset', 'AdminEmailChanged', 'AdminGameSignInBlockCleared'
 ];
 
 const NO_KINDS: readonly string[] = [];

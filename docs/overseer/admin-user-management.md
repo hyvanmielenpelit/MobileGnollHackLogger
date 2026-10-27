@@ -59,8 +59,9 @@ listed in this order:
 
 | Status | Label | True when |
 |---|---|---|
-| `GoodStanding` | In good standing | the email is confirmed and none of the next seven holds |
+| `GoodStanding` | In good standing | the email is confirmed and none of the next eight holds |
 | `LockedOut` | Locked out | `LockoutEnd > now` (admin-set or after failed sign-ins) |
+| `GameSignInBlocked` | Game sign-in blocked | an active `GameSignInBlocks` row: `ClearedUtc` null and `BlockedUntilUtc > now` (§ 7.2) |
 | `Banned` | Banned | `IsBanned` |
 | `GameLogBanned` | Game log uploads banned | `IsGameLogBanned` |
 | `BonesBanned` | Bones banned | `IsBonesBanned` |
@@ -70,7 +71,10 @@ listed in this order:
 | `EmailUnconfirmed` | Email not confirmed | `!EmailConfirmed` |
 | `Administrator` | Administrator | the user name is in `Admins` |
 
-*Administrator* is not a problem and does not affect *In good standing*. A lockout is **admin-set**
+*Administrator* is not a problem and does not affect *In good standing*. *Game sign-in blocked* ends by
+itself with the block; its tooltip names, per block, the app that holds it, the address (or *every
+address* for an account block) and its end, and the status text reads *"Game sign-in blocked until
+2026-10-27 19:20 UTC"* with the latest end. A lockout is **admin-set**
 while `LockoutEnd == AdminLockoutEndUtc` and it is in the future; any other lockout is an automatic one
 after failed sign-ins, so an admin's old reason never shows on a later automatic lockout.
 
@@ -122,6 +126,7 @@ says otherwise. An action with nothing to change answers 409 `already-done`.
 |---|---|---|---|---|---|
 | Lock out | `POST {id}/lockout` | `{ until, reason }` | `LockoutEnd = until`, lockout enabled, the `AdminLockout*` columns, a new security stamp | self, admins | `AdminLockedOut` (45) |
 | Unlock | `DELETE {id}/lockout` | — | Clears `LockoutEnd`, `AccessFailedCount` and the `AdminLockout*` columns; ends any lockout, automatic ones included | self, admins | `AdminUnlocked` (46) |
+| Clear game sign-in block | `DELETE {id}/game-sign-in-block` | — | Sets `ClearedUtc` and `ClearedByUserId` on the account's active `GameSignInBlocks` rows (§ 7.3); offered only while the account is *Game sign-in blocked*, and not as a bulk action | none: self and admins allowed | `AdminGameSignInBlockCleared` (53) |
 | Ban | `POST {id}/ban` | `{ reason }` | `IsBanned`, `BannedUtc`, `BanReason`, `BannedByUserId`, a new security stamp | self, admins | `AdminBanned` (47) |
 | Unban | `DELETE {id}/ban` | — | Clears the four | self, admins | `AdminUnbanned` (48) |
 | Game upload restrictions | `PUT {id}/game-restrictions` | `{ gameLogBanned, bonesBanned, reason? }` | `IsGameLogBanned`, `IsBonesBanned` | none: self and admins allowed | — |
@@ -161,7 +166,7 @@ summary tells the administrator to pass the instructions on.
 ahead, else 400 `until`; a longer exclusion is a ban.
 
 **`already-done`.** Unlock on an account that is not locked out, has no failed sign-ins and no admin
-lockout columns; ban on a banned account; unban on one that is not; mark email confirmed on a confirmed
+lockout columns; clearing the game sign-in block of an account that has no active one; ban on a banned account; unban on one that is not; mark email confirmed on a confirmed
 one; game restrictions that change nothing; placing a deletion hold on an account that already has one;
 changing the email to the current address, compared normalized.
 Releasing a hold the account does not have answers 404.
@@ -178,6 +183,7 @@ return the result DTO instead of an empty 200, and their services write the audi
 | Game upload restrictions | Sign-in unaffected | Unaffected | `/xlogfile` refuses a game-log-banned account with 423; `/bones` refuses a bones-banned one with 423, and its bones are never sent to other players |
 | Sign out everywhere, reset two-factor | Signed-in sessions end within 5 minutes | The same | GnollHack sends the password with every request, so it keeps working |
 | Mark email confirmed | Sign-in allowed | Sign-in allowed | Allowed |
+| Clear game sign-in block | Unaffected | Unaffected | The website lets GnollHack's next retry through within 15 seconds; Overseer at once (§ 7.3) |
 | Change email | Sign-in refused as unconfirmed until the user confirms the new address, unless marked confirmed; signed-in sessions end within 5 minutes | The same | Refused as unconfirmed (403) until confirmed, unless marked confirmed |
 
 Locking out, banning, signing out everywhere, resetting two-factor and changing the email renew the security stamp; signed-in
@@ -191,7 +197,7 @@ Friction follows the damage an action can do:
 
 | Level | Actions | Dialog |
 |---|---|---|
-| Safe | Unlock, Unban, Unblock from AI chat, Release deletion hold, Sign out everywhere, Mark email confirmed | The shared confirm dialog: one sentence on what happens, a button named for the verb |
+| Safe | Unlock, Clear game sign-in block, Unban, Unblock from AI chat, Release deletion hold, Sign out everywhere, Mark email confirmed | The shared confirm dialog: one sentence on what happens, a button named for the verb |
 | Caution | Block from AI chat, Place deletion hold, Reset two-factor (do it only after verifying the person's identity) | The shared reason dialog |
 | Caution | Lock out | Duration (*1 hour*, *24 hours*, *7 days*, *30 days*, *Until a date…*), a required reason, the effect line and *"I have checked this is the right account ({email})."* |
 | Caution | Ban | A required reason, *"Cannot sign in anywhere until unbanned. The reason is not shown to the user."* and the same checkbox |
@@ -199,7 +205,7 @@ Friction follows the damage an action can do:
 | Caution | Game upload restrictions | *Ban game log uploads*, *Ban bones uploads and downloads*, and a reason the dialog requires whenever anything is turned on |
 | Danger | Delete account | § 4 |
 
-The Unlock confirmation says that a game sign-in block after repeated wrong passwords can last up to 15 more minutes, because Unlock does not clear the GnollHack sign-in throttle (§ 7.3).
+The Unlock confirmation says that a game sign-in block after repeated wrong passwords is separate and is cleared with *Clear game sign-in block*, because Unlock does not clear the GnollHack sign-in throttle (§ 7.3). That action's confirmation says GnollHack can sign in again within 15 seconds, and that the block returns after 10 more failures if the stored password is still wrong.
 
 ## 4. Deleting one account
 
@@ -402,12 +408,13 @@ The kinds are a stored contract, only ever appended to:
 | 14 | `DeletionRequestApproved` | *Deletion requests* → Approve and delete |
 | 15 | `DeletionRequestDeclined` | *Deletion requests* → Decline |
 | 16 | `EmailChanged` | Change email |
+| 17 | `GameSignInBlockCleared` | Clear game sign-in block |
 
 A user deleting their own account on the website writes no row: no administrator acted.
 
 **Retention.** Nothing prunes `AdminUserActions`, `AdminBulkOperations` or `AdminBulkOperationItems`
 (whose `UserId` has no foreign key either), and account erasure does not touch them: they are kept
-indefinitely. The per-user `SecurityEvent` rows of the same actions, kinds 45–52, cascade with the
+indefinitely. The per-user `SecurityEvent` rows of the same actions, kinds 45–53, cascade with the
 account and are pruned after `ChatRetentionSettings:PruneSecurityEventDays` like every other event.
 
 **The Admin log sub-tab** lists the entries newest first in batches of 20. Each card shows the action
@@ -478,7 +485,13 @@ refused. Their failures count toward the in-memory `GameApiSignInThrottle` inste
 - The tight limit is per pair, so another address guessing a player's password cannot keep the player
   out: it meets the account limit only after 50 failures an hour.
 - It is **per process**: not shared between the website and Overseer, or between instances, and reset
-  on restart. At most 100,000 keys are kept per limit, the least recently used dropped first.
+  on restart. At most 100,000 keys are kept per limit, the least recently used dropped first. The pair
+  and account blocks of **existing accounts** are mirrored to the `GameSignInBlocks` table by
+  `GameSignInBlockSync`, one row per app, kind, account and (for a pair) address, so the Users tab can
+  show and clear them (§ 7.3); blocks of unknown names and address blocks stay in memory only. Each app
+  ends its own active rows when it starts, since a restart has released every block, and a row is
+  removed a day after its block ended. A refused request names the account in its `RateLimitRejected`
+  event when the database knows the block.
 - The limits are the `GameApiSecurity` section of each app's `appsettings.json`
   (`PairFailureLimit`, `PairWindowMinutes`, `PairBlockMinutes`, `AccountFailureLimit`,
   `AccountWindowMinutes`, `AccountBlockMinutes`, `IpFailureLimit`, `IpWindowMinutes`, `IpBlockMinutes`,
@@ -528,9 +541,15 @@ password passes, an account blocked from the AI chat gets the 403 of
 
 ### 7.3 Two limits of the throttle
 
-- **An admin Unlock does not clear the game throttle.** The website's throttle lives in the website's
-  process, out of Overseer's reach. A pair block lasts at most 15 minutes and an account block 30, so a
-  player unlocked by an admin can be refused by GnollHack for up to that long.
+- **An admin Unlock does not clear the game throttle; *Clear game sign-in block* does.** The action
+  marks the account's active `GameSignInBlocks` rows cleared. The app that holds a block reads its row
+  when a request is refused, at most once per 15 seconds per block, and on a cleared row releases the
+  block and lets the request on to the password check, so the website lets GnollHack's next retry
+  through within 15 seconds. Overseer releases its own blocks at once, because the clear runs in its own
+  process. A pair block and an account block cleared together are both released by one request. A row
+  whose end differs from the block in memory belongs to an earlier block and never releases a newer one;
+  if a row cannot be written, the block stays invisible to the Users tab and simply expires, at most 30
+  minutes later.
 - **Neither app uses forwarded headers.** Behind a reverse proxy every client has the proxy's address:
   the pair limit then behaves like a per-account limit, and the address limit could block every player
   at once. Set `GameApiSecurity:PerIpLimitsEnabled` to `false` there; the deployment check in
@@ -565,7 +584,7 @@ Remember § 2.1: until accounts have signed in after deployment, *Last sign-in* 
 ## 10. Tests
 
 In `Overseer.Tests/UnitTests/`: `AdminUserStatusTests` (the two rule implementations agree),
-`AdminUserManagementServiceTests` (guards, validation, audit rows and events, the deletion refusals and
+`AdminUserManagementServiceTests` (guards, validation, audit rows and events, clearing a game sign-in block, the deletion refusals and
 the audit row of a failed erasure, and change email: the user name kept, the instructions email, a failed
 or unconfigured sender, a taken or current address), `AdminEmailChangeEmailBuilderTests` (the
 instructions email's link, wording and encoding), `AdminBulkUserOperationTests` (preview classification and cap,
@@ -574,5 +593,9 @@ operations), `AccountErasureTests` (the benchmark foreign keys), `GnollHackSignI
 `GameApiSignInClassifierTests`, `GameApiSignInThrottleTests`, `GameApiSignInResponsesTests` and
 `SessionCreateLockoutTests` (no Identity lockout after repeated wrong passwords, the throttle by
 address, a banned account with the correct password). `IntegrationTests/AdminSecurityTests` checks 401
-and 403 on every `api/admin/users` route. No test project hosts the website, so its sign-in page and the
-game API controllers are checked manually.
+and 403 on every `api/admin/users` route. `GameSignInBlockSyncTests` covers the block rows: written for an
+existing account only, released when cleared, the 15-second lookup, a pair and an account block cleared
+together, a release in the same process, an earlier block's cleared row, and the start-up cleanup.
+`MobileGnollHackLogger.Tests` hosts the website: `Api/GameApiAuthenticationTests` covers the game API
+sign-in, its throttle, the account named in the rate-limit event and a cleared block letting the correct
+password through, and `Pages/` its account pages, the sign-in page among them.

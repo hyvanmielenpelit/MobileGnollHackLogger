@@ -12,6 +12,7 @@ public enum AdminUserStatusKind
 {
     GoodStanding,
     LockedOut,
+    GameSignInBlocked,
     Banned,
     GameLogBanned,
     BonesBanned,
@@ -22,22 +23,30 @@ public enum AdminUserStatusKind
     Administrator,
 }
 
-/// <summary>The facts about an account that live outside its user row.</summary>
-public sealed record AdminUserFacts(bool HasActiveHold, bool HasPendingDeletionRequest);
+/// <summary>
+/// The facts about an account that live outside its user row. <paramref name="GameSignInBlockedUntil"/> is the latest
+/// end of the account's active game sign-in blocks, null when there is none.
+/// </summary>
+public sealed record AdminUserFacts(bool HasActiveHold, bool HasPendingDeletionRequest, DateTime? GameSignInBlockedUntil);
 
 /// <summary>The statuses of one account at one moment, with the text the admin log and the change note show.</summary>
 public sealed class AdminUserStatusSet
 {
-    public AdminUserStatusSet(IReadOnlyList<AdminUserStatusKind> statuses, DateTimeOffset? lockedOutUntil)
+    public AdminUserStatusSet(IReadOnlyList<AdminUserStatusKind> statuses, DateTimeOffset? lockedOutUntil,
+        DateTimeOffset? gameSignInBlockedUntil = null)
     {
         Statuses = statuses;
         LockedOutUntil = lockedOutUntil;
+        GameSignInBlockedUntil = gameSignInBlockedUntil;
     }
 
     public IReadOnlyList<AdminUserStatusKind> Statuses { get; }
 
     /// <summary>The lockout's end while <see cref="AdminUserStatusKind.LockedOut"/> is set.</summary>
     public DateTimeOffset? LockedOutUntil { get; }
+
+    /// <summary>The latest game sign-in block's end while <see cref="AdminUserStatusKind.GameSignInBlocked"/> is set.</summary>
+    public DateTimeOffset? GameSignInBlockedUntil { get; }
 
     public bool Has(AdminUserStatusKind kind) => Statuses.Contains(kind);
 
@@ -150,6 +159,7 @@ public static class AdminUserStatus
     {
         AdminUserStatusKind.GoodStanding => "In good standing",
         AdminUserStatusKind.LockedOut => "Locked out",
+        AdminUserStatusKind.GameSignInBlocked => "Game sign-in blocked",
         AdminUserStatusKind.Banned => "Banned",
         AdminUserStatusKind.GameLogBanned => "Game log uploads banned",
         AdminUserStatusKind.BonesBanned => "Bones banned",
@@ -172,14 +182,17 @@ public static class AdminUserStatus
     public static string FormatUtc(DateTimeOffset value) =>
         value.UtcDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC";
 
-    /// <summary>"In good standing", or the statuses joined, with the lockout's end.</summary>
+    /// <summary>"In good standing", or the statuses joined, with the lockout's and the game sign-in block's ends.</summary>
     public static string Describe(AdminUserStatusSet set)
     {
         if (set.Statuses.Count == 0) return "Deleted";
-        return string.Join(", ", set.Statuses.Select(s =>
-            s == AdminUserStatusKind.LockedOut && set.LockedOutUntil is DateTimeOffset until
-                ? "Locked out until " + FormatUtc(until)
-                : Label(s)));
+        return string.Join(", ", set.Statuses.Select(s => s switch
+        {
+            AdminUserStatusKind.LockedOut when set.LockedOutUntil is DateTimeOffset until => "Locked out until " + FormatUtc(until),
+            AdminUserStatusKind.GameSignInBlocked when set.GameSignInBlockedUntil is DateTimeOffset blockedUntil =>
+                "Game sign-in blocked until " + FormatUtc(blockedUntil),
+            _ => Label(s)
+        }));
     }
 
     private static DateTimeOffset NowOffset(DateTime nowUtc) => new(DateTime.SpecifyKind(nowUtc, DateTimeKind.Utc), TimeSpan.Zero);
@@ -195,14 +208,16 @@ public static class AdminUserStatus
         bool blocked = user.OverseerBlockedUtc != null;
         bool unconfirmed = !user.EmailConfirmed;
         bool admin = user.NormalizedUserName != null && adminNormalizedNames.Contains(user.NormalizedUserName);
+        bool signInBlocked = facts.GameSignInBlockedUntil is DateTime blockedUntil && blockedUntil > nowUtc;
 
         var statuses = new List<AdminUserStatusKind>();
-        if (!unconfirmed && !lockedOut && !banned && !gameLogBanned && !bonesBanned && !blocked
+        if (!unconfirmed && !lockedOut && !signInBlocked && !banned && !gameLogBanned && !bonesBanned && !blocked
             && !facts.HasActiveHold && !facts.HasPendingDeletionRequest)
         {
             statuses.Add(AdminUserStatusKind.GoodStanding);
         }
         if (lockedOut) statuses.Add(AdminUserStatusKind.LockedOut);
+        if (signInBlocked) statuses.Add(AdminUserStatusKind.GameSignInBlocked);
         if (banned) statuses.Add(AdminUserStatusKind.Banned);
         if (gameLogBanned) statuses.Add(AdminUserStatusKind.GameLogBanned);
         if (bonesBanned) statuses.Add(AdminUserStatusKind.BonesBanned);
@@ -212,7 +227,8 @@ public static class AdminUserStatus
         if (unconfirmed) statuses.Add(AdminUserStatusKind.EmailUnconfirmed);
         if (admin) statuses.Add(AdminUserStatusKind.Administrator);
 
-        return new AdminUserStatusSet(statuses, lockedOut ? user.LockoutEnd : null);
+        return new AdminUserStatusSet(statuses, lockedOut ? user.LockoutEnd : null,
+            signInBlocked ? NowOffset(facts.GameSignInBlockedUntil!.Value) : null);
     }
 
     /// <summary>The SQL form of one status.</summary>
@@ -225,11 +241,14 @@ public static class AdminUserStatus
         {
             AdminUserStatusKind.GoodStanding => u => u.EmailConfirmed
                 && !(u.LockoutEnd != null && u.LockoutEnd > now)
+                && !db.GameSignInBlocks.Any(b => b.AspNetUserId == u.Id && b.ClearedUtc == null && b.BlockedUntilUtc > nowUtc)
                 && u.IsBanned != true && u.IsGameLogBanned != true && u.IsBonesBanned != true
                 && u.OverseerBlockedUtc == null
                 && !db.AccountHolds.Any(h => h.AspNetUserId == u.Id && h.ReleasedUtc == null)
                 && !db.AccountDeletionRequests.Any(r => r.AspNetUserId == u.Id && r.Status == AccountDeletionRequestStatus.Pending),
             AdminUserStatusKind.LockedOut => u => u.LockoutEnd != null && u.LockoutEnd > now,
+            AdminUserStatusKind.GameSignInBlocked => u =>
+                db.GameSignInBlocks.Any(b => b.AspNetUserId == u.Id && b.ClearedUtc == null && b.BlockedUntilUtc > nowUtc),
             AdminUserStatusKind.Banned => u => u.IsBanned == true,
             AdminUserStatusKind.GameLogBanned => u => u.IsGameLogBanned == true,
             AdminUserStatusKind.BonesBanned => u => u.IsBonesBanned == true,

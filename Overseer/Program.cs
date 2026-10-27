@@ -57,9 +57,13 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 builder.Services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval =
     TimeSpan.FromMinutes(builder.Configuration.GetValue("IdentityLockout:SecurityStampValidationMinutes", 5)));
 
-// Throttles failed sign-ins on /api/session/create in place of Identity lockout.
-builder.Services.AddSingleton(new GnollHackServer.Data.Security.GameApiSignInThrottle(
-    GnollHackServer.Data.Security.GameApiSignInThrottleOptions.FromConfiguration(builder.Configuration)));
+// Throttles failed sign-ins on /api/session/create in place of Identity lockout. The blocks of existing accounts
+// are mirrored to GameSignInBlocks, where the Users tab shows and clears them.
+var gameApiSignInThrottle = new GnollHackServer.Data.Security.GameApiSignInThrottle(
+    GnollHackServer.Data.Security.GameApiSignInThrottleOptions.FromConfiguration(builder.Configuration));
+builder.Services.AddSingleton(gameApiSignInThrottle);
+builder.Services.AddSingleton(new GnollHackServer.Data.Security.GameSignInBlockSync(
+    gameApiSignInThrottle, MobileGnollHackLogger.Data.GameSignInBlockSource.Overseer));
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddCookie(IdentityConstants.ApplicationScheme, options =>
@@ -683,6 +687,15 @@ using (var benchmarkCleanupScope = app.Services.CreateScope())
         .GetRequiredService<Overseer.Services.Benchmarking.BenchmarkService>();
     try { await benchmarkService.CleanupOrphanedRunsAsync(); }
     catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark orphaned-run cleanup failed."); }
+
+    // A restart has cleared every in-memory game sign-in block, so Overseer's rows of them end now.
+    try
+    {
+        var db = benchmarkCleanupScope.ServiceProvider
+            .GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+        await app.Services.GetRequiredService<GnollHackServer.Data.Security.GameSignInBlockSync>().EndAllOwnAsync(db);
+    }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Ending Overseer's game sign-in block rows failed."); }
 
     // A series left Running by an unclean shutdown has no live orchestrator advancing it, so
     // reconcile it to Stopped — otherwise the Continue button never appears and the series is

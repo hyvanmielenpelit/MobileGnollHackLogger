@@ -47,6 +47,9 @@ public sealed record GameApiSignInThrottleOptions(
 /// <summary>Whether a sign-in may be checked now; when not, how long until it may and why ("pair", "account" or "ip").</summary>
 public readonly record struct ThrottleDecision(bool Allowed, TimeSpan RetryAfter, string? Reason);
 
+/// <summary>A block a failure opened: its limit ("pair", "account" or "ip", as <see cref="ThrottleDecision.Reason"/>), start and end.</summary>
+public readonly record struct ThrottleBlockOpened(string Kind, DateTime BlockedUtc, DateTime BlockedUntilUtc);
+
 /// <summary>
 /// Failed-password throttle for the GnollHack game APIs, kept in memory and separate from Identity lockout so a
 /// guessing attack cannot send a player's game client into a lockout retry loop. Sliding failure windows per pair of
@@ -54,7 +57,9 @@ public readonly record struct ThrottleDecision(bool Allowed, TimeSpan RetryAfter
 /// one other address cannot reach it), and per IP address across accounts. The account is the upper-cased user name,
 /// whether or not the account exists, so the throttle reveals nothing. Reaching a limit opens a block of fixed
 /// length. A refused request is not counted and does not extend anything. Thread-safe; at most
-/// <see cref="GameApiSignInThrottleOptions.MaxTrackedKeys"/> keys per limit, oldest dropped.
+/// <see cref="GameApiSignInThrottleOptions.MaxTrackedKeys"/> keys per limit, oldest dropped. The pair and account
+/// blocks of existing accounts are mirrored to the <c>GameSignInBlocks</c> table by <see cref="GameSignInBlockSync"/>,
+/// through which an administrator's clear reaches <see cref="Release"/>.
 /// </summary>
 public sealed class GameApiSignInThrottle
 {
@@ -119,19 +124,65 @@ public sealed class GameApiSignInThrottle
         }
     }
 
-    public void RecordFailure(string normalizedUserName, string? ipAddress)
+    /// <summary>Counts a wrong password; returns the blocks this failure opened, usually none.</summary>
+    public IReadOnlyList<ThrottleBlockOpened> RecordFailure(string normalizedUserName, string? ipAddress)
+    {
+        DateTime now = Now;
+        List<ThrottleBlockOpened>? opened = null;
+        void Opened(string kind, TimeSpan block) => (opened ??= new()).Add(new ThrottleBlockOpened(kind, now, now + block));
+
+        lock (_gate)
+        {
+            if (Count(_pairs, PairKey(normalizedUserName, ipAddress), now, PairWindow, _options.PairFailureLimit, PairBlock))
+            {
+                Opened("pair", PairBlock);
+            }
+            if (Count(_accounts, AccountKey(normalizedUserName), now, AccountWindow, _options.AccountFailureLimit, AccountBlock))
+            {
+                Opened("account", AccountBlock);
+            }
+            if (TracksIp(ipAddress) && Count(_ips, ipAddress!, now, IpWindow, _options.IpFailureLimit, IpBlock))
+            {
+                Opened("ip", IpBlock);
+            }
+        }
+        return opened ?? (IReadOnlyList<ThrottleBlockOpened>)Array.Empty<ThrottleBlockOpened>();
+    }
+
+    /// <summary>
+    /// Removes one limit's window ("pair", "account" or "ip") for the key, so its block and its failures are gone.
+    /// True when a block was active.
+    /// </summary>
+    public bool Release(string kind, string normalizedUserName, string? ipAddress)
     {
         DateTime now = Now;
         lock (_gate)
         {
-            Count(_pairs, PairKey(normalizedUserName, ipAddress), now, PairWindow, _options.PairFailureLimit, PairBlock);
-            Count(_accounts, AccountKey(normalizedUserName), now, AccountWindow, _options.AccountFailureLimit, AccountBlock);
-            if (TracksIp(ipAddress))
-            {
-                Count(_ips, ipAddress!, now, IpWindow, _options.IpFailureLimit, IpBlock);
-            }
+            var (map, key) = Limit(kind, normalizedUserName, ipAddress);
+            bool wasBlocked = BlockedUntil(map, key, now) != null;
+            map.Remove(key);
+            return wasBlocked;
         }
     }
+
+    /// <summary>The end of one limit's active block ("pair", "account" or "ip") for the key; null when it is not blocked.</summary>
+    public DateTime? BlockEnd(string kind, string normalizedUserName, string? ipAddress)
+    {
+        DateTime now = Now;
+        lock (_gate)
+        {
+            var (map, key) = Limit(kind, normalizedUserName, ipAddress);
+            return BlockedUntil(map, key, now);
+        }
+    }
+
+    private (Dictionary<string, Window> Map, string Key) Limit(string kind, string normalizedUserName, string? ipAddress) => kind switch
+    {
+        "pair" => (_pairs, PairKey(normalizedUserName, ipAddress)),
+        "account" => (_accounts, AccountKey(normalizedUserName)),
+        "ip" => (_ips, ipAddress ?? string.Empty),
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Expected pair, account or ip."),
+    };
 
     /// <summary>A correct password clears the pair's and the account's failures; the IP's are kept.</summary>
     public void RecordSuccess(string normalizedUserName, string? ipAddress)
@@ -146,7 +197,8 @@ public sealed class GameApiSignInThrottle
     private static DateTime? BlockedUntil(Dictionary<string, Window> map, string key, DateTime now) =>
         map.TryGetValue(key, out var w) && w.BlockedUntil is DateTime until && until > now ? until : null;
 
-    private void Count(Dictionary<string, Window> map, string key, DateTime now, TimeSpan window, int limit, TimeSpan block)
+    /// <summary>Counts one failure; true when it opened a block.</summary>
+    private bool Count(Dictionary<string, Window> map, string key, DateTime now, TimeSpan window, int limit, TimeSpan block)
     {
         if (!map.TryGetValue(key, out var w))
         {
@@ -158,7 +210,7 @@ public sealed class GameApiSignInThrottle
 
         if (w.BlockedUntil is DateTime until && until > now)
         {
-            return;
+            return false;
         }
         if (w.BlockedUntil != null)
         {
@@ -176,7 +228,9 @@ public sealed class GameApiSignInThrottle
         {
             w.BlockedUntil = now + block;
             w.Failures.Clear();
+            return true;
         }
+        return false;
     }
 
     /// <summary>

@@ -178,6 +178,9 @@ public class AdminUsersController : ControllerBase
     [HttpDelete("{id}/lockout")]
     public async Task<IActionResult> Unlock(string id) => ToResult(await _users.UnlockAsync(Actor, id));
 
+    [HttpDelete("{id}/game-sign-in-block")]
+    public async Task<IActionResult> ClearGameSignInBlock(string id) => ToResult(await _users.ClearGameSignInBlocksAsync(Actor, id));
+
     [HttpPost("{id}/ban")]
     public async Task<IActionResult> Ban(string id, [FromBody] AdminReasonRequest request)
         => ToResult(await _users.BanAsync(Actor, id, request?.Reason));
