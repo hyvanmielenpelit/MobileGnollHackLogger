@@ -592,6 +592,12 @@ public class AiTelemetryUserConfigDto
 
     /// <summary>The current display name, else the usage rows' ModelDisplayName, else (own key) the model id.</summary>
     public string ConfigName { get; set; } = string.Empty;
+
+    /// <summary>The configuration's (or own-key model's) current settings, for its badges; null when it is gone.</summary>
+    public string? Provider { get; set; }
+    public string? ThinkingLevel { get; set; }
+    public string? ReasoningMode { get; set; }
+    public string? ServiceTier { get; set; }
     public long Requests { get; set; }
     public decimal EstimatedCost { get; set; }
 
@@ -834,6 +840,12 @@ public class AiTelemetryGroupConfigDto
     /// <summary>The SystemAiApiConfiguration id; null on the own-key line.</summary>
     public long? ConfigId { get; set; }
     public string ConfigName { get; set; } = string.Empty;
+
+    /// <summary>The configuration's current settings, for its badges; null when it is gone and on the own-key line.</summary>
+    public string? Provider { get; set; }
+    public string? ThinkingLevel { get; set; }
+    public string? ReasoningMode { get; set; }
+    public string? ServiceTier { get; set; }
     public long Requests { get; set; }
     public decimal EstimatedCost { get; set; }
 
@@ -1009,6 +1021,11 @@ public class DefaultApiKeyUserDto
     public long Id { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public bool IsEnabled { get; set; }
+
+    /// <summary>The configuration's settings, for its badges. No provider: it is the key's.</summary>
+    public string? ThinkingLevel { get; set; }
+    public string? ReasoningMode { get; set; }
+    public string? ServiceTier { get; set; }
 }
 
 public class SaveDefaultApiKeyRequest

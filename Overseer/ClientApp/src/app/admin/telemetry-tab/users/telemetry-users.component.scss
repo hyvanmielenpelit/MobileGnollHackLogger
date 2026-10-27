@@ -1,6 +1,8 @@
 /* The filter bar, the status line and Load more are the global card-list classes in styles.scss;
    `.action-btn`, `.btn-ghost`, `.gh-tag`, `.gh-model-card-badges` and the Sort popover's frame are
-   global too. The card's grid, head and title are the breakdown cards', from _telemetry-cards.scss. */
+   global too. The card's grid and head are the breakdown cards', from _telemetry-cards.scss; the
+   title is the Admin → Users card's, from _admin-shared.scss. */
+@use '../../admin-shared' as shared;
 @use '../telemetry-cards' as cards;
 @use '../telemetry-sort' as sort;
 
@@ -102,7 +104,7 @@
 }
 
 .tl-user-title {
-  @include cards.card-title;
+  @include shared.entity-card-title;
 }
 
 .tl-user-actions {
@@ -250,9 +252,10 @@ time {
   }
 }
 
+@include cards.config-badges;
+
 .tl-config-own-key,
 .tl-config-disabled {
-  margin-inline-start: 6px;
   border-color: var(--border-glass);
   color: #a1a1aa;
 }

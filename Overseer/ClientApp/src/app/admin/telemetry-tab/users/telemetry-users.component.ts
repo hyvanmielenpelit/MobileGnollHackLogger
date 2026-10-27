@@ -24,7 +24,9 @@ import { AdminUsersService } from '../../../services/admin-users.service';
 import { formatCost } from '../../benchmark/batteries/battery.models';
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
 import { parseServerUtcDate } from '../../../utils/date.util';
+import { formatServiceTier } from '../../../utils/model-badge-format.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
+import { ModelOptionBadgesComponent } from '../../../shared/model-picker/model-option-badges.component';
 import { AdminConfirmDialogComponent } from '../../admin-dialogs/admin-confirm-dialog.component';
 import { AdminReasonDialogComponent } from '../../admin-dialogs/admin-reason-dialog.component';
 import { AdminPageStore } from '../../admin-page.store';
@@ -100,7 +102,7 @@ const EMPTY_TEXTS: Readonly<Record<AiTelemetryKeySource, string>> = {
  */
 @Component({
   selector: 'app-telemetry-users',
-  imports: [AdminReasonDialogComponent, AdminConfirmDialogComponent],
+  imports: [AdminReasonDialogComponent, AdminConfirmDialogComponent, ModelOptionBadgesComponent],
   templateUrl: './telemetry-users.component.html',
   styleUrl: './telemetry-users.component.scss'
 })
@@ -130,6 +132,7 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
   readonly batch = TELEMETRY_USERS_BATCH;
   readonly formatInteger = formatInteger;
   readonly formatCost = formatCost;
+  readonly formatServiceTier = formatServiceTier;
 
   /** The users fetched so far, in the server's order. */
   readonly rows = signal<AiTelemetryUserRowDto[]>([]);

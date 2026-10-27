@@ -29,6 +29,8 @@ import {
   verificationLabel,
   verificationTooltip
 } from '../../shared/key-verification/key-verification';
+import { ModelOptionBadgesComponent } from '../../shared/model-picker/model-option-badges.component';
+import { formatServiceTier } from '../../utils/model-badge-format.util';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 
 /** The providers that can have a default key, in display order. */
@@ -47,7 +49,7 @@ export interface DefaultKeyError {
  */
 @Component({
   selector: 'app-admin-api-keys',
-  imports: [FormsModule, KeyVerificationDialogComponent],
+  imports: [FormsModule, KeyVerificationDialogComponent, ModelOptionBadgesComponent],
   templateUrl: './admin-api-keys.component.html',
   styleUrl: './admin-api-keys.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -75,6 +77,7 @@ export class AdminApiKeysComponent implements OnInit, OnChanges, OnDestroy {
   readonly providers = DEFAULT_KEY_PROVIDERS;
   readonly verificationLabel = verificationLabel;
   readonly verificationTooltip = verificationTooltip;
+  readonly formatServiceTier = formatServiceTier;
 
   /** Answers received since the host's last list, by provider. */
   private received: Record<string, DefaultApiKeyStatus> = {};

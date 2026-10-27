@@ -272,11 +272,19 @@ public class SystemDefaultApiKeyService
             .Where(c => c.UseDefaultApiKey)
             .OrderBy(c => c.OrderIndex)
             .ThenBy(c => c.Id)
-            .Select(c => new { c.Provider, c.Id, c.DisplayName, c.IsEnabled })
+            .Select(c => new { c.Provider, c.Id, c.DisplayName, c.IsEnabled, c.ThinkingLevel, c.ReasoningMode, c.ServiceTier })
             .ToListAsync(ct);
 
         return configs
-            .Select(c => (c.Provider, new DefaultApiKeyUserDto { Id = c.Id, DisplayName = c.DisplayName, IsEnabled = c.IsEnabled }))
+            .Select(c => (c.Provider, new DefaultApiKeyUserDto
+            {
+                Id = c.Id,
+                DisplayName = c.DisplayName,
+                IsEnabled = c.IsEnabled,
+                ThinkingLevel = c.ThinkingLevel,
+                ReasoningMode = c.ReasoningMode,
+                ServiceTier = c.ServiceTier
+            }))
             .ToList();
     }
 

@@ -262,6 +262,10 @@ export interface DefaultApiKeyConfigRef {
   id: number;
   displayName: string;
   isEnabled: boolean;
+  /** The configuration's settings, for its badges. No provider: it is the key's. */
+  thinkingLevel?: string | null;
+  reasoningMode?: string | null;
+  serviceTier?: string | null;
 }
 
 /** One provider's default key. Never carries the key itself, only its last four characters. */
@@ -539,6 +543,11 @@ export interface AiTelemetryUserConfigDto {
   keySource: 'system' | 'user';
   configId: number;
   configName: string;
+  /** The configuration's (or own-key model's) current settings, for its badges; null when it is gone. */
+  provider?: string | null;
+  thinkingLevel?: string | null;
+  reasoningMode?: string | null;
+  serviceTier?: string | null;
   requests: number;
   estimatedCost: number;
   /** The user's own assignment, if any. */
@@ -771,6 +780,11 @@ export interface AiTelemetryGroupConfigDto {
   /** Null on the own-key line. */
   configId?: number | null;
   configName: string;
+  /** The configuration's current settings, for its badges; null when it is gone and on the own-key line. */
+  provider?: string | null;
+  thinkingLevel?: string | null;
+  reasoningMode?: string | null;
+  serviceTier?: string | null;
   requests: number;
   estimatedCost: number;
   assignmentId?: number | null;

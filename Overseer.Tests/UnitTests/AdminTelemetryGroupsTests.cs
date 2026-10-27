@@ -292,6 +292,38 @@ public class AdminTelemetryGroupsTests
     }
 
     [Fact]
+    public async Task GetGroups_SystemLinesCarryTheirConfigurationsBadgeSettings_AndTheOwnKeyLineNone()
+    {
+        using var db = NewDb();
+        await SeedAsync(db);
+        foreach (var config in await db.SystemAiApiConfigurations.ToListAsync(TestContext.Current.CancellationToken))
+        {
+            config.ThinkingLevel = "level-" + config.Id;
+            config.ReasoningMode = "Summary";
+            config.ServiceTier = "priority";
+        }
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var red = Row(await GroupsAsync(db, keys: "both"), "Red");
+
+        // Configuration 1 granted and used, 2 granted only, 3 used only.
+        foreach (long id in new long[] { 1, 2, 3 })
+        {
+            var line = Assert.Single(red.Configs, c => c.ConfigId == id);
+            Assert.Equal("Anthropic", line.Provider);
+            Assert.Equal("level-" + id, line.ThinkingLevel);
+            Assert.Equal("Summary", line.ReasoningMode);
+            Assert.Equal("priority", line.ServiceTier);
+        }
+
+        var own = Assert.Single(red.Configs, c => c.KeySource == "user");
+        Assert.Null(own.Provider);
+        Assert.Null(own.ThinkingLevel);
+        Assert.Null(own.ReasoningMode);
+        Assert.Null(own.ServiceTier);
+    }
+
+    [Fact]
     public async Task GetGroups_KeySourcesSelectTheLogs()
     {
         using var db = NewDb();

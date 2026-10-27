@@ -315,7 +315,9 @@ default, highest first), *Requests*, *Tokens*, *Busiest hour*, *Refusals*, *Last
 last request sorts last in both directions, and ties go by user name, then user id.
 
 The cards are built like the breakdown's, on the same layout mixins and breakpoints
-(`_telemetry-cards.scss`): a title row with the icon buttons at its end, the meta line *Last active …*, an
+(`_telemetry-cards.scss`): a title row with the icon buttons at its end, its title the user name in the
+Admin → Users card's style (gold `--title-color`, the `entity-card-title` mixin of `_admin-shared.scss`,
+which `admin-user-card` also includes), the meta line *Last active …*, an
 *Account state* badge row (*Blocked*, *Deletion hold*, *N refusals*), nine metrics, then the
 configurations table, full width, in a keyboard-scrollable labeled region that stacks under 36 rem. The
 metrics are requests (chat and title), tokens, estimated cost, the **busiest hour** (most requests in one
@@ -331,6 +333,15 @@ own-key line is one per user and `UserAiModelId`, named by the `UserAiModel`'s `
 logged `ModelDisplayName`, else the model id, and tagged *own key*; it shows *—* under *Today* and *This
 month* and the limit source *own key* (`LimitSource = "ownKey"`), since limits apply to system
 configurations only.
+
+Each line's name is followed by the configuration's badges, as everywhere Overseer names a
+configuration: thinking level, reasoning mode and provider through `app-model-option-badges`, then the
+service tier, then the *own key* and *disabled* tags, in one row that wraps between badges (the
+`config-badges` mixin of `_telemetry-cards.scss`). They are the configuration's (or the own-key
+`UserAiModel`'s) **current** settings, sent as `provider`, `thinkingLevel`, `reasoningMode` and
+`serviceTier`; a line whose configuration or own-key model has been deleted has none and keeps its logged
+name. No availability chip and no role badges: the first would need a catalog lookup per line, and the
+view's role filters already express the second.
 
 The server's row carries `systemRequests`, `userKeyRequests`, `systemEstimatedCost` and
 `userKeyEstimatedCost` beside the totals, each configuration line its `keySource` (a `configId` is unique
@@ -382,6 +393,10 @@ the charts dialog equal no filter.
   configurations members used that the group does not grant (tagged *not granted by this group*, no
   counters); then one *Members' own keys* line under user keys. Highest requests first. The system lines
   appear while the *Keys* filter includes system keys, the own-key line while it includes user keys.
+  System lines carry the configuration's badges as in the Users view (§ 12); the *Members' own keys* line
+  has none, since it sums many models.
+- **Title:** the group name in the Users card's title style (`entity-card-title`); *No group* too, so the
+  list lines up, its *Users in no group* badge marking it.
 - **Actions:** *Usage by model* (§ 7c), *Usage charts* (the charts dialog with the group chosen in its
   Groups tab), *Manage limits* (selects Users → Groups and opens that group's AI configuration access
   dialog).

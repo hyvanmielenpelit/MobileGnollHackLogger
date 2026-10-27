@@ -191,6 +191,19 @@
   }
 }
 
+/* The badges after a configuration's name in a card's configurations table; wraps between badges.
+   Emitted at the top level. */
+@mixin config-badges($row: '.tl-config-badges') {
+  #{$row} {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    margin-inline-start: 6px;
+    vertical-align: middle;
+  }
+}
+
 /* The title, and the card's icon buttons at its end. Included in the row's rule. */
 @mixin card-title-row($title: '.tl-card-title') {
   display: flex;

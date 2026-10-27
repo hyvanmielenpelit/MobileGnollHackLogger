@@ -114,10 +114,16 @@
               <ul class="aak-config-list">
                 @for (config of status.usedBy; track config.id) {
                   <li>
-                    {{ config.displayName }}
-                    @if (!config.isEnabled) {
-                      <span class="aak-config-disabled">(disabled)</span>
-                    }
+                    <span class="aak-config-line">
+                      {{ config.displayName }}
+                      <app-model-option-badges [model]="config" />
+                      @if (config.serviceTier) {
+                        &ngsp;<span class="config-badge"><span class="visually-hidden">service tier </span>{{ formatServiceTier(config.serviceTier) }}</span>
+                      }
+                      @if (!config.isEnabled) {
+                        &ngsp;<span class="aak-config-disabled">(disabled)</span>
+                      }
+                    </span>
                   </li>
                 }
               </ul>
@@ -180,7 +186,15 @@
           </p>
           <ul class="aak-config-list aak-delete-configs">
             @for (config of deleteCheck.configs; track config.id) {
-              <li>{{ config.displayName }}</li>
+              <li>
+                <span class="aak-config-line">
+                  {{ config.displayName }}
+                  <app-model-option-badges [model]="config" />
+                  @if (config.serviceTier) {
+                    &ngsp;<span class="config-badge"><span class="visually-hidden">service tier </span>{{ formatServiceTier(config.serviceTier) }}</span>
+                  }
+                </span>
+              </li>
             }
           </ul>
         }

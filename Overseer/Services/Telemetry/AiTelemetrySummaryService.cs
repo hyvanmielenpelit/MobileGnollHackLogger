@@ -1081,6 +1081,10 @@ public class AiTelemetrySummaryService
     /// <summary>One user's usage of one own-key model; a null id when the log attributes none.</summary>
     private sealed record UserKeyModelUsage(long? UserAiModelId, long Requests, decimal Cost, string? DisplayName, string? ModelId);
 
+    /// <summary>An own-key model's current name and the settings its badges show.</summary>
+    private sealed record KeyModelBadges(long Id, string? DisplayName, string? Provider, string? ThinkingLevel, string? ReasoningMode,
+        string? ServiceTier);
+
     /// <summary>One user's usage of the selected key sources over a range, with activity, refusals and account state.</summary>
     private sealed class UserAggregate
     {
@@ -1309,11 +1313,12 @@ public class AiTelemetrySummaryService
             .ToListAsync(ct);
         var keyModelIds = aggregates.SelectMany(a => a.KeyModels).Where(m => m.UserAiModelId != null).Select(m => m.UserAiModelId!.Value)
             .Distinct().ToList();
-        var keyModelNames = keyModelIds.Count == 0
-            ? new Dictionary<long, string?>()
+        var keyModels = keyModelIds.Count == 0
+            ? new Dictionary<long, KeyModelBadges>()
             : await _db.UserAiModels.AsNoTracking()
                 .Where(m => keyModelIds.Contains(m.Id))
-                .ToDictionaryAsync(m => m.Id, m => m.DisplayName, ct);
+                .Select(m => new KeyModelBadges(m.Id, m.DisplayName, m.Provider, m.ThinkingLevel, m.ReasoningMode, m.ServiceTier))
+                .ToDictionaryAsync(m => m.Id, ct);
 
         var now = DateTime.UtcNow;
         var rows = new List<AiTelemetryUserRowDto>();
@@ -1365,6 +1370,10 @@ public class AiTelemetrySummaryService
                     KeySource = "system",
                     ConfigId = c.ConfigId,
                     ConfigName = !string.IsNullOrEmpty(config?.DisplayName) ? config!.DisplayName : c.DisplayName ?? config?.ModelId ?? c.ConfigId.ToString(CultureInfo.InvariantCulture),
+                    Provider = config?.Provider,
+                    ThinkingLevel = config?.ThinkingLevel,
+                    ReasoningMode = config?.ReasoningMode,
+                    ServiceTier = config?.ServiceTier,
                     Requests = c.Requests,
                     EstimatedCost = c.Cost,
                     AssignmentId = assignment?.Id,
@@ -1385,7 +1394,8 @@ public class AiTelemetrySummaryService
             // One line per UserAiModel the log attributes; a ConfigId is unique only within its key source.
             foreach (var m in u.KeyModels)
             {
-                string? modelName = m.UserAiModelId is long modelId && keyModelNames.TryGetValue(modelId, out var name) ? name : null;
+                KeyModelBadges? keyModel = m.UserAiModelId is long modelId && keyModels.TryGetValue(modelId, out var found) ? found : null;
+                string? modelName = keyModel?.DisplayName;
                 lines.Add(new AiTelemetryUserConfigDto
                 {
                     KeySource = "user",
@@ -1393,6 +1403,10 @@ public class AiTelemetrySummaryService
                     ConfigName = !string.IsNullOrEmpty(modelName) ? modelName
                         : !string.IsNullOrEmpty(m.DisplayName) ? m.DisplayName
                         : m.ModelId ?? string.Empty,
+                    Provider = keyModel?.Provider,
+                    ThinkingLevel = keyModel?.ThinkingLevel,
+                    ReasoningMode = keyModel?.ReasoningMode,
+                    ServiceTier = keyModel?.ServiceTier,
                     Requests = m.Requests,
                     EstimatedCost = m.Cost,
                     LimitSource = "ownKey"
@@ -1462,7 +1476,7 @@ public class AiTelemetrySummaryService
             .Distinct().ToList();
         var configs = await _db.SystemAiApiConfigurations.AsNoTracking()
             .Where(c => configIds.Contains(c.Id))
-            .Select(c => new { c.Id, c.DisplayName, c.ModelId })
+            .Select(c => new { c.Id, c.DisplayName, c.ModelId, c.Provider, c.ThinkingLevel, c.ReasoningMode, c.ServiceTier })
             .ToDictionaryAsync(c => c.Id, ct);
 
         string ConfigName(long configId, string? loggedName)
@@ -1470,6 +1484,18 @@ public class AiTelemetrySummaryService
             configs.TryGetValue(configId, out var config);
             return !string.IsNullOrEmpty(config?.DisplayName) ? config!.DisplayName
                 : loggedName ?? config?.ModelId ?? configId.ToString(CultureInfo.InvariantCulture);
+        }
+
+        AiTelemetryGroupConfigDto WithBadges(AiTelemetryGroupConfigDto line, long configId)
+        {
+            if (configs.TryGetValue(configId, out var config))
+            {
+                line.Provider = config.Provider;
+                line.ThinkingLevel = config.ThinkingLevel;
+                line.ReasoningMode = config.ReasoningMode;
+                line.ServiceTier = config.ServiceTier;
+            }
+            return line;
         }
 
         var now = DateTime.UtcNow;
@@ -1527,7 +1553,7 @@ public class AiTelemetrySummaryService
             foreach (var grant in granted.OrderBy(a => a.OrderIndex).ThenBy(a => a.Id))
             {
                 usedById.TryGetValue(grant.SystemAiApiConfigurationId, out var usage);
-                lines.Add(new AiTelemetryGroupConfigDto
+                lines.Add(WithBadges(new AiTelemetryGroupConfigDto
                 {
                     KeySource = "system",
                     ConfigId = grant.SystemAiApiConfigurationId,
@@ -1543,20 +1569,20 @@ public class AiTelemetrySummaryService
                     MaxMonthlyChatRequests = grant.MaxMonthlyChatRequests,
                     DailyChatTokens = EffectiveDaily(grant, now, grant.DailyChatTokensCount),
                     MaxDailyChatTokens = grant.MaxDailyChatTokens
-                });
+                }, grant.SystemAiApiConfigurationId));
             }
 
             var grantedIds = lines.Select(l => l.ConfigId).ToHashSet();
             foreach (var u in used.Where(c => !grantedIds.Contains(c.ConfigId)))
             {
-                lines.Add(new AiTelemetryGroupConfigDto
+                lines.Add(WithBadges(new AiTelemetryGroupConfigDto
                 {
                     KeySource = "system",
                     ConfigId = u.ConfigId,
                     ConfigName = ConfigName(u.ConfigId, u.DisplayName),
                     Requests = u.Requests,
                     EstimatedCost = u.Cost
-                });
+                }, u.ConfigId));
             }
 
             if (IncludesUser(keys))

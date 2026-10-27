@@ -235,12 +235,18 @@
                     <tr [attr.data-key-source]="config.keySource">
                       <th scope="row">
                         {{ config.configName }}
-                        @if (config.keySource === 'user') {
-                          <span class="gh-tag tl-config-own-key">own key</span>
-                        }
-                        @if (config.assignmentEnabled === false) {
-                          <span class="gh-tag tl-config-disabled">disabled</span>
-                        }
+                        <span class="tl-config-badges">
+                          <app-model-option-badges [model]="config" />
+                          @if (config.serviceTier) {
+                            &ngsp;<span class="config-badge"><span class="visually-hidden">service tier </span>{{ formatServiceTier(config.serviceTier) }}</span>
+                          }
+                          @if (config.keySource === 'user') {
+                            &ngsp;<span class="gh-tag tl-config-own-key">own key</span>
+                          }
+                          @if (config.assignmentEnabled === false) {
+                            &ngsp;<span class="gh-tag tl-config-disabled">disabled</span>
+                          }
+                        </span>
                       </th>
                       <td class="num" data-label="Requests">{{ formatInteger(config.requests) }}</td>
                       <td class="num" data-label="Est. cost">{{ formatCost(config.estimatedCost) }}</td>

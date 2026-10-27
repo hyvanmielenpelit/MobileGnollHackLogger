@@ -396,6 +396,39 @@ describe('TelemetryUsersComponent', () => {
       expect(textOf(row.querySelector('.tl-config-source'))).toBe('own key');
     });
 
+    it('shows a configuration\'s thinking level, reasoning, provider and service tier badges in its row header', () => {
+      nextPage = page([user(1, {
+        configs: [
+          config({ provider: 'OpenAI', thinkingLevel: 'high', reasoningMode: 'Summary', serviceTier: 'flex', assignmentEnabled: false }),
+          config({ configId: 8, configName: 'Gone' })
+        ]
+      })]);
+      create();
+
+      const headers = Array.from(cards()[0].querySelectorAll('tbody th'));
+      const badges = headers[0].querySelector('.tl-config-badges')!;
+      expect(textOf(badges.querySelector('.thinking-badge'))).toBe('thinking level High');
+      expect(textOf(badges.querySelector('.reasoning-badge'))).toBe('reasoning mode Summary');
+      expect(textOf(badges.querySelector('app-provider-badge'))).toBe('OpenAI');
+      expect(textOf(badges.querySelector('.config-badge'))).toBe('service tier Flex');
+      expect(textOf(badges.querySelector('.tl-config-disabled'))).toBe('disabled');
+
+      expect(headers[1].querySelector('.thinking-badge')).toBeNull();
+      expect(headers[1].querySelector('app-provider-badge')).toBeNull();
+      expect(headers[1].querySelector('.config-badge')).toBeNull();
+      expect(textOf(headers[1])).toBe('Gone');
+    });
+
+    it('titles the card with the user name, focusable from script', () => {
+      nextPage = page([user(1)]);
+      create();
+
+      const title = cards()[0].querySelector('h5.tl-user-title')!;
+      expect(title.id).toBe('tl-users-0-title');
+      expect(title.getAttribute('tabindex')).toBe('-1');
+      expect(textOf(title)).toBe('alice');
+    });
+
     it('renders both lines when a system configuration and an own model share a configId', () => {
       nextPage = page([user(1, { configs: [config({ configId: 7 }), ownKeyConfig({ configId: 7 })] })], 1, 'both');
       create(undefined, 'both');

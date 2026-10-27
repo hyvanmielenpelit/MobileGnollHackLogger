@@ -24,7 +24,9 @@ import {
 import { formatCost } from '../../benchmark/batteries/battery.models';
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
 import { parseServerUtcDate } from '../../../utils/date.util';
+import { formatServiceTier } from '../../../utils/model-badge-format.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
+import { ModelOptionBadgesComponent } from '../../../shared/model-picker/model-option-badges.component';
 import { AdminPageStore } from '../../admin-page.store';
 import { TelemetrySort, TelemetrySortPopoverComponent } from '../sort-popover/telemetry-sort-popover.component';
 import {
@@ -80,7 +82,7 @@ const SCOPE_TEXTS: Readonly<Record<AiTelemetryKeySource, string>> = {
  */
 @Component({
   selector: 'app-telemetry-groups',
-  imports: [TelemetrySortPopoverComponent],
+  imports: [TelemetrySortPopoverComponent, ModelOptionBadgesComponent],
   templateUrl: './telemetry-groups.component.html',
   styleUrl: './telemetry-groups.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -107,6 +109,7 @@ export class TelemetryGroupsComponent implements OnInit, OnChanges, OnDestroy {
   readonly batch = TELEMETRY_GROUPS_BATCH;
   readonly formatInteger = formatInteger;
   readonly formatCost = formatCost;
+  readonly formatServiceTier = formatServiceTier;
   readonly displayName = groupDisplayName;
 
   /** Every group the server returned, in its order. */

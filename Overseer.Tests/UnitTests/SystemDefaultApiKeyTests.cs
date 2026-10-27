@@ -434,6 +434,30 @@ public class SystemDefaultApiKeyTests
     }
 
     [Fact]
+    public async Task UsedBy_And_DeletionCheck_CarryTheConfigurationsBadgeSettings()
+    {
+        var f = Create();
+        var ct = TestContext.Current.CancellationToken;
+        var config = await AddConfigAsync(f.Db, "Default GPT", "OpenAI", useDefault: true, isEnabled: true);
+        config.ThinkingLevel = "high";
+        config.ReasoningMode = "Summary";
+        config.ServiceTier = "flex";
+        await f.Db.SaveChangesAsync(ct);
+
+        var statuses = Assert.IsAssignableFrom<IEnumerable<DefaultApiKeyStatusDto>>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetStatus(ct)).Value);
+        var check = Assert.IsType<DefaultApiKeyDeletionCheckDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetDeletionCheck("OpenAI", ct)).Value);
+
+        foreach (var used in new[] { Assert.Single(statuses.Single(s => s.Provider == "OpenAI").UsedBy), Assert.Single(check.Configs) })
+        {
+            Assert.Equal("high", used.ThinkingLevel);
+            Assert.Equal("Summary", used.ReasoningMode);
+            Assert.Equal("flex", used.ServiceTier);
+        }
+    }
+
+    [Fact]
     public async Task ApplyDefaultKey_CopiesTheKey_OrReturnsFalseWithoutOne()
     {
         var f = Create();

@@ -123,6 +123,15 @@
   padding-inline-start: 1.25rem;
 }
 
+/* The name, then its badges; wraps between badges and keeps the list item's bullet. */
+.aak-config-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  vertical-align: middle;
+}
+
 .aak-config-disabled {
   color: #a1a1aa;
   font-size: var(--text-secondary);

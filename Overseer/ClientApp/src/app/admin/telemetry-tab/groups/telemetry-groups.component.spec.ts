@@ -496,6 +496,41 @@ describe('TelemetryGroupsComponent', () => {
       expect(textOf(el.querySelector('#' + region.getAttribute('aria-labelledby')))).toBe('Configurations of Testers');
     });
 
+    it('shows a system line\'s configuration badges, and none on the Own keys line', () => {
+      next = dto([group(1, 'Testers', {
+        configs: [
+          config({ provider: 'Google', thinkingLevel: 'high', reasoningMode: 'Summary', serviceTier: 'priority' }),
+          config({ configId: 9, configName: 'Gemini', grantedByGroup: false, assignmentId: null, assignmentEnabled: null, thinkingLevel: 'low' }),
+          config({ keySource: 'user', configId: null, configName: 'Own keys', grantedByGroup: false, assignmentId: null, assignmentEnabled: null })
+        ]
+      })], 'both');
+      create(undefined, 'both');
+
+      const headers = Array.from(cards()[0].querySelectorAll('tbody th'));
+      const badges = headers[0].querySelector('.tl-config-badges')!;
+      expect(textOf(badges.querySelector('.thinking-badge'))).toBe('thinking level High');
+      expect(textOf(badges.querySelector('.reasoning-badge'))).toBe('reasoning mode Summary');
+      expect(textOf(badges.querySelector('app-provider-badge'))).toBe('Google');
+      expect(textOf(badges.querySelector('.config-badge'))).toBe('service tier Priority');
+
+      expect(textOf(headers[1].querySelector('.thinking-badge'))).toBe('thinking level Low');
+      expect(textOf(headers[1].querySelector('.tl-config-badges .tl-config-not-granted'))).toBe('not granted by this group');
+
+      expect(headers[2].querySelector('.thinking-badge')).toBeNull();
+      expect(headers[2].querySelector('app-provider-badge')).toBeNull();
+      expect(headers[2].querySelector('.config-badge')).toBeNull();
+      expect(textOf(headers[2])).toBe('Own keys own key');
+    });
+
+    it('titles the card with the group name, focusable from script', () => {
+      create();
+
+      const title = cards()[0].querySelector('h5.tl-group-title')!;
+      expect(title.id).toBe('tl-groups-0-title');
+      expect(title.getAttribute('tabindex')).toBe('-1');
+      expect(textOf(title)).toBe('Testers');
+    });
+
     it('stacks the configurations table under 36 rem of its own width', () => {
       next = dto([group(1, 'Testers', { configs: [config()] })]);
       create();

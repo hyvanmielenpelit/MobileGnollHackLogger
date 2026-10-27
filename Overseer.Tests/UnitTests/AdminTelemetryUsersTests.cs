@@ -207,6 +207,44 @@ public class AdminTelemetryUsersTests
     }
 
     [Fact]
+    public async Task GetUsers_ASystemLineCarriesItsConfigurationsBadgeSettings()
+    {
+        using var db = NewDb();
+        await SeedAsync(db);
+        var one = await db.SystemAiApiConfigurations.SingleAsync(c => c.Id == 1, TestContext.Current.CancellationToken);
+        one.ThinkingLevel = "high";
+        one.ReasoningMode = "Summary";
+        one.ServiceTier = "priority";
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var alice = Assert.Single((await UsersAsync(db)).Users, u => u.UserId == Alice);
+
+        var line = Assert.Single(alice.Configs, c => c.ConfigId == 1);
+        Assert.Equal("Anthropic", line.Provider);
+        Assert.Equal("high", line.ThinkingLevel);
+        Assert.Equal("Summary", line.ReasoningMode);
+        Assert.Equal("priority", line.ServiceTier);
+    }
+
+    [Fact]
+    public async Task GetUsers_ALineWhoseConfigurationWasDeletedHasNoBadgesAndKeepsItsLoggedName()
+    {
+        using var db = NewDb();
+        await SeedAsync(db);
+        db.SystemAiApiConfigurations.Remove(await db.SystemAiApiConfigurations.SingleAsync(c => c.Id == 2, TestContext.Current.CancellationToken));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var alice = Assert.Single((await UsersAsync(db)).Users, u => u.UserId == Alice);
+
+        var line = Assert.Single(alice.Configs, c => c.ConfigId == 2);
+        Assert.Equal("Logged 2", line.ConfigName);
+        Assert.Null(line.Provider);
+        Assert.Null(line.ThinkingLevel);
+        Assert.Null(line.ReasoningMode);
+        Assert.Null(line.ServiceTier);
+    }
+
+    [Fact]
     public async Task GetUsers_PeakHourBeatsSpreadOutRequests()
     {
         using var db = NewDb();
@@ -549,7 +587,31 @@ public class AdminTelemetryUsersTests
 
         var alice = Assert.Single((await UsersAsync(db, keys: "user")).Users, u => u.UserId == Alice);
 
-        Assert.Equal("Logged own", Assert.Single(alice.Configs).ConfigName);
+        var line = Assert.Single(alice.Configs);
+        Assert.Equal("Logged own", line.ConfigName);
+        Assert.Null(line.Provider);
+        Assert.Null(line.ThinkingLevel);
+    }
+
+    [Fact]
+    public async Task GetUsers_AnOwnKeyLineCarriesItsModelsBadgeSettings()
+    {
+        using var db = NewDb();
+        await SeedWithOwnKeysAsync(db);
+        var model = await db.UserAiModels.SingleAsync(m => m.Id == 1, TestContext.Current.CancellationToken);
+        model.ThinkingLevel = "medium";
+        model.ReasoningMode = "Raw";
+        model.ServiceTier = "flex";
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var alice = Assert.Single((await UsersAsync(db, keys: "user")).Users, u => u.UserId == Alice);
+
+        var line = Assert.Single(alice.Configs);
+        Assert.Equal("My Claude", line.ConfigName);
+        Assert.Equal("Anthropic", line.Provider);
+        Assert.Equal("medium", line.ThinkingLevel);
+        Assert.Equal("Raw", line.ReasoningMode);
+        Assert.Equal("flex", line.ServiceTier);
     }
 
     [Fact]

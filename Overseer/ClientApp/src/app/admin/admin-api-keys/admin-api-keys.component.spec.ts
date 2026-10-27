@@ -127,6 +127,31 @@ describe('AdminApiKeysComponent', () => {
     expect(card('OpenAI').querySelector('.aak-verification')).toBeNull();
   });
 
+  it('shows a used-by configuration\'s thinking level, reasoning and service tier badges, and no provider badge', async () => {
+    await render([
+      status('Anthropic', {
+        hasKey: true, keyHint: 'ab12',
+        usedBy: [
+          { id: 3, displayName: 'Claude Chat', isEnabled: true, thinkingLevel: 'high', reasoningMode: 'Summary', serviceTier: 'priority' },
+          { id: 4, displayName: 'Claude Title', isEnabled: false }
+        ]
+      })
+    ]);
+
+    const items = Array.from(card('Anthropic').querySelectorAll('.aak-used-by li')) as HTMLElement[];
+    expect(items.length).toBe(2);
+
+    const thinking = items[0].querySelector('.thinking-badge') as HTMLElement;
+    expect(thinking.textContent!.replace(/\s+/g, ' ').trim()).toBe('thinking level High');
+    expect(items[0].querySelector('.reasoning-badge')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('reasoning mode Summary');
+    expect(items[0].querySelector('.config-badge')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('service tier Priority');
+    expect(items[0].querySelector('app-provider-badge')).toBeNull();
+
+    expect(items[1].querySelector('.thinking-badge')).toBeNull();
+    expect(items[1].querySelector('.config-badge')).toBeNull();
+    expect(items[1].querySelector('.aak-config-disabled')!.textContent!.trim()).toBe('(disabled)');
+  });
+
   it('leaves the heading and the intro out when showHeading is false, and is labelled by the dialog heading', async () => {
     fixture.componentRef.setInput('showHeading', false);
     await render([status('Anthropic'), status('Google'), status('OpenAI')]);

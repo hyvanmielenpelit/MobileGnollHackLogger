@@ -1,7 +1,8 @@
 /* The filter bar, the status line and Load more are the global card-list classes in styles.scss;
    `.action-btn`, `.btn-ghost`, `.gh-tag` and `.gh-model-card-badges` are global too, and the Sort
    popover styles itself. The card's grid, head and title are the breakdown cards', from
-   _telemetry-cards.scss. */
+   _telemetry-cards.scss; the title is the Admin → Users card's, from _admin-shared.scss. */
+@use '../../admin-shared' as shared;
 @use '../telemetry-cards' as cards;
 
 :host {
@@ -70,7 +71,7 @@
 }
 
 .tl-group-title {
-  @include cards.card-title;
+  @include shared.entity-card-title;
 }
 
 .tl-group-actions {
@@ -222,10 +223,11 @@ time {
   }
 }
 
+@include cards.config-badges;
+
 .tl-config-own-key,
 .tl-config-disabled,
 .tl-config-not-granted {
-  margin-inline-start: 6px;
   border-color: var(--border-glass);
   color: #a1a1aa;
 }
