@@ -503,6 +503,16 @@ export class ModelsComponent implements OnInit {
     return this.titleOptionsCache;
   }
 
+  /** The saved title model is not among the options the user can pick: titles run on Default (First Available). */
+  get titleModelUnavailable(): boolean {
+    return !this.loading && !this.firstLoad && this.titleModelSelection !== null
+      && !this.titleModelOptions.some(o => o.key === this.titleModelSelection);
+  }
+
+  get effectiveTitleSelection(): string | null {
+    return this.titleModelUnavailable ? null : this.titleModelSelection;
+  }
+
   openModelPicker() {
     this.pickerProvider = this.providers.length > 0 ? this.providers[0] : 'OpenAI';
     this.isAddingModel = true;

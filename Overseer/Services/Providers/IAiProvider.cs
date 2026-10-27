@@ -108,6 +108,15 @@ public interface IAiProvider
         string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier, string? safetyIdentifier)
         => BuildTitleRequestBody(modelId, systemPrompt, userMessage, maxTokens, serviceTier);
 
+    /// <summary>The title request body with the model's thinking level and reasoning mode; the default ignores both.</summary>
+    Dictionary<string, object> BuildTitleRequestBody(
+        string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier, string? safetyIdentifier,
+        string? thinkingLevel, string? reasoningMode)
+        => BuildTitleRequestBody(modelId, systemPrompt, userMessage, maxTokens, serviceTier, safetyIdentifier);
+
+    /// <summary>The thinking level a chat request built with <paramref name="configuredLevel"/> carries; null when it carries none.</summary>
+    string? EffectiveThinkingLevel(string? configuredLevel) => string.IsNullOrEmpty(configuredLevel) ? null : configuredLevel;
+
     string GetTitleUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint);
 
     string? ParseTitleResponse(JsonElement root);

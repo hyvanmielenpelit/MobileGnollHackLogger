@@ -269,6 +269,24 @@ public class AnthropicProviderTests
         Assert.False(root.TryGetProperty("output_config", out _));
     }
 
+    [Theory]
+    [InlineData("low", null, "low")]
+    [InlineData(null, null, "high")]
+    [InlineData(null, "medium", "medium")]
+    [InlineData(null, "none", null)]
+    [InlineData("none", null, "none")]
+    public void EffectiveThinkingLevel_IsTheConfiguredLevelOrTheExplicitDefault(string? configured, string? explicitDefault, string? expected)
+    {
+        var settings = new Dictionary<string, string?>();
+        if (explicitDefault != null)
+        {
+            settings["AnthropicSettings:ExplicitDefaultEffort"] = explicitDefault;
+        }
+        IAiProvider provider = new AnthropicProvider(new ConfigurationBuilder().AddInMemoryCollection(settings).Build());
+
+        Assert.Equal(expected, provider.EffectiveThinkingLevel(configured));
+    }
+
     [Fact]
     public void BuildChatRequestBody_WithReasoningSummary_SetsDisplay()
     {

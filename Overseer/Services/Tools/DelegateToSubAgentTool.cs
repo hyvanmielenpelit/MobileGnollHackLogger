@@ -187,6 +187,8 @@ public class DelegateToSubAgentTool : IToolHandler
         ModelPricing? pricing = null;
         string? resolvedServiceTier = null;
         string? resolvedThinkingLevel = null;
+        // What the request carries: a provider may apply its own default to an unset level.
+        string? sentThinkingLevel = null;
 
         try
         {
@@ -242,6 +244,7 @@ public class DelegateToSubAgentTool : IToolHandler
             {
                 resolvedThinkingLevel = null;
             }
+            sentThinkingLevel = aiProvider.EffectiveThinkingLevel(resolvedThinkingLevel);
 
             if (!string.IsNullOrEmpty(resolvedReasoningMode) &&
                 metadata.SupportedReasoningModes.Count > 0 &&
@@ -368,7 +371,7 @@ public class DelegateToSubAgentTool : IToolHandler
                            $"Provider: {resolved.Provider}\n" +
                            $"Model: {resolved.ModelId}\n" +
                            $"Credential Source: {resolved.CredentialSource}\n" +
-                           $"Thinking Level: {resolvedThinkingLevel ?? "None"}\n" +
+                           $"Thinking Level: {sentThinkingLevel ?? "None"}\n" +
                            $"Reasoning Mode: {resolvedReasoningMode ?? "None"}\n" +
                            $"Service Tier: {resolvedServiceTier ?? "None"}\n" +
                            $"Parallel Execution: {subAgentExecContext.ParallelExecutionMode}\n" +
@@ -541,7 +544,7 @@ public class DelegateToSubAgentTool : IToolHandler
             if (resolved != null && subAgentResult.ModelCalls.Count > 0)
             {
                 await RecordRunTelemetryAsync(subAgentDef, toolCallId, resolved, pricing, resolvedServiceTier,
-                    resolvedThinkingLevel, subAgentResult, context);
+                    sentThinkingLevel, subAgentResult, context);
             }
         }
     }

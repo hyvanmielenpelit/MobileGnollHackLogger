@@ -759,7 +759,8 @@ public class AdminController : ControllerBase
 
     /// <summary>
     /// Deletes the configuration unless something is calling its model right now. Benchmark history
-    /// and usage and error logs are kept: none of them depends on the configuration row.
+    /// and usage and error logs are kept: none of them depends on the configuration row. Users who chose
+    /// it as their title model return to Default (First Available).
     /// </summary>
     [HttpDelete("systemconfigs/{id}")]
     public async Task<IActionResult> DeleteSystemConfig(long id)
@@ -779,6 +780,13 @@ public class AdminController : ControllerBase
         }
 
         _dbContext.SystemAiApiConfigurations.Remove(config);
+
+        var titleSettings = await _dbContext.UserAiSettings.Where(s => s.TitleGenerationSystemModelId == id).ToListAsync();
+        foreach (var settings in titleSettings)
+        {
+            settings.TitleGenerationSystemModelId = null;
+        }
+
         await _dbContext.SaveChangesAsync();
         return Ok();
     }

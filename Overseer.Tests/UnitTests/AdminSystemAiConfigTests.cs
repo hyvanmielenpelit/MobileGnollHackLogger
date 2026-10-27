@@ -444,6 +444,28 @@ public class AdminSystemAiConfigTests
     }
 
     [Fact]
+    public async Task DeleteSystemConfig_ReturnsUsersWhoChoseItForTitles_ToDefault()
+    {
+        var (controller, db, _) = CreateTestController();
+        var ct = TestContext.Current.CancellationToken;
+        var doomed = await AddConfigAsync(db);
+        var kept = await AddConfigAsync(db);
+        db.UserAiSettings.AddRange(
+            new UserAiSettings { AspNetUserId = "title-user-1", TitleGenerationSystemModelId = doomed.Id },
+            new UserAiSettings { AspNetUserId = "title-user-2", TitleGenerationSystemModelId = doomed.Id },
+            new UserAiSettings { AspNetUserId = "title-user-3", TitleGenerationSystemModelId = kept.Id });
+        await db.SaveChangesAsync(ct);
+
+        Assert.IsType<OkResult>(await controller.DeleteSystemConfig(doomed.Id));
+
+        var titleModels = await db.UserAiSettings.AsNoTracking()
+            .ToDictionaryAsync(s => s.AspNetUserId, s => s.TitleGenerationSystemModelId, ct);
+        Assert.Null(titleModels["title-user-1"]);
+        Assert.Null(titleModels["title-user-2"]);
+        Assert.Equal(kept.Id, titleModels["title-user-3"]);
+    }
+
+    [Fact]
     public async Task DeleteSystemConfig_UsedByACompletedRun_Succeeds_AndLeavesTheRunsHistoryIntact()
     {
         var (controller, db, _) = CreateTestController();

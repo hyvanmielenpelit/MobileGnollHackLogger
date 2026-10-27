@@ -177,9 +177,12 @@
           <app-model-picker class="title-model-selector-wrapper" variant="compact" label="Title generation model"
                             viewStateKey="models.titleGeneration"
                             noneLabel="Default (First Available)" [options]="titleModelOptions"
-                            [selectedKey]="titleModelSelection || null"
+                            [selectedKey]="effectiveTitleSelection"
                             (selectionChange)="selectTitleModelByKey($event.key)"></app-model-picker>
         </div>
+        @if (titleModelUnavailable) {
+          <p class="form-text text-muted mb-0" id="titleModelUnavailableHint">Your chosen title model is no longer available, so titles use Default (First Available). Choose a model to change it.</p>
+        }
       </div>
     }
   </div>

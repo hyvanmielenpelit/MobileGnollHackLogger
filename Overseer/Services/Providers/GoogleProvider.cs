@@ -787,7 +787,7 @@ public class GoogleProvider : IAiProvider
             {
                 new { role = "user", parts = new[] { new { text = $"{systemPrompt}\n\nUser Message: {userMessage}" } } }
             },
-            ["generationConfig"] = new { maxOutputTokens = maxTokens }
+            ["generationConfig"] = new Dictionary<string, object> { ["maxOutputTokens"] = maxTokens }
         };
 
         if (!string.IsNullOrEmpty(serviceTier) && !string.Equals(serviceTier, "none", StringComparison.OrdinalIgnoreCase))
@@ -795,6 +795,19 @@ public class GoogleProvider : IAiProvider
             req["service_tier"] = serviceTier;
         }
 
+        return req;
+    }
+
+    /// <summary>Adds <c>generationConfig.thinkingConfig</c> by the chat's rule; Gemini has no reasoning mode or safety identifier field.</summary>
+    public Dictionary<string, object> BuildTitleRequestBody(
+        string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier, string? safetyIdentifier,
+        string? thinkingLevel, string? reasoningMode)
+    {
+        var req = BuildTitleRequestBody(modelId, systemPrompt, userMessage, maxTokens, serviceTier);
+        if (!string.IsNullOrEmpty(thinkingLevel) && req["generationConfig"] is Dictionary<string, object> genConfig)
+        {
+            genConfig["thinkingConfig"] = new { thinkingLevel = thinkingLevel.ToUpperInvariant() };
+        }
         return req;
     }
 
@@ -833,13 +846,20 @@ public class GoogleProvider : IAiProvider
         {
             var firstCandidate = candidatesArray[0];
             if (firstCandidate.TryGetProperty("content", out var cObj) &&
-                cObj.TryGetProperty("parts", out var partsArr) && partsArr.GetArrayLength() > 0)
+                cObj.TryGetProperty("parts", out var partsArr) && partsArr.ValueKind == JsonValueKind.Array)
             {
-                var firstPart = partsArr[0];
-                if (firstPart.TryGetProperty("text", out var textProp))
+                // A thought summary part can precede the answer.
+                foreach (var part in partsArr.EnumerateArray())
                 {
-                    var text = textProp.GetString() ?? "";
-                    return text.Trim('"', ' ', '\r', '\n');
+                    if (part.TryGetProperty("thought", out var thoughtProp) && thoughtProp.ValueKind == JsonValueKind.True)
+                    {
+                        continue;
+                    }
+                    if (part.TryGetProperty("text", out var textProp))
+                    {
+                        var text = textProp.GetString() ?? "";
+                        return text.Trim('"', ' ', '\r', '\n');
+                    }
                 }
             }
         }

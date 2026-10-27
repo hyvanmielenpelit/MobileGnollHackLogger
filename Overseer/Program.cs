@@ -294,6 +294,7 @@ builder.Services.AddScoped<ChatService>();
 builder.Services.AddSingleton<Overseer.Services.ParallelExecutionResolver>();
 builder.Services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
 builder.Services.AddScoped<SystemAiConfigService>();
+builder.Services.AddScoped<TitleModelResolver>();
 builder.Services.Configure<Overseer.Models.AiUsageGuardOptions>(builder.Configuration.GetSection(Overseer.Models.AiUsageGuardOptions.SectionName));
 builder.Services.AddScoped<Overseer.Services.Security.AiUsageGuard>();
 

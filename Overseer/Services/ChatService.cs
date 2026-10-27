@@ -488,6 +488,8 @@ public class ChatService
         string? model = null;
         string? modelDisplayName = null;
         string? thinkingLevel = null;
+        // What the request carries: a provider may apply its own default to an unset level.
+        string? sentThinkingLevel = null;
         string? reasoningMode = null;
         string? reasoningSummary = null;
         string? serviceTier = null;
@@ -724,6 +726,7 @@ public class ChatService
                 yield return new ChatEvent { Type = "error", Data = $"Error: AI Provider '{provider}' not supported." };
                 yield break;
             }
+            sentThinkingLevel = aiProvider.EffectiveThinkingLevel(thinkingLevel);
 
             bool hasGameSnapshot = false;
             bool hasMessageHistory = false;
@@ -1669,7 +1672,7 @@ public class ChatService
                     new Overseer.Services.Telemetry.ChatAttemptLinks(
                         Guid.NewGuid(), RoleContext: 1, AgentDepth: 0,
                         systemModelId.HasValue ? AiKeySource.System : AiKeySource.UserKey,
-                        systemModelId, systemModelId.HasValue ? null : userId, thinkingLevel));
+                        systemModelId, systemModelId.HasValue ? null : userId, sentThinkingLevel));
             }
         }
 
@@ -1858,7 +1861,7 @@ public class ChatService
                     TimestampUtc = DateTime.UtcNow,
                     ProviderUsed = provider,
                     ModelUsed = model,
-                    ThinkingLevelUsed = thinkingLevel,
+                    ThinkingLevelUsed = sentThinkingLevel,
                     ReasoningModeUsed = reasoningMode,
                     ServiceTierUsed = serviceTier,
                     ActualServiceTierUsed = runResult.ActualServiceTier,
@@ -1924,7 +1927,7 @@ public class ChatService
                         cacheReadTokens: runResult.CacheReadTokens,
                         cacheCreationTokens: runResult.CacheCreationTokens,
                         totalDurationMs: runResult.TotalDurationMs,
-                        thinkingLevel: new UsageThinkingLevel(thinkingLevel),
+                        thinkingLevel: new UsageThinkingLevel(sentThinkingLevel),
                         // The main model's own cost: sub-agents write usage rows of their own.
                         estimatedCost: mainCost,
                         pricingSource: pricingSource);
@@ -1935,7 +1938,7 @@ public class ChatService
                     await Overseer.Services.Telemetry.UserKeyUsageRecorder.TryRecordAsync(
                         _scopeFactory, (ILogger?)_logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ChatService>.Instance,
                         new Overseer.Services.Telemetry.UserKeyUsageEntry(
-                            userId, userModelId, provider ?? string.Empty, model ?? string.Empty, modelDisplayName, thinkingLevel,
+                            userId, userModelId, provider ?? string.Empty, model ?? string.Empty, modelDisplayName, sentThinkingLevel,
                             wholeTurnInputTokens, wholeTurnOutputTokens, runResult.CacheReadTokens, runResult.CacheCreationTokens,
                             runResult.TotalDurationMs, RoleContext: 1, mainCost, pricingSource));
                 }
@@ -2700,113 +2703,41 @@ public class ChatService
             
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var cryptoService = scope.ServiceProvider.GetRequiredService<CryptoService>();
-            
+
             var settings = await dbContext.UserAiSettings.FindAsync(new object[] { userId }, cancellationToken);
-            UserAiModel? model = null;
-            string provider = "";
-            string modelId = "";
-            string apiKey = "";
-            string? serviceTier = null;
-            /* Resolved alongside the key in each branch below, because the endpoint belongs to
-               whichever key holder funds the call. Left at Official, a configured deployment's
-               title requests would go to the public API carrying its credential. */
-            var titleEndpoint = Overseer.Services.Providers.AiEndpointDescriptor.Official;
-
-            long? usedSystemModelId = settings?.TitleGenerationSystemModelId;
-            // The system configuration that funds the title, kept for pricing; null on the user's own key.
-            SystemAiApiConfiguration? titleConfig = null;
-
-            if (settings?.TitleGenerationSystemModelId != null)
+            var titleModelResolver = ActivatorUtilities.GetServiceOrCreateInstance<TitleModelResolver>(scope.ServiceProvider);
+            var resolution = await titleModelResolver.ResolveAsync(settings, userId, cancellationToken);
+            if (_showDebugLog)
             {
-                var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                var (config, errorMessage) = await systemAiConfigService.GetAndCheckSystemConfigAsync(settings.TitleGenerationSystemModelId.Value, userId, requiredRoleFilter: 2);
-
-                if (config != null && !string.IsNullOrEmpty(config.EncryptedApiKey) && !string.IsNullOrEmpty(config.ApiKeyNonce) && !string.IsNullOrEmpty(config.ApiKeyTag))
+                foreach (var skipReason in resolution.SkipReasons)
                 {
-                    titleConfig = config;
-                    provider = config.Provider;
-                    modelId = config.ModelId;
-                    serviceTier = config.ServiceTier;
-                    apiKey = cryptoService.Decrypt(config.EncryptedApiKey, config.ApiKeyNonce, config.ApiKeyTag, "SYSTEM_API_KEY");
-                    titleEndpoint = _endpointPolicy.Resolve(config);
-                }
-                else if (config == null)
-                {
-                    if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: {errorMessage}" }, CancellationToken.None);
-                    return;
-                }
-            }
-            else
-            {
-                if (settings?.TitleGenerationModelId != null)
-                {
-                    model = await dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == settings.TitleGenerationModelId && m.AspNetUserId == userId, cancellationToken);
-                }
-                
-                if (model == null)
-                {
-                    model = await dbContext.UserAiModels
-                        .Where(m => m.AspNetUserId == userId)
-                        .OrderBy(m => m.OrderIndex)
-                        .FirstOrDefaultAsync(cancellationToken);
-                }
-
-                if (model != null)
-                {
-                    provider = model.Provider;
-                    modelId = model.ModelId;
-                    serviceTier = model.ServiceTier;
-
-                    var apiKeyEntry = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider, cancellationToken);
-                    if (apiKeyEntry != null && !string.IsNullOrEmpty(apiKeyEntry.EncryptedApiKey) && !string.IsNullOrEmpty(apiKeyEntry.ApiKeyNonce) && !string.IsNullOrEmpty(apiKeyEntry.ApiKeyTag))
-                    {
-                        apiKey = cryptoService.Decrypt(apiKeyEntry.EncryptedApiKey, apiKeyEntry.ApiKeyNonce, apiKeyEntry.ApiKeyTag, userId);
-                        titleEndpoint = _endpointPolicy.Resolve(apiKeyEntry);
-                    }
-                }
-
-                if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(apiKey))
-                {
-                    var settingsService = scope.ServiceProvider.GetRequiredService<SettingsService>();
-                    int titleRoleFilter = 2;
-                    var resolvedSystemModels = await settingsService.GetResolvedSystemModelsAsync(userId, roleFilter: 2);
-                    if (!resolvedSystemModels.Any())
-                    {
-                        titleRoleFilter = 1;
-                        resolvedSystemModels = await settingsService.GetResolvedSystemModelsAsync(userId, roleFilter: 1);
-                    }
-                    var firstSystemModel = resolvedSystemModels.FirstOrDefault();
-
-                    /* Checked against the role the list was built with: a role-1 fallback would be
-                       refused by a fixed role-2 check. A refused model means no title. */
-                    bool fallbackAllowed = false;
-                    if (firstSystemModel.Config != null)
-                    {
-                        var fallbackConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                        var (allowedConfig, refusal) = await fallbackConfigService.GetAndCheckSystemConfigAsync(firstSystemModel.Config.Id, userId, requiredRoleFilter: titleRoleFilter);
-                        fallbackAllowed = allowedConfig != null;
-                        if (!fallbackAllowed && _showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: {refusal}" }, CancellationToken.None);
-                    }
-
-                    if (fallbackAllowed && !string.IsNullOrEmpty(firstSystemModel.Config!.EncryptedApiKey) && !string.IsNullOrEmpty(firstSystemModel.Config.ApiKeyNonce) && !string.IsNullOrEmpty(firstSystemModel.Config.ApiKeyTag))
-                    {
-                        provider = firstSystemModel.Config.Provider;
-                        modelId = firstSystemModel.Config.ModelId;
-                        serviceTier = firstSystemModel.Config.ServiceTier;
-                        apiKey = cryptoService.Decrypt(firstSystemModel.Config.EncryptedApiKey, firstSystemModel.Config.ApiKeyNonce, firstSystemModel.Config.ApiKeyTag, "SYSTEM_API_KEY");
-                        titleEndpoint = _endpointPolicy.Resolve(firstSystemModel.Config);
-                        usedSystemModelId = firstSystemModel.Config.Id;
-                        titleConfig = firstSystemModel.Config;
-                    }
+                    await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] {skipReason}" }, CancellationToken.None);
                 }
             }
 
-            if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(apiKey))
+            var choice = resolution.Choice;
+            if (choice == null)
             {
+                // No usable model: the truncated first message replaces the placeholder title.
                 if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: No valid model or API key found." }, CancellationToken.None);
+                await WriteFallbackTitleAsync(dbContext, sessionId, wireRef, userId, userMessage, cancellationToken);
+                var abortedStatus = new { sessionId = wireRef, status = "" };
+                await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(abortedStatus) }, CancellationToken.None);
                 return;
             }
+
+            if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Using {choice.Provider}/{choice.ModelId}" + (resolution.IsFallback ? " (fallback from the selected title model)" : "") }, CancellationToken.None);
+
+            UserAiModel? model = choice.UserModel;
+            string provider = choice.Provider;
+            string modelId = choice.ModelId;
+            string apiKey = choice.ApiKey;
+            string? serviceTier = choice.ServiceTier;
+            // The endpoint belongs to whichever key holder funds the call.
+            var titleEndpoint = choice.Endpoint;
+            // The system configuration that funds the title, kept for pricing; null on the user's own key.
+            SystemAiApiConfiguration? titleConfig = choice.SystemConfig;
+            long? usedSystemModelId = titleConfig?.Id;
 
             if (!_aiProviders.TryGetValue(provider, out var aiProvider))
             {
@@ -2824,7 +2755,8 @@ public class ChatService
             string? titleSafetyIdentifier = usedSystemModelId != null && !titleEndpoint.IsCustom
                 ? OptionalSingleton<Overseer.Services.Security.SafetyIdentifierService>()?.For(userId)
                 : null;
-            var titleReqBody = aiProvider.BuildTitleRequestBody(modelId, prompt, userMessage, maxTokens, serviceTier, titleSafetyIdentifier);
+            var titleReqBody = aiProvider.BuildTitleRequestBody(modelId, prompt, userMessage, maxTokens, serviceTier, titleSafetyIdentifier,
+                choice.ThinkingLevel, choice.ReasoningMode);
             string reqBodyStr = System.Text.Json.JsonSerializer.Serialize(titleReqBody);
             string titleUrl = aiProvider.GetTitleUrl(modelId, apiKey, titleEndpoint);
 
@@ -2839,7 +2771,7 @@ public class ChatService
             var titleAttemptLinks = new Overseer.Services.Telemetry.ChatAttemptLinks(
                 Guid.NewGuid(), RoleContext: 2, AgentDepth: 0,
                 usedSystemModelId != null ? AiKeySource.System : AiKeySource.UserKey,
-                usedSystemModelId, usedSystemModelId != null ? null : userId, ThinkingLevel: null);
+                usedSystemModelId, usedSystemModelId != null ? null : userId, ThinkingLevel: choice.ThinkingLevel);
             ILogger titleLogger = (ILogger?)_logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ChatService>.Instance;
             Task RecordTitleAttemptsAsync() => Overseer.Services.Telemetry.ChatProviderAttemptRecorder.TryRecordAsync(
                 _scopeFactory, titleLogger,
@@ -3039,13 +2971,13 @@ public class ChatService
                         await systemAiConfigService.RecordUsageAsync(usedSystemModelId.Value, userId, titleInputTokens, titleOutputTokens, roleContext: 2,
                             cacheReadTokens: titleUsage?.CacheReadTokens, cacheCreationTokens: titleUsage?.CacheCreationTokens,
                             totalDurationMs: (int)sw.ElapsedMilliseconds,
-                            thinkingLevel: new UsageThinkingLevel(null), estimatedCost: titleCost, pricingSource: titlePricingSource);
+                            thinkingLevel: new UsageThinkingLevel(choice.ThinkingLevel), estimatedCost: titleCost, pricingSource: titlePricingSource);
                     }
                     else
                     {
                         await Overseer.Services.Telemetry.UserKeyUsageRecorder.TryRecordAsync(_scopeFactory, titleLogger,
                             new Overseer.Services.Telemetry.UserKeyUsageEntry(
-                                userId, model?.Id, provider, modelId, model?.DisplayName, ThinkingLevel: null,
+                                userId, model?.Id, provider, modelId, model?.DisplayName, ThinkingLevel: choice.ThinkingLevel,
                                 titleInputTokens, titleOutputTokens, titleUsage?.CacheReadTokens, titleUsage?.CacheCreationTokens,
                                 (int)sw.ElapsedMilliseconds, RoleContext: 2, titleCost, titlePricingSource));
                     }
@@ -3123,22 +3055,9 @@ public class ChatService
             else
             {
                 // Fallback: use truncated user message so the title doesn't stay as "GnollHack..."
-                var fallbackTitle = userMessage.Length > 50 ? userMessage.Substring(0, 47) + "..." : userMessage;
-                if (!string.IsNullOrWhiteSpace(fallbackTitle))
-                {
-                    var session = await dbContext.ChatSession.FindAsync(new object[] { sessionId }, cancellationToken);
-                    if (session != null && session.Title?.StartsWith("GnollHack", StringComparison.OrdinalIgnoreCase) == true)
-                    {
-                        session.Title = fallbackTitle;
-                        await dbContext.SaveChangesAsync(cancellationToken);
-                        
-                        var titleUpdateData = new { sessionId = wireRef, title = fallbackTitle };
-                        var evt = new ChatEvent { Type = "title_update", Data = System.Text.Json.JsonSerializer.Serialize(titleUpdateData) };
-                        await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
-                    }
-                }
+                await WriteFallbackTitleAsync(dbContext, sessionId, wireRef, userId, userMessage, cancellationToken);
             }
-            
+
             var successStatus = new { sessionId = wireRef, status = "" };
             await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(successStatus) }, CancellationToken.None);
         }
@@ -3174,6 +3093,27 @@ public class ChatService
 
             var errorStatus = new { sessionId = wireRef, status = "" };
             await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "title_status", Data = System.Text.Json.JsonSerializer.Serialize(errorStatus) }, CancellationToken.None);
+        }
+    }
+
+    /// <summary>Replaces a "GnollHack..." placeholder title with the truncated user message.</summary>
+    private async Task WriteFallbackTitleAsync(ApplicationDbContext dbContext, long sessionId, string wireRef, string userId, string userMessage, CancellationToken cancellationToken)
+    {
+        var fallbackTitle = userMessage.Length > 50 ? userMessage.Substring(0, 47) + "..." : userMessage;
+        if (string.IsNullOrWhiteSpace(fallbackTitle))
+        {
+            return;
+        }
+
+        var session = await dbContext.ChatSession.FindAsync(new object[] { sessionId }, cancellationToken);
+        if (session != null && session.Title?.StartsWith("GnollHack", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            session.Title = fallbackTitle;
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            var titleUpdateData = new { sessionId = wireRef, title = fallbackTitle };
+            var evt = new ChatEvent { Type = "title_update", Data = System.Text.Json.JsonSerializer.Serialize(titleUpdateData) };
+            await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
         }
     }
 

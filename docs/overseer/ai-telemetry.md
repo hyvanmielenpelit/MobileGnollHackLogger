@@ -57,6 +57,15 @@ when it sent none, and (on the system log) `null` on rows written before the col
 `null` differ on purpose: OpenAI has a real reasoning effort `none`, so no word can mean "not sent". The
 breakdown shows *None sent*, *Not recorded* or the level, and can group or separate levels.
 
+The level recorded is the one the request carried. For a chat turn and a sub-agent run on Anthropic
+with no configured level, that is `AnthropicSettings:ExplicitDefaultEffort` (default `high`), which the
+provider sends in place of an unset level (`IAiProvider.EffectiveThinkingLevel`). Title rows (role 2)
+record the title model's configured level; a title never applies the Anthropic default, so *None sent*
+on a title row means that model has no level configured and the provider used its own default. Rows
+written before 2026-10-27 recorded the configured level, so Anthropic chat rows from before then show
+*None sent* where `high` was sent. GnollBench's `ModelCallTelemetry.ThinkingLevelSent` still records
+the configured level.
+
 ## 5. Model names
 
 A breakdown row shows the catalog model name (`ModelMetadataService.GetMetadata(...).DisplayName`), else

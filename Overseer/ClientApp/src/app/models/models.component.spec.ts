@@ -1,5 +1,6 @@
 import type { Mock } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -7,6 +8,7 @@ import { of, Subject, throwError } from 'rxjs';
 import { ModelsComponent, SYSTEM_MODEL_ATTENTION_TEXT } from './models.component';
 import { SettingsService, UserAiModel } from '../services/settings.service';
 import { ModelAvailability, ModelResolutionResult } from '../shared/model-availability/model-availability';
+import { ModelPickerComponent } from '../shared/model-picker/model-picker.component';
 
 const RETIRED: ModelAvailability = {
   status: 'retired',
@@ -119,6 +121,38 @@ describe('ModelsComponent', () => {
       expect(component.saving).toBe(false);
       expect(mockDialog.close).toHaveBeenCalled();
       expect(consoleError).toHaveBeenCalledWith('Failed to delete model', expect.any(TypeError));
+    });
+  });
+
+  describe('title model selection', () => {
+    const SYSTEM_FLASH = flash(AVAILABLE, { isSystem: true });
+    const picker = () => fixture.debugElement.query(By.directive(ModelPickerComponent)).componentInstance as ModelPickerComponent;
+    const hint = () => (fixture.nativeElement as HTMLElement).querySelector('#titleModelUnavailableHint');
+
+    function showWithTitleSystemModel(titleGenerationSystemModelId: number): void {
+      (settingsService.getSettings as Mock).mockReturnValue(of({
+        hasApiKey: true,
+        spoilerFreeMode: true,
+        titleGenerationSystemModelId
+      }));
+      (settingsService.getUserModels as Mock).mockReturnValue(of([SYSTEM_FLASH]));
+      component.ngOnInit();
+      fixture.detectChanges();
+    }
+
+    it('shows Default and the hint when the saved system title model is no longer offered', () => {
+      showWithTitleSystemModel(99);
+
+      expect(component.titleModelSelection).toBe('s_99');
+      expect(picker().selectedKey).toBeNull();
+      expect(hint()).not.toBeNull();
+    });
+
+    it('shows the saved system title model and no hint when it is offered', () => {
+      showWithTitleSystemModel(5);
+
+      expect(picker().selectedKey).toBe('s_5');
+      expect(hint()).toBeNull();
     });
   });
 

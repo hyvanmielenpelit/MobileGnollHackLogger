@@ -162,9 +162,7 @@ public class AnthropicProvider : IAiProvider
         // Anthropic is the only provider where omitting `thinking` is ambiguous: it runs adaptive
         // thinking on the 5-series but no thinking at all on Opus 4.6/4.7/4.8 and Sonnet 4.6. Google
         // and OpenAI omit-when-empty by design; do not "harmonise" this back to that pattern.
-        string effectiveEffort = !string.IsNullOrEmpty(thinkingLevel)
-            ? thinkingLevel
-            : _configuration.GetValue<string>("AnthropicSettings:ExplicitDefaultEffort") ?? "high";
+        string? effectiveEffort = EffectiveThinkingLevel(thinkingLevel);
 
         if (!string.IsNullOrEmpty(effectiveEffort) && !string.Equals(effectiveEffort, "none", StringComparison.OrdinalIgnoreCase))
         {
@@ -803,6 +801,37 @@ public class AnthropicProvider : IAiProvider
         string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier, string? safetyIdentifier)
         => WithSafetyIdentifier(BuildTitleRequestBody(modelId, systemPrompt, userMessage, maxTokens, serviceTier), safetyIdentifier);
 
+    /// <summary>
+    /// Adds adaptive thinking at the configured level. An unset level adds nothing: titles do not apply
+    /// <c>AnthropicSettings:ExplicitDefaultEffort</c>.
+    /// </summary>
+    public Dictionary<string, object> BuildTitleRequestBody(
+        string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier, string? safetyIdentifier,
+        string? thinkingLevel, string? reasoningMode)
+    {
+        var req = BuildTitleRequestBody(modelId, systemPrompt, userMessage, maxTokens, serviceTier);
+        if (!string.IsNullOrEmpty(thinkingLevel) && !string.Equals(thinkingLevel, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            req["thinking"] = new { type = "adaptive" };
+            req["output_config"] = new { effort = thinkingLevel };
+        }
+        return WithSafetyIdentifier(req, safetyIdentifier);
+    }
+
+    /// <summary>The configured level, or <c>AnthropicSettings:ExplicitDefaultEffort</c> (default <c>high</c>) when none is configured.</summary>
+    public string? EffectiveThinkingLevel(string? configuredLevel)
+    {
+        if (!string.IsNullOrEmpty(configuredLevel))
+        {
+            return configuredLevel;
+        }
+
+        string? fallback = _configuration.GetValue<string>("AnthropicSettings:ExplicitDefaultEffort") ?? "high";
+        return string.IsNullOrEmpty(fallback) || string.Equals(fallback, "none", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : fallback;
+    }
+
     public Dictionary<string, object> BuildChatRequestBody(
         string modelId,
         List<object> messageHistory,
@@ -863,13 +892,17 @@ public class AnthropicProvider : IAiProvider
 
     public string? ParseTitleResponse(JsonElement root)
     {
-        if (root.TryGetProperty("content", out var contentArray) && contentArray.GetArrayLength() > 0)
+        if (root.TryGetProperty("content", out var contentArray) && contentArray.ValueKind == JsonValueKind.Array)
         {
-            var firstBlock = contentArray[0];
-            if (firstBlock.TryGetProperty("text", out var textProp))
+            // A thinking block can precede the text.
+            foreach (var block in contentArray.EnumerateArray())
             {
-                var text = textProp.GetString() ?? "";
-                return text.Trim('"', ' ', '\r', '\n');
+                if (block.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "text"
+                    && block.TryGetProperty("text", out var textProp))
+                {
+                    var text = textProp.GetString() ?? "";
+                    return text.Trim('"', ' ', '\r', '\n');
+                }
             }
         }
         return null;

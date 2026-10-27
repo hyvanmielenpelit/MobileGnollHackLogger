@@ -765,6 +765,33 @@ public class OpenAiResponsesProvider : IAiProvider
         string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier, string? safetyIdentifier)
         => WithSafetyIdentifier(BuildTitleRequestBody(modelId, systemPrompt, userMessage, maxTokens, serviceTier), safetyIdentifier);
 
+    /// <summary>
+    /// Adds <c>reasoning.effort</c> and <c>reasoning.mode</c> by the chat's rules. A title never requests a
+    /// summary or encrypted reasoning: it is single-shot and not stored.
+    /// </summary>
+    public Dictionary<string, object> BuildTitleRequestBody(
+        string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier, string? safetyIdentifier,
+        string? thinkingLevel, string? reasoningMode)
+    {
+        var req = BuildTitleRequestBody(modelId, systemPrompt, userMessage, maxTokens, serviceTier);
+
+        var reasoningObj = new Dictionary<string, object>();
+        if (!string.IsNullOrEmpty(thinkingLevel) && thinkingLevel != "none")
+        {
+            reasoningObj["effort"] = thinkingLevel;
+        }
+        if (!string.IsNullOrEmpty(reasoningMode) && reasoningMode != "none")
+        {
+            reasoningObj["mode"] = reasoningMode;
+        }
+        if (reasoningObj.Count > 0)
+        {
+            req["reasoning"] = reasoningObj;
+        }
+
+        return WithSafetyIdentifier(req, safetyIdentifier);
+    }
+
     public Dictionary<string, object> BuildChatRequestBody(
         string modelId,
         List<object> messageHistory,
