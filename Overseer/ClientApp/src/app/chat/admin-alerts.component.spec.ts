@@ -113,6 +113,17 @@ describe('AdminAlertsComponent', () => {
     expect(TestBed.inject(Router).url).toBe('/admin/configs');
   });
 
+  it('dismisses the alert when its link is followed', async () => {
+    alerts.next([alert({ id: 'linked', linkUrl: '/admin/configs', linkText: 'Review' })]);
+    fixture.detectChanges();
+
+    link()!.click();
+    await fixture.whenStable();
+
+    expect(dismiss).toHaveBeenCalledWith('linked');
+    expect(TestBed.inject(Router).url).toBe('/admin/configs');
+  });
+
   it('renders no link without link text, or for a link off the site', () => {
     alerts.next([
       alert({ id: 'a', linkUrl: '/admin/configs', linkText: null }),

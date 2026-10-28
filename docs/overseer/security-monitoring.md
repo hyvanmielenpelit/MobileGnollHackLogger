@@ -320,11 +320,13 @@ so every entry point follows a change in the Security tab within that window, wi
 
 **Admin alerts** (`ConfigHealthService`): *warning* `snapshot-guard-observe` while the mode is Observe and
 `snapshot-guard-off` while it is Off, each with *Change* → `/admin/security/settings`; *warning*
-`snapshot-refusals:{yyyyMMdd}:{count}` while `SnapshotRejected` events fall in the last 7 days (*"N game
+`snapshot-refusals:{newest event id}` while `SnapshotRejected` events fall in the last 7 days (*"N game
 snapshots were refused for text addressed to the AI in the last 7 days (M users)."*); *error*
 `snapshot-autoblock:{newest event id}` while `AutoBlocked` events do; these two with *Review* →
 `/admin/security/events`. The changing part of each id makes a
-dismissed alert reappear on new events.
+dismissed alert reappear on new events. A repeat that `SecurityEventRecorder` folds into an existing event
+(within `RunWindow`) keeps the id, so it does not re-raise a dismissed refusal alert. Following an alert's
+*Review* or *Change* link dismisses it like ✕.
 
 **Settings** (`SnapshotGuard`, read on each call by `SnapshotGuardOptions.Read`, which never throws):
 `Mode` (the seed), `AutoBlockEnabled` (true; an unreadable value is true), `AutoBlockDistinctDays` (3; 1–30),

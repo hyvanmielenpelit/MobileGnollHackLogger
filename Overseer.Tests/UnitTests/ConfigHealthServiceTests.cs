@@ -332,11 +332,13 @@ public class ConfigHealthServiceTests
         return new ConfigHealthService(configuration, scopeFactory);
     }
 
-    private void AddSecurityEvent(SecurityEventKind kind, string userId, DateTime at, int count = 1)
+    private long AddSecurityEvent(SecurityEventKind kind, string userId, DateTime at, int count = 1)
     {
         using var db = new ApplicationDbContext(_dbOptions);
-        db.SecurityEvents.Add(new SecurityEvent { Kind = kind, AspNetUserId = userId, OccurredUtc = at, LastOccurredUtc = at, Count = count, Code = "injection-own" });
+        var securityEvent = new SecurityEvent { Kind = kind, AspNetUserId = userId, OccurredUtc = at, LastOccurredUtc = at, Count = count, Code = "injection-own" };
+        db.SecurityEvents.Add(securityEvent);
         db.SaveChanges();
+        return securityEvent.Id;
     }
 
     [Theory]
@@ -359,19 +361,54 @@ public class ConfigHealthServiceTests
     }
 
     [Fact]
-    public async Task RefusalsInTheLastSevenDays_AreCounted_WithTheCountInTheId()
+    public async Task RefusalsInTheLastSevenDays_AreCounted_KeyedByTheNewestEventInTheWindow()
     {
         AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-1", DateTime.UtcNow.AddDays(-1), count: 2);
-        AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-2", DateTime.UtcNow.AddHours(-1));
+        long u2Id = AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-2", DateTime.UtcNow.AddHours(-1));
         AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-3", DateTime.UtcNow.AddDays(-8));
 
         var alert = Assert.Single(await CreateGuardService("Enforce").GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal));
 
-        Assert.EndsWith(":3", alert.Id);
+        Assert.Equal($"snapshot-refusals:{u2Id}", alert.Id);
         Assert.Equal("warning", alert.Type);
         Assert.Equal("3 game snapshots were refused for text addressed to the AI in the last 7 days (2 users).", alert.Message);
         Assert.Equal("/admin/security/events", alert.LinkUrl);
         Assert.Equal("Review", alert.LinkText);
+    }
+
+    [Fact]
+    public async Task ARepeatFoldedIntoTheSameEvent_KeepsTheAlertId()
+    {
+        long eventId = AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-1", DateTime.UtcNow.AddMinutes(-5));
+        var service = CreateGuardService("Enforce");
+        var before = Assert.Single(await service.GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal));
+
+        using (var db = new ApplicationDbContext(_dbOptions))
+        {
+            var securityEvent = db.SecurityEvents.Single(e => e.Id == eventId);
+            securityEvent.Count = 3;
+            securityEvent.LastOccurredUtc = DateTime.UtcNow;
+            db.SaveChanges();
+        }
+
+        var after = Assert.Single(await service.GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal));
+        Assert.Equal(before.Id, after.Id);
+        Assert.Equal($"snapshot-refusals:{eventId}", after.Id);
+        Assert.Equal("3 game snapshots were refused for text addressed to the AI in the last 7 days (1 user).", after.Message);
+    }
+
+    [Fact]
+    public async Task ANewRefusalEvent_ChangesTheAlertId()
+    {
+        AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-1", DateTime.UtcNow.AddHours(-2));
+        var service = CreateGuardService("Enforce");
+        var before = Assert.Single(await service.GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal));
+
+        long newId = AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-1", DateTime.UtcNow.AddMinutes(-1));
+
+        var after = Assert.Single(await service.GetSystemAlertsAsync(TestContext.Current.CancellationToken), a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal));
+        Assert.NotEqual(before.Id, after.Id);
+        Assert.Equal($"snapshot-refusals:{newId}", after.Id);
     }
 
     [Fact]

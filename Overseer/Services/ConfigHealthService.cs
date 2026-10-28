@@ -548,7 +548,7 @@ public class ConfigHealthService
 
             var refusals = await dbContext.SecurityEvents.AsNoTracking()
                 .Where(e => e.Kind == MobileGnollHackLogger.Data.SecurityEventKind.SnapshotRejected && e.LastOccurredUtc >= since)
-                .Select(e => new { e.Count, e.AspNetUserId })
+                .Select(e => new { e.Id, e.Count, e.AspNetUserId })
                 .ToListAsync(ct);
             if (refusals.Count > 0)
             {
@@ -556,7 +556,7 @@ public class ConfigHealthService
                 int users = refusals.Select(r => r.AspNetUserId).Distinct().Count();
                 alerts.Add(new SystemAlert
                 {
-                    Id = $"snapshot-refusals:{now.ToString("yyyyMMdd", invariant)}:{count.ToString(invariant)}",
+                    Id = $"snapshot-refusals:{refusals.Max(r => r.Id).ToString(invariant)}",
                     Type = "warning",
                     Message = $"{(count == 1 ? "1 game snapshot was" : $"{count} game snapshots were")} refused for text addressed to the AI in the last 7 days ({(users == 1 ? "1 user" : $"{users} users")}).",
                     LinkUrl = "/admin/security/events",
