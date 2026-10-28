@@ -307,6 +307,27 @@ public class BenchmarkRunManager
         }
     }
 
+    /// <summary>Whether <paramref name="state"/> is still the current, uncompleted run; false once another launch replaced it.</summary>
+    public bool IsLive(BenchmarkRunState state)
+    {
+        lock (_lock)
+        {
+            return ReferenceEquals(_currentRun, state) && !state.IsCompleted;
+        }
+    }
+
+    /// <summary>Completes <paramref name="state"/> only while it is still the current run; a no-op once another launch replaced it.</summary>
+    public void Complete(BenchmarkRunState state)
+    {
+        lock (_lock)
+        {
+            if (ReferenceEquals(_currentRun, state))
+            {
+                Complete(state.RunId);
+            }
+        }
+    }
+
     public bool TryCancel(long runId)
     {
         lock (_lock)

@@ -62,10 +62,34 @@ public sealed class DetachedWorkTests
                 await Task.Yield();
                 throw new InvalidOperationException("boom");
             },
-            _ => throw cleanupFault);
+            (Action<Exception>)(_ => throw cleanupFault));
         await task;
 
         Assert.True(task.IsCompletedSuccessfully);
+        Assert.Equal(2, logger.Entries.Count);
+        Assert.All(logger.Entries, e => Assert.Equal(LogLevel.Error, e.Level));
+        Assert.Same(cleanupFault, logger.Entries[1].Exception);
+    }
+
+    [Fact]
+    public async Task AnAsynchronousOnFaultIsAwaitedAndItsFaultLogged()
+    {
+        var logger = new ListLogger();
+        var cleanupFault = new InvalidOperationException("cleanup");
+        bool handlerRan = false;
+
+        var task = DetachedWork.Start(logger, "test work",
+            () => throw new InvalidOperationException("boom"),
+            async _ =>
+            {
+                await Task.Yield();
+                handlerRan = true;
+                throw cleanupFault;
+            });
+        await task;
+
+        Assert.True(task.IsCompletedSuccessfully);
+        Assert.True(handlerRan);
         Assert.Equal(2, logger.Entries.Count);
         Assert.All(logger.Entries, e => Assert.Equal(LogLevel.Error, e.Level));
         Assert.Same(cleanupFault, logger.Entries[1].Exception);

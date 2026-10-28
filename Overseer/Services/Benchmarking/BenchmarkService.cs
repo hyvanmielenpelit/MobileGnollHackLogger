@@ -631,6 +631,34 @@ public class BenchmarkService
         await db.SaveChangesAsync(CancellationToken.None);
     }
 
+    /// <summary>
+    /// Settles a run repair whose work faulted before its own handlers ran: a row still reading Running goes back to
+    /// the status its answers describe, or, for a trial, to the status captured before the launch.
+    /// </summary>
+    public async Task SettleFaultedRepairAsync(
+        long runId, string reason, BenchmarkRunStatus? capturedStatus = null, DateTime? capturedCompletedAtUtc = null)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var run = await db.BenchmarkRuns.FindAsync(new object[] { runId }, CancellationToken.None);
+        if (run == null || run.Status != BenchmarkRunStatus.Running)
+        {
+            return;
+        }
+
+        if (capturedStatus is { } status)
+        {
+            await RestoreCapturedStatusAsync(db, run, status, capturedCompletedAtUtc);
+            return;
+        }
+
+        if (run.RerunStartedAtUtc.HasValue && run.RerunCompletedAtUtc == null)
+        {
+            run.RerunCompletedAtUtc = DateTime.UtcNow;
+        }
+        await RestoreTerminalStatusAsync(db, run, reason);
+    }
+
     public async Task CleanupOrphanedRunsAsync()
     {
         using var scope = _scopeFactory.CreateScope();

@@ -27,9 +27,10 @@ using Xunit;
 /// Every controller test below asserts on the <b>tracked</b> <c>run</c> instance returned by
 /// <c>SeedConfigsAndSuite</c>'s caller, not on a freshly-queried row. The background <c>Task.Run</c>
 /// each endpoint fires uses its own scoped <c>ApplicationDbContext</c> and will shortly flip the
-/// row again — to a terminal status, since the seeded model configurations carry a dummy encrypted
-/// key that cannot be decrypted — so a fresh query races that background task and is not a
-/// reliable way to observe what the controller itself wrote. The tracked instance already holds
+/// row again — to a terminal status, because the fixture's service provider cannot resolve
+/// <c>SystemAiConfigService</c> and the launch's fault handler settles the row — so a fresh query
+/// races that background task and is not a reliable way to observe what the controller itself
+/// wrote. The tracked instance already holds
 /// the synchronous write under test, made before that background task was ever scheduled.
 /// </summary>
 public class BenchmarkRerunStatusTests
@@ -262,6 +263,148 @@ public class BenchmarkRerunStatusTests
         Assert.IsType<AcceptedResult>(result);
         Assert.Equal(BenchmarkRunStatus.Running, run.Status);
         Assert.Null(run.CompletedAtUtc);
+    }
+
+    // -----------------------------------------------------------------------
+    // A repair whose work faults before its own handlers run is settled by the launch's fault
+    // handler. The controller fixture's service provider has no ILogger<SystemAiConfigService>, so
+    // every repair faults resolving SystemAiConfigService, before its try block.
+    // -----------------------------------------------------------------------
+
+    /// <summary>Polls the row until <paramref name="done"/> holds, failing with the last status read after 5 seconds.</summary>
+    private static async Task<BenchmarkRun> WaitForRunAsync(ApplicationDbContext db, long runId, Func<BenchmarkRun, bool> done)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (true)
+        {
+            var row = await db.BenchmarkRuns.AsNoTracking()
+                .FirstAsync(r => r.Id == runId, TestContext.Current.CancellationToken);
+            if (done(row))
+            {
+                return row;
+            }
+
+            if (DateTime.UtcNow > deadline)
+            {
+                Assert.Fail($"Run {runId} still reads {row.Status} after 5 seconds.");
+            }
+
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Theory]
+    [InlineData("RerunAnswer")]
+    [InlineData("ReassessAnswer")]
+    [InlineData("RerunSynthesis")]
+    [InlineData("RetryFailedAssessments")]
+    [InlineData("RetryClaimVerification")]
+    public async Task ARepairThatFaultsBeforeItsHandlers_SettlesTheRow(string repair)
+    {
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, _, modelC) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+
+        var run = BuildSeedRun(suite, modelA, modelC);
+        var answer = new BenchmarkRunAnswer
+        {
+            ExpectedPointsRecorded = true,
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            Status = BenchmarkAnswerStatus.Ok,
+            OrderIndex = 1
+        };
+        if (repair == "RetryFailedAssessments")
+        {
+            answer.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
+        }
+        else if (repair == "RetryClaimVerification")
+        {
+            answer.ClaimVerificationError = "timeout";
+        }
+        run.Answers.Add(answer);
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var seededCompletedAt = run.CompletedAtUtc;
+
+        IActionResult result;
+        string operation;
+        switch (repair)
+        {
+            case "RerunAnswer":
+                result = await controller.RerunAnswer(run.Id, answer.Id, new BenchmarkRetryRequest());
+                operation = "Re-run";
+                break;
+            case "ReassessAnswer":
+                result = await controller.ReassessAnswer(run.Id, answer.Id, new ReassessAnswerRequest());
+                operation = "Re-assessment";
+                break;
+            case "RerunSynthesis":
+                result = await controller.RerunSynthesis(run.Id, null);
+                operation = "Synthesis re-run";
+                break;
+            case "RetryFailedAssessments":
+                result = await controller.RetryFailedAssessments(run.Id, null);
+                operation = "Assessment retry";
+                break;
+            case "RetryClaimVerification":
+                result = await controller.RetryClaimVerification(run.Id, null);
+                operation = "Claim verification retry";
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(repair), repair, null);
+        }
+
+        Assert.IsType<AcceptedResult>(result);
+        var settled = await WaitForRunAsync(db, run.Id, r => r.Status != BenchmarkRunStatus.Running);
+
+        Assert.StartsWith($"{operation} could not start: ", settled.ErrorMessage);
+        if (repair == "ReassessAnswer")
+        {
+            // Nulled at launch; the finalizer stamps a null CompletedAtUtc even under preserveCompletedAt.
+            Assert.NotNull(settled.CompletedAtUtc);
+            Assert.True(settled.CompletedAtUtc > DateTime.UtcNow.AddMinutes(-1));
+        }
+        else
+        {
+            Assert.Equal(seededCompletedAt, settled.CompletedAtUtc);
+        }
+
+        if (repair == "RerunAnswer")
+        {
+            Assert.NotNull(settled.RerunCompletedAtUtc);
+        }
+    }
+
+    [Fact]
+    public async Task AFaultedTrialReassessment_RestoresTheCapturedStatus()
+    {
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, _, modelC) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+
+        var fixedCompletedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var run = BuildSeedRun(suite, modelA, modelC);
+        run.CompletedAtUtc = fixedCompletedAt;
+        run.ErrorMessage = null;
+        var answer = new BenchmarkRunAnswer
+        {
+            ExpectedPointsRecorded = true,
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            Status = BenchmarkAnswerStatus.Ok,
+            OrderIndex = 1
+        };
+        run.Answers.Add(answer);
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await controller.ReassessAnswer(run.Id, answer.Id, new ReassessAnswerRequest { Trial = true });
+
+        Assert.IsType<AcceptedResult>(result);
+        var settled = await WaitForRunAsync(db, run.Id, r => r.Status != BenchmarkRunStatus.Running);
+
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, settled.Status);
+        Assert.Equal(fixedCompletedAt, settled.CompletedAtUtc);
+        Assert.Null(settled.ErrorMessage);
     }
 
     [Fact]

@@ -83,6 +83,23 @@ public class BenchmarkRunManagerClaimTests
     }
 
     [Fact]
+    public void CompleteByState_IgnoresAStateAnotherLaunchReplaced()
+    {
+        var manager = new BenchmarkRunManager();
+        Assert.True(manager.TryStart(1, new CancellationTokenSource(), out var first));
+        manager.Complete(1);
+        Assert.True(manager.TryStart(1, new CancellationTokenSource(), out var second));
+
+        Assert.False(manager.IsLive(first));
+        manager.Complete(first);
+        Assert.Equal(1L, manager.CurrentRunId);
+
+        Assert.True(manager.IsLive(second));
+        manager.Complete(second);
+        Assert.Null(manager.CurrentRunId);
+    }
+
+    [Fact]
     public void OwnerTokens_AndConflictMessages_NameTheKind()
     {
         Assert.Equal("series:12", BenchmarkRunManager.SeriesOwner(12));

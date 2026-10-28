@@ -4644,7 +4644,7 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         var cts = new CancellationTokenSource();
-        if (!_runManager.TryStart(run.Id, cts, out _))
+        if (!_runManager.TryStart(run.Id, cts, out var launch))
         {
             return Conflict("A benchmark run is already in progress.");
         }
@@ -4661,7 +4661,8 @@ public class AdminBenchmarkController : ControllerBase
             () => _benchmarkService.ReassessSingleQuestionAsync(
                 run.Id, answerId, request?.AssessorModelConfigurationId, trial,
                 originalStatus, originalCompletedAtUtc, cts.Token, member),
-            _ => _runManager.Complete(run.Id));
+            RepairFaultHandler(launch, "Re-assessment",
+                trial ? originalStatus : null, trial ? originalCompletedAtUtc : null));
         return Accepted(new { runId = id, trial });
     }
 
@@ -4873,7 +4874,7 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         var cts = new CancellationTokenSource();
-        if (!_runManager.TryStart(run.Id, cts, out _))
+        if (!_runManager.TryStart(run.Id, cts, out var launch))
         {
             return Conflict("A benchmark run is already in progress.");
         }
@@ -4888,7 +4889,7 @@ public class AdminBenchmarkController : ControllerBase
 
         _ = DetachedWork.Start(_logger, $"single-question rerun for run {run.Id}",
             () => _benchmarkService.RerunSingleQuestionAsync(run.Id, answerId, request?.AssessorModelConfigurationId, cts.Token),
-            _ => _runManager.Complete(run.Id));
+            RepairFaultHandler(launch, "Re-run"));
         return Accepted(new { runId = id });
     }
 
@@ -4955,7 +4956,7 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         var cts = new CancellationTokenSource();
-        if (!_runManager.TryStart(run.Id, cts, out _))
+        if (!_runManager.TryStart(run.Id, cts, out var launch))
         {
             return Conflict("A benchmark run is already in progress.");
         }
@@ -4967,7 +4968,7 @@ public class AdminBenchmarkController : ControllerBase
 
         _ = DetachedWork.Start(_logger, $"final synthesis rerun for run {id}",
             () => _benchmarkService.RerunFinalSynthesisAsync(id, request?.AssessorModelConfigurationId, cts.Token),
-            _ => _runManager.Complete(run.Id));
+            RepairFaultHandler(launch, "Synthesis re-run"));
         return Accepted(new { runId = id });
     }
 
@@ -5043,7 +5044,7 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         var cts = new CancellationTokenSource();
-        if (!_runManager.TryStart(run.Id, cts, out _))
+        if (!_runManager.TryStart(run.Id, cts, out var launch))
         {
             return Conflict("A benchmark run is already in progress.");
         }
@@ -5055,7 +5056,7 @@ public class AdminBenchmarkController : ControllerBase
 
         _ = DetachedWork.Start(_logger, $"failed-assessment retry for run {id}",
             () => _benchmarkService.RetryFailedAssessmentsAsync(id, request?.AssessorModelConfigurationId, cts.Token),
-            _ => _runManager.Complete(run.Id));
+            RepairFaultHandler(launch, "Assessment retry"));
         return Accepted(new { runId = id });
     }
 
@@ -5111,7 +5112,7 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         var cts = new CancellationTokenSource();
-        if (!_runManager.TryStart(run.Id, cts, out _))
+        if (!_runManager.TryStart(run.Id, cts, out var launch))
         {
             return Conflict("A benchmark run is already in progress.");
         }
@@ -5123,7 +5124,7 @@ public class AdminBenchmarkController : ControllerBase
 
         _ = DetachedWork.Start(_logger, $"claim verification retry for run {id}",
             () => _benchmarkService.RetryFailedClaimVerificationAsync(id, targetVerifierId, cts.Token),
-            _ => _runManager.Complete(run.Id));
+            RepairFaultHandler(launch, "Claim verification retry"));
         return Accepted(new { runId = id });
     }
 
@@ -5171,6 +5172,32 @@ public class AdminBenchmarkController : ControllerBase
         // "now Canceled".
         return Ok(new { success = cancelled || (run != null && run.Status != BenchmarkRunStatus.Running) });
     }
+
+    /// <summary>
+    /// The fault handler of a run repair: while <paramref name="launch"/> still holds the run slot, settles the row the
+    /// launch set to Running, then releases the slot.
+    /// </summary>
+    private Func<Exception, Task> RepairFaultHandler(
+        BenchmarkRunState launch, string operation,
+        BenchmarkRunStatus? capturedStatus = null, DateTime? capturedCompletedAtUtc = null)
+        => async ex =>
+        {
+            if (!_runManager.IsLive(launch))
+            {
+                return;
+            }
+
+            try
+            {
+                await _benchmarkService.SettleFaultedRepairAsync(
+                    launch.RunId, $"{operation} could not start: {ExceptionDetails.DescribeShort(ex)}",
+                    capturedStatus, capturedCompletedAtUtc);
+            }
+            finally
+            {
+                _runManager.Complete(launch);
+            }
+        };
 
     [HttpPost("runs/{id}/rerun-failed")]
     public async Task<IActionResult> RerunFailedQuestions(long id)
@@ -5225,7 +5252,7 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         var cts = new CancellationTokenSource();
-        if (!_runManager.TryStart(run.Id, cts, out _))
+        if (!_runManager.TryStart(run.Id, cts, out var launch))
         {
             return Conflict("A benchmark run is already in progress.");
         }
@@ -5242,7 +5269,7 @@ public class AdminBenchmarkController : ControllerBase
 
         _ = DetachedWork.Start(_logger, $"failed-question rerun for run {run.Id}",
             () => _benchmarkService.RunFailedQuestionsAsync(run.Id, cts.Token),
-            _ => _runManager.Complete(run.Id));
+            RepairFaultHandler(launch, "Failed-question re-run"));
 
         return Accepted(new { runId = run.Id });
     }
