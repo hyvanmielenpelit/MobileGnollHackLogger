@@ -9,8 +9,8 @@ using Overseer.Services.Feedback;
 namespace Overseer.Controllers;
 
 /// <summary>
-/// The admin Feedback tab's transfer to and from an AI coding assistant: the Markdown export of selected issues
-/// (<see cref="FeedbackExportService"/>) and the preview and apply of a resolution file
+/// The admin Feedback tab's transfer to and from an AI coding assistant: the YAML or Markdown export of selected issues
+/// (<see cref="FeedbackExportService"/>), the format examples, and the preview and apply of a resolution file
 /// (<see cref="FeedbackResolutionService"/>), for both sub-tabs. Errors are <c>{ message }</c>; a resolution file that
 /// breaks the format's rules is 400 with <c>{ message, errors }</c>, and an apply that finds issues changed since the
 /// preview is 409 with <c>{ message, conflicts }</c> and writes nothing. Reads answer 499 when the client aborts; apply
@@ -33,8 +33,8 @@ public class AdminFeedbackTransferController : ControllerBase
     private string? CurrentUserId => User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
     /// <summary>
-    /// The Markdown export of at most 200 issues, with the requested ones that no longer exist. 400 for an invalid
-    /// request; 404 with <c>{ message, missingIds, missingFingerprints }</c> when none of them exists.
+    /// The YAML or Markdown export of at most 200 issues, with the requested ones that no longer exist. 400 for an
+    /// invalid request; 404 with <c>{ message, missingIds, missingFingerprints }</c> when none of them exists.
     /// </summary>
     [HttpPost("export")]
     public async Task<IActionResult> Export([FromBody] AdminFeedbackExportRequestDto? request, CancellationToken ct = default)
@@ -53,6 +53,18 @@ public class AdminFeedbackTransferController : ControllerBase
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
+    }
+
+    /// <summary>
+    /// The example issues file and resolution file of <paramref name="source"/> (<c>overseer</c> or <c>gnollbench</c>),
+    /// as <c>{ issues, resolutions }</c>, each <c>{ fileName, content, mediaType }</c>. 400 for an unknown source.
+    /// </summary>
+    [HttpGet("format-examples")]
+    public IActionResult FormatExamples([FromQuery] string? source = null)
+    {
+        if (!FeedbackTransferSources.TryParse(source, out var parsed))
+            return BadRequest(new { message = $"Unknown source '{source}'. Use overseer or gnollbench." });
+        return Ok(FeedbackFormatExamples.For(parsed));
     }
 
     /// <summary>Validates a resolution file and compares each item with the stored issue; nothing is written.</summary>

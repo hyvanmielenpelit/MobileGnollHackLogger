@@ -1,20 +1,22 @@
 import type { ParseIssue } from '../../benchmark/question-yaml/question-yaml-format';
-import type {
-  FeedbackResolutionItem,
-  FeedbackResolutionRequest,
-  FeedbackResolutionStatus
+import {
+  FEEDBACK_RESOLVED_VIA_IDS,
+  type FeedbackResolutionItem,
+  type FeedbackResolutionRequest,
+  type FeedbackResolutionStatus
 } from '../../../services/feedback-transfer.service';
 import type { FeedbackSource } from './feedback-view-storage';
 import { findHiddenCharacters } from './feedback-hidden-characters';
 
 /**
- * The resolution file an agent writes from a feedback export (`overseer-feedback-resolutions`, version 1), and the
- * client's parse and schema pass over it, rules R1–R13 of the format. Errors block the import; notices do not. The
- * server runs R1–R9 again on preview and apply. Parsing is `js-yaml`, loaded lazily.
+ * The resolution file an agent writes from a feedback export (`overseer-feedback-resolutions`, version 1 or 2), and
+ * the client's parse and schema pass over it, rules R1–R14 of the format. Errors block the import; notices do not. The
+ * server runs R1–R9 again on preview and apply. Parsing is `js-yaml`, loaded lazily. Version 2 adds `resolvedVia`;
+ * in a version-1 file it is an unknown key.
  *
  * ```yaml
  * format: overseer-feedback-resolutions
- * version: 1
+ * version: 2
  * source: overseer
  * exportedAtUtc: "2026-10-23T12:34:56Z"
  * issues:
@@ -24,6 +26,7 @@ import { findHiddenCharacters } from './feedback-hidden-characters';
  *     resolution: |
  *       What changed, where, and how it was verified.
  *     fixedInVersion: "1.4.1"
+ *     resolvedVia: [wiki, knowledge_base]
  *     note: |
  *       The triage note.
  * ```
@@ -32,7 +35,10 @@ import { findHiddenCharacters } from './feedback-hidden-characters';
 export type { ParseIssue };
 
 export const FEEDBACK_RESOLUTION_FORMAT = 'overseer-feedback-resolutions';
-export const FEEDBACK_RESOLUTION_VERSION = 1;
+/** The versions the importer reads. */
+export const FEEDBACK_RESOLUTION_VERSIONS: readonly (1 | 2)[] = [1, 2];
+/** The version an agent writes now. */
+export const FEEDBACK_RESOLUTION_VERSION = 2;
 export const MAX_RESOLUTION_ITEMS = 500;
 export const MAX_NOTE_LENGTH = 1000;
 export const MAX_RESOLUTION_LENGTH = 4000;
@@ -44,7 +50,8 @@ const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
 const UTC_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?\s*([Zz]|[+-]\d{2}(:?\d{2})?)$/;
 
 const TOP_LEVEL_KEYS = ['format', 'version', 'source', 'exportedAtUtc', 'issues'];
-const ITEM_KEYS = ['id', 'fingerprint', 'status', 'resolution', 'fixedInVersion', 'note'];
+const ITEM_KEYS_V1 = ['id', 'fingerprint', 'status', 'resolution', 'fixedInVersion', 'note'];
+const ITEM_KEYS_V2 = [...ITEM_KEYS_V1, 'resolvedVia'];
 const STATUSES: readonly FeedbackResolutionStatus[] = ['new', 'acknowledged', 'resolved', 'dismissed'];
 
 /** The sub-tab name a source's file belongs to, as the R2 message says it. */
@@ -85,15 +92,18 @@ export function checkFeedbackResolutionDocument(doc: unknown, expectedSource: Fe
   const error = (message: string): void => { errors.push({ line: null, message }); };
 
   // R1
-  const header = `The document must be a YAML mapping with \`format: ${FEEDBACK_RESOLUTION_FORMAT}\` and \`version: ${FEEDBACK_RESOLUTION_VERSION}\`.`;
+  const header = `The document must be a YAML mapping with \`format: ${FEEDBACK_RESOLUTION_FORMAT}\` and \`version: 1\` or \`version: 2\`.`;
   if (!isMapping(doc) || doc['format'] !== FEEDBACK_RESOLUTION_FORMAT || !('version' in doc)) {
     error(header);
     return fail();
   }
-  if (doc['version'] !== FEEDBACK_RESOLUTION_VERSION) {
-    error(`Unsupported \`version: ${String(doc['version'])}\`; this importer understands version ${FEEDBACK_RESOLUTION_VERSION}.`);
+  const rawVersion = doc['version'];
+  const version = FEEDBACK_RESOLUTION_VERSIONS.find(v => v === rawVersion);
+  if (version === undefined) {
+    error(`Unsupported \`version: ${String(rawVersion)}\`; this importer understands versions 1 and 2.`);
     return fail();
   }
+  const itemKeys = version === 1 ? ITEM_KEYS_V1 : ITEM_KEYS_V2;
 
   // R4, top level
   for (const key of Object.keys(doc)) {
@@ -161,8 +171,10 @@ export function checkFeedbackResolutionDocument(doc: unknown, expectedSource: Fe
 
     // R4, item
     for (const key of Object.keys(raw)) {
-      if (!ITEM_KEYS.includes(key)) {
-        error(`${label}: unknown key \`${key}\`; allowed: ${ITEM_KEYS.join(', ')}.`);
+      if (version === 1 && key === 'resolvedVia') {
+        error(`${label}: unknown key \`resolvedVia\`; it needs version 2.`);
+      } else if (!itemKeys.includes(key)) {
+        error(`${label}: unknown key \`${key}\`; allowed: ${itemKeys.join(', ')}.`);
       }
     }
 
@@ -228,16 +240,25 @@ export function checkFeedbackResolutionDocument(doc: unknown, expectedSource: Fe
     if (resolution !== undefined) item.resolution = resolution;
     const fixedInVersion = readFixedInVersion(raw, label, errors, notices);
     if (fixedInVersion !== undefined) item.fixedInVersion = fixedInVersion;
+    if (version === 2) {
+      const resolvedVia = readResolvedVia(raw, label, errors, notices);
+      if (resolvedVia !== undefined) item.resolvedVia = resolvedVia;
+    }
 
     if (errors.length > before) return;
 
     // R10
-    if (item.status === undefined && item.note === undefined && item.resolution === undefined && item.fixedInVersion === undefined) {
+    if (item.status === undefined && item.note === undefined && item.resolution === undefined && item.fixedInVersion === undefined
+      && item.resolvedVia === undefined) {
       notices.push(`${label}: this item changes nothing.`);
     }
     // R11: only a cleared resolution is known here; the preview also knows the stored one.
     if (item.status === 'resolved' && item.resolution === '') {
       notices.push(`${label}: a resolved issue should say what was done.`);
+    }
+    // R14: likewise only a cleared list is known here.
+    if (item.status === 'resolved' && item.resolvedVia?.length === 0) {
+      notices.push(`${label}: a resolved issue should say how it was fixed (\`resolvedVia\`).`);
     }
     // R13
     for (const [noun, text] of [['note', item.note], ['resolution', item.resolution]] as const) {
@@ -253,7 +274,7 @@ export function checkFeedbackResolutionDocument(doc: unknown, expectedSource: Fe
 
   const request: FeedbackResolutionRequest = {
     format: FEEDBACK_RESOLUTION_FORMAT,
-    version: FEEDBACK_RESOLUTION_VERSION,
+    version,
     source: fileSource,
     items
   };
@@ -299,6 +320,35 @@ function readFixedInVersion(raw: Record<string, unknown>, label: string, errors:
     return undefined;
   }
   return trimmed;
+}
+
+/**
+ * `resolvedVia` (version 2): undefined keeps the stored list, `[]` clears it. The ids are trimmed, compared
+ * case-sensitively, de-duplicated and put in the canonical order, as the server reads them; the first unknown one is
+ * an error naming the allowed ids.
+ */
+function readResolvedVia(raw: Record<string, unknown>, label: string, errors: ParseIssue[], notices: string[]): string[] | undefined {
+  if (!('resolvedVia' in raw)) return undefined;
+  const value = raw['resolvedVia'];
+  const allowed = FEEDBACK_RESOLVED_VIA_IDS.join(', ');
+  if (value === null) {
+    notices.push(`${label}: \`resolvedVia\` is empty, so the stored list is kept; write \`resolvedVia: []\` to clear it.`);
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    errors.push({ line: null, message: `${label}: \`resolvedVia\` must be a list of ids, for example [wiki, knowledge_base]; allowed: ${allowed}.` });
+    return undefined;
+  }
+  const chosen = new Set<string>();
+  for (const entry of value) {
+    const id = typeof entry === 'string' ? entry.trim() : String(entry);
+    if (!(FEEDBACK_RESOLVED_VIA_IDS as readonly string[]).includes(id)) {
+      errors.push({ line: null, message: `${label}: Unknown resolved-via value \`${id}\`; allowed: ${allowed}.` });
+      return undefined;
+    }
+    chosen.add(id);
+  }
+  return FEEDBACK_RESOLVED_VIA_IDS.filter(id => chosen.has(id));
 }
 
 /** Normalizes line endings and drops trailing whitespace; a blank text becomes `''`. */

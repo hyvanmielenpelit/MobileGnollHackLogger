@@ -38,6 +38,8 @@ export interface SecurityEvent {
   systemAiApiConfigurationId?: number | null;
   provider?: string | null;
   modelId?: string | null;
+  /** The model catalog's display name of `modelId`, else the id; null without a model. */
+  modelLabel?: string | null;
   code?: string | null;
   detail?: string | null;
   /** The refused game texts kept for the event in the snapshot guard's quarantine. */
@@ -137,6 +139,8 @@ export interface SecurityRelatedProviderAttempt {
   startedAtUtc: string;
   roleContext: number;
   requestedModelId: string;
+  /** The model catalog's display name of `requestedModelId`, else the id. */
+  requestedModelLabel?: string;
   httpStatus?: number | null;
   providerErrorCode?: string | null;
   /** A `ProviderAttemptOutcome` name. */
@@ -148,6 +152,8 @@ export interface SecurityRelatedProviderAttempt {
 export interface SecurityRelatedUsageRow {
   timestampUtc: string;
   modelId: string;
+  /** The model catalog's display name of `modelId`, else the id. */
+  modelLabel?: string;
   roleContext: number;
   tokens?: number | null;
   cost?: number | null;

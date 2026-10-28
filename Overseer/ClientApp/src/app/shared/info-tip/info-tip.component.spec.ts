@@ -1,5 +1,6 @@
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 
 import { InfoTipComponent } from './info-tip.component';
 
@@ -22,13 +23,15 @@ class ClickHostComponent {}
   imports: [InfoTipComponent],
   template: `
     <div class="outer-row" (click)="rowClicks = rowClicks + 1">
-      <app-info-tip trigger="dialog" tipId="dlg-tip" subject="Report writer" dialogTitle="Choosing a report writer">
+      <app-info-tip trigger="dialog" tipId="dlg-tip" subject="Report writer" dialogTitle="Choosing a report writer"
+                    (opened)="openedCount = openedCount + 1">
         <p>Use a strong writing model.</p>
       </app-info-tip>
     </div>`
 })
 class DialogHostComponent {
   rowClicks = 0;
+  openedCount = 0;
 }
 
 @Component({
@@ -239,6 +242,25 @@ describe('InfoTipComponent (dialog trigger)', () => {
     (root().querySelector('#dlg-tip p') as HTMLElement).click();
     expect(fixture.componentInstance.rowClicks).toBe(clicksBefore);
     expect(dialog().open).toBe(true);
+  });
+
+  it('emits opened each time the dialog opens, and not again while it is open', () => {
+    const tip = fixture.debugElement.query(By.directive(InfoTipComponent)).componentInstance as InfoTipComponent;
+    const host = fixture.componentInstance;
+
+    expect(host.openedCount).toBe(0);
+    button().click();
+    fixture.detectChanges();
+    expect(host.openedCount).toBe(1);
+
+    tip.openDialog();
+    expect(host.openedCount).toBe(1);
+
+    closeButton().click();
+    fixture.detectChanges();
+    button().click();
+    fixture.detectChanges();
+    expect(host.openedCount).toBe(2);
   });
 
   it('falls back to the subject for the title', () => {

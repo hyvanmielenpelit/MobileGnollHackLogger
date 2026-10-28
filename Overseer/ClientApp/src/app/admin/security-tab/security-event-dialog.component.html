@@ -82,10 +82,10 @@
                         <span class="gh-tag sev-q-tag" [class.sev-q-tag-injection]="$first && item.level === 'Injection'">{{ tag }}</span>
                       }
                     </div>
-                    <h5 class="sev-q-title" [id]="'sev-q-' + item.id + '-title'">{{ i + 1 }}. {{ item.channel }} <span class="sev-q-kind">({{ item.textKind }})</span></h5>
+                    <h5 class="sev-q-title" [id]="'sev-q-' + item.id + '-title'">{{ i + 1 }}. {{ channelLabel(item.channel) }} <span class="sev-q-kind">({{ textKindLabel(item.textKind) }})</span></h5>
                     <ul class="sev-q-codes" role="list" [attr.aria-label]="'Codes of text ' + (i + 1)">
                       @for (code of item.codes; track code) {
-                        <li class="sev-q-code"><code class="sev-mono">{{ code }}</code> <span class="sev-q-code-meaning">{{ codeMeaning(code) }}</span></li>
+                        <li class="sev-q-code"><span class="sev-q-code-label">{{ codeLabel(code) }}</span>&ngsp;<span class="sev-q-code-meaning">{{ codeMeaning(code) }}</span></li>
                       }
                     </ul>
                     <dl class="sev-q-facts">

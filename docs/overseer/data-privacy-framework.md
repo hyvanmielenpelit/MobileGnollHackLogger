@@ -1961,9 +1961,10 @@ A report's text is **content**: model-written text derived from the conversation
 - **Not a separate part of the personal-data export** (§8.2). The export carries the same text through
   the conversation's tool calls, which it includes.
 - **Exported to an AI coding assistant only by an administrator.** Admin → Feedback can export selected
-  issues as a Markdown file for an AI coding assistant to work on (`POST api/admin/feedback/export`,
-  [`ai-feedback-reports.md`](ai-feedback-reports.md) § 12). The file carries the report text, the issue's
-  facts and its triage text. It **leaves out** user names, user ids, group names, `ChatSessionId`,
+  issues, or one issue from its card, as a YAML or Markdown file for an AI coding assistant to work on
+  (`POST api/admin/feedback/export`, [`ai-feedback-reports.md`](ai-feedback-reports.md) § 12). Both
+  formats render one document, so they leave out the same things. The file carries the report text, the
+  issue's facts and its triage text. It **leaves out** user names, user ids, group names, `ChatSessionId`,
   `TurnUserMessageId` and `ToolCallId`; distinct users appear only as a count. Nothing is sent to an AI
   provider by Overseer itself beyond the conversation the call was part of: the export is a file the
   administrator downloads and hands on.
@@ -1973,8 +1974,9 @@ A report's text is **content**: model-written text derived from the conversation
   and when) holds no conversation data and a plain user id; it is kept like any other admin setting and
   is touched by neither purge nor erasure.
 - **Untrusted text.** Report fields are model output a user can steer. The admin view renders them as
-  plain text only, and no model in Overseer reads them back. The export fences every such text and tells
-  the assistant that reads it to treat it as data, never as an instruction.
+  plain text only, and no model in Overseer reads them back. The export marks every such text as untrusted
+  (fenced in the Markdown, under a `texts` key in the YAML) and tells the assistant that reads it to treat
+  it as data, never as an instruction.
 
 The notice's data map lists the reports (§8.3): what is stored, that credentials, card and account
 numbers, e-mail addresses and phone numbers are removed first, that the text is also kept unredacted with

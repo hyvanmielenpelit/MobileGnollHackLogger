@@ -57,7 +57,7 @@ function detail(overrides: Partial<SecurityEventDetail> = {}): SecurityEventDeta
     explanation: 'The snapshot guard refused game text addressed to the AI.',
     systemConfigurationName: null,
     related: {
-      termsAcceptances: [{ documentKey: 'terms', version: '3', acceptedUtc: '2026-09-01T08:00:00Z', source: 'website' }],
+      termsAcceptances: [{ documentKey: 'overseer-terms', version: '3', acceptedUtc: '2026-09-01T08:00:00Z', source: 'Web' }],
       adminActions: [],
       hold: null,
       deletionRequest: null,
@@ -143,10 +143,10 @@ describe('SecurityEventDialogComponent', () => {
     expect(textOf(el.querySelector('.sev-explanation-text'))).toBe('The snapshot guard refused game text addressed to the AI.');
     const fields = fieldsOf();
     expect(fields['Event id']).toBe('12');
-    expect(fields['Kind']).toBe('Snapshot refused (SnapshotRejected)');
+    expect(fields['Kind']).toBe('Snapshot refused');
     expect(fields['User id']).toBe('u1');
-    expect(fields['Code']).toBe('injection-own');
-    expect(fields['Detail']).toBe('tool-get_directory_listing:authority');
+    expect(fields['Code']).toBe('Injection in the player\'s own text');
+    expect(fields['Detail']).toBe('Withheld. Result of game folder listing: Claims authority.');
     expect(fields['IP address']).toBe('—');
     expect(fields['Count']).toBe('2');
   });
@@ -159,8 +159,9 @@ describe('SecurityEventDialogComponent', () => {
     const first = items()[0];
     expect(Array.from(first.querySelectorAll('.sev-q-tag')).map(t => textOf(t)))
       .toEqual(['Injection', 'Player\'s own text', 'Withheld', 'Normal chat']);
-    expect(textOf(first.querySelector('.sev-q-title'))).toBe('1. tool-get_directory_listing (Manifest)');
-    expect(textOf(first.querySelector('.sev-q-code code'))).toBe('authority');
+    expect(textOf(first.querySelector('.sev-q-title'))).toBe('1. Result of game folder listing (Directory manifest)');
+    expect(textOf(first.querySelector('.sev-q-code-label'))).toBe('Claims authority');
+    expect(first.querySelector('.sev-q-code code')).toBeNull();
     expect(textOf(first.querySelector('.sev-q-code-meaning'))).toContain('header of the prompt');
     expect(textOf(first.querySelector('.sev-q-facts'))).toContain('54 characters');
     expect(textOf(first.querySelector('.sev-q-sha code'))).toBe('0123456789ab…');
@@ -168,23 +169,24 @@ describe('SecurityEventDialogComponent', () => {
 
     const second = items()[1];
     expect(Array.from(second.querySelectorAll('.sev-q-tag')).map(t => textOf(t))).toContain('Incognito chat');
-    expect(Array.from(second.querySelectorAll('.sev-q-code code')).map(c => textOf(c))).toEqual(['address', 'tool']);
+    expect(textOf(second.querySelector('.sev-q-title'))).toBe('2. Snapshot attached in the chat (Game snapshot)');
+    expect(Array.from(second.querySelectorAll('.sev-q-code-label')).map(c => textOf(c))).toEqual(['Addresses the AI', 'Steers a tool call']);
     expect(textOf(el.querySelector('.sev-cap'))).toBe('');
   });
 
-  it('opens a text in the hosted Snapshot Viewer with its note', () => {
+  it('opens a text in the hosted Snapshot Viewer, titled with its channel, with its note', () => {
     openWith();
     const viewer = vi.spyOn(component.viewer!, 'openReadOnly').mockReturnValue(undefined);
 
     items()[0].querySelector<HTMLButtonElement>('.sev-q-view')!.click();
 
     expect(viewer).toHaveBeenCalledWith({
-      name: 'tool-get_directory_listing',
+      name: 'Result of game folder listing',
       sanitizedText: item(7).text,
       digestText: null,
       charCount: 54,
       sha256: item(7).sha256
-    }, 'Refused game text of Snapshot refused #12, channel tool-get_directory_listing: authority');
+    }, 'Refused game text of Snapshot refused #12, Result of game folder listing: Claims authority');
   });
 
   it('saves one text as a .txt file', () => {
@@ -248,14 +250,14 @@ describe('SecurityEventDialogComponent', () => {
     expect(el.querySelector('.sev-links')).not.toBeNull();
   });
 
-  it('lists the terms the user accepted, first among the related records', () => {
+  it('lists the terms the user accepted, first among the related records, in labels', () => {
     openWith(detail({ related: { ...detail().related, sameUserEvents: [{ id: 11, kind: 'LoginFailed', code: null, detail: null }] } }));
 
     const sections = Array.from(el.querySelectorAll<HTMLElement>('.sev-related-section'));
     expect(sections.map(s => s.dataset['section'])).toEqual(['terms', 'user-events']);
     expect(textOf(sections[0].querySelector('h5'))).toBe('Terms accepted');
     expect(Array.from(sections[0].querySelectorAll('tbody td')).map(td => textOf(td)))
-      .toEqual(['terms', '3', '2026-09-01 08:00 UTC', 'website']);
+      .toEqual(['Gnoll Overseer Terms of Service', '3', '2026-09-01 08:00 UTC', 'Overseer website']);
   });
 
   it('closes and opens the Admin log on the user from Admin log', async () => {

@@ -25,6 +25,9 @@ public sealed class AdminFeedbackIssueDto
     /// <summary>Distinct model ids of the retained occurrences, at most five, then <c>+N</c> for the rest.</summary>
     public List<string> ModelIds { get; set; } = new();
 
+    /// <summary>Aligned with <see cref="ModelIds"/>: the catalog's display name, or the id when it has none; <c>+N</c> as is.</summary>
+    public List<string> ModelLabels { get; set; } = new();
+
     /// <summary>Distinct providers of the retained occurrences, in ordinal order.</summary>
     public List<string> Providers { get; set; } = new();
 
@@ -42,6 +45,9 @@ public sealed class AdminFeedbackIssueDto
     public DateTime? TriagedUtc { get; set; }
     public string? Resolution { get; set; }
     public string? FixedInVersion { get; set; }
+
+    /// <summary><c>FeedbackResolvedVia</c> ids, in their order; empty when none.</summary>
+    public List<string> ResolvedVia { get; set; } = new();
 
     /// <summary>
     /// Accepted GnollBench self-reports with the same fingerprint; null when there are none. The chat fingerprints
@@ -87,6 +93,9 @@ public sealed class AdminFeedbackOccurrenceDto
     public long? TurnUserMessageId { get; set; }
     public string? Provider { get; set; }
     public string? ModelId { get; set; }
+
+    /// <summary>The catalog's display name of <see cref="ModelId"/>, or the id when it has none.</summary>
+    public string? ModelLabel { get; set; }
     public string? AppVersion { get; set; }
     public string? UserName { get; set; }          // joined from AspNetUsers; null once erased
 
@@ -169,6 +178,9 @@ public sealed class AdminFeedbackFilterQuery
 public sealed class AdminFeedbackFacetValueDto
 {
     public string Value { get; set; } = "";
+
+    /// <summary>The Models facet: the catalog's display name, or the id. Empty for the other facets.</summary>
+    public string Label { get; set; } = "";
     public int Count { get; set; }
 }
 
@@ -236,13 +248,19 @@ public sealed class AdminFeedbackSwitchUpdateDto
     public bool Enabled { get; set; }
 }
 
-/// <summary>A triage. For each text field, absent (null) keeps the stored value and empty or blank clears it.</summary>
+/// <summary>
+/// A triage. For each text field, absent (null) keeps the stored value and empty or blank clears it;
+/// <see cref="ResolvedVia"/> null keeps it and an empty list clears it.
+/// </summary>
 public sealed class AdminFeedbackStatusUpdateDto
 {
     public string Status { get; set; } = "";
     public string? Note { get; set; }
     public string? Resolution { get; set; }
     public string? FixedInVersion { get; set; }
+
+    /// <summary><c>FeedbackResolvedVia</c> ids.</summary>
+    public List<string>? ResolvedVia { get; set; }
 }
 
 /// <summary>The lowercase wire values of <see cref="OverseerFeedbackStatus"/>.</summary>

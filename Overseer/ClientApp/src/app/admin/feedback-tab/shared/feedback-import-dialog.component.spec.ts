@@ -10,9 +10,9 @@ import {
 import {
   FeedbackImportDialogComponent,
   feedbackImportBadges,
-  feedbackIssueHeading,
-  feedbackStatusLabel
+  feedbackIssueHeading
 } from './feedback-import-dialog.component';
+import { feedbackStatusLabel } from './feedback-labels';
 
 const FP = '3f2a9c1b0d4e'.padEnd(64, 'a');
 const FP2 = 'b'.repeat(64);
@@ -39,9 +39,9 @@ function previewItem(overrides: Partial<FeedbackResolutionPreviewItem> = {}): Fe
     fingerprintMatches: true,
     category: 'tool_problem',
     subject: 'wiki_search finds <b>nothing</b>',
-    current: { status: 'new', note: null, resolution: null, fixedInVersion: null, triagedUtc: null, lastSeenUtc: '2026-10-22T10:00:00Z' },
-    after: { status: 'resolved', note: null, resolution: 'Fixed the wiki search.', fixedInVersion: null },
-    changes: { status: true, note: false, resolution: true, fixedInVersion: false },
+    current: { status: 'new', note: null, resolution: null, fixedInVersion: null, resolvedVia: [], triagedUtc: null, lastSeenUtc: '2026-10-22T10:00:00Z' },
+    after: { status: 'resolved', note: null, resolution: 'Fixed the wiki search.', fixedInVersion: null, resolvedVia: [] },
+    changes: { status: true, note: false, resolution: true, fixedInVersion: false, resolvedVia: false },
     hasChanges: true,
     occurrencesSinceExport: 0,
     triagedSinceExport: false,
@@ -67,9 +67,9 @@ function preview(items: FeedbackResolutionPreviewItem[], overrides: Partial<Feed
 
 const unchangedSeven = (): FeedbackResolutionPreviewItem => previewItem({
   index: 1, id: 7, fingerprint: FP2, subject: 'Another issue',
-  current: { status: 'acknowledged', note: 'Looking.', resolution: null, fixedInVersion: null, triagedUtc: '2026-10-20T09:00:00Z', lastSeenUtc: null },
-  after: { status: 'acknowledged', note: 'Looking.', resolution: null, fixedInVersion: null },
-  changes: { status: false, note: false, resolution: false, fixedInVersion: false },
+  current: { status: 'acknowledged', note: 'Looking.', resolution: null, fixedInVersion: null, resolvedVia: [], triagedUtc: '2026-10-20T09:00:00Z', lastSeenUtc: null },
+  after: { status: 'acknowledged', note: 'Looking.', resolution: null, fixedInVersion: null, resolvedVia: [] },
+  changes: { status: false, note: false, resolution: false, fixedInVersion: false, resolvedVia: false },
   hasChanges: false
 });
 
@@ -87,9 +87,9 @@ describe('FeedbackImportDialogComponent', () => {
       expect(feedbackImportBadges(previewItem()).map(b => b.text)).toEqual(['status New → Resolved', 'resolution']);
       expect(feedbackImportBadges(unchangedSeven()).map(b => b.text)).toEqual(['no changes']);
       expect(feedbackImportBadges(previewItem({
-        changes: { status: false, note: true, resolution: false, fixedInVersion: true },
+        changes: { status: false, note: true, resolution: false, fixedInVersion: true, resolvedVia: true },
         triagedSinceExport: true, occurrencesSinceExport: 3, regressedSinceExport: true
-      })).map(b => b.text)).toEqual(['note', 'fixed in version', 'Triaged since export', '3 new occurrences since export', 'Regressed since export']);
+      })).map(b => b.text)).toEqual(['note', 'fixed in version', 'resolved via', 'Triaged since export', '3 new occurrences since export', 'Regressed since export']);
       expect(feedbackImportBadges(previewItem({ errors: ['issues[0] (id 42): no Overseer feedback issue has id 42.'] })).map(b => b.text))
         .toEqual(['cannot be applied']);
     });
@@ -214,6 +214,42 @@ describe('FeedbackImportDialogComponent', () => {
       expect(footerButton('Apply 1 change').getAttribute('aria-disabled')).toBeNull();
     });
 
+    it('badges a resolved-via change and shows it before and after in labels', async () => {
+      const via = previewItem({
+        current: { status: 'acknowledged', note: null, resolution: null, fixedInVersion: null, resolvedVia: ['wiki'], triagedUtc: null, lastSeenUtc: null },
+        after: { status: 'resolved', note: null, resolution: 'Fixed.', fixedInVersion: null, resolvedVia: ['wiki', 'knowledge_base'] },
+        changes: { status: true, note: false, resolution: true, fixedInVersion: false, resolvedVia: true }
+      });
+      const cleared = previewItem({
+        index: 1, id: 7, fingerprint: FP2,
+        current: { status: 'resolved', note: null, resolution: 'Done.', fixedInVersion: null, resolvedVia: ['overseer_release'], triagedUtc: null, lastSeenUtc: null },
+        after: { status: 'resolved', note: null, resolution: 'Done.', fixedInVersion: null, resolvedVia: [] },
+        changes: { status: false, note: false, resolution: false, fixedInVersion: false, resolvedVia: true }
+      });
+      previewResolutions.mockReturnValue(of(preview([via, cleared])));
+      await toReview();
+
+      const cards = all('.fi-card');
+      expect(Array.from(cards[0].querySelectorAll('.status-badge')).map(text)).toEqual(['status Acknowledged → Resolved', 'resolution', 'resolved via']);
+      expect(text(cards[0].querySelector('.fi-resolved-via-line'))).toBe('GnollHack wiki → GnollHack wiki, Knowledge base');
+      expect(Array.from(cards[0].querySelectorAll('.fi-fields dt')).map(text)).toEqual(['Status', 'Fixed in version', 'Resolved via']);
+      expect(text(cards[1].querySelector('.fi-resolved-via-line'))).toBe('Overseer release → None');
+      expect(cards[0].textContent).not.toContain('knowledge_base');
+      expect(cards[1].textContent).not.toContain('overseer_release');
+    });
+
+    it('shows no resolved-via line for an item that leaves the list', async () => {
+      previewResolutions.mockReturnValue(of(preview([previewItem({
+        current: { status: 'new', note: null, resolution: null, fixedInVersion: null, resolvedVia: ['wiki'], triagedUtc: null, lastSeenUtc: null },
+        after: { status: 'resolved', note: null, resolution: 'Fixed.', fixedInVersion: null, resolvedVia: ['wiki'] }
+      })])));
+      await toReview();
+
+      const card = all('.fi-card')[0];
+      expect(card.querySelector('.fi-resolved-via-line')).toBeNull();
+      expect(Array.from(card.querySelectorAll('.status-badge')).map(text)).not.toContain('resolved via');
+    });
+
     it('switches the text fields between side by side and diff', async () => {
       previewResolutions.mockReturnValue(of(preview([previewItem()])));
       await toReview();
@@ -311,9 +347,9 @@ describe('FeedbackImportDialogComponent', () => {
       expect(imported).not.toHaveBeenCalled();
 
       const dismissed = previewItem({
-        current: { status: 'dismissed', note: null, resolution: null, fixedInVersion: null, triagedUtc: '2026-10-23T13:00:00Z', lastSeenUtc: null },
+        current: { status: 'dismissed', note: null, resolution: null, fixedInVersion: null, resolvedVia: [], triagedUtc: '2026-10-23T13:00:00Z', lastSeenUtc: null },
         triagedSinceExport: true,
-        changes: { status: true, note: false, resolution: true, fixedInVersion: false }
+        changes: { status: true, note: false, resolution: true, fixedInVersion: false, resolvedVia: false }
       });
       previewResolutions.mockReturnValue(of(preview([dismissed, unchangedSeven()])));
       q<HTMLButtonElement>('.fi-review-again')!.click();

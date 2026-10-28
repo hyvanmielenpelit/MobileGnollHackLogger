@@ -6,6 +6,7 @@ import {
   ADMIN_FEEDBACK_ENDPOINT,
   ADMIN_FEEDBACK_FIXED_IN_VERSION_PATTERN,
   AdminFeedbackFacets,
+  AdminFeedbackIssue,
   AdminFeedbackService
 } from './admin-feedback.service';
 
@@ -173,6 +174,42 @@ describe('AdminFeedbackService', () => {
     const cleared = http.expectOne(`${BASE}/issues/7/status`);
     expect(cleared.request.body).toEqual({ status: 'dismissed', note: '', fixedInVersion: '' });
     cleared.flush(null);
+  });
+
+  it('posts a resolved-via list as given, an empty one to clear it, and leaves out a null one', () => {
+    service.updateStatus(7, 'resolved', { resolvedVia: ['wiki', 'knowledge_base'] }).subscribe();
+    const set = http.expectOne(`${BASE}/issues/7/status`);
+    expect(set.request.body).toEqual({ status: 'resolved', resolvedVia: ['wiki', 'knowledge_base'] });
+    set.flush(null);
+
+    service.updateStatus(7, 'dismissed', { resolvedVia: [] }).subscribe();
+    const cleared = http.expectOne(`${BASE}/issues/7/status`);
+    expect(cleared.request.body).toEqual({ status: 'dismissed', resolvedVia: [] });
+    cleared.flush(null);
+
+    service.updateStatus(7, 'resolved', { resolvedVia: null, note: 'x' }).subscribe();
+    const kept = http.expectOne(`${BASE}/issues/7/status`);
+    expect(kept.request.body).toEqual({ status: 'resolved', note: 'x' });
+    kept.flush(null);
+  });
+
+  it('reads the resolved-via list and the model labels of an issue, and the facet labels', () => {
+    let issue: AdminFeedbackIssue | undefined;
+    service.getIssues().subscribe(page => issue = page.rows[0]);
+    http.expectOne(r => r.url === `${BASE}/issues`).flush({
+      totalCount: 1,
+      rows: [{ id: 3, modelIds: ['gpt-x', '+2'], modelLabels: ['GPT X', '+2'], resolvedVia: ['overseer_release'] }]
+    });
+    expect(issue?.modelLabels).toEqual(['GPT X', '+2']);
+    expect(issue?.resolvedVia).toEqual(['overseer_release']);
+
+    let models: AdminFeedbackFacets['models'] = [];
+    service.getFacets().subscribe(f => models = f.models);
+    http.expectOne(r => r.url === `${BASE}/facets`).flush({
+      categories: [], models: [{ value: 'gpt-x', count: 1, label: 'GPT X' }], providers: [], sources: [], versions: [], tools: [],
+      users: [], groups: [], configs: []
+    });
+    expect(models).toEqual([{ value: 'gpt-x', count: 1, label: 'GPT X' }]);
   });
 
   it('checks a fixed-in version as the server does', () => {

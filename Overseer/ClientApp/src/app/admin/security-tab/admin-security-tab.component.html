@@ -225,10 +225,15 @@
                     <div><dt>Model</dt><dd>{{ modelText(event) }}</dd></div>
                   }
                   @if (event.code) {
-                    <div><dt>Code</dt><dd class="sec-mono">{{ event.code }}</dd></div>
+                    <!-- A provider's own code is quoted back to the provider, so it stays as received. -->
+                    @if (isProviderCode(event)) {
+                      <div><dt>Provider code</dt><dd class="sec-mono">{{ event.code }}</dd></div>
+                    } @else {
+                      <div><dt>Code</dt><dd>{{ codeText(event) }}</dd></div>
+                    }
                   }
                   @if (event.detail) {
-                    <div class="sec-fact-detail"><dt>Detail</dt><dd>{{ event.detail }}</dd></div>
+                    <div class="sec-fact-detail"><dt>Detail</dt><dd>{{ detailText(event) }}</dd></div>
                   }
                 </dl>
               }

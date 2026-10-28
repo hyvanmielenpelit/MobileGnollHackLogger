@@ -286,14 +286,24 @@ public sealed class OverseerFeedbackQuery
     public const string NoGroupName = "No group";
 
     private readonly ApplicationDbContext _db;
+    private readonly ModelMetadataService? _metadata;
 
-    public OverseerFeedbackQuery(ApplicationDbContext db)
+    public OverseerFeedbackQuery(ApplicationDbContext db, ModelMetadataService? metadata = null)
     {
         _db = db;
+        _metadata = metadata;
     }
 
     /// <summary>The display name of a configuration that no longer exists.</summary>
     public static string DeletedConfigurationName(long id) => $"Configuration #{id} (deleted)";
+
+    /// <summary>The catalog's display name of a model; the id without a service, a provider or a catalog name.</summary>
+    public string ModelLabel(string? provider, string modelId)
+    {
+        if (_metadata == null || string.IsNullOrWhiteSpace(provider) || string.IsNullOrWhiteSpace(modelId)) return modelId;
+        string name = _metadata.GetMetadata(provider, modelId).DisplayName;
+        return string.IsNullOrWhiteSpace(name) ? modelId : name;
+    }
 
     // --- Issues ---
 
@@ -443,6 +453,7 @@ public sealed class OverseerFeedbackQuery
 
         var modelPairs = await reports.Where(r => r.ModelId != null && r.ModelId != "")
             .Select(r => new { r.IssueId, Value = r.ModelId! }).Distinct().ToListAsync(ct);
+        var modelProviders = await ModelProvidersAsync(reports, ct);
         var providerPairs = await reports.Where(r => r.Provider != null && r.Provider != "")
             .Select(r => new { r.IssueId, Value = r.Provider! }).Distinct().ToListAsync(ct);
         var versionPairs = await reports.Where(r => r.AppVersion != null && r.AppVersion != "")
@@ -478,6 +489,8 @@ public sealed class OverseerFeedbackQuery
             Tools = ValueFacet(toolPairs.SelectMany(p => ParseRelatedTools(p.Json).Select(t => (p.IssueId, t.ToLowerInvariant()))),
                 StringComparer.Ordinal.Compare),
         };
+        foreach (var model in dto.Models)
+            model.Label = ModelLabel(modelProviders.GetValueOrDefault(model.Value), model.Value);
 
         var sourceIssues = new Dictionary<string, HashSet<long>>(StringComparer.Ordinal);
         foreach (var pair in sourcePairs)
@@ -570,6 +583,7 @@ public sealed class OverseerFeedbackQuery
             .ToListAsync(ct);
         var modelsByIssue = modelPairs.GroupBy(p => p.IssueId)
             .ToDictionary(g => g.Key, g => g.Select(p => p.ModelId!).OrderBy(m => m, StringComparer.Ordinal).ToList());
+        var modelProviders = await ModelProvidersAsync(reports, ct);
 
         var providerPairs = await reports
             .Where(r => r.Provider != null && r.Provider != "")
@@ -612,6 +626,7 @@ public sealed class OverseerFeedbackQuery
         foreach (var issue in issues)
         {
             latest.TryGetValue(issue.Id, out var newest);
+            var shownModels = ShownModelIds(modelsByIssue.GetValueOrDefault(issue.Id));
             rows.Add(new AdminFeedbackIssueDto
             {
                 Id = issue.Id,
@@ -623,7 +638,8 @@ public sealed class OverseerFeedbackQuery
                 OccurrenceCount = issue.OccurrenceCount,
                 RetainedCount = retained.GetValueOrDefault(issue.Id),
                 DistinctUserCount = userCounts.GetValueOrDefault(issue.Id),
-                ModelIds = ShownModelIds(modelsByIssue.GetValueOrDefault(issue.Id)),
+                ModelIds = shownModels,
+                ModelLabels = shownModels.Select(m => m.StartsWith('+') ? m : ModelLabel(modelProviders.GetValueOrDefault(m), m)).ToList(),
                 Providers = providersByIssue.GetValueOrDefault(issue.Id) ?? new List<string>(),
                 ModelSources = sourcesByIssue.GetValueOrDefault(issue.Id) ?? new AdminFeedbackModelSourceCountsDto(),
                 RegressionCount = issue.RegressionCount,
@@ -638,6 +654,7 @@ public sealed class OverseerFeedbackQuery
                 TriagedUtc = issue.TriagedUtc,
                 Resolution = issue.Resolution,
                 FixedInVersion = issue.FixedInVersion,
+                ResolvedVia = FeedbackResolvedVia.FromStored(issue.ResolvedVia),
                 AlsoInGnollBench = gnollBench.GetValueOrDefault(issue.Fingerprint)
             });
         }
@@ -687,6 +704,7 @@ public sealed class OverseerFeedbackQuery
             TurnUserMessageId = r.TurnUserMessageId,
             Provider = r.Provider,
             ModelId = r.ModelId,
+            ModelLabel = string.IsNullOrWhiteSpace(r.ModelId) ? r.ModelId : ModelLabel(r.Provider, r.ModelId),
             AppVersion = r.AppVersion,
             UserName = r.AspNetUserId != null && names.TryGetValue(r.AspNetUserId, out var name) ? name : null,
             ModelSource = r.ModelSource,
@@ -776,6 +794,18 @@ public sealed class OverseerFeedbackQuery
     }
 
     // --- Helpers ---
+
+    /// <summary>A provider for each model id among <paramref name="reports"/>: the ordinal first of those that name it.</summary>
+    private static async Task<Dictionary<string, string>> ModelProvidersAsync(IQueryable<OverseerFeedbackReport> reports, CancellationToken ct)
+    {
+        var pairs = await reports
+            .Where(r => r.ModelId != null && r.ModelId != "" && r.Provider != null && r.Provider != "")
+            .Select(r => new { ModelId = r.ModelId!, Provider = r.Provider! })
+            .Distinct()
+            .ToListAsync(ct);
+        return pairs.GroupBy(p => p.ModelId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Select(p => p.Provider).OrderBy(p => p, StringComparer.Ordinal).First(), StringComparer.Ordinal);
+    }
 
     private IQueryable<OverseerFeedbackIssue> InRange(DateTime? startDate, DateTime? endDate)
     {

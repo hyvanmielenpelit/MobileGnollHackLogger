@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { FEEDBACK_EXPORT_MAX_ISSUES } from '../../../services/feedback-transfer.service';
 import { FeedbackExportDialogComponent, FeedbackExportDone } from './feedback-export-dialog.component';
+import { FeedbackFormatsTipComponent } from './feedback-formats-tip.component';
 import { FeedbackImportDialogComponent } from './feedback-import-dialog.component';
 import { FEEDBACK_SELECTION_CAP, FeedbackExportOptions, FeedbackSource } from './feedback-view-storage';
 
@@ -21,12 +22,13 @@ const integer = new Intl.NumberFormat('en-US');
 /**
  * The selection line of a feedback list: how many issues are selected and how many of them the filters hide,
  * Show selected only, Clear selection and Select all N matching, and the two transfer actions, Export… and
- * Import resolutions…, whose dialogs it opens. The host holds the selection; the bar only reports requests.
+ * Import resolutions…, whose dialogs it opens, followed by the (i) of the feedback file formats. The host holds the
+ * selection; the bar only reports requests.
  */
 @Component({
   selector: 'app-feedback-selection-bar',
   standalone: true,
-  imports: [FeedbackExportDialogComponent, FeedbackImportDialogComponent],
+  imports: [FeedbackExportDialogComponent, FeedbackImportDialogComponent, FeedbackFormatsTipComponent],
   templateUrl: './feedback-selection-bar.component.html',
   styleUrls: ['./feedback-selection-bar.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush

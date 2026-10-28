@@ -28,6 +28,7 @@ import { FilterFacetComponent, FilterFacetOption } from '../../shared/data-table
 import { TableState, anyOfFilter, customFilter } from '../../shared/data-table/table-state';
 import { InfoTipComponent } from '../../shared/info-tip/info-tip.component';
 import { parseServerUtcDate } from '../../utils/date.util';
+import { providerLabel } from '../../utils/display-labels.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { rovingTabIndex } from '../../utils/roving-tab.util';
 import {
@@ -39,6 +40,7 @@ import {
 } from '../admin-page.store';
 import { SecurityEventDialogComponent, SecurityUserEventsRequest } from './security-event-dialog.component';
 import { securityKindLabel, securityRunSpanText, securityTimeText, securityUserLabel } from './security-event-archive';
+import { isProviderCodeKind, securityCodeLabel, securityDetailText } from './security-labels';
 
 export { securityKindLabel };
 
@@ -696,8 +698,22 @@ export class AdminSecurityTabComponent implements OnInit, AfterViewInit, OnDestr
     return `, ${event.quarantineCount} ${event.quarantineCount === 1 ? 'text' : 'texts'} kept`;
   }
 
+  /** The provider's name and the model's display name, else its id. */
   modelText(event: SecurityEvent): string {
-    return [event.provider, event.modelId].filter(part => !!part).join(' · ');
+    return [providerLabel(event.provider), event.modelLabel?.trim() || event.modelId].filter(part => !!part).join(' · ');
+  }
+
+  /** True when the event's code is the provider's own, shown as received under *Provider code*. */
+  isProviderCode(event: SecurityEvent): boolean {
+    return isProviderCodeKind(event.kind);
+  }
+
+  codeText(event: SecurityEvent): string {
+    return securityCodeLabel(event.kind, event.code);
+  }
+
+  detailText(event: SecurityEvent): string {
+    return securityDetailText(event.kind, event.detail);
   }
 
   // --- Actions ---

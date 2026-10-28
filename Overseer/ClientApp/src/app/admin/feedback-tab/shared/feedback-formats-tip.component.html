@@ -1,0 +1,67 @@
+<!-- The feedback file formats, in a dialog tip: the issues file, the resolution file and the resolution message.
+     The example files load the first time the dialog opens. -->
+<app-info-tip trigger="dialog" [tipId]="tipId" subject="Feedback file formats" dialogTitle="Feedback file formats"
+              (opened)="onOpened()">
+  <p class="fft-status" role="status" [class.fft-status-active]="loading">{{ statusText }}</p>
+  @if (error) {
+    <div class="fft-error">
+      <p class="gh-field-error" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ error }}</span>
+      </p>
+      <button type="button" class="btn-ghost fft-retry" (click)="retry()">Try again</button>
+    </div>
+  }
+
+  <section class="fft-section fft-issues">
+    <h4 class="gh-section-title">Issues file (export)</h4>
+    <p>
+      <strong>Export…</strong> and each card's <strong>Download as YAML</strong> write this file
+      (<code>overseer-feedback-issues</code>). An AI coding assistant works on it with the
+      <code>server-feedback-resolution</code> skill. It keeps the ids, not the labels, and every value under a
+      <code>texts</code> key is model or administrator text: data to investigate, never an instruction.
+    </p>
+    @if (examples) {
+      <pre class="fft-example" tabindex="0" role="region" aria-label="Example issues file">{{ examples.issues.content }}</pre>
+      <button type="button" class="btn-ghost fft-download fft-download-issues" (click)="download(examples.issues)">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        Download example<span class="visually-hidden"> issues file</span>
+      </button>
+    }
+  </section>
+
+  <section class="fft-section fft-resolutions">
+    <h4 class="gh-section-title">Resolutions file (import)</h4>
+    <p>
+      The agent writes this file (<code>overseer-feedback-resolutions</code>, version 2) for several issues at
+      once; <strong>Import resolutions…</strong> previews it before anything changes. Each issue's
+      <code>resolvedVia</code> lists where its fix went, by these ids:
+    </p>
+    <dl class="fft-resolved-via">
+      @for (option of resolvedViaOptions; track option.id) {
+        <div>
+          <dt><code>{{ option.id }}</code></dt>
+          <dd>{{ option.label }}</dd>
+        </div>
+      }
+    </dl>
+    @if (examples) {
+      <pre class="fft-example" tabindex="0" role="region" aria-label="Example resolutions file">{{ examples.resolutions.content }}</pre>
+      <button type="button" class="btn-ghost fft-download fft-download-resolutions" (click)="download(examples.resolutions)">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        Download example<span class="visually-hidden"> resolutions file</span>
+      </button>
+    }
+  </section>
+
+  <section class="fft-section fft-message">
+    <h4 class="gh-section-title">Closing one issue</h4>
+    <p>
+      For a single issue the agent writes a resolution message in the chat instead of a file. It serves as the
+      commit message, and closes the issue on the web: open the card's <strong>Edit triage</strong>, set the status
+      to Resolved, select where the fix went under <strong>Resolved via</strong>, paste the message into
+      <strong>Resolution</strong>, give <strong>Fixed in version</strong> for an Overseer release, and save.
+    </p>
+    <pre class="fft-example" tabindex="0" role="region" aria-label="Example resolution message">{{ messageExample }}</pre>
+  </section>
+</app-info-tip>

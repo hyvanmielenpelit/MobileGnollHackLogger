@@ -43,11 +43,11 @@ public class SecurityQueryService
     private static readonly Dictionary<SecurityEventKind, string> Explanations = new()
     {
         [SecurityEventKind.LoginFailed] = "A sign-in failed: a wrong password, or a user name no account has (Detail unknown-user). Written by Overseer's login and session create, the website login and the game APIs; the IP address is kept, the attempted user name is not.",
-        [SecurityEventKind.LoginLockedOut] = "A sign-in was refused because the account is locked out after repeated failures. Written by the same sign-in paths as LoginFailed; the IP address is kept.",
-        [SecurityEventKind.TwoFactorFailed] = "A wrong two-factor code was entered at sign-in. The IP address is kept.",
+        [SecurityEventKind.LoginLockedOut] = "A sign-in was refused because the account is locked out after repeated failures. Written by Overseer's login and its two-factor step, session create and the website login; the game APIs do not write it. The IP address is kept.",
+        [SecurityEventKind.TwoFactorFailed] = "A wrong two-factor code was entered at sign-in. Written by Overseer's login only. The IP address is kept.",
         [SecurityEventKind.RateLimitRejected] = "A rate limiter refused a request. Code is the limiter's policy (for example game-api-signin, session-create or session-create-turn) and Detail, where given, the limit that tripped: pair, account or ip. A game-api-signin or session-create refusal names the account when the pair or account block belongs to an existing one.",
         [SecurityEventKind.QuotaRefused] = "A usage limit refused an AI call before it reached the provider. Code is the limit: user, group or system for a configuration's quota, guard-cost or guard-runs for the AI usage guard.",
-        [SecurityEventKind.AccessDenied] = "An AI call was refused because the user may not use the configuration. Code is disabled (the configuration is switched off) or not-assigned (the user has no access to it).",
+        [SecurityEventKind.AccessDenied] = "An AI call was refused because the user may not use the configuration. Code is disabled (the user's own assignment to the configuration is switched off) or not-assigned (the configuration is not system-wide and neither the user nor an enabled group of theirs is assigned to it).",
         [SecurityEventKind.ProviderRefusal] = "The provider ended an operator-funded chat turn or sub-agent run with a refusal. Code is the provider's finish reason; incognito turns are included, title generation never.",
         [SecurityEventKind.ProviderSafetyBlock] = "The provider's safety filter blocked an operator-funded chat turn or sub-agent run. Code is the block or finish reason; incognito turns are included, title generation never.",
         [SecurityEventKind.ProviderPolicyRejection] = "The provider rejected the final attempt of an operator-funded call with a 4xx error naming a policy. Code is the sanitized provider error code.",
@@ -74,12 +74,23 @@ public class SecurityQueryService
     private readonly ApplicationDbContext _db;
     private readonly IContentKeyRing _keyRing;
     private readonly ILogger<SecurityQueryService>? _logger;
+    private readonly ModelMetadataService? _metadata;
 
-    public SecurityQueryService(ApplicationDbContext db, IContentKeyRing keyRing, ILogger<SecurityQueryService>? logger = null)
+    public SecurityQueryService(ApplicationDbContext db, IContentKeyRing keyRing, ILogger<SecurityQueryService>? logger = null,
+        ModelMetadataService? metadata = null)
     {
         _db = db;
         _keyRing = keyRing;
         _logger = logger;
+        _metadata = metadata;
+    }
+
+    /// <summary>The catalog's display name of a model; the id without a service, a provider or a catalog name.</summary>
+    private string? ModelLabel(string? provider, string? modelId)
+    {
+        if (_metadata == null || string.IsNullOrWhiteSpace(provider) || string.IsNullOrWhiteSpace(modelId)) return modelId;
+        string name = _metadata.GetMetadata(provider, modelId).DisplayName;
+        return string.IsNullOrWhiteSpace(name) ? modelId : name;
     }
 
     /// <summary>What <paramref name="kind"/> means; a generic sentence for a kind without one.</summary>
@@ -206,7 +217,7 @@ public class SecurityQueryService
         };
     }
 
-    private static void Fill(SecurityEventDto dto, SecurityEvent e, string? userName, bool userIsBlocked)
+    private void Fill(SecurityEventDto dto, SecurityEvent e, string? userName, bool userIsBlocked)
     {
         dto.Id = e.Id;
         dto.OccurredUtc = Utc(e.OccurredUtc);
@@ -220,6 +231,7 @@ public class SecurityQueryService
         dto.SystemAiApiConfigurationId = e.SystemAiApiConfigurationId;
         dto.Provider = e.Provider;
         dto.ModelId = e.ModelId;
+        dto.ModelLabel = ModelLabel(e.Provider, e.ModelId);
         dto.Code = e.Code;
         dto.Detail = e.Detail;
     }
@@ -486,6 +498,7 @@ public class SecurityQueryService
                     StartedAtUtc = Utc(a.StartedAtUtc),
                     RoleContext = a.RoleContext,
                     RequestedModelId = a.RequestedModelId,
+                    RequestedModelLabel = ModelLabel(e.Provider, a.RequestedModelId) ?? a.RequestedModelId,
                     HttpStatus = a.HttpStatus,
                     ProviderErrorCode = a.ProviderErrorCode,
                     Outcome = a.Outcome.ToString(),
@@ -498,12 +511,13 @@ public class SecurityQueryService
                 .OrderByDescending(l => l.TimestampUtc)
                 .ThenByDescending(l => l.Id)
                 .Take(MaxRelatedRows)
-                .Select(l => new { l.TimestampUtc, l.ModelId, l.RoleContext, l.InputTokens, l.OutputTokens, l.EstimatedCost })
+                .Select(l => new { l.TimestampUtc, l.Provider, l.ModelId, l.RoleContext, l.InputTokens, l.OutputTokens, l.EstimatedCost })
                 .ToListAsync(ct))
                 .Select(l => new SecurityUsageRowDto
                 {
                     TimestampUtc = Utc(l.TimestampUtc),
                     ModelId = l.ModelId,
+                    ModelLabel = ModelLabel(string.IsNullOrWhiteSpace(l.Provider) ? e.Provider : l.Provider, l.ModelId) ?? l.ModelId,
                     RoleContext = l.RoleContext,
                     Tokens = (l.InputTokens ?? 0) + (l.OutputTokens ?? 0),
                     Cost = l.EstimatedCost

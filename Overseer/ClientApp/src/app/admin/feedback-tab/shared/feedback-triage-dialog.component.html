@@ -75,6 +75,25 @@
             }
           </div>
 
+          <!-- Where the fix went: one checkbox per channel, the id only as its value. -->
+          <fieldset class="ftd-resolved" [attr.aria-labelledby]="id + '-resolved-label'"
+                    [attr.aria-describedby]="id + '-resolved-help'">
+            <legend class="ftd-legend">
+              <span [id]="id + '-resolved-label'">Resolved via</span>
+              <app-info-tip [tipId]="id + '-resolved-help'" subject="Resolved via">Where the fix went. GnollHack wiki and knowledge-base fixes go live when the server's copy is pulled; an Overseer release needs a deploy.</app-info-tip>
+            </legend>
+            <div class="ftd-resolved-options">
+              @for (option of resolvedViaOptions; track option.id) {
+                <label class="checkbox-label ftd-resolved-option">
+                  <input type="checkbox" [id]="id + '-resolved-' + option.id" [value]="option.id"
+                         [checked]="isResolvedVia(option.id)"
+                         (change)="onResolvedVia(option.id, $event)">
+                  <span>{{ option.label }}</span>
+                </label>
+              }
+            </div>
+          </fieldset>
+
           <div class="ftd-field ftd-field-note">
             <div class="ftd-label-row">
               <label [for]="id + '-note'">Note</label>

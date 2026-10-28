@@ -43,6 +43,10 @@ public class BenchmarkFeedbackTriage
     [MaxLength(64)]
     public string? FixedInVersion { get; set; }
 
+    /// <summary>The channels the fix went through: comma-separated ids, in <c>FeedbackResolvedVia</c> order.</summary>
+    [MaxLength(200)]
+    public string? ResolvedVia { get; set; }
+
     /// <summary>Plain column: the triage record outlives the account.</summary>
     [MaxLength(450)]
     public string? TriagedByUserId { get; set; }

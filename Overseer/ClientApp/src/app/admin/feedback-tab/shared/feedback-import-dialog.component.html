@@ -173,6 +173,10 @@
                 <dd class="fi-status-line">{{ card.statusLine }}</dd>
                 <dt>Fixed in version</dt>
                 <dd class="fi-version-line">{{ card.versionLine }}</dd>
+                @if (card.resolvedViaLine) {
+                  <dt>Resolved via</dt>
+                  <dd class="fi-resolved-via-line">{{ card.resolvedViaLine }}</dd>
+                }
               </dl>
               @if (card.showResolution) {
                 <p class="fi-field-label">Resolution</p>

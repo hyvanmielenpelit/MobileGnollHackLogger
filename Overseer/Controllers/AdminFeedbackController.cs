@@ -207,7 +207,8 @@ public class AdminFeedbackController : ControllerBase
     /// <summary>
     /// Triages an issue: sets its status, and its note, resolution and fixed-in version, and records who did it and
     /// when. For each text field an absent value keeps the stored one and an empty one clears it; an over-long value
-    /// or a malformed version is 400. <c>regressed</c> is refused, because the system sets it when a resolved issue
+    /// or a malformed version is 400. An absent <c>resolvedVia</c> keeps the stored list, an empty one clears it, and an
+    /// unknown id is 400. <c>regressed</c> is refused, because the system sets it when a resolved issue
     /// recurs.
     /// </summary>
     [HttpPost("issues/{id:long}/status")]
@@ -225,6 +226,12 @@ public class AdminFeedbackController : ControllerBase
         {
             return BadRequest(new { message = error });
         }
+        IReadOnlyList<string>? resolvedVia = null;
+        if (request.ResolvedVia != null)
+        {
+            if (!FeedbackResolvedVia.TryParse(request.ResolvedVia, out var parsedVia, out error)) return BadRequest(new { message = error });
+            resolvedVia = parsedVia;
+        }
 
         var issue = await _db.OverseerFeedbackIssues.FirstOrDefaultAsync(i => i.Id == id);
         if (issue == null) return NotFound(new { message = "No such feedback issue." });
@@ -233,6 +240,7 @@ public class AdminFeedbackController : ControllerBase
         if (hasNote) issue.TriageNote = note;
         if (hasResolution) issue.Resolution = resolution;
         if (hasVersion) issue.FixedInVersion = fixedInVersion;
+        if (resolvedVia != null) issue.ResolvedVia = FeedbackResolvedVia.ToStored(resolvedVia);
         issue.TriagedByUserId = CurrentUserId;
         issue.TriagedUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync();

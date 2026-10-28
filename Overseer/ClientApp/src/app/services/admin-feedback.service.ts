@@ -81,6 +81,11 @@ export interface AdminFeedbackIssue {
   distinctUserCount: number;
   /** At most five model ids, then `+N`. */
   modelIds: string[];
+  /**
+   * The models' catalog display names, index for index with `modelIds` (the `+N` entry as is; the id when the catalog
+   * has no name). The server always sends it; optional so a fixture without it still types.
+   */
+  modelLabels?: string[];
   /** The providers of the retained occurrences. */
   providers: string[];
   modelSources: AdminFeedbackModelSourceCounts;
@@ -98,6 +103,11 @@ export interface AdminFeedbackIssue {
   /** What was done about the issue; null while none is written. */
   resolution: string | null;
   fixedInVersion: string | null;
+  /**
+   * Where the fix went: *Resolved via* ids in the canonical order (`FEEDBACK_RESOLVED_VIA_IDS`), empty when none. The
+   * server always sends it; optional so a fixture without it still types.
+   */
+  resolvedVia?: string[];
   alsoInGnollBench: AdminFeedbackGnollBenchLink | null;
 }
 
@@ -120,6 +130,8 @@ export interface AdminFeedbackOccurrence {
   turnUserMessageId: number | null;
   provider: string | null;
   modelId: string | null;
+  /** The model's catalog display name, else the id; null when `modelId` is. Optional like `modelLabels`. */
+  modelLabel?: string | null;
   appVersion: string | null;
   /** Null once the account is erased. */
   userName: string | null;
@@ -153,6 +165,11 @@ export interface AdminFeedbackOccurrencePage {
 export interface AdminFeedbackFacetValue {
   value: string;
   count: number;
+  /**
+   * The value's display label: the catalog name for the Models facet (the id when it has none), empty for every other
+   * facet. The server always sends it; optional so a fixture without it still types.
+   */
+  label?: string;
 }
 
 /** One facet entity (a user, a group, a configuration) with its display name and issue count. */
@@ -246,6 +263,8 @@ export interface AdminFeedbackTriageChanges {
   note?: string | null;
   resolution?: string | null;
   fixedInVersion?: string | null;
+  /** *Resolved via* ids; null or left out keeps the stored list, `[]` clears it. */
+  resolvedVia?: readonly string[] | null;
 }
 
 /** The list filters as query parameters; blank values and empty lists are left out. */
@@ -342,14 +361,18 @@ export class AdminFeedbackService {
   }
 
   /**
-   * Sets an issue's status and, for each field given, its triage note, resolution and fixed-in version;
-   * returns the updated issue. 404 for an unknown issue; 400 for an unknown status or a field too long.
+   * Sets an issue's status and, for each field given, its triage note, resolution, fixed-in version and resolved-via
+   * list; returns the updated issue. 404 for an unknown issue; 400 for an unknown status or resolved-via id, or a
+   * field too long.
    */
   updateStatus(issueId: number, status: AdminFeedbackTriageStatus, changes: AdminFeedbackTriageChanges = {}): Observable<AdminFeedbackIssue> {
-    const body: { status: AdminFeedbackTriageStatus; note?: string; resolution?: string; fixedInVersion?: string } = { status };
+    const body: {
+      status: AdminFeedbackTriageStatus; note?: string; resolution?: string; fixedInVersion?: string; resolvedVia?: string[];
+    } = { status };
     if (changes.note != null) body.note = changes.note.trim();
     if (changes.resolution != null) body.resolution = changes.resolution.trim();
     if (changes.fixedInVersion != null) body.fixedInVersion = changes.fixedInVersion.trim();
+    if (changes.resolvedVia != null) body.resolvedVia = [...changes.resolvedVia];
     return this.http.post<AdminFeedbackIssue>(this.issueUrl(issueId, '/status'), body);
   }
 

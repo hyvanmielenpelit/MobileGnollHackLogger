@@ -36,17 +36,29 @@ import {
   GnollBenchFeedbackTriageStatus
 } from '../../../services/admin-gnollbench-feedback.service';
 import { adminApiError } from '../../../services/admin-users.service';
+import { FeedbackTransferService, feedbackTransferStatus } from '../../../services/feedback-transfer.service';
 import { CardListSort, CardListState } from '../../../shared/data-table/card-list-state';
 import { FilterFacetComponent, FilterFacetOption } from '../../../shared/data-table/filter-facet.component';
 import { TableState, customFilter } from '../../../shared/data-table/table-state';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { parseServerUtcDate } from '../../../utils/date.util';
+import { providerLabel, toolLabel } from '../../../utils/display-labels.util';
+import { downloadTextFile } from '../../../utils/download.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { adminQueryList, readAdminQueryList } from '../../admin-url';
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
+import { DEFAULT_FEEDBACK_EXPORT_OPTIONS } from '../shared/feedback-export-dialog.component';
+import {
+  feedbackCategoryLabel,
+  feedbackCauseLabel,
+  feedbackNoticedViaLabel,
+  feedbackStatusLabel,
+  formatResolvedVia,
+  labelFrom
+} from '../shared/feedback-labels';
 import { FeedbackSelectionBarComponent } from '../shared/feedback-selection-bar.component';
 import { hiddenCharactersOf } from '../shared/feedback-hidden-characters';
-import { FeedbackTriageDialogComponent, FeedbackTriageValues } from '../shared/feedback-triage-dialog.component';
+import { FeedbackTriageDialogComponent, FeedbackTriageSubmission, FeedbackTriageValues } from '../shared/feedback-triage-dialog.component';
 import {
   FEEDBACK_SELECTION_CAP,
   FeedbackExportOptions,
@@ -137,20 +149,6 @@ const GNOLLBENCH_SORTS: readonly CardListSort[] = [
   { id: 'subject', label: 'Subject (A–Z)', column: 'subject', direction: 'asc' }
 ];
 
-const STATUS_LABELS: Readonly<Record<string, string>> = {
-  new: 'New',
-  acknowledged: 'Acknowledged',
-  resolved: 'Resolved',
-  regressed: 'Regressed',
-  dismissed: 'Dismissed'
-};
-
-const CATEGORY_LABELS: Readonly<Record<string, string>> = {
-  missing_information: 'Missing information',
-  tool_problem: 'Tool problem',
-  own_mistake: 'Own mistake'
-};
-
 const CONDITION_LABELS: Readonly<Record<string, string>> = {
   production: 'Production',
   sourceOnly: 'Source code only',
@@ -161,23 +159,6 @@ const ACCEPTED_LABELS: Readonly<Record<GnollBenchAcceptedScope, string>> = {
   accepted: 'Accepted only',
   all: 'Accepted and refused',
   refused: 'Refused only'
-};
-
-const SUSPECTED_CAUSE_LABELS: Readonly<Record<string, string>> = {
-  did_not_verify: 'Did not verify',
-  misread_tool_result: 'Misread a tool result',
-  training_knowledge_conflict: 'Conflict with training knowledge',
-  search_strategy: 'Search strategy',
-  corpus_or_tool_limit: 'Corpus or tool limit',
-  ambiguous_question: 'Ambiguous question',
-  answered_too_quickly: 'Answered too quickly',
-  other: 'Other'
-};
-
-const NOTICED_VIA_LABELS: Readonly<Record<string, string>> = {
-  user_correction: 'The user corrected it',
-  tool_result: 'A tool result contradicted it',
-  self_review: 'Its own review'
 };
 
 /** What a stored id facet value reads as while the facets do not name it. */
@@ -198,20 +179,6 @@ const COLLAPSED_LINES = 6;
 const COLLAPSED_CHARS = 480;
 
 const NO_VALUES: readonly string[] = [];
-
-/** A value of a fixed label map, or the value itself; never an inherited property. */
-function labelFrom(map: Readonly<Record<string, string>>, value: string | null | undefined): string {
-  if (!value) return '';
-  return Object.hasOwn(map, value) ? map[value] : value;
-}
-
-export function gnollBenchStatusLabel(status: string): string {
-  return labelFrom(STATUS_LABELS, status);
-}
-
-export function gnollBenchCategoryLabel(category: string | null | undefined): string {
-  return labelFrom(CATEGORY_LABELS, category);
-}
 
 export function gnollBenchConditionLabel(condition: string | null | undefined): string {
   return labelFrom(CONDITION_LABELS, condition);
@@ -403,8 +370,8 @@ interface TriageResult {
  * the base set (accepted, all or refused calls), a facet for every run fact (status, category, model,
  * provider, run, series, analysis group, battery run, model batch, suite, question, information condition,
  * corpus, Experimental Changes and harness) and chips; its selection bar holds a selection by fingerprint for
- * the export and the resolution import. Each card has the issue's figures, its self-reports on demand and
- * Edit triage, which opens the triage dialog. The shell supplies the date range and a Refresh token. The view
+ * the export and the resolution import. Each card has the issue's figures, its self-reports on demand, a
+ * one-issue YAML download and Edit triage, which opens the triage dialog. The shell supplies the date range and a Refresh token. The view
  * is remembered per browser and the filters are kept in the address. Report text is model output and is
  * rendered as plain text only.
  */
@@ -416,6 +383,7 @@ interface TriageResult {
 })
 export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDestroy {
   private readonly feedback = inject(AdminGnollBenchFeedbackService);
+  private readonly transfer = inject(FeedbackTransferService);
   private readonly benchmark = inject(AdminBenchmarkService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -435,8 +403,8 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   readonly acceptedLabels = ACCEPTED_LABELS;
   readonly searchMax = GNOLLBENCH_SEARCH_MAX;
   readonly selectionCap = FEEDBACK_SELECTION_CAP;
-  readonly statusLabel = gnollBenchStatusLabel;
-  readonly categoryLabel = gnollBenchCategoryLabel;
+  readonly statusLabel = feedbackStatusLabel;
+  readonly categoryLabel = feedbackCategoryLabel;
   readonly conditionLabel = gnollBenchConditionLabel;
   readonly corpusLabel = gnollBenchCorpusLabel;
   /** An Experimental Changes spec in words, with the catalog's titles once it has arrived. */
@@ -481,6 +449,8 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   /** The long texts shown in full, as `details-{id}` or `question-{id}`. */
   readonly expandedTexts = signal<ReadonlySet<string>>(new Set<string>());
   readonly savingFingerprint = signal<string | null>(null);
+  /** The issue whose YAML download is running; another download waits until it ends. */
+  readonly downloadingId = signal<string | null>(null);
   readonly triageResults = signal<Readonly<Record<string, TriageResult>>>({});
 
   // --- Selection ---
@@ -583,6 +553,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   private selectAllSub: Subscription | null = null;
   private readonly occurrenceSubs = new Map<string, Subscription>();
   private changesSub: Subscription | null = null;
+  private downloadSub: Subscription | null = null;
   private initialized = false;
 
   ngOnInit(): void {
@@ -623,7 +594,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   ngOnDestroy(): void {
     this.list.dispose();
     for (const sub of [this.listSub, this.probeSub, this.facetsSub, this.countsSub, this.querySub, this.selectionSub,
-      this.matchingSub, this.pruneSub, this.selectAllSub, this.changesSub]) {
+      this.matchingSub, this.pruneSub, this.selectAllSub, this.changesSub, this.downloadSub]) {
       sub?.unsubscribe();
     }
     this.occurrenceSubs.forEach(sub => sub.unsubscribe());
@@ -738,10 +709,10 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
       (list ?? []).map(e => ({ value: String(e.id), label: e.name, count: e.count }));
     switch (key) {
       case 'status':
-        return GNOLLBENCH_FEEDBACK_STATUSES.map(status => ({ value: status, label: gnollBenchStatusLabel(status), count: counts?.[status] ?? 0 }));
-      case 'category': return values(data?.categories, v => gnollBenchCategoryLabel(v.value));
+        return GNOLLBENCH_FEEDBACK_STATUSES.map(status => ({ value: status, label: feedbackStatusLabel(status), count: counts?.[status] ?? 0 }));
+      case 'category': return values(data?.categories, v => feedbackCategoryLabel(v.value));
       case 'model': return values(data?.models, v => v.label || v.value);
-      case 'provider': return values(data?.providers, v => v.label || v.value);
+      case 'provider': return values(data?.providers, v => providerLabel(v.value) || v.label || v.value);
       case 'run': return entities(data?.runs);
       case 'series': return entities(data?.series);
       case 'group': return entities(data?.groups);
@@ -761,9 +732,10 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     const idLabel = ID_FALLBACK_LABELS[key];
     if (idLabel) return `${idLabel} #${value}`;
     switch (key) {
-      case 'status': return gnollBenchStatusLabel(value);
-      case 'category': return gnollBenchCategoryLabel(value);
+      case 'status': return feedbackStatusLabel(value);
+      case 'category': return feedbackCategoryLabel(value);
       case 'condition': return gnollBenchConditionLabel(value);
+      case 'provider': return providerLabel(value) || value;
       case 'corpus': return gnollBenchCorpusLabel(value);
       case 'variant': return gnollBenchVariantLabel(value, this.changeTitles());
       case 'harness': return `Harness ${value}`;
@@ -1247,15 +1219,30 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
 
   /** `Claude Opus · Anthropic`; whichever is known. */
   modelText(occurrence: GnollBenchFeedbackOccurrence): string {
-    return [occurrence.modelLabel || occurrence.modelId, occurrence.provider].filter(part => !!part).join(' · ');
+    return [occurrence.modelLabel || occurrence.modelId, providerLabel(occurrence.provider)].filter(part => !!part).join(' · ');
+  }
+
+  /** The issue's providers by name (`OpenAI`); empty for none. */
+  providersText(issue: GnollBenchFeedbackIssue): string {
+    return issue.providers.map(provider => providerLabel(provider) || provider).join(', ');
+  }
+
+  /** `GnollHack wiki search, Item stats`; empty for none. */
+  toolsText(tools: readonly string[]): string {
+    return tools.map(tool => toolLabel(tool) || tool).join(', ');
+  }
+
+  /** `GnollHack wiki, Overseer release`; empty while the issue says nothing about where the fix went. */
+  resolvedViaText(issue: GnollBenchFeedbackIssue): string {
+    return issue.resolvedVia?.length ? formatResolvedVia(issue.resolvedVia) : '';
   }
 
   causeLabel(cause: string | null | undefined): string {
-    return labelFrom(SUSPECTED_CAUSE_LABELS, cause);
+    return feedbackCauseLabel(cause);
   }
 
   noticedViaText(value: string | null): string {
-    return labelFrom(NOTICED_VIA_LABELS, value);
+    return feedbackNoticedViaLabel(value);
   }
 
   /** The run's report, which the server serves as a download. */
@@ -1280,6 +1267,44 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     this.expandedTexts.set(next);
   }
 
+  // --- Download ---
+
+  /**
+   * Downloads one issue as a YAML issues file with the remembered export options, and says so on the card's
+   * result line. An issue the server no longer has is said so, and the list is fetched again. Ignored while
+   * a download runs.
+   */
+  downloadIssue(issue: GnollBenchFeedbackIssue): void {
+    if (this.downloadingId() !== null) return;
+    const fingerprint = issue.fingerprint;
+    const options = this.exportOptions() ?? DEFAULT_FEEDBACK_EXPORT_OPTIONS;
+    this.downloadingId.set(fingerprint);
+    this.setTriageResult(fingerprint, { message: '', error: null });
+    this.downloadSub?.unsubscribe();
+    this.downloadSub = this.transfer.exportIssues({
+      source: 'gnollbench', format: 'yaml', fingerprints: [fingerprint],
+      occurrencesPerIssue: options.occurrencesPerIssue, includeQuestionText: options.includeQuestionText !== false
+    }).subscribe({
+      next: result => {
+        this.downloadingId.set(null);
+        downloadTextFile(result.fileName, result.content, result.mediaType);
+        this.setTriageResult(fingerprint, { message: `Downloaded ${result.fileName}.`, error: null });
+        this.cdr.markForCheck();
+      },
+      error: err => {
+        this.downloadingId.set(null);
+        if (feedbackTransferStatus(err) === 404) {
+          this.setTriageResult(fingerprint, { message: 'This issue no longer exists.', error: null });
+          this.reloadIssues();
+          this.notice.set(`The issue “${issue.subject}” no longer exists.`);
+        } else {
+          this.setTriageResult(fingerprint, { message: 'The issue could not be downloaded: ' + adminApiError(err).message, error: null });
+        }
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
   // --- Triage ---
 
   triageResult(fingerprint: string): TriageResult | undefined {
@@ -1293,12 +1318,12 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
       idPrefix: `tl-gbfb-${idPart(issue.fingerprint)}-triage`,
       subject: issue.subject,
       details: [
-        gnollBenchCategoryLabel(issue.category),
-        `Status: ${gnollBenchStatusLabel(issue.status)}`,
+        feedbackCategoryLabel(issue.category),
+        `Status: ${feedbackStatusLabel(issue.status)}`,
         issue.selfReportCount === 1 ? '1 self-report' : `${formatInteger(issue.selfReportCount)} self-reports`
       ],
       values: FeedbackGnollBenchPanelComponent.triageValuesOf(issue),
-      statuses: GNOLLBENCH_FEEDBACK_TRIAGE_STATUSES.map(status => ({ value: status, label: gnollBenchStatusLabel(status) })),
+      statuses: GNOLLBENCH_FEEDBACK_TRIAGE_STATUSES.map(status => ({ value: status, label: feedbackStatusLabel(status) })),
       statusHelp: 'A resolved issue that a run reports again becomes Regressed; a dismissed one stays dismissed.',
       limits: { note: GNOLLBENCH_NOTE_MAX, resolution: GNOLLBENCH_RESOLUTION_MAX, fixedInVersion: GNOLLBENCH_FIXED_IN_VERSION_MAX },
       fixedInVersionPattern: GNOLLBENCH_FIXED_IN_VERSION_PATTERN,
@@ -1308,18 +1333,19 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   }
 
   /**
-   * Saves the status, and each text that differs from the stored one: an unchanged text is left out, which
-   * keeps it, and an emptied one is sent empty, which clears it. The card takes the server's copy, the result
-   * is announced and the Status counts are fetched again. A failure reaches the dialog as an error with the
-   * message to show.
+   * Saves the status, each text that differs from the stored one, and Resolved via when the dialog changed it:
+   * an unchanged text is left out, which keeps it, and an emptied one is sent empty, which clears it. The card
+   * takes the server's copy, the result is announced and the Status counts are fetched again. A failure reaches
+   * the dialog as an error with the message to show.
    */
-  saveTriage(issue: GnollBenchFeedbackIssue, values: FeedbackTriageValues): Observable<GnollBenchFeedbackIssue> {
+  saveTriage(issue: GnollBenchFeedbackIssue, values: FeedbackTriageSubmission): Observable<GnollBenchFeedbackIssue> {
     return defer(() => {
       const fingerprint = issue.fingerprint;
       const update: GnollBenchFeedbackStatusUpdate = { status: values.status as GnollBenchFeedbackTriageStatus };
       if (values.note !== (issue.triageNote ?? '')) update.note = values.note;
       if (values.resolution !== (issue.resolution ?? '')) update.resolution = values.resolution;
       if (values.fixedInVersion !== (issue.fixedInVersion ?? '')) update.fixedInVersion = values.fixedInVersion;
+      if (values.resolvedVia !== undefined) update.resolvedVia = [...values.resolvedVia];
 
       this.savingFingerprint.set(fingerprint);
       this.setTriageResult(fingerprint, { message: '', error: null });
@@ -1331,12 +1357,13 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
             triageNote: update.note !== undefined ? update.note || null : issue.triageNote,
             resolution: update.resolution !== undefined ? update.resolution || null : issue.resolution,
             fixedInVersion: update.fixedInVersion !== undefined ? update.fixedInVersion || null : issue.fixedInVersion,
+            resolvedVia: update.resolvedVia ? [...update.resolvedVia] : issue.resolvedVia,
             triagedUtc: new Date().toISOString()
           }),
         tap(saved => {
           this.rows.set(this.rows().map(i => i.fingerprint === fingerprint ? saved : i));
           this.list.invalidate();
-          this.setTriageResult(fingerprint, { message: `Saved. The issue is ${gnollBenchStatusLabel(saved.status)}.`, error: null });
+          this.setTriageResult(fingerprint, { message: `Saved. The issue is ${feedbackStatusLabel(saved.status)}.`, error: null });
           this.loadCounts();
         }),
         catchError(err => throwError(() => new Error('The issue could not be saved: ' + adminApiError(err).message))),
@@ -1355,7 +1382,8 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
       status: issue.status === 'regressed' ? '' : issue.status,
       note: issue.triageNote ?? '',
       resolution: issue.resolution ?? '',
-      fixedInVersion: issue.fixedInVersion ?? ''
+      fixedInVersion: issue.fixedInVersion ?? '',
+      resolvedVia: issue.resolvedVia ?? []
     };
   }
 

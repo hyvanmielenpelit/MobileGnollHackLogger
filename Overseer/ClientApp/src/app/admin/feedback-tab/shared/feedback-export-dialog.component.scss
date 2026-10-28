@@ -10,8 +10,17 @@
   color: #ccc;
 }
 
+.fx-format,
 .fx-occurrences {
   margin-bottom: 14px;
+}
+
+.fx-format-name {
+  font-weight: 600;
+}
+
+.fx-format-hint {
+  color: #bbb;
 }
 
 .fx-question-text {

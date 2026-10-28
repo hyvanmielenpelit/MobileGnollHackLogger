@@ -19,6 +19,7 @@ import {
   AdminFeedbackOccurrencePage,
   AdminFeedbackService
 } from '../../../services/admin-feedback.service';
+import { FeedbackExportResult, FeedbackTransferService } from '../../../services/feedback-transfer.service';
 import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
 import { AdminPageStore } from '../../admin-page.store';
 import { adminTestRoutes } from '../../admin.component.testing';
@@ -378,7 +379,7 @@ describe('FeedbackOverseerPanelComponent', () => {
       const facts = Array.from(card.querySelectorAll('.tl-fb-facts > div')).map(f => [textOf(f.querySelector('dt')), textOf(f.querySelector('dd'))]);
       expect(facts).toEqual([
         ['Latest expected location', 'wiki page Dilithium crystal'],
-        ['Latest related tools', 'wiki_search, item_lookup'],
+        ['Latest related tools', 'GnollHack wiki search, GnollHack wiki item lookup'],
         ["Model's suspected cause (hypothesis)", 'Corpus or tool limit'],
         ['Latest version', '1.4.2+abc'],
         ['Providers', 'Anthropic, OpenAI'],
@@ -676,7 +677,7 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(options('tl-fb-facet-user')).toEqual(['alice 4', 'bob 1']);
       expect(options('tl-fb-facet-group')).toEqual(['Testers 2', 'No group 1']);
       expect(options('tl-fb-facet-source')).toEqual(['System configuration 6', 'User\'s own model 2']);
-      expect(options('tl-fb-facet-tool')).toEqual(['item_lookup 1', 'wiki_search 3']);
+      expect(options('tl-fb-facet-tool')).toEqual(['GnollHack wiki item lookup 1', 'GnollHack wiki search 3']);
       expect(options('tl-fb-facet-resolution')).toEqual(['With a resolution 3', 'Without a resolution 3']);
       expect(facet('tl-fb-facet-resolution')!.mode).toBe('single');
       expect(issuesSpy).toHaveBeenCalledWith({ startDate: '2026-09-21', endDate: '2026-10-21', resolution: 'with', take: 1 });
@@ -714,7 +715,7 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(chipLabels()).toEqual([
         'Remove filter Status: Resolved', 'Remove filter Category: Tool problem', 'Remove filter Category: Own mistake',
         'Remove filter Model: gpt-x', 'Remove filter Provider: OpenAI', 'Remove filter User: alice', 'Remove filter Group: No group',
-        'Remove filter Model source: User\'s own model', 'Remove filter Tool: wiki_search', 'Remove filter Has resolution: Without a resolution'
+        'Remove filter Model source: User\'s own model', 'Remove filter Tool: GnollHack wiki search', 'Remove filter Has resolution: Without a resolution'
       ]);
     });
 
@@ -1372,6 +1373,265 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(dialog.open).toBe(false);
       expect(deleteSpy).not.toHaveBeenCalled();
       expect(cards().length).toBe(1);
+    });
+  });
+
+  describe('readable labels', () => {
+    /** The ids a card or an occurrence must not show while each has a label. */
+    const IDS = /wiki_search|item_lookup|claude-x|gpt-x|\banthropic\b|\bopenai\b/;
+
+    it('shows tools, providers and models by their labels on the card and its occurrences, and an unlabeled tool in words', async () => {
+      nextPage = page([issue(1, {
+        modelIds: ['claude-x', 'gpt-x', '+2'], modelLabels: ['Claude X', 'GPT X', '+2'],
+        providers: ['anthropic', 'openai'], latestRelatedTools: ['wiki_search', 'some_new_tool']
+      })]);
+      occurrencesSpy.mockReturnValue(of<AdminFeedbackOccurrencePage>({
+        totalCount: 1,
+        rows: [occurrence(5, {
+          provider: 'anthropic', modelId: 'claude-x', modelLabel: 'Claude X', relatedTools: ['item_lookup', 'some_new_tool'],
+          searchedFor: 'the dilithium page'
+        })]
+      }));
+      await create();
+      const card = cards()[0];
+      const details = openOccurrences(card);
+
+      expect(textOf(card.querySelector('.tl-fb-models'))).toBe('Models: Claude X, GPT X, +2');
+      const tools = card.querySelector('.tl-fb-fact-tools dd')!;
+      expect(textOf(tools)).toBe('GnollHack wiki search, Some new tool');
+      expect(tools.classList.contains('tl-fb-mono')).toBe(false);
+      expect(textOf(card.querySelector('.tl-fb-fact-providers dd'))).toBe('Anthropic, OpenAI');
+
+      const item = details.querySelector<HTMLElement>('li.tl-fb-occ')!;
+      const facts = Object.fromEntries(Array.from(item.querySelectorAll('.tl-fb-occ-facts > div'))
+        .map(f => [textOf(f.querySelector('dt')), f.querySelector('dd')!]));
+      expect(textOf(facts['Provider and model'])).toBe('Anthropic · Claude X');
+      expect(textOf(facts['Related tools'])).toBe('GnollHack wiki item lookup, Some new tool');
+      expect(facts['Related tools'].classList.contains('tl-fb-mono')).toBe(false);
+
+      expect(textOf(card)).not.toMatch(IDS);
+    });
+
+    it('shows a model id when the server sent no label for it', async () => {
+      nextPage = page([issue(1, { modelIds: ['claude-x', 'gpt-x'], modelLabels: ['Claude X', ''] })]);
+      occurrencesSpy.mockReturnValue(of<AdminFeedbackOccurrencePage>({ totalCount: 1, rows: [occurrence(5, { modelLabel: null })] }));
+      await create();
+      const card = cards()[0];
+      const details = openOccurrences(card);
+
+      expect(textOf(card.querySelector('.tl-fb-models'))).toBe('Models: Claude X, gpt-x');
+      expect(details.textContent).toContain('Anthropic · claude-x');
+    });
+
+    it('labels the Model, Provider and Tool facets and their chips, and filters by the ids', async () => {
+      facetsSpy.mockReturnValue(of(facets({
+        models: [{ value: 'gpt-x', count: 3, label: 'GPT X' }, { value: 'claude-x', count: 5, label: 'Claude X' }],
+        providers: [{ value: 'openai', count: 3, label: '' }, { value: 'anthropic', count: 5, label: '' }],
+        tools: [{ value: 'wiki_search', count: 3, label: '' }, { value: 'some_new_tool', count: 1, label: '' }]
+      })));
+      await create();
+      const options = (id: string) => facet(id)!.options.map(o => `${o.label} ${o.count}`);
+
+      expect(options('tl-fb-facet-model')).toEqual(['Claude X 5', 'GPT X 3']);
+      expect(options('tl-fb-facet-provider')).toEqual(['Anthropic 5', 'OpenAI 3']);
+      expect(options('tl-fb-facet-tool')).toEqual(['GnollHack wiki search 3', 'Some new tool 1']);
+
+      choose('tl-fb-facet-model', ['gpt-x']);
+      choose('tl-fb-facet-provider', ['openai']);
+      choose('tl-fb-facet-tool', ['wiki_search']);
+
+      expect(lastQuery()).toEqual(expect.objectContaining({ modelIds: ['gpt-x'], providers: ['openai'], tools: ['wiki_search'] }));
+      expect(chipLabels()).toEqual(expect.arrayContaining([
+        'Remove filter Model: GPT X', 'Remove filter Provider: OpenAI', 'Remove filter Tool: GnollHack wiki search'
+      ]));
+      expect(textOf(q('.tl-fb-chips'))).not.toMatch(IDS);
+      await settle();
+      expect(queryParams()).toEqual(expect.objectContaining({ model: 'gpt-x', provider: 'openai', tool: 'wiki_search' }));
+    });
+
+    it('shows where the fix went in labels beside the fixed-in version, and nothing while it says nothing', async () => {
+      nextPage = page([
+        issue(1, { status: 'resolved', resolvedVia: ['overseer_release', 'wiki'], fixedInVersion: '1.4.3' }),
+        issue(2, { resolvedVia: [] }),
+        issue(3)
+      ], 3);
+      await create();
+      const [first, second, third] = cards();
+
+      expect(textOf(first.querySelector('.tl-fb-fact-resolved dt'))).toBe('Resolved via');
+      expect(textOf(first.querySelector('.tl-fb-fact-resolved dd'))).toBe('GnollHack wiki, Overseer release');
+      expect(first.querySelector('.tl-fb-fact-resolved')!.nextElementSibling!.classList.contains('tl-fb-fact-fixed')).toBe(true);
+      expect(textOf(first.querySelector('.tl-fb-facts'))).not.toMatch(/overseer_release/);
+      expect(second.querySelector('.tl-fb-fact-resolved')).toBeNull();
+      expect(third.querySelector('.tl-fb-fact-resolved')).toBeNull();
+    });
+  });
+
+  describe('Resolved via in the triage dialog', () => {
+    const triageDialog = (): HTMLDialogElement => q<HTMLDialogElement>('dialog.ftd-dialog')!;
+    const box = (id: string): HTMLInputElement => triageDialog().querySelector<HTMLInputElement>(`#tl-fb-1-triage-resolved-${id}`)!;
+
+    function openTriage(): void {
+      cards()[0].querySelector<HTMLButtonElement>('.tl-fb-edit')!.click();
+      fixture.detectChanges();
+    }
+
+    function toggle(input: HTMLInputElement): void {
+      input.click();
+      fixture.detectChanges();
+    }
+
+    function save(): void {
+      triageDialog().querySelector<HTMLButtonElement>('.ftd-save')!.click();
+      fixture.detectChanges();
+    }
+
+    it('opens on the stored choice and sends it only when it changed', async () => {
+      nextPage = page([issue(1, { status: 'resolved', resolvedVia: ['wiki'] })]);
+      const updateSpy = vi.spyOn(service, 'updateStatus').mockImplementation(
+        (_id: number, _status: string, changes?: { resolvedVia?: readonly string[] | null }) =>
+          of(issue(1, { status: 'resolved', resolvedVia: changes?.resolvedVia ? [...changes.resolvedVia] : ['wiki'] })));
+      await create();
+
+      openTriage();
+      expect(box('wiki').checked).toBe(true);
+      save();
+      expect(updateSpy).toHaveBeenLastCalledWith(1, 'resolved', {});
+
+      openTriage();
+      toggle(box('overseer_release'));
+      save();
+      expect(updateSpy).toHaveBeenLastCalledWith(1, 'resolved', { resolvedVia: ['wiki', 'overseer_release'] });
+      expect(textOf(cards()[0].querySelector('.tl-fb-fact-resolved dd'))).toBe('GnollHack wiki, Overseer release');
+
+      openTriage();
+      toggle(box('wiki'));
+      toggle(box('overseer_release'));
+      save();
+      expect(updateSpy).toHaveBeenLastCalledWith(1, 'resolved', { resolvedVia: [] });
+      expect(cards()[0].querySelector('.tl-fb-fact-resolved')).toBeNull();
+    });
+  });
+
+  describe('download as YAML', () => {
+    let exportSpy: Mock;
+    let saved: { names: string[]; types: string[] };
+    let restore: (() => void)[];
+
+    function result(overrides: Partial<FeedbackExportResult> = {}): FeedbackExportResult {
+      return {
+        fileName: 'overseer-feedback-overseer-issue-1-20261028-0915.yaml', content: 'format: overseer-feedback-issues\n',
+        mediaType: 'application/yaml;charset=utf-8', issueCount: 1, missingIds: [], missingFingerprints: [], ...overrides
+      };
+    }
+
+    const button = (card: HTMLElement = cards()[0]): HTMLButtonElement => card.querySelector<HTMLButtonElement>('.tl-fb-download')!;
+
+    function clickDownload(): void {
+      button().click();
+      fixture.detectChanges();
+    }
+
+    beforeEach(() => {
+      exportSpy = vi.spyOn(TestBed.inject(FeedbackTransferService), 'exportIssues').mockReturnValue(of(result()));
+      saved = { names: [], types: [] };
+      const blob = vi.spyOn(URL, 'createObjectURL').mockImplementation((source: Blob | MediaSource) => {
+        saved.types.push((source as Blob).type);
+        return 'blob:feedback-download-test';
+      });
+      const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+      const anchor = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        saved.names.push(this.download);
+      });
+      restore = [() => blob.mockRestore(), () => revoke.mockRestore(), () => anchor.mockRestore()];
+    });
+
+    afterEach(() => restore.forEach(undo => undo()));
+
+    it('leads the card\'s actions as an icon button named for the issue, with a Download as YAML tooltip', async () => {
+      await create();
+      const group = cards()[0].querySelector('.tl-fb-actions')!;
+      const download = button();
+
+      expect(group.querySelector('button')).toBe(download);
+      expect(download.classList.contains('action-btn')).toBe(true);
+      expect(download.getAttribute('aria-label')).toBe('Download issue as YAML: Dilithium crystal');
+      expect(textOf(download)).toBe('');
+      expect(download.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+      const tip = el.querySelector<HTMLElement>('#' + download.getAttribute('interestfor'))!;
+      expect(tip.getAttribute('popover')).toBe('hint');
+      expect(tip.classList.contains('gh-tooltip')).toBe(true);
+      expect(textOf(tip)).toBe('Download as YAML');
+      expect(download.getAttribute('style')).toContain('anchor-name: --tl-fb-1-download-tip');
+      expect(tip.getAttribute('style')).toContain('position-anchor: --tl-fb-1-download-tip');
+      expect(download.hasAttribute('title')).toBe(false);
+    });
+
+    it('exports the one issue in YAML with the remembered occurrences, saves the file and says so', async () => {
+      saveFeedbackView('overseer', {
+        version: 1, sort: 'lastSeen', filters: {}, search: '', range: CUSTOM_RANGE,
+        exportOptions: { occurrencesPerIssue: 25, includeQuestionText: false, format: 'markdown' }
+      });
+      await create();
+      clickDownload();
+
+      expect(exportSpy).toHaveBeenCalledWith({ source: 'overseer', format: 'yaml', issueIds: [1], occurrencesPerIssue: 25 });
+      expect(saved.names).toEqual(['overseer-feedback-overseer-issue-1-20261028-0915.yaml']);
+      expect(saved.types).toEqual(['application/yaml;charset=utf-8']);
+      const line = cards()[0].querySelector('#tl-fb-1-result')!;
+      expect(line.getAttribute('role')).toBe('status');
+      expect(textOf(line)).toBe('Downloaded overseer-feedback-overseer-issue-1-20261028-0915.yaml.');
+      expect(q('dialog[open]')).toBeNull();
+    });
+
+    it('uses ten occurrences when no export options are remembered', async () => {
+      await create();
+      clickDownload();
+
+      expect(exportSpy).toHaveBeenCalledWith({ source: 'overseer', format: 'yaml', issueIds: [1], occurrencesPerIssue: 10 });
+    });
+
+    it('is busy while its request runs and ignores a second click', async () => {
+      const response = new Subject<FeedbackExportResult>();
+      exportSpy.mockReturnValue(response.asObservable());
+      await create();
+
+      clickDownload();
+      expect(button().getAttribute('aria-busy')).toBe('true');
+      clickDownload();
+      expect(exportSpy).toHaveBeenCalledTimes(1);
+
+      response.next(result());
+      response.complete();
+      fixture.detectChanges();
+      expect(button().getAttribute('aria-busy')).toBeNull();
+      expect(saved.names.length).toBe(1);
+    });
+
+    it('says an issue the server no longer has is gone, and fetches the list again', async () => {
+      exportSpy.mockReturnValue(throwError(() => ({ status: 404, error: { message: 'None of the requested issues exist.', missingIds: [1], missingFingerprints: [] } })));
+      await create();
+      const before = listQueries().length;
+
+      clickDownload();
+
+      expect(listQueries().length).toBe(before + 1);
+      expect(textOf(cards()[0].querySelector('#tl-fb-1-result'))).toBe('This issue no longer exists.');
+      expect(status()).toContain('The issue “Dilithium crystal” no longer exists.');
+      expect(saved.names).toEqual([]);
+      expect(button().getAttribute('aria-busy')).toBeNull();
+    });
+
+    it('writes another failure to the card\'s result line', async () => {
+      exportSpy.mockReturnValue(throwError(() => ({ status: 500, error: { message: 'The export failed on the server.' } })));
+      await create();
+      const before = listQueries().length;
+
+      clickDownload();
+
+      expect(textOf(cards()[0].querySelector('#tl-fb-1-result'))).toBe('The issue could not be downloaded: The export failed on the server.');
+      expect(listQueries().length).toBe(before);
+      expect(saved.names).toEqual([]);
     });
   });
 

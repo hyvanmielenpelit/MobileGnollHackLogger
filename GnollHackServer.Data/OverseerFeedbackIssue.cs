@@ -78,6 +78,10 @@ public class OverseerFeedbackIssue
     [MaxLength(64)]
     public string? FixedInVersion { get; set; }
 
+    /// <summary>The channels the fix went through: comma-separated ids, in <c>FeedbackResolvedVia</c> order.</summary>
+    [MaxLength(200)]
+    public string? ResolvedVia { get; set; }
+
     [MaxLength(450)]
     public string? TriagedByUserId { get; set; }
 

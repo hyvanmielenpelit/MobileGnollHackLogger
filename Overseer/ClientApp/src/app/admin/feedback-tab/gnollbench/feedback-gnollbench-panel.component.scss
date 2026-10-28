@@ -488,6 +488,10 @@ time {
   align-items: center;
   gap: 8px;
   margin-inline-start: auto;
+
+  .action-btn {
+    margin: 0;
+  }
 }
 
 .tl-gbfb-triaged,

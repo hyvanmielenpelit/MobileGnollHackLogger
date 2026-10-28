@@ -145,7 +145,7 @@ Rationale, the `[Trait("Category", "UsesExternalApi")]` convention, live-model p
 
 - **Operating System:** Development and tool execution take place on Windows. For PowerShell commands, syntax rules, quoting, and file I/O best practices, follow the global `agent-powershell-guidelines` skill.
 - **Snapshot Suite Wizard files:** Files written for the Snapshot Suite Wizard (`agent-new-suite-<slug>.yaml`, `agent-new-questions-<slug>.yaml`) and the rubric-repair handoff (`agent-rubric-repair-<slug>.yaml`) live outside the repository. One that an implementation plan creates goes in that plan's task directory in the plans repository, beside the plan, with a `_v<N>` suffix; one made without a plan goes beside its input file. They are written UTF-8 without a BOM with **LF** line endings, matching Overseer's own downloads; the repository's CRLF convention does not apply to them. The rules and their reasons are in the `server_snapshot_suite_authoring` and `server_rubric_handoff` skills.
-- **Feedback resolution files:** The YAML resolution file an agent writes after working on an Overseer feedback export (`overseer-feedback-<source>-<timestamp>.md`) is `agent-feedback-resolutions-<slug>_v<N>.yaml`. It also lives outside the repository: in the plan's task directory in the plans repository, beside the plan, when an implementation plan covers the work; beside the export file when there is none. It is written UTF-8 without a BOM with **LF** line endings, like the files above. The format, the rules and the developer's import steps are in the `server_feedback_resolution` skill.
+- **Feedback resolution files:** The YAML resolution file an agent writes after working on an Overseer feedback export (`overseer-feedback-<source>-<timestamp>.yaml`, or `.md`) is `agent-feedback-resolutions-<slug>_v<N>.yaml`. It also lives outside the repository: in the plan's task directory in the plans repository, beside the plan, when an implementation plan covers the work; beside the export file when there is none. It is written UTF-8 without a BOM with **LF** line endings, like the files above. The format, the rules and the developer's import steps are in the `server_feedback_resolution` skill.
 
 ## Implementation Plans
 
@@ -229,7 +229,8 @@ Skills in this repository use the **`server_`** prefix. Canonical bodies live in
 **generated** by `SharedAgentSkills\tools\sync_stubs.ps1` and must never be hand-edited.
 Notable project skills include `server_implementation_planning`, `server_benchmark_to_chat_transfer`, `server_wiki_handoff`,
 `server_rubric_handoff` (the YAML repair file a Suite Defect finding hands off for one-action import),
-`server_feedback_resolution` (working on an Overseer feedback export from Admin → Feedback: triaging and
+`server_feedback_resolution` (working on an Overseer feedback export from Admin → Feedback,
+`overseer-feedback-<source>-<timestamp>.yaml` (or `.md`): triaging and
 fixing the reported issues, and the YAML resolution file the developer imports back),
 `server_benchmark_runbook` (the Developer Runbook every benchmark analysis ends in: one numbered
 step list, the following runs included as steps),

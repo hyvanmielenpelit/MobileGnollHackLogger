@@ -122,7 +122,7 @@
                 }
                 @if (issue.modelIds.length > 0) {
                   <span class="tl-fb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                  <span class="tl-fb-models"><span class="visually-hidden">Models: </span>{{ issue.modelIds.join(', ') }}</span>
+                  <span class="tl-fb-models"><span class="visually-hidden">Models: </span>{{ modelsText(issue) }}</span>
                 }
               </div>
               <!-- Focused after Show more and after a delete. -->
@@ -169,7 +169,7 @@
               </div>
               <div class="tl-fb-fact tl-fb-fact-tools">
                 <dt>Latest related tools</dt>
-                <dd class="tl-fb-mono">{{ issue.latestRelatedTools.length > 0 ? issue.latestRelatedTools.join(', ') : 'Not recorded' }}</dd>
+                <dd>{{ toolsText(issue.latestRelatedTools) || 'Not recorded' }}</dd>
               </div>
               <div class="tl-fb-fact tl-fb-fact-cause">
                 <dt>Model's suspected cause (hypothesis)</dt>
@@ -182,12 +182,19 @@
               </div>
               <div class="tl-fb-fact tl-fb-fact-providers">
                 <dt>Providers</dt>
-                <dd>{{ issue.providers.length > 0 ? issue.providers.join(', ') : 'Not recorded' }}</dd>
+                <dd>{{ providersText(issue) || 'Not recorded' }}</dd>
               </div>
               <div class="tl-fb-fact tl-fb-fact-sources">
                 <dt>Model sources</dt>
                 <dd>{{ modelSourcesText(issue) || 'Not recorded' }}</dd>
               </div>
+              <!-- Where the fix went, beside the version that has it. -->
+              @if (resolvedViaText(issue); as resolvedVia) {
+                <div class="tl-fb-fact tl-fb-fact-resolved">
+                  <dt>Resolved via</dt>
+                  <dd>{{ resolvedVia }}</dd>
+                </div>
+              }
               @if (issue.fixedInVersion) {
                 <div class="tl-fb-fact tl-fb-fact-fixed">
                   <dt>Fixed in version</dt>
@@ -265,7 +272,7 @@
                             <div class="tl-fb-occ-wide"><dt>Expected location</dt><dd>{{ o.expectedLocation }}</dd></div>
                           }
                           @if (o.relatedTools.length > 0) {
-                            <div><dt>Related tools</dt><dd class="tl-fb-mono">{{ o.relatedTools.join(', ') }}</dd></div>
+                            <div><dt>Related tools</dt><dd>{{ toolsText(o.relatedTools) }}</dd></div>
                           }
                           @if (o.noticedVia) {
                             <div><dt>Noticed via</dt><dd>{{ noticedViaText(o.noticedVia) }}</dd></div>
@@ -331,6 +338,16 @@
                 }
               </div>
               <div class="tl-fb-actions" role="group" [attr.aria-label]="'Actions for ' + issue.subject">
+                <button type="button" class="action-btn tl-fb-download"
+                        [attr.aria-label]="'Download issue as YAML: ' + issue.subject"
+                        [attr.aria-busy]="downloadingId() === issue.id ? 'true' : null"
+                        [attr.interestfor]="'tl-fb-' + issue.id + '-download-tip'"
+                        [attr.style]="'anchor-name: --tl-fb-' + issue.id + '-download-tip'"
+                        (click)="downloadIssue(issue)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'tl-fb-' + issue.id + '-download-tip'"
+                     [attr.style]="'position-anchor: --tl-fb-' + issue.id + '-download-tip'">Download as YAML</div>
                 <button type="button" class="btn-ghost tl-fb-edit" aria-haspopup="dialog"
                         [attr.aria-busy]="savingId() === issue.id ? 'true' : null"
                         (click)="editTriage(issue)">

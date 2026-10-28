@@ -26,6 +26,7 @@ import { adminApiError } from '../../../services/admin-users.service';
 import { FilePickerComponent } from '../../../shared/file-picker/file-picker.component';
 import { TextDiffComponent, TextDiffView } from '../../../shared/text-diff/text-diff.component';
 import { DiffResult, diffLines } from '../../../utils/text-diff.util';
+import { feedbackStatusLabel, formatResolvedVia } from './feedback-labels';
 import { parseFeedbackResolutionYaml, type ParseIssue } from './feedback-resolution-yaml';
 import type { FeedbackSource } from './feedback-view-storage';
 
@@ -47,24 +48,12 @@ export interface FeedbackImportCard {
   badges: FeedbackImportBadge[];
   statusLine: string;
   versionLine: string;
+  /** `GnollHack wiki → GnollHack wiki, Knowledge base`; null when the item leaves the list. */
+  resolvedViaLine: string | null;
   noteDiff: DiffResult;
   resolutionDiff: DiffResult;
   showNote: boolean;
   showResolution: boolean;
-}
-
-const STATUS_LABELS: Readonly<Record<string, string>> = {
-  new: 'New',
-  acknowledged: 'Acknowledged',
-  resolved: 'Resolved',
-  regressed: 'Regressed',
-  dismissed: 'Dismissed'
-};
-
-/** An issue status in words; an unknown wire value is shown as it came. */
-export function feedbackStatusLabel(status: string | null | undefined): string {
-  if (!status) return '(none)';
-  return STATUS_LABELS[status.toLowerCase()] ?? status;
 }
 
 /** `Issue #42` for Overseer; `Issue 3f2a9c1b0d4e` (the fingerprint's first 12 characters) for GnollBench. */
@@ -86,6 +75,7 @@ export function feedbackImportBadges(item: FeedbackResolutionPreviewItem): Feedb
     if (item.changes.note) badges.push({ text: 'note', tone: 'change' });
     if (item.changes.resolution) badges.push({ text: 'resolution', tone: 'change' });
     if (item.changes.fixedInVersion) badges.push({ text: 'fixed in version', tone: 'change' });
+    if (item.changes.resolvedVia) badges.push({ text: 'resolved via', tone: 'change' });
   }
   if (item.triagedSinceExport) badges.push({ text: 'Triaged since export', tone: 'warning' });
   const since = item.occurrencesSinceExport ?? 0;
@@ -477,7 +467,9 @@ export class FeedbackImportDialogComponent implements OnDestroy {
 
   private toCard(item: FeedbackResolutionPreviewItem): FeedbackImportCard {
     const current = item.current;
-    const after = item.after ?? (current ? { status: current.status, note: current.note, resolution: current.resolution, fixedInVersion: current.fixedInVersion } : null);
+    const after = item.after ?? (current
+      ? { status: current.status, note: current.note, resolution: current.resolution, fixedInVersion: current.fixedInVersion, resolvedVia: current.resolvedVia }
+      : null);
     const note = { before: current?.note ?? '', after: after?.note ?? '' };
     const resolution = { before: current?.resolution ?? '', after: after?.resolution ?? '' };
     return {
@@ -486,6 +478,9 @@ export class FeedbackImportDialogComponent implements OnDestroy {
       badges: feedbackImportBadges(item),
       statusLine: changeLine(current?.status, after?.status, item.changes.status, feedbackStatusLabel),
       versionLine: changeLine(current?.fixedInVersion, after?.fixedInVersion, item.changes.fixedInVersion, plain),
+      resolvedViaLine: item.changes.resolvedVia
+        ? `${formatResolvedVia(current?.resolvedVia)} → ${formatResolvedVia(after?.resolvedVia)}`
+        : null,
       noteDiff: diffLines(note.before, note.after),
       resolutionDiff: diffLines(resolution.before, resolution.after),
       showNote: note.before !== '' || note.after !== '',

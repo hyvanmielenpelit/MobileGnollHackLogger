@@ -43,18 +43,30 @@ import {
   AdminFeedbackTriageStatus
 } from '../../../services/admin-feedback.service';
 import { adminApiError } from '../../../services/admin-users.service';
+import { FeedbackTransferService, feedbackTransferStatus } from '../../../services/feedback-transfer.service';
 import { CardListChip, CardListFacetSpec, CardListSort, CardListState } from '../../../shared/data-table/card-list-state';
 import { FilterFacetComponent, FilterFacetOption } from '../../../shared/data-table/filter-facet.component';
 import { TableState, anyOfFilter, customFilter } from '../../../shared/data-table/table-state';
 import { parseServerUtcDate } from '../../../utils/date.util';
+import { providerLabel, toolLabel } from '../../../utils/display-labels.util';
+import { downloadTextFile } from '../../../utils/download.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { AdminConfirmDialogComponent } from '../../admin-dialogs/admin-confirm-dialog.component';
 import { AdminPageStore } from '../../admin-page.store';
 import { ADMIN_TAB_SLUGS, adminCommands, adminQueryList, clearedFeedbackQueryParams, readAdminQueryList } from '../../admin-url';
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
+import { DEFAULT_FEEDBACK_EXPORT_OPTIONS } from '../shared/feedback-export-dialog.component';
+import {
+  feedbackCategoryLabel,
+  feedbackCauseLabel,
+  feedbackNoticedViaLabel,
+  feedbackStatusLabel,
+  formatResolvedVia,
+  labelFrom
+} from '../shared/feedback-labels';
 import { FeedbackSelectionBarComponent, FeedbackSelectionId } from '../shared/feedback-selection-bar.component';
 import { hiddenCharactersOf } from '../shared/feedback-hidden-characters';
-import { FeedbackTriageDialogComponent, FeedbackTriageValues } from '../shared/feedback-triage-dialog.component';
+import { FeedbackTriageDialogComponent, FeedbackTriageSubmission, FeedbackTriageValues } from '../shared/feedback-triage-dialog.component';
 import {
   FEEDBACK_SELECTION_CAP,
   FeedbackExportOptions,
@@ -103,37 +115,6 @@ const FEEDBACK_SORTS: readonly CardListSort[] = [
 
 const DEFAULT_SORT: AdminFeedbackIssueSort = 'lastSeen';
 
-const STATUS_LABELS: Readonly<Record<AdminFeedbackStatus, string>> = {
-  new: 'New',
-  acknowledged: 'Acknowledged',
-  resolved: 'Resolved',
-  regressed: 'Regressed',
-  dismissed: 'Dismissed'
-};
-
-const CATEGORY_LABELS: Readonly<Record<string, string>> = {
-  missing_information: 'Missing information',
-  tool_problem: 'Tool problem',
-  own_mistake: 'Own mistake'
-};
-
-const SUSPECTED_CAUSE_LABELS: Readonly<Record<string, string>> = {
-  did_not_verify: 'Did not verify',
-  misread_tool_result: 'Misread a tool result',
-  training_knowledge_conflict: 'Conflict with training knowledge',
-  search_strategy: 'Search strategy',
-  corpus_or_tool_limit: 'Corpus or tool limit',
-  ambiguous_question: 'Ambiguous question',
-  answered_too_quickly: 'Answered too quickly',
-  other: 'Other'
-};
-
-const NOTICED_VIA_LABELS: Readonly<Record<string, string>> = {
-  user_correction: 'The user corrected it',
-  tool_result: 'A tool result contradicted it',
-  self_review: 'Its own review'
-};
-
 const MODEL_SOURCE_LABELS: Readonly<Record<string, string>> = {
   system: 'System configuration',
   user: 'User\'s own model',
@@ -148,24 +129,6 @@ const RESOLUTION_FILTER_LABELS: Readonly<Record<AdminFeedbackResolutionFilter, s
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const NO_VALUES: readonly string[] = [];
-
-/** A value of a fixed label map, or the value itself; never an inherited property. */
-function labelFrom(map: Readonly<Record<string, string>>, value: string | null | undefined): string {
-  if (!value) return '';
-  return Object.hasOwn(map, value) ? map[value] : value;
-}
-
-export function feedbackStatusLabel(status: string): string {
-  return labelFrom(STATUS_LABELS, status);
-}
-
-export function feedbackCategoryLabel(category: string): string {
-  return labelFrom(CATEGORY_LABELS, category);
-}
-
-export function feedbackCauseLabel(cause: string | null | undefined): string {
-  return labelFrom(SUSPECTED_CAUSE_LABELS, cause);
-}
 
 /** `21 Oct 2026`, local time; the raw value when it does not parse. */
 export function feedbackDateText(utc: string | null | undefined): string {
@@ -294,9 +257,9 @@ interface TriageResult {
  * Version, Tool and Has resolution facets, and chips, which also show an `ids` filter a link from the
  * GnollBench sub-tab sets (`status=all` is no status filter); the facets and the search live in the address and,
  * with the sort and the range, in the remembered view. Each issue has its figures, latest facts,
- * occurrences on demand, a selection checkbox, and Edit triage and Delete, which open the triage dialog
- * and a confirmation; the selection bar exports and imports the selection. Report text is model output
- * and is rendered as plain text only.
+ * occurrences on demand, a selection checkbox, a one-issue YAML download, and Edit triage and Delete,
+ * which open the triage dialog and a confirmation; the selection bar exports and imports the selection.
+ * Report text is model output and is rendered as plain text only.
  */
 @Component({
   selector: 'app-feedback-overseer-panel',
@@ -306,6 +269,7 @@ interface TriageResult {
 })
 export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDestroy {
   private readonly feedback = inject(AdminFeedbackService);
+  private readonly transfer = inject(FeedbackTransferService);
   private readonly store = inject(AdminPageStore);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -363,6 +327,8 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   readonly expandedDetails = signal<ReadonlySet<number>>(new Set<number>());
   readonly savingId = signal<number | null>(null);
   readonly deletingId = signal<number | null>(null);
+  /** The issue whose YAML download is running; another download waits until it ends. */
+  readonly downloadingId = signal<number | null>(null);
   readonly triageResults = signal<Readonly<Record<number, TriageResult>>>({});
 
   // --- Selection ---
@@ -422,6 +388,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   private selectionSub: Subscription | null = null;
   private notShownSub: Subscription | null = null;
   private selectAllSub: Subscription | null = null;
+  private downloadSub: Subscription | null = null;
   private readonly occurrenceSubs = new Map<number, Subscription>();
   /** Set once the address of this sub-tab has been applied the first time. */
   private initialized = false;
@@ -474,6 +441,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     this.selectionSub?.unsubscribe();
     this.notShownSub?.unsubscribe();
     this.selectAllSub?.unsubscribe();
+    this.downloadSub?.unsubscribe();
     this.occurrenceSubs.forEach(sub => sub.unsubscribe());
   }
 
@@ -607,11 +575,12 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     this.cdr.markForCheck();
   }
 
-  /** The options of one facet as the range's facets list them, in the facet's order. */
+  /** The options of one facet as the range's facets list them, in the facet's order; labeled values sort by their label. */
   private optionsOf(column: FacetColumn): FilterFacetOption[] {
     const data = this.facetData();
-    const values = (list: AdminFeedbackFacetValue[] | undefined, label: (value: string) => string = v => v) =>
-      [...(list ?? [])].sort((a, b) => compareText(a.value, b.value)).map(v => ({ value: v.value, label: label(v.value), count: v.count }));
+    const values = (list: AdminFeedbackFacetValue[] | undefined, label: (value: AdminFeedbackFacetValue) => string = v => v.value) =>
+      (list ?? []).map(v => ({ value: v.value, label: label(v), count: v.count }))
+        .sort((a, b) => compareText(a.label, b.label) || compareText(a.value, b.value));
     const entities = (list: AdminFeedbackFacetEntity[] | undefined) =>
       [...(list ?? [])].sort((a, b) => compareText(a.name, b.name)).map(e => ({ value: e.id, label: e.name || e.id, count: e.count }));
     const countOf = (list: AdminFeedbackFacetValue[] | undefined, value: string) => list?.find(v => v.value === value)?.count ?? 0;
@@ -621,9 +590,9 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
       case 'category':
         return ADMIN_FEEDBACK_CATEGORIES.map(c => ({ value: c, label: feedbackCategoryLabel(c), count: countOf(data?.categories, c) }));
       case 'model':
-        return values(data?.models);
+        return values(data?.models, v => v.label || v.value);
       case 'provider':
-        return values(data?.providers);
+        return values(data?.providers, v => providerLabel(v.value) || v.value);
       case 'user':
         return entities(data?.users);
       case 'group': {
@@ -640,7 +609,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
       case 'version':
         return values(data?.versions);
       case 'tool':
-        return values(data?.tools);
+        return values(data?.tools, v => toolLabel(v.value) || v.value);
       case 'resolution': {
         const counts = this.resolutionCounts();
         return ADMIN_FEEDBACK_RESOLUTION_FILTERS.map(value => ({ value, label: RESOLUTION_FILTER_LABELS[value], count: counts?.[value] ?? 0 }));
@@ -669,6 +638,9 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
         return value === ADMIN_FEEDBACK_NO_GROUP ? 'No group' : data?.groups.find(g => g.id === value)?.name || value;
       case 'user': return data?.users.find(u => u.id === value)?.name || value;
       case 'config': return data?.configs.find(c => c.id === value)?.name || value;
+      case 'model': return data?.models.find(m => m.value === value)?.label || value;
+      case 'provider': return providerLabel(value) || value;
+      case 'tool': return toolLabel(value) || value;
       case 'ids': return `#${value}`;
       default: return value;
     }
@@ -1204,6 +1176,26 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     return issue.retainedCount < issue.occurrenceCount ? `${formatInteger(issue.retainedCount)} retained` : '';
   }
 
+  /** The issue's models by their catalog names, `+N` as it is; an id the server sent no name for reads as the id. */
+  modelsText(issue: AdminFeedbackIssue): string {
+    return issue.modelIds.map((id, index) => issue.modelLabels?.[index] || id).join(', ');
+  }
+
+  /** The issue's providers by name (`OpenAI`); empty for none. */
+  providersText(issue: AdminFeedbackIssue): string {
+    return issue.providers.map(provider => providerLabel(provider) || provider).join(', ');
+  }
+
+  /** `GnollHack wiki search, Item stats`; empty for none. */
+  toolsText(tools: readonly string[]): string {
+    return tools.map(tool => toolLabel(tool) || tool).join(', ');
+  }
+
+  /** `GnollHack wiki, Overseer release`; empty while the issue says nothing about where the fix went. */
+  resolvedViaText(issue: AdminFeedbackIssue): string {
+    return issue.resolvedVia?.length ? formatResolvedVia(issue.resolvedVia) : '';
+  }
+
   /** `System configuration 5 · User's own model 2`; the non-zero counts only, or empty. */
   modelSourcesText(issue: AdminFeedbackIssue): string {
     const sources = issue.modelSources;
@@ -1335,9 +1327,9 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     }
   }
 
-  /** `Anthropic · claude-x`; whichever is known. */
+  /** `Anthropic · Claude X`: the provider's and the model's labels, whichever is known; the model id without a label. */
   modelText(occurrence: AdminFeedbackOccurrence): string {
-    return [occurrence.provider, occurrence.modelId].filter(part => !!part).join(' · ');
+    return [providerLabel(occurrence.provider), occurrence.modelLabel || occurrence.modelId].filter(part => !!part).join(' · ');
   }
 
   /** The reporting user's groups, or `No group`. */
@@ -1346,7 +1338,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   }
 
   noticedViaText(value: string | null): string {
-    return labelFrom(NOTICED_VIA_LABELS, value);
+    return feedbackNoticedViaLabel(value);
   }
 
   /** `Session 812 · message 4410`. */
@@ -1384,6 +1376,43 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     this.expandedDetails.set(next);
   }
 
+  // --- Download ---
+
+  /**
+   * Downloads one issue as a YAML issues file with the remembered export options, and says so on the card's
+   * result line. An issue the server no longer has is said so, and the list is fetched again. Ignored while
+   * a download runs.
+   */
+  downloadIssue(issue: AdminFeedbackIssue): void {
+    if (this.downloadingId() !== null) return;
+    const options = this.exportOptions ?? DEFAULT_FEEDBACK_EXPORT_OPTIONS;
+    this.downloadingId.set(issue.id);
+    this.setTriageResult(issue.id, { message: '', error: null });
+    this.downloadSub?.unsubscribe();
+    this.downloadSub = this.transfer.exportIssues({
+      source: 'overseer', format: 'yaml', issueIds: [issue.id], occurrencesPerIssue: options.occurrencesPerIssue
+    }).subscribe({
+      next: result => {
+        this.downloadingId.set(null);
+        downloadTextFile(result.fileName, result.content, result.mediaType);
+        this.setTriageResult(issue.id, { message: `Downloaded ${result.fileName}.`, error: null });
+        this.cdr.markForCheck();
+      },
+      error: err => {
+        this.downloadingId.set(null);
+        if (feedbackTransferStatus(err) === 404) {
+          this.setTriageResult(issue.id, { message: 'This issue no longer exists.', error: null });
+          this.reloadIssues();
+          this.pruneSelection();
+          this.notice.set(`The issue “${issue.subject}” no longer exists.`);
+        } else {
+          this.setTriageResult(issue.id, { message: 'The issue could not be downloaded: ' + adminApiError(err).message, error: null });
+        }
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
   // --- Triage ---
 
   triageResult(issueId: number): TriageResult | undefined {
@@ -1412,17 +1441,19 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   }
 
   /**
-   * Saves the status and every text field that differs from the stored one: a field left as it was is
-   * kept, an emptied one is cleared. The card takes the server's copy, the result is announced and the
-   * counts refetched. A failure reaches the dialog as an error with the message to show.
+   * Saves the status, every text field that differs from the stored one and Resolved via when the dialog
+   * changed it: a field left as it was is kept, an emptied one is cleared. The card takes the server's copy,
+   * the result is announced and the counts refetched. A failure reaches the dialog as an error with the
+   * message to show.
    */
-  saveTriage(issue: AdminFeedbackIssue, values: FeedbackTriageValues): Observable<AdminFeedbackIssue> {
+  saveTriage(issue: AdminFeedbackIssue, values: FeedbackTriageSubmission): Observable<AdminFeedbackIssue> {
     return defer(() => {
       const status = values.status as AdminFeedbackTriageStatus;
       const changes: AdminFeedbackTriageChanges = {};
       if (values.note !== (issue.triageNote ?? '')) changes.note = values.note;
       if (values.resolution !== (issue.resolution ?? '')) changes.resolution = values.resolution;
       if (values.fixedInVersion !== (issue.fixedInVersion ?? '')) changes.fixedInVersion = values.fixedInVersion;
+      if (values.resolvedVia !== undefined) changes.resolvedVia = [...values.resolvedVia];
       this.savingId.set(issue.id);
       this.setTriageResult(issue.id, { message: '', error: null });
       return this.feedback.updateStatus(issue.id, status, changes).pipe(
@@ -1432,7 +1463,8 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
             ...issue, status, triagedUtc: new Date().toISOString(),
             triageNote: changes.note !== undefined ? changes.note || null : issue.triageNote,
             resolution: changes.resolution !== undefined ? changes.resolution || null : issue.resolution,
-            fixedInVersion: changes.fixedInVersion !== undefined ? changes.fixedInVersion || null : issue.fixedInVersion
+            fixedInVersion: changes.fixedInVersion !== undefined ? changes.fixedInVersion || null : issue.fixedInVersion,
+            resolvedVia: changes.resolvedVia ? [...changes.resolvedVia] : issue.resolvedVia
           }),
         tap(saved => {
           this.rows.set(this.rows().map(i => i.id === issue.id ? saved : i));
@@ -1496,7 +1528,8 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
       status: issue.status === 'regressed' ? '' : issue.status,
       note: issue.triageNote ?? '',
       resolution: issue.resolution ?? '',
-      fixedInVersion: issue.fixedInVersion ?? ''
+      fixedInVersion: issue.fixedInVersion ?? '',
+      resolvedVia: issue.resolvedVia ?? []
     };
   }
 

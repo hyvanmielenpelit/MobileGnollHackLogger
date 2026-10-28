@@ -60,6 +60,11 @@ export interface GnollBenchFeedbackIssue {
   triageNote: string | null;
   resolution: string | null;
   fixedInVersion: string | null;
+  /**
+   * Where the fix went: *Resolved via* ids in the canonical order (`FEEDBACK_RESOLVED_VIA_IDS`), empty when none. The
+   * server always sends it; optional so a fixture without it still types.
+   */
+  resolvedVia?: string[];
   /** Null when the triager's account is gone, or nobody has triaged the issue. */
   triagedByUserName: string | null;
   triagedUtc: string | null;
@@ -222,13 +227,14 @@ export interface GnollBenchFeedbackOccurrencesQuery {
 
 /**
  * A triage change. An absent or null note, resolution or fixed-in version keeps the stored value, and an
- * empty string clears it.
+ * empty string clears it; an absent or null resolved-via list keeps the stored one, and `[]` clears it.
  */
 export interface GnollBenchFeedbackStatusUpdate {
   status: GnollBenchFeedbackTriageStatus;
   note?: string | null;
   resolution?: string | null;
   fixedInVersion?: string | null;
+  resolvedVia?: readonly string[] | null;
 }
 
 /** The list fields of `GnollBenchFeedbackFilters` and the query parameter each one is sent as. */
@@ -323,14 +329,15 @@ export class AdminGnollBenchFeedbackService {
 
   /**
    * Triages an issue and returns it as the list shows it. Only the fields given are sent: an absent field
-   * keeps the stored value, and an empty string clears it. 400 for `regressed`, an unknown status, a
-   * value over its length or a malformed fixed-in version; 404 for an unknown fingerprint.
+   * keeps the stored value, and an empty string or list clears it. 400 for `regressed`, an unknown status, a
+   * value over its length, a malformed fixed-in version or an unknown resolved-via id; 404 for an unknown fingerprint.
    */
   updateStatus(fingerprint: string, update: GnollBenchFeedbackStatusUpdate): Observable<GnollBenchFeedbackIssue> {
-    const body: Record<string, string> = { status: update.status };
+    const body: Record<string, string | string[]> = { status: update.status };
     if (update.note != null) body['note'] = update.note;
     if (update.resolution != null) body['resolution'] = update.resolution;
     if (update.fixedInVersion != null) body['fixedInVersion'] = update.fixedInVersion;
+    if (update.resolvedVia != null) body['resolvedVia'] = [...update.resolvedVia];
     return this.http.post<GnollBenchFeedbackIssue>(this.issueUrl(fingerprint, '/status'), body);
   }
 }

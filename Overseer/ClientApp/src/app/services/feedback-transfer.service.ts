@@ -17,9 +17,24 @@ export type FeedbackResolutionStatus = Exclude<FeedbackTransferStatus, 'regresse
 /** The most issues one export holds. */
 export const FEEDBACK_EXPORT_MAX_ISSUES = 200;
 
+/** The file format of an export: YAML for an AI coding assistant, Markdown to read. */
+export type FeedbackExportFormat = 'yaml' | 'markdown';
+
+/**
+ * Where an issue's fix went, in the canonical order (`FeedbackResolvedVia` on the server). The ids are what the API
+ * and the files carry; the UI shows their labels (`feedback-labels.ts`).
+ */
+export const FEEDBACK_RESOLVED_VIA_IDS = [
+  'wiki', 'knowledge_base', 'overseer_release', 'gnollhack_release', 'server_configuration', 'other'
+] as const;
+
+/** One *Resolved via* id. The wire types carry `string[]`, so an id a newer server adds still reads. */
+export type FeedbackResolvedVia = typeof FEEDBACK_RESOLVED_VIA_IDS[number];
+
 /** The body of `POST export`. Overseer sends `issueIds`, GnollBench `fingerprints`. */
 export interface FeedbackExportRequest {
   source: FeedbackTransferSource;
+  format: FeedbackExportFormat;
   issueIds?: number[];
   fingerprints?: string[];
   occurrencesPerIssue?: 5 | 10 | 25;
@@ -30,7 +45,10 @@ export interface FeedbackExportRequest {
 /** The export file, and the requested issues that no longer exist. */
 export interface FeedbackExportResult {
   fileName: string;
-  markdown: string;
+  /** The file's text, LF line endings. */
+  content: string;
+  /** `text/markdown;charset=utf-8` or `application/yaml;charset=utf-8`. */
+  mediaType: string;
   issueCount: number;
   missingIds: number[];
   missingFingerprints: string[];
@@ -45,8 +63,8 @@ export interface FeedbackExportNotFound {
 
 /**
  * One issue of a resolution file as JSON. For `status`, `resolution`, `fixedInVersion` and `note`, absent keeps the
- * stored value and `''` clears it. `expectedStatus` and `expectedTriagedUtc` are sent to apply only: the current
- * values the preview showed.
+ * stored value and `''` clears it; `resolvedVia` (version 2 only) absent keeps the stored list and `[]` clears it.
+ * `expectedStatus` and `expectedTriagedUtc` are sent to apply only: the current values the preview showed.
  */
 export interface FeedbackResolutionItem {
   id?: number;
@@ -55,6 +73,7 @@ export interface FeedbackResolutionItem {
   resolution?: string;
   fixedInVersion?: string;
   note?: string;
+  resolvedVia?: string[];
   expectedStatus?: FeedbackTransferStatus;
   expectedTriagedUtc?: string | null;
 }
@@ -62,7 +81,7 @@ export interface FeedbackResolutionItem {
 /** The body of both `POST resolutions/preview` and `POST resolutions/apply`. */
 export interface FeedbackResolutionRequest {
   format?: 'overseer-feedback-resolutions';
-  version?: 1;
+  version?: 1 | 2;
   source: FeedbackTransferSource;
   exportedAtUtc?: string;
   items: FeedbackResolutionItem[];
@@ -86,6 +105,7 @@ export interface FeedbackResolutionState {
   note: string | null;
   resolution: string | null;
   fixedInVersion: string | null;
+  resolvedVia: string[];
   triagedUtc: string | null;
   lastSeenUtc: string | null;
 }
@@ -96,14 +116,16 @@ export interface FeedbackResolutionValues {
   note: string | null;
   resolution: string | null;
   fixedInVersion: string | null;
+  resolvedVia: string[];
 }
 
-/** Which values an item changes. */
+/** Which values an item changes. `resolvedVia` compares the lists as sets. */
 export interface FeedbackResolutionChanges {
   status: boolean;
   note: boolean;
   resolution: boolean;
   fixedInVersion: boolean;
+  resolvedVia: boolean;
 }
 
 /** One item of a preview. `subject` is model-written text, shown as plain text only. */
@@ -163,9 +185,22 @@ export interface FeedbackResolutionConflict {
   conflicts: FeedbackResolutionConflictItem[];
 }
 
+/** One example file of `GET format-examples`. */
+export interface FeedbackFormatExample {
+  fileName: string;
+  content: string;
+  mediaType: string;
+}
+
+/** Example files of the issues export and the resolution file, built on the server by the real builders. */
+export interface FeedbackFormatExamples {
+  issues: FeedbackFormatExample;
+  resolutions: FeedbackFormatExample;
+}
+
 /**
- * The typed client of `AdminFeedbackTransferController` (`api/admin/feedback`): the Markdown export of selected
- * issues, and the preview and apply of a resolution file.
+ * The typed client of `AdminFeedbackTransferController` (`api/admin/feedback`): the YAML or Markdown export of
+ * selected issues, the preview and apply of a resolution file, and the example files of both formats.
  */
 @Injectable({ providedIn: 'root' })
 export class FeedbackTransferService {
@@ -181,6 +216,10 @@ export class FeedbackTransferService {
 
   applyResolutions(request: FeedbackResolutionRequest): Observable<FeedbackResolutionApplyResult> {
     return this.http.post<FeedbackResolutionApplyResult>(`${FEEDBACK_TRANSFER_ENDPOINT}/resolutions/apply`, request);
+  }
+
+  formatExamples(source: FeedbackTransferSource): Observable<FeedbackFormatExamples> {
+    return this.http.get<FeedbackFormatExamples>(`${FEEDBACK_TRANSFER_ENDPOINT}/format-examples`, { params: { source } });
   }
 }
 

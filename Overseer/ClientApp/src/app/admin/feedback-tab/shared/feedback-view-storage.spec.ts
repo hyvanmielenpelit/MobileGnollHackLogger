@@ -2,6 +2,7 @@ import {
   FEEDBACK_SELECTION_CAP,
   FeedbackViewRecord,
   defaultFeedbackRange,
+  feedbackExportFormat,
   loadFeedbackView,
   loadGnollBenchSelection,
   loadOverseerSelection,
@@ -74,6 +75,30 @@ describe('feedback-view-storage', () => {
     expect(loadFeedbackView('overseer')).toEqual({
       version: 1, sort: '', filters: { status: ['new'], tool: ['wiki_search'] }, search: '', range: defaultFeedbackRange()
     });
+  });
+
+  it('keeps the export format, and reads any other stored format as YAML', () => {
+    const markdown = record({ exportOptions: { occurrencesPerIssue: 10, includeQuestionText: false, format: 'markdown' } });
+    saveFeedbackView('gnollbench', markdown);
+    expect(loadFeedbackView('gnollbench')).toEqual(markdown);
+    expect(loadFeedbackView('gnollbench')!.version).toBe(1);
+    expect(feedbackExportFormat(loadFeedbackView('gnollbench')!.exportOptions)).toBe('markdown');
+
+    for (const stored of ['pdf', 'Markdown', 3, null]) {
+      localStorage.setItem('overseer.admin.feedback.overseer.view', JSON.stringify({
+        ...record(), exportOptions: { occurrencesPerIssue: 5, includeQuestionText: true, format: stored }
+      }));
+      const options = loadFeedbackView('overseer')!.exportOptions;
+      expect(options).toEqual({ occurrencesPerIssue: 5, includeQuestionText: true });
+      expect(feedbackExportFormat(options)).toBe('yaml');
+    }
+
+    localStorage.setItem('overseer.admin.feedback.overseer.view', JSON.stringify({
+      ...record(), exportOptions: { occurrencesPerIssue: 25, includeQuestionText: true }
+    }));
+    expect(feedbackExportFormat(loadFeedbackView('overseer')!.exportOptions)).toBe('yaml');
+    expect(feedbackExportFormat(undefined)).toBe('yaml');
+    expect(feedbackExportFormat({ format: 'yaml' })).toBe('yaml');
   });
 
   it('reads the Overseer sort from the key it had before the sub-tabs, once, and leaves that key in place', () => {

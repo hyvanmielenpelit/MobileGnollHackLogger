@@ -175,8 +175,8 @@ public sealed class FeedbackResolutionServiceTests : IDisposable
 
         Assert.Contains(Errors(new AdminFeedbackResolutionRequestDto { Format = "overseer-feedback-export", Source = "overseer", Items = new() { item } }),
             m => m.Contains("format must be", StringComparison.Ordinal));
-        Assert.Contains(Errors(new AdminFeedbackResolutionRequestDto { Version = 2, Source = "overseer", Items = new() { item } }),
-            m => m.Contains("version must be 1", StringComparison.Ordinal));
+        Assert.Contains(Errors(new AdminFeedbackResolutionRequestDto { Version = 3, Source = "overseer", Items = new() { item } }),
+            m => m.Contains("version must be 1 or 2", StringComparison.Ordinal));
         Assert.Contains(Errors(new AdminFeedbackResolutionRequestDto { Source = "chat", Items = new() { item } }),
             m => m.Contains("source must be", StringComparison.Ordinal));
         Assert.Contains(Errors(new AdminFeedbackResolutionRequestDto { Source = "overseer", Items = new() }),
@@ -269,6 +269,94 @@ public sealed class FeedbackResolutionServiceTests : IDisposable
     }
 
     [Fact]
+    public void Validate_ResolvedVia_IsAVersion2Key_WithKnownIds()
+    {
+        var item = new AdminFeedbackResolutionItemDto { Id = 1, Fingerprint = Fp(1), ResolvedVia = new() { "wiki" } };
+
+        var v1 = Errors(OverseerFile(null, item));
+        Assert.Equal(new[] { "issues[0] (id 1): unknown key `resolvedVia`; it needs version 2." }, v1);
+
+        var v2 = OverseerFile(null, new AdminFeedbackResolutionItemDto { Id = 1, Fingerprint = Fp(1), ResolvedVia = new() { " knowledge_base ", "wiki", "wiki" } });
+        v2.Version = 2;
+        Assert.True(FeedbackResolutionService.TryValidate(v2, false, out var file, out _));
+        Assert.True(file.Items[0].HasResolvedVia);
+        Assert.Equal(new[] { "wiki", "knowledge_base" }, file.Items[0].ResolvedVia);
+
+        var unversioned = OverseerFile(null, new AdminFeedbackResolutionItemDto { Id = 1, Fingerprint = Fp(1), ResolvedVia = new() });
+        unversioned.Version = null;
+        Assert.True(FeedbackResolutionService.TryValidate(unversioned, false, out file, out _));
+        Assert.True(file.Items[0].HasResolvedVia);
+        Assert.Empty(file.Items[0].ResolvedVia);
+
+        var unknown = OverseerFile(null, new AdminFeedbackResolutionItemDto { Id = 1, Fingerprint = Fp(1), ResolvedVia = new() { "Wiki" } });
+        unknown.Version = 2;
+        Assert.Contains(Errors(unknown), m => m.StartsWith("issues[0] (id 1): Unknown resolved-via value `Wiki`; allowed: wiki, knowledge_base,", StringComparison.Ordinal));
+
+        Assert.True(FeedbackResolutionService.TryValidate(OverseerFile(null, new AdminFeedbackResolutionItemDto { Id = 1, Fingerprint = Fp(1) }), false, out file, out _));
+        Assert.False(file.Items[0].HasResolvedVia);
+    }
+
+    [Fact]
+    public async Task Preview_ResolvedVia_KeepsClearsAndComparesAsASet()
+    {
+        var a = await AddIssueAsync(1);
+        var b = await AddIssueAsync(2);
+        var c = await AddIssueAsync(3);
+        foreach (var issue in new[] { a, b, c }) issue.ResolvedVia = "wiki,knowledge_base";
+        await _db.SaveChangesAsync(Ct);
+
+        var file = OverseerFile(null,
+            new AdminFeedbackResolutionItemDto { Id = a.Id, Fingerprint = a.Fingerprint, ResolvedVia = new() { "knowledge_base", "wiki" } },
+            new AdminFeedbackResolutionItemDto { Id = b.Id, Fingerprint = b.Fingerprint, ResolvedVia = new() },
+            new AdminFeedbackResolutionItemDto { Id = c.Id, Fingerprint = c.Fingerprint, Status = "resolved", Resolution = "Done." });
+        file.Version = 2;
+        var preview = (await _service.PreviewAsync(file, Ct)).Preview!;
+
+        var same = preview.Items[0];
+        Assert.Equal(new[] { "wiki", "knowledge_base" }, same.Current!.ResolvedVia);
+        Assert.False(same.Changes.ResolvedVia);
+        Assert.False(same.HasChanges);
+
+        var cleared = preview.Items[1];
+        Assert.Empty(cleared.After!.ResolvedVia);
+        Assert.True(cleared.Changes.ResolvedVia);
+        Assert.True(cleared.HasChanges);
+
+        var kept = preview.Items[2];
+        Assert.Equal(new[] { "wiki", "knowledge_base" }, kept.After!.ResolvedVia);
+        Assert.False(kept.Changes.ResolvedVia);
+        Assert.DoesNotContain(kept.Notices, n => n.Contains("resolvedVia", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Apply_WritesResolvedVia_ForBothSources()
+    {
+        var issue = await AddIssueAsync(1);
+        var overseer = OverseerFile(null, new AdminFeedbackResolutionItemDto
+        {
+            Id = issue.Id, Fingerprint = issue.Fingerprint, Status = "resolved", Resolution = "Done.", ResolvedVia = new() { "overseer_release", "wiki" }, ExpectedStatus = "new"
+        });
+        overseer.Version = 2;
+        Assert.Equal(FeedbackResolutionOutcome.Ok, (await _service.ApplyAsync(overseer, AdminId, Ct)).Outcome);
+        Assert.Equal("wiki,overseer_release", (await ReloadAsync(issue.Id)).ResolvedVia);
+
+        await AddSelfReportAsync(Fp(2), T0.AddDays(1));
+        var gnollBench = GnollBenchFile(null, new AdminFeedbackResolutionItemDto
+        {
+            Fingerprint = Fp(2), Status = "resolved", Resolution = "Done.", ResolvedVia = new() { "gnollhack_release" }, ExpectedStatus = "new"
+        });
+        Assert.Equal(FeedbackResolutionOutcome.Ok, (await ServiceOn(_db).ApplyAsync(gnollBench, AdminId, Ct)).Outcome);
+        Assert.Equal("gnollhack_release", (await TriageAsync(Fp(2)))!.ResolvedVia);
+
+        var expectedTriaged = (await TriageAsync(Fp(2)))!.TriagedUtc;
+        var clear = GnollBenchFile(null, new AdminFeedbackResolutionItemDto { Fingerprint = Fp(2), ResolvedVia = new(), ExpectedStatus = "resolved", ExpectedTriagedUtc = expectedTriaged });
+        var applied = await ServiceOn(_db).ApplyAsync(clear, AdminId, Ct);
+        Assert.Equal(FeedbackResolutionOutcome.Ok, applied.Outcome);
+        Assert.Equal(1, applied.Applied!.Changed);
+        Assert.Null((await TriageAsync(Fp(2)))!.ResolvedVia);
+    }
+
+    [Fact]
     public void Validate_ForApply_RequiresTheExpectedStatus()
     {
         var errors = Errors(OverseerFile(null, new AdminFeedbackResolutionItemDto { Id = 1, Fingerprint = Fp(1), Status = "resolved" }), forApply: true);
@@ -311,7 +399,7 @@ public sealed class FeedbackResolutionServiceTests : IDisposable
         Assert.Equal((true, true, true, false), (first.Changes.Status, first.Changes.Note, first.Changes.Resolution, first.Changes.FixedInVersion));
         Assert.True(first.HasChanges);
         Assert.Null(first.OccurrencesSinceExport);
-        Assert.Empty(first.Notices);
+        Assert.Equal(new[] { "issues[0] (id " + a.Id + "): a resolved issue should say how it was fixed (`resolvedVia`)." }, first.Notices);
 
         var second = preview.Items[1];
         Assert.False(second.HasChanges);
@@ -396,7 +484,7 @@ public sealed class FeedbackResolutionServiceTests : IDisposable
         Assert.True(regressed.RegressedSinceExport);
         Assert.False(regressed.TriagedSinceExport);
         Assert.Equal(1, regressed.OccurrencesSinceExport);
-        Assert.Empty(regressed.Notices);
+        Assert.Equal(new[] { $"issues[0] (fingerprint {Fp(1)[..12]}…): a resolved issue should say how it was fixed (`resolvedVia`)." }, regressed.Notices);
 
         var refusedOnly = preview.Items[1];
         Assert.True(refusedOnly.Exists);

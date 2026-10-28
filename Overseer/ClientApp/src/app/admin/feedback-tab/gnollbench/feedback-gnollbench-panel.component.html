@@ -159,7 +159,7 @@
             <dl class="tl-gbfb-facts">
               <div class="tl-gbfb-fact tl-gbfb-fact-providers">
                 <dt>Providers</dt>
-                <dd>{{ issue.providers.length > 0 ? issue.providers.join(', ') : 'Not recorded' }}</dd>
+                <dd>{{ providersText(issue) || 'Not recorded' }}</dd>
               </div>
               <div class="tl-gbfb-fact tl-gbfb-fact-suites">
                 <dt>Suites</dt>
@@ -177,6 +177,13 @@
                     <span class="tl-gbfb-sep"><span aria-hidden="true"> &middot; </span><span class="visually-hidden">, </span></span>
                     <span class="tl-gbfb-overseer-status">{{ statusLabel(overseer.status) }}</span>
                   </dd>
+                </div>
+              }
+              <!-- Where the fix went, beside the version that has it. -->
+              @if (resolvedViaText(issue); as resolvedVia) {
+                <div class="tl-gbfb-fact tl-gbfb-fact-resolved">
+                  <dt>Resolved via</dt>
+                  <dd>{{ resolvedVia }}</dd>
                 </div>
               }
               @if (issue.fixedInVersion) {
@@ -298,7 +305,7 @@
                             <div class="tl-gbfb-occ-wide"><dt>Expected location</dt><dd>{{ o.expectedLocation }}</dd></div>
                           }
                           @if (o.relatedTools.length > 0) {
-                            <div><dt>Related tools</dt><dd class="tl-gbfb-mono">{{ o.relatedTools.join(', ') }}</dd></div>
+                            <div><dt>Related tools</dt><dd>{{ toolsText(o.relatedTools) }}</dd></div>
                           }
                           @if (o.noticedVia) {
                             <div><dt>Noticed via</dt><dd>{{ noticedViaText(o.noticedVia) }}</dd></div>
@@ -348,7 +355,7 @@
               </div>
             </details>
 
-            <!-- Under a hairline: who triaged it and the last result at the start, Edit triage at the end. The
+            <!-- Under a hairline: who triaged it and the last result at the start, the actions at the end. The
                  triage form is a dialog. -->
             <div class="tl-gbfb-footer">
               <div class="tl-gbfb-footer-text">
@@ -356,6 +363,16 @@
                 <p class="tl-gbfb-result" [id]="cid + '-result'" role="status">{{ result?.message ?? '' }}</p>
               </div>
               <div class="tl-gbfb-actions" role="group" [attr.aria-label]="'Actions for ' + issue.subject">
+                <button type="button" class="action-btn tl-gbfb-download"
+                        [attr.aria-label]="'Download issue as YAML: ' + issue.subject"
+                        [attr.aria-busy]="downloadingId() === issue.fingerprint ? 'true' : null"
+                        [attr.interestfor]="cid + '-download-tip'"
+                        [attr.style]="'anchor-name: --' + cid + '-download-tip'"
+                        (click)="downloadIssue(issue)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="cid + '-download-tip'"
+                     [attr.style]="'position-anchor: --' + cid + '-download-tip'">Download as YAML</div>
                 <button type="button" class="btn-ghost tl-gbfb-edit" aria-haspopup="dialog"
                         [attr.aria-busy]="savingFingerprint() === issue.fingerprint ? 'true' : null"
                         (click)="editTriage(issue)">

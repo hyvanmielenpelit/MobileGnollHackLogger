@@ -133,8 +133,8 @@ public class AdminGnollBenchFeedbackController : ControllerBase
 
     /// <summary>
     /// Triages an issue: creates or updates its triage row and records who did it and when. An absent note, resolution
-    /// or fixed-in version keeps the stored value and an empty one clears it. <c>regressed</c> is refused, because it
-    /// is derived. Returns the issue as the list shows it.
+    /// or fixed-in version keeps the stored value and an empty one clears it; so does an absent or empty
+    /// <c>resolvedVia</c>, whose unknown ids are 400. <c>regressed</c> is refused, because it is derived. Returns the issue as the list shows it.
     /// </summary>
     [HttpPost("issues/{fingerprint}/status")]
     public async Task<IActionResult> SetStatus(string fingerprint, [FromBody] GnollBenchFeedbackStatusUpdateDto? request)
@@ -146,7 +146,8 @@ public class AdminGnollBenchFeedbackController : ControllerBase
             Status = request.Status,
             Note = request.Note,
             Resolution = request.Resolution,
-            FixedInVersion = request.FixedInVersion
+            FixedInVersion = request.FixedInVersion,
+            ResolvedVia = request.ResolvedVia
         }, CurrentUserId, CancellationToken.None);
 
         switch (result.Outcome)
@@ -186,6 +187,7 @@ public class AdminGnollBenchFeedbackController : ControllerBase
             TriageNote = i.TriageNote,
             Resolution = i.Resolution,
             FixedInVersion = i.FixedInVersion,
+            ResolvedVia = i.ResolvedVia.ToList(),
             TriagedByUserName = i.TriagedByUserId != null && triagers.TryGetValue(i.TriagedByUserId, out var name) ? name : null,
             TriagedUtc = i.TriagedUtc,
             ResolvedUtc = i.ResolvedUtc,

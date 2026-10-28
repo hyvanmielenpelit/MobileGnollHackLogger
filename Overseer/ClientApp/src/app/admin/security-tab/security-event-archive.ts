@@ -5,11 +5,27 @@ import {
   SecurityRelated
 } from '../../services/admin.service';
 import { elapsedMsBetween, parseServerUtcDate } from '../../utils/date.util';
+import { providerLabel } from '../../utils/display-labels.util';
 import { safeFileName } from '../../utils/download.util';
 import { ArchiveEntry, buildTextArchive, uniqueFileNames } from '../benchmark/download-center/text-archive';
+import { outcomeLabel } from '../benchmark/shared/provider-availability/provider-availability';
+import { adminLogKindLabel } from '../users-tab/admin-log/admin-user-log.component';
+import {
+  isProviderCodeKind,
+  messageRoleLabel,
+  securityCodeLabel,
+  securityDetailText,
+  snapshotChannelLabel,
+  snapshotCodeLabel,
+  snapshotRefusalCodeLabel,
+  snapshotSubjectLabel,
+  snapshotTextKindLabel,
+  termsDocumentLabel,
+  termsSourceLabel
+} from './security-labels';
 
 // The words, tables and ZIP entries of one security event, shared by the Security tab's cards, the
-// event dialog and the event's download. Pure: no Angular, no HTTP.
+// event dialog and the event's download. Pure functions: no component state, no HTTP.
 
 const KIND_LABELS: Readonly<Record<string, string>> = {
   LoginFailed: 'Sign-in failed',
@@ -43,7 +59,7 @@ const KIND_LABELS: Readonly<Record<string, string>> = {
 
 /** What a security event kind reads as; an unknown kind reads as its name. */
 export function securityKindLabel(kind: string): string {
-  return KIND_LABELS[kind] ?? kind;
+  return Object.hasOwn(KIND_LABELS, kind) ? KIND_LABELS[kind] : kind;
 }
 
 /** The user name, else *Unknown user* for an id without one, else *No user*. */
@@ -129,28 +145,35 @@ export function securityEventArchiveName(eventId: number, now: Date): string {
 export interface SecurityEventField {
   label: string;
   value: string;
-  /** Identifiers and codes are set in the monospace face. */
+  /** Identifiers, model ids and provider codes are set in the monospace face. */
   mono: boolean;
 }
 
-/** Every stored field of the event, ids included; an empty one reads as a dash. */
+/**
+ * Every stored field of the event, ids included, coded values as labels; an empty one reads as a dash. A provider
+ * kind's code is shown as received, under *Provider code*.
+ */
 export function securityEventFields(detail: SecurityEventDetail): SecurityEventField[] {
   const field = (label: string, value: string | number | null | undefined, mono = false): SecurityEventField =>
     ({ label, value: textOf(value), mono });
   const configuration = detail.systemAiApiConfigurationId == null
     ? null
     : `${detail.systemAiApiConfigurationId} · ${detail.systemConfigurationName?.trim() || 'no longer exists'}`;
+  const modelLabel = detail.modelLabel?.trim();
+  const providerCode = isProviderCodeKind(detail.kind);
   return [
     field('Event id', detail.id, true),
-    field('Kind', `${securityKindLabel(detail.kind)} (${detail.kind})`),
+    field('Kind', securityKindLabel(detail.kind)),
     field('User', securityUserLabel(detail)),
     field('User id', detail.userId, true),
     field('Configuration', configuration),
-    field('Provider', detail.provider),
-    field('Model', detail.modelId, true),
+    field('Provider', providerLabel(detail.provider)),
+    field('Model', modelLabel || detail.modelId, !modelLabel || modelLabel === detail.modelId),
     field('IP address', detail.ipAddress, true),
-    field('Code', detail.code, true),
-    field('Detail', detail.detail),
+    providerCode
+      ? field('Provider code', detail.code, true)
+      : field('Code', securityCodeLabel(detail.kind, detail.code)),
+    field('Detail', securityDetailText(detail.kind, detail.detail)),
     field('First occurrence', securityTimeText(detail.occurredUtc)),
     field('Last occurrence', securityTimeText(detail.lastOccurredUtc)),
     field('Count', detail.count)
@@ -180,7 +203,7 @@ function roleText(roleContext: number): string {
   return ROLE_CONTEXT_LABELS[roleContext] ?? String(roleContext);
 }
 
-/** The related records that exist, one section each, *Terms accepted* first; empty lists have none. */
+/** The related records that exist, one section each, *Terms accepted* first, coded values as labels; empty lists have none. */
 export function securityRelatedSections(related: SecurityRelated | null | undefined): SecurityRelatedSection[] {
   if (!related) return [];
   const sections: SecurityRelatedSection[] = [];
@@ -190,9 +213,10 @@ export function securityRelatedSections(related: SecurityRelated | null | undefi
   const cells = (...values: (string | number | boolean | null | undefined)[]): string[] => values.map(textOf);
 
   add('terms', 'Terms accepted', ['Document', 'Version', 'Accepted', 'Source'],
-    (related.termsAcceptances ?? []).map(t => cells(t.documentKey, t.version, securityTimeText(t.acceptedUtc), t.source)));
+    (related.termsAcceptances ?? []).map(t => cells(termsDocumentLabel(t.documentKey), t.version, securityTimeText(t.acceptedUtc),
+      termsSourceLabel(t.source))));
   add('admin-actions', 'Admin log', ['Time', 'Action', 'By', 'Reason', 'Detail', 'Bulk operation'],
-    (related.adminActions ?? []).map(a => cells(securityTimeText(a.occurredUtc), a.kind, a.actorUserName, a.reason, a.detail,
+    (related.adminActions ?? []).map(a => cells(securityTimeText(a.occurredUtc), adminLogKindLabel(a.kind), a.actorUserName, a.reason, a.detail,
       a.bulkOperationId == null ? null : `#${a.bulkOperationId}`)));
   const hold = related.hold;
   add('hold', 'Account hold', ['Hold', 'Reason', 'Placed by', 'Placed'],
@@ -202,31 +226,32 @@ export function securityRelatedSections(related: SecurityRelated | null | undefi
     deletion ? [cells(`#${deletion.id}`, deletion.status, securityTimeText(deletion.requestedUtc), deletion.holdReasons)] : []);
   add('sessions', 'Sessions with a refused snapshot', ['Session', 'Created', 'Snapshot refused', 'Refusal code', 'Confidential'],
     (related.sessions ?? []).map(s => cells(`#${s.id}`, securityTimeText(s.createdUtc), securityTimeText(s.snapshotRefusedUtc),
-      s.snapshotRefusalCode, s.isConfidential)));
+      snapshotRefusalCodeLabel(s.snapshotRefusalCode), s.isConfidential)));
   const message = related.reportedMessage;
   add('reported', 'Reported message', ['Message', 'Session', 'Sent', 'Role', 'Still stored'],
     message ? [cells(`#${message.messageId}`, message.sessionId == null ? null : `#${message.sessionId}`,
-      securityTimeText(message.timestampUtc), message.role, message.exists)] : []);
+      securityTimeText(message.timestampUtc), messageRoleLabel(message.role), message.exists)] : []);
   add('attempts', 'Provider attempts', ['Started', 'Role', 'Model', 'HTTP status', 'Error code', 'Outcome', 'Retried'],
-    (related.providerAttempts ?? []).map(p => cells(securityTimeText(p.startedAtUtc), roleText(p.roleContext), p.requestedModelId,
-      p.httpStatus, p.providerErrorCode, p.outcome, p.retried)));
+    (related.providerAttempts ?? []).map(p => cells(securityTimeText(p.startedAtUtc), roleText(p.roleContext),
+      p.requestedModelLabel?.trim() || p.requestedModelId, p.httpStatus, p.providerErrorCode, outcomeLabel(p.outcome), p.retried)));
   add('usage', 'AI usage', ['Time', 'Model', 'Role', 'Tokens', 'Cost'],
-    (related.usageRows ?? []).map(u => cells(securityTimeText(u.timestampUtc), u.modelId, roleText(u.roleContext),
+    (related.usageRows ?? []).map(u => cells(securityTimeText(u.timestampUtc), u.modelLabel?.trim() || u.modelId, roleText(u.roleContext),
       u.tokens == null ? null : formatCount(u.tokens), u.cost == null ? null : `$${u.cost.toFixed(4)}`)));
   add('ip-events', 'Events from this IP address', ['Event', 'Kind', 'Code', 'Count'],
-    (related.ipEvents ?? []).map(e => cells(`#${e.id}`, securityKindLabel(e.kind), e.code, e.count)));
+    (related.ipEvents ?? []).map(e => cells(`#${e.id}`, securityKindLabel(e.kind), securityCodeLabel(e.kind, e.code), e.count)));
   add('request-logs', 'Website request log', ['Last request', 'Count', 'Method', 'Path', 'Response', 'User name'],
     (related.requestLogs ?? []).map(r => cells(securityTimeText(r.lastDate), r.count, r.requestMethod, r.requestPath,
       r.responseCode, r.requestUserName)));
   add('user-events', 'Other events of this user', ['Event', 'Kind', 'Code', 'Detail'],
-    (related.sameUserEvents ?? []).map(e => cells(`#${e.id}`, securityKindLabel(e.kind), e.code, e.detail)));
+    (related.sameUserEvents ?? []).map(e => cells(`#${e.id}`, securityKindLabel(e.kind), securityCodeLabel(e.kind, e.code),
+      securityDetailText(e.kind, e.detail))));
   return sections;
 }
 
 /**
- * The files of one event's download: `security-event-{id}.json` (the detail with each text replaced
- * by its file name), `security-event-{id}.md` (a readable summary) and each refused text as received,
- * every entry stamped `now`.
+ * The files of one event's download: `security-event-{id}.json` (the detail with every stored value as
+ * stored, each text replaced by its file name), `security-event-{id}.md` (a readable summary in labels)
+ * and each refused text as received, every entry stamped `now`.
  */
 export function buildSecurityEventArchiveEntries(detail: SecurityEventDetail, now: Date): ArchiveEntry[] {
   const items = detail.quarantine ?? [];
@@ -264,12 +289,12 @@ function securityEventMarkdown(detail: SecurityEventDetail, textNames: readonly 
     const cap = quarantineCapText(detail);
     if (cap) lines.push(cap, '');
     items.forEach((item, i) => {
-      lines.push(`### ${i + 1}. ${item.channel}`, '');
+      lines.push(`### ${i + 1}. ${snapshotChannelLabel(item.channel)}`, '');
       lines.push(...markdownTable(['Field', 'Value'], [
         ['Verdict', quarantineTags(item).join(' · ')],
-        ['Codes', item.codes.join(', ')],
-        ['Text kind', item.textKind],
-        ['Subject', item.subject],
+        ['Codes', textOf(item.codes.map(snapshotCodeLabel).join(', '))],
+        ['Text kind', textOf(snapshotTextKindLabel(item.textKind))],
+        ['Subject', textOf(snapshotSubjectLabel(item.subject))],
         ['Received', securityTimeText(item.occurredUtc)],
         ['Session', textOf(item.sessionRef)],
         ['Length', quarantineLengthText(item)],

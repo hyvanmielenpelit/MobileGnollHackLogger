@@ -33,6 +33,7 @@ import {
   securityTimeText,
   securityUserLabel
 } from './security-event-archive';
+import { snapshotChannelLabel, snapshotCodeLabel, snapshotTextKindLabel } from './security-labels';
 
 /** The file saving the dialog does, replaceable in specs. */
 export const securityEventIo = {
@@ -93,6 +94,9 @@ export class SecurityEventDialogComponent implements OnInit, OnDestroy {
   readonly tags = quarantineTags;
   readonly lengthText = quarantineLengthText;
   readonly unreadable = isUnreadableQuarantineText;
+  readonly channelLabel = snapshotChannelLabel;
+  readonly textKindLabel = snapshotTextKindLabel;
+  readonly codeLabel = snapshotCodeLabel;
 
   eventId: number | null = null;
   detail: SecurityEventDetail | null = null;
@@ -233,7 +237,7 @@ export class SecurityEventDialogComponent implements OnInit, OnDestroy {
   }
 
   codeMeaning(code: string): string {
-    return SNAPSHOT_GUARD_CODE_MEANINGS[code] ?? '';
+    return Object.hasOwn(SNAPSHOT_GUARD_CODE_MEANINGS, code) ? SNAPSHOT_GUARD_CODE_MEANINGS[code] : '';
   }
 
   private memoFor(): { fields: SecurityEventField[]; sections: SecurityRelatedSection[] } | null {
@@ -247,13 +251,15 @@ export class SecurityEventDialogComponent implements OnInit, OnDestroy {
 
   // --- Refused texts ---
 
-  /** Shows the text in the Snapshot Viewer's read-only mode, over this dialog. */
+  /** Shows the text in the Snapshot Viewer's read-only mode, over this dialog, titled with its channel. */
   openInViewer(item: SecurityQuarantineItem): void {
     const detail = this.detail;
     if (!detail || !this.viewer) return;
-    const note = `Refused game text of ${securityKindLabel(detail.kind)} #${detail.id}, channel ${item.channel}: ${item.codes.join(', ')}`;
+    const channel = snapshotChannelLabel(item.channel);
+    const note = `Refused game text of ${securityKindLabel(detail.kind)} #${detail.id}, ${channel}: `
+      + item.codes.map(snapshotCodeLabel).join(', ');
     this.viewer.openReadOnly({
-      name: item.channel,
+      name: channel,
       sanitizedText: item.text,
       digestText: null,
       charCount: item.plainLength,

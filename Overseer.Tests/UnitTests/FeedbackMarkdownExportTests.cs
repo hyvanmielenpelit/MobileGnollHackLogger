@@ -414,7 +414,7 @@ public sealed class FeedbackMarkdownExportTests : IDisposable
         Assert.Equal(new[]
         {
             "format: overseer-feedback-resolutions",
-            "version: 1",
+            "version: 2",
             "source: overseer",
             "exportedAtUtc: \"2026-10-23T12:34:56Z\"",
             "issues:",
@@ -429,6 +429,34 @@ public sealed class FeedbackMarkdownExportTests : IDisposable
         Assert.Contains("    # resolution: |", template);
         Assert.Contains("    # fixedInVersion: ", template);
         Assert.Contains("    # note: |", template);
+        Assert.Contains("    # resolvedVia: [wiki]", template);
+        Assert.Contains("`resolvedVia` takes the ids wiki, knowledge_base, overseer_release, gnollhack_release, server_configuration, other.", markdown);
+    }
+
+    [Fact]
+    public void Build_WritesTheResolvedViaIds_AsAFact()
+    {
+        var issue = HostileIssue();
+        var withVia = new FeedbackExportIssue
+        {
+            Id = 44, Fingerprint = Fp(44), Category = MissingInformation, Status = "resolved", Subject = "s", Summary = "s",
+            ResolvedVia = new[] { FeedbackResolvedVia.Wiki, FeedbackResolvedVia.KnowledgeBase }
+        };
+
+        Assert.Contains("| Resolved via | none |", FeedbackMarkdownExport.Build(OverseerDocument(issue)));
+        Assert.Contains("| Resolved via | wiki, knowledge_base |", FeedbackMarkdownExport.Build(OverseerDocument(withVia)));
+    }
+
+    [Fact]
+    public void FileName_NamesAOneIssueExportByItsIdOrFingerprintPrefix()
+    {
+        var overseer = new FeedbackExportIssue { Id = 42, Fingerprint = Fp(42) };
+        var gnollBench = new FeedbackExportIssue { Fingerprint = Fp(42) };
+
+        Assert.Equal("overseer-feedback-overseer-issue-42-20261023-1234.md", FeedbackMarkdownExport.FileName(FeedbackTransferSources.Overseer, ExportedAt, overseer));
+        Assert.Equal("overseer-feedback-overseer-issue-42-20261023-1234.yaml", FeedbackYamlExport.FileName(FeedbackTransferSources.Overseer, ExportedAt, overseer));
+        Assert.Equal($"overseer-feedback-gnollbench-{Fp(42)[..12]}-20261023-1234.yaml", FeedbackYamlExport.FileName(FeedbackTransferSources.GnollBench, ExportedAt, gnollBench));
+        Assert.Equal("overseer-feedback-gnollbench-20261023-1234.yaml", FeedbackYamlExport.FileName(FeedbackTransferSources.GnollBench, ExportedAt));
     }
 
     [Fact]
@@ -523,7 +551,7 @@ public sealed class FeedbackMarkdownExportTests : IDisposable
         }, Version, Ct);
 
         Assert.Equal(FeedbackExportOutcome.Exported, result.Outcome);
-        string markdown = result.Export!.Markdown;
+        string markdown = result.Export!.Content;
         foreach (var forbidden in new[]
         {
             "reporter-id-marker-5d1", "secret-reporter-name", "triager-id-marker-9c2", "secret-triager-name",
@@ -550,16 +578,16 @@ public sealed class FeedbackMarkdownExportTests : IDisposable
         var first = await _service.ExportAsync(request, Version, Ct);
         var second = await _service.ExportAsync(request, Version, Ct);
 
-        Assert.Equal(first.Export!.Markdown, second.Export!.Markdown);
+        Assert.Equal(first.Export!.Content, second.Export!.Content);
         Assert.Equal("overseer-feedback-overseer-20261023-1234.md", first.Export.FileName);
-        Assert.Contains("| Exported at (UTC) | 2026-10-23T12:34:56Z |", first.Export.Markdown);
-        Assert.Contains("exportedAtUtc: \"2026-10-23T12:34:56Z\"", first.Export.Markdown);
+        Assert.Contains("| Exported at (UTC) | 2026-10-23T12:34:56Z |", first.Export.Content);
+        Assert.Contains("exportedAtUtc: \"2026-10-23T12:34:56Z\"", first.Export.Content);
         Assert.Equal(new long[] { 9999 }, first.Export.MissingIds);
         Assert.Equal(1, first.Export.IssueCount);
-        Assert.Contains("The newest 5 of 7 retained occurrences, newest first.", first.Export.Markdown);
-        Assert.Contains("Details 6.", first.Export.Markdown);
-        Assert.DoesNotContain("Details 1.", first.Export.Markdown);
-        Assert.DoesNotContain("\r", first.Export.Markdown);
+        Assert.Contains("The newest 5 of 7 retained occurrences, newest first.", first.Export.Content);
+        Assert.Contains("Details 6.", first.Export.Content);
+        Assert.DoesNotContain("Details 1.", first.Export.Content);
+        Assert.DoesNotContain("\r", first.Export.Content);
     }
 
     [Fact]
@@ -581,9 +609,43 @@ public sealed class FeedbackMarkdownExportTests : IDisposable
         Assert.Equal(FeedbackExportOutcome.Invalid, await Outcome(new AdminFeedbackExportRequestDto { Source = "gnollbench", Fingerprints = new List<string> { "abc" } }));
         Assert.Equal(FeedbackExportOutcome.Invalid, await Outcome(new AdminFeedbackExportRequestDto { Source = "gnollbench", IssueIds = new List<long> { 1 } }));
 
+        Assert.Equal(FeedbackExportOutcome.Invalid, await Outcome(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { 1 }, Format = "pdf" }));
+
         var none = await _service.ExportAsync(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { 5, 6 } }, Version, Ct);
         Assert.Equal(FeedbackExportOutcome.NotFound, none.Outcome);
         Assert.Equal(new long[] { 5, 6 }, none.MissingIds);
+    }
+
+    [Fact]
+    public async Task Export_RendersTheRequestedFormat_FromOneDocument_AndNamesAOneIssueFile()
+    {
+        var (issue, _) = await SeedOverseerIssueAsync();
+        issue.ResolvedVia = "knowledge_base,wiki";
+        await _db.SaveChangesAsync(Ct);
+
+        var markdown = await _service.ExportAsync(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { issue.Id } }, Version, Ct);
+        var yaml = await _service.ExportAsync(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { issue.Id }, Format = "YAML" }, Version, Ct);
+        var both = await _service.ExportAsync(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { issue.Id, 9999 }, Format = "yaml" }, Version, Ct);
+
+        Assert.Equal(FeedbackMarkdownExport.MediaType, markdown.Export!.MediaType);
+        Assert.Equal($"overseer-feedback-overseer-issue-{issue.Id}-20261023-1234.md", markdown.Export.FileName);
+        Assert.Contains("| Resolved via | wiki, knowledge_base |", markdown.Export.Content);
+
+        Assert.Equal(FeedbackYamlExport.MediaType, yaml.Export!.MediaType);
+        Assert.Equal($"overseer-feedback-overseer-issue-{issue.Id}-20261023-1234.yaml", yaml.Export.FileName);
+        Assert.StartsWith("# Overseer feedback issues.", yaml.Export.Content);
+        Assert.Contains("format: overseer-feedback-issues", yaml.Export.Content);
+        Assert.Contains("      resolvedVia:\n        - \"wiki\"\n        - \"knowledge_base\"\n", yaml.Export.Content);
+        foreach (var forbidden in new[]
+        {
+            "reporter-id-marker-5d1", "secret-reporter-name", "triager-id-marker-9c2", "secret-triager-name",
+            "Secret Group Name", "987654321", "123456789", "toolcall-marker-xyz", "agent-marker-abc"
+        })
+        {
+            Assert.DoesNotContain(forbidden, yaml.Export.Content);
+        }
+
+        Assert.Equal("overseer-feedback-overseer-20261023-1234.yaml", both.Export!.FileName);
     }
 
     [Fact]
@@ -618,7 +680,7 @@ public sealed class FeedbackMarkdownExportTests : IDisposable
         var with = await _service.ExportAsync(new AdminFeedbackExportRequestDto { Source = "gnollbench", Fingerprints = new List<string> { Fp(7).ToUpperInvariant(), Fp(8) } }, Version, Ct);
         var without = await _service.ExportAsync(new AdminFeedbackExportRequestDto { Source = "gnollbench", Fingerprints = new List<string> { Fp(7) }, IncludeQuestionText = false }, Version, Ct);
 
-        string markdown = with.Export!.Markdown;
+        string markdown = with.Export!.Content;
         Assert.Contains($"## Issue {Fp(7)[..12]}", Headings(markdown));
         Assert.Contains($"| Runs | 1: #{run.Id} |", markdown);
         Assert.Contains("| Suites | Suite One |", markdown);
@@ -631,6 +693,6 @@ public sealed class FeedbackMarkdownExportTests : IDisposable
         Assert.Contains("Unique question text marker?", markdown);
         Assert.Equal(new[] { Fp(8) }, with.Export.MissingFingerprints);
         Assert.Equal("overseer-feedback-gnollbench-20261023-1234.md", with.Export.FileName);
-        Assert.DoesNotContain("Unique question text marker?", without.Export!.Markdown);
+        Assert.DoesNotContain("Unique question text marker?", without.Export!.Content);
     }
 }

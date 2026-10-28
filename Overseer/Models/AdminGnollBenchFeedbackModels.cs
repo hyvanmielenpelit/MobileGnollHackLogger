@@ -86,6 +86,9 @@ public sealed class GnollBenchFeedbackIssueDto
     public string? TriageNote { get; set; }
     public string? Resolution { get; set; }
     public string? FixedInVersion { get; set; }
+
+    /// <summary><c>FeedbackResolvedVia</c> ids, in their order; empty when none.</summary>
+    public List<string> ResolvedVia { get; set; } = new();
     public string? TriagedByUserName { get; set; } // null when the triager's account is gone
     public DateTime? TriagedUtc { get; set; }
     public DateTime? ResolvedUtc { get; set; }
@@ -207,7 +210,7 @@ public sealed class GnollBenchFeedbackFacetsDto
 
 /// <summary>
 /// A triage change. An absent (or null) note, resolution or fixed-in version keeps the stored value, and an empty
-/// string clears it.
+/// string clears it; an absent <see cref="ResolvedVia"/> keeps the stored list and an empty one clears it.
 /// </summary>
 public sealed class GnollBenchFeedbackStatusUpdateDto
 {
@@ -215,4 +218,7 @@ public sealed class GnollBenchFeedbackStatusUpdateDto
     public string? Note { get; set; }
     public string? Resolution { get; set; }
     public string? FixedInVersion { get; set; }
+
+    /// <summary><c>FeedbackResolvedVia</c> ids.</summary>
+    public List<string>? ResolvedVia { get; set; }
 }

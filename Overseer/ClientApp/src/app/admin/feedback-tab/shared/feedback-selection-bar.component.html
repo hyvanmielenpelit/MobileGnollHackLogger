@@ -1,4 +1,5 @@
-<!-- What is selected, shown or not; no select-all checkbox. Export and Import resolutions open their own dialogs. -->
+<!-- What is selected, shown or not; no select-all checkbox. Export and Import resolutions open their own dialogs;
+     the (i) after them explains the file formats. -->
 <div class="fsb" role="group" aria-label="Selection, export and import">
   <div class="fsb-selection">
     <p class="fsb-count">
@@ -38,6 +39,7 @@
       <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
       Import resolutions…
     </button>
+    <app-feedback-formats-tip [source]="source" />
   </div>
 </div>
 <p class="fsb-status" role="status">{{ statusMessage }}</p>

@@ -13,6 +13,25 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
 
+/// <summary>The file formats of an export, as wire values.</summary>
+public static class FeedbackExportFormats
+{
+    public const string Yaml = "yaml";
+    public const string Markdown = "markdown";
+
+    /// <summary>Parses a format, ignoring case and surrounding whitespace; null or blank reads <see cref="Markdown"/>.</summary>
+    public static bool TryParse(string? value, [NotNullWhen(true)] out string? format)
+    {
+        format = string.IsNullOrWhiteSpace(value) ? Markdown : value.Trim().ToLowerInvariant() switch
+        {
+            Yaml => Yaml,
+            Markdown => Markdown,
+            _ => null
+        };
+        return format != null;
+    }
+}
+
 /// <summary>The two feedback stores an export or a resolution file belongs to, as wire values.</summary>
 public static class FeedbackTransferSources
 {
@@ -74,6 +93,9 @@ public sealed class FeedbackExportIssue
     public DateTime? LastRegressionUtc { get; init; }
     public DateTime? TriagedUtc { get; init; }
     public string? FixedInVersion { get; init; }
+
+    /// <summary><see cref="FeedbackResolvedVia"/> ids, in their order.</summary>
+    public IReadOnlyList<string> ResolvedVia { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> Models { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> Providers { get; init; } = Array.Empty<string>();
 
@@ -159,7 +181,7 @@ public static class FeedbackMarkdownExport
     public const string FormatName = "overseer-feedback-export";
     public const int FormatVersion = 1;
     public const string ResolutionFormatName = "overseer-feedback-resolutions";
-    public const int ResolutionFormatVersion = 1;
+    public const int ResolutionFormatVersion = 2;
     public const string SkillName = "server-feedback-resolution";
     public const int FingerprintHeadingLength = 12;
     public const int MaxRunIdsListed = 20;
@@ -167,9 +189,22 @@ public static class FeedbackMarkdownExport
 
     private const string None = "none";
 
-    /// <summary><c>overseer-feedback-&lt;source&gt;-&lt;yyyyMMdd-HHmm&gt;.md</c>.</summary>
-    public static string FileName(string source, DateTime exportedAtUtc)
-        => $"overseer-feedback-{source}-{AsUtc(exportedAtUtc).ToString("yyyyMMdd-HHmm", CultureInfo.InvariantCulture)}.md";
+    /// <summary>
+    /// <c>overseer-feedback-&lt;source&gt;-&lt;yyyyMMdd-HHmm&gt;.md</c>; for a one-issue export
+    /// <c>overseer-feedback-overseer-issue-42-…</c> or <c>overseer-feedback-gnollbench-&lt;fp12&gt;-…</c>.
+    /// </summary>
+    public static string FileName(string source, DateTime exportedAtUtc, FeedbackExportIssue? single = null)
+        => BaseFileName(source, exportedAtUtc, single) + ".md";
+
+    /// <summary>A file name without its extension; see <see cref="FileName"/>.</summary>
+    internal static string BaseFileName(string source, DateTime exportedAtUtc, FeedbackExportIssue? single)
+    {
+        string time = AsUtc(exportedAtUtc).ToString("yyyyMMdd-HHmm", CultureInfo.InvariantCulture);
+        if (single == null) return $"overseer-feedback-{source}-{time}";
+        return source == FeedbackTransferSources.Overseer && single.Id is long id
+            ? $"overseer-feedback-{source}-issue-{id.ToString(CultureInfo.InvariantCulture)}-{time}"
+            : $"overseer-feedback-{source}-{Hex(single.Fingerprint, FingerprintHeadingLength)}-{time}";
+    }
 
     /// <summary>ISO 8601 to the second, with <c>Z</c>.</summary>
     public static string FormatTimestamp(DateTime utc)
@@ -281,6 +316,7 @@ public static class FeedbackMarkdownExport
         Row(sb, "Suspected causes (hypotheses)", Listed(issue.SuspectedCauses));
         Row(sb, "Triaged (UTC)", issue.TriagedUtc is DateTime triaged ? FormatTimestamp(triaged) : "never");
         Row(sb, "Fixed in version", string.IsNullOrWhiteSpace(issue.FixedInVersion) ? None : issue.FixedInVersion);
+        Row(sb, "Resolved via", Listed(issue.ResolvedVia));
         if (AnyHidden(issue.Subject, issue.Summary, issue.TriageNote, issue.Resolution)) Row(sb, "Marks", "hidden characters");
         Line(sb);
 
@@ -386,12 +422,8 @@ public static class FeedbackMarkdownExport
                 {
                     Line(yaml, $"  - fingerprint: \"{issue.Fingerprint}\"");
                 }
-                Line(yaml, $"    # status: resolved          # new | acknowledged | resolved | dismissed; now {issue.Status}");
-                Line(yaml, "    # resolution: |");
-                Line(yaml, "    #   What changed, where, and how it was verified.");
-                Line(yaml, "    # fixedInVersion: \"1.4.1\"");
-                Line(yaml, "    # note: |");
-                Line(yaml, "    #   The triage note.");
+                foreach (var line in TemplateItemComments(issue.Status))
+                    Line(yaml, "    " + line);
             }
         }
 
@@ -400,6 +432,8 @@ public static class FeedbackMarkdownExport
         Line(sb, $"Copy this block into a resolution file in the `{ResolutionFormatName}` format, version {ResolutionFormatVersion.ToString(CultureInfo.InvariantCulture)}.");
         Line(sb, "Keep one item per issue worked on, and uncomment the fields that change: an absent field keeps the stored value and an empty one clears it.");
         Line(sb, "`regressed` cannot be chosen: recurrence is recorded by the system.");
+        Line(sb, $"`resolvedVia` takes the ids {string.Join(", ", FeedbackResolvedVia.All)}.");
+        Line(sb, "The resolution is the issue's resolution message: its subject line, then Resolved via, Changed, Verified and Live lines.");
         Line(sb);
         string body = yaml.ToString();
         string fence = FenceFor(body);
@@ -407,6 +441,21 @@ public static class FeedbackMarkdownExport
         sb.Append(body);
         Line(sb, fence);
     }
+
+    /// <summary>
+    /// The commented-out fields of one resolution template item, without indentation, shared with the YAML export.
+    /// <paramref name="status"/> is the issue's shown status.
+    /// </summary>
+    internal static IReadOnlyList<string> TemplateItemComments(string status) => new[]
+    {
+        $"# status: resolved          # new | acknowledged | resolved | dismissed; now {status}",
+        "# resolvedVia: [wiki]       # " + string.Join(" | ", FeedbackResolvedVia.All),
+        "# resolution: |",
+        "#   The resolution message: what changed, where, and how it was verified.",
+        "# fixedInVersion: \"1.4.1\"",
+        "# note: |",
+        "#   The triage note."
+    };
 
     // --- Helpers ---
 
@@ -524,7 +573,7 @@ public static class FeedbackMarkdownExport
         return category is UnicodeCategory.Format or UnicodeCategory.Control;
     }
 
-    private static bool AnyHidden(params string?[] texts)
+    internal static bool AnyHidden(params string?[] texts)
     {
         foreach (var text in texts)
         {
@@ -593,14 +642,17 @@ public sealed class FeedbackExportResult
 
     /// <summary>The file, when <see cref="Outcome"/> is <see cref="FeedbackExportOutcome.Exported"/>.</summary>
     public AdminFeedbackExportResultDto? Export { get; init; }
+
+    /// <summary>The document the file was built from, when exported.</summary>
+    public FeedbackExportDocument? Document { get; init; }
     public List<long> MissingIds { get; init; } = new();
     public List<string> MissingFingerprints { get; init; } = new();
 }
 
 /// <summary>
 /// Loads the issues of an export through <see cref="OverseerFeedbackQuery"/> and <see cref="GnollBenchFeedbackQuery"/>,
-/// maps them to a <see cref="FeedbackExportDocument"/> that holds no user identity, and builds the file with
-/// <see cref="FeedbackMarkdownExport"/>. The export time is the clock's, cut to the second, and is taken before
+/// maps them to a <see cref="FeedbackExportDocument"/> that holds no user identity, and renders that one document with
+/// <see cref="FeedbackYamlExport"/> or <see cref="FeedbackMarkdownExport"/>. The export time is the clock's, cut to the second, and is taken before
 /// anything is read, so anything triaged or reported after it reads as changed since the export. Scoped.
 /// </summary>
 public sealed class FeedbackExportService
@@ -638,6 +690,9 @@ public sealed class FeedbackExportService
         if (!FeedbackTransferSources.TryParse(request.Source, out var source))
             return Invalid($"Unknown source '{request.Source}'. Use overseer or gnollbench.");
 
+        if (!FeedbackExportFormats.TryParse(request.Format, out var format))
+            return Invalid($"Unknown format '{request.Format}'. Use yaml or markdown.");
+
         int perIssue = request.OccurrencesPerIssue ?? DefaultOccurrencesPerIssue;
         if (!AllowedOccurrencesPerIssue.Contains(perIssue))
             return Invalid("Occurrences per issue must be 5, 10 or 25.");
@@ -646,9 +701,34 @@ public sealed class FeedbackExportService
         DateTime exportedAt = new(now.Ticks - now.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
         string version = string.IsNullOrWhiteSpace(overseerVersion) ? "unknown" : overseerVersion.Trim();
 
-        return source == FeedbackTransferSources.Overseer
+        var result = source == FeedbackTransferSources.Overseer
             ? await ExportOverseerAsync(request, perIssue, exportedAt, version, ct)
             : await ExportGnollBenchAsync(request, perIssue, request.IncludeQuestionText ?? true, exportedAt, version, ct);
+        if (result.Outcome != FeedbackExportOutcome.Exported || result.Document == null) return result;
+
+        var document = result.Document;
+        int requested = source == FeedbackTransferSources.Overseer
+            ? (request.IssueIds ?? new List<long>()).Distinct().Count()
+            : (request.Fingerprints ?? new List<string>()).Select(GnollBenchFeedbackQuery.NormalizeFingerprint).Distinct().Count();
+        var single = requested == 1 && document.Issues.Count == 1 ? document.Issues[0] : null;
+        bool yaml = format == FeedbackExportFormats.Yaml;
+        return new FeedbackExportResult
+        {
+            Outcome = FeedbackExportOutcome.Exported,
+            MissingIds = result.MissingIds,
+            MissingFingerprints = result.MissingFingerprints,
+            Export = new AdminFeedbackExportResultDto
+            {
+                FileName = yaml
+                    ? FeedbackYamlExport.FileName(document.Source, document.ExportedAtUtc, single)
+                    : FeedbackMarkdownExport.FileName(document.Source, document.ExportedAtUtc, single),
+                Content = yaml ? FeedbackYamlExport.Build(document) : FeedbackMarkdownExport.Build(document),
+                MediaType = yaml ? FeedbackYamlExport.MediaType : FeedbackMarkdownExport.MediaType,
+                IssueCount = document.Issues.Count,
+                MissingIds = result.MissingIds,
+                MissingFingerprints = result.MissingFingerprints
+            }
+        };
     }
 
     // --- Overseer ---
@@ -744,6 +824,7 @@ public sealed class FeedbackExportService
                 LastRegressionUtc = issue.LastRegressionUtc,
                 TriagedUtc = issue.TriagedUtc,
                 FixedInVersion = issue.FixedInVersion,
+                ResolvedVia = FeedbackResolvedVia.FromStored(issue.ResolvedVia),
                 Models = row.ModelIds,
                 Providers = row.Providers,
                 ModelSources = sources,
@@ -860,6 +941,7 @@ public sealed class FeedbackExportService
                 OccurrenceCount = issue.SelfReportCount,
                 TriagedUtc = issue.TriagedUtc,
                 FixedInVersion = issue.FixedInVersion,
+                ResolvedVia = issue.ResolvedVia,
                 Models = models,
                 Providers = issue.Providers,
                 RelatedTools = Ordered(own.SelectMany(f => OverseerFeedbackQuery.ParseRelatedTools(f.RelatedToolsJson))),
@@ -921,20 +1003,14 @@ public sealed class FeedbackExportService
     private static List<string> Ordered(IEnumerable<string?> values)
         => values.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v!).Distinct(StringComparer.Ordinal).OrderBy(v => v, StringComparer.Ordinal).ToList();
 
+    /// <summary>The loaded document; <see cref="ExportAsync"/> renders it in the requested format.</summary>
     private static FeedbackExportResult Exported(FeedbackExportDocument document, List<long> missingIds, List<string> missingFingerprints)
         => new()
         {
             Outcome = FeedbackExportOutcome.Exported,
             MissingIds = missingIds,
             MissingFingerprints = missingFingerprints,
-            Export = new AdminFeedbackExportResultDto
-            {
-                FileName = FeedbackMarkdownExport.FileName(document.Source, document.ExportedAtUtc),
-                Markdown = FeedbackMarkdownExport.Build(document),
-                IssueCount = document.Issues.Count,
-                MissingIds = missingIds,
-                MissingFingerprints = missingFingerprints
-            }
+            Document = document
         };
 
     private static FeedbackExportResult Invalid(string message) => new() { Outcome = FeedbackExportOutcome.Invalid, Message = message };

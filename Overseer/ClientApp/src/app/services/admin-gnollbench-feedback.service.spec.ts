@@ -146,6 +146,25 @@ describe('AdminGnollBenchFeedbackService', () => {
     cleared.flush(null);
   });
 
+  it('posts a resolved-via list as given, an empty one to clear it, and leaves out a null one', () => {
+    let via: string[] | undefined;
+    service.updateStatus(FP, { status: 'resolved', resolvedVia: ['wiki', 'gnollhack_release'] }).subscribe(issue => via = issue.resolvedVia);
+    const set = http.expectOne(`${BASE}/issues/${FP}/status`);
+    expect(set.request.body).toEqual({ status: 'resolved', resolvedVia: ['wiki', 'gnollhack_release'] });
+    set.flush({ fingerprint: FP, status: 'resolved', resolvedVia: ['wiki', 'gnollhack_release'] });
+    expect(via).toEqual(['wiki', 'gnollhack_release']);
+
+    service.updateStatus(FP, { status: 'dismissed', resolvedVia: [] }).subscribe();
+    const cleared = http.expectOne(`${BASE}/issues/${FP}/status`);
+    expect(cleared.request.body).toEqual({ status: 'dismissed', resolvedVia: [] });
+    cleared.flush(null);
+
+    service.updateStatus(FP, { status: 'acknowledged', resolvedVia: null }).subscribe();
+    const kept = http.expectOne(`${BASE}/issues/${FP}/status`);
+    expect(kept.request.body).toEqual({ status: 'acknowledged' });
+    kept.flush(null);
+  });
+
   it('escapes the fingerprint in the path', () => {
     service.getOccurrences('a/b').subscribe();
     http.expectOne(r => r.url === `${BASE}/issues/a%2Fb/occurrences`).flush({ totalCount: 0, rows: [] });

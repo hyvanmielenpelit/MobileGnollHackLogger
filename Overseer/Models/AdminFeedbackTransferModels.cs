@@ -6,13 +6,16 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 /// <summary>
-/// A Markdown export of feedback issues. Overseer takes <see cref="IssueIds"/>, GnollBench <see cref="Fingerprints"/>;
+/// An export of feedback issues. Overseer takes <see cref="IssueIds"/>, GnollBench <see cref="Fingerprints"/>;
 /// at most 200 issues. <see cref="OccurrencesPerIssue"/> is 5, 10 (the default) or 25.
 /// </summary>
 public sealed class AdminFeedbackExportRequestDto
 {
     /// <summary><c>overseer</c> or <c>gnollbench</c>.</summary>
     public string? Source { get; set; }
+
+    /// <summary><c>yaml</c> or <c>markdown</c>; null reads <c>markdown</c>.</summary>
+    public string? Format { get; set; }
     public List<long>? IssueIds { get; set; }
     public List<string>? Fingerprints { get; set; }
     public int? OccurrencesPerIssue { get; set; }
@@ -25,7 +28,12 @@ public sealed class AdminFeedbackExportRequestDto
 public sealed class AdminFeedbackExportResultDto
 {
     public string FileName { get; set; } = "";
-    public string Markdown { get; set; } = "";
+
+    /// <summary>The file's text, LF line endings.</summary>
+    public string Content { get; set; } = "";
+
+    /// <summary><c>text/markdown;charset=utf-8</c> or <c>application/yaml;charset=utf-8</c>.</summary>
+    public string MediaType { get; set; } = "";
     public int IssueCount { get; set; }
 
     /// <summary>Overseer issue ids that no longer exist.</summary>
@@ -36,9 +44,10 @@ public sealed class AdminFeedbackExportResultDto
 }
 
 /// <summary>
-/// One issue of a resolution file (<c>overseer-feedback-resolutions</c> version 1). For each of <see cref="Status"/>,
+/// One issue of a resolution file (<c>overseer-feedback-resolutions</c> version 1 or 2). For each of <see cref="Status"/>,
 /// <see cref="Resolution"/>, <see cref="FixedInVersion"/> and <see cref="Note"/>, absent or null keeps the stored
-/// value and an empty or blank string clears it. <see cref="ExpectedStatus"/> and <see cref="ExpectedTriagedUtc"/> are
+/// value and an empty or blank string clears it; <see cref="ResolvedVia"/> (version 2 only) absent keeps the stored
+/// list and an empty list clears it. <see cref="ExpectedStatus"/> and <see cref="ExpectedTriagedUtc"/> are
 /// the current values the preview showed; apply requires the status and compares both with the stored ones.
 /// </summary>
 public sealed class AdminFeedbackResolutionItemDto
@@ -57,6 +66,9 @@ public sealed class AdminFeedbackResolutionItemDto
     /// <summary>The triage note.</summary>
     public string? Note { get; set; }
 
+    /// <summary>Version 2: <c>FeedbackResolvedVia</c> ids.</summary>
+    public List<string>? ResolvedVia { get; set; }
+
     /// <summary>Apply only: the status the preview showed, <c>regressed</c> included.</summary>
     public string? ExpectedStatus { get; set; }
 
@@ -70,7 +82,7 @@ public sealed class AdminFeedbackResolutionItemDto
 
 /// <summary>
 /// A resolution file as JSON: the body of both preview and apply. <see cref="Format"/> and <see cref="Version"/> may
-/// be left out; when given they must be <c>overseer-feedback-resolutions</c> and 1.
+/// be left out; when given they must be <c>overseer-feedback-resolutions</c> and 1 or 2.
 /// </summary>
 public sealed class AdminFeedbackResolutionRequestDto
 {
@@ -110,6 +122,7 @@ public sealed class AdminFeedbackResolutionStateDto
     public string? Note { get; set; }
     public string? Resolution { get; set; }
     public string? FixedInVersion { get; set; }
+    public List<string> ResolvedVia { get; set; } = new();
     public DateTime? TriagedUtc { get; set; }
     public DateTime? LastSeenUtc { get; set; }
 }
@@ -121,15 +134,17 @@ public sealed class AdminFeedbackResolutionValuesDto
     public string? Note { get; set; }
     public string? Resolution { get; set; }
     public string? FixedInVersion { get; set; }
+    public List<string> ResolvedVia { get; set; } = new();
 }
 
-/// <summary>Which values the item changes.</summary>
+/// <summary>Which values the item changes. <see cref="ResolvedVia"/> compares the lists as sets.</summary>
 public sealed class AdminFeedbackResolutionChangesDto
 {
     public bool Status { get; set; }
     public bool Note { get; set; }
     public bool Resolution { get; set; }
     public bool FixedInVersion { get; set; }
+    public bool ResolvedVia { get; set; }
 }
 
 /// <summary>
@@ -190,6 +205,21 @@ public sealed class AdminFeedbackResolutionConflictItemDto
     public string? CurrentStatus { get; set; }
     public DateTime? ExpectedTriagedUtc { get; set; }
     public DateTime? CurrentTriagedUtc { get; set; }
+}
+
+/// <summary>One example file of <see cref="AdminFeedbackFormatExamplesDto"/>.</summary>
+public sealed class AdminFeedbackFormatExampleDto
+{
+    public string FileName { get; set; } = "";
+    public string Content { get; set; } = "";
+    public string MediaType { get; set; } = "";
+}
+
+/// <summary>Example files of the issues export and the resolution file, built by the real builders.</summary>
+public sealed class AdminFeedbackFormatExamplesDto
+{
+    public AdminFeedbackFormatExampleDto Issues { get; set; } = new();
+    public AdminFeedbackFormatExampleDto Resolutions { get; set; } = new();
 }
 
 /// <summary>The 409 body of an apply that found issues changed since the preview; nothing was written.</summary>

@@ -100,6 +100,37 @@
   font-family: var(--font-mono);
 }
 
+/* Resolved via: a borderless group whose legend is laid out as a label row; `.checkbox-label` is global. */
+.ftd-resolved {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ftd-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-block-size: 24px;
+  margin: 0 0 6px;
+  padding: 0;
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: #e4e4e7;
+}
+
+.ftd-resolved-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px 1.25rem;
+}
+
+.ftd-resolved-option {
+  font-size: var(--text-body);
+  color: #e4e4e7;
+}
+
 .ftd-note {
   --autosize-min: 2lh;
   --autosize-max: 8lh;
@@ -156,16 +187,24 @@
   flex-shrink: 0;
 }
 
-/* Status and Fixed in version side by side where the dialog has room for both; Note and Resolution
-   always take the whole width. */
+/* Status and Fixed in version side by side where the dialog has room for both; Resolved via, Note and
+   Resolution always take the whole width. */
 @container ftd-body (inline-size >= 32rem) {
   .ftd-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .ftd-resolved,
   .ftd-field-note,
   .ftd-field-resolution {
     grid-column: 1 / -1;
+  }
+}
+
+/* The Resolved via choices in two columns where they fit, one on a phone. */
+@container ftd-body (inline-size >= 24rem) {
+  .ftd-resolved-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

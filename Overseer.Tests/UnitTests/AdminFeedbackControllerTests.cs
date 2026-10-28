@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using MobileGnollHackLogger.Data;
 using Overseer.Controllers;
 using Overseer.Models;
+using Overseer.Services;
 using Overseer.Services.Feedback;
 using Overseer.Tests.Helpers;
 using Xunit;
@@ -936,6 +937,84 @@ public sealed class AdminFeedbackControllerTests : IDisposable
         var stored = await StoredAsync(issue.Id);
         Assert.Equal(OverseerFeedbackStatus.Resolved, stored.Status);
         Assert.Null(stored.TriagedByUserId);
+    }
+
+    [Fact]
+    public async Task ResolvedVia_IsKeptWhenAbsent_ClearedWhenEmpty_AndUnknownIdsAreRefused()
+    {
+        var issue = await AddIssueAsync("Dilithium crystal");
+
+        var dto = OkValue<AdminFeedbackIssueDto>(await _controller.SetStatus(issue.Id, new AdminFeedbackStatusUpdateDto
+        {
+            Status = "resolved", ResolvedVia = new List<string> { "knowledge_base", " wiki ", "wiki" }
+        }));
+        Assert.Equal(new[] { "wiki", "knowledge_base" }, dto.ResolvedVia);
+        Assert.Equal("wiki,knowledge_base", (await StoredAsync(issue.Id)).ResolvedVia);
+
+        dto = OkValue<AdminFeedbackIssueDto>(await _controller.SetStatus(issue.Id, new AdminFeedbackStatusUpdateDto { Status = "resolved" }));
+        Assert.Equal(new[] { "wiki", "knowledge_base" }, dto.ResolvedVia);
+
+        AssertBadRequest(await _controller.SetStatus(issue.Id, new AdminFeedbackStatusUpdateDto
+        {
+            Status = "resolved", ResolvedVia = new List<string> { "wiki", "memory" }
+        }), "resolved-via");
+        Assert.Equal("wiki,knowledge_base", (await StoredAsync(issue.Id)).ResolvedVia);
+
+        dto = OkValue<AdminFeedbackIssueDto>(await _controller.SetStatus(issue.Id, new AdminFeedbackStatusUpdateDto
+        {
+            Status = "dismissed", ResolvedVia = new List<string>()
+        }));
+        Assert.Empty(dto.ResolvedVia);
+        Assert.Null((await StoredAsync(issue.Id)).ResolvedVia);
+    }
+
+    /// <summary>A catalog that names only the models it is given; any other id has an empty display name.</summary>
+    private sealed class StubModelMetadata(Dictionary<string, string> names) : ModelMetadataService
+    {
+        public override ModelMetadata GetMetadata(string provider, string modelId)
+            => new() { Id = modelId, DisplayName = names.TryGetValue(modelId, out var name) ? name : "" };
+    }
+
+    [Fact]
+    public async Task ModelLabels_UseTheCatalogsName_AndFallBackToTheId()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var issue = await AddIssueAsync("Dilithium crystal");
+        await AddReportAsync(issue, 1, T0, modelId: "model-a");
+        await AddReportAsync(issue, 2, T0.AddMinutes(1), modelId: "model-b");
+
+        var labeled = new OverseerFeedbackQuery(_db, new StubModelMetadata(new() { ["model-a"] = "Model A" }));
+        var rows = await labeled.BuildIssueDtosAsync(new List<OverseerFeedbackIssue> { issue }, ct);
+        Assert.Equal(new[] { "model-a", "model-b" }, rows[0].ModelIds);
+        Assert.Equal(new[] { "Model A", "model-b" }, rows[0].ModelLabels);
+        var occurrences = await labeled.BuildOccurrenceDtosAsync(await labeled.Occurrences(issue.Id).ToListAsync(ct), ct);
+        Assert.Equal(new[] { "model-b", "Model A" }, occurrences.Select(o => o.ModelLabel));
+        var facets = await labeled.FacetsAsync(null, null, ct);
+        Assert.Equal(new[] { ("model-a", "Model A"), ("model-b", "model-b") }, facets.Models.Select(m => (m.Value, m.Label)));
+        Assert.All(facets.Providers, p => Assert.Equal("", p.Label));
+
+        var plain = new OverseerFeedbackQuery(_db);
+        Assert.Equal(new[] { "model-a", "model-b" }, (await plain.BuildIssueDtosAsync(new List<OverseerFeedbackIssue> { issue }, ct))[0].ModelLabels);
+        Assert.Equal(new[] { "model-a", "model-b" }, (await plain.FacetsAsync(null, null, ct)).Models.Select(m => m.Label));
+    }
+
+    [Fact]
+    public async Task ModelLabels_CopyTheOverflowEntry_AndSkipAnOccurrenceWithoutAProvider()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var issue = await AddIssueAsync("Dilithium crystal");
+        for (int i = 0; i < AdminFeedbackController.MaxModelIdsShown + 2; i++)
+            await AddReportAsync(issue, i + 1, T0.AddMinutes(i), modelId: $"model-{i}");
+        var noProvider = await AddReportAsync(issue, 99, T0.AddHours(1), modelId: "model-0", provider: null);
+
+        var query = new OverseerFeedbackQuery(_db, new StubModelMetadata(new() { ["model-0"] = "Model Zero" }));
+        var row = (await query.BuildIssueDtosAsync(new List<OverseerFeedbackIssue> { issue }, ct))[0];
+
+        Assert.Equal(row.ModelIds.Count, row.ModelLabels.Count);
+        Assert.Equal("+2", row.ModelLabels[^1]);
+        Assert.Equal("Model Zero", row.ModelLabels[0]);
+        var occurrence = Assert.Single(await query.BuildOccurrenceDtosAsync(new List<OverseerFeedbackReport> { noProvider }, ct));
+        Assert.Equal("model-0", occurrence.ModelLabel);
     }
 
     // --- Delete ---

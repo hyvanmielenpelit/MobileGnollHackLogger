@@ -13,13 +13,14 @@ import {
 import { Subscription } from 'rxjs';
 import {
   FEEDBACK_EXPORT_MAX_ISSUES,
+  FeedbackExportFormat,
   FeedbackExportRequest,
   FeedbackTransferService,
   feedbackExportNotFound
 } from '../../../services/feedback-transfer.service';
 import { adminApiError } from '../../../services/admin-users.service';
 import { downloadTextFile } from '../../../utils/download.util';
-import type { FeedbackExportOptions, FeedbackSource } from './feedback-view-storage';
+import { feedbackExportFormat, type FeedbackExportOptions, type FeedbackSource } from './feedback-view-storage';
 
 /** Overseer issue id or GnollBench fingerprint. */
 type ExportId = number | string;
@@ -33,13 +34,20 @@ export interface FeedbackExportDone {
   issueCount: number;
 }
 
-export const DEFAULT_FEEDBACK_EXPORT_OPTIONS: FeedbackExportOptions = { occurrencesPerIssue: 10, includeQuestionText: true };
+export const DEFAULT_FEEDBACK_EXPORT_OPTIONS: FeedbackExportOptions = { occurrencesPerIssue: 10, includeQuestionText: true, format: 'yaml' };
 
 export const OCCURRENCES_PER_ISSUE_CHOICES: readonly FeedbackExportOptions['occurrencesPerIssue'][] = [5, 10, 25];
 
+/** The file formats, YAML first: the default, and the one an AI coding assistant reads. */
+export const FEEDBACK_EXPORT_FORMAT_CHOICES: readonly { readonly value: FeedbackExportFormat; readonly label: string; readonly hint: string }[] = [
+  { value: 'yaml', label: 'YAML', hint: 'for an AI coding assistant' },
+  { value: 'markdown', label: 'Markdown', hint: 'to read' }
+];
+
 /**
- * Export the selected issues as Markdown, for an AI coding assistant to work on: the occurrences per issue and,
- * for GnollBench, whether each occurrence carries its question text. The file is saved through the browser.
+ * Export the selected issues as YAML, for an AI coding assistant to work on, or as Markdown to read: the file
+ * format, the occurrences per issue and, for GnollBench, whether each occurrence carries its question text. The
+ * file is saved through the browser with the media type the server names.
  */
 @Component({
   selector: 'app-feedback-export-dialog',
@@ -63,8 +71,10 @@ export class FeedbackExportDialogComponent implements OnDestroy {
   @Output() exported = new EventEmitter<FeedbackExportDone>();
 
   readonly occurrenceChoices = OCCURRENCES_PER_ISSUE_CHOICES;
+  readonly formatChoices = FEEDBACK_EXPORT_FORMAT_CHOICES;
   readonly maxIssues = FEEDBACK_EXPORT_MAX_ISSUES;
 
+  format: FeedbackExportFormat = 'yaml';
   occurrencesPerIssue: FeedbackExportOptions['occurrencesPerIssue'] = DEFAULT_FEEDBACK_EXPORT_OPTIONS.occurrencesPerIssue;
   includeQuestionText = DEFAULT_FEEDBACK_EXPORT_OPTIONS.includeQuestionText;
   exporting = false;
@@ -81,7 +91,7 @@ export class FeedbackExportDialogComponent implements OnDestroy {
   }
 
   get title(): string {
-    return `Export ${this.count} ${this.count === 1 ? 'issue' : 'issues'} as Markdown`;
+    return `Export ${this.count} ${this.count === 1 ? 'issue' : 'issues'}`;
   }
 
   /** Why Export is unavailable; null when it is not. */
@@ -95,7 +105,7 @@ export class FeedbackExportDialogComponent implements OnDestroy {
   }
 
   get options(): FeedbackExportOptions {
-    return { occurrencesPerIssue: this.occurrencesPerIssue, includeQuestionText: this.includeQuestionText };
+    return { occurrencesPerIssue: this.occurrencesPerIssue, includeQuestionText: this.includeQuestionText, format: this.format };
   }
 
   open(): void {
@@ -104,6 +114,7 @@ export class FeedbackExportDialogComponent implements OnDestroy {
       ? options.occurrencesPerIssue
       : DEFAULT_FEEDBACK_EXPORT_OPTIONS.occurrencesPerIssue;
     this.includeQuestionText = options.includeQuestionText !== false;
+    this.format = feedbackExportFormat(options);
     this.error = null;
     this.exporting = false;
     const el = this.dialog?.nativeElement;
@@ -122,6 +133,11 @@ export class FeedbackExportDialogComponent implements OnDestroy {
     if (this.exporting) event.preventDefault();
   }
 
+  setFormat(value: FeedbackExportFormat): void {
+    this.format = value;
+    this.cdr.markForCheck();
+  }
+
   setOccurrences(value: FeedbackExportOptions['occurrencesPerIssue']): void {
     this.occurrencesPerIssue = value;
     this.cdr.markForCheck();
@@ -136,8 +152,11 @@ export class FeedbackExportDialogComponent implements OnDestroy {
     if (this.blockedReason !== null) return;
     const options = this.options;
     const request: FeedbackExportRequest = this.isGnollBench
-      ? { source: 'gnollbench', fingerprints: this.ids.map(String), occurrencesPerIssue: options.occurrencesPerIssue, includeQuestionText: options.includeQuestionText }
-      : { source: 'overseer', issueIds: this.ids.map(Number), occurrencesPerIssue: options.occurrencesPerIssue };
+      ? {
+        source: 'gnollbench', format: this.format, fingerprints: this.ids.map(String),
+        occurrencesPerIssue: options.occurrencesPerIssue, includeQuestionText: options.includeQuestionText
+      }
+      : { source: 'overseer', format: this.format, issueIds: this.ids.map(Number), occurrencesPerIssue: options.occurrencesPerIssue };
 
     this.exporting = true;
     this.error = null;
@@ -146,7 +165,7 @@ export class FeedbackExportDialogComponent implements OnDestroy {
     this.exportSub = this.transfer.exportIssues(request).subscribe({
       next: result => {
         this.exporting = false;
-        downloadTextFile(result.fileName, result.markdown, 'text/markdown;charset=utf-8');
+        downloadTextFile(result.fileName, result.content, result.mediaType);
         const missing: ExportId[] = this.isGnollBench ? [...result.missingFingerprints] : [...result.missingIds];
         this.dialog?.nativeElement?.close();
         this.exported.emit({ missing, exportOptions: options, fileName: result.fileName, issueCount: result.issueCount });

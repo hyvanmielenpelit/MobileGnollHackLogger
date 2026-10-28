@@ -208,6 +208,11 @@ describe('AdminSecurityTabComponent', () => {
       expect(textOf(card(2).querySelector('.sec-kind'))).toBe('Snapshot refused');
       expect(textOf(card(1).querySelector('.sec-kind'))).toBe('Blocked automatically');
       expect(component.kindOptions.map(o => o.label)).toEqual(['Snapshot refused', 'Blocked automatically', 'Blocked by admin']);
+      expect(factsOf(card(2))).toEqual({
+        Code: 'Injection in the player\'s own text',
+        Detail: 'Observed and delivered. Snapshot sent at session start: Addresses the AI, Steers a tool call.'
+      });
+      expect(factsOf(card(1))).toEqual({ Code: 'Repeated injections in the player\'s own text' });
     });
   });
 
@@ -303,7 +308,7 @@ describe('AdminSecurityTabComponent', () => {
       eventsSpy.mockReturnValue(of(page([
         securityEvent(3, {
           kind: 'ProviderSafetyBlock', count: 12, lastOccurredUtc: '2026-10-13T09:19:00Z',
-          provider: 'Anthropic', modelId: 'claude-x', code: 'refusal', detail: 'Stopped by the provider', ipAddress: null
+          provider: 'anthropic', modelId: 'claude-x', modelLabel: 'Claude X', code: 'refusal', detail: 'Stopped by the provider', ipAddress: null
         }),
         securityEvent(2, { userId: 'u9', userName: null }),
         securityEvent(1, { userId: null, userName: null })
@@ -323,7 +328,8 @@ describe('AdminSecurityTabComponent', () => {
       expect(kicker).toContain('12 times');
       expect(kicker).toContain('in 4 min');
       expect(textOf(first.querySelector('h5.sec-title'))).toBe('Alice');
-      expect(factsOf(first)).toEqual({ Model: 'Anthropic · claude-x', Code: 'refusal', Detail: 'Stopped by the provider' });
+      expect(factsOf(first)).toEqual({ Model: 'Anthropic · Claude X', 'Provider code': 'refusal', Detail: 'Stopped by the provider' });
+      expect(Array.from(first.querySelectorAll('.sec-facts dd.sec-mono')).map(dd => textOf(dd))).toEqual(['refusal']);
       expect(first.querySelector('.sec-actions')!.getAttribute('role')).toBe('group');
       expect(first.querySelector('.sec-actions')!.getAttribute('aria-label')).toBe('Actions for Alice');
 
@@ -341,6 +347,21 @@ describe('AdminSecurityTabComponent', () => {
       expect(noUserActions.getAttribute('aria-label')).toBe('Actions for No user');
       expect(noUserActions.querySelector('.sec-details')).not.toBeNull();
       expect(noUserActions.querySelector('.sec-block, .sec-unblock, .sec-usage')).toBeNull();
+    });
+
+    it('shows an event\'s code and detail as labels, and the model id when the catalog has no name', () => {
+      eventsSpy.mockReturnValue(of(page([
+        securityEvent(2, { code: 'game-api:bones', detail: 'unknown-user', userId: null, userName: null }),
+        securityEvent(1, {
+          kind: 'QuotaRefused', provider: 'openai', modelId: 'gpt-x', modelLabel: 'gpt-x', code: 'guard-cost', ipAddress: null
+        })
+      ])));
+      create();
+
+      expect(factsOf(card(2))).toEqual({ IP: '203.0.113.5', Code: 'Game API, bones upload', Detail: 'No account matched the user name' });
+      expect(factsOf(card(1))).toEqual({ Model: 'OpenAI · gpt-x', Code: 'Daily cost guard' });
+      expect(card(1).querySelector('.sec-facts dd.sec-mono')).toBeNull();
+      expect(textOf(el.querySelector('ul.sec-cards'))).not.toContain('guard-cost');
     });
 
     it('names each card\'s Details after the kind and the user, and opens the event dialog for that event', () => {

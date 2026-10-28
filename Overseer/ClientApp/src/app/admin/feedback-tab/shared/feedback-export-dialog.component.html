@@ -1,6 +1,6 @@
 <!-- EXPORT
-     The selected issues as one Markdown file for an AI coding assistant. No closedby="any": a click beside the
-     dialog must not abandon an export in flight. -->
+     The selected issues as one file: YAML for an AI coding assistant, or Markdown to read. No closedby="any": a
+     click beside the dialog must not abandon an export in flight. -->
 <dialog #dialog class="gh-dialog feedback-transfer-dialog feedback-export-dialog"
         [attr.aria-labelledby]="source + '-feedback-export-title'"
         [attr.aria-busy]="exporting ? 'true' : null"
@@ -24,6 +24,17 @@
         and ends in a resolution template. An AI coding assistant works on it with the
         <code>server-feedback-resolution</code> skill and writes a resolution file you import here.
       </p>
+
+      <fieldset class="gh-choice fx-format">
+        <legend>File format</legend>
+        @for (choice of formatChoices; track choice.value) {
+          <label class="gh-radio">
+            <input type="radio" [name]="source + '-feedback-export-format'" [attr.value]="choice.value"
+                   [checked]="format === choice.value" (change)="setFormat(choice.value)">
+            <span><span class="fx-format-name">{{ choice.label }}</span>&ngsp;<span class="fx-format-hint">{{ choice.hint }}</span></span>
+          </label>
+        }
+      </fieldset>
 
       <fieldset class="gh-choice fx-occurrences">
         <legend>Occurrences per issue</legend>

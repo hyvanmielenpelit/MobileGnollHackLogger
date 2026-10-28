@@ -46,6 +46,9 @@ public class SecurityEventDto
     public long? SystemAiApiConfigurationId { get; set; }
     public string? Provider { get; set; }
     public string? ModelId { get; set; }
+
+    /// <summary>The catalog's display name of <see cref="ModelId"/>, or the id when it has none.</summary>
+    public string? ModelLabel { get; set; }
     public string? Code { get; set; }
     public string? Detail { get; set; }
 
@@ -191,6 +194,9 @@ public class SecurityProviderAttemptDto
     public DateTime StartedAtUtc { get; set; }
     public int RoleContext { get; set; }
     public string RequestedModelId { get; set; } = string.Empty;
+
+    /// <summary>The catalog's display name of <see cref="RequestedModelId"/>, or the id when it has none.</summary>
+    public string RequestedModelLabel { get; set; } = string.Empty;
     public int? HttpStatus { get; set; }
     public string? ProviderErrorCode { get; set; }
 
@@ -204,6 +210,9 @@ public class SecurityUsageRowDto
 {
     public DateTime TimestampUtc { get; set; }
     public string ModelId { get; set; } = string.Empty;
+
+    /// <summary>The catalog's display name of <see cref="ModelId"/>, or the id when it has none.</summary>
+    public string ModelLabel { get; set; } = string.Empty;
     public int RoleContext { get; set; }
 
     /// <summary>Input plus output tokens.</summary>

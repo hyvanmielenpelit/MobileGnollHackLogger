@@ -24,7 +24,7 @@ describe('FeedbackTriageDialogComponent', () => {
     return {
       idPrefix: 'tl-fb-1-triage',
       subject: 'Dilithium crystal',
-      values: { status: 'new', note: '', resolution: '', fixedInVersion: '' },
+      values: { status: 'new', note: '', resolution: '', fixedInVersion: '', resolvedVia: [] },
       statuses: [
         { value: 'new', label: 'New' }, { value: 'acknowledged', label: 'Acknowledged' },
         { value: 'resolved', label: 'Resolved' }, { value: 'dismissed', label: 'Dismissed' }
@@ -83,7 +83,7 @@ describe('FeedbackTriageDialogComponent', () => {
   });
 
   it('opens modal, named by its heading, with the issue\'s values and focus on Status', () => {
-    open({ values: { status: 'acknowledged', note: 'Seen', resolution: 'Added the page.', fixedInVersion: '1.4.3' } });
+    open({ values: { status: 'acknowledged', note: 'Seen', resolution: 'Added the page.', fixedInVersion: '1.4.3', resolvedVia: [] } });
 
     expect(dialog().open).toBe(true);
     expect(dialog().matches(':modal')).toBe(true);
@@ -152,7 +152,7 @@ describe('FeedbackTriageDialogComponent', () => {
   });
 
   it('opens a regressed issue on Choose a status, and refuses to save until one is chosen', () => {
-    open({ values: { status: '', note: '', resolution: '', fixedInVersion: '' } });
+    open({ values: { status: '', note: '', resolution: '', fixedInVersion: '', resolvedVia: [] } });
 
     expect(Array.from(status().options).map(o => o.value)).toEqual(['', 'new', 'acknowledged', 'resolved', 'dismissed']);
     expect(status().options[0].disabled).toBe(true);
@@ -305,5 +305,109 @@ describe('FeedbackTriageDialogComponent', () => {
     const fixedTop = fixed().getBoundingClientRect().top;
     expect(fixedTop).toBe(statusTop);
     expect(fixed().getBoundingClientRect().left).toBeGreaterThan(status().getBoundingClientRect().left);
+  });
+
+  describe('Resolved via', () => {
+    const group = (): HTMLFieldSetElement => q<HTMLFieldSetElement>('fieldset.ftd-resolved')!;
+    const boxes = (): HTMLInputElement[] => Array.from(group().querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
+    const box = (id: string): HTMLInputElement => q<HTMLInputElement>(`#tl-fb-1-triage-resolved-${id}`)!;
+
+    function toggle(input: HTMLInputElement): void {
+      input.click();
+      fixture.detectChanges();
+    }
+
+    it('follows Fixed in version as a group named Resolved via, with six labeled checkboxes whose ids are only their values', () => {
+      open();
+
+      expect(fixed().compareDocumentPosition(group()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(group().compareDocumentPosition(note()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(textOf(q('#' + group().getAttribute('aria-labelledby')))).toBe('Resolved via');
+      expect(textOf(q('#' + group().getAttribute('aria-describedby')))).toBe(
+        'Where the fix went. GnollHack wiki and knowledge-base fixes go live when the server\'s copy is pulled; an Overseer release needs a deploy.');
+      expect(group().querySelector('legend app-info-tip button')!.getAttribute('aria-label')).toBe('About Resolved via');
+      expect(boxes().map(b => b.value)).toEqual(
+        ['wiki', 'knowledge_base', 'overseer_release', 'gnollhack_release', 'server_configuration', 'other']);
+      expect(boxes().map(b => textOf(b.closest('label')))).toEqual(
+        ['GnollHack wiki', 'Knowledge base', 'Overseer release', 'GnollHack release', 'Server configuration', 'Other']);
+      expect(boxes().every(b => b.closest('label')!.classList.contains('checkbox-label'))).toBe(true);
+      expect(textOf(group())).not.toMatch(/knowledge_base|overseer_release|gnollhack_release|server_configuration/);
+      expect(boxes().some(b => b.checked)).toBe(false);
+    });
+
+    it('checks the stored ids', () => {
+      open({ values: { status: 'resolved', note: '', resolution: '', fixedInVersion: '', resolvedVia: ['knowledge_base', 'wiki'] } });
+
+      expect(boxes().filter(b => b.checked).map(b => b.value)).toEqual(['wiki', 'knowledge_base']);
+      expect(component.dirty).toBe(false);
+    });
+
+    it('lays the choices out in two columns where there is room, one where not', () => {
+      open();
+      dialog().style.width = '40rem';
+      fixture.detectChanges();
+      expect(box('knowledge_base').getBoundingClientRect().top).toBe(box('wiki').getBoundingClientRect().top);
+      expect(box('knowledge_base').getBoundingClientRect().left).toBeGreaterThan(box('wiki').getBoundingClientRect().left);
+
+      dialog().style.width = '18rem';
+      fixture.detectChanges();
+      expect(box('knowledge_base').getBoundingClientRect().top).toBeGreaterThan(box('wiki').getBoundingClientRect().top);
+      expect(box('knowledge_base').getBoundingClientRect().left).toBe(box('wiki').getBoundingClientRect().left);
+    });
+
+    it('makes the form dirty while the choice differs from the stored one, so Escape asks first', () => {
+      open({ values: { status: 'new', note: '', resolution: '', fixedInVersion: '', resolvedVia: ['wiki'] } });
+
+      toggle(box('other'));
+      expect(component.dirty).toBe(true);
+      toggle(box('other'));
+      expect(component.dirty).toBe(false);
+
+      toggle(box('wiki'));
+      expect(component.dirty).toBe(true);
+      escape();
+      expect(dialog().open).toBe(true);
+      expect(q('.ftd-unsaved')!.classList.contains('is-shown')).toBe(true);
+    });
+
+    it('sends no resolvedVia while the choice is unchanged', () => {
+      open({ values: { status: 'resolved', note: '', resolution: '', fixedInVersion: '', resolvedVia: ['wiki'] } });
+      typeInto(note(), 'Seen');
+      click('.ftd-save');
+
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(submit.mock.calls[0][0]).toEqual({ status: 'resolved', note: 'Seen', resolution: '', fixedInVersion: '' });
+      expect(Object.hasOwn(submit.mock.calls[0][0] as object, 'resolvedVia')).toBe(false);
+    });
+
+    it('sends the changed choice in the canonical order', () => {
+      open({ values: { status: 'resolved', note: '', resolution: '', fixedInVersion: '', resolvedVia: ['wiki'] } });
+      toggle(box('other'));
+      toggle(box('overseer_release'));
+      click('.ftd-save');
+
+      expect(submit).toHaveBeenCalledWith({
+        status: 'resolved', note: '', resolution: '', fixedInVersion: '', resolvedVia: ['wiki', 'overseer_release', 'other']
+      });
+    });
+
+    it('sends an empty list when every stored choice is unchecked', () => {
+      open({ values: { status: 'dismissed', note: '', resolution: '', fixedInVersion: '', resolvedVia: ['wiki', 'knowledge_base'] } });
+      toggle(box('wiki'));
+      toggle(box('knowledge_base'));
+      click('.ftd-save');
+
+      expect(submit).toHaveBeenCalledWith({ status: 'dismissed', note: '', resolution: '', fixedInVersion: '', resolvedVia: [] });
+    });
+
+    it('opens fresh: a reopened form shows the stored choice, not the last edit', () => {
+      open();
+      toggle(box('wiki'));
+      click('.ftd-discard');
+      open();
+
+      expect(box('wiki').checked).toBe(false);
+      expect(component.dirty).toBe(false);
+    });
   });
 });

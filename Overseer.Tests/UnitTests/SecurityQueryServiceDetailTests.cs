@@ -324,6 +324,54 @@ public class SecurityQueryServiceDetailTests
         Assert.Empty(related.AdminActions);
     }
 
+    /// <summary>A catalog that names only the models it is given; any other id has an empty display name.</summary>
+    private sealed class StubModelMetadata(Dictionary<string, string> names) : Overseer.Services.ModelMetadataService
+    {
+        public override Overseer.Services.ModelMetadata GetMetadata(string provider, string modelId)
+            => new() { Id = modelId, DisplayName = names.TryGetValue(modelId, out var name) ? name : "" };
+    }
+
+    [Fact]
+    public async Task ModelLabels_UseTheCatalogsName_FallBackToTheId_AndToTheIdWithoutACatalog()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var f = new Fixture();
+        await SeedUsersAsync(f.Db, Player);
+        DateTime at = DateTime.UtcNow.AddHours(-1);
+        var e = await AddEventAsync(f.Db, SecurityEventKind.ProviderSafetyBlock, Player, at, code: "SAFETY", configurationId: 7);
+        e.Provider = "Anthropic";
+        e.ModelId = "named-model";
+        f.Db.ChatProviderAttempts.Add(new ChatProviderAttempt
+        {
+            StartedAtUtc = at,
+            AgentRunId = Guid.NewGuid(),
+            RoleContext = 1,
+            KeySource = AiKeySource.System,
+            SystemAiApiConfigurationId = 7,
+            AspNetUserId = Player,
+            Provider = "Anthropic",
+            RequestedModelId = "unnamed-model",
+            Outcome = ProviderAttemptOutcome.Ok
+        });
+        f.Db.SystemAiUsageLogs.Add(new SystemAiUsageLog
+        {
+            SystemAiApiConfigurationId = 7, AspNetUserId = Player, TimestampUtc = at, Provider = "Anthropic", ModelId = "named-model", RoleContext = 1
+        });
+        await f.Db.SaveChangesAsync(ct);
+
+        var labeled = new SecurityQueryService(f.Db, f.Ring, metadata: new StubModelMetadata(new() { ["named-model"] = "Named Model" }));
+        var detail = (await labeled.GetEventDetailAsync(e.Id, Admin, AdminName, AdminIp, ct))!;
+        Assert.Equal("named-model", detail.ModelId);
+        Assert.Equal("Named Model", detail.ModelLabel);
+        Assert.Equal("unnamed-model", Assert.Single(detail.Related.ProviderAttempts).RequestedModelLabel);
+        Assert.Equal("Named Model", Assert.Single(detail.Related.UsageRows).ModelLabel);
+        Assert.Equal("Named Model", (await labeled.GetEventsAsync(null, null, null, null, null, 0, 20, ct)).Rows.Single(r => r.Id == e.Id).ModelLabel);
+
+        var plain = (await DetailAsync(f, e.Id))!;
+        Assert.Equal("named-model", plain.ModelLabel);
+        Assert.Equal("named-model", Assert.Single(plain.Related.UsageRows).ModelLabel);
+    }
+
     [Fact]
     public async Task TermsAcceptances_AreListedForAnyKindWithAUser_RegardlessOfTheWindow()
     {

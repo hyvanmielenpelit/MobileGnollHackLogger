@@ -13,6 +13,7 @@ describe('FeedbackSelectionBarComponent', () => {
   let component: FeedbackSelectionBarComponent;
   let host: HTMLElement;
   let exportIssues: Mock;
+  let formatExamples: Mock;
 
   const q = <T extends Element = HTMLElement>(selector: string): T | null => host.querySelector<T>(selector);
   const text = (el: Element | null): string => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -33,9 +34,13 @@ describe('FeedbackSelectionBarComponent', () => {
 
   beforeEach(async () => {
     exportIssues = vi.fn().mockName('FeedbackTransferService.exportIssues');
+    formatExamples = vi.fn().mockName('FeedbackTransferService.formatExamples');
     await TestBed.configureTestingModule({
       imports: [FeedbackSelectionBarComponent],
-      providers: [{ provide: FeedbackTransferService, useValue: { exportIssues, previewResolutions: vi.fn(), applyResolutions: vi.fn() } }]
+      providers: [{
+        provide: FeedbackTransferService,
+        useValue: { exportIssues, formatExamples, previewResolutions: vi.fn(), applyResolutions: vi.fn() }
+      }]
     }).compileComponents();
 
     fixture = TestBed.createComponent(FeedbackSelectionBarComponent);
@@ -143,7 +148,8 @@ describe('FeedbackSelectionBarComponent', () => {
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     exportIssues.mockReturnValue(of({
-      fileName: 'overseer-feedback-gnollbench-20261023-1234.md', markdown: '# x\n', issueCount: 1, missingIds: [], missingFingerprints: [FP]
+      fileName: 'overseer-feedback-gnollbench-20261023-1234.yaml', content: 'format: x\n', mediaType: 'application/yaml;charset=utf-8',
+      issueCount: 1, missingIds: [], missingFingerprints: [FP]
     }));
     const exported: { missing: FeedbackSelectionId[]; exportOptions: FeedbackExportOptions }[] = [];
     component.exported.subscribe(e => exported.push(e));
@@ -154,18 +160,58 @@ describe('FeedbackSelectionBarComponent', () => {
 
     const dialog = q<HTMLDialogElement>('dialog.feedback-export-dialog')!;
     expect(dialog.open).toBe(true);
-    expect(text(dialog.querySelector('h3'))).toBe('Export 2 issues as Markdown');
+    expect(text(dialog.querySelector('h3'))).toBe('Export 2 issues');
     expect(dialog.querySelector<HTMLInputElement>('input[type="radio"][value="25"]')!.checked).toBe(true);
 
     dialog.querySelector<HTMLButtonElement>('.fx-export-btn')!.click();
     fixture.detectChanges();
 
     expect(exportIssues).toHaveBeenCalledWith({
-      source: 'gnollbench', fingerprints: [FP, 'b'.repeat(64)], occurrencesPerIssue: 25, includeQuestionText: true
+      source: 'gnollbench', format: 'yaml', fingerprints: [FP, 'b'.repeat(64)], occurrencesPerIssue: 25, includeQuestionText: true
     });
-    expect(exported).toEqual([{ missing: [FP], exportOptions: { occurrencesPerIssue: 25, includeQuestionText: true } }]);
+    expect(exported).toEqual([{ missing: [FP], exportOptions: { occurrencesPerIssue: 25, includeQuestionText: true, format: 'yaml' } }]);
     expect(text(q('.fsb-status'))).toBe(
-      'Saved overseer-feedback-gnollbench-20261023-1234.md with 1 issue. 1 selected issue no longer exists and has left the selection.');
+      'Saved overseer-feedback-gnollbench-20261023-1234.yaml with 1 issue. 1 selected issue no longer exists and has left the selection.');
+  });
+
+  it('ends its actions row with the file formats tip of its sub-tab', () => {
+    set({ source: 'gnollbench' });
+    const actions = q('.fsb-actions')!;
+    const tip = actions.lastElementChild!;
+    expect(tip.tagName.toLowerCase()).toBe('app-feedback-formats-tip');
+    expect(tip.previousElementSibling).toBe(q('.fsb-import'));
+    expect(tip.querySelector('button.gh-info-btn')!.getAttribute('aria-label')).toBe('About Feedback file formats');
+    expect(tip.querySelector('#gnollbench-feedback-formats')).not.toBeNull();
+    expect(formatExamples).not.toHaveBeenCalled();
+  });
+
+  it('opens and closes the formats tip without touching its own dialogs or outputs', () => {
+    formatExamples.mockReturnValue(of({
+      issues: { fileName: 'a.yaml', content: 'a: 1\n', mediaType: 'application/yaml;charset=utf-8' },
+      resolutions: { fileName: 'b.yaml', content: 'b: 1\n', mediaType: 'application/yaml;charset=utf-8' }
+    }));
+    let outputs = 0;
+    component.exported.subscribe(() => outputs++);
+    component.imported.subscribe(() => outputs++);
+    component.clear.subscribe(() => outputs++);
+    set({ source: 'overseer', selectedIds: [1] });
+
+    const tip = q('app-feedback-formats-tip')!;
+    tip.querySelector<HTMLButtonElement>('button.gh-info-btn')!.click();
+    fixture.detectChanges();
+    const tipDialog = tip.querySelector<HTMLDialogElement>('dialog')!;
+    expect(tipDialog.open).toBe(true);
+    expect(formatExamples).toHaveBeenCalledWith('overseer');
+
+    tipDialog.dispatchEvent(new Event('cancel', { cancelable: true }));
+    tip.querySelector<HTMLButtonElement>('dialog .dialog-header .btn-icon-action')!.click();
+    fixture.detectChanges();
+
+    expect(tipDialog.open).toBe(false);
+    expect(q<HTMLDialogElement>('dialog.feedback-export-dialog')!.open).toBe(false);
+    expect(q<HTMLDialogElement>('dialog.feedback-import-dialog')!.open).toBe(false);
+    expect(outputs).toBe(0);
+    expect(exportIssues).not.toHaveBeenCalled();
   });
 
   it('opens the import dialog for its sub-tab and passes an import on', () => {

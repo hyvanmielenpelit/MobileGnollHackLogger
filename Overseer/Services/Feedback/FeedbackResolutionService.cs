@@ -28,6 +28,10 @@ public sealed class FeedbackResolutionItem
     public bool HasFixedInVersion { get; init; }
     public string? FixedInVersion { get; init; }
 
+    /// <summary>Version 2: whether the item sets <see cref="ResolvedVia"/>; an empty list clears it.</summary>
+    public bool HasResolvedVia { get; init; }
+    public IReadOnlyList<string> ResolvedVia { get; init; } = Array.Empty<string>();
+
     /// <summary>Apply only: the lowercase status the preview showed.</summary>
     public string? ExpectedStatus { get; init; }
     public DateTime? ExpectedTriagedUtc { get; init; }
@@ -73,10 +77,10 @@ public sealed class FeedbackResolutionApplyResult
 
 /// <summary>
 /// The resolution import of the admin Feedback sub-tabs: validates a resolution file (<c>overseer-feedback-resolutions</c>
-/// version 1, rules R1–R9), previews it against the stored issues, and applies it in one transaction.
+/// version 1 or 2, rules R1–R9), previews it against the stored issues, and applies it in one transaction.
 ///
-/// <para>For each of status, note, resolution and fixed-in version an absent value keeps the stored one and an empty
-/// one clears it. Apply compares every item's expected status and triage time with the stored ones before writing,
+/// <para>For each of status, note, resolution, fixed-in version and resolved-via (version 2 only) an absent value keeps
+/// the stored one and an empty one clears it. Apply compares every item's expected status and triage time with the stored ones before writing,
 /// and writes each issue with a conditional update on the values it read, so an issue triaged, regressed or deleted
 /// in between rolls the whole file back and is reported as a conflict. Only items that change something are written;
 /// they record the importing administrator and the time. A GnollBench item upserts the fingerprint's triage row:
@@ -88,6 +92,9 @@ public sealed class FeedbackResolutionService
     public const string FormatName = FeedbackMarkdownExport.ResolutionFormatName;
     public const int FormatVersion = FeedbackMarkdownExport.ResolutionFormatVersion;
     public const int MaxItems = 500;
+
+    /// <summary>The versions the import reads; version 1 has no <c>resolvedVia</c>.</summary>
+    public static IReadOnlyList<int> SupportedVersions { get; } = new[] { 1, 2 };
 
     private static readonly Regex FingerprintPattern = new("^[0-9a-f]{64}$", RegexOptions.CultureInvariant);
     private static readonly string[] ChoosableStatuses =
@@ -132,8 +139,9 @@ public sealed class FeedbackResolutionService
             errors.Add(FileError($"Unknown key `{key}`."));
         if (request.Format != null && request.Format != FormatName)
             errors.Add(FileError($"format must be `{FormatName}`."));
-        if (request.Version != null && request.Version != FormatVersion)
-            errors.Add(FileError($"version must be {FormatVersion}."));
+        if (request.Version != null && !SupportedVersions.Contains(request.Version.Value))
+            errors.Add(FileError($"version must be {string.Join(" or ", SupportedVersions)}."));
+        bool versionOne = request.Version == 1;
 
         bool hasSource = FeedbackTransferSources.TryParse(request.Source, out var source);
         if (!hasSource)
@@ -173,6 +181,8 @@ public sealed class FeedbackResolutionService
 
             foreach (var key in UnknownKeys(item.UnknownKeys))
                 errors.Add(ItemError(index, $"{label}: unknown key `{key}`."));
+            if (versionOne && item.ResolvedVia != null)
+                errors.Add(ItemError(index, $"{label}: unknown key `resolvedVia`; it needs version 2."));
 
             if (hasSource && overseer)
             {
@@ -209,6 +219,10 @@ public sealed class FeedbackResolutionService
                 errors.Add(ItemError(index, $"{label}: {error}"));
             if (!FeedbackTriageFields.TryReadFixedInVersion(item.FixedInVersion, out hasVersion, out fixedInVersion, out error))
                 errors.Add(ItemError(index, $"{label}: {error}"));
+            IReadOnlyList<string> resolvedVia = Array.Empty<string>();
+            bool hasResolvedVia = !versionOne && item.ResolvedVia != null;
+            if (hasResolvedVia && !FeedbackResolvedVia.TryParse(item.ResolvedVia, out resolvedVia, out var viaError))
+                errors.Add(ItemError(index, $"{label}: {viaError}"));
 
             string? expected = null;
             if (forApply)
@@ -233,6 +247,8 @@ public sealed class FeedbackResolutionService
                 Resolution = resolution,
                 HasFixedInVersion = hasVersion,
                 FixedInVersion = fixedInVersion,
+                HasResolvedVia = hasResolvedVia,
+                ResolvedVia = resolvedVia,
                 ExpectedStatus = expected,
                 ExpectedTriagedUtc = item.ExpectedTriagedUtc is DateTime t ? AsUtc(t) : null,
                 Label = label
@@ -299,6 +315,7 @@ public sealed class FeedbackResolutionService
                     Note = state.Note,
                     Resolution = state.Resolution,
                     FixedInVersion = state.FixedInVersion,
+                    ResolvedVia = state.ResolvedVia.ToList(),
                     TriagedUtc = AsUtc(state.TriagedUtc),
                     LastSeenUtc = AsUtc(state.LastSeenUtc)
                 };
@@ -320,10 +337,12 @@ public sealed class FeedbackResolutionService
                     var (after, changes) = Plan(item, state);
                     row.After = after;
                     row.Changes = changes;
-                    row.HasChanges = changes.Status || changes.Note || changes.Resolution || changes.FixedInVersion;
+                    row.HasChanges = AnyChange(changes);
                     if (!row.HasChanges) row.Notices.Add($"{item.Label}: this item changes nothing.");
                     if (item.Status == AdminFeedbackStatuses.Resolved && after.Resolution == null)
                         row.Notices.Add($"{item.Label}: a resolved issue should say what was done.");
+                    if (item.Status == AdminFeedbackStatuses.Resolved && after.ResolvedVia.Count == 0)
+                        row.Notices.Add($"{item.Label}: a resolved issue should say how it was fixed (`resolvedVia`).");
                 }
             }
 
@@ -380,7 +399,7 @@ public sealed class FeedbackResolutionService
         {
             var state = states[item.Index];
             var (after, changes) = Plan(item, state);
-            if (!(changes.Status || changes.Note || changes.Resolution || changes.FixedInVersion))
+            if (!AnyChange(changes))
             {
                 unchanged++;
                 continue;
@@ -440,6 +459,7 @@ public sealed class FeedbackResolutionService
         public string? Note { get; init; }
         public string? Resolution { get; init; }
         public string? FixedInVersion { get; init; }
+        public IReadOnlyList<string> ResolvedVia { get; init; } = Array.Empty<string>();
         public DateTime? TriagedUtc { get; init; }
         public DateTime? LastSeenUtc { get; init; }
         public DateTime? LastRegressionUtc { get; init; }
@@ -474,6 +494,7 @@ public sealed class FeedbackResolutionService
                     i.TriageNote,
                     i.Resolution,
                     i.FixedInVersion,
+                    i.ResolvedVia,
                     i.TriagedUtc,
                     i.LastSeenUtc,
                     i.LastRegressionUtc,
@@ -510,6 +531,7 @@ public sealed class FeedbackResolutionService
                     Note = issue.TriageNote,
                     Resolution = issue.Resolution,
                     FixedInVersion = issue.FixedInVersion,
+                    ResolvedVia = FeedbackResolvedVia.FromStored(issue.ResolvedVia),
                     TriagedUtc = issue.TriagedUtc,
                     LastSeenUtc = issue.LastSeenUtc,
                     LastRegressionUtc = issue.LastRegressionUtc,
@@ -551,6 +573,7 @@ public sealed class FeedbackResolutionService
                 Note = state.TriageNote,
                 Resolution = state.Resolution,
                 FixedInVersion = state.FixedInVersion,
+                ResolvedVia = state.ResolvedVia,
                 TriagedUtc = state.TriagedUtc,
                 ResolvedUtc = state.ResolvedUtc,
                 LastSeenUtc = state.LastSeenUtc,
@@ -570,17 +593,22 @@ public sealed class FeedbackResolutionService
             Status = item.Status ?? state.Status,
             Note = item.HasNote ? item.Note : state.Note,
             Resolution = item.HasResolution ? item.Resolution : state.Resolution,
-            FixedInVersion = item.HasFixedInVersion ? item.FixedInVersion : state.FixedInVersion
+            FixedInVersion = item.HasFixedInVersion ? item.FixedInVersion : state.FixedInVersion,
+            ResolvedVia = (item.HasResolvedVia ? item.ResolvedVia : state.ResolvedVia).ToList()
         };
         var changes = new AdminFeedbackResolutionChangesDto
         {
             Status = after.Status != state.Status,
             Note = !string.Equals(after.Note, state.Note, StringComparison.Ordinal),
             Resolution = !string.Equals(after.Resolution, state.Resolution, StringComparison.Ordinal),
-            FixedInVersion = !string.Equals(after.FixedInVersion, state.FixedInVersion, StringComparison.Ordinal)
+            FixedInVersion = !string.Equals(after.FixedInVersion, state.FixedInVersion, StringComparison.Ordinal),
+            ResolvedVia = !FeedbackResolvedVia.SameSet(after.ResolvedVia, state.ResolvedVia)
         };
         return (after, changes);
     }
+
+    private static bool AnyChange(AdminFeedbackResolutionChangesDto changes)
+        => changes.Status || changes.Note || changes.Resolution || changes.FixedInVersion || changes.ResolvedVia;
 
     // --- Writes ---
 
@@ -593,6 +621,7 @@ public sealed class FeedbackResolutionService
         DateTime? storedTriaged = state.TriagedUtc;
         var status = item.Status != null && AdminFeedbackStatuses.TryParse(item.Status, out var parsed) ? parsed : storedStatus;
         string? note = after.Note, resolution = after.Resolution, fixedInVersion = after.FixedInVersion;
+        string? resolvedVia = FeedbackResolvedVia.ToStored(after.ResolvedVia);
         DateTime? triagedUtc = now;
 
         return _db.OverseerFeedbackIssues
@@ -602,6 +631,7 @@ public sealed class FeedbackResolutionService
                 .SetProperty(i => i.TriageNote, note)
                 .SetProperty(i => i.Resolution, resolution)
                 .SetProperty(i => i.FixedInVersion, fixedInVersion)
+                .SetProperty(i => i.ResolvedVia, resolvedVia)
                 .SetProperty(i => i.TriagedByUserId, userId)
                 .SetProperty(i => i.TriagedUtc, triagedUtc), ct);
     }
@@ -615,6 +645,7 @@ public sealed class FeedbackResolutionService
         var status = StoredStatusAfter(item, stored);
         DateTime? resolvedUtc = ResolvedUtcAfter(item, state, status, now);
         string? note = after.Note, resolution = after.Resolution, fixedInVersion = after.FixedInVersion;
+        string? resolvedVia = FeedbackResolvedVia.ToStored(after.ResolvedVia);
         DateTime? triagedUtc = now;
 
         return _db.BenchmarkFeedbackTriages
@@ -624,6 +655,7 @@ public sealed class FeedbackResolutionService
                 .SetProperty(t => t.TriageNote, note)
                 .SetProperty(t => t.Resolution, resolution)
                 .SetProperty(t => t.FixedInVersion, fixedInVersion)
+                .SetProperty(t => t.ResolvedVia, resolvedVia)
                 .SetProperty(t => t.ResolvedUtc, resolvedUtc)
                 .SetProperty(t => t.TriagedByUserId, userId)
                 .SetProperty(t => t.TriagedUtc, triagedUtc), ct);
@@ -640,6 +672,7 @@ public sealed class FeedbackResolutionService
             TriageNote = after.Note,
             Resolution = after.Resolution,
             FixedInVersion = after.FixedInVersion,
+            ResolvedVia = FeedbackResolvedVia.ToStored(after.ResolvedVia),
             ResolvedUtc = ResolvedUtcAfter(item, state, status, now),
             TriagedByUserId = userId,
             TriagedUtc = now

@@ -4,8 +4,10 @@ import {
   ChangeDetectorRef,
   Component,
   ElementRef,
+  EventEmitter,
   Input,
   OnInit,
+  Output,
   ViewChild,
   inject
 } from '@angular/core';
@@ -24,7 +26,8 @@ import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/po
  * description.
  *
  * The dialog stops its own close, cancel and click events, so a dialog it sits in stays open and
- * the control it sits in never sees a click meant for the dialog.
+ * the control it sits in never sees a click meant for the dialog. `opened` fires each time the dialog
+ * opens, so a host can load the dialog's content on first view.
  */
 @Component({
   selector: 'app-info-tip',
@@ -48,6 +51,9 @@ export class InfoTipComponent implements OnInit {
 
   /** The dialog's title in dialog mode; the subject when empty. */
   @Input() dialogTitle = '';
+
+  /** Dialog mode: the dialog has just opened. */
+  @Output() readonly opened = new EventEmitter<void>();
 
   @ViewChild('infoDialog') infoDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('infoDialogTitle') infoDialogTitle?: ElementRef<HTMLElement>;
@@ -78,12 +84,16 @@ export class InfoTipComponent implements OnInit {
     if (!dialog) {
       return;
     }
-    if (!dialog.open) {
+    const opening = !dialog.open;
+    if (opening) {
       dialog.showModal();
     }
     this.open = true;
     this.infoDialogTitle?.nativeElement.focus();
     this.cdr.markForCheck();
+    if (opening) {
+      this.opened.emit();
+    }
   }
 
   closeDialog(): void {

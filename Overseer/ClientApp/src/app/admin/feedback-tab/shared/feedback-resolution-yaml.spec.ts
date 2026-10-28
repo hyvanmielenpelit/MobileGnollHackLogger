@@ -9,6 +9,8 @@ const FP2 = 'b'.repeat(64);
 
 const overseerHeader = 'format: overseer-feedback-resolutions\nversion: 1\nsource: overseer\nexportedAtUtc: "2026-10-23T12:34:56Z"\n';
 const gnollBenchHeader = 'format: overseer-feedback-resolutions\nversion: 1\nsource: gnollbench\nexportedAtUtc: "2026-10-23T12:34:56Z"\n';
+const overseerV2Header = overseerHeader.replace('version: 1', 'version: 2');
+const gnollBenchV2Header = gnollBenchHeader.replace('version: 1', 'version: 2');
 
 const messages = (result: FeedbackResolutionParseResult): string[] => result.errors.map(e => e.message);
 
@@ -54,14 +56,118 @@ describe('feedback-resolution-yaml', () => {
     expect(syntax.errors[0].line).not.toBeNull();
   });
 
-  it('R1: requires the exact format and version', async () => {
+  it('R1: requires the exact format and version 1 or 2', async () => {
     const wrongFormat = await parseFeedbackResolutionYaml('format: overseer-benchmark-questions\nversion: 1\n', 'overseer');
-    expect(messages(wrongFormat)).toEqual(['The document must be a YAML mapping with `format: overseer-feedback-resolutions` and `version: 1`.']);
+    expect(messages(wrongFormat)).toEqual(['The document must be a YAML mapping with `format: overseer-feedback-resolutions` and `version: 1` or `version: 2`.']);
 
-    const wrongVersion = await parseFeedbackResolutionYaml('format: overseer-feedback-resolutions\nversion: 2\n', 'overseer');
-    expect(messages(wrongVersion)).toEqual(['Unsupported `version: 2`; this importer understands version 1.']);
+    const noVersion = await parseFeedbackResolutionYaml('format: overseer-feedback-resolutions\nsource: overseer\n', 'overseer');
+    expect(messages(noVersion)).toEqual(['The document must be a YAML mapping with `format: overseer-feedback-resolutions` and `version: 1` or `version: 2`.']);
+
+    const wrongVersion = await parseFeedbackResolutionYaml('format: overseer-feedback-resolutions\nversion: 3\n', 'overseer');
+    expect(messages(wrongVersion)).toEqual(['Unsupported `version: 3`; this importer understands versions 1 and 2.']);
+
+    const textVersion = await parseFeedbackResolutionYaml('format: overseer-feedback-resolutions\nversion: "2"\n', 'overseer');
+    expect(messages(textVersion)).toEqual(['Unsupported `version: 2`; this importer understands versions 1 and 2.']);
 
     expect(messages(checkFeedbackResolutionDocument(['a list'], 'overseer'))[0]).toContain('must be a YAML mapping');
+  });
+
+  it('reads a version-2 file with resolvedVia, the ids in the canonical order without duplicates', async () => {
+    const result = await parseFeedbackResolutionYaml(overseerV2Header + [
+      'issues:',
+      '  - id: 42',
+      `    fingerprint: "${FP}"`,
+      '    status: resolved',
+      '    resolution: Added the page.',
+      '    resolvedVia: [knowledge_base, " wiki ", wiki]',
+      '  - id: 43',
+      `    fingerprint: "${FP2}"`,
+      '    resolvedVia: []',
+      ''
+    ].join('\n'), 'overseer');
+
+    expect(result.errors).toEqual([]);
+    expect(result.notices).toEqual([]);
+    expect(result.request).toEqual({
+      format: 'overseer-feedback-resolutions',
+      version: 2,
+      source: 'overseer',
+      exportedAtUtc: '2026-10-23T12:34:56Z',
+      items: [
+        { id: 42, fingerprint: FP, status: 'resolved', resolution: 'Added the page.', resolvedVia: ['wiki', 'knowledge_base'] },
+        { id: 43, fingerprint: FP2, resolvedVia: [] }
+      ]
+    });
+  });
+
+  it('reads a version-2 file without resolvedVia, which keeps the stored list', async () => {
+    const result = await parseFeedbackResolutionYaml(overseerV2Header + `issues:\n  - id: 42\n    fingerprint: "${FP}"\n    status: acknowledged\n`, 'overseer');
+    expect(result.errors).toEqual([]);
+    expect(result.request?.version).toBe(2);
+    expect(result.request?.items).toEqual([{ id: 42, fingerprint: FP, status: 'acknowledged' }]);
+  });
+
+  it('R4: refuses resolvedVia in a version-1 file, naming version 2', async () => {
+    const result = await parseFeedbackResolutionYaml(overseerHeader + `issues:\n  - id: 42\n    fingerprint: "${FP}"\n    resolvedVia: [wiki]\n`, 'overseer');
+    expect(result.request).toBeNull();
+    expect(messages(result)).toEqual(['issues[0] (id 42): unknown key `resolvedVia`; it needs version 2.']);
+  });
+
+  it('R4: lists resolvedVia among the allowed keys of a version-2 item', async () => {
+    const result = await parseFeedbackResolutionYaml(overseerV2Header + `issues:\n  - id: 42\n    fingerprint: "${FP}"\n    state: resolved\n`, 'overseer');
+    expect(messages(result)).toEqual([
+      'issues[0] (id 42): unknown key `state`; allowed: id, fingerprint, status, resolution, fixedInVersion, note, resolvedVia.'
+    ]);
+  });
+
+  it('refuses an unknown resolved-via id, listing the ids, and a resolvedVia that is not a list', async () => {
+    const unknown = await parseFeedbackResolutionYaml(gnollBenchV2Header + `issues:\n  - fingerprint: "${FP}"\n    resolvedVia: [wiki, Wiki, docs]\n`, 'gnollbench');
+    expect(messages(unknown)).toEqual([
+      'issues[0] (fingerprint 3f2a9c1b0d4e…): Unknown resolved-via value `Wiki`; allowed: wiki, knowledge_base, overseer_release, gnollhack_release, server_configuration, other.'
+    ]);
+
+    const notList = await parseFeedbackResolutionYaml(gnollBenchV2Header + `issues:\n  - fingerprint: "${FP}"\n    resolvedVia: wiki\n`, 'gnollbench');
+    expect(messages(notList)).toEqual([
+      'issues[0] (fingerprint 3f2a9c1b0d4e…): `resolvedVia` must be a list of ids, for example [wiki, knowledge_base]; allowed: wiki, knowledge_base, overseer_release, gnollhack_release, server_configuration, other.'
+    ]);
+  });
+
+  it('keeps the stored resolved-via list when the value is null, and says how to clear it', async () => {
+    const result = await parseFeedbackResolutionYaml(gnollBenchV2Header + `issues:\n  - fingerprint: "${FP}"\n    status: new\n    resolvedVia:\n`, 'gnollbench');
+    expect(result.errors).toEqual([]);
+    expect(result.request?.items[0]).toEqual({ fingerprint: FP, status: 'new' });
+    expect(result.notices).toEqual([
+      'issues[0] (fingerprint 3f2a9c1b0d4e…): `resolvedVia` is empty, so the stored list is kept; write `resolvedVia: []` to clear it.'
+    ]);
+  });
+
+  it('R14: a resolved issue whose resolved-via list is cleared is a notice; a kept or filled list is not', async () => {
+    const result = await parseFeedbackResolutionYaml(overseerV2Header + [
+      'issues:',
+      '  - id: 1',
+      `    fingerprint: "${FP}"`,
+      '    status: resolved',
+      '    resolution: Done.',
+      '    resolvedVia: []',
+      '  - id: 2',
+      `    fingerprint: "${FP2}"`,
+      '    status: resolved',
+      '    resolution: Done.',
+      '  - id: 3',
+      `    fingerprint: "${'c'.repeat(64)}"`,
+      '    status: resolved',
+      '    resolution: Done.',
+      '    resolvedVia: [other]',
+      ''
+    ].join('\n'), 'overseer');
+    expect(result.errors).toEqual([]);
+    expect(result.notices).toEqual(['issues[0] (id 1): a resolved issue should say how it was fixed (`resolvedVia`).']);
+  });
+
+  it('R10: an item that only sets resolvedVia changes something', async () => {
+    const result = await parseFeedbackResolutionYaml(gnollBenchV2Header + `issues:\n  - fingerprint: "${FP}"\n    resolvedVia: [server_configuration]\n`, 'gnollbench');
+    expect(result.errors).toEqual([]);
+    expect(result.notices).toEqual([]);
   });
 
   it('R2: requires a known source that matches the sub-tab', async () => {
@@ -240,7 +346,7 @@ describe('feedback-resolution-yaml', () => {
   it('reads the resolution template an export writes, once its comments are filled in', async () => {
     const template = [
       'format: overseer-feedback-resolutions',
-      'version: 1',
+      'version: 2',
       'source: overseer',
       'exportedAtUtc: "2026-10-23T12:34:56Z"',
       'issues:',
@@ -250,6 +356,7 @@ describe('feedback-resolution-yaml', () => {
       '    resolution: |',
       '      What changed, where, and how it was verified.',
       '    # fixedInVersion: "1.4.1"',
+      '    # resolvedVia: [wiki]',
       ''
     ].join('\r\n');
     const result = await parseFeedbackResolutionYaml('﻿' + template, 'overseer');

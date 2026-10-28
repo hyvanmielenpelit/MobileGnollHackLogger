@@ -211,10 +211,10 @@
   padding: 0;
   list-style: none;
   font-size: var(--text-secondary);
+}
 
-  code {
-    color: var(--primary-color);
-  }
+.sev-q-code-label {
+  color: var(--primary-color);
 }
 
 .sev-q-code-meaning {

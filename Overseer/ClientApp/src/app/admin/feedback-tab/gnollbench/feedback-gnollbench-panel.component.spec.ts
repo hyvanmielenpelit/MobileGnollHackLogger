@@ -6,7 +6,7 @@ import { Router, convertToParamMap, provideRouter } from '@angular/router';
 import { provideLocationMocks } from '@angular/common/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import {
   AdminBenchmarkService,
   BenchmarkExperimentalChangeCatalogDto,
@@ -24,6 +24,7 @@ import {
   GnollBenchFeedbackOccurrence,
   GnollBenchFeedbackOccurrencePage
 } from '../../../services/admin-gnollbench-feedback.service';
+import { FeedbackExportResult, FeedbackTransferService } from '../../../services/feedback-transfer.service';
 import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
 import { FeedbackSelectionBarComponent } from '../shared/feedback-selection-bar.component';
 import { FeedbackExportOptions, FeedbackRange, loadFeedbackView, loadGnollBenchSelection } from '../shared/feedback-view-storage';
@@ -849,14 +850,15 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         fixture.detectChanges();
       }
 
-      it('ends each card in a footer: the triaged line, then Edit triage alone in a group named for the issue; no form in the card', async () => {
+      it('ends each card in a footer: the triaged line, then Download and Edit triage in a group named for the issue; no form in the card', async () => {
         await create();
         const card = cards()[0];
 
         expect(textOf(card.querySelector('.tl-gbfb-footer .tl-gbfb-triaged'))).toBe('Not triaged yet');
         const group = card.querySelector('.tl-gbfb-footer [role="group"]')!;
         expect(group.getAttribute('aria-label')).toBe('Actions for Dilithium crystal');
-        expect(Array.from(group.querySelectorAll('button')).map(b => textOf(b))).toEqual(['Edit triage: Dilithium crystal']);
+        expect(Array.from(group.querySelectorAll('button')).map(b => b.getAttribute('aria-label') ?? textOf(b))).toEqual(
+          ['Download issue as YAML: Dilithium crystal', 'Edit triage: Dilithium crystal']);
         expect(group.querySelector('.tl-gbfb-edit')!.getAttribute('aria-haspopup')).toBe('dialog');
         expect(card.querySelector('select, textarea, input[type="text"]')).toBeNull();
       });
@@ -949,6 +951,210 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         expect(textOf(card.querySelector(`#${cid(1)}-result`))).toBe('');
         expect(countsSpy).not.toHaveBeenCalled();
         expect(component.savingFingerprint()).toBeNull();
+      });
+
+      it('opens on the stored Resolved via and sends it only when it changed, an emptied one as an empty list', async () => {
+        nextPage = page([issue(1, { status: 'resolved', resolvedVia: ['knowledge_base'] })]);
+        const updateSpy = vi.spyOn(service, 'updateStatus').mockImplementation(
+          (_fingerprint: string, update: { resolvedVia?: readonly string[] | null }) =>
+            of(issue(1, { status: 'resolved', resolvedVia: update.resolvedVia ? [...update.resolvedVia] : ['knowledge_base'] })));
+        await create();
+        const box = (id: string): HTMLInputElement => field<HTMLInputElement>(`resolved-${id}`);
+        const toggle = (input: HTMLInputElement): void => {
+          input.click();
+          fixture.detectChanges();
+        };
+
+        editTriage(cards()[0]);
+        expect(box('knowledge_base').checked).toBe(true);
+        saveTriage();
+        expect(updateSpy).toHaveBeenLastCalledWith(fp(1), { status: 'resolved' });
+
+        editTriage(cards()[0]);
+        toggle(box('server_configuration'));
+        saveTriage();
+        expect(updateSpy).toHaveBeenLastCalledWith(fp(1), { status: 'resolved', resolvedVia: ['knowledge_base', 'server_configuration'] });
+        expect(textOf(cards()[0].querySelector('.tl-gbfb-fact-resolved dd'))).toBe('Knowledge base, Server configuration');
+
+        editTriage(cards()[0]);
+        toggle(box('knowledge_base'));
+        toggle(box('server_configuration'));
+        saveTriage();
+        expect(updateSpy).toHaveBeenLastCalledWith(fp(1), { status: 'resolved', resolvedVia: [] });
+        expect(cards()[0].querySelector('.tl-gbfb-fact-resolved')).toBeNull();
+      });
+    });
+
+    describe('readable labels', () => {
+      /** The ids a card or a self-report must not show while each has a label. */
+      const IDS = /wiki_search|item_lookup|\banthropic\b|\bopenai\b/;
+
+      it('shows providers and tools by their labels on the card and its self-reports, and an unlabeled tool in words', async () => {
+        nextPage = page([issue(1, { providers: ['anthropic', 'openai'] })]);
+        occurrencesSpy.mockReturnValue(of<GnollBenchFeedbackOccurrencePage>({
+          totalCount: 1,
+          rows: [occurrence(5, { provider: 'anthropic', relatedTools: ['wiki_search', 'some_new_tool'], searchedFor: 'the dilithium page' })]
+        }));
+        await create();
+        const card = cards()[0];
+        const details = openOccurrences(card);
+
+        expect(textOf(card.querySelector('.tl-gbfb-fact-providers dd'))).toBe('Anthropic, OpenAI');
+        const item = details.querySelector<HTMLElement>('li.tl-gbfb-occ')!;
+        const facts = Object.fromEntries(Array.from(item.querySelectorAll('.tl-gbfb-occ-facts > div'))
+          .map(f => [textOf(f.querySelector('dt')), f.querySelector('dd')!]));
+        expect(textOf(facts['Model and provider'])).toBe('Claude X · Anthropic');
+        expect(textOf(facts['Related tools'])).toBe('GnollHack wiki search, Some new tool');
+        expect(facts['Related tools'].classList.contains('tl-gbfb-mono')).toBe(false);
+        expect(textOf(card)).not.toMatch(IDS);
+      });
+
+      it('labels the Provider facet and its chip, and filters by the stored value', async () => {
+        facetsSpy.mockReturnValue(of(facets({
+          providers: [{ value: 'openai', label: 'openai', count: 1 }, { value: 'anthropic', label: 'anthropic', count: 2 }]
+        })));
+        await create();
+
+        expect(facet('provider')!.options.map(o => `${o.label} ${o.count}`)).toEqual(['OpenAI 1', 'Anthropic 2']);
+        choose('provider', ['openai']);
+        expect(lastQuery()).toEqual(expect.objectContaining({ providers: ['openai'] }));
+        expect(chipLabels()).toContain('Remove filter Provider: OpenAI');
+      });
+
+      it('shows where the fix went in labels beside the fixed-in version, and nothing while it says nothing', async () => {
+        nextPage = page([
+          issue(1, { status: 'resolved', resolvedVia: ['gnollhack_release', 'wiki'], fixedInVersion: '1.4.3' }),
+          issue(2, { resolvedVia: [] }),
+          issue(3)
+        ]);
+        await create();
+        const [first, second, third] = cards();
+
+        expect(textOf(first.querySelector('.tl-gbfb-fact-resolved dt'))).toBe('Resolved via');
+        expect(textOf(first.querySelector('.tl-gbfb-fact-resolved dd'))).toBe('GnollHack wiki, GnollHack release');
+        expect(first.querySelector('.tl-gbfb-fact-resolved')!.nextElementSibling!.classList.contains('tl-gbfb-fact-fixed')).toBe(true);
+        expect(textOf(first.querySelector('.tl-gbfb-facts'))).not.toMatch(/gnollhack_release/);
+        expect(second.querySelector('.tl-gbfb-fact-resolved')).toBeNull();
+        expect(third.querySelector('.tl-gbfb-fact-resolved')).toBeNull();
+      });
+    });
+
+    describe('download as YAML', () => {
+      let exportSpy: Mock;
+      let saved: { names: string[]; types: string[] };
+      let restore: (() => void)[];
+
+      function result(overrides: Partial<FeedbackExportResult> = {}): FeedbackExportResult {
+        return {
+          fileName: `overseer-feedback-gnollbench-${fp(1).slice(0, 12)}-20261028-0915.yaml`, content: 'format: overseer-feedback-issues\n',
+          mediaType: 'application/yaml;charset=utf-8', issueCount: 1, missingIds: [], missingFingerprints: [], ...overrides
+        };
+      }
+
+      const button = (): HTMLButtonElement => cards()[0].querySelector<HTMLButtonElement>('.tl-gbfb-download')!;
+
+      function clickDownload(): void {
+        button().click();
+        fixture.detectChanges();
+      }
+
+      beforeEach(() => {
+        exportSpy = vi.spyOn(TestBed.inject(FeedbackTransferService), 'exportIssues').mockReturnValue(of(result()));
+        saved = { names: [], types: [] };
+        const blob = vi.spyOn(URL, 'createObjectURL').mockImplementation((source: Blob | MediaSource) => {
+          saved.types.push((source as Blob).type);
+          return 'blob:feedback-download-test';
+        });
+        const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+        const anchor = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+          saved.names.push(this.download);
+        });
+        restore = [() => blob.mockRestore(), () => revoke.mockRestore(), () => anchor.mockRestore()];
+      });
+
+      afterEach(() => restore.forEach(undo => undo()));
+
+      it('leads the card\'s actions as an icon button named for the issue, with a Download as YAML tooltip', async () => {
+        await create();
+        const download = button();
+
+        expect(cards()[0].querySelector('.tl-gbfb-actions button')).toBe(download);
+        expect(download.classList.contains('action-btn')).toBe(true);
+        expect(download.getAttribute('aria-label')).toBe('Download issue as YAML: Dilithium crystal');
+        expect(textOf(download)).toBe('');
+        const tip = el.querySelector<HTMLElement>('#' + download.getAttribute('interestfor'))!;
+        expect(tip.getAttribute('popover')).toBe('hint');
+        expect(textOf(tip)).toBe('Download as YAML');
+        expect(download.getAttribute('style')).toContain(`anchor-name: --${cid(1)}-download-tip`);
+        expect(tip.getAttribute('style')).toContain(`position-anchor: --${cid(1)}-download-tip`);
+        expect(download.hasAttribute('title')).toBe(false);
+      });
+
+      it('exports the one issue in YAML with the remembered options, saves the file and says so', async () => {
+        localStorage.setItem(GNOLLBENCH_FEEDBACK_VIEW_STORAGE_KEY, JSON.stringify({
+          version: 1, sort: 'lastSeen', filters: {}, search: '', range: CUSTOM_RANGE,
+          exportOptions: { occurrencesPerIssue: 5, includeQuestionText: false, format: 'markdown' }
+        }));
+        await create();
+        clickDownload();
+
+        expect(exportSpy).toHaveBeenCalledWith({
+          source: 'gnollbench', format: 'yaml', fingerprints: [fp(1)], occurrencesPerIssue: 5, includeQuestionText: false
+        });
+        expect(saved.names).toEqual([result().fileName]);
+        expect(saved.types).toEqual(['application/yaml;charset=utf-8']);
+        expect(textOf(cards()[0].querySelector(`#${cid(1)}-result`))).toBe(`Downloaded ${result().fileName}.`);
+      });
+
+      it('uses ten occurrences with the question text when no export options are remembered', async () => {
+        await create();
+        clickDownload();
+
+        expect(exportSpy).toHaveBeenCalledWith({
+          source: 'gnollbench', format: 'yaml', fingerprints: [fp(1)], occurrencesPerIssue: 10, includeQuestionText: true
+        });
+      });
+
+      it('is busy while its request runs and ignores a second click', async () => {
+        const response = new Subject<FeedbackExportResult>();
+        exportSpy.mockReturnValue(response.asObservable());
+        await create();
+
+        clickDownload();
+        expect(button().getAttribute('aria-busy')).toBe('true');
+        clickDownload();
+        expect(exportSpy).toHaveBeenCalledTimes(1);
+
+        response.next(result());
+        response.complete();
+        fixture.detectChanges();
+        expect(button().getAttribute('aria-busy')).toBeNull();
+        expect(saved.names.length).toBe(1);
+      });
+
+      it('says an issue the server no longer has is gone, and fetches the list again', async () => {
+        exportSpy.mockReturnValue(throwError(() => ({ status: 404, error: { message: 'None of the requested issues exist.', missingIds: [], missingFingerprints: [fp(1)] } })));
+        await create();
+        const before = listQueries().length;
+
+        clickDownload();
+
+        expect(listQueries().length).toBe(before + 1);
+        expect(textOf(cards()[0].querySelector(`#${cid(1)}-result`))).toBe('This issue no longer exists.');
+        expect(status()).toContain('The issue “Dilithium crystal” no longer exists.');
+        expect(saved.names).toEqual([]);
+      });
+
+      it('writes another failure to the card\'s result line', async () => {
+        exportSpy.mockReturnValue(throwError(() => ({ status: 500, error: { message: 'The export failed on the server.' } })));
+        await create();
+        const before = listQueries().length;
+
+        clickDownload();
+
+        expect(textOf(cards()[0].querySelector(`#${cid(1)}-result`))).toBe('The issue could not be downloaded: The export failed on the server.');
+        expect(listQueries().length).toBe(before);
+        expect(saved.names).toEqual([]);
       });
     });
 

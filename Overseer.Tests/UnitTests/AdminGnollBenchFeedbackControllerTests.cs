@@ -611,6 +611,28 @@ public sealed class AdminGnollBenchFeedbackControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task SetStatus_ResolvedVia_IsKeptWhenAbsent_ClearedWhenEmpty_AndUnknownIdsAreRefused()
+    {
+        await AddSimpleReportAsync(Fp(1), T0);
+
+        var set = OkValue<GnollBenchFeedbackIssueDto>(await _controller.SetStatus(Fp(1),
+            new GnollBenchFeedbackStatusUpdateDto { Status = "resolved", ResolvedVia = new List<string> { "other", "wiki" } }));
+        Assert.Equal(new[] { "wiki", "other" }, set.ResolvedVia);
+        Assert.Equal("wiki,other", (await _db.BenchmarkFeedbackTriages.SingleAsync(Ct)).ResolvedVia);
+
+        var kept = OkValue<GnollBenchFeedbackIssueDto>(await _controller.SetStatus(Fp(1), new GnollBenchFeedbackStatusUpdateDto { Status = "resolved" }));
+        Assert.Equal(new[] { "wiki", "other" }, kept.ResolvedVia);
+
+        Assert.IsType<BadRequestObjectResult>(await _controller.SetStatus(Fp(1),
+            new GnollBenchFeedbackStatusUpdateDto { Status = "resolved", ResolvedVia = new List<string> { "Wiki" } }));
+
+        var cleared = OkValue<GnollBenchFeedbackIssueDto>(await _controller.SetStatus(Fp(1),
+            new GnollBenchFeedbackStatusUpdateDto { Status = "acknowledged", ResolvedVia = new List<string>() }));
+        Assert.Empty(cleared.ResolvedVia);
+        Assert.Null((await _db.BenchmarkFeedbackTriages.AsNoTracking().SingleAsync(Ct)).ResolvedVia);
+    }
+
+    [Fact]
     public async Task SetStatus_ResolvedSetsResolvedUtc_AndOtherStatusesClearIt()
     {
         await AddSimpleReportAsync(Fp(1), T0);

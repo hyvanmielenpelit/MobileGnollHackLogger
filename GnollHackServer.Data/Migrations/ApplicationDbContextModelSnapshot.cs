@@ -1072,6 +1072,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<DateTime?>("ResolvedUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ResolvedVia")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -4857,6 +4861,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("Resolution")
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("ResolvedVia")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Status")
                         .IsRequired()

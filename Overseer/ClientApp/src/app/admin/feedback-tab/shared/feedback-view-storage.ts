@@ -5,13 +5,24 @@
  */
 
 import type { FeedbackTimeSpan } from '../../admin-page.store';
+import type { FeedbackExportFormat } from '../../../services/feedback-transfer.service';
 
 export type FeedbackSource = 'overseer' | 'gnollbench';
 
 /** Empty dates mean no bound. */
 export interface FeedbackRange { preset: FeedbackTimeSpan; start: string; end: string; }
 
-export interface FeedbackExportOptions { occurrencesPerIssue: 5 | 10 | 25; includeQuestionText: boolean; }
+/** The remembered export options. `format` absent reads `yaml`, as does any value but `markdown` read from storage. */
+export interface FeedbackExportOptions {
+  occurrencesPerIssue: 5 | 10 | 25;
+  includeQuestionText: boolean;
+  format?: FeedbackExportFormat;
+}
+
+/** The export format the options choose: `markdown` only when they say so, `yaml` otherwise. */
+export function feedbackExportFormat(options: Pick<FeedbackExportOptions, 'format'> | null | undefined): FeedbackExportFormat {
+  return options?.format === 'markdown' ? 'markdown' : 'yaml';
+}
 
 export interface FeedbackViewRecord {
   version: 1;
@@ -84,10 +95,13 @@ function readFilters(value: unknown): Record<string, string[]> {
 
 function readExportOptions(value: unknown): FeedbackExportOptions | undefined {
   if (!isObject(value) || !OCCURRENCES_PER_ISSUE.includes(value['occurrencesPerIssue'] as number)) return undefined;
-  return {
+  const options: FeedbackExportOptions = {
     occurrencesPerIssue: value['occurrencesPerIssue'] as 5 | 10 | 25,
     includeQuestionText: value['includeQuestionText'] !== false
   };
+  const format = value['format'];
+  if (format === 'yaml' || format === 'markdown') options.format = format;
+  return options;
 }
 
 /** The sort the Overseer sub-tab kept before the sub-tabs, or null. */

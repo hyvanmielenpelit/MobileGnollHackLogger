@@ -1,0 +1,54 @@
+/* The projected body of the formats dialog: a status line, then three sections with their examples. */
+
+/* Always rendered, so a screen reader hears it fill; takes no room while empty. */
+.fft-status {
+  margin: 0;
+}
+
+.fft-status.fft-status-active,
+.fft-error {
+  margin-block-end: 12px;
+}
+
+.fft-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+
+  .gh-field-error {
+    margin: 0;
+  }
+}
+
+.fft-section > p + dl {
+  margin-block-start: 10px;
+}
+
+.fft-resolved-via {
+  dt code {
+    font-size: 0.875rem;
+  }
+}
+
+/* An example file: monospace, scrolling in both directions inside a capped height. */
+.fft-example {
+  margin: 10px 0 8px;
+  padding: 10px 12px;
+  max-block-size: 16rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  white-space: pre;
+  font-family: "Consolas", "Menlo", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #e4e4e7;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}

@@ -372,11 +372,13 @@ the request's context, at most 30 writes per IP address a minute.
 
 | Kind | Written by | User | IP |
 |---|---|---|---|
-| `LoginFailed` (`Detail` `unknown-user` when no account matched), `LoginLockedOut`, `TwoFactorFailed` | Overseer `AuthController` login and 2FA; `SessionController.Create`; website `Login`; game APIs | when matched | yes |
-| `RateLimitRejected` (`Code` = policy) | Overseer and website rate limiters, Overseer's with `Detail` = the endpoint's route template (the path without its query string when no route matched; never the raw path, which carries session ids and `eph_` references); the game API sign-in throttle (`game-api-signin`) and the session-create throttle (`session-create`), `Detail` = the limit (`pair`, `account` or `ip`); the `session/create` initial-turn limiter (`session-create-turn`) | when signed in, or when a game sign-in block belongs to an existing account (§ 8) | yes |
+| `LoginFailed` (`Code` = the sign-in path: `login`, `session-create`, `website-login` or `game-api:<route>`; `Detail` `unknown-user` when no account matched) | Overseer `AuthController` login; `SessionController.Create`; website `Login`; the game APIs (`GameApiAuthenticator`, `<route>` = `bones`, `xlogfile`, `replay` or `savefiletracking`) | when matched | yes |
+| `LoginLockedOut` (`Code` `login`, `login-2fa`, `session-create` or `website-login`) | Overseer `AuthController` login and 2FA; `SessionController.Create`; website `Login`. The game APIs do not write it: a locked account's game request is refused and written to the request log only | yes | yes |
+| `TwoFactorFailed` (`Code` `login-2fa`) | Overseer `AuthController` 2FA only | yes | yes |
+| `RateLimitRejected` (`Code` = policy, `unknown` when the rejected endpoint names none) | Overseer and website rate limiters, Overseer's with `Detail` = the endpoint's route template (the path without its query string when no route matched; never the raw path, which carries session ids and `eph_` references); the game API sign-in throttle (`game-api-signin`) and the session-create throttle (`session-create`), `Detail` = the limit (`pair`, `account` or `ip`); the `session/create` initial-turn limiter (`session-create-turn`) | when signed in, or when a game sign-in block belongs to an existing account (§ 8) | yes |
 | `QuotaRefused` (`Code` user / group / system), `AccessDenied` (`Code` disabled / not-assigned) | `SystemAiConfigService` | yes | no |
 | `QuotaRefused` (`Code` guard-cost / guard-runs) | `AiUsageGuard`, through `SystemAiConfigService` and `delegate_to_subagent` | yes | no |
-| `ProviderRefusal`, `ProviderSafetyBlock` (`Code` = finish / block reason), `ProviderPolicyRejection` (`Code` = sanitized error code of a final 4xx attempt naming a policy); `Detail` = `req:<provider request id>` when the call reported one, the id an operator quotes to the provider (`[A-Za-z0-9_.-]`, at most 64) | after every operator-funded chat turn and sub-agent run (`ProviderRefusalEvents`), incognito included; never for titles | yes | no |
+| `ProviderRefusal`, `ProviderSafetyBlock` (`Code` = finish / block reason; `refusal` when no finish reason came), `ProviderPolicyRejection` (`Code` = sanitized error code of a final 4xx attempt naming a policy); `Detail` = `req:<provider request id>` when the call reported one, the id an operator quotes to the provider (`[A-Za-z0-9_.-]`, at most 64) | after every operator-funded chat turn and sub-agent run (`ProviderRefusalEvents`), incognito included; never for titles | yes | no |
 | `AttachmentRejected` (`Code` count / validation / content / malware / scan-failed, `Detail` = `{content type};{byte size}`, a side empty when the check had not reached it: no `Detail` for `count`, the declared type only for `validation` (`image/png;`), both for the rest; the type keeps only letters, digits, `/`, `.`, `+` and `-`, at most 64; never the file name or the scanner's text) | `ChatService` attachment checks | yes | no |
 | `ChatReported` (`Code` = `msg:<message id>`) | `ChatController.ReportMessage`, after the email is sent; the report itself is not stored, and the event names the reporter and the reported message's id, never its content. The id is deliberate: the same action emails the whole conversation to the operator's mailbox, so the id reveals nothing the report did not send, and it is what lets the event be checked later; it also makes each reported message its own run | yes | no |
 | `SnapshotRejected` (`Code` injection-own / injection-foreign / suspicious-own / suspicious-foreign, `Detail` = the channels' codes, `observed;` first in Observe) | `SnapshotGuardService`, from session create, snapshot attach and client tool results (§ 3a); the texts themselves are in the quarantine (§ 3a) when it is on, linked to the event | yes | no |
@@ -486,9 +488,10 @@ shared with the AI Telemetry tab (an info tip says it applies to *Summary* and *
   request. A text that cannot be decrypted shows the unreadable notice in place of its two actions.
   **Download event (.zip)** saves
   `security-event-{id}-{yyyyMMdd-HHmm}.zip`, built in the browser from the same response:
-  `security-event-{id}.json` (the detail, each text replaced by its file name), `security-event-{id}.md`
-  (a readable summary with each related list as a table) and `texts/{n}-{channel}.txt` per kept text, as
-  received. An event without kept text has no `texts/` folder. Reading the detail is what the access
+  `security-event-{id}.json` (the detail with every stored value as stored, each text replaced by its
+  file name), `security-event-{id}.md` (a readable summary with each related list as a table, in the
+  labels below) and `texts/{n}-{channel}.txt` per kept text, as received. An event without kept text has
+  no `texts/` folder. Reading the detail is what the access
   journal records (§ 3a); the downloads are not journaled again.
 - **Settings**: the *Snapshot guard* fieldset (§ 3a: a *Mode* radio group, Off / Observe / Enforce, each
   with its sentence; a choice applies at once, the group is disabled while it is saved and restored on a
@@ -499,11 +502,65 @@ shared with the AI Telemetry tab (an info tip says it applies to *Summary* and *
 
 Every count is a word plus a number.
 
+**Labels on screen, stored values underneath.** The tab shows every coded value as a plain US English
+label — on the Summary and Events sub-tabs, the event cards, the *Kind* facet and its chips, the detail
+dialog and the ZIP's Markdown summary. The stored value stays in the database, the API, the address and
+the ZIP's JSON, which is the raw record an operator hands on and from which the dialog's labels are
+derived. The labels live in `Overseer/ClientApp/src/app/admin/security-tab/security-labels.ts`:
+
+- **Codes.** `securityCodeLabel(kind, code)` reads `SECURITY_CODE_LABELS` (kind → code → label): the
+  card's *Code*, the dialog's *Code* field and the *Events from this IP address* and *Other events of this
+  user* tables show *Not assigned to the user*, *Daily cost guard*, *Injection in the player's own text*,
+  *Overseer sign-in, per IP address* or *Message #812*, not `not-assigned`, `guard-cost`, `injection-own`,
+  `LoginRateLimit` or `msg:812`. A game API sign-in code `game-api:<route>` reads *Game API, {route}*, and a
+  session refusal code with a subject (`injection-own:refresh`) adds the subject in parentheses. Each label is written from the code that records the event (§ 5), not from its slug, because
+  a label that misdescribes an event would mislead a block decision. **The map is updated with every new
+  code**; until then a code it does not know reads through `wordsLabel` (`utils/display-labels.util.ts`),
+  its words in sentence case (`session-create-turn` → *Session create turn*): readable, and visibly not
+  curated.
+- **Provider codes are shown as the provider wrote it.** The code of `ProviderRefusal`,
+  `ProviderSafetyBlock` and `ProviderPolicyRejection` (`isProviderCodeKind`) is the provider's own open
+  vocabulary, which the operator quotes back to the provider and no fixed list could label; it stays as
+  received, in monospace, under the term *Provider code*. So do a provider attempt's error code and HTTP
+  status. This is the one deliberate exception.
+- **Details.** `securityDetailText(kind, detail)` reads a detail of a fixed shape in words: *No account
+  matched the user name* (`unknown-user`), *Per account and IP address* (`pair`), *Provider request id
+  abc123* (`req:abc123`), *image/png, 48,213 bytes* (`image/png;48213`), and a `SnapshotRejected` detail
+  as sentences per channel, opening with *Observed and delivered.* in Observe mode and *Withheld.* in
+  Enforce mode (*Observed and delivered. Snapshot sent at session start: Addresses the AI, Steers a tool
+  call.*). A detail that is a reason (holds, blocks, admin actions), a route template, a snapshot detail
+  the server cut at 256 characters, or one that matches no known shape is shown as stored.
+- **The snapshot guard's texts.** Each refused text's heading, the Snapshot Viewer's title and the ZIP
+  summary's headings name the channel (*Snapshot sent at session start*, *Message history sent at session
+  start*, *Directory manifest sent at session start*, *Snapshot attached in the chat*, *Result of
+  {tool label}*). The dialog's heading adds the text kind in parentheses (*Game snapshot*, *Message
+  history*, *Directory manifest*, *Client tool result*); the ZIP summary lists the text kind and the
+  subject as rows of its table. Each scanner code reads as a short label
+  (*Addresses the AI*, *Overrides instructions*, *Claims authority*, *Steers a tool call*, *Image link to
+  another site*, *Link to another site*, *Hidden tag characters*, *Hidden characters*, *Standing order*,
+  *Scan timed out*) followed by its meaning.
+- **Related records.** A terms acceptance's document and source (the configured page titles, *Gnoll
+  Overseer Terms of Service* and *GnollHack Account Terms of Service*; *Overseer website*, *GnollHack app*,
+  *GnollHack website*), an admin-log action (`adminLogKindLabel`), a refused session's refusal code (the
+  `SnapshotRejected` code labels), a reported message's role (*User*, *Assistant*, *System*) and a provider
+  attempt's outcome (`outcomeLabel`) are labels.
+- **Providers and models.** Providers read through `providerLabel` (*OpenAI*, *Anthropic*, *Google*,
+  *xAI*, any other as stored). Models read as the model catalog's display name, resolved on the server:
+  `SecurityQueryService` takes `ModelMetadataService` as an optional constructor parameter and fills
+  `modelLabel` on an event (list and detail), `requestedModelLabel` on each provider attempt and
+  `modelLabel` on each usage row, through `GetMetadata(provider, modelId).DisplayName` with the event's
+  provider (a usage row's own when it has one). An empty name, no provider or no service falls back to
+  the id.
+- **Left as they are**: the kind's label on the cards (already words; the dialog's *Kind* field drops the
+  `(LoginFailed)` suffix), the guard's mode, a verdict and the other refused-text tags, a deletion
+  request's status, and every identifier the administrator quotes — event, user, session, message, hold
+  and bulk-operation ids, the IP address, the SHA-256, a request's method, path and response code.
+
 | Method | Route | Returns |
 |---|---|---|
 | `GET` | `api/admin/security/summary?startDate&endDate` | counts per kind (sums of `Count`), distinct users and IPs per kind, pending deletion requests, active holds |
-| `GET` | `api/admin/security/events?startDate&endDate&kinds&userId&search&skip&take` | events newest first, `take` 1–100, each with `quarantineCount` |
-| `GET` | `api/admin/security/events/{id}` | one event: its fields, `explanation`, `systemConfigurationName`, the newest 50 kept texts decrypted with `quarantineTotalCount`, and `related`; journals the read of any text (§ 3a); 404 `{ message }` for an unknown id |
+| `GET` | `api/admin/security/events?startDate&endDate&kinds&userId&search&skip&take` | events newest first, `take` 1–100, each with `quarantineCount` and `modelLabel` (the catalog's display name, else the id; null without a model) |
+| `GET` | `api/admin/security/events/{id}` | one event: its fields with `modelLabel`, `explanation`, `systemConfigurationName`, the newest 50 kept texts decrypted with `quarantineTotalCount`, and `related` (provider attempts with `requestedModelLabel`, usage rows with `modelLabel`); journals the read of any text (§ 3a); 404 `{ message }` for an unknown id |
 | `GET` | `api/admin/security/safety-identifier/{identifier}` | `{ userId, userName }` or 404 |
 | `GET` / `POST` | `api/admin/security/snapshot-guard` | the snapshot guard's state / set the mode (`{ mode }`), § 3a |
 | `POST` / `DELETE` | `api/admin/users/{userId}/overseer-block` | block (`{ reason }`) / unblock |
@@ -756,9 +813,13 @@ columns read as the notice; no active version throws from `Seal`), `SecurityEven
 budget and its release on dequeue and on a drop, the provider request id detail),
 `SecurityQueryServiceDetailTests` (decryption, the related lists by kind, another user's provider attempts
 never listed, the terms acceptances, a reported message without content, the journal row only when texts
-are returned, the 50-text cap, an unknown id, `QuarantineCount` on the page) and
+are returned, the 50-text cap, an unknown id, `QuarantineCount` on the page, and the model labels: the
+catalog's name, the id when the catalog has none, the id without a catalog) and
 `SecurityEventMaintenanceTests` (the quarantine prune, its dry run, zero days, held users not exempt, the
-manual action's log line, the cascade from a deleted event). The client: `security-event-dialog.component.spec.ts`,
-`security-event-archive.spec.ts` and `admin-security-tab.component.spec.ts`.
+manual action's log line, the cascade from a deleted event). The client: `security-labels.spec.ts` (every
+label map, each detail shape and a malformed one, provider codes returned unchanged, an unknown code in
+words, no inherited property read as a label), `security-event-dialog.component.spec.ts`,
+`security-event-archive.spec.ts` (labels in the fields, related tables and Markdown summary; the JSON entry
+still holding the stored values) and `admin-security-tab.component.spec.ts`.
 Every `api/admin` endpoint's authorization is pinned by `AdminEndpointAuthorizationSweepTests` and CSRF
 enforcement by `AntiforgeryEnforcementTests` (`Overseer.Tests/IntegrationTests/`).

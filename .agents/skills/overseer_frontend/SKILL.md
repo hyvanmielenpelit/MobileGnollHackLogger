@@ -14,6 +14,7 @@ When working on the frontend for the Overseer project within MobileGnollHackLogg
    [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) before adding or restyling any
    of them, including toolbars and dialog footers.
 6. **UI text is US English.** See `AGENTS.md` § Language and Spelling.
+7. **Coded values are shown as labels**, never as raw ids or slugs. See **Coded Values as Labels** below.
 
 ### Before writing HTML, CSS, or client-side JS
 
@@ -401,6 +402,14 @@ The short version, so you know whether you need it:
 - **Centralized Styling**: Checkbox styling is managed centrally in `src/styles.scss`. Do not duplicate checkbox CSS rules in component SCSS files.
 - **There is no `.gh-checkbox` class.** A label carrying it renders the browser's default checkbox; use `.checkbox-label`.
 - **Radio groups** use the global `.gh-choice` fieldset (its `<legend>` names the group) with one `<label class="gh-radio">` wrapping each radio input, also from `src/styles.scss`.
+
+### Coded Values as Labels
+- **A coded value is shown as a plain US English label.** A wire value, an enum name, a slug, a tool name or a model id never reaches the screen as it is stored: `knowledge_base` reads *Knowledge base*, `wiki_search` *GnollHack wiki search*, `guard-cost` *Daily cost guard*, a model id the catalog's display name.
+- **The id stays everywhere else**: in code, the API, the URL, `localStorage`, and files an agent reads (the feedback exports, a ZIP's JSON). A filter or facet shows the label and sends the id.
+- **An unknown value falls back to `wordsLabel`** (its words in sentence case: `some_new_tool` → *Some new tool*), **never to an empty string**. Read a map with an own-property check, so `constructor` or `__proto__` is never taken for a label.
+- **An external party's open vocabulary that an operator quotes back is shown as received**: a provider's error or refusal code, an HTTP status. Identifiers an administrator quotes (ids, IP addresses, hashes, versions) stay identifiers.
+- **The shared helpers** are in `Overseer/ClientApp/src/app/utils/display-labels.util.ts`: `toolLabel`, `providerLabel` and `wordsLabel`. A tab's own maps live beside it (`admin/feedback-tab/shared/feedback-labels.ts`, `admin/security-tab/security-labels.ts`). When a tool is added, `toolLabel`'s map is updated together with the chat's `TOOL_DISPLAY_NAMES`; when a security event code is added, `SECURITY_CODE_LABELS` is.
+- **A model's display name is resolved on the server** from the model catalog (`ModelMetadataService`) and sent beside the id (`modelLabel`), falling back to the id.
 
 ## Project Structure and Navigation
 

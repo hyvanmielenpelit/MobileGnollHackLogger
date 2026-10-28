@@ -320,6 +320,9 @@ public sealed class GnollBenchFeedbackIssue
     public string? TriageNote { get; init; }
     public string? Resolution { get; init; }
     public string? FixedInVersion { get; init; }
+
+    /// <summary><see cref="FeedbackResolvedVia"/> ids, in their order.</summary>
+    public IReadOnlyList<string> ResolvedVia { get; init; } = Array.Empty<string>();
     public string? TriagedByUserId { get; init; }
     public DateTime? TriagedUtc { get; init; }
     public DateTime? ResolvedUtc { get; init; }
@@ -415,6 +418,9 @@ public sealed class GnollBenchFeedbackTriageState
     public string? TriageNote { get; init; }
     public string? Resolution { get; init; }
     public string? FixedInVersion { get; init; }
+
+    /// <summary><see cref="FeedbackResolvedVia"/> ids, in their order.</summary>
+    public IReadOnlyList<string> ResolvedVia { get; init; } = Array.Empty<string>();
     public string? TriagedByUserId { get; init; }
     public DateTime? TriagedUtc { get; init; }
     public DateTime? ResolvedUtc { get; init; }
@@ -434,6 +440,9 @@ public sealed class GnollBenchFeedbackTriageUpdate
     public string? Note { get; init; }
     public string? Resolution { get; init; }
     public string? FixedInVersion { get; init; }
+
+    /// <summary><see cref="FeedbackResolvedVia"/> ids; an empty list clears them.</summary>
+    public IReadOnlyList<string>? ResolvedVia { get; init; }
 }
 
 public enum GnollBenchFeedbackTriageOutcome
@@ -638,6 +647,7 @@ public sealed class GnollBenchFeedbackQuery
                 TriageNote = triage?.TriageNote,
                 Resolution = triage?.Resolution,
                 FixedInVersion = triage?.FixedInVersion,
+                ResolvedVia = FeedbackResolvedVia.FromStored(triage?.ResolvedVia),
                 TriagedByUserId = triage?.TriagedByUserId,
                 TriagedUtc = triage?.TriagedUtc,
                 ResolvedUtc = triage?.ResolvedUtc,
@@ -671,6 +681,12 @@ public sealed class GnollBenchFeedbackQuery
         if (!TryNormalizeText(update.FixedInVersion, MaxFixedInVersionLength, out string? version, out bool clearVersion)
             || (version != null && !FixedInVersionPattern.IsMatch(version)))
             return Invalid(fp, "The fixed-in version must be 1 to 64 letters, digits, '.', '+' or '-'.");
+        IReadOnlyList<string>? resolvedVia = null;
+        if (update.ResolvedVia != null)
+        {
+            if (!FeedbackResolvedVia.TryParse(update.ResolvedVia, out var parsedVia, out var viaError)) return Invalid(fp, viaError!);
+            resolvedVia = parsedVia;
+        }
 
         if (fp.Length == 0 || !await _db.BenchmarkRunAnswerSelfReports.AnyAsync(s => s.Fingerprint == fp, ct))
             return new GnollBenchFeedbackTriageResult { Outcome = GnollBenchFeedbackTriageOutcome.NotFound, Fingerprint = fp, Message = "No such GnollBench feedback issue." };
@@ -706,6 +722,7 @@ public sealed class GnollBenchFeedbackQuery
         if (clearNote) triage.TriageNote = null; else if (note != null) triage.TriageNote = note;
         if (clearResolution) triage.Resolution = null; else if (resolution != null) triage.Resolution = resolution;
         if (clearVersion) triage.FixedInVersion = null; else if (version != null) triage.FixedInVersion = version;
+        if (resolvedVia != null) triage.ResolvedVia = FeedbackResolvedVia.ToStored(resolvedVia);
         triage.TriagedByUserId = userId;
         triage.TriagedUtc = now;
 
@@ -1187,6 +1204,7 @@ public sealed class GnollBenchFeedbackQuery
                 TriageNote = c.Triage?.TriageNote,
                 Resolution = c.Triage?.Resolution,
                 FixedInVersion = c.Triage?.FixedInVersion,
+                ResolvedVia = FeedbackResolvedVia.FromStored(c.Triage?.ResolvedVia),
                 TriagedByUserId = c.Triage?.TriagedByUserId,
                 TriagedUtc = c.Triage?.TriagedUtc,
                 ResolvedUtc = c.Triage?.ResolvedUtc,

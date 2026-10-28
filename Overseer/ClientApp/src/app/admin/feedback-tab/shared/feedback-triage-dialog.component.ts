@@ -10,6 +10,7 @@ import {
 import { Observable, Subscription } from 'rxjs';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
+import { RESOLVED_VIA_OPTIONS } from './feedback-labels';
 
 /** An issue's triage as the form holds it; `status` is empty while a regressed issue has no new status chosen. */
 export interface FeedbackTriageValues {
@@ -17,6 +18,14 @@ export interface FeedbackTriageValues {
   note: string;
   resolution: string;
   fixedInVersion: string;
+  /** *Resolved via* ids, in the canonical order. */
+  resolvedVia: readonly string[];
+}
+
+/** What Save hands the host: the trimmed values, with `resolvedVia` only when it differs from the stored list. */
+export interface FeedbackTriageSubmission extends Omit<FeedbackTriageValues, 'resolvedVia'> {
+  /** The chosen ids in the canonical order; `[]` clears the stored list. Absent when unchanged. */
+  resolvedVia?: readonly string[];
 }
 
 export interface FeedbackTriageDialogOptions {
@@ -36,7 +45,7 @@ export interface FeedbackTriageDialogOptions {
   /** Shown under Fixed in version when it fails the pattern. */
   fixedInVersionError: string;
   /** Sends the change; the dialog closes when it completes and shows the error's message when it fails. */
-  submit: (values: FeedbackTriageValues) => Observable<unknown>;
+  submit: (values: FeedbackTriageSubmission) => Observable<unknown>;
 }
 
 type TextField = 'note' | 'resolution' | 'fixedInVersion';
@@ -44,11 +53,18 @@ type TextField = 'note' | 'resolution' | 'fixedInVersion';
 /** `requestClose()` runs the cancel handler first; not every browser has it yet. */
 type ClosableDialog = HTMLDialogElement & { requestClose?: () => void };
 
-const EMPTY_VALUES: FeedbackTriageValues = { status: '', note: '', resolution: '', fixedInVersion: '' };
+const EMPTY_VALUES: FeedbackTriageValues = { status: '', note: '', resolution: '', fixedInVersion: '', resolvedVia: [] };
+
+/** Ids in the canonical order, unknown ones last in their own order, without blanks or duplicates. */
+function orderedResolvedVia(ids: readonly string[]): string[] {
+  const unique = [...new Set(ids.map(id => id.trim()).filter(id => id !== ''))];
+  const known = RESOLVED_VIA_OPTIONS.map(option => option.id as string).filter(id => unique.includes(id));
+  return [...known, ...unique.filter(id => !known.includes(id))];
+}
 
 /**
  * Triage one feedback issue: the issue in a panel under the title, Status and Fixed in version side by
- * side where they fit, then Note and Resolution. Save checks the status and the version at their fields, then hands the trimmed values to
+ * side where they fit, then Resolved via, Note and Resolution. Save checks the status and the version at their fields, then hands the trimmed values to
  * the host's `submit`; the dialog closes when it succeeds and keeps the values and the server's message
  * when it fails. Escape or Cancel on a changed form first asks to discard the changes. Used by both
  * Feedback sub-tabs.
@@ -67,6 +83,7 @@ export class FeedbackTriageDialogComponent implements OnDestroy {
   @ViewChild('dialog', { static: true }) dialog!: ElementRef<HTMLDialogElement>;
 
   readonly formatInteger = formatInteger;
+  readonly resolvedViaOptions = RESOLVED_VIA_OPTIONS;
 
   options: FeedbackTriageDialogOptions | null = null;
   values: FeedbackTriageValues = { ...EMPTY_VALUES };
@@ -96,7 +113,19 @@ export class FeedbackTriageDialogComponent implements OnDestroy {
     return this.values.status !== stored.status
       || this.values.note.trim() !== stored.note.trim()
       || this.values.resolution.trim() !== stored.resolution.trim()
-      || this.values.fixedInVersion.trim() !== stored.fixedInVersion.trim();
+      || this.values.fixedInVersion.trim() !== stored.fixedInVersion.trim()
+      || this.resolvedViaChanged;
+  }
+
+  /** Whether the checked *Resolved via* ids differ from the stored ones, as sets. */
+  get resolvedViaChanged(): boolean {
+    const stored = orderedResolvedVia(this.options?.values.resolvedVia ?? []);
+    const current = this.values.resolvedVia;
+    return stored.length !== current.length || stored.some(id => !current.includes(id));
+  }
+
+  isResolvedVia(id: string): boolean {
+    return this.values.resolvedVia.includes(id);
   }
 
   open(options: FeedbackTriageDialogOptions): void {
@@ -105,7 +134,7 @@ export class FeedbackTriageDialogComponent implements OnDestroy {
     this.options = null;
     this.cdr.detectChanges();
     this.options = options;
-    this.values = { ...options.values };
+    this.values = { ...options.values, resolvedVia: orderedResolvedVia(options.values.resolvedVia ?? []) };
     this.statusError = null;
     this.versionError = null;
     this.error = null;
@@ -127,6 +156,14 @@ export class FeedbackTriageDialogComponent implements OnDestroy {
   onText(field: TextField, event: Event): void {
     this.values[field] = (event.target as HTMLInputElement | HTMLTextAreaElement).value;
     if (field === 'fixedInVersion') this.versionError = null;
+    this.confirmingDiscard = false;
+  }
+
+  /** A *Resolved via* checkbox; the list stays in the canonical order. */
+  onResolvedVia(id: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    const others = this.values.resolvedVia.filter(value => value !== id);
+    this.values.resolvedVia = orderedResolvedVia(checked ? [...others, id] : others);
     this.confirmingDiscard = false;
   }
 
@@ -178,12 +215,13 @@ export class FeedbackTriageDialogComponent implements OnDestroy {
       return;
     }
 
-    const values: FeedbackTriageValues = {
+    const values: FeedbackTriageSubmission = {
       status,
       note: this.values.note.trim().slice(0, options.limits.note),
       resolution: this.values.resolution.trim().slice(0, options.limits.resolution),
       fixedInVersion
     };
+    if (this.resolvedViaChanged) values.resolvedVia = [...this.values.resolvedVia];
     this.busy = true;
     this.cdr.markForCheck();
     this.sub?.unsubscribe();
