@@ -47,6 +47,12 @@ public sealed record BenchmarkToolRoutingAnalysis
     /// <summary>The knowledge-base-topic questions of <see cref="KnowledgeBaseTopicQuestionCount"/> that made zero <c>get_knowledge_article</c> calls.</summary>
     public int KnowledgeBaseTopicZeroCallCount { get; init; }
 
+    /// <summary>The order indexes of the <see cref="KnowledgeBaseTopicQuestionCount"/> questions, ascending.</summary>
+    public IReadOnlyList<int> KnowledgeBaseTopicQuestions { get; init; } = Array.Empty<int>();
+
+    /// <summary>The order indexes of the <see cref="KnowledgeBaseTopicZeroCallCount"/> questions, ascending.</summary>
+    public IReadOnlyList<int> KnowledgeBaseTopicZeroCallQuestions { get; init; } = Array.Empty<int>();
+
     public double? SourceShareModelTimeCorrelation { get; init; }
     public double? SourceShareQualityScoreCorrelation { get; init; }
     public int CorrelationSampleSize { get; init; }
@@ -249,8 +255,8 @@ public static class BenchmarkChatTransfer
         // Knowledge base under-use: answers with zero get_knowledge_article calls, overall and
         // among the questions that name a knowledge-base topic
         int zeroKbCount = 0;
-        int kbTopicCount = 0;
-        int kbTopicZeroCount = 0;
+        var kbTopicQuestions = new List<int>();
+        var kbTopicZeroQuestions = new List<int>();
         foreach (var a in answered)
         {
             var counts = ToolCallCountsFor(a);
@@ -262,13 +268,15 @@ public static class BenchmarkChatTransfer
 
             if (IsKnowledgeBaseTopicQuestion(a))
             {
-                kbTopicCount++;
+                kbTopicQuestions.Add(a.OrderIndex);
                 if (zeroKb)
                 {
-                    kbTopicZeroCount++;
+                    kbTopicZeroQuestions.Add(a.OrderIndex);
                 }
             }
         }
+        kbTopicQuestions.Sort();
+        kbTopicZeroQuestions.Sort();
 
         // Correlations
         var sourceShares = new List<double>();
@@ -311,8 +319,10 @@ public static class BenchmarkChatTransfer
             BandStats = bandStatsList,
             AnsweredQuestionCount = answered.Count,
             ZeroKnowledgeBaseAnswerCount = zeroKbCount,
-            KnowledgeBaseTopicQuestionCount = kbTopicCount,
-            KnowledgeBaseTopicZeroCallCount = kbTopicZeroCount,
+            KnowledgeBaseTopicQuestionCount = kbTopicQuestions.Count,
+            KnowledgeBaseTopicZeroCallCount = kbTopicZeroQuestions.Count,
+            KnowledgeBaseTopicQuestions = kbTopicQuestions,
+            KnowledgeBaseTopicZeroCallQuestions = kbTopicZeroQuestions,
             SourceShareModelTimeCorrelation = rTime,
             SourceShareQualityScoreCorrelation = rQuality,
             CorrelationSampleSize = sourceShares.Count,
@@ -413,16 +423,18 @@ public static class BenchmarkChatTransfer
     /// Words that mark a question as one the knowledge base answers: app navigation, settings,
     /// troubleshooting and platform documentation, and the game topics its Knowledge Base section
     /// lists, item identification and reading the game map, as <c>ChatService</c>'s "Information
-    /// Routing" and <c>get_knowledge_article.md</c> give it. The map words are phrases: a bare "map"
-    /// or "symbol" occurs in ordinary game questions.
+    /// Routing" and <c>get_knowledge_article.md</c> give it. The map and identification words are
+    /// phrases: a bare "map", "symbol" or "glyph" occurs in ordinary game and rendering-internals
+    /// questions, and a bare "identify" in questions about the scroll of identify's mechanics.
     /// </summary>
     public static readonly IReadOnlyList<string> KnowledgeBaseTopicKeywords = new[]
     {
         "navigation", "settings", "options menu", "game options", "troubleshooting", "crash",
         "account", "controls", "replay", "save management", "import", "export",
         "system requirements", "developer tools", "vault", "get_knowledge_article",
-        "item identification", "unidentified", "identify", "appearance",
-        "game map", "map symbol", "glyph"
+        "item identification", "unidentified", "identify an item", "identify items",
+        "how do i identify", "appearance",
+        "game map", "map symbol", "map glyph", "glyphs on the map"
     };
 
     /// <summary>

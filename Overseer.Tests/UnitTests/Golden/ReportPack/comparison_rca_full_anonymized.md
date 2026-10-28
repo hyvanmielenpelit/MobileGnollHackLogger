@@ -5364,49 +5364,49 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 10 tests (adjusted p 0.813)",
+      "display": "no Accuracy difference between Model A and Model B established after the Holm adjustment across 10 tests (adjusted p 0.813)",
       "key": "pair.A.B.dimension.accuracy.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 4 tests (adjusted p 0.406)",
+      "display": "no Accuracy difference between Model A and Model B established after the Holm adjustment across 4 tests (adjusted p 0.406)",
       "key": "pair.A.B.dimension.accuracy.reference",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 10 tests (adjusted p 0.813)",
+      "display": "no Completeness difference between Model A and Model B established after the Holm adjustment across 10 tests (adjusted p 0.813)",
       "key": "pair.A.B.dimension.completeness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 4 tests (adjusted p 0.406)",
+      "display": "no Completeness difference between Model A and Model B established after the Holm adjustment across 4 tests (adjusted p 0.406)",
       "key": "pair.A.B.dimension.completeness.reference",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 10 tests (adjusted p 0.813)",
+      "display": "no Conciseness difference between Model A and Model B established after the Holm adjustment across 10 tests (adjusted p 0.813)",
       "key": "pair.A.B.dimension.conciseness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 4 tests (adjusted p 0.406)",
+      "display": "no Conciseness difference between Model A and Model B established after the Holm adjustment across 4 tests (adjusted p 0.406)",
       "key": "pair.A.B.dimension.conciseness.reference",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 10 tests (adjusted p 0.813)",
+      "display": "no Readability difference between Model A and Model B established after the Holm adjustment across 10 tests (adjusted p 0.813)",
       "key": "pair.A.B.dimension.readability.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 4 tests (adjusted p 0.406)",
+      "display": "no Readability difference between Model A and Model B established after the Holm adjustment across 4 tests (adjusted p 0.406)",
       "key": "pair.A.B.dimension.readability.reference",
       "value": false
     },
@@ -5418,7 +5418,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.813)",
+      "display": "no difference in score between Model A and Model B established after the Holm adjustment across 10 tests (adjusted p 0.813)",
       "key": "pair.A.B.quality.allPairs",
       "value": false
     },
@@ -5435,7 +5435,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 4 tests (adjusted p 0.406)",
+      "display": "no difference in score between Model A and Model B established after the Holm adjustment across 4 tests (adjusted p 0.406)",
       "key": "pair.A.B.quality.reference",
       "value": false
     },
@@ -5453,19 +5453,19 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 10 tests (adjusted p 1.000)",
+      "display": "no speed difference between Model A and Model B established after the Holm adjustment across 10 tests (adjusted p 1.000)",
       "key": "pair.A.B.speed.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "Model A took 0.83 times as long as Model B on the same questions (0.53 to 1.31)",
+      "display": "Model A took 0.83 times as long as Model B on the same questions (paired ratio, 95% interval 0.53 to 1.31)",
       "key": "pair.A.B.speed.ratio",
       "value": 0.8330303825065561
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 4 tests (adjusted p 0.438)",
+      "display": "no speed difference between Model A and Model B established after the Holm adjustment across 4 tests (adjusted p 0.438)",
       "key": "pair.A.B.speed.reference",
       "value": false
     },
@@ -5507,49 +5507,49 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Accuracy difference between Model A and Model C established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.C.dimension.accuracy.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no Accuracy difference between Model A and Model C established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.C.dimension.accuracy.reference",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Completeness difference between Model A and Model C established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.C.dimension.completeness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no Completeness difference between Model A and Model C established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.C.dimension.completeness.reference",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Conciseness difference between Model A and Model C established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.C.dimension.conciseness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no Conciseness difference between Model A and Model C established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.C.dimension.conciseness.reference",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Readability difference between Model A and Model C established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.C.dimension.readability.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no Readability difference between Model A and Model C established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.C.dimension.readability.reference",
       "value": false
     },
@@ -5561,7 +5561,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no difference in score between Model A and Model C established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.C.quality.allPairs",
       "value": false
     },
@@ -5578,7 +5578,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no difference in score between Model A and Model C established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.C.quality.reference",
       "value": false
     },
@@ -5596,19 +5596,19 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no speed difference between Model A and Model C established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.C.speed.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "Model A took 0.71 times as long as Model C on the same questions (0.70 to 0.73)",
+      "display": "Model A took 0.71 times as long as Model C on the same questions (paired ratio, 95% interval 0.70 to 0.73)",
       "key": "pair.A.C.speed.ratio",
       "value": 0.714024714731622
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no speed difference between Model A and Model C established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.C.speed.reference",
       "value": false
     },
@@ -5650,49 +5650,49 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Accuracy difference between Model A and Model D established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.D.dimension.accuracy.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no Accuracy difference between Model A and Model D established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.D.dimension.accuracy.reference",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Completeness difference between Model A and Model D established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.D.dimension.completeness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no Completeness difference between Model A and Model D established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.D.dimension.completeness.reference",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Conciseness difference between Model A and Model D established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.D.dimension.conciseness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no Conciseness difference between Model A and Model D established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.D.dimension.conciseness.reference",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Readability difference between Model A and Model D established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.D.dimension.readability.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no Readability difference between Model A and Model D established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.D.dimension.readability.reference",
       "value": false
     },
@@ -5704,7 +5704,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no difference in score between Model A and Model D established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.D.quality.allPairs",
       "value": false
     },
@@ -5721,7 +5721,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no difference in score between Model A and Model D established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.D.quality.reference",
       "value": false
     },
@@ -5739,19 +5739,19 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no speed difference between Model A and Model D established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.D.speed.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "Model A took 0.62 times as long as Model D on the same questions (0.40 to 0.98)",
+      "display": "Model A took 0.62 times as long as Model D on the same questions (paired ratio, 95% interval 0.40 to 0.98)",
       "key": "pair.A.D.speed.ratio",
       "value": 0.6246956089867761
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no speed difference between Model A and Model D established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.D.speed.reference",
       "value": false
     },
@@ -5793,49 +5793,49 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Accuracy difference between Model A and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.E.dimension.accuracy.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no Accuracy difference between Model A and Model E established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.E.dimension.accuracy.reference",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Completeness difference between Model A and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.E.dimension.completeness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no Completeness difference between Model A and Model E established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.E.dimension.completeness.reference",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Conciseness difference between Model A and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.E.dimension.conciseness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no Conciseness difference between Model A and Model E established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.E.dimension.conciseness.reference",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Readability difference between Model A and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.E.dimension.readability.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no Readability difference between Model A and Model E established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.E.dimension.readability.reference",
       "value": false
     },
@@ -5847,7 +5847,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no difference in score between Model A and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.E.quality.allPairs",
       "value": false
     },
@@ -5864,7 +5864,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no difference in score between Model A and Model E established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.E.quality.reference",
       "value": false
     },
@@ -5882,19 +5882,19 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no speed difference between Model A and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.A.E.speed.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "Model A took 0.56 times as long as Model E on the same questions (0.54 to 0.57)",
+      "display": "Model A took 0.56 times as long as Model E on the same questions (paired ratio, 95% interval 0.54 to 0.57)",
       "key": "pair.A.E.speed.ratio",
       "value": 0.5553073274569991
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 4 tests (adjusted p 0.125)",
+      "display": "no speed difference between Model A and Model E established after the Holm adjustment across 4 tests (adjusted p 0.125)",
       "key": "pair.A.E.speed.reference",
       "value": false
     },
@@ -5924,25 +5924,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Accuracy difference between Model B and Model C established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.C.dimension.accuracy.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Completeness difference between Model B and Model C established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.C.dimension.completeness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Conciseness difference between Model B and Model C established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.C.dimension.conciseness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Readability difference between Model B and Model C established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.C.dimension.readability.allPairs",
       "value": false
     },
@@ -5954,7 +5954,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no difference in score between Model B and Model C established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.C.quality.allPairs",
       "value": false
     },
@@ -5983,13 +5983,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 10 tests (adjusted p 1.000)",
+      "display": "no speed difference between Model B and Model C established after the Holm adjustment across 10 tests (adjusted p 1.000)",
       "key": "pair.B.C.speed.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "Model B took 0.86 times as long as Model C on the same questions (0.54 to 1.36)",
+      "display": "Model B took 0.86 times as long as Model C on the same questions (paired ratio, 95% interval 0.54 to 1.36)",
       "key": "pair.B.C.speed.ratio",
       "value": 0.8571412636633363
     },
@@ -6019,25 +6019,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Accuracy difference between Model B and Model D established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.D.dimension.accuracy.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Completeness difference between Model B and Model D established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.D.dimension.completeness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Conciseness difference between Model B and Model D established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.D.dimension.conciseness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Readability difference between Model B and Model D established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.D.dimension.readability.allPairs",
       "value": false
     },
@@ -6049,7 +6049,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no difference in score between Model B and Model D established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.D.quality.allPairs",
       "value": false
     },
@@ -6078,13 +6078,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no speed difference between Model B and Model D established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.D.speed.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "Model B took 0.75 times as long as Model D on the same questions (0.74 to 0.76)",
+      "display": "Model B took 0.75 times as long as Model D on the same questions (paired ratio, 95% interval 0.74 to 0.76)",
       "key": "pair.B.D.speed.ratio",
       "value": 0.7499073528471929
     },
@@ -6114,25 +6114,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Accuracy difference between Model B and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.E.dimension.accuracy.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Completeness difference between Model B and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.E.dimension.completeness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Conciseness difference between Model B and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.E.dimension.conciseness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Readability difference between Model B and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.E.dimension.readability.allPairs",
       "value": false
     },
@@ -6144,7 +6144,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no difference in score between Model B and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.B.E.quality.allPairs",
       "value": false
     },
@@ -6173,13 +6173,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 10 tests (adjusted p 0.469)",
+      "display": "no speed difference between Model B and Model E established after the Holm adjustment across 10 tests (adjusted p 0.469)",
       "key": "pair.B.E.speed.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "Model B took 0.67 times as long as Model E on the same questions (0.42 to 1.06)",
+      "display": "Model B took 0.67 times as long as Model E on the same questions (paired ratio, 95% interval 0.42 to 1.06)",
       "key": "pair.B.E.speed.ratio",
       "value": 0.6666111334212095
     },
@@ -6209,25 +6209,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 10 tests (adjusted p 1.000)",
+      "display": "no Accuracy difference between Model C and Model D established after the Holm adjustment across 10 tests (adjusted p 1.000)",
       "key": "pair.C.D.dimension.accuracy.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 10 tests (adjusted p 1.000)",
+      "display": "no Completeness difference between Model C and Model D established after the Holm adjustment across 10 tests (adjusted p 1.000)",
       "key": "pair.C.D.dimension.completeness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 10 tests (adjusted p 1.000)",
+      "display": "no Conciseness difference between Model C and Model D established after the Holm adjustment across 10 tests (adjusted p 1.000)",
       "key": "pair.C.D.dimension.conciseness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 10 tests (adjusted p 1.000)",
+      "display": "no Readability difference between Model C and Model D established after the Holm adjustment across 10 tests (adjusted p 1.000)",
       "key": "pair.C.D.dimension.readability.allPairs",
       "value": false
     },
@@ -6239,7 +6239,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 10 tests (adjusted p 1.000)",
+      "display": "no difference in score between Model C and Model D established after the Holm adjustment across 10 tests (adjusted p 1.000)",
       "key": "pair.C.D.quality.allPairs",
       "value": false
     },
@@ -6268,13 +6268,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 10 tests (adjusted p 1.000)",
+      "display": "no speed difference between Model C and Model D established after the Holm adjustment across 10 tests (adjusted p 1.000)",
       "key": "pair.C.D.speed.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "Model C took 0.87 times as long as Model D on the same questions (0.55 to 1.38)",
+      "display": "Model C took 0.87 times as long as Model D on the same questions (paired ratio, 95% interval 0.55 to 1.38)",
       "key": "pair.C.D.speed.ratio",
       "value": 0.8748935381341502
     },
@@ -6304,25 +6304,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Accuracy difference between Model C and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.C.E.dimension.accuracy.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Completeness difference between Model C and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.C.E.dimension.completeness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Conciseness difference between Model C and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.C.E.dimension.conciseness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Readability difference between Model C and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.C.E.dimension.readability.allPairs",
       "value": false
     },
@@ -6334,7 +6334,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no difference in score between Model C and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.C.E.quality.allPairs",
       "value": false
     },
@@ -6363,13 +6363,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no speed difference between Model C and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.C.E.speed.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "Model C took 0.78 times as long as Model E on the same questions (0.77 to 0.79)",
+      "display": "Model C took 0.78 times as long as Model E on the same questions (paired ratio, 95% interval 0.77 to 0.79)",
       "key": "pair.C.E.speed.ratio",
       "value": 0.7777144348087733
     },
@@ -6405,25 +6405,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no Accuracy difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Accuracy difference between Model D and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.D.E.dimension.accuracy.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Completeness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Completeness difference between Model D and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.D.E.dimension.completeness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Conciseness difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Conciseness difference between Model D and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.D.E.dimension.conciseness.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "no Readability difference established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no Readability difference between Model D and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.D.E.dimension.readability.allPairs",
       "value": false
     },
@@ -6435,7 +6435,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)",
+      "display": "no difference in score between Model D and Model E established after the Holm adjustment across 10 tests (adjusted p 0.313)",
       "key": "pair.D.E.quality.allPairs",
       "value": false
     },
@@ -6464,13 +6464,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "no speed difference established after the Holm adjustment across 10 tests (adjusted p 1.000)",
+      "display": "no speed difference between Model D and Model E established after the Holm adjustment across 10 tests (adjusted p 1.000)",
       "key": "pair.D.E.speed.allPairs",
       "value": false
     },
     {
       "available": true,
-      "display": "Model D took 0.89 times as long as Model E on the same questions (0.56 to 1.41)",
+      "display": "Model D took 0.89 times as long as Model E on the same questions (paired ratio, 95% interval 0.56 to 1.41)",
       "key": "pair.D.E.speed.ratio",
       "value": 0.8889246530124949
     },
@@ -13126,7 +13126,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 14,
+    "engineVersion": 15,
     "evidence": [
       {
         "atRisk": [

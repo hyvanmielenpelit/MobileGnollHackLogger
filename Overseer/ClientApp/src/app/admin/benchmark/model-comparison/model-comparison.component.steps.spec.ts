@@ -429,6 +429,23 @@ describe('ModelComparisonComponent', () => {
         'Run reports, and each run\'s or battery run\'s own AI reports, are in that report\'s Downloads.');
     });
 
+    it('insets the step-4 note as the Download Center body is inset', () => {
+      render(buildDto(comparableSet(3)), 3);
+      component.goToStep(4);
+      fixture.detectChanges();
+      flushDocuments([reportDocument(21)]);
+
+      const host = fixture.nativeElement as HTMLElement;
+      const note = host.querySelector<HTMLElement>('#mc-step-panel-4 > .mc-documents-note')!;
+      const body = host.querySelector<HTMLElement>('#mc-step-panel-4 app-download-center-panel .dc-body')!;
+      expect(note).not.toBeNull();
+      expect(body).not.toBeNull();
+      const bodyInset = getComputedStyle(body).paddingInlineStart;
+      expect(bodyInset).not.toBe('0px');
+      expect(getComputedStyle(note).paddingInlineStart).toBe(bodyInset);
+      expect(getComputedStyle(note).paddingInlineEnd).toBe(getComputedStyle(body).paddingInlineEnd);
+    });
+
     it('chooses on step 4 only the documents the last finished job wrote', () => {
       render(buildDto(comparableSet(3)), 3);
       const before = component.documentsContext;

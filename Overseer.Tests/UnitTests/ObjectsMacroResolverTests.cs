@@ -262,6 +262,61 @@ public class ObjectsMacroResolverTests
     }
 
     /// <summary>
+    /// oc_weight is in ounces while the game shows pounds, so the unit and the figure a player
+    /// reads travel with the value: 550 ounces is shown as "34 lbs", 3 ounces as "0.2 lbs".
+    /// </summary>
+    [Fact]
+    public void Resolve_StatesTheWeightUnitAndTheWeightTheGameShows()
+    {
+        var resolver = NewResolver();
+        resolver.Load(FixtureObjectsC(DragonSuitEntry("test dragon scale mail")));
+
+        var suit = resolver.Resolve("test dragon scale mail");
+
+        Assert.True(suit.Success, suit.FailureReason);
+        Assert.Equal(550L, AsLong(suit.Fields["weight"]));
+        var suitNote = Assert.Single(suit.Notes, n => n.StartsWith("weight is in ounces", StringComparison.Ordinal));
+        Assert.StartsWith("weight is in ounces (16 to a pound); the game shows 34 lbs ", suitNote);
+        Assert.Contains(suitNote, Assert.IsType<List<string>>(suit.Fields["notes"]));
+
+        var entry = new[]
+        {
+            "GENERAL_ARMOR(\"test feather\", None, 1, 0, 1, NO_POWER, NO_POWER, NO_POWER, P1_NONE, ENCHTYPE_GENERAL_ARMOR, 44, 5, 3,",
+            "    600, 3, 2, 0, 0, 0, 0, 0, ARM_SUIT, P_NONE, MATINIT_BASE_MATERIAL, MAT_CLOTH, CLR_GRAY, 0, OBJECT_SOUNDSET_GENERIC,",
+            "    O1_NONE, O2_NONE, O3_NONE, O4_NONE, O5_NONE, O6_NONE, PERMITTED_ALL, OD_NONE, NO_ANIMATION, NO_ENLARGEMENT, NO_REPLACEMENT),"
+        };
+
+        var light = NewResolver();
+        light.Load(FixtureObjectsC(entry));
+        var feather = light.Resolve("test feather");
+
+        Assert.True(feather.Success, feather.FailureReason);
+        Assert.Equal(3L, AsLong(feather.Fields["weight"]));
+        Assert.Contains(feather.Notes, n => n.StartsWith("weight is in ounces (16 to a pound); the game shows 0.2 lbs ", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// printweight's thresholds and units with the default weight options (src/do.c:656-731):
+    /// one decimal under 10 pounds, "lb" only for exactly one pound, whole pounds from 10, and
+    /// hundredweight from 1000 pounds. 200 ounces is exactly 12.5 pounds and rounds to even.
+    /// </summary>
+    [Theory]
+    [InlineData(0, "0.0 lbs")]
+    [InlineData(3, "0.2 lbs")]
+    [InlineData(16, "1.0 lb")]
+    [InlineData(20, "1.2 lbs")]
+    [InlineData(159, "9.9 lbs")]
+    [InlineData(160, "10 lbs")]
+    [InlineData(200, "12 lbs")]
+    [InlineData(550, "34 lbs")]
+    [InlineData(15999, "1000 lbs")]
+    [InlineData(16000, "10 cwt")]
+    public void GameWeightText_FollowsPrintweight(int ounces, string expected)
+    {
+        Assert.Equal(expected, ObjectsMacroResolver.GameWeightText(ounces));
+    }
+
+    /// <summary>
     /// The last three struct objdescr members were silently discarded, so an entry that names a
     /// replacement object lost it. They are emitted when set and omitted at their NO_* defaults.
     /// </summary>
@@ -487,6 +542,7 @@ public class ObjectsMacroResolverTests
         Assert.Equal(150L, AsLong(r.Fields["spell_casting_penalty_percent"]));
         Assert.Equal(5L, AsLong(r.Fields["delay"]));
         Assert.Equal(550L, AsLong(r.Fields["weight"]));
+        Assert.Contains(r.Notes, n => n.StartsWith("weight is in ounces (16 to a pound); the game shows 34 lbs ", StringComparison.Ordinal));
         Assert.Equal("MAT_DRAGON_HIDE", r.Fields["material"]);
         Assert.Equal("ARM_SUIT", r.Fields["armor_category"]);
         Assert.Contains("O2_DRAGON_ITEM", Assert.IsType<List<string>>(r.Fields["object_flags2"]));

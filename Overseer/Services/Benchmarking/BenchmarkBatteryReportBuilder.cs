@@ -1095,13 +1095,22 @@ public static class BenchmarkBatteryReportBuilder
                 ? $"- **Tool call outcomes:** {Int(failed)} failed, {Int(refused)} refused by the tool budget"
                 : $"- **Tool call outcomes:** — *not recorded: {answerOutcomes.ToolCallsUnavailableReason ?? "the per-call rows were not loaded."}*");
         }
+        // Two populations the claim verifier rules on: the answers' own claims, and the answer
+        // sentences graders accused. The refuted sentences of both count a sentence in both once.
+        const string NotCountable = "— *not countable: some verifications record no roles*";
         if (usage.ClaimsChecked > 0)
         {
-            string sentences = answerOutcomes == null
-                ? string.Empty
-                : "; refuted answer sentences (accused ones included): "
-                  + (answerOutcomes.RefutedAnswerSentences is int refutedSentences ? Int(refutedSentences) : "— *not countable: some verifications record no roles*");
-            sb.AppendLine($"- **Claim verification:** {Int(usage.ClaimsChecked)} claims checked — {Int(usage.ClaimsSupported)} supported, **{Int(usage.ClaimsRefuted)} refuted**, {Int(usage.ClaimsIndeterminate)} indeterminate{sentences}");
+            sb.AppendLine($"- **Answers' own claims:** {Int(usage.ClaimsChecked)} checked — {Int(usage.ClaimsSupported)} supported, **{Int(usage.ClaimsRefuted)} refuted**, {Int(usage.ClaimsIndeterminate)} indeterminate");
+        }
+        if (answerOutcomes != null && (usage.ClaimsChecked > 0 || answerOutcomes.AccusedSentences is { Checked: > 0 }))
+        {
+            string accused = answerOutcomes.AccusedSentences is { } counts
+                ? $"{Int(counts.Checked)} checked — {Int(counts.Supported)} supported, {Int(counts.Refuted)} refuted, {Int(counts.Indeterminate)} indeterminate"
+                : NotCountable;
+            string both = answerOutcomes.RefutedAnswerSentences is int refutedSentences
+                ? $"{Int(refutedSentences)} (a sentence in both populations counts once)"
+                : NotCountable;
+            sb.AppendLine($"- **Sentences graders accused:** {accused}; refuted answer sentences, both kinds: {both}");
         }
         sb.AppendLine();
 

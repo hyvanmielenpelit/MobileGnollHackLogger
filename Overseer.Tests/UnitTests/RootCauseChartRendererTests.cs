@@ -266,6 +266,51 @@ public class RootCauseChartRendererTests
         Assert.DoesNotContain(RootCauseChartRenderer.Draw(nullsOnly, Sheet(), anonymized: false), c => c.Key == BenchmarkReportChartPlacement.RcaHypothesesKey);
     }
 
+    /// <summary>Model Comparison #5's entries: two share every word but the thinking level.</summary>
+    private static readonly IReadOnlyDictionary<string, string> SharedPrefixLabels = new Dictionary<string, string>
+    {
+        ["A"] = "GPT-6 Luna @ high",
+        ["B"] = "GPT-6.1 Terra @ medium",
+        ["C"] = "GPT-6.1 Terra @ high"
+    };
+
+    [Fact]
+    public void AHypothesisLabel_ThatWouldCutALabelSharingItsFirstWords_ShortensItFromTheMiddle()
+    {
+        string medium = RootCauseChartRenderer.HypothesisChartLabel(
+            Hypothesis("HQ2", RootCauseAxes.Intelligence, RootCauseGrades.Low, "Concise style: Model B"), SharedPrefixLabels);
+        string high = RootCauseChartRenderer.HypothesisChartLabel(
+            Hypothesis("HQ2", RootCauseAxes.Intelligence, RootCauseGrades.Low, "Concise style: Model C"), SharedPrefixLabels);
+
+        // The column would have cut both at "GPT-6.1 Ter…"; the shortened labels keep what tells them apart.
+        Assert.Equal("HQ2.1 Concise style: GPT…medium", medium);
+        Assert.Equal("HQ2.1 Concise style: GPT-6…high", high);
+        Assert.All(new[] { medium, high }, l => Assert.True(l.Length <= RootCauseChartRenderer.HypothesisLabelChars));
+
+        // A line one character too long loses only what it must.
+        Assert.Equal("HC1.1 Cost: GPT-6.1 Terra…high", RootCauseChartRenderer.HypothesisChartLabel(
+            Hypothesis("HC1", RootCauseAxes.Cost, RootCauseGrades.High, "Cost: Model C"), SharedPrefixLabels));
+    }
+
+    [Fact]
+    public void AHypothesisLabel_KeepsADistinctLabel_AndALineThatFits_Unchanged()
+    {
+        // GPT-6 Luna differs from the Terra entries within its first word: cut or not, it stays whole.
+        Assert.Equal("HQ2.1 Concise style: GPT-6 Luna @ high", RootCauseChartRenderer.HypothesisChartLabel(
+            Hypothesis("HQ2", RootCauseAxes.Intelligence, RootCauseGrades.Low, "Concise style: Model A"), SharedPrefixLabels));
+
+        var distinct = new Dictionary<string, string> { ["A"] = "Orion Max", ["B"] = "Vega Pro" };
+        Assert.Equal("HS3.1 Orion Max is slower mainly from more output tokens", RootCauseChartRenderer.HypothesisChartLabel(
+            Hypothesis("HS3", RootCauseAxes.Speed, RootCauseGrades.Moderate, "Model A is slower mainly from more output tokens"), distinct));
+
+        Assert.Equal("HC1.1 GPT-6.1 Terra @ high", RootCauseChartRenderer.HypothesisChartLabel(
+            Hypothesis("HC1", RootCauseAxes.Cost, RootCauseGrades.High, "Model C"), SharedPrefixLabels));
+
+        // The anonymized variant has no labels: the letters stand.
+        Assert.Equal("HQ2.1 Concise style: Model B", RootCauseChartRenderer.HypothesisChartLabel(
+            Hypothesis("HQ2", RootCauseAxes.Intelligence, RootCauseGrades.Low, "Concise style: Model B"), new Dictionary<string, string>()));
+    }
+
     [Fact]
     public void TheCostKey_NamesOutputWithThinkingIncluded_ForAProviderThatDoesNotReportReasoning()
     {

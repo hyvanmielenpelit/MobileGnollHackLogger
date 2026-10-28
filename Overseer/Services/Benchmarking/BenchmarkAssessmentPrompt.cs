@@ -843,8 +843,15 @@ public static class BenchmarkAssessmentPrompt
     ///     ExplicitDefaultEffort it sent; the run report names that level beside "Default" and Profile Fit
     ///     reads it. ScoringMethodVersion stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do
     ///     not move.
+    /// v63: search_definitions and get_function_definition find an enum or struct whose "{" is on the
+    ///     next line; get_item_stats notes that its weight is in ounces and gives the pounds the game
+    ///     shows; ToolGuides/_policy.md no longer asks for file names and line numbers when citing
+    ///     source; OpenAiResponsesProvider puts a paragraph break between message output items; the
+    ///     panel synthesis input counts raised and verified claims as one population.
+    ///     ScoringMethodVersion stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 move with the
+    ///     _policy.md line.
     /// </summary>
-    public const string HarnessVersion = "62";
+    public const string HarnessVersion = "63";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -1617,16 +1624,20 @@ public static class BenchmarkAssessmentPrompt
             int supported = verdicts.Sum(v => v.ClaimsSupportedCount ?? 0);
             int refuted = verdicts.Sum(v => v.ClaimsRefutedCount ?? 0);
             int indeterminate = verdicts.Sum(v => v.ClaimsIndeterminateCount ?? 0);
+            int verified = supported + refuted + indeterminate;
             sb.AppendLine("--- CLAIM VERIFICATION TOTALS (counted by the harness; copy these figures rather than adding up the per-question lines) ---");
+            // A raised claim is not always verified, so each line names the verified subset the three
+            // outcomes sum to.
             if (claimLines && panelRunClaimTotals == null)
             {
-                sb.AppendLine($"Unverified claims: {unverified} across {withClaims} answer(s); verified: {supported} supported, {refuted} refuted, {indeterminate} indeterminate");
+                sb.AppendLine($"Unverified claims: {unverified} raised across {withClaims} answer(s), {verified} of them verified: {supported} supported, {refuted} refuted, {indeterminate} indeterminate");
             }
             else if (claimLines)
             {
                 var all = panelRunClaimTotals!;
-                sb.AppendLine($"Claims you raised: {unverified} across {withClaims} answer(s); verified: {supported} supported, {refuted} refuted, {indeterminate} indeterminate");
-                sb.AppendLine($"All claims checked in this run (both members, each counted once): {all.Claims} across {all.Answers} answer(s); verified: {all.Supported} supported, {all.Refuted} refuted, {all.Indeterminate} indeterminate");
+                int allVerified = all.Supported + all.Refuted + all.Indeterminate;
+                sb.AppendLine($"Claims you raised: {unverified} across {withClaims} answer(s), {verified} of them verified: {supported} supported, {refuted} refuted, {indeterminate} indeterminate");
+                sb.AppendLine($"All claims checked in this run (both members, each counted once): {all.Claims} across {all.Answers} answer(s), {allVerified} of them verified: {all.Supported} supported, {all.Refuted} refuted, {all.Indeterminate} indeterminate");
             }
             if (chargedTotal > 0)
             {

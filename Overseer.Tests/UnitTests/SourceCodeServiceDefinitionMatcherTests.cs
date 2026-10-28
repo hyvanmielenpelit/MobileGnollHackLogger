@@ -13,7 +13,8 @@ using Xunit;
 /// Covers the two definition-matcher additions in <see cref="SourceCodeService.FindDefinition"/>
 /// and its body-locator counterpart: a one-line "&lt;type tokens&gt; name(" function definition, and
 /// the closing line of a multi-line typedef block. Also pins the exclusions those additions must not
-/// widen into — extern/FDECL/OVL prototypes and bare call statements.
+/// widen into — extern/FDECL/OVL prototypes and bare call statements. Also covers an <c>enum</c> or
+/// <c>struct</c> head whose <c>{</c> is on the next line, and the look-alikes that must not match it.
 /// </summary>
 public class SourceCodeServiceDefinitionMatcherTests : IDisposable
 {
@@ -53,6 +54,46 @@ public class SourceCodeServiceDefinitionMatcherTests : IDisposable
             "    int x;\r\n" +
             "    int y;\r\n" +
             "} gbuf_entry;\r\n");
+
+        // An enum and a struct whose "{" is on the line after the name (the include/layer.h style,
+        // one with a trailing comment), and a struct-typed member list whose next line is not a brace.
+        File.WriteAllText(Path.Combine(_sourceDir, "include", "layer.h"),
+            "/* layer.h */\r\n" +
+            "#include \"config.h\"\r\n" +
+            "/* Layer types */\r\n" +
+            "enum layer_types\r\n" +
+            "{\r\n" +
+            "    LAYER_FLOOR = 0,\r\n" +
+            "    LAYER_CARPET,\r\n" +
+            "    MAX_LAYERS\r\n" +
+            "};\r\n" +
+            "/* Layer info */\r\n" +
+            "struct layer_info /* per-position layers */\r\n" +
+            "{\r\n" +
+            "    int glyph;\r\n" +
+            "    int layer_flags;\r\n" +
+            "};\r\n" +
+            "struct member_holder {\r\n" +
+            "    struct member_struct\r\n" +
+            "        first_field,\r\n" +
+            "        second_field;\r\n" +
+            "};\r\n");
+
+        // A function taking an enum parameter, its body brace on the next line, and a struct
+        // forward declaration followed by a block statement — neither is an enum or struct definition.
+        File.WriteAllText(Path.Combine(_sourceDir, "src", "blocks.c"),
+            "/* blocks.c */\r\n" +
+            "static void takes_param_enum(enum param_enum e)\r\n" +
+            "{\r\n" +
+            "    (void) e;\r\n" +
+            "}\r\n" +
+            "void fwd_user(void)\r\n" +
+            "{\r\n" +
+            "    struct proto_only;\r\n" +
+            "    {\r\n" +
+            "        int scoped = 0;\r\n" +
+            "    }\r\n" +
+            "}\r\n");
     }
 
     public void Dispose()
@@ -245,5 +286,170 @@ public class SourceCodeServiceDefinitionMatcherTests : IDisposable
         string typeResult = service.GetFunctionBody("gbuf_entry", "type");
 
         Assert.Equal(structResult, typeResult);
+    }
+
+    [Fact]
+    public void FindDefinition_EnumWithBraceOnTheNextLine_MatchesUnderEnumKind()
+    {
+        using var service = CreateService();
+
+        string result = service.FindDefinition("layer_types", "enum");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- include/layer.h:L4 ---",
+            "    3: /* Layer types */",
+            ">>> 4: enum layer_types",
+            "    5: {",
+            "    6:     LAYER_FLOOR = 0,",
+            "    7:     LAYER_CARPET,",
+            "    8:     MAX_LAYERS",
+            "    9: };"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void FindDefinition_EnumWithBraceOnTheNextLine_MatchesUnderAnyKind()
+    {
+        using var service = CreateService();
+
+        string result = service.FindDefinition("layer_types", "any");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- include/layer.h:L4 ---",
+            "    2: #include \"config.h\"",
+            "    3: /* Layer types */",
+            ">>> 4: enum layer_types",
+            "    5: {",
+            "    6:     LAYER_FLOOR = 0,",
+            "    7:     LAYER_CARPET,",
+            "    8:     MAX_LAYERS",
+            "    9: };"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    /// <summary>
+    /// The head line is the match and the output runs from it through the whole braced body,
+    /// whereas a same-line "enum name {" starts its output at the brace.
+    /// </summary>
+    [Fact]
+    public void GetFunctionBody_EnumWithBraceOnTheNextLine_ReturnsTheHeadAndTheWholeBody()
+    {
+        using var service = CreateService();
+
+        string result = service.GetFunctionBody("layer_types", "enum");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- include/layer.h:L3-L9 (layer_types, 7 lines) ---",
+            "/* Layer types */",
+            "enum layer_types",
+            "{",
+            "    LAYER_FLOOR = 0,",
+            "    LAYER_CARPET,",
+            "    MAX_LAYERS",
+            "}"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void GetFunctionBody_EnumWithBraceOnTheNextLine_AnyKindReturnsTheWholeBody()
+    {
+        using var service = CreateService();
+
+        string result = service.GetFunctionBody("layer_types", "any");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- include/layer.h:L2-L9 (layer_types, 8 lines) ---",
+            "#include \"config.h\"",
+            "/* Layer types */",
+            "enum layer_types",
+            "{",
+            "    LAYER_FLOOR = 0,",
+            "    LAYER_CARPET,",
+            "    MAX_LAYERS",
+            "}"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void FindDefinition_StructWithBraceOnTheNextLine_MatchesUnderStructKind()
+    {
+        using var service = CreateService();
+
+        string result = service.FindDefinition("layer_info", "struct");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- include/layer.h:L11 ---",
+            "    10: /* Layer info */",
+            ">>> 11: struct layer_info /* per-position layers */",
+            "    12: {",
+            "    13:     int glyph;",
+            "    14:     int layer_flags;",
+            "    15: };",
+            "    16: struct member_holder {"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void GetFunctionBody_StructWithBraceOnTheNextLine_ReturnsTheHeadAndTheWholeBody()
+    {
+        using var service = CreateService();
+
+        string result = service.GetFunctionBody("layer_info", "struct");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- include/layer.h:L10-L15 (layer_info, 6 lines) ---",
+            "/* Layer info */",
+            "struct layer_info /* per-position layers */",
+            "{",
+            "    int glyph;",
+            "    int layer_flags;",
+            "}"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    /// <summary>
+    /// A line naming the symbol followed by a brace is not enough: a forward declaration
+    /// ("struct proto_only;") followed by a block statement, an enum used as a parameter type with
+    /// the function body's brace on the next line, and a struct-typed member list whose next line is
+    /// a field name are not definitions.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(SourceCodeService.FindDefinition), "proto_only", "struct")]
+    [InlineData(nameof(SourceCodeService.FindDefinition), "proto_only", "any")]
+    [InlineData(nameof(SourceCodeService.GetFunctionBody), "proto_only", "struct")]
+    [InlineData(nameof(SourceCodeService.GetFunctionBody), "proto_only", "any")]
+    [InlineData(nameof(SourceCodeService.FindDefinition), "param_enum", "enum")]
+    [InlineData(nameof(SourceCodeService.FindDefinition), "param_enum", "any")]
+    [InlineData(nameof(SourceCodeService.GetFunctionBody), "param_enum", "enum")]
+    [InlineData(nameof(SourceCodeService.GetFunctionBody), "param_enum", "any")]
+    [InlineData(nameof(SourceCodeService.FindDefinition), "member_struct", "struct")]
+    [InlineData(nameof(SourceCodeService.GetFunctionBody), "member_struct", "any")]
+    public void HeadLineWithoutANextLineBrace_IsNotADefinition(string method, string name, string kind)
+    {
+        using var service = CreateService();
+
+        string result = method == nameof(SourceCodeService.GetFunctionBody)
+            ? service.GetFunctionBody(name, kind)
+            : service.FindDefinition(name, kind);
+
+        Assert.Equal($"No definition found for '{name}' of kind '{kind}'.", result);
     }
 }

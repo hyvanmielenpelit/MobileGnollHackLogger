@@ -69,6 +69,9 @@ public sealed class RootCauseModelInput
 
     public double? MemberBIndex { get; init; }
 
+    /// <summary>The panel's intraclass correlation, ICC(A,1), over the answers both members scored; null without a panel.</summary>
+    public double? PanelIcc { get; init; }
+
     /// <summary>The model's index under the reference reader alone; null without one, or when it did not score every answer.</summary>
     public double? ReferenceReaderIndex { get; init; }
 
@@ -220,8 +223,11 @@ public static class RootCauseEngine
     /// and a time-of-day run is one pass launched once per time of day. From version 13 a ruled-out hypothesis is never
     /// an axis's best: an axis whose every hypothesis was ruled out has none. From version 14 a known fact about a
     /// component whose label is plural (<see cref="RootCauseKnownFacts.PluralComponentLabels"/>) takes a plural verb.
+    /// From version 15 HQ8 states the direction the data shows, HQ9 shares the net narrowing of the gap, HC1 is not
+    /// raised for one model at two levels on one price card, HS5 compares the waits as printed, WC2 states what its
+    /// test checks, and a comparison states WQ6 once, for the model whose members are furthest apart.
     /// </summary>
-    public const int Version = 14;
+    public const int Version = 15;
 
     /// <summary>The list output price ratio from which two models of one provider are in different price tiers.</summary>
     public const double TierPriceRatio = 1.5;
@@ -343,6 +349,7 @@ public static class RootCauseEngine
         {
             drafts.AddRange(RootCauseHypotheses.WithinRules(ctx, model, axes, ctx.ControlCap(model)));
         }
+        if (RootCauseHypotheses.GraderDisagreement(ctx) is { } wq6) drafts.Add(wq6);
         if (RootCauseHypotheses.SharedLeadGroupNote(ctx, drafts) is { } sharedGroupNote) result.Notes.Add(sharedGroupNote);
 
         var graded = drafts.Select(d => (Hypothesis: RootCauseHypotheses.Grade(d, ctx.Name), Draft: d)).ToList();
@@ -2092,6 +2099,9 @@ public static class RootCauseLabels
                 return Topic(hypothesis);
             case "HQ5" when hypothesis.Kind == "pair":
                 return Topic(hypothesis) + ", " + hypothesis.Models.Count.ToString(CultureInfo.InvariantCulture) + " models";
+            case "HQ8" when second != null && IsThinkingInversion(hypothesis):
+                // The entry at the lower thinking level, the better side of an inversion, is named first.
+                return Possessive(second) + " " + Topic(hypothesis) + ", compared with " + first;
             default:
                 return Possessive(first) + " " + Topic(hypothesis)
                        + (second != null && hypothesis.Kind == "pair" ? ", compared with " + second : string.Empty);
@@ -2121,6 +2131,8 @@ public static class RootCauseLabels
                 return "the concise response style";
             case "HC4" when hypothesis.ShortStatement.StartsWith(RootCauseHypotheses.CachingPriceShort, StringComparison.Ordinal):
                 return "higher price per input token from prompt caching";
+            case "HQ8" when IsThinkingInversion(hypothesis):
+                return "higher score at the lower thinking level";
             case "WQ2":
                 const string LostIn = "Lost in ";
                 string group = hypothesis.ShortStatement.StartsWith(LostIn, StringComparison.Ordinal)
@@ -2133,6 +2145,10 @@ public static class RootCauseLabels
                     : RootCauseHypotheses.LowerFirst(hypothesis.ShortStatement.Split(':')[0].Trim()));
         }
     }
+
+    /// <summary>An HQ8 whose lower thinking level scored higher (<see cref="RootCauseHypotheses.ThinkingInversionShort"/>).</summary>
+    private static bool IsThinkingInversion(RootCauseHypothesis hypothesis)
+        => hypothesis.ShortStatement.StartsWith(RootCauseHypotheses.ThinkingInversionShort, StringComparison.Ordinal);
 
     /// <summary>The words of <paramref name="text"/>, split on whitespace.</summary>
     public static string[] Words(string text) => (text ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);

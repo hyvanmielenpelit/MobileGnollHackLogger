@@ -874,6 +874,31 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"  - *{RubricRepairLeadLine}*");
     }
 
+    /// <summary>
+    /// The detail a per-answer <see cref="RubricContradictedLabel"/> flag ends with: for each
+    /// supported rubric-charged item <paramref name="member"/> accused (every item when null), who
+    /// charged it, the rubric text the grader quoted or "(no rubric text quoted)", and the verifier's
+    /// verdict with its citation. Empty when no such item is stored.
+    /// </summary>
+    private static string RubricContradictionDetailText(BenchmarkRunAnswer answer, BenchmarkPanelMember? member)
+    {
+        var verifications = ClaimVerificationsOf(answer);
+        var items = BenchmarkService.SupportedRubricContradictions(
+            member.HasValue ? BenchmarkService.AccusedByMembers(verifications, member.Value) : verifications);
+        if (items.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return " — " + string.Join(" and ", items.Select(v =>
+        {
+            string rubric = string.IsNullOrWhiteSpace(v.RubricQuote)
+                ? "(no rubric text quoted)"
+                : $"rubric \"{QuoteLine(v.RubricQuote)}\"";
+            return $"charged by {AccusedByText(v)}, {rubric}, verifier: {VerdictText(v)} ({QuoteLine(v.Citation)})";
+        }));
+    }
+
     private const string BasisRefutedCause = "own-knowledge basis refuted";
     private const string AccusationSupportedCause = "a sentence the assessor quoted as false was supported";
     private const string AssessorStatementRefutedCause = "a statement of the assessor's own evidence was refuted";
@@ -2047,6 +2072,14 @@ public static class BenchmarkReportBuilder
         string oneLine = WhitespaceRunRegex.Replace(text.Replace("\r\n", " ").Replace("\r", " ").Replace("\n", " "), " ").Trim();
         return oneLine.Replace("|", "\\|");
     }
+
+    /// <summary>
+    /// Model text for a <c>&gt;</c> blockquote line: every line break (<c>\r\n</c>, <c>\n</c>,
+    /// <c>\r</c>) becomes one space, so the text stays inside the quote and a "- item" it carries is
+    /// not read as a list item outside it. Empty for null.
+    /// </summary>
+    internal static string QuoteLine(string? text)
+        => text is null ? string.Empty : text.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ');
 
     /// <summary>The first harness version whose candidate is offered <c>report_feedback</c>.</summary>
     internal const int SelfReportsHarnessVersion = 60;
@@ -4445,6 +4478,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine(panelIcc.HasValue
                 ? $"- **ICC(A,1):** {Inv(panelIcc.Value, "F2")} — two-way random, absolute agreement, single rater."
                 : "- **ICC(A,1):** not computed — fewer than 5 answers both members scored, or no variance between their scores.");
+            sb.AppendLine("- *ICC, mean |B − A| and the member-alone indices compare the members' scores as graded, caps included.*");
             if (panelPairs.Count > 0)
             {
                 var spreadA = BenchmarkPanelDiagnostics.MemberSpread(panelPairs, BenchmarkPanelMember.A);
@@ -4455,7 +4489,7 @@ public static class BenchmarkReportBuilder
                 sb.AppendLine($"- **Member spread:** {MemberSpreadText(spreadA)}; {MemberSpreadText(spreadB)}.{narrowNote}");
             }
             sb.AppendLine(panelSplitCount > 0
-                ? $"- **Critical-error splits:** {panelSplitCount} of {panelGraded}" + (panelSplits.Count > 0 ? " — " + string.Join(", ", panelSplits.Select(a => $"Q{a.OrderIndex}")) : string.Empty) + ". The members disagree on whether the answer contains a fabrication; each member's own cap enters the mean."
+                ? $"- **Critical-error splits:** {panelSplitCount} of {panelGraded}" + (panelSplits.Count > 0 ? " — " + string.Join(", ", panelSplits.Select(a => $"Q{a.OrderIndex}")) : string.Empty) + ". The members disagree on whether the answer contains a critical error. Since scoring method 13 a one-member cap enters the panel mean only when the claim verifier upholds it; an overturned cap does not."
                 : $"- **Critical-error splits:** none of {panelGraded}.");
             if (panelGraded > 0)
             {
@@ -5349,7 +5383,11 @@ public static class BenchmarkReportBuilder
             if (kbTopicCount > 0)
             {
                 // The topic questions are counted on their own; the observation covers the rest.
-                sb.AppendLine($"- **Knowledge base under-use:** {routing.KnowledgeBaseTopicZeroCallCount} of {kbTopicCount} knowledge-base-topic question(s) made zero `get_knowledge_article` calls.");
+                string kbTopicQuestions = string.Join(", ", routing.KnowledgeBaseTopicQuestions.Select(q => $"Q{q}"));
+                string kbZeroQuestions = routing.KnowledgeBaseTopicZeroCallQuestions.Count > 0
+                    ? $" ({string.Join(", ", routing.KnowledgeBaseTopicZeroCallQuestions.Select(q => $"Q{q}"))})"
+                    : string.Empty;
+                sb.AppendLine($"- **Knowledge base under-use:** {routing.KnowledgeBaseTopicZeroCallCount} of {kbTopicCount} knowledge-base-topic question(s) ({kbTopicQuestions}) made zero `get_knowledge_article` calls{kbZeroQuestions}.");
                 int otherCount = routingAnsweredCount - kbTopicCount;
                 if (otherCount > 0)
                 {
@@ -5633,7 +5671,7 @@ public static class BenchmarkReportBuilder
                 }
                 if (!string.IsNullOrWhiteSpace(a.ReviewComment))
                 {
-                    sb.AppendLine($"> - **Assessor Comment:** {a.ReviewComment}");
+                    sb.AppendLine($"> - **Assessor Comment:** {QuoteLine(a.ReviewComment)}");
                 }
 
                 // What the deductions rest on. A score argued from the authored rubric and one
@@ -5642,15 +5680,15 @@ public static class BenchmarkReportBuilder
                 var (accuracyEvidence, completenessEvidence, _, criticalErrorDemoted) = ReadEvidence(a);
                 if (!string.IsNullOrWhiteSpace(accuracyEvidence))
                 {
-                    sb.AppendLine($"> - **Accuracy Evidence:** {accuracyEvidence}");
+                    sb.AppendLine($"> - **Accuracy Evidence:** {QuoteLine(accuracyEvidence)}");
                 }
                 if (!string.IsNullOrWhiteSpace(completenessEvidence))
                 {
-                    sb.AppendLine($"> - **Completeness Evidence:** {completenessEvidence}");
+                    sb.AppendLine($"> - **Completeness Evidence:** {QuoteLine(completenessEvidence)}");
                 }
                 if (a.CriticalError && !string.IsNullOrWhiteSpace(a.CriticalErrorQuote))
                 {
-                    sb.AppendLine($"> - **Critical Error Quote:** \"{a.CriticalErrorQuote}\"");
+                    sb.AppendLine($"> - **Critical Error Quote:** \"{QuoteLine(a.CriticalErrorQuote)}\"");
                 }
                 // The claims themselves, not just the count: the run-level Assessor Findings
                 // block says how many there were, and this is the only place a reader can see
@@ -5659,7 +5697,7 @@ public static class BenchmarkReportBuilder
                 if (unverifiedClaims.Count > 0)
                 {
                     sb.AppendLine($"> - **Unverified Claims ({unverifiedClaims.Count}):** " +
-                        string.Join("; ", unverifiedClaims.Select(c => $"\"{c}\"")) +
+                        string.Join("; ", unverifiedClaims.Select(c => $"\"{QuoteLine(c)}\"")) +
                         " — *neither confirmed nor refuted against the rubric; not an Accuracy deduction from harness version 7.*");
                 }
                 if (criticalErrorDemoted)
@@ -5673,7 +5711,7 @@ public static class BenchmarkReportBuilder
                     {
                         if (BenchmarkVerdictConsistency.IsNoFaultEvidence(accuracyEvidence))
                         {
-                            string evDisplay = !string.IsNullOrWhiteSpace(accuracyEvidence) ? $"\"{accuracyEvidence.Trim()}\"" : "(none)";
+                            string evDisplay = !string.IsNullOrWhiteSpace(accuracyEvidence) ? $"\"{QuoteLine(accuracyEvidence.Trim())}\"" : "(none)";
                             flaggedDims.Add($"Accuracy to {a.AccuracyLevel.Value}/6 while its stated evidence ({evDisplay}) names no defect");
                         }
                         else if (BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(a.AccuracyLevel.Value, accuracyEvidence, a.UnverifiedClaimCount ?? unverifiedClaims.Count))
@@ -5687,7 +5725,7 @@ public static class BenchmarkReportBuilder
                     }
                     if (a.CompletenessLevel.HasValue && a.CompletenessLevel.Value <= BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel && BenchmarkVerdictConsistency.IsNoFaultEvidence(completenessEvidence))
                     {
-                        string evDisplay = !string.IsNullOrWhiteSpace(completenessEvidence) ? $"\"{completenessEvidence.Trim()}\"" : "(none)";
+                        string evDisplay = !string.IsNullOrWhiteSpace(completenessEvidence) ? $"\"{QuoteLine(completenessEvidence.Trim())}\"" : "(none)";
                         flaggedDims.Add($"Completeness to {a.CompletenessLevel.Value}/6 while its stated evidence ({evDisplay}) names no defect");
                     }
 
@@ -5720,31 +5758,31 @@ public static class BenchmarkReportBuilder
                         sb.AppendLine($"> - **Panel Member B ({memberBAnswerLabel}):** Accuracy={memberB.AccuracyLevel}/6, Completeness={memberB.CompletenessLevel}/6, Conciseness={memberB.ConcisenessLevel}/6, Readability={memberB.ReadabilityLevel}/6 — {memberBScore}{memberBRaw}, critical error {(memberB.CriticalError ? "yes" : "no")}{memberBFloor}");
                         if (!string.IsNullOrWhiteSpace(memberB.Comment))
                         {
-                            sb.AppendLine($">   - **Comment:** {memberB.Comment}");
+                            sb.AppendLine($">   - **Comment:** {QuoteLine(memberB.Comment)}");
                         }
                         if (!string.IsNullOrWhiteSpace(memberB.AccuracyEvidence))
                         {
-                            sb.AppendLine($">   - **Accuracy Evidence:** {memberB.AccuracyEvidence}");
+                            sb.AppendLine($">   - **Accuracy Evidence:** {QuoteLine(memberB.AccuracyEvidence)}");
                         }
                         if (!string.IsNullOrWhiteSpace(memberB.CompletenessEvidence))
                         {
-                            sb.AppendLine($">   - **Completeness Evidence:** {memberB.CompletenessEvidence}");
+                            sb.AppendLine($">   - **Completeness Evidence:** {QuoteLine(memberB.CompletenessEvidence)}");
                         }
                         if (memberB.CriticalError && !string.IsNullOrWhiteSpace(memberB.CriticalErrorQuote))
                         {
-                            sb.AppendLine($">   - **Critical Error Quote:** \"{memberB.CriticalErrorQuote}\"");
+                            sb.AppendLine($">   - **Critical Error Quote:** \"{QuoteLine(memberB.CriticalErrorQuote)}\"");
                         }
                         if (memberB.UnverifiedClaims.Count > 0)
                         {
                             sb.AppendLine($">   - **Unverified Claims ({memberB.UnverifiedClaims.Count}):** " +
-                                string.Join("; ", memberB.UnverifiedClaims.Select(c => $"\"{c}\"")));
+                                string.Join("; ", memberB.UnverifiedClaims.Select(c => $"\"{QuoteLine(c)}\"")));
                         }
                     }
                     else
                     {
                         string memberBError = string.IsNullOrWhiteSpace(a.CoAssessmentError)
                             ? string.Empty
-                            : $" — {BenchmarkAssessmentFailure.Truncate(a.CoAssessmentError, 200)}";
+                            : $" — {QuoteLine(BenchmarkAssessmentFailure.Truncate(a.CoAssessmentError, 200))}";
                         sb.AppendLine($"> - **Panel Member B ({memberBAnswerLabel}):** not scored ({a.CoAssessmentStatus?.ToString() ?? "not attempted"}){memberBError}");
                     }
 
@@ -5782,7 +5820,7 @@ public static class BenchmarkReportBuilder
                 if (!string.IsNullOrWhiteSpace(a.ClaimVerificationError))
                 {
                     string verifierName = a.ClaimVerificationByModelSnapshot.Label() ?? run.ClaimVerifierModelSnapshot.Label() ?? "claim verifier";
-                    string err = BenchmarkAssessmentFailure.Truncate(a.ClaimVerificationError, 200) ?? a.ClaimVerificationError;
+                    string err = QuoteLine(BenchmarkAssessmentFailure.Truncate(a.ClaimVerificationError, 200) ?? a.ClaimVerificationError);
                     string errEnd = err.EndsWith('.') || err.EndsWith('!') || err.EndsWith('?') ? string.Empty : ".";
                     sb.AppendLine($"> - **Claim Verification ({verifierName}):** failed — {err}{errEnd} The unverified claims above were not checked{ClaimVerificationSpendText(a)}{ClaimVerificationRetryText(a)}. Use **Retry claim verification** to repeat it.{ClaimVerificationRawTextHead(a)}");
                 }
@@ -5817,13 +5855,13 @@ public static class BenchmarkReportBuilder
                 var supportedAccusationsOfAnswer = BenchmarkService.SupportedAccusations(accusedSentences);
                 foreach (var accusation in supportedAccusationsOfAnswer)
                 {
-                    sb.AppendLine($"> - **Supported accusation:** a sentence {AccusedByText(accusation)} charged as false was checked by the claim verifier and **supported** — \"{accusation.Claim}\"{QuotedFragmentsText(accusation)} ({accusation.Citation}). *Advisory; the deduction stands.*");
+                    sb.AppendLine($"> - **Supported accusation:** a sentence {AccusedByText(accusation)} charged as false was checked by the claim verifier and **supported** — \"{QuoteLine(accusation.Claim)}\"{QuoteLine(QuotedFragmentsText(accusation))} ({QuoteLine(accusation.Citation)}). *Advisory; the deduction stands.*");
                 }
                 foreach (var accusation in accusedSentences.Where(v => !supportedAccusationsOfAnswer.Contains(v)))
                 {
                     string verdictWord = accusation.EffectiveVerdict.ToString().ToLowerInvariant();
-                    string citation = string.IsNullOrWhiteSpace(accusation.Citation) ? "no citation" : accusation.Citation;
-                    sb.AppendLine($"> - **Accused sentence, {verdictWord}:** a sentence {AccusedByText(accusation)} charged as false was checked by the claim verifier and returned **{VerdictText(accusation)}** — \"{accusation.Claim}\"{QuotedFragmentsText(accusation)} ({citation}).");
+                    string citation = string.IsNullOrWhiteSpace(accusation.Citation) ? "no citation" : QuoteLine(accusation.Citation);
+                    sb.AppendLine($"> - **Accused sentence, {verdictWord}:** a sentence {AccusedByText(accusation)} charged as false was checked by the claim verifier and returned **{VerdictText(accusation)}** — \"{QuoteLine(accusation.Claim)}\"{QuoteLine(QuotedFragmentsText(accusation))} ({citation}).");
                 }
                 // The sentences the graders quoted as the critical error, when the verifier checked them.
                 var criticalErrorQuotes = CriticalErrorQuotesOf(a);
@@ -5839,9 +5877,9 @@ public static class BenchmarkReportBuilder
                             BenchmarkClaimVerdict.Supported => " — the verifier sided with the answer",
                             _ => string.Empty
                         };
-                        string citation = string.IsNullOrWhiteSpace(quote.Citation) ? "no citation" : quote.Citation;
+                        string citation = string.IsNullOrWhiteSpace(quote.Citation) ? "no citation" : QuoteLine(quote.Citation);
                         string verdictWord = quote.EffectiveVerdict.ToString().ToLowerInvariant();
-                        sb.AppendLine($"> - **Critical-error quote, {verdictWord}:** a sentence {MemberPhrase(quote) ?? "the assessor"} quoted as the critical error was checked by the claim verifier and returned **{VerdictText(quote)}**{side} — \"{quote.Claim}\" ({citation}).");
+                        sb.AppendLine($"> - **Critical-error quote, {verdictWord}:** a sentence {MemberPhrase(quote) ?? "the assessor"} quoted as the critical error was checked by the claim verifier and returned **{VerdictText(quote)}**{side} — \"{QuoteLine(quote.Claim)}\" ({citation}).");
                     }
                 }
                 // The assessor's own evidence sentences: a refutation clears the answer, not convicts it.
@@ -5852,9 +5890,9 @@ public static class BenchmarkReportBuilder
                     sb.AppendLine($"> - **Assessor statements checked:** {assessorStatements.Count} — supported {statementSupported}, refuted {statementRefuted}, indeterminate {statementIndeterminate}");
                     foreach (var statement in assessorStatements.Where(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted))
                     {
-                        string citation = string.IsNullOrWhiteSpace(statement.Citation) ? "no citation" : statement.Citation;
+                        string citation = string.IsNullOrWhiteSpace(statement.Citation) ? "no citation" : QuoteLine(statement.Citation);
                         string wrongParty = MemberPhrase(statement) is string statementMember ? char.ToUpperInvariant(statementMember[0]) + statementMember[1..] : "The assessor";
-                        sb.AppendLine($"> - **Assessor statement refuted:** a statement of {ChargedByPossessive(statement)} own evidence was checked by the claim verifier and **refuted** — \"{statement.Claim}\" ({citation}). *{wrongParty}, not the answer, {(MemberPhrase(statement) == "both members" ? "were" : "was")} wrong on this point; advisory, the deduction stands.*");
+                        sb.AppendLine($"> - **Assessor statement refuted:** a statement of {ChargedByPossessive(statement)} own evidence was checked by the claim verifier and **refuted** — \"{QuoteLine(statement.Claim)}\" ({citation}). *{wrongParty}, not the answer, {(MemberPhrase(statement) == "both members" ? "were" : "was")} wrong on this point; advisory, the deduction stands.*");
                     }
                 }
                 var suspectedFalse = SuspectedFalseClaimsOf(a);
@@ -5869,11 +5907,11 @@ public static class BenchmarkReportBuilder
                 foreach (var noted in (ClaimVerificationsOf(a) ?? new List<BenchmarkClaimVerification>())
                              .Where(v => !string.IsNullOrWhiteSpace(v.CitationNote)))
                 {
-                    sb.AppendLine($"> - **Citation note:** \"{noted.Claim}\" — the verifier returned {noted.Verdict.ToString().ToLowerInvariant()} citing {noted.Citation}, but {noted.CitationNote}; the harness reads it as indeterminate.");
+                    sb.AppendLine($"> - **Citation note:** \"{QuoteLine(noted.Claim)}\" — the verifier returned {noted.Verdict.ToString().ToLowerInvariant()} citing {QuoteLine(noted.Citation)}, but {QuoteLine(noted.CitationNote)}; the harness reads it as indeterminate.");
                 }
                 if (a.EvidenceInformedQualityScore.HasValue)
                 {
-                    sb.AppendLine($"> - {EvidenceInformedRegradeLine(run, a)}");
+                    sb.AppendLine($"> - {QuoteLine(EvidenceInformedRegradeLine(run, a))}");
                 }
                 if (a.AssessedByModelConfigurationId.HasValue &&
                     a.AssessedByModelConfigurationId != run.AssessorModelConfigurationId)
@@ -6030,7 +6068,7 @@ public static class BenchmarkReportBuilder
                 {
                     flagDescriptions.Add($"Contested accuracy deduction (advisory, changed no score) ({string.Join(" and ", ContestedDeductionCauses(ia, isPanelRun ? BenchmarkPanelMember.A : (BenchmarkPanelMember?)null))})");
                 }
-                if (iaFlags.HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource)) flagDescriptions.Add($"{RubricContradictedLabel}: a sentence docked against the rubric was supported with a citation (advisory, changed no score)");
+                if (iaFlags.HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource)) flagDescriptions.Add($"{RubricContradictedLabel}: a sentence docked against the rubric was supported with a citation (advisory, changed no score){RubricContradictionDetailText(ia, isPanelRun ? BenchmarkPanelMember.A : (BenchmarkPanelMember?)null)}");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy)) flagDescriptions.Add("Omission docked as accuracy (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.DimensionOutlier)) flagDescriptions.Add("Dimension outlier: one level ≤ 1 beside three at ≥ 3, no defect of that kind named (advisory, changed no score)");
 
@@ -6043,7 +6081,7 @@ public static class BenchmarkReportBuilder
                 {
                     flagDescriptions.Add($"Member B: contested accuracy deduction (advisory, changed no score) ({string.Join(" and ", ContestedDeductionCauses(ia, BenchmarkPanelMember.B).Select(c => CauseText(c, BenchmarkPanelMember.B)))})");
                 }
-                if (iaFlagsB.HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource)) flagDescriptions.Add($"Member B: {RubricContradictedLabel.ToLowerInvariant()}: a sentence docked against the rubric was supported with a citation (advisory, changed no score)");
+                if (iaFlagsB.HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource)) flagDescriptions.Add($"Member B: {RubricContradictedLabel.ToLowerInvariant()}: a sentence docked against the rubric was supported with a citation (advisory, changed no score){RubricContradictionDetailText(ia, BenchmarkPanelMember.B)}");
                 if (iaFlagsB.HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy)) flagDescriptions.Add("Member B: omission docked as accuracy (advisory, changed no score)");
                 if (iaFlagsB.HasFlag(BenchmarkAnswerFlags.DimensionOutlier)) flagDescriptions.Add("Member B: dimension outlier: one level ≤ 1 beside three at ≥ 3, no defect of that kind named (advisory, changed no score)");
                 if (ia.ToolBudgetExhausted)

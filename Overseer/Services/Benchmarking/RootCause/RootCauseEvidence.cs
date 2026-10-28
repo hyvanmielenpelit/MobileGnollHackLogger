@@ -939,8 +939,16 @@ public static class RootCauseEvidence
             MemberAIndex = memberAIndex ?? panel?.MemberAIndex,
             MemberBIndex = memberBIndex ?? panel?.MemberBIndex,
             ReferenceReaderIndex = referenceReaderIndex ?? panel?.ReferenceIndex,
+            PanelIcc = MeanPanelIcc(runs),
             Evidence = evidence
         };
+    }
+
+    /// <summary>The mean of the runs' panel ICC(A,1), as the <c>panel.icc</c> fact states it; null when no run has one.</summary>
+    private static double? MeanPanelIcc(IReadOnlyList<BenchmarkRun> runs)
+    {
+        var values = runs.Select(r => r.PanelIntraclassCorrelation).OfType<double>().ToList();
+        return values.Count == 0 ? null : values.Average();
     }
 
     /// <summary>The key of a model's release date in <see cref="RootCauseInput.ReleaseDates"/>: <c>provider|modelId</c>, trimmed, in lower case.</summary>

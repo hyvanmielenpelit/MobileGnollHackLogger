@@ -639,6 +639,26 @@ public class BenchmarkVerdictConsistencyTests
         Assert.False(BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors(synthesis));
     }
 
+    [Theory]
+    // A comma-delimited interjection between "cannot" and "be" leaves the admission an admission.
+    [InlineData("The run cannot, however, be described as free of factual error.")]
+    [InlineData("The run can't, on balance, be characterized as factually clean, though its weaknesses were confined to omissions.")]
+    public void SynthesisClaimsNoFactualErrors_DoesNotFireOnAnInterruptedAdmission(string synthesis)
+    {
+        Assert.False(BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors(synthesis));
+    }
+
+    [Fact]
+    public void SynthesisClaimsNoFactualErrors_InterruptedAffirmation_IsNotAnAdmission()
+    {
+        // "can, however, be described as factually clean" affirms rather than admits, so the
+        // same sentence's "confined to ... omissions" claim still stands.
+        const string synthesis =
+            "The run can, however, be described as factually clean: its weaknesses were confined to omissions.";
+
+        Assert.True(BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors(synthesis));
+    }
+
     [Fact]
     public void SynthesisClaimsNoFactualErrors_NotConfinedToANonOmissionObject_IsNotAnAdmission()
     {

@@ -3133,8 +3133,11 @@ function peerToken(entryKey: string): string | null {
   return `${match[1] === 'battery' ? 'battery-run' : match[1]}-${match[2]}`;
 }
 
-/** The longest comparison-name or covered-models slug a file name carries, as the server's `MaxNameSlugLength`. */
+/** The most characters of a comparison-name or covered-models slug a file name keeps before `-and-more`, as the server's `MaxNameSlugLength`. */
 export const COMPARISON_NAME_SLUG_MAX = 40;
+
+/** The end of a comparison-name or covered-models slug that was cut, so the name never reads as complete: the server's `CutSuffix`. */
+export const COMPARISON_SLUG_CUT_SUFFIX = '-and-more';
 
 /** The most covered models a subset's file name names one by one. */
 const NAMED_COVERED_MAX = 3;
@@ -3152,9 +3155,24 @@ function cutAtHyphen(slug: string, max: number): string {
   return cut.length === 0 ? slug.slice(0, max) : cut;
 }
 
-/** A comparison's name in a file name: `safeFileName`, cut at the last hyphen at or before 40 characters. */
+/**
+ * `slug` when it fits in 40 characters, else `cutAtHyphen`'s cut, a trailing `-vs` dropped when
+ * `dropDanglingVs`, followed by `-and-more`: the server's `Shorten`.
+ */
+function shortenSlug(slug: string, dropDanglingVs: boolean): string {
+  if (slug.length <= COMPARISON_NAME_SLUG_MAX) {
+    return slug;
+  }
+  let cut = cutAtHyphen(slug, COMPARISON_NAME_SLUG_MAX);
+  if (dropDanglingVs && cut.endsWith('-vs')) {
+    cut = cut.slice(0, -'-vs'.length);
+  }
+  return cut + COMPARISON_SLUG_CUT_SUFFIX;
+}
+
+/** A comparison's name in a file name: `safeFileName`, cut at the last hyphen at or before 40 characters and then ending in `-and-more` when it is longer. */
 export function comparisonNameSlug(name: string | null | undefined): string {
-  return cutAtHyphen(safeFileName(name ?? ''), COMPARISON_NAME_SLUG_MAX);
+  return shortenSlug(safeFileName(name ?? ''), false);
 }
 
 /** A subset's covered models: up to three models' slugs joined by `-vs-` in a named copy, else their count and the covered-set key's first 6 hex. */
@@ -3162,8 +3180,7 @@ function coveredSlug(doc: BenchmarkReportDocumentListItemDto, named: boolean): s
   const covered = doc.coveredModels ?? [];
   // A model without a label carries its entry key as its label and is counted instead.
   if (named && covered.length > 0 && covered.length <= NAMED_COVERED_MAX && covered.every(model => model.label !== model.entryKey)) {
-    const joined = cutAtHyphen(covered.map(model => safeFileName(model.label)).join('-vs-'), COMPARISON_NAME_SLUG_MAX);
-    return joined.endsWith('-vs') ? joined.slice(0, -'-vs'.length) : joined;
+    return shortenSlug(covered.map(model => safeFileName(model.label)).join('-vs-'), true);
   }
   const total = comparisonModelTotal(doc);
   const count = `${covered.length}${typeof total === 'number' && total > 0 ? `-of-${total}` : ''}-models`;
@@ -3176,8 +3193,8 @@ function coveredSlug(doc: BenchmarkReportDocumentListItemDto, named: boolean): s
  * `BenchmarkPdfFileNames.ComparisonStem` builds it, or null for any other document (no comparison
  * number, or a run's or battery run's own document):
  * - one model's document: `comparison-12_<model slug>_<kind>`, in both namings, the subject always named;
- * - a document of the whole comparison: `comparison-12_<name slug ≤ 40>_<kind>`, and
- *   `comparison-12_<kind>` in an anonymized copy or while the name is unknown;
+ * - a document of the whole comparison: `comparison-12_<name slug ≤ 40>_<kind>`, a cut slug ending in
+ *   `-and-more`, and `comparison-12_<kind>` in an anonymized copy or while the name is unknown;
  * - a model subset: `comparison-12_subset-<covered slug>_<kind>`, the covered slug naming up to three
  *   models in a named copy and counting them otherwise (`2-of-5-models-3f9a0c`).
  *

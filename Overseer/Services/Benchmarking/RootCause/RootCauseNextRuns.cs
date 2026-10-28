@@ -130,7 +130,7 @@ public static class RootCauseNextRuns
 
     /// <summary>The <see cref="RootCauseRecommendedRun.When"/> of a time-of-day run.</summary>
     public static readonly string TimeOfDayWhen = "Launch it " + Inv(ReplicateRuns) + " times, each at a different time of day; Number of Runs "
-        + Inv(ReplicateRuns) + ", Runs per model " + Inv(ReplicateRuns) + " or a model batch would run them back to back";
+        + Inv(ReplicateRuns) + ", Runs per model " + Inv(ReplicateRuns) + " or a model batch would run them back to back, which this run must not do";
 
     /// <summary><c>$7.50</c>, <c>$0.046</c>, <c>$240</c>, <c>$1,200</c>: two significant figures, whole dollars from $10.</summary>
     public static string Dollars(double usd)

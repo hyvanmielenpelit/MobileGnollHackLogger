@@ -1333,7 +1333,9 @@ public static class BenchmarkReportFacts
     /// <summary>
     /// <c>panel.sameProviderDelta</c>, where exactly one panel member shares the subject's provider in every run and the
     /// other in none: that member's own index minus the other member's, the mean over the runs with both, as
-    /// <see cref="SameProviderDeltaDisplay"/> words it. No fact otherwise.
+    /// <see cref="SameProviderDeltaDisplay"/> words it. No fact otherwise. When both member-alone facts are later
+    /// replaced (a battery result's composites, <see cref="FactList.Replace"/>), the fact is restated from them, so it
+    /// is the difference of the figures the panel table prints.
     /// </summary>
     internal static void AddSameProviderDelta(
         FactList facts, string? subjectProvider, IReadOnlyList<BenchmarkRun> subjectRuns, IReadOnlyList<(int? MemberA, int? MemberB)> memberAlone)
@@ -1345,14 +1347,24 @@ public static class BenchmarkReportFacts
         bool bOther = subjectRuns.All(r => !SameProvider(r.CoAssessorModelSnapshot?.Provider, subjectProvider));
         if (!(aSame && bOther) && !(bSame && aOther)) return;
 
+        facts.SameProviderMember = aSame ? "A" : "B";
         var both = memberAlone.Where(m => m.MemberA.HasValue && m.MemberB.HasValue).ToList();
         if (both.Count == 0) return;
 
         double a = both.Average(m => (double)m.MemberA!.Value);
         double b = both.Average(m => (double)m.MemberB!.Value);
-        double delta = aSame ? a - b : b - a;
-        facts.Add("panel.sameProviderDelta", delta, SameProviderDeltaDisplay(aSame ? "A" : "B", aSame ? "B" : "A", delta));
+        AddSameProviderDeltaFact(facts, aSame, a, b);
     }
+
+    private static void AddSameProviderDeltaFact(FactList facts, bool aSame, double memberA, double memberB)
+    {
+        double delta = aSame ? memberA - memberB : memberB - memberA;
+        facts.Add(SameProviderDeltaKey, delta, SameProviderDeltaDisplay(aSame ? "A" : "B", aSame ? "B" : "A", delta));
+    }
+
+    private const string SameProviderDeltaKey = "panel.sameProviderDelta";
+    private const string MemberAAloneKey = "panel.memberAAlone";
+    private const string MemberBAloneKey = "panel.memberBAlone";
 
     /// <summary>
     /// <c>member B, from the model's own provider, scored it 2 points below member A</c>: the same-provider member, the
@@ -2528,11 +2540,31 @@ public static class BenchmarkReportFacts
 
         public void Add(string key, bool value, string display) => Add(key, (JsonNode)JsonValue.Create(value), display);
 
-        /// <summary>Every fact keyed <paramref name="key"/> is removed, and one available fact takes its place.</summary>
+        // The figures Replace has set, by key.
+        private readonly Dictionary<string, double> _replaced = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// The panel member, <c>A</c> or <c>B</c>, that shares the subject's provider, as <see cref="AddSameProviderDelta"/>
+        /// found it; null when no single member does.
+        /// </summary>
+        public string? SameProviderMember { get; set; }
+
+        /// <summary>
+        /// Every fact keyed <paramref name="key"/> is removed, and one available fact takes its place. Once both
+        /// member-alone figures are replaced, <c>panel.sameProviderDelta</c> is restated from them.
+        /// </summary>
         public void Replace(string key, double value, string display)
         {
             _facts.RemoveAll(f => string.Equals(f.Key, key, StringComparison.Ordinal));
             Add(key, value, display);
+            _replaced[key] = value;
+
+            if (SameProviderMember != null && key is MemberAAloneKey or MemberBAloneKey
+                && _replaced.TryGetValue(MemberAAloneKey, out double memberA) && _replaced.TryGetValue(MemberBAloneKey, out double memberB))
+            {
+                _facts.RemoveAll(f => string.Equals(f.Key, SameProviderDeltaKey, StringComparison.Ordinal));
+                AddSameProviderDeltaFact(this, SameProviderMember == "A", memberA, memberB);
+            }
         }
 
         public void Unavailable(string key, string? reason)

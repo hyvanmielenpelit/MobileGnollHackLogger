@@ -107,8 +107,11 @@ public static class BenchmarkPdfFileNames
         return runPrefix + comparisonPrefix + SafeFileName(title) + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
     }
 
-    /// <summary>The longest comparison-name or covered-models slug a comparison file name carries.</summary>
+    /// <summary>The most characters of a comparison-name or covered-models slug a comparison file name keeps before <see cref="CutSuffix"/>.</summary>
     public const int MaxNameSlugLength = 40;
+
+    /// <summary>The end of a comparison-name or covered-models slug that was cut, so the name never reads as complete.</summary>
+    public const string CutSuffix = "-and-more";
 
     /// <summary>The most covered models a subset's file name names one by one.</summary>
     private const int MaxNamedCoveredModels = 3;
@@ -119,7 +122,7 @@ public static class BenchmarkPdfFileNames
     /// <c>comparison-12_&lt;name slug&gt;_&lt;kind&gt;</c>; for a subset
     /// <c>comparison-12_subset-&lt;covered slug&gt;_&lt;kind&gt;</c>, the covered slug being up to
     /// <see cref="MaxNamedCoveredModels"/> models' slugs joined by <c>-vs-</c> and cut as
-    /// <see cref="NameSlug"/> cuts (without a dangling <c>-vs</c>), else <c>3-of-10-models-&lt;first 6 hex of the covered-set key&gt;</c>.
+    /// <see cref="NameSlug"/> cuts (without a dangling <c>-vs</c> before <see cref="CutSuffix"/>), else <c>3-of-10-models-&lt;first 6 hex of the covered-set key&gt;</c>.
     /// An anonymized copy names no model the comparison name or the covered set would reveal: a
     /// whole-comparison stem leaves the name out and a subset is counted. The kind is <see cref="KindSlug"/>.
     /// </summary>
@@ -159,8 +162,7 @@ public static class BenchmarkPdfFileNames
         if (named && covered.Count is > 0 and <= MaxNamedCoveredModels
             && covered.All(m => !string.Equals(m.Label, m.EntryKey, StringComparison.Ordinal)))
         {
-            string joined = CutAtHyphen(string.Join("-vs-", covered.Select(m => SafeFileName(m.Label))), MaxNameSlugLength);
-            return joined.EndsWith("-vs", StringComparison.Ordinal) ? joined[..^"-vs".Length] : joined;
+            return Shorten(string.Join("-vs-", covered.Select(m => SafeFileName(m.Label))), dropDanglingVs: true);
         }
 
         int? total = facts.ComparisonEntryCount ?? comparison.EntryCount;
@@ -170,8 +172,23 @@ public static class BenchmarkPdfFileNames
         return setKey is { Length: >= 6 } ? count + "-" + setKey[..6].ToLowerInvariant() : count;
     }
 
-    /// <summary>A comparison's name in a file name: <see cref="SafeFileName"/>, cut at the last hyphen at or before <see cref="MaxNameSlugLength"/> characters.</summary>
-    public static string NameSlug(string? name) => CutAtHyphen(SafeFileName(name), MaxNameSlugLength);
+    /// <summary>
+    /// A comparison's name in a file name: <see cref="SafeFileName"/>, cut at the last hyphen at or before
+    /// <see cref="MaxNameSlugLength"/> characters and then ending in <see cref="CutSuffix"/> when it is longer.
+    /// </summary>
+    public static string NameSlug(string? name) => Shorten(SafeFileName(name), dropDanglingVs: false);
+
+    /// <summary>
+    /// <paramref name="slug"/> when it fits in <see cref="MaxNameSlugLength"/> characters, else <see cref="CutAtHyphen"/>'s
+    /// cut, a trailing <c>-vs</c> dropped when <paramref name="dropDanglingVs"/>, followed by <see cref="CutSuffix"/>.
+    /// </summary>
+    private static string Shorten(string slug, bool dropDanglingVs)
+    {
+        if (slug.Length <= MaxNameSlugLength) return slug;
+        string cut = CutAtHyphen(slug, MaxNameSlugLength);
+        if (dropDanglingVs && cut.EndsWith("-vs", StringComparison.Ordinal)) cut = cut[..^"-vs".Length];
+        return cut + CutSuffix;
+    }
 
     /// <summary>
     /// <paramref name="slug"/> when it fits in <paramref name="max"/> characters, else its part before the last

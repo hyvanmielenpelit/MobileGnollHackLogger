@@ -21,7 +21,6 @@
   not that the game lacks the answer, and repeated guessing is the most expensive way to find
   out which. Two misses on one lookup means changing approach — a different tool, a broader
   survey, or telling the player you could not find it.
-- When citing source code, always mention the file name and approximate line number.
 - Use source_code_view to get more context when a source_code_search result is incomplete.
 - Appearance strings returned by any tool (or found in source code / wiki) are pre-shuffle defaults and must never be used to identify an item in the player's game. Magical item appearances are randomized each game by shuffle_all().
 - The **only** authoritative source for this game's item identities is the `Discoveries`

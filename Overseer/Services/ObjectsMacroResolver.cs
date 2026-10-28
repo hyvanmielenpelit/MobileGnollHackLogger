@@ -1658,7 +1658,9 @@ namespace Overseer.Services
             fields["generation_probability"] = EvaluateSlot(Slot(slots, "oc_prob") ?? "0");
             fields["multigen_type"] = EvaluateSlot(Slot(slots, "oc_multigen_type") ?? "0");
             fields["delay"] = EvaluateSlot(Slot(slots, "oc_delay") ?? "0");
-            fields["weight"] = EvaluateSlot(Slot(slots, "oc_weight") ?? "0");
+            object weight = EvaluateSlot(Slot(slots, "oc_weight") ?? "0");
+            fields["weight"] = weight;
+            EmitWeightNote(notes, weight);
 
             EmitCost(fields, site, slots, structuralSlots);
             EmitNutrition(fields, slots, structuralSlots);
@@ -1889,6 +1891,39 @@ namespace Overseer.Services
             }
 
             fields["nutrition"] = EvaluateSlot(Slot(slots, "oc_nutrition") ?? "0");
+        }
+
+        /* oc_weight is stored in ounces, and every weight the player reads goes through
+           printweight, so the number alone reads as pounds or as no unit at all. */
+        private static void EmitWeightNote(List<string> notes, object weight)
+        {
+            long ounces;
+            if (weight is int i) ounces = i;
+            else if (weight is long l) ounces = l;
+            else return;
+
+            notes.Add("weight is in ounces (16 to a pound); the game shows " + GameWeightText(ounces)
+                + " (printweight, src/do.c:656-731, with the metric_system and detailed_weights "
+                + "options off, their defaults).");
+        }
+
+        /// <summary>
+        /// <paramref name="ounces"/> as printweight (src/do.c:656-731) prints it with the
+        /// metric_system and detailed_weights options off: pounds are ounces / 16, shown as
+        /// "%.0f cwt" of pounds / 100 from 1000 pounds, "%.0f lbs" from 10 pounds, and otherwise
+        /// with one decimal, "lb" for exactly one pound and "lbs" for any other weight. Pounds are
+        /// multiples of 1/16, so a halfway value is exact and rounds to even, as printf rounds it.
+        /// </summary>
+        internal static string GameWeightText(long ounces)
+        {
+            double pounds = ounces / 16.0;
+            if (pounds >= 1000) return Fixed(pounds / 100, 0) + " cwt";
+            if (pounds >= 10) return Fixed(pounds, 0) + " lbs";
+            return Fixed(pounds, 1) + (pounds == 1 ? " lb" : " lbs");
+
+            static string Fixed(double value, int decimals) =>
+                Math.Round(value, decimals, MidpointRounding.ToEven)
+                    .ToString(decimals == 0 ? "F0" : "F1", CultureInfo.InvariantCulture);
         }
 
         private void EmitDirection(

@@ -1454,8 +1454,8 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "|---|---|---|---|");
             foreach (var pair in pairs)
             {
-                string result = pair.NotTestedReason != null || pair.AdjustedPValue == null ? "not tested" : pair.Established ? string.Empty : "may be chance";
-                Line(sb, RcaRow(Cell(PairName(ctx, pair)), RatioCell(pair), RcaVolumeRatioCell(ctx, pair.FirstLetter, pair.SecondLetter), result));
+                Line(sb, RcaRow(Cell(PairName(ctx, pair)), RatioCell(pair), RcaVolumeRatioCell(ctx, pair.FirstLetter, pair.SecondLetter),
+                    Cell(ResultText(ctx, pair, "was cheaper"))));
             }
         }
         Line(sb);

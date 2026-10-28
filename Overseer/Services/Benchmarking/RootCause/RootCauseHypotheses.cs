@@ -398,6 +398,12 @@ public static class RootCauseHypotheses
     /// <summary>The short statement's lead of HC4 in a grouped pair, where the caching effect itself leads: <c>Caching, input price: Model A</c>.</summary>
     public const string CachingPriceShort = "Caching, input price";
 
+    /// <summary>
+    /// The short statement's lead of HQ8 when the lower thinking level scored higher, before the name of the entry at the
+    /// lower level: <c>Thinking-level inversion: Model B</c>.
+    /// </summary>
+    public const string ThinkingInversionShort = "Thinking-level inversion";
+
     /// <summary>The refuted-if statement of a price effect (<see cref="RootCauseDraft.PriceEffect"/>), which no run can change.</summary>
     public const string PriceEffectRefutedIf = "Not testable by a run: the share follows from the price cards and these runs' token counts.";
 
@@ -927,13 +933,15 @@ public static class RootCauseHypotheses
             yield return d;
         }
 
-        // HQ8: the same model at two thinking levels.
+        // HQ8: the same model at two thinking levels; when the lower level scored higher, the statement is the inversion.
         if (SameModelAtTwoLevels(a, b))
         {
             bool lowerIsWorse = ThinkingRank(a.ThinkingLevel) < ThinkingRank(b.ThinkingLevel);
             var d = PairDraft(ctx, pair, "HQ8", RootCauseAxes.Intelligence, a, b,
-                A + "'s lower thinking level explains its gap to " + B + ".",
-                "Thinking level: " + A,
+                lowerIsWorse
+                    ? A + "'s lower thinking level explains its gap to " + B + "."
+                    : B + " at the lower thinking level scored higher than " + A + ".",
+                lowerIsWorse ? "Thinking level: " + A : ThinkingInversionShort + ": " + B,
                 "The lower thinking level scores higher (a thinking-level inversion).",
                 "the higher level keeps scoring higher on the same questions",
                 stands, RootCauseLoci.Model);
@@ -943,7 +951,7 @@ public static class RootCauseHypotheses
                 d.NotSupported = true;
                 d.Against.Add("The lower thinking level scored higher: a thinking-level inversion.");
             }
-            d.Share = 1.0;
+            d.Share = lowerIsWorse ? 1.0 : null;
             d.Established = testEstablished;
             d.EstablishedText = PairTestReason;
             d.Robustness.Add(ctx.ReplicatesCheck(a, b));
@@ -956,9 +964,12 @@ public static class RootCauseHypotheses
             yield return d;
         }
 
-        // HQ9: the verifier would clear part of the Accuracy shortfall.
-        if (a.VerificationClearedIndex is double cleared && a.QualityIndex is double index && cleared - index >= 0.5)
+        // HQ9: the verifier would clear part of the Accuracy shortfall: the gap narrows by A's gain less B's, or by A's
+        // gain alone (one-sided) when B's sensitivity is unknown.
+        double? gainB = b.VerificationClearedIndex is double clearedB && b.QualityIndex is double indexB ? clearedB - indexB : null;
+        if (a.VerificationClearedIndex is double cleared && a.QualityIndex is double index && cleared - index - (gainB ?? 0) >= 0.5)
         {
+            double narrowing = cleared - index - (gainB ?? 0);
             var d = PairDraft(ctx, pair, "HQ9", RootCauseAxes.Intelligence, a, b,
                 "The claim verifier would clear part of " + A + "'s Accuracy shortfall against " + B + ".",
                 "Verifier would clear: " + A,
@@ -966,11 +977,21 @@ public static class RootCauseHypotheses
                 "re-grading with the verifier's rulings narrows the gap",
                 stands, RootCauseLoci.Harness);
             d.For.Add(A + "'s verification-cleared Overall Index is " + OneDecimal(cleared) + " against its published " + OneDecimal(index) + ".");
-            d.Share = gap > 0 ? (cleared - index) / gap : null;
+            if (gainB.HasValue)
+            {
+                d.For.Add(B + "'s verification-cleared Overall Index is " + OneDecimal(b.VerificationClearedIndex!.Value) + " against its published "
+                          + OneDecimal(b.QualityIndex!.Value) + ", so the gap narrows by " + OneDecimal(narrowing) + " points.");
+            }
+            else
+            {
+                d.Against.Add(B + "'s verification-cleared sensitivity is unknown, so the share is one-sided: it counts " + A + "'s gain alone.");
+            }
+            d.Share = gap > 0 ? narrowing / gap : null;
             d.Established = false;
             d.EstablishedText = "the claim verifier's rulings are advisory, not a test";
             d.Robustness.Add(ctx.ReplicatesCheck(a, b));
             d.FactKeys.Add(ctx.Key(a.Token, BenchmarkBatteryReportFacts.PanelVerificationClearedSensitivityKey));
+            if (gainB.HasValue) d.FactKeys.Add(ctx.Key(b.Token, BenchmarkBatteryReportFacts.PanelVerificationClearedSensitivityKey));
             d.NextRunKind = RootCauseRunKinds.PanelSwap;
             yield return d;
         }
@@ -1069,7 +1090,9 @@ public static class RootCauseHypotheses
         var waitShares = ctx.Models.Select(m => RootCauseEvidence.OwnWaitShare(m.Evidence)).Where(v => v.HasValue).Select(v => v!.Value).ToList();
         double? retriesA = ctx.RetriesPerAnswer(a);
         var retries = ctx.Models.Select(ctx.RetriesPerAnswer).Where(v => v.HasValue).Select(v => v!.Value).ToList();
-        bool aboveWait = waitA is double w && waitShares.Count > 0 && w > (RootCauseStatistics.Median(waitShares) ?? 0);
+        // Compared in whole percentage points, as the statement prints them: at least one point above the median.
+        bool aboveWait = waitA is double w && waitShares.Count > 0
+                         && WholePercent(w) >= WholePercent(RootCauseStatistics.Median(waitShares) ?? 0) + 1;
         bool aboveRetries = retriesA is double rt && retries.Count > 0 && rt > (RootCauseStatistics.Median(retries) ?? 0);
         if (aboveWait || aboveRetries)
         {
@@ -1181,12 +1204,17 @@ public static class RootCauseHypotheses
         }
         else if (volume.Share!.Value >= price.Share!.Value)
         {
-            var d = Make("HC1", A + " costs more than " + B + " mainly from token volume.", "Token volume: " + A,
-                "The price effect is larger.", "the volume effect stays the larger", volume, RootCauseLoci.Model, RootCauseLoci.Chat);
-            d.Against.Add("The price effect is " + SharePct(price) + " of the difference.");
-            if (caching != null) d.Against.Add("The caching effect is " + SharePct(caching) + " of the difference.");
-            d.NextRunKind = RootCauseRunKinds.Replicate;
-            yield return d;
+            // The same model on one price card has no price effect, so the volume effect is the whole difference by
+            // construction and HC1 would say nothing.
+            if (!(sameModel && SamePriceCards(a, b)))
+            {
+                var d = Make("HC1", A + " costs more than " + B + " mainly from token volume.", "Token volume: " + A,
+                    "The price effect is larger.", "the volume effect stays the larger", volume, RootCauseLoci.Model, RootCauseLoci.Chat);
+                d.Against.Add("The price effect is " + SharePct(price) + " of the difference.");
+                if (caching != null) d.Against.Add("The caching effect is " + SharePct(caching) + " of the difference.");
+                d.NextRunKind = RootCauseRunKinds.Replicate;
+                yield return d;
+            }
         }
         else
         {
@@ -1700,31 +1728,82 @@ public static class RootCauseHypotheses
             yield return d;
         }
 
-        // WQ6: grader disagreement.
-        double? disagreement = model.Evidence.PanelAnswers is > 0 ? model.Evidence.PanelDisagreements / (double)model.Evidence.PanelAnswers : null;
-        double? memberGap = model.MemberAIndex is double ma && model.MemberBIndex is double mb ? Math.Abs(ma - mb) : null;
-        double? halfWidth = model.QualityLower is double lo && model.QualityUpper is double hi ? (hi - lo) / 2 : null;
-        bool disagree = disagreement is > 0.15;
-        bool gapWide = memberGap is double g && halfWidth is double h && g > h;
-        if (disagree || gapWide)
+        // WQ6: grader disagreement; in comparison scope GraderDisagreement states it once, for the model it selects.
+        if (!ctx.Comparison && GraderDisagreementDraft(ctx, model) is { } wq6) yield return wq6;
+    }
+
+    /// <summary>
+    /// WQ6 of a comparison, once for the document: of the models with an index whose graders disagree (a panel
+    /// disagreement rate above 0.15, or members' indices further apart than the index's interval half-width), the one whose
+    /// member gap is the largest against its half-width, then the one with the lower panel ICC, then the higher
+    /// disagreement rate, then the first in letter order. Null outside comparison scope or when no model qualifies.
+    /// </summary>
+    internal static RootCauseDraft? GraderDisagreement(RootCauseContext ctx)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        if (!ctx.Comparison) return null;
+        var candidates = ctx.Models
+            .Where(m => m.QualityIndex.HasValue)
+            .Select((m, order) => (Model: m, Order: order, Figures: GraderDisagreementFigures(m)))
+            .Where(c => c.Figures.Disagree || c.Figures.GapWide)
+            .ToList();
+        if (candidates.Count == 0) return null;
+
+        var selected = candidates
+            .OrderBy(c => c.Figures.GapRatio.HasValue ? 0 : 1)
+            .ThenByDescending(c => c.Figures.GapRatio ?? 0)
+            .ThenBy(c => c.Model.PanelIcc.HasValue ? 0 : 1)
+            .ThenBy(c => c.Model.PanelIcc ?? 0)
+            .ThenByDescending(c => c.Figures.Rate ?? 0)
+            .ThenBy(c => c.Order)
+            .First();
+        var draft = GraderDisagreementDraft(ctx, selected.Model)!;
+        if (candidates.Count > 1)
         {
-            var d = WithinDraft(ctx, model, "WQ6", RootCauseAxes.Intelligence,
-                "Grader disagreement makes " + M + "'s index uncertain.",
-                "Grader disagreement: " + M,
-                "The panel members agree.",
-                "the disagreement recurs under another panel",
-                RootCauseLoci.Harness);
-            if (disagreement is double dr) d.For.Add("The panel disagreed on " + Pct(dr) + " of the answers both members graded.");
-            if (memberGap is double mg) d.For.Add("The members' indices are " + OneDecimal(mg) + " points apart" + (halfWidth is double hw ? ", against an interval half-width of " + OneDecimal(hw) : string.Empty) + ".");
-            var wilson = disagreement.HasValue ? RootCauseStatistics.Wilson(model.Evidence.PanelDisagreements!.Value, model.Evidence.PanelAnswers!.Value) : null;
-            d.Established = (wilson is { } w && w.Low > 0.15) || gapWide;
-            d.EstablishedText = Both(
-                disagreement.HasValue ? "the disagreement rate may be 15% or less (its 95% interval reaches that low)" : null,
-                memberGap.HasValue && halfWidth.HasValue ? "the two members' indices differ by no more than the interval half-width" : null);
-            d.FactKeys.Add(ctx.Key(model.Token, "panel.disagreements"));
-            d.NextRunKind = RootCauseRunKinds.PanelSwap;
-            yield return d;
+            draft.For.Add("Of the " + Inv(candidates.Count) + " models whose graders disagree, " + ctx.Name(selected.Model.Token)
+                          + "'s members are the furthest apart against its interval half-width.");
         }
+        draft.Scale = ctx.AtRisk(selected.Model.Token).Total;
+        return draft;
+    }
+
+    /// <summary>
+    /// The figures WQ6 reads of one model: its panel disagreement rate, its members' index gap, its index's interval
+    /// half-width, the gap as a multiple of the half-width, and whether the rate or the gap fires the rule.
+    /// </summary>
+    private static (double? Rate, double? Gap, double? HalfWidth, double? GapRatio, bool Disagree, bool GapWide) GraderDisagreementFigures(RootCauseModelInput model)
+    {
+        double? rate = model.Evidence.PanelAnswers is > 0 ? model.Evidence.PanelDisagreements / (double)model.Evidence.PanelAnswers : null;
+        double? gap = model.MemberAIndex is double ma && model.MemberBIndex is double mb ? Math.Abs(ma - mb) : null;
+        double? halfWidth = model.QualityLower is double lo && model.QualityUpper is double hi ? (hi - lo) / 2 : null;
+        double? ratio = gap is double g && halfWidth is double h && h > 0 ? g / h : null;
+        return (rate, gap, halfWidth, ratio, rate is > 0.15, gap is double gw && halfWidth is double hw && gw > hw);
+    }
+
+    /// <summary>The WQ6 draft of <paramref name="model"/>; null when its graders do not disagree.</summary>
+    private static RootCauseDraft? GraderDisagreementDraft(RootCauseContext ctx, RootCauseModelInput model)
+    {
+        string M = ctx.Name(model.Token);
+        var (disagreement, memberGap, halfWidth, _, disagree, gapWide) = GraderDisagreementFigures(model);
+        if (!disagree && !gapWide) return null;
+
+        var d = WithinDraft(ctx, model, "WQ6", RootCauseAxes.Intelligence,
+            "Grader disagreement makes " + M + "'s index uncertain.",
+            "Grader disagreement: " + M,
+            "The panel members agree.",
+            "the disagreement recurs under another panel",
+            RootCauseLoci.Harness);
+        if (disagreement is double dr) d.For.Add("The panel disagreed on " + Pct(dr) + " of the answers both members graded.");
+        if (memberGap is double mg) d.For.Add("The members' indices are " + OneDecimal(mg) + " points apart" + (halfWidth is double hw ? ", against an interval half-width of " + OneDecimal(hw) : string.Empty) + ".");
+        if (model.PanelIcc is double icc) d.For.Add("The panel's intraclass correlation over " + M + "'s answers is " + Two(icc) + ".");
+        var wilson = disagreement.HasValue ? RootCauseStatistics.Wilson(model.Evidence.PanelDisagreements!.Value, model.Evidence.PanelAnswers!.Value) : null;
+        d.Established = (wilson is { } w && w.Low > 0.15) || gapWide;
+        d.EstablishedText = Both(
+            disagreement.HasValue ? "the disagreement rate may be 15% or less (its 95% interval reaches that low)" : null,
+            memberGap.HasValue && halfWidth.HasValue ? "the two members' indices differ by no more than the interval half-width" : null);
+        d.FactKeys.Add(ctx.Key(model.Token, "panel.disagreements"));
+        d.NextRunKind = RootCauseRunKinds.PanelSwap;
+        return d;
     }
 
     private static IEnumerable<RootCauseDraft> WithinSpeed(RootCauseContext ctx, RootCauseModelInput model)
@@ -1909,7 +1988,7 @@ public static class RootCauseHypotheses
         {
             double? cacheShare = ctx.CacheReadShare(model);
             var d = WithinDraft(ctx, model, "WC2", RootCauseAxes.Cost,
-                "Uncached input is " + M + "'s largest cost component (where its cost goes, not a comparison).",
+                "A low cache-read share makes uncached input " + M + "'s largest cost component (where its cost goes, not a comparison).",
                 "Uncached input: " + M,
                 "The cache-read share is at least 70%.",
                 "the uncached share stays the largest",
@@ -2216,6 +2295,18 @@ public static class RootCauseHypotheses
            && !string.Equals(a.ThinkingLevel?.Trim(), b.ThinkingLevel?.Trim(), StringComparison.OrdinalIgnoreCase)
            && ThinkingRank(a.ThinkingLevel) >= 0 && ThinkingRank(b.ThinkingLevel) >= 0;
 
+    /// <summary>
+    /// The two were billed on one price card: each side's runs on one card, and the two cards list the same price for
+    /// every cost component, with at least one price listed.
+    /// </summary>
+    internal static bool SamePriceCards(RootCauseModelInput a, RootCauseModelInput b)
+    {
+        var pa = a.Evidence.PricesPerMillion;
+        var pb = b.Evidence.PricesPerMillion;
+        return !a.Evidence.PricesDiffer && !b.Evidence.PricesDiffer
+               && pa.Length == pb.Length && pa.Any(p => p.HasValue) && pa.SequenceEqual(pb);
+    }
+
     /// <summary>The two compare different model ids.</summary>
     internal static bool DifferentModels(RootCauseModelInput a, RootCauseModelInput b)
         => !string.Equals(a.ModelId?.Trim(), b.ModelId?.Trim(), StringComparison.OrdinalIgnoreCase);
@@ -2235,6 +2326,9 @@ public static class RootCauseHypotheses
         => group.StartsWith('S') && group.Length > 1 && char.IsAsciiDigit(group[1]) ? "suite " + group[1..] : "the " + group.ToLowerInvariant() + " band";
 
     internal static string Pct(double value) => BenchmarkReportFormat.Percent(value * 100);
+
+    /// <summary>A fraction in whole percentage points, rounded as <see cref="Pct"/> prints it.</summary>
+    private static double WholePercent(double value) => Math.Round(value * 100, 0, MidpointRounding.AwayFromZero);
 
     internal static string SharePct(RootCauseComponent component)
         => component.Share is double s ? Pct(s) + (component.ShareLower is double lo && component.ShareUpper is double hi ? " (" + Interval(lo, hi) + ")" : string.Empty) : "an unknown share";

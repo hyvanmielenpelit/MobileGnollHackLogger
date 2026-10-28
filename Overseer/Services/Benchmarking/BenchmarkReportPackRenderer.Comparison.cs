@@ -1249,7 +1249,8 @@ public static partial class BenchmarkReportPackRenderer
         + "questions both answered, with its 95% interval. Better, similar and worse count the questions both scored on the same item "
         + "revision on which the model scored more than 15 points above the reference, within 15 points of it, or more than 15 points "
         + "below it; they are not tests. May mislead per 20: answers with an accuracy level below 4 or a critical error, per 20 answers. "
-        + "Time and cost ratios: the model's median answer time and cost per question divided by the reference's.";
+        + "Time ratio of medians: the model's median answer time divided by the reference's. Cost ratio of means: the model's mean cost "
+        + "per question divided by the reference's. Neither is a paired ratio over the questions both answered.";
 
     private const string FailureProfileOutcomesNote = "Counted over each model's scored answers in all its runs; in a panel run a level is "
         + "the mean of both panel members' levels. May mislead: an accuracy level below 4 or a critical error. Outcomes are recorded from "
@@ -1290,7 +1291,7 @@ public static partial class BenchmarkReportPackRenderer
         if (full) header.Add("Questions");
         header.Add("Paired difference (95% interval)");
         if (full) header.Add("Result");
-        header.AddRange(new[] { "Better / similar / worse", "May mislead per 20", "Time ratio", "Cost ratio" });
+        header.AddRange(new[] { "Better / similar / worse", "May mislead per 20", "Time ratio of medians", "Cost ratio of means" });
         TableHeaderOf(sb, header);
 
         var rows = ComparisonRows(ctx);

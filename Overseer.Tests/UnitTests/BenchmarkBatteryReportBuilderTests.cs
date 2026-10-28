@@ -361,12 +361,20 @@ public class BenchmarkBatteryReportBuilderTests
     [Fact]
     public async Task TheUsageSection_StatesTheToolCallOutcomes_AndTheRefutedAnswerSentences()
     {
-        var outcomes = new BenchmarkBatteryAnswerOutcomes { ToolCallsFailed = 3, ToolCallsRefusedByBudget = 1, RefutedAnswerSentences = 5 };
+        var outcomes = new BenchmarkBatteryAnswerOutcomes
+        {
+            ToolCallsFailed = 3,
+            ToolCallsRefusedByBudget = 1,
+            RefutedAnswerSentences = 5,
+            AccusedSentences = new BenchmarkBatteryVerdictCounts(Checked: 8, Supported: 4, Refuted: 3, Indeterminate: 1)
+        };
 
         string report = await BuildAsync(outcomes, MembersWithUsage());
 
         Assert.Contains("- **Tool call outcomes:** 3 failed, 1 refused by the tool budget", report);
-        Assert.Contains("- **Claim verification:** 6 claims checked — 4 supported, **2 refuted**, 0 indeterminate; refuted answer sentences (accused ones included): 5", report);
+        Assert.Contains("- **Answers' own claims:** 6 checked — 4 supported, **2 refuted**, 0 indeterminate" + Environment.NewLine
+            + "- **Sentences graders accused:** 8 checked — 4 supported, 3 refuted, 1 indeterminate; refuted answer sentences, both kinds: 5 (a sentence in both populations counts once)", report);
+        Assert.DoesNotContain("- **Claim verification:**", report);
     }
 
     [Fact]
@@ -377,7 +385,7 @@ public class BenchmarkBatteryReportBuilderTests
         string report = await BuildAsync(outcomes, MembersWithUsage());
 
         Assert.Contains("- **Tool call outcomes:** — *not recorded: " + BenchmarkBatteryAnswerOutcomes.ToolRecordsReason + "*", report);
-        Assert.Contains("; refuted answer sentences (accused ones included): — *not countable: some verifications record no roles*", report);
+        Assert.Contains("- **Sentences graders accused:** — *not countable: some verifications record no roles*; refuted answer sentences, both kinds: — *not countable: some verifications record no roles*", report);
     }
 
     [Fact]
@@ -387,7 +395,8 @@ public class BenchmarkBatteryReportBuilderTests
 
         Assert.Contains("## 9. Token and Tool Usage", report);
         Assert.DoesNotContain("Tool call outcomes", report);
-        Assert.Contains("- **Claim verification:** 6 claims checked — 4 supported, **2 refuted**, 0 indeterminate", report);
+        Assert.Contains("- **Answers' own claims:** 6 checked — 4 supported, **2 refuted**, 0 indeterminate", report);
+        Assert.DoesNotContain("Sentences graders accused", report);
         Assert.DoesNotContain("refuted answer sentences", report);
     }
 

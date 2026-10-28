@@ -76,12 +76,19 @@ public static class RootCauseChartRenderer
 
     // R4: the label, the four grade positions, then the share bar and its text.
     private const float HypothesisLabelWidth = 150f;
+    private const float HypothesisLabelPadding = 6f;
     private const float GradeWidth = 180f;
     private const float GradeDot = 7f;
     private const float ShareTrackWidth = 56f;
     private const float ShareBarHeight = 7f;
     private const float HeaderHeight = 20f;
     private const float MinHypothesisRowPoints = 12f;
+
+    /// <summary>The characters R4's label column holds at <see cref="LabelCharPoints"/> each, less one for the ellipsis.</summary>
+    internal const int HypothesisLabelChars = (int)((HypothesisLabelWidth - HypothesisLabelPadding) / LabelCharPoints) - 1;
+
+    /// <summary>The first characters a model's label keeps when R4 shortens it from the middle.</summary>
+    private const int ShortenedLabelHeadChars = 3;
 
     private static readonly string[] GradeOrder =
     {
@@ -147,23 +154,25 @@ public static class RootCauseChartRenderer
         var charted = (result.Hypotheses ?? new List<RootCauseHypothesis>()).Where(h => h != null && h.Kind != "null").ToList();
         bool priceEffects = charted.Any(h => h.PriceEffect);
         AddHypotheses(plans, charted.Where(h => !h.PriceEffect).ToList(),
-            ModelNames(result, anonymized),
+            ModelLabels(result, anonymized),
             "The confidence grade of each hypothesis in the tables, and its share of the difference with its 95% interval where it has one"
             + (priceEffects ? "; price-card differences are left out" : string.Empty) + ". " + drawnBy);
         return plans;
     }
 
-    /// <summary>
-    /// The named variant's text with each <c>Model X</c> of an analyzed model replaced by the model's label; the anonymized
-    /// variant's text unchanged.
-    /// </summary>
-    private static Func<string, string> ModelNames(RootCauseResult result, bool anonymized)
+    /// <summary>The named variant's label of each analyzed model, by letter; none in the anonymized variant.</summary>
+    private static IReadOnlyDictionary<string, string> ModelLabels(RootCauseResult result, bool anonymized)
+        => anonymized
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : (result.Models ?? new List<RootCauseModel>())
+                .Where(m => !string.IsNullOrEmpty(m.Letter) && !string.IsNullOrWhiteSpace(m.Label))
+                .GroupBy(m => m.Letter!, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First().Label, StringComparer.Ordinal);
+
+    /// <summary>The text with each <c>Model X</c> of <paramref name="labels"/> replaced by its label; unchanged without labels.</summary>
+    private static Func<string, string> ModelNames(IReadOnlyDictionary<string, string> labels)
     {
-        var labels = (result.Models ?? new List<RootCauseModel>())
-            .Where(m => !string.IsNullOrEmpty(m.Letter) && !string.IsNullOrWhiteSpace(m.Label))
-            .GroupBy(m => m.Letter!, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First().Label, StringComparer.Ordinal);
-        if (anonymized || labels.Count == 0) return text => text;
+        if (labels.Count == 0) return text => text;
         return text => ModelToken.Replace(text, match => labels.TryGetValue(match.Groups[1].Value, out string? label) ? label : match.Value);
     }
 
@@ -229,8 +238,10 @@ public static class RootCauseChartRenderer
     private static bool Available(RootCauseChartRow row)
         => row.UnavailableReason == null && row.Total is double total && double.IsFinite(total) && row.Segments.Count > 0;
 
-    private static void AddHypotheses(List<ChartPlan> plans, IReadOnlyList<RootCauseHypothesis>? source, Func<string, string> names, string caption)
+    private static void AddHypotheses(
+        List<ChartPlan> plans, IReadOnlyList<RootCauseHypothesis>? source, IReadOnlyDictionary<string, string> labels, string caption)
     {
+        var names = ModelNames(labels);
         var hypotheses = (source ?? Array.Empty<RootCauseHypothesis>()).Where(h => h != null).ToList();
         if (hypotheses.Count == 0) return;
 
@@ -257,7 +268,7 @@ public static class RootCauseChartRenderer
         string alt = AltText(HypothesesTitle, hypotheses.Select(h => HypothesisClause(h, names)).ToList());
         plans.Add(new ChartPlan(BenchmarkReportChartPlacement.RcaHypothesesKey, HypothesesTitle,
             Clip(caption, BenchmarkReportChartStore.MaxCaptionChars), alt, height,
-            content => ComposeHypotheses(content, visible, hidden, pitch, names)));
+            content => ComposeHypotheses(content, visible, hidden, pitch, labels)));
     }
 
     // ---------------------------------------------------------------- text
@@ -325,6 +336,66 @@ public static class RootCauseChartRenderer
         string id = string.IsNullOrWhiteSpace(hypothesis.Key) ? hypothesis.Id ?? string.Empty : hypothesis.Key;
         string text = string.IsNullOrWhiteSpace(hypothesis.ShortStatement) ? hypothesis.Statement ?? string.Empty : hypothesis.ShortStatement;
         return (id + " " + names(text)).Trim();
+    }
+
+    /// <summary>
+    /// The hypothesis' label as R4's label column prints it: <see cref="HypothesisLabel"/> with the models' labels, except on
+    /// a line longer than the column holds (<see cref="HypothesisLabelChars"/>), where a model's label that would be cut and
+    /// shares its first words with another model's label is shortened from the middle, as far as the line needs: its
+    /// first characters, an ellipsis, then the words after the shared ones (<c>GPT…medium</c>), so that the part telling
+    /// the two apart stays visible. A label that differs from every other within its first word is never shortened.
+    /// </summary>
+    internal static string HypothesisChartLabel(RootCauseHypothesis hypothesis, IReadOnlyDictionary<string, string> labels)
+    {
+        string full = HypothesisLabel(hypothesis, ModelNames(labels));
+        int overflow = full.Length - HypothesisLabelChars;
+        if (overflow <= 0 || labels.Count < 2) return full;
+
+        string id = string.IsNullOrWhiteSpace(hypothesis.Key) ? hypothesis.Id ?? string.Empty : hypothesis.Key;
+        string text = string.IsNullOrWhiteSpace(hypothesis.ShortStatement) ? hypothesis.Statement ?? string.Empty : hypothesis.ShortStatement;
+        var line = new System.Text.StringBuilder(id.Length == 0 ? string.Empty : id + " ");
+        int last = 0;
+        foreach (Match match in ModelToken.Matches(text))
+        {
+            line.Append(text, last, match.Index - last);
+            last = match.Index + match.Length;
+            if (!labels.TryGetValue(match.Groups[1].Value, out string? label))
+            {
+                line.Append(match.Value);
+                continue;
+            }
+
+            int shared = SharedWordsLength(label, labels.Values);
+            int removable = shared - ShortenedLabelHeadChars;
+            if (overflow > 0 && removable >= 2 && line.Length + label.Length > HypothesisLabelChars)
+            {
+                int cut = Math.Min(removable, overflow + 1);
+                string shortened = label[..(shared - cut)].TrimEnd() + "…" + label[shared..];
+                overflow -= label.Length - shortened.Length;
+                label = shortened;
+            }
+            line.Append(label);
+        }
+        line.Append(text, last, text.Length - last);
+        return line.ToString().Trim();
+    }
+
+    /// <summary>
+    /// The length of the longest run of whole words, with the space after them, that <paramref name="label"/> shares at its
+    /// start with another of <paramref name="labels"/>: 16 for <c>GPT-6.1 Terra @ medium</c> beside <c>GPT-6.1 Terra @ high</c>,
+    /// 0 for <c>GPT-6 Luna</c> beside <c>GPT-6.1 Terra</c>.
+    /// </summary>
+    private static int SharedWordsLength(string label, IEnumerable<string> labels)
+    {
+        int common = 0;
+        foreach (string other in labels)
+        {
+            if (string.Equals(other, label, StringComparison.Ordinal)) continue;
+            int n = 0;
+            while (n < label.Length && n < other.Length && label[n] == other[n]) n++;
+            common = Math.Max(common, n);
+        }
+        return common == 0 ? 0 : label.LastIndexOf(' ', common - 1) + 1;
     }
 
     private static string SegmentLabel(RootCauseSegment segment)
@@ -578,7 +649,8 @@ public static class RootCauseChartRenderer
     /// has a share, a bar to the share with its 95% interval as a whisker and the figures beside it.
     /// </summary>
     private static void ComposeHypotheses(
-        IContainer container, IReadOnlyList<(string? Heading, RootCauseHypothesis? Hypothesis)> items, int hidden, float pitch, Func<string, string> names)
+        IContainer container, IReadOnlyList<(string? Heading, RootCauseHypothesis? Hypothesis)> items, int hidden, float pitch,
+        IReadOnlyDictionary<string, string> labels)
     {
         container.Column(col =>
         {
@@ -610,8 +682,8 @@ public static class RootCauseChartRenderer
 
                 col.Item().Height(pitch).Row(line =>
                 {
-                    line.ConstantItem(HypothesisLabelWidth).Height(pitch).AlignMiddle().PaddingRight(6)
-                        .Element(c => Line(c, HypothesisLabel(shown, names), RootCauseChartPalette.Ink));
+                    line.ConstantItem(HypothesisLabelWidth).Height(pitch).AlignMiddle().PaddingRight(HypothesisLabelPadding)
+                        .Element(c => Line(c, HypothesisChartLabel(shown, labels), RootCauseChartPalette.Ink));
                     line.ConstantItem(GradeWidth).Row(grade => ComposeGrade(grade, shown.Grade, pitch));
                     line.RelativeItem().Row(share => ComposeShare(share, shown, pitch));
                 });

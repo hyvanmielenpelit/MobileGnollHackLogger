@@ -12,7 +12,8 @@ using Xunit;
 /// pair itself, the slowest model its preferred partner's), the amount a hypothesis explains, the axis status
 /// with and without pairs, beside a price effect and with every hypothesis ruled out, the noun phrase of a check a draft proposes, the cost rules of
 /// a pair split into input and output, WS1 on a model whose visible text arrives in one burst, and the answers WQ4 and
-/// HQ6 need.
+/// HQ6 need; HQ8 in both directions, HQ9 on the net narrowing of the gap, HC1 between two levels on one price card, HS5
+/// at the precision it prints, WC2's statement, and the model a comparison's WQ6 is stated for.
 /// </summary>
 public class RootCauseHypothesesTests
 {
@@ -952,6 +953,334 @@ public class RootCauseHypothesesTests
         var drafts = RootCauseHypotheses.PairRules(ctx, new RootCausePair("A", "B"), new Dictionary<string, bool>());
 
         Assert.Equal(raised, drafts.Any(d => d.Id == "HQ6"));
+    }
+
+    // --- HQ8, HQ9, HC1, HS5, WC2 and a comparison's WQ6 ------------------------------------------------------
+
+    /// <summary>
+    /// A battery entry of <paramref name="modelId"/> at <paramref name="thinkingLevel"/> on twelve scored questions, two runs
+    /// per suite, with its Overall Index, an interval of ± <paramref name="halfWidth"/>, the advisory
+    /// verification-cleared index <paramref name="cleared"/>, the index under each panel member, the panel's ICC, and
+    /// <paramref name="disagreements"/> of <paramref name="panelAnswers"/> answers on which the panel disagreed.
+    /// </summary>
+    private static RootCauseModelInput Entry(string token, double index, string modelId, string thinkingLevel,
+        double? cleared = null, double? memberA = null, double? memberB = null, double halfWidth = 2.0, double? icc = null,
+        int disagreements = 0, int panelAnswers = 0)
+    {
+        var basis = Answering(token, index);
+        return new RootCauseModelInput
+        {
+            Token = token,
+            Letter = token,
+            Label = "Model label " + token,
+            Provider = "OpenAI",
+            ModelId = modelId,
+            ThinkingLevel = thinkingLevel,
+            EntryKey = "battery:" + token,
+            QualityIndex = index,
+            QualityLower = index - halfWidth,
+            QualityUpper = index + halfWidth,
+            VerificationClearedIndex = cleared,
+            MemberAIndex = memberA,
+            MemberBIndex = memberB,
+            PanelIcc = icc,
+            Evidence = new RootCauseModelEvidence
+            {
+                RunCount = 2,
+                RunsPerSuite = 2,
+                CriticalErrorsConfirmed = true,
+                Panel = panelAnswers > 0,
+                PanelAnswers = panelAnswers > 0 ? panelAnswers : null,
+                PanelDisagreements = panelAnswers > 0 ? disagreements : null,
+                Answers = basis.Evidence.Answers,
+                SpeedItems = basis.Evidence.SpeedItems
+            }
+        };
+    }
+
+    private static List<RootCauseDraft> IntelligenceDrafts(RootCauseModelInput a, RootCauseModelInput b)
+        => RootCauseHypotheses.PairRules(Compared(a, b), new RootCausePair(a.Token, b.Token), new Dictionary<string, bool>())
+            .Where(d => d.Axis == RootCauseAxes.Intelligence)
+            .ToList();
+
+    [Fact]
+    public void HQ8_WhenTheLowerThinkingLevelScoredHigher_StatesTheInversion_WithNoShare()
+    {
+        // Comparison #5: GPT-6.1 Terra at high (84.67) below the same model at medium (85.78).
+        var hq8 = Assert.Single(IntelligenceDrafts(Entry("A", 84.67, "gpt-6.1-terra", "high"), Entry("B", 85.78, "gpt-6.1-terra", "medium")),
+            d => d.Id == "HQ8");
+
+        Assert.Equal(new[] { "A", "B" }, hq8.Models);
+        Assert.Equal("Model B at the lower thinking level scored higher than Model A.", hq8.Statement);
+        Assert.Equal(RootCauseHypotheses.ThinkingInversionShort + ": Model B", hq8.Short);
+        Assert.True(hq8.NotSupported);
+        Assert.Null(hq8.Share);
+        Assert.Contains("The lower thinking level scored higher: a thinking-level inversion.", hq8.Against);
+
+        var graded = Grade(hq8);
+        Assert.Equal(RootCauseGrades.NotSupported, graded.Grade);
+        Assert.Null(graded.Share);
+        Assert.Null(graded.Explains);
+        string label = RootCauseLabels.Of(graded, t => "Model " + t);
+        Assert.Equal("Model B's higher score at the lower thinking level, compared with Model A", label);
+        Assert.Contains(RootCauseLabels.Topic(graded), label, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HQ8_WhenTheLowerThinkingLevelScoredLower_NamesItAsTheGap()
+    {
+        var hq8 = Assert.Single(IntelligenceDrafts(Entry("A", 84.0, "gpt-6.1-terra", "medium"), Entry("B", 86.0, "gpt-6.1-terra", "high")),
+            d => d.Id == "HQ8");
+
+        Assert.Equal("Model A's lower thinking level explains its gap to Model B.", hq8.Statement);
+        Assert.Equal("Thinking level: Model A", hq8.Short);
+        Assert.False(hq8.NotSupported);
+        Assert.Equal(1.0, hq8.Share!.Value, 9);
+        Assert.Equal("Model A's lower thinking level, compared with Model B", RootCauseLabels.Of(Grade(hq8), t => "Model " + t));
+    }
+
+    [Fact]
+    public void HQ9_WithComparisonFiveFigures_RaisesNothing_SinceBothModelsGainAlike()
+    {
+        // GPT-6 Luna 81.60 → 82.35 and GPT-6.1 Terra (medium) 85.78 → 86.61: the gap narrows by 0.75 − 0.83 < 0.5 points.
+        var drafts = IntelligenceDrafts(Entry("A", 81.60, "gpt-6-luna", "high", cleared: 82.35), Entry("B", 85.78, "gpt-6.1-terra", "medium", cleared: 86.61));
+
+        Assert.DoesNotContain(drafts, d => d.Id == "HQ9");
+    }
+
+    [Fact]
+    public void HQ9_SharesTheNetNarrowingOfTheGap_OrMarksAOneSidedShare_WhenTheOtherSensitivityIsUnknown()
+    {
+        double gap = 85.78 - 81.60;
+
+        // Both sensitivities known: the gap narrows by (83.60 − 81.60) − (86.61 − 85.78) points.
+        var net = Assert.Single(IntelligenceDrafts(Entry("A", 81.60, "gpt-6-luna", "high", cleared: 83.60), Entry("B", 85.78, "gpt-6.1-terra", "medium", cleared: 86.61)),
+            d => d.Id == "HQ9");
+        Assert.Equal((83.60 - 81.60 - (86.61 - 85.78)) / gap, net.Share!.Value, 9);
+        Assert.Contains("Model B's verification-cleared Overall Index is 86.6 against its published 85.8, so the gap narrows by 1.2 points.", net.For);
+        Assert.DoesNotContain(net.Against, line => line.Contains("one-sided", StringComparison.Ordinal));
+
+        // The better model's sensitivity unknown: Model A's gain alone, said to be one-sided.
+        var oneSided = Assert.Single(IntelligenceDrafts(Entry("A", 81.60, "gpt-6-luna", "high", cleared: 82.35), Entry("B", 85.78, "gpt-6.1-terra", "medium")),
+            d => d.Id == "HQ9");
+        Assert.Equal((82.35 - 81.60) / gap, oneSided.Share!.Value, 9);
+        Assert.Contains("Model B's verification-cleared sensitivity is unknown, so the share is one-sided: it counts Model A's gain alone.", oneSided.Against);
+    }
+
+    /// <summary>
+    /// One of two models on twelve priced questions billed on <paramref name="card"/>, reasoning reported apart, with
+    /// <paramref name="scale"/> times the base input and output tokens.
+    /// </summary>
+    private static RootCauseModelInput Volumed(string token, string modelId, string thinkingLevel, double scale, double[] card)
+    {
+        var questions = Enumerable.Range(1, 12).ToList();
+        return new RootCauseModelInput
+        {
+            Token = token,
+            Letter = token,
+            Label = "Model label " + token,
+            Provider = "OpenAI",
+            ModelId = modelId,
+            ThinkingLevel = thinkingLevel,
+            EntryKey = "run:" + token,
+            Evidence = new RootCauseModelEvidence
+            {
+                RunCount = 1,
+                RunsPerSuite = 1,
+                Priced = true,
+                ReasoningReported = true,
+                PricesPerMillion = card.Select(p => (double?)p).ToArray(),
+                Answers = questions.Select(q => new RootCauseAnswerRecord
+                {
+                    RunId = 1,
+                    ItemKey = "q" + q + "@1",
+                    QuestionKey = "q" + q,
+                    Band = "Simple",
+                    Ok = true,
+                    ReasoningReported = true
+                }).ToList(),
+                CostItems = questions.Select(q =>
+                {
+                    double[] tokens = { 10000 * scale * (1 + 0.01 * (q % 3)), 2000, 0, 500 * scale, 500 * scale * (1 + 0.01 * (q % 4)) };
+                    return new RootCauseItem
+                    {
+                        Key = "q" + q,
+                        Band = "Simple",
+                        Tokens = tokens,
+                        Cost = tokens.Select((t, k) => t * card[k] / 1_000_000).ToArray()
+                    };
+                }).ToList()
+            }
+        };
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void HC1_IsNotRaised_ForTheSameModelAtTwoLevelsOnOnePriceCard(bool sameModel, bool raised)
+    {
+        // Model A reads and writes twice the tokens on the same card; the price effect is zero by construction.
+        double[] card = { 1.25, 0.125, 0, 10, 10 };
+        var ctx = Compared(Volumed("A", "gpt-6.1-terra", "high", 2.0, card), Volumed("B", sameModel ? "gpt-6.1-terra" : "gpt-6-luna", "medium", 1.0, card));
+        var pair = new RootCausePair("A", "B");
+
+        var cost = ctx.CostPair(pair)!;
+        Assert.False(cost.Grouped);
+        Assert.Equal(0.0, cost.Components.Single(c => c.Key == RootCauseCostKeys.All && c.Effect == RootCauseCostKeys.Price).Share!.Value, 9);
+        var drafts = RootCauseHypotheses.PairRules(ctx, pair, new Dictionary<string, bool>()).Where(d => d.Axis == RootCauseAxes.Cost).ToList();
+
+        Assert.Equal(raised, drafts.Any(d => d.Id == "HC1"));
+        Assert.DoesNotContain(drafts, d => d.Id == "HC2");
+        Assert.Equal(sameModel, RootCauseHypotheses.SameModelAtTwoLevels(ctx.Model("A"), ctx.Model("B")));
+        Assert.True(RootCauseHypotheses.SamePriceCards(ctx.Model("A"), ctx.Model("B")));
+    }
+
+    /// <summary>
+    /// One of two timed models on twelve questions writing <paramref name="outputTokens"/> per question, whose own waits
+    /// are <paramref name="waitShare"/> of its model time.
+    /// </summary>
+    private static RootCauseModelInput Waiting(string token, double outputTokens, double waitShare)
+    {
+        var questions = Enumerable.Range(1, 12).ToList();
+        double Decode(int q) => outputTokens * 10 * (1 + 0.01 * (q % 3));
+        double ModelTime(int q) => 2000 + Decode(q) + 500;
+        return new RootCauseModelInput
+        {
+            Token = token,
+            Letter = token,
+            Label = "Model label " + token,
+            Provider = "Provider " + token,
+            ModelId = "model-" + token.ToLowerInvariant(),
+            ThinkingLevel = "high",
+            EntryKey = "run:" + token,
+            Evidence = new RootCauseModelEvidence
+            {
+                RunCount = 1,
+                RunsPerSuite = 1,
+                ReasoningReported = true,
+                Answers = questions.Select(q => new RootCauseAnswerRecord
+                {
+                    RunId = 1,
+                    ItemKey = "q" + q + "@1",
+                    QuestionKey = "q" + q,
+                    Band = "Simple",
+                    Ok = true,
+                    Telemetry = true,
+                    ModelTimeMs = ModelTime(q),
+                    OwnWaitMs = waitShare * ModelTime(q)
+                }).ToList(),
+                SpeedItems = questions.Select(q => new RootCauseItem
+                {
+                    Key = "q" + q,
+                    Band = "Simple",
+                    TtftMs = 2000,
+                    DecodeMs = Decode(q),
+                    ModelTimeMs = ModelTime(q),
+                    DurationMs = ModelTime(q) + 1000,
+                    ToolMs = 1000,
+                    WaitMs = waitShare * ModelTime(q),
+                    Calls = 2,
+                    OutputTokens = outputTokens
+                }).ToList()
+            }
+        };
+    }
+
+    [Theory]
+    [InlineData(0.004, 0.001, false)]
+    [InlineData(0.034, 0.026, false)]
+    [InlineData(0.05, 0.01, true)]
+    public void HS5_FiresOnlyOnePrintedPercentagePointAboveTheMedian(double waitA, double waitB, bool fires)
+    {
+        // Model A is the slower; its waits print as 0% and 3% against a median that prints the same, or 5% against 3%.
+        var ctx = Compared(Waiting("A", 3000, waitA), Waiting("B", 1000, waitB));
+
+        var drafts = RootCauseHypotheses.PairRules(ctx, new RootCausePair("A", "B"), new Dictionary<string, bool>());
+
+        Assert.Contains(drafts, d => d.Axis == RootCauseAxes.Speed && d.Models[0] == "A");
+        var hs5 = drafts.Where(d => d.Id == "HS5").ToList();
+        Assert.Equal(fires, hs5.Count == 1);
+        if (fires) Assert.Contains("Model A's own waits are 5% of its model time, above the models' median.", hs5[0].For);
+    }
+
+    [Fact]
+    public void WC2_StatesTheHypothesisItsTestChecks()
+    {
+        var wc2 = Assert.Single(Within(Billed("A", anthropic: false, new double[] { 3, 0.3, 3.75, 15, 15 }), RootCauseAxes.Cost), d => d.Id == "WC2");
+
+        Assert.Equal("A low cache-read share makes uncached input Model A's largest cost component (where its cost goes, not a comparison).", wc2.Statement);
+        Assert.Equal("The cache-read share is at least 70%.", wc2.RefutedIf);
+    }
+
+    /// <summary>
+    /// Comparison #5's three battery entries, whose member gaps and interval half-widths are constructed: GPT-6 Luna (high),
+    /// whose members agree; GPT-6.1 Terra (medium), ICC 0.66 and no disagreement, members 2.4 points apart against a
+    /// half-width of 2.0; and GPT-6.1 Terra (high), ICC 0.27 and one disagreement, members 5.9 points apart against 2.3.
+    /// </summary>
+    private static RootCauseContext ComparisonFive()
+        => new(new RootCauseInput
+        {
+            Scope = RootCauseEngine.ComparisonScope,
+            ReferenceToken = "A",
+            Models = new[]
+            {
+                Entry("A", 81.60, "gpt-6-luna", "high", memberA: 82.0, memberB: 81.2, halfWidth: 2.1, icc: 0.71, panelAnswers: 36),
+                Entry("B", 85.78, "gpt-6.1-terra", "medium", memberA: 87.0, memberB: 84.6, halfWidth: 2.0, icc: 0.66, panelAnswers: 36),
+                Entry("C", 84.67, "gpt-6.1-terra", "high", memberA: 87.6, memberB: 81.7, halfWidth: 2.3, icc: 0.27, disagreements: 1, panelAnswers: 36)
+            }
+        });
+
+    [Fact]
+    public void WQ6_InAComparison_IsStatedForTheModelWhoseMembersAreFurthestApartAgainstItsHalfWidth()
+    {
+        // Model C is the middle model on intelligence, so it is no within-rule target; the rule is stated for it all the same.
+        var ctx = ComparisonFive();
+
+        var wq6 = RootCauseHypotheses.GraderDisagreement(ctx)!;
+
+        Assert.Equal("WQ6", wq6.Id);
+        Assert.Equal(new[] { "C" }, wq6.Models);
+        Assert.Equal("within:C", wq6.Group);
+        Assert.Equal("Grader disagreement makes Model C's index uncertain.", wq6.Statement);
+        Assert.Contains("The members' indices are 5.9 points apart, against an interval half-width of 2.3.", wq6.For);
+        Assert.Contains("The panel's intraclass correlation over Model C's answers is 0.27.", wq6.For);
+        Assert.Contains("Of the 2 models whose graders disagree, Model C's members are the furthest apart against its interval half-width.", wq6.For);
+        Assert.Equal(ctx.AtRisk("C").Total, wq6.Scale!.Value, 9);
+
+        // A within-rule target of a comparison no longer states it on its own.
+        foreach (var model in ctx.Models)
+        {
+            Assert.DoesNotContain(RootCauseHypotheses.WithinRules(ctx, model, new[] { RootCauseAxes.Intelligence }, (null, null)), d => d.Id == "WQ6");
+        }
+    }
+
+    [Theory]
+    [InlineData(0.66, 0.27, "C")]
+    [InlineData(0.27, 0.66, "B")]
+    public void WQ6_InAComparison_BreaksATieOnTheMemberGapByTheLowerIcc(double iccB, double iccC, string expected)
+    {
+        var ctx = new RootCauseContext(new RootCauseInput
+        {
+            Scope = RootCauseEngine.ComparisonScope,
+            ReferenceToken = "B",
+            Models = new[]
+            {
+                Entry("B", 86, "gpt-6.1-terra", "medium", memberA: 87.5, memberB: 84.5, icc: iccB, panelAnswers: 36),
+                Entry("C", 85, "gpt-6.1-terra", "high", memberA: 86.5, memberB: 83.5, icc: iccC, panelAnswers: 36)
+            }
+        });
+
+        Assert.Equal(new[] { expected }, RootCauseHypotheses.GraderDisagreement(ctx)!.Models);
+    }
+
+    [Fact]
+    public void WQ6_InModelScope_StaysTheSubjectsOwnRule()
+    {
+        var subject = Entry("A", 84.67, "gpt-6.1-terra", "high", memberA: 87.6, memberB: 81.7, halfWidth: 2.3, icc: 0.27, disagreements: 1, panelAnswers: 36);
+        var ctx = new RootCauseContext(new RootCauseInput { Scope = RootCauseEngine.ModelScope, Models = new[] { subject } });
+
+        Assert.Single(RootCauseHypotheses.WithinRules(ctx, subject, new[] { RootCauseAxes.Intelligence }, (null, null)), d => d.Id == "WQ6");
+        Assert.Null(RootCauseHypotheses.GraderDisagreement(ctx));
     }
 
     [Fact]

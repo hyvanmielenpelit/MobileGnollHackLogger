@@ -430,6 +430,34 @@ public class BenchmarkRootCauseDigestTests
         Assert.Empty(both.Sorted());
     }
 
+    [Theory]
+    // Model Comparison #5: GPT-6 Luna @ high, member-alone composites 81.6 and 81.6, its runs' own indices a point apart.
+    [InlineData(81, 82, 81.6, 81.6, 0.0, "member B, from the model's own provider, scored it within a point of member A")]
+    // GPT-6.1 Terra @ medium, composites 87.0 and 84.6, its runs' own indices three points apart.
+    [InlineData(87, 84, 87.0, 84.6, -2.4, "member B, from the model's own provider, scored it 2 points below member A")]
+    public void ABatteryResultsSameProviderDelta_IsTheDifferenceOfTheMemberAloneComposites_ThePanelTablePrints(
+        int runA, int runB, double compositeA, double compositeB, double delta, string display)
+    {
+        BenchmarkRun Run() => new()
+        {
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "Google-grader"),
+            CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "OpenAI-grader")
+        };
+        var facts = new BenchmarkReportFacts.FactList();
+        BenchmarkReportFacts.AddSameProviderDelta(facts, "OpenAI", new[] { Run(), Run() },
+            new List<(int? MemberA, int? MemberB)> { (runA, runB), (runA, runB) });
+        Assert.Equal((double)(runB - runA), Assert.Single(facts.Sorted()).Value!.GetValue<double>(), 9);
+
+        // The battery's composites replace the member-alone facts, as BenchmarkBatteryReportFacts does; the delta follows.
+        facts.Replace("panel.memberAAlone", compositeA, BenchmarkReportFormat.OneDecimal(compositeA) + " / 100");
+        Assert.Equal((double)(runB - runA), facts.Sorted().Single(f => f.Key == "panel.sameProviderDelta").Value!.GetValue<double>(), 9);
+        facts.Replace("panel.memberBAlone", compositeB, BenchmarkReportFormat.OneDecimal(compositeB) + " / 100");
+
+        var fact = Assert.Single(facts.Sorted(), f => f.Key == "panel.sameProviderDelta");
+        Assert.Equal(delta, fact.Value!.GetValue<double>(), 9);
+        Assert.Equal(display, fact.Display);
+    }
+
     [Fact]
     public void TheReliabilityParagraph_CitesTheSameProviderReading_InPlaceOfTheGenericSentence()
     {

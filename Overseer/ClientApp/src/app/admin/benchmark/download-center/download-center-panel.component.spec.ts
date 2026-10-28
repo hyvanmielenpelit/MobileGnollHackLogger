@@ -29,6 +29,7 @@ import { ReportChartPickerComponent } from '../report-pack/report-chart-picker.c
 import {
   CHART_SKIP_REASONS,
   COMPARISON_NAME_SLUG_MAX,
+  COMPARISON_SLUG_CUT_SUFFIX,
   DOWNLOAD_CENTER_REPORT_JOB_POLL_MS,
   DOWNLOAD_CENTER_SEARCH_DEBOUNCE_MS,
   DOWNLOAD_CENTER_STORAGE_KEY,
@@ -1192,7 +1193,7 @@ describe('DownloadCenterPanelComponent', () => {
       expect(reportDocumentFileStem(afterExclusion, 'x', Named)).toBe('comparison-12_subset-4-of-4-models-3f9a0c_root-cause-analysis');
     });
 
-    it('cuts a long covered slug at a hyphen within forty characters, without a dangling -vs', () => {
+    it('cuts a long covered slug at a hyphen within forty characters, without a dangling -vs, and ends it in -and-more', () => {
       const three = coveringDoc(1, ExecutiveSummary, false, [
         { entryKey: 'run:12', label: 'Claude 5.5 Opus Extended Thinking', provider: 'Anthropic', letter: 'A' },
         { entryKey: 'run:14', label: 'Gemini 3.8 Pro Deep Think', provider: 'Google', letter: 'B' },
@@ -1200,18 +1201,39 @@ describe('DownloadCenterPanelComponent', () => {
       ]);
 
       expect(`${reportDocumentFileStem(three, 'x', Named)}_summary_named.pdf`)
-        .toBe('comparison-12_subset-claude-5.5-opus-extended-thinking_executive-summary_summary_named.pdf');
+        .toBe('comparison-12_subset-claude-5.5-opus-extended-thinking-and-more_executive-summary_summary_named.pdf');
     });
 
-    it('slugs a comparison name as safeFileName, cut at the last hyphen within forty characters', () => {
+    it('names two of three models whose names do not fit and says there are more, in a whole comparison and a subset', () => {
+      const models: BenchmarkReportCoveredModelDto[] = [
+        { entryKey: 'run:21', label: 'GPT-6 Luna (high)', provider: 'OpenAI', letter: 'A' },
+        { entryKey: 'run:22', label: 'GPT-6.1 Terra (medium)', provider: 'OpenAI', letter: 'B' },
+        { entryKey: 'run:23', label: 'GPT-6.1 Terra (high)', provider: 'OpenAI', letter: 'C' }
+      ];
+
+      const whole = coveringDoc(1, ExecutiveSummary, true, models, {
+        comparisonName: 'GPT-6 Luna (high) vs GPT-6.1 Terra (medium) vs GPT-6.1 Terra (high)'
+      });
+      expect(`${reportDocumentFileStem(whole, 'x', Named)}_summary_named.pdf`)
+        .toBe('comparison-12_gpt-6-luna-high-vs-gpt-6.1-terra-medium-and-more_executive-summary_summary_named.pdf');
+
+      const subset = coveringDoc(1, ExecutiveSummary, false, models);
+      expect(`${reportDocumentFileStem(subset, 'x', Named)}_summary_named.pdf`)
+        .toBe('comparison-12_subset-gpt-6-luna-high-vs-gpt-6.1-terra-medium-and-more_executive-summary_summary_named.pdf');
+    });
+
+    it('slugs a comparison name as safeFileName, cut at the last hyphen within forty characters and ending in -and-more when cut', () => {
       const cases: [string, string][] = [
         ['GPT-5.6 Luna (max) vs GPT-6.1 Sol (medium)', 'gpt-5.6-luna-max-vs-gpt-6.1-sol-medium'],
-        ['10 models · Core knowledge battery revision three', '10-models-core-knowledge-battery'],
-        ['a'.repeat(50), 'a'.repeat(40)]
+        ['GPT-6 Luna (high) vs GPT-6.1 Terra (medium) vs GPT-6.1 Terra (high)', 'gpt-6-luna-high-vs-gpt-6.1-terra-medium-and-more'],
+        ['10 models · Core knowledge battery revision three', '10-models-core-knowledge-battery-and-more'],
+        ['a'.repeat(50), `${'a'.repeat(40)}-and-more`]
       ];
       for (const [name, slug] of cases) {
-        expect(comparisonNameSlug(name), name).toBe(slug);
-        expect(comparisonNameSlug(name).length).toBeLessThanOrEqual(COMPARISON_NAME_SLUG_MAX);
+        const actual = comparisonNameSlug(name);
+        expect(actual, name).toBe(slug);
+        const kept = actual.endsWith(COMPARISON_SLUG_CUT_SUFFIX) ? actual.slice(0, -COMPARISON_SLUG_CUT_SUFFIX.length) : actual;
+        expect(kept.length).toBeLessThanOrEqual(COMPARISON_NAME_SLUG_MAX);
       }
     });
 

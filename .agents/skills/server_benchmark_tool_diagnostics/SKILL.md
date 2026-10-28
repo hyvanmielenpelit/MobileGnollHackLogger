@@ -197,6 +197,17 @@ is an `ObjectsMacroResolver` — the same field `get_item_stats`'s Level 1 resol
 `_objectsResolver`, which does not exist. A stored miss with no `Did you mean:` line and no
 appearance note is a run recorded **before** the harness-29 round.
 
+**Three harness-63 markers (the battery runs 24–26 round, 2026-10-28).** From harness 63
+`search_definitions` and `get_function_definition` find an `enum` or `struct` head whose `{` opens on
+the next non-blank line (`enum layer_types` in `include/layer.h:13-14`); a run stamped 62 or earlier
+that missed such a symbol met that tool gap, not a corpus or model failure, and on a 63-stamped run the
+same miss is a regression. Every `get_item_stats` result whose `weight` is a number carries a note
+*"weight is in ounces (16 to a pound); the game shows N lbs …"* (`server_tool_parameter_reference`
+§ 6); a stored result without it is harness 62 or earlier, where an answer printing the bare 550 as a
+weight read an unlabeled unit. And `OpenAiResponsesProvider` puts a paragraph break before the first
+text of a second or later `message` output item, so from 63 an OpenAI answer glued sentence-to-sentence
+across two items (run 137 Q11) is a regression, while before it the glue is that provider gap.
+
 **A `get_monster_stats` miss carrying `Did you mean: ` is a harness-61 marker (the runs 126–131
 round, 2026-10-24).** From harness 61 the tool resolves a monster's female name (slot 3 of its
 `src/monst.c` macro) and common name (slot 4) after its base name, with a `Resolved '…' to '…'` note in

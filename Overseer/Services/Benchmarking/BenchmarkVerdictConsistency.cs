@@ -737,14 +737,15 @@ public static class BenchmarkVerdictConsistency
     /// matching this is disqualified even when it also matches <see cref="NoFactualErrorsRegex"/>.
     ///
     /// Run 53's admissions are covered too: "not factually clean", "cannot be characterized (or
-    /// described) as factually clean" (or "as free of factual errors"), and "not confined to
-    /// omissions". The last requires omissions as the object, with at most three modifier words
-    /// between, so "not confined to this dungeon" is not an admission.
+    /// described) as factually clean" (or "as free of factual errors"), with at most one
+    /// comma-delimited interjection of up to three words before "be" ("cannot, however, be"), and
+    /// "not confined to omissions". The last requires omissions as the object, with at most three
+    /// modifier words between, so "not confined to this dungeon" is not an admission.
     /// </summary>
     private static readonly Regex FactualErrorsAdmittedRegex = new(
         @"\bnot\s+(?:entirely\s+|wholly\s+|completely\s+)?(?:free|devoid)\s+of\s+(?:any\s+)?factual\s+error|\bnot\s+without\s+(?:any\s+)?factual\s+error|\b(?:contains?|contained|carries|carried|includes?|included|exhibits?|exhibited)\s+(?:a\s+|some\s+|several\s+|two\s+|three\s+)?factual\s+error|\bfactual\s+errors?\s+(?:were|was|are|is)\s+(?:present|found|identified|recorded|noted)"
         + @"|\bnot\s+factually\s+clean"
-        + @"|\b(?:cannot|can\s+not|can['’]t)\s+be\s+(?:characteri[sz]ed|described)\s+as\s+(?:factually\s+clean|free\s+of\s+(?:any\s+)?factual\s+error)"
+        + @"|\b(?:cannot|can\s+not|can['’]t)(?:\s*,\s*(?:[\w-]+\s+){0,2}[\w-]+\s*,)?\s+be\s+(?:characteri[sz]ed|described)\s+as\s+(?:factually\s+clean|free\s+of\s+(?:any\s+)?factual\s+error)"
         + @"|\bnot\s+confined\s+to\s+(?:[\w-]+\s+){0,3}?omissions?\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 

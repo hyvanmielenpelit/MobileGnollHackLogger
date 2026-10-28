@@ -2981,9 +2981,9 @@ public class BenchmarkReportPackRendererTests
         string a = RcaLabel(document, "A"), b = RcaLabel(document, "B"), c = RcaLabel(document, "C");
 
         Assert.Contains("| Pair | Spend ratio (95% interval) | At equal prices | Result |\n", cost);
-        Assert.Contains("| " + b + " vs " + a + " | 2.00 (1.60 to 2.50) | 1.25 |  |\n", cost);
-        Assert.Contains("| " + c + " vs " + a + " | 1.25 (0.80 to 2.00) | — | May be chance |\n", cost);
-        Assert.DoesNotContain("was cheaper", cost);
+        // An established pair names the cheaper model in its Result cell, as the speed and intelligence tables do.
+        Assert.Contains("| " + b + " vs " + a + " | 2.00 (1.60 to 2.50) | 1.25 | " + a + " was cheaper |\n", cost);
+        Assert.Contains("| " + c + " vs " + a + " | 1.25 (0.80 to 2.00) | — | Not established |\n", cost);
         Assert.Contains("Spend ratios include the price cards. At equal prices is the token-volume ratio, the part the price cards do not set.", cost);
 
         // The pair the price cards lead gets no bullet of its own; the other names its leading component that is no price effect.
@@ -3440,12 +3440,61 @@ public class BenchmarkReportPackRendererTests
             text.IndexOf("## Compared with the reference model\n", StringComparison.Ordinal),
             text.IndexOf("## Also worth knowing\n", StringComparison.Ordinal),
             text.IndexOf("## Model by model\n", StringComparison.Ordinal));
-        Assert.Contains("| Model | Paired difference (95% interval) | Better / similar / worse | May mislead per 20 | Time ratio | Cost ratio |\n", text);
+        Assert.Contains("| Model | Paired difference (95% interval) | Better / similar / worse | May mislead per 20 | Time ratio of medians | Cost ratio of means |\n", text);
         Assert.DoesNotContain("## Notable findings", text);
 
         var findings = sheet.NotableFindings!;
         foreach (var finding in findings.Take(3)) Assert.Contains("- " + finding.Summary + "\n", text);
         foreach (var finding in findings.Skip(3)) Assert.DoesNotContain(finding.Summary, text);
+    }
+
+    [Fact]
+    public void TheReferenceTable_NamesItsRatiosRatiosOfMediansAndMeans_AndThePairFactsSayPairedRatio()
+    {
+        string text = RenderDocument(ComparisonDocument(BenchmarkReportAudience.ExecutiveSummary), BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+
+        Assert.Contains("| Time ratio of medians | Cost ratio of means |\n", text);
+        Assert.Contains("Time ratio of medians: the model's median answer time divided by the reference's. Cost ratio of means: the model's mean cost "
+            + "per question divided by the reference's. Neither is a paired ratio over the questions both answered.", text);
+
+        var ratios = ComparisonFacts().Sheet!.Facts.Where(f => f.Available && f.Key.StartsWith("pair.", StringComparison.Ordinal)
+            && (f.Key.EndsWith(".speed.ratio", StringComparison.Ordinal) || f.Key.EndsWith(".cost.ratio", StringComparison.Ordinal))).ToList();
+        Assert.NotEmpty(ratios);
+        Assert.All(ratios, f => Assert.Matches(@"^Model [A-Z] (took|cost) \d+\.\d\d times as (long|much) as Model [A-Z] on the same questions \(paired ratio(, 95% interval \d+\.\d\d to \d+\.\d\d)?\)$", f.Display));
+    }
+
+    [Fact]
+    public void APairsResultInAFamily_NamesBothModels_EstablishedOrNot()
+    {
+        var comparison = FiveModelComparison();
+        var runs = FiveModelRuns();
+        var keys = BenchmarkComparisonReportFacts.DefaultCoveredKeys(comparison);
+        var (reference, allPairs, unavailable) = BenchmarkComparisonReportFacts.PairedFromRuns(comparison, keys, runs);
+        BenchmarkReportFactSheet Build() => BenchmarkComparisonReportFacts.BuildFromRuns(
+            comparison, keys, runs, 120, reference, allPairs, unavailable, ComparisonNumber).Sheet!;
+
+        // Every result of either family names the pair's two models, so two in one paragraph read apart.
+        var before = Build();
+        var results = before.Facts.Where(f => f.Available && f.Key.StartsWith("pair.", StringComparison.Ordinal)
+            && (f.Key.EndsWith("." + BenchmarkComparisonReportFacts.ReferenceFamilyName, StringComparison.Ordinal)
+                || f.Key.EndsWith("." + BenchmarkComparisonReportFacts.AllPairsFamilyName, StringComparison.Ordinal))).ToList();
+        Assert.NotEmpty(results);
+        Assert.All(results, f =>
+        {
+            string[] parts = f.Key.Split('.');
+            Assert.Contains("Model " + parts[1], f.Display, StringComparison.Ordinal);
+            Assert.Contains("Model " + parts[2], f.Display, StringComparison.Ordinal);
+        });
+        Assert.StartsWith("no difference in score between Model A and Model B established after the Holm adjustment across ",
+            before.Facts.Single(f => f.Key == "pair.A.B.quality.reference").Display);
+
+        // An established result names the model it favors first, then the other.
+        string KeyOf(string letter) => before.Peers.Single(p => p.Letter == letter).EntryKey;
+        var tested = new[] { KeyOf("A"), KeyOf("C") };
+        reference!.Measures.Single(m => m.Measure == BenchmarkPairedTests.IntelligenceMeasure).Pairs
+            .Single(p => tested.Contains(p.BaselineKey) && tested.Contains(p.TreatmentKey)).Established = true;
+        Assert.StartsWith("Model A scored higher than Model C on the same questions, established after the Holm adjustment across ",
+            Build().Facts.Single(f => f.Key == "pair.A.C.quality.reference").Display);
     }
 
     [Fact]

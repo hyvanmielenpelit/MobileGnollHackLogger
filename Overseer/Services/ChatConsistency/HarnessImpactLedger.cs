@@ -326,6 +326,8 @@ public static class HarnessImpactLedger
                 "get_monster_stats resolves a monster's female and common names and lists near names on a miss; its name parameter says so."),
             new("62", R,
                 "Call telemetry records the thinking level each request carried, an Anthropic default for an unset level included; the run report names it beside \"Default\" and Profile Fit reads it."),
+            new("63", CI,
+                "Definition tools find an enum or struct whose \"{\" is on the next line; get_item_stats notes the weight in ounces and pounds; _policy.md drops the file-name-and-line citation rule (the tool guides hash moves); OpenAI message output items are separated by a paragraph break."),
         };
 
         return table.OrderBy(e => e.Number).ToList();

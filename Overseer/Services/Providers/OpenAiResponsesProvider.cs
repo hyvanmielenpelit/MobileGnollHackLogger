@@ -225,6 +225,14 @@ public class OpenAiResponsesProvider : IAiProvider
         var toolCallsInProgress = new Dictionary<string, (string name, StringBuilder args)>();
         var reasoningSanitizer = new ReasoningTextSanitizer();
         var visibleSanitizer = new ReasoningTextSanitizer();
+
+        // The text deltas of every message item in one response arrive on one channel with
+        // nothing between items, so a later message item is set off from the visible text
+        // already emitted by a paragraph break.
+        var visibleTail = new VisibleTextTail();
+        bool visibleTextPushed = false;
+        bool messageBreakPending = false;
+
         bool replayUnavailable = false;
         var meta = new ProviderCallMeta();
 
@@ -272,10 +280,17 @@ public class OpenAiResponsesProvider : IAiProvider
                             {
                                 var text = delta.GetString() ?? "";
                                 meta.MarkText(ts, text.Length);
+                                if (messageBreakPending && text.Length > 0)
+                                {
+                                    messageBreakPending = false;
+                                    text = visibleTail.ParagraphBreakBefore(text) + text;
+                                }
+                                if (text.Length > 0) visibleTextPushed = true;
                                 var sanitized = visibleSanitizer.Push(text);
                                 if (!string.IsNullOrEmpty(sanitized))
                                 {
                                     chunkStr = sanitized;
+                                    visibleTail.Record(sanitized);
                                 }
                             }
                         }
@@ -316,6 +331,20 @@ public class OpenAiResponsesProvider : IAiProvider
                                     else if (addedType == "refusal")
                                     {
                                         meta.IsRefusal = true;
+                                    }
+                                    else if (addedType == "message" && visibleTextPushed)
+                                    {
+                                        // The earlier message's text is complete, so whatever the
+                                        // sanitizer still holds back from it is released here. The
+                                        // break is then decided on the exact visible text, and is
+                                        // added only once the new item produces text of its own.
+                                        var heldTail = visibleSanitizer.Flush();
+                                        if (!string.IsNullOrEmpty(heldTail))
+                                        {
+                                            chunkStr = heldTail;
+                                            visibleTail.Record(heldTail);
+                                        }
+                                        messageBreakPending = true;
                                     }
                                 }
                             }
@@ -931,5 +960,55 @@ public class OpenAiResponsesProvider : IAiProvider
     {
         if (string.IsNullOrEmpty(raw)) return raw;
         return raw.Length <= MaxErrorDetailLength ? raw : raw.Substring(0, MaxErrorDetailLength);
+    }
+
+    /// <summary>
+    /// What the visible text emitted so far ends with: whether any non-whitespace text has been
+    /// emitted, and how many newlines its trailing whitespace holds.
+    /// </summary>
+    private sealed class VisibleTextTail
+    {
+        private bool _hasContent;
+        private int _trailingNewlines;
+
+        public void Record(string emitted)
+        {
+            if (string.IsNullOrEmpty(emitted)) return;
+
+            int newlines = 0;
+            int i = emitted.Length - 1;
+            for (; i >= 0 && char.IsWhiteSpace(emitted[i]); i--)
+            {
+                if (emitted[i] == '\n') newlines++;
+            }
+
+            if (i < 0)
+            {
+                _trailingNewlines += newlines;
+            }
+            else
+            {
+                _hasContent = true;
+                _trailingNewlines = newlines;
+            }
+        }
+
+        /// <summary>
+        /// The newlines that make a paragraph break between the emitted text and
+        /// <paramref name="next"/>, counting those the emitted text ends with and those
+        /// <paramref name="next"/> begins with. Empty when nothing visible has been emitted yet.
+        /// </summary>
+        public string ParagraphBreakBefore(string next)
+        {
+            if (!_hasContent) return string.Empty;
+
+            int newlines = _trailingNewlines;
+            for (int i = 0; i < next.Length && char.IsWhiteSpace(next[i]); i++)
+            {
+                if (next[i] == '\n') newlines++;
+            }
+
+            return newlines >= 2 ? string.Empty : new string('\n', 2 - newlines);
+        }
     }
 }

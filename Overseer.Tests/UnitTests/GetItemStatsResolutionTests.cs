@@ -290,4 +290,22 @@ public class GetItemStatsResolutionTests : IDisposable
         Assert.Contains("DRGN_ARMR(\"silver dragon scale mail\"", mail.RawDefinition);
         Assert.DoesNotContain("Resolved '", mail.Message ?? string.Empty);
     }
+
+    /// <summary>
+    /// The stored weight of 550 is in ounces, and the stats carry a note naming the unit and the
+    /// "34 lbs" the game shows for it.
+    /// </summary>
+    [Fact]
+    public async Task Weight_CarriesTheOunceUnitAndTheGameWeightInTheNotes()
+    {
+        using var service = await CreateServiceAsync();
+
+        var mail = service.GetItemStats("silver dragon scale mail");
+        Assert.Null(mail.Error);
+        Assert.NotNull(mail.Stats);
+        Assert.Equal(550L, Convert.ToInt64(mail.Stats!.Fields["weight"]));
+
+        var notes = Assert.IsType<List<string>>(mail.Stats.Fields["notes"]);
+        Assert.Contains(notes, n => n.StartsWith("weight is in ounces (16 to a pound); the game shows 34 lbs ", StringComparison.Ordinal));
+    }
 }

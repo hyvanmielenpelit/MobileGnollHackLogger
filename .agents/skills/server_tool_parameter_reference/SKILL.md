@@ -509,6 +509,17 @@ one. Up to harness 53 every constant of such an enum was missing, so a `get_cons
 one in a run stamped 53 or earlier was the parser, not the corpus. Tool output, not a tool guide:
 `ToolGuidesSha256` does not move.
 
+**From harness 63 (the battery runs 24–26 round, 2026-10-28) `search_definitions` and
+`get_function_definition` find an `enum` or `struct` whose `{` is on the next line.** After the
+same-line patterns, kinds `struct`, `enum` and `any` accept a head line that is only
+`[typedef] enum|struct <name>`, a trailing comment allowed, when the next non-blank line starts with
+`{`; the look-ahead is that one line, so a prototype (`struct foo;`), a parameter (`void f(enum x`) or
+a member list (`struct attribs` followed by `acurr,`) never matches, and a comment line between the
+head and the brace defeats it. The body runs from the head line through the closing brace. Up to
+harness 62 such a definition missed (`enum layer_types`, `include/layer.h:13-14`, on run 136 Q15), so a
+miss on one in a run stamped 62 or earlier is that gap. The miss probe still names the three files that
+mention a symbol most (`SourceMissContentBuilder`), which need not include the defining header.
+
 **Failure modes across the family**: missing required parameter → `Success = false` with a
 `"Missing … parameter"` message (this no longer applies to `source_code_view`'s `start_line` /
 `search_term` — `file` is now its only required parameter, and `start_line` defaults to 1 when
@@ -1131,6 +1142,13 @@ exists for all three tools, by two different mechanisms:**
     `ARM_MC_BONUS`. `spell_casting_penalty` is the stored value; the percentage a player
     experiences is emitted alongside it as `spell_casting_penalty_percent`, that value times
     `ARMOR_SPELL_CASTING_PENALTY_MULTIPLIER` (30).
+  - **From harness 63 the weight unit travels as a note too**, for every item whose `weight` is a
+    number: *"weight is in ounces (16 to a pound); the game shows N lbs (printweight, src/do.c:656-731,
+    …)"*. N is formatted as `printweight` does with its default options: `%.0f cwt` of pounds / 100 from
+    1000 lb, `%.0f lbs` from 10 lb, `%.1f lb` at exactly 1 lb, `%.1f lbs` otherwise (silver dragon
+    scale mail, 550, shows "34 lbs"; a 3-ounce item "0.2 lbs"). Minification keeps it. Up to harness
+    62 the bare value carried no unit, and run 134 Q3 printed "Weight: 550". `get_monster_stats`
+    returns `cwt` raw with no note, since the game never displays a monster's weight.
   - **A Level 1 failure is logged and named in `message`, not left to the JSON's shape alone.**
     `ItemResolution.Failed` always carries a reason; `GetItemStats` logs it at *information* level
     (`"Level 1 parsing did not resolve item '{Name}' ({Reason}); returning the raw definition."`),

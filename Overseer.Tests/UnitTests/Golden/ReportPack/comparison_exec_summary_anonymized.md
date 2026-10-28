@@ -53,7 +53,7 @@ For the best answers, choose Model A or Model B; their intervals overlap, so the
 
 **Reference:** Model A, the highest Intelligence Index.
 
-| Model | Paired difference (95% interval) | Better / similar / worse | May mislead per 20 | Time ratio | Cost ratio |
+| Model | Paired difference (95% interval) | Better / similar / worse | May mislead per 20 | Time ratio of medians | Cost ratio of means |
 |---|---|---|---|---|---|
 | Model A (reference) | — | — | 0 | 1.00× | 1.00× |
 | Model B | 0.0 (-21.0 to +21.0) | 1 / 5 / 0 | 0 | 0.75× | 0.60× |
@@ -61,7 +61,7 @@ For the best answers, choose Model A or Model B; their intervals overlap, so the
 | Model D | -15.8 (-26.1 to -5.6) | 0 / 1 / 5 | 0 | 0.67× | 1.20× |
 | Model E | -30.0 (-43.9 to -16.1) | 0 / 1 / 5 | 0 | 1.67× | 0.20× |
 
-*Paired difference: the mean per-question difference, the model minus the reference, on the questions both answered, with its 95% interval. Better, similar and worse count the questions both scored on the same item revision on which the model scored more than 15 points above the reference, within 15 points of it, or more than 15 points below it; they are not tests. May mislead per 20: answers with an accuracy level below 4 or a critical error, per 20 answers. Time and cost ratios: the model's median answer time and cost per question divided by the reference's.*
+*Paired difference: the mean per-question difference, the model minus the reference, on the questions both answered, with its 95% interval. Better, similar and worse count the questions both scored on the same item revision on which the model scored more than 15 points above the reference, within 15 points of it, or more than 15 points below it; they are not tests. May mislead per 20: answers with an accuracy level below 4 or a critical error, per 20 answers. Time ratio of medians: the model's median answer time divided by the reference's. Cost ratio of means: the model's mean cost per question divided by the reference's. Neither is a paired ratio over the questions both answered.*
 
 The table sets every other model against Model A; only the paired tests and the intervals decide where an order is established.
 

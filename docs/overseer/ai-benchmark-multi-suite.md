@@ -1283,8 +1283,10 @@ cost shows it once the AI-written reports exist."*
 
 *Token and Tool Usage* (§ 9) also reads the members' per-call tool records, the one part of the report
 not taken from the persisted analysis: *Tool call outcomes: N failed, M refused by the tool budget*, or
-*not recorded* with the reason when a member predates harness 17, and the claim line adds *refuted answer
-sentences (accused ones included): K* beside the answers' own refuted claims.
+*not recorded* with the reason when a member predates harness 17, and two labeled claim lines: *Answers'
+own claims: N checked — s supported, r refuted, i indeterminate* and *Sentences graders accused: M checked
+— s supported, r refuted, i indeterminate; refuted answer sentences, both kinds: K*, where a sentence in
+both populations counts once (harness 63).
 
 From harness 56 the report adds a **Provider availability** subsection (§ 3.10): the pooled provider
 error rate with its count and interval, the unattributed errors, the re-runs and a per-member table

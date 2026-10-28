@@ -649,6 +649,17 @@
   padding: 0;
   gap: 0;
 
+  /* The inset mirrors the Download Center panel's .dc-body. */
+  > .mc-documents-note {
+    flex: none;
+    margin: 0;
+    padding: 20px 24px 0;
+
+    @media (max-width: 600px) {
+      padding-inline: 16px;
+    }
+  }
+
   > app-download-center-panel {
     flex: 1 1 auto;
     min-height: 0;

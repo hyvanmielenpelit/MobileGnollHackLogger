@@ -1210,6 +1210,9 @@ namespace Overseer.Services
             // Closing line of a multi-line typedef block, e.g. "} gbuf_entry;".
             var typedefCloseRegex = new Regex($@"^\s*\}}\s*{escapedSymbol}\s*;");
             var enumRegex = new Regex($@"^\s*enum\s+{escapedSymbol}\s*{{");
+            // "struct name" / "enum name" alone on its line, its "{" on the next line (see OpensBlockOnNextLine).
+            var structHeadRegex = new Regex(BlockHeadPattern("struct", escapedSymbol));
+            var enumHeadRegex = new Regex(BlockHeadPattern("enum", escapedSymbol));
             var enumValueRegex = new Regex($@"^\s*{escapedSymbol}\s*=\s*\d+");
             var enumCommaRegex = new Regex($@"^\s*{escapedSymbol}\s*,");
 
@@ -1256,6 +1259,10 @@ namespace Overseer.Services
                         {
                             match = true;
                         }
+                        else if (structHeadRegex.IsMatch(line) && OpensBlockOnNextLine(doc.ContentLines, i))
+                        {
+                            match = true;
+                        }
                     }
 
                     if ((kind == "any" || kind == "type") && !match)
@@ -1270,6 +1277,10 @@ namespace Overseer.Services
                     if ((kind == "any" || kind == "enum") && !match)
                     {
                         if (enumRegex.IsMatch(line))
+                        {
+                            match = true;
+                        }
+                        else if (enumHeadRegex.IsMatch(line) && OpensBlockOnNextLine(doc.ContentLines, i))
                         {
                             match = true;
                         }
@@ -1310,6 +1321,31 @@ namespace Overseer.Services
 
             return results.Length > 0 ? results.ToString().Trim() : $"No definition found for '{symbol}' of kind '{kind}'.";
         }
+
+        /// <summary>
+        /// Pattern for a <paramref name="keyword"/> ("struct" or "enum") definition head with nothing
+        /// after the name but an optional trailing comment, e.g. "enum layer_types" whose "{" is on
+        /// the next line. A prototype ("struct foo;") or a parameter type ("void f(enum x") never
+        /// matches; the caller still requires <see cref="OpensBlockOnNextLine"/>.
+        /// </summary>
+        private static string BlockHeadPattern(string keyword, string escapedSymbol)
+            => $@"^\s*(?:typedef\s+)?{keyword}\s+{escapedSymbol}\s*(?:/\*.*\*/\s*|//.*)?$";
+
+        /// <summary>
+        /// True when the first non-blank line after <paramref name="headLine"/> starts with "{" after
+        /// its leading whitespace. Only that one line is examined, so a head followed by anything
+        /// else (a member list, a comment, another declaration) is not treated as a definition.
+        /// </summary>
+        private static bool OpensBlockOnNextLine(string[] lines, int headLine)
+        {
+            for (int j = headLine + 1; j < lines.Length; j++)
+            {
+                if (string.IsNullOrWhiteSpace(lines[j])) continue;
+                return lines[j].TrimStart().StartsWith('{');
+            }
+            return false;
+        }
+
         /// <summary>
         /// Shared helper: finds the first line in the index that matches a symbol of the given kind.
         /// Returns the document and 0-based line index, or (null, -1) if not found.
@@ -1329,6 +1365,8 @@ namespace Overseer.Services
             var macroRegex = new Regex($@"^\s*#define\s+{escapedSymbol}[\s(]");
             var structRegex = new Regex($@"^\s*struct\s+{escapedSymbol}\s*{{");
             var enumRegex = new Regex($@"^\s*enum\s+{escapedSymbol}\s*{{");
+            var structHeadRegex = new Regex(BlockHeadPattern("struct", escapedSymbol));
+            var enumHeadRegex = new Regex(BlockHeadPattern("enum", escapedSymbol));
             var typeRegex = new Regex($@"^\s*typedef\s+.*\s+{escapedSymbol}\s*;");
             // Closing line of a multi-line typedef block, e.g. "} gbuf_entry;".
             var typedefCloseRegex = new Regex($@"^\s*\}}\s*{escapedSymbol}\s*;");
@@ -1360,10 +1398,12 @@ namespace Overseer.Services
                         // anonymous "typedef struct { ... } name;" block (get_function_definition
                         // exposes no "type" kind, so an anonymous typedef surfaces under "struct").
                         if (structRegex.IsMatch(line) || typedefCloseRegex.IsMatch(line)) match = true;
+                        else if (structHeadRegex.IsMatch(line) && OpensBlockOnNextLine(doc.ContentLines, i)) match = true;
                     }
                     if ((kind == "any" || kind == "enum") && !match)
                     {
                         if (enumRegex.IsMatch(line)) match = true;
+                        else if (enumHeadRegex.IsMatch(line) && OpensBlockOnNextLine(doc.ContentLines, i)) match = true;
                     }
                     if ((kind == "any" || kind == "type") && !match)
                     {

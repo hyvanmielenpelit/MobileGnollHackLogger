@@ -320,11 +320,15 @@ public class BenchmarkChatTransferTests
     [InlineData("What does get_knowledge_article say about the vault?")]
     [InlineData("Does the game crash when the replay ends?")]
     [InlineData("How do I tell what an unidentified wand does?")]
-    [InlineData("What is the fastest way to identify a ring?")]
+    [InlineData("How do I identify an unknown wand?")]
+    [InlineData("What is the fastest way to identify an item without a scroll?")]
+    [InlineData("Can I identify items by selling them?")]
     [InlineData("Which potion has an orange appearance in this game?")]
     [InlineData("How does item identification work?")]
     [InlineData("What does the brown glyph on the game map mean?")]
     [InlineData("Which map symbol marks a fountain?")]
+    [InlineData("What does this map glyph mean?")]
+    [InlineData("How do I read the glyphs on the map?")]
     public void HasKnowledgeBaseRoutingQuestion_FindsATopicInTheQuestion(string question)
     {
         Assert.True(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { RoutingAnswer(question) }));
@@ -337,6 +341,10 @@ public class BenchmarkChatTransferTests
     // A bare "map" or "symbol" is an ordinary game word, not a knowledge-base topic.
     [InlineData("Where on this map is the altar?")]
     [InlineData("Does praying with a holy symbol help against undead?")]
+    // The player-assistance suite's Q6 and Q15: scroll mechanics and rendering internals, not
+    // knowledge-base topics.
+    [InlineData("In GnollHack, how many items does a scroll of identify identify, and does its blessed, uncursed or cursed state change that?")]
+    [InlineData("Explain GnollHack's multi-layer glyph rendering model: what layers exist, where they are defined, and how the C core hands them to the client.")]
     public void HasKnowledgeBaseRoutingQuestion_IgnoresBareOptionsAndFileNamesInTheQuestion(string question)
     {
         Assert.False(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { RoutingAnswer(question) }));
@@ -381,6 +389,8 @@ public class BenchmarkChatTransferTests
         Assert.Equal(3, routing.ZeroKnowledgeBaseAnswerCount);
         Assert.Equal(3, routing.KnowledgeBaseTopicQuestionCount);
         Assert.Equal(2, routing.KnowledgeBaseTopicZeroCallCount);
+        Assert.Equal(new[] { 1, 2, 3 }, routing.KnowledgeBaseTopicQuestions);
+        Assert.Equal(new[] { 1, 3 }, routing.KnowledgeBaseTopicZeroCallQuestions);
     }
 
     [Fact]
@@ -396,6 +406,8 @@ public class BenchmarkChatTransferTests
         Assert.Equal(1, routing.ZeroKnowledgeBaseAnswerCount);
         Assert.Equal(0, routing.KnowledgeBaseTopicQuestionCount);
         Assert.Equal(0, routing.KnowledgeBaseTopicZeroCallCount);
+        Assert.Empty(routing.KnowledgeBaseTopicQuestions);
+        Assert.Empty(routing.KnowledgeBaseTopicZeroCallQuestions);
     }
 
     [Fact]

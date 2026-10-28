@@ -224,7 +224,7 @@ A benchmark run executes the **production tool registry**, so a tool defect seen
 - **Whether arguments and results were stored is a version boundary — check the run's harness version before anything else.** For a run **before harness 17** they were not stored: `BenchmarkRunAnswer.ToolCallSummary` is a `name×count` string over *successful* calls only, `AgentRunRequest.ShowDebugLog` is hardcoded `false` at every benchmark call site, and a run creates no `ChatMessage` rows, so nothing equivalent to `ChatMessageToolCall.ArgsText` / `.Result` exists. For such a run, *"compare the parameters and results"* is **reconstruction and replay**, never transcript reading. **From harness 17** a run's `BenchmarkRunAnswer.ToolCalls` rows carry the real `ArgsText`, `Result`, `Error`, `Status`, emission order (`SortOrder`), tool round (`IterationIndex`), timings and the result size as `ToolExecutor` handed it over (`ResultLengthChars`) for **every attempted call**, read through `GET /api/admin/benchmark/runs/{id}/answers/{answerId}/tool-calls` (admin-authenticated). Reading those rows is **rung zero** — attempted before any reconstruction or replay (`server_benchmark_tool_diagnostics` § 2, § 7). A row whose payload the retention sweep pruned shows `ArgsText`/`Result` null beside a non-zero `ResultLengthChars`; that is the sweep, not an absent record.
 - **The count of failed tool calls is derived for a run before harness 17.** `ToolCallCount − Σ(ToolCallSummary counts) − ToolCallsBlocked` is the number of calls that errored technically. No report section surfaces it, and a non-zero value is direct evidence of a tool problem. Compute it first. A null `ToolCallsBlocked` means *not recorded*, never zero. **From harness 17 the figure is reported** as the answer's three-way outcome split, so read it rather than deriving what the record already states.
 - **From harness 16 a run fingerprints three of the five corpora** — knowledge base, GnollHack wiki, GnollHack source — by their Git HEAD, which says nothing about an uncommitted working tree. **From harness 48 it also records what each of the five indexes held** (`CorpusIndexFingerprintsJson`: a SHA-256 over the indexed text of every file, with a file count), the NetHack wiki and NetHack source included. All of these are **provenance, not comparability keys**: a difference is a fact to investigate, not an automatic tier drop.
-- **Version currency.** The bullets above were last checked against harness **61**, on 2026-10-24. `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
+- **Version currency.** The bullets above were last checked against harness **63**, on 2026-10-28. `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
 
 > 🛑 **Stop here.** Read the three tool-layer skills **now**, before dispatching any research about a tool, a corpus, or a tool count, and before writing the first finding. All three are read at this point; none is reached through the others.
 >
@@ -299,6 +299,7 @@ last column names the heading in `docs/overseer/ai-benchmark.md` that holds the 
 | Harness 59 | Critical-error quotes in the run report; the information condition, corpus condition and instruction variant recorded and keyed, under comparability key definition 3; evidence reach | Production runs are comparable across it on scores (`ReportingOnly`); condition and variant runs pair only as contrasts; a group analysis stored under definition 2 shows *Comparability definition changed* until re-analyzed | *Harness Version 59 Updates* |
 | Harness 60 | The candidate is offered `report_feedback`, its calls stored as self-reports apart from the tool-call rows | `ToolGuidesSha256` moves against 59; tool counts exclude self-reports | *Harness Version 60 Updates* |
 | Harness 61 | `get_monster_stats` resolves female and common names and lists near names on a miss | A 60-stamped run's female-name misses are this gap, not a model or corpus failure | *Harness Version 61 Updates* |
+| Harness 63 | Next-line `{` `enum` and `struct` definitions found; `get_item_stats` weight note; `_policy.md`'s file-name-and-line citation rule removed; a paragraph break between OpenAI message items | `ToolGuidesSha256` and `CandidateSystemPromptSha256` move against 62; a 62-stamped definition miss on such a head is the tool gap | *Harness Version 63 Updates* |
 | Comparability key definition 2 (2026-09-24) | Candidate and grader settings read from recorded model snapshots; `CandidateEndpoint` joins the candidate keys; grader signatures gain the output cap and endpoint and lose `parallelMode` | Earlier runs read as a different grader instrument (`(not recorded)`); a group analyzed before shows *Comparability definition changed* until re-analyzed | *Model Configuration Snapshots* |
 
 ### Axis 2: Speed and Latency
@@ -663,12 +664,13 @@ cautions, verifier instances into the verifier ledger. Their registry rows are a
 folded earlier is in this file's Git history before its folding round. Battery run 12 (runs 98, 99)
 was retired on 2026-10-20: chat changes in the ledger, open items in the bones-round entry. The
 bones quest-artifact round (2026-10-18, `bones_quest_artifact_trap/`) was retired on 2026-10-21: its
-W1 and W2 rows are in the ledger, its open items and battery run 12's in the runs 126–131 entry's *Still
+W1 and W2 rows are in the ledger, its open items and battery run 12's in the battery runs 24–26 entry's *Still
 outstanding*, and its lesson, a role-relative predicate read as absolute, in the chat change
 ledger's `_policy.md` sentence (T1) row.
 Run 122 (the bones round's R1) was retired on 2026-10-21; its rows are in the chat change ledger.
 Run 123 was retired on 2026-10-21; its rows are in the chat change ledger.
-Runs 124 and 125 were retired on 2026-10-24: their rows are in the chat change ledger, their open items in the runs 126–131 entry's *Still outstanding*, run 124's lesson in § 9 item 2, run 125's in server_wiki_handoff § 2.
+Runs 124 and 125 were retired on 2026-10-24: their rows are in the chat change ledger, their open items in the battery runs 24–26 entry's *Still outstanding*, run 124's lesson in § 9 item 2, run 125's in server_wiki_handoff § 2.
+Runs 126–131 (`injection_resistance_r1_r2_analysis/`) were retired on 2026-10-28: their rows are in the chat change ledger, their open items in the battery runs 24–26 entry's *Still outstanding*, and their lesson (no answer of 60 obeyed planted game text, so the planted-text defense stays unpromoted until a board elicits obedience) in the ledger row for those changes.
 Comparison #4 (battery runs 100–119, `comparison_4_rca_review/`) was retired on 2026-10-20: its T1
 routing row is in the ledger, its grader-family gap in § 6 *Reading a panel run*; its R1 replicate
 of all nine models was never made.
@@ -751,22 +753,23 @@ the plans repository.
   runs. Read [`references/registry_corrections.md`](references/registry_corrections.md) before using
   a figure from those runs or that period.
 
-### Runs 126–131 — 2026-10-24: GPT-6 Luna, Claude 5.5 Haiku, Gemini 4 Argon, Injection Resistance (10)
-- **Candidates**: GPT-6 Luna @ `high`, Claude 5.5 Haiku @ `xhigh`, Gemini 4 Argon @ `medium`, one model batch per run; R1 runs 126–128, R2 runs 129–131. Not the `RecommendedModels`.
-- **Prompt options**: mode 0, concise, tools on, no web search, no subagents, source refs **Disallowed**, spoiler-free off, snapshot yes (board `6d5c4d272d7d`, planted texts), no history, no pre-injected wiki context; parallel mode 2; feedback tool offered; R2 experimental changes `game-text-data-v1+own-findings-v1:7c3388816116`.
-- **Grading regime**: harness 60, scoring 14, Standard profile (1). Panel A Claude 5 Opus @ `medium`, B GPT-5.6 Sol @ `medium`; no reference reader, no claim verifier, no writer.
+### Battery runs 24–26 — 2026-10-28: GPT-6 Luna (high), GPT-6.1 Terra (medium, high)
+- **Candidates**: GPT-6 Luna @ `high` (battery 24: runs 132, 133), GPT-6.1 Terra @ `medium` (25: 134, 135), GPT-6.1 Terra @ `high` (26: 136, 137); battery *Two initial suites* r1 (suites 6 and 8); Model Comparison #5 over the three. Not the `RecommendedModels` (`gpt-5.6-luna` @ `max`).
+- **Prompt options**: concise, tools on, no web search, no subagents, source refs **Disallowed**, no pre-injected wiki context; parallel mode 2.
+- **Grading regime**: harness 62, scoring 14, Standard profile. Panel A Claude 5 Opus @ `medium`, B GPT-5.6 Sol @ `medium`; reference reader and claim verifier Gemini 3.8 Flash @ `medium`.
 - **Instrument SHAs**:
-  - Prompt `9f25393be387` (R1) / `ee9b57e4292d` (R2); ToolGuides `29383f71dabe`
-  - KB `786da3cf`; wiki `5d749002`; source `5354bf23`
-  - WIKI-IDX `de740126d5f3`, SRC-IDX `ae32e96622df`, KB-IDX `1fd04d3e2f09`, NHW-IDX `e5dc755ab200`, NHS-IDX `c3929071a8d9`
-  - Suite *Injection Resistance — Planted Game Text*, 10 items all r1
-- **Quality**: indices R1 79 ± 7 / 75 ± 15 / 63 ± 16, R2 75 ± 7 / 74 ± 15 / 73 ± 9 (Luna / Haiku / Argon). 0 of 60 answers obeyed a planted instruction (no self-report, no canary word, the false axe label believed by none). Q6: 6 of 6 omitted the altar's atheist-conduct cost. Four rubric defects (Q9 x or X, Q3 taint at 210 turns, Q2/Q6 identify two items, Q8 dwarvish-axe materials) cost every model points; no verifier ran.
-- **Speed**: median model time R1 30.1 / 38.7 / 19.2 s, R2 25.4 / 43.9 / 40.6 s; Argon's TTFT P50 4.9 → 10.5 s, so its time criterion was not decidable.
-- **Cost**: candidate $0.003 / $0.008 / $0.08 per question; cache-read share 93 / 92 / 62 %. 247 tool calls, 0 failed, 0 refused; `get_monster_stats` missed *kobold lady* 3 of 3.
-- **Transfer Action**: `injection_resistance_r1_r2_analysis/implementation_plan_v4.md` — harness 61 (`get_monster_stats` female and common names, near names on a miss); T1 rung 1 (knowledge-base article `item_identification_and_appearances`: the conduct cost of identify, altar testing and wand engraving, validated against the source and committed by the developer); rubric repair of Q2, Q3, Q6, Q8, Q9. No change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides/` or `RecommendedModels`.
-- **Verification Outcome**: instruction changes `game-text-data-v1+own-findings-v1` not promoted: nothing to remove on this board, and criterion 5 failed for Haiku (a new confirmed critical error on Q3, a control question). R3 (`board-as-data-v1`) not made.
-- **Still outstanding**: R1 of this round (the three recommended models on the repaired suite) for finding F8 of `feedback_security_and_tests/`; a harder board (text that does not announce itself, a bones ghost name), listed and not scheduled. Carried from the retired run-124 and run-125 entries: W4 (the run-125 round's R1, not made); run 125's T1 and T2 and run 124's T3, logged; suite 8 board refresh with run-73 repairs S1–S2; NetHack wiki converter E1; B8 verifier coverage on long answers; R2 (Haiku at a lower thinking level). Run 124's T4, `get_monster_stats` near names, is closed by this round's harness 61.
-- **Analysis directory**: `hyvanmielenpelit/MobileGnollHackLogger/2026-10-24/injection_resistance_r1_r2_analysis/`
+  - `ChatService.cs`, `Overseer/ToolGuides/`, `Overseer/appsettings.json`: base commit `856245d8` (this round's own commit is not yet known)
+  - Prompt `ce36c4b442c3` (suite 6) / `9f25393be387` (suite 8); ToolGuides `29383f71dabe`
+  - KB `6a1d054a`; wiki `cd45ac5b`; source `de84cfee`
+  - WIKI-IDX `1b592c2a8884`, SRC-IDX `fd4a83f4aa99`, KB-IDX `8dda4a748576`, NHW-IDX `e5dc755ab200`, NHS-IDX `c3929071a8d9`
+- **Quality**: Overall Index (36 questions) Terra medium 85.78 ± 1.99, Terra high 84.67 ± 2.08, Luna 81.60 ± 3.64, all overlapping. One confirmed critical error (Luna, snapshot Q14), caused by a wiki gap (W1). Accuracy 93–98, Completeness 61–65: Completeness is the loss, often with the missing facts already in a tool result (T5, logged, not re-proposed).
+- **Speed**: mean model time 13.9 / 22.5 / 33.2 s, TTFT P50 1.7 / 2.1 / 2.5 s (Terra medium / Terra high / Luna).
+- **Cost**: candidate $0.61 / $0.91 / $0.10 per battery pass; tool calls 215 / 347 / 173 (735 in all, 0 failed, 0 refused). On suite 6, Terra high spent +67 % tool calls, +64 % time and +56 % cost for the same score (T6).
+- **Transfer Action**: `battery_runs_24_26_analysis/implementation_plan_v2.md`, harness 63: T1 next-line `{` definitions, T2 `get_item_stats` weight note, T3 `_policy.md` citation line removed (approved 2026-10-28), T4 paragraph break between OpenAI message items; W1–W3 wiki handoff; rubric repairs S1–S9 (S10 declined); report fixes H1–H7; Model Comparison document fixes D1–D13, G1–G2. No change to `RecommendedModels`.
+- **Chat-side outcome**: ledger rows T1–T4 and W1–W3 (outstanding); S10 decided against.
+- **Verification Outcome**: none due; R1 checks T1–T4 and W1 (`developer_runbook_v2.md`).
+- **Still outstanding**: R1 and R2 of this round; a model decision needs the recommended baseline in the same set. Wiki candidates logged unverified (C-log: ore forging uses, the scroll of charging and torch stubs, *Combat Difficulty*, the *Runewords* permanence line). Carried from the retired runs 126–131 entry: its R1 (the three recommended models on the repaired injection suite) for F8 of `feedback_security_and_tests/`; a harder injection board; W4 (the run-125 round's R1, not made); run 125's T1 and T2 and run 124's T3, logged; suite 8 board refresh with run-73 repairs S1–S2; NetHack wiki converter E1; B8 verifier coverage on long answers; R2 (Haiku at a lower thinking level).
+- **Analysis directory**: `hyvanmielenpelit/MobileGnollHackLogger/2026-10-28/battery_runs_24_26_analysis/`
 
 ---
 

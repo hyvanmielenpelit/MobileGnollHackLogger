@@ -48,12 +48,12 @@ For the best answers, choose Orion Max or Zeta Prime; their intervals overlap, s
 
 **Reference:** Orion Max, the highest Intelligence Index.
 
-| Model | Provider | Paired difference (95% interval) | Better / similar / worse | May mislead per 20 | Time ratio | Cost ratio |
+| Model | Provider | Paired difference (95% interval) | Better / similar / worse | May mislead per 20 | Time ratio of medians | Cost ratio of means |
 |---|---|---|---|---|---|---|
 | Orion Max (reference) | Northwind | — | — | 0 | 1.00× | 1.00× |
 | Zeta Prime | Midland | -30.0 (-43.9 to -16.1) | 0 / 1 / 5 | 0 | 1.67× | 0.20× |
 
-*Paired difference: the mean per-question difference, the model minus the reference, on the questions both answered, with its 95% interval. Better, similar and worse count the questions both scored on the same item revision on which the model scored more than 15 points above the reference, within 15 points of it, or more than 15 points below it; they are not tests. May mislead per 20: answers with an accuracy level below 4 or a critical error, per 20 answers. Time and cost ratios: the model's median answer time and cost per question divided by the reference's.*
+*Paired difference: the mean per-question difference, the model minus the reference, on the questions both answered, with its 95% interval. Better, similar and worse count the questions both scored on the same item revision on which the model scored more than 15 points above the reference, within 15 points of it, or more than 15 points below it; they are not tests. May mislead per 20: answers with an accuracy level below 4 or a critical error, per 20 answers. Time ratio of medians: the model's median answer time divided by the reference's. Cost ratio of means: the model's mean cost per question divided by the reference's. Neither is a paired ratio over the questions both answered.*
 
 The table sets every other model against Orion Max; only the paired tests and the intervals decide where an order is established.
 

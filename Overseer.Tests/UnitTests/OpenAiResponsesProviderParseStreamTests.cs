@@ -1,7 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
@@ -143,5 +146,185 @@ public class OpenAiResponsesProviderParseStreamTests
         var errors = events.Where(e => e.Type == "error").ToList();
         Assert.Single(errors);
         Assert.Equal("OpenAI stream error: [response.failed] Unknown error", errors[0].Data);
+    }
+
+    private static string Sse(string eventType, object data)
+    {
+        return "event: " + eventType + "\n" +
+               "data: " + JsonSerializer.Serialize(data) + "\n\n";
+    }
+
+    private static string MessageItem(string id, int outputIndex, params string[] deltas)
+    {
+        var sb = new StringBuilder();
+        sb.Append(Sse("response.output_item.added", new
+        {
+            type = "response.output_item.added",
+            output_index = outputIndex,
+            item = new { id, type = "message", role = "assistant", content = Array.Empty<object>() }
+        }));
+        foreach (var delta in deltas)
+        {
+            sb.Append(Sse("response.output_text.delta", new
+            {
+                type = "response.output_text.delta",
+                item_id = id,
+                output_index = outputIndex,
+                content_index = 0,
+                delta
+            }));
+        }
+        sb.Append(Sse("response.output_item.done", new
+        {
+            type = "response.output_item.done",
+            output_index = outputIndex,
+            item = new
+            {
+                id,
+                type = "message",
+                role = "assistant",
+                content = new[] { new { type = "output_text", text = string.Concat(deltas) } }
+            }
+        }));
+        return sb.ToString();
+    }
+
+    private static string FunctionCallItem(string callId, int outputIndex)
+    {
+        const string arguments = "{\"query\":\"Holy Grail\"}";
+        return
+            Sse("response.output_item.added", new
+            {
+                type = "response.output_item.added",
+                output_index = outputIndex,
+                item = new { id = "fc_" + callId, type = "function_call", call_id = callId, name = "wiki_search", arguments = "" }
+            }) +
+            Sse("response.function_call_arguments.done", new
+            {
+                type = "response.function_call_arguments.done",
+                item_id = "fc_" + callId,
+                output_index = outputIndex,
+                call_id = callId,
+                arguments
+            }) +
+            Sse("response.output_item.done", new
+            {
+                type = "response.output_item.done",
+                output_index = outputIndex,
+                item = new { id = "fc_" + callId, type = "function_call", call_id = callId, name = "wiki_search", arguments }
+            });
+    }
+
+    private static string Completed()
+    {
+        return Sse("response.completed", new
+        {
+            type = "response.completed",
+            response = new { id = "resp_items", status = "completed" }
+        });
+    }
+
+    private static List<string> Chunks(List<ChatEvent> events)
+    {
+        return events.Where(e => e.Type == "chunk").Select(e => e.Data).ToList();
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_TwoMessageItems_AreSeparatedByParagraphBreak()
+    {
+        var sse = MessageItem("msg_1", 0, "A") + MessageItem("msg_2", 1, "B") + Completed();
+
+        var events = await ParseAsync(sse);
+
+        Assert.Equal("A\n\nB", string.Concat(Chunks(events)));
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_SingleMessageItem_ChunksAreUnchanged()
+    {
+        var sse = MessageItem("msg_1", 0, "Hello", "\n\nThe Grail is ", "complete.") + Completed();
+
+        var events = await ParseAsync(sse);
+
+        Assert.Equal(new[] { "Hello", "\n\nThe Grail is ", "complete." }, Chunks(events));
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_MessageThenFunctionCall_AddsNoBreak()
+    {
+        var sse = MessageItem("msg_1", 0, "Let me check.") + FunctionCallItem("call_1", 1) + Completed();
+
+        var events = await ParseAsync(sse);
+
+        Assert.Equal("Let me check.", string.Concat(Chunks(events)));
+        Assert.Single(events, e => e.Type == "tool_call_complete");
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_MessageFunctionCallMessage_BreaksBetweenTheMessages()
+    {
+        // The function call adds no break of its own; the second message item does.
+        var sse =
+            MessageItem("msg_1", 0, "A") +
+            FunctionCallItem("call_1", 1) +
+            MessageItem("msg_2", 2, "B") +
+            Completed();
+
+        var events = await ParseAsync(sse);
+
+        Assert.Equal("A\n\nB", string.Concat(Chunks(events)));
+        Assert.Single(events, e => e.Type == "tool_call_complete");
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_FirstItemEndsInParagraphBreak_AddsNoExtraBreak()
+    {
+        var sse = MessageItem("msg_1", 0, "A\n\n") + MessageItem("msg_2", 1, "B") + Completed();
+
+        var events = await ParseAsync(sse);
+
+        Assert.Equal("A\n\nB", string.Concat(Chunks(events)));
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_FirstItemEndsInOneNewline_AddsOneNewline()
+    {
+        var sse = MessageItem("msg_1", 0, "A\n") + MessageItem("msg_2", 1, "B") + Completed();
+
+        var events = await ParseAsync(sse);
+
+        Assert.Equal("A\n\nB", string.Concat(Chunks(events)));
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_SecondItemBeginsWithParagraphBreak_AddsNoExtraBreak()
+    {
+        var sse = MessageItem("msg_1", 0, "A") + MessageItem("msg_2", 1, "\n\nB") + Completed();
+
+        var events = await ParseAsync(sse);
+
+        Assert.Equal("A\n\nB", string.Concat(Chunks(events)));
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_FirstItemTailHeldBackBySanitizer_IsReleasedBeforeTheBreak()
+    {
+        // A trailing "to" could begin a "to=" routing marker, so the sanitizer holds it back and
+        // the text emitted so far ends in a newline that is not the end of the item's text.
+        var sse = MessageItem("msg_1", 0, "Next steps:\nto") + MessageItem("msg_2", 1, "Invoke it.") + Completed();
+
+        var events = await ParseAsync(sse);
+
+        Assert.Equal("Next steps:\nto\n\nInvoke it.", string.Concat(Chunks(events)));
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_SecondMessageItemWithoutText_AddsNoBreak()
+    {
+        var sse = MessageItem("msg_1", 0, "A") + MessageItem("msg_2", 1) + Completed();
+
+        var events = await ParseAsync(sse);
+
+        Assert.Equal("A", string.Concat(Chunks(events)));
     }
 }

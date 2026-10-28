@@ -563,8 +563,8 @@ public class RootCauseEngineTests
         Assert.DoesNotContain(result.RecommendedRuns, r => r.Kind == RootCauseRunKinds.TimeStratum);
         Assert.Contains(ws1.Key, replicate.HypothesisIds);
         Assert.Equal(replicate.Number, ws1.NextRunNumber);
-        Assert.Equal("Launch it 3 times, each at a different time of day; Number of Runs 3, Runs per model 3 or a model batch would run them back to back",
-            replicate.When);
+        Assert.Equal("Launch it 3 times, each at a different time of day; Number of Runs 3, Runs per model 3 or a model batch would run them back to back, "
+            + "which this run must not do", replicate.When);
         Assert.Equal(RootCauseNextRuns.TimeOfDayWhen, replicate.When);
         Assert.Equal(RootCauseNextRuns.ReplicateRuns, replicate.Launches);
         Assert.Equal("Single", replicate.RunMode);
@@ -826,9 +826,9 @@ public class RootCauseEngineTests
     }
 
     [Fact]
-    public void TheEngineVersion_IsFourteen()
+    public void TheEngineVersion_IsFifteen()
     {
-        Assert.Equal(14, RootCauseEngine.Version);
+        Assert.Equal(15, RootCauseEngine.Version);
     }
 
     [Fact]

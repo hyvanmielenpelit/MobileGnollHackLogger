@@ -506,25 +506,52 @@ public class BenchmarkReportCoverAndFileNameTests
     }
 
     [Fact]
-    public void ALongCoveredSlug_IsCutAtAHyphenWithinFortyCharacters()
+    public void ALongCoveredSlug_IsCutAtAHyphenWithinFortyCharacters_AndEndsInAndMore()
     {
         var three = ComparisonScope(BenchmarkReportAudience.ExecutiveSummary, coversAll: false,
             ("run:12", "Claude 5.5 Opus Extended Thinking", "Anthropic"),
             ("run:14", "Gemini 3.8 Pro Deep Think", "Google"),
             ("run:13", "GPT-6.1 Sol Medium Reasoning", "OpenAI"));
 
-        Assert.Equal("comparison-12_subset-claude-5.5-opus-extended-thinking_executive-summary_summary_named.pdf",
+        Assert.Equal("comparison-12_subset-claude-5.5-opus-extended-thinking-and-more_executive-summary_summary_named.pdf",
             BenchmarkPdfFileNames.ForReportDocument(three, Options(BenchmarkReportPeerNaming.Named)));
+    }
+
+    [Fact]
+    public void ThreeModelsWhoseNamesDoNotFit_NameTwoAndSayThereAreMore_InAWholeComparisonAndASubset()
+    {
+        (string Key, string Label, string Provider)[] models =
+        {
+            ("run:21", "GPT-6 Luna (high)", "OpenAI"),
+            ("run:22", "GPT-6.1 Terra (medium)", "OpenAI"),
+            ("run:23", "GPT-6.1 Terra (high)", "OpenAI")
+        };
+        var options = Options(BenchmarkReportPeerNaming.Named);
+
+        var whole = ComparisonScope(BenchmarkReportAudience.ExecutiveSummary, coversAll: true, models);
+        whole.Comparison!.Name = "GPT-6 Luna (high) vs GPT-6.1 Terra (medium) vs GPT-6.1 Terra (high)";
+        Assert.Equal("comparison-12_gpt-6-luna-high-vs-gpt-6.1-terra-medium-and-more_executive-summary_summary_named.pdf",
+            BenchmarkPdfFileNames.ForReportDocument(whole, options));
+
+        var subset = ComparisonScope(BenchmarkReportAudience.ExecutiveSummary, coversAll: false, models);
+        Assert.Equal("comparison-12_subset-gpt-6-luna-high-vs-gpt-6.1-terra-medium-and-more_executive-summary_summary_named.pdf",
+            BenchmarkPdfFileNames.ForReportDocument(subset, options));
     }
 
     [Theory]
     [InlineData("GPT-5.6 Luna (max) vs GPT-6.1 Sol (medium)", "gpt-5.6-luna-max-vs-gpt-6.1-sol-medium")]
-    [InlineData("10 models · Core knowledge battery revision three", "10-models-core-knowledge-battery")]
-    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
-    public void TheNameSlug_IsTheSafeFileName_CutAtTheLastHyphenWithinFortyCharacters(string name, string slug)
+    [InlineData("GPT-6 Luna (high) vs GPT-6.1 Terra (medium) vs GPT-6.1 Terra (high)", "gpt-6-luna-high-vs-gpt-6.1-terra-medium-and-more")]
+    [InlineData("10 models · Core knowledge battery revision three", "10-models-core-knowledge-battery-and-more")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-and-more")]
+    public void TheNameSlug_IsTheSafeFileName_CutAtTheLastHyphenWithinFortyCharacters_AndEndsInAndMoreWhenCut(string name, string slug)
     {
-        Assert.Equal(slug, BenchmarkPdfFileNames.NameSlug(name));
-        Assert.True(BenchmarkPdfFileNames.NameSlug(name).Length <= BenchmarkPdfFileNames.MaxNameSlugLength);
+        string actual = BenchmarkPdfFileNames.NameSlug(name);
+        Assert.Equal(slug, actual);
+
+        string kept = actual.EndsWith(BenchmarkPdfFileNames.CutSuffix, StringComparison.Ordinal)
+            ? actual[..^BenchmarkPdfFileNames.CutSuffix.Length]
+            : actual;
+        Assert.True(kept.Length <= BenchmarkPdfFileNames.MaxNameSlugLength);
     }
 
     [Fact]

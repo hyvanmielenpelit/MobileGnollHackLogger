@@ -50,7 +50,7 @@ using Overseer.Services.Benchmarking.RootCause;
 //                                                  a tested pair's mean per-question difference, L minus M
 //   pair.<L>.<M>.quality.<family>                  established after the family's Holm adjustment (family =
 //                                                  reference or allPairs)
-//   pair.<L>.<M>.speed.ratio, .cost.ratio          L's model time and spend per question relative to M's
+//   pair.<L>.<M>.speed.ratio, .cost.ratio          the paired ratio of L's model time and spend per question to M's
 //   pair.<L>.<M>.speed.<family>, .cost.<family>    established after the family's Holm adjustment
 //   pair.<L>.<M>.quality.short, .speed.short, .cost.short
 //                                                  the effect and whether it is established, without the adjustment
@@ -1417,8 +1417,8 @@ public static class BenchmarkComparisonReportFacts
         }
 
         string what = axis == "speed" ? " took " + Ratio(pair.Effect!.Value) + " times as long as " : " cost " + Ratio(pair.Effect!.Value) + " times as much as ";
-        string interval = pair.Lower is double l && pair.Upper is double u ? " (" + Ratio(l) + " to " + Ratio(u) + ")" : string.Empty;
-        facts.Add(key, pair.Effect.Value, a + what + b + " on the same questions" + interval);
+        string interval = pair.Lower is double l && pair.Upper is double u ? ", 95% interval " + Ratio(l) + " to " + Ratio(u) : string.Empty;
+        facts.Add(key, pair.Effect.Value, a + what + b + " on the same questions (paired ratio" + interval + ")");
     }
 
     /// <summary>The pair's result in one family: established or not after the family's adjustment, with the adjusted p-value.</summary>
@@ -1436,12 +1436,12 @@ public static class BenchmarkComparisonReportFacts
             : "as a single test";
         string p = "(adjusted p " + PValue(pair.AdjustedPValue.Value) + ")";
 
-        string winner = pair.Favors == "First" ? "Model " + pair.FirstLetter : "Model " + pair.SecondLetter;
+        var (winner, loser) = WinnerAndLoser(pair);
         string result = axis switch
         {
-            "speed" => winner + " was faster on the same questions",
-            "cost" => winner + " was cheaper on the same questions",
-            _ => winner + " scored higher on the same questions"
+            "speed" => winner + " was faster than " + loser + " on the same questions",
+            "cost" => winner + " was cheaper than " + loser + " on the same questions",
+            _ => winner + " scored higher than " + loser + " on the same questions"
         };
 
         string noDifference = axis switch
@@ -1452,7 +1452,7 @@ public static class BenchmarkComparisonReportFacts
         };
         string display = pair.Established && pair.Favors != "None"
             ? result + ", established " + adjustment + " " + p
-            : noDifference + " established " + adjustment + " " + p;
+            : noDifference + " between " + Between(pair) + " established " + adjustment + " " + p;
         facts.Add(key, pair.Established, display);
     }
 
@@ -1478,13 +1478,22 @@ public static class BenchmarkComparisonReportFacts
                 : "as a single test";
             string p = "(adjusted p " + PValue(test.AdjustedPValue.Value) + ")";
             string name = char.ToUpperInvariant(dimension[0]) + dimension[1..];
-            string winner = test.Favors == "First" ? "Model " + test.FirstLetter : "Model " + test.SecondLetter;
+            var (winner, loser) = WinnerAndLoser(test);
             string display = test.Established && test.Favors != "None"
-                ? winner + " scored higher on " + name + " on the same questions, established " + adjustment + " " + p
-                : "no " + name + " difference established " + adjustment + " " + p;
+                ? winner + " scored higher than " + loser + " on " + name + " on the same questions, established " + adjustment + " " + p
+                : "no " + name + " difference between " + Between(test) + " established " + adjustment + " " + p;
             facts.Add(key, test.Established, display);
         }
     }
+
+    /// <summary>The model a pair's result favors and the other, as <c>Model X</c>: the second model unless it favors the first.</summary>
+    private static (string Winner, string Loser) WinnerAndLoser(BenchmarkReportPairedTest pair)
+        => pair.Favors == "First"
+            ? ("Model " + pair.FirstLetter, "Model " + pair.SecondLetter)
+            : ("Model " + pair.SecondLetter, "Model " + pair.FirstLetter);
+
+    /// <summary>A pair's two models in letter order: <c>Model A and Model B</c>.</summary>
+    private static string Between(BenchmarkReportPairedTest pair) => "Model " + pair.FirstLetter + " and Model " + pair.SecondLetter;
 
     /// <summary>A paired-test response's dimension tests, each oriented by letter, with its lower-case dimension and its measure.</summary>
     private static IEnumerable<(string Dimension, BenchmarkPairedMeasureDto Measure, BenchmarkReportPairedTest Test)> DimensionTests(

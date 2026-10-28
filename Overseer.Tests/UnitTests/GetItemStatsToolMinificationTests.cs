@@ -96,4 +96,35 @@ public class GetItemStatsToolMinificationTests
 
         Assert.Equal(TruncationSentence, minified.Message);
     }
+
+    /// <summary>
+    /// The stats pass through minification whole, so the weight note naming the unit and the
+    /// game's "34 lbs" still reaches the model in the serialized payload.
+    /// </summary>
+    [Fact]
+    public void WeightNote_SurvivesMinification()
+    {
+        string weightNote = "weight is in ounces (16 to a pound); the game shows "
+            + ObjectsMacroResolver.GameWeightText(550)
+            + " (printweight, src/do.c:656-731, with the metric_system and detailed_weights options off, their defaults).";
+        var stats = new ItemStats();
+        stats.Fields["name"] = "silver dragon scale mail";
+        stats.Fields["weight"] = 550;
+        stats.Fields["notes"] = new List<string> { weightNote };
+
+        var result = new StatsResponse<ItemStats>
+        {
+            Stats = stats,
+            RawDefinition = "DRGN_ARMR(\"silver dragon scale mail\", ...)",
+            Message = "These are the object class values.",
+            MacroDefinitions = new Dictionary<string, string> { { "DRGN_ARMR", new string('x', 20_000) } }
+        };
+
+        var minified = GetItemStatsTool.Minify(result, Options, threshold: 500);
+
+        Assert.Empty(minified.MacroDefinitions);
+        var notes = Assert.IsType<List<string>>(minified.Stats!.Fields["notes"]);
+        Assert.Equal(weightNote, Assert.Single(notes));
+        Assert.Contains("the game shows 34 lbs", JsonSerializer.Serialize(minified, Options));
+    }
 }

@@ -755,10 +755,61 @@ public class BenchmarkBatteryReportFactsTests
         Assert.Equal(1, outcomes.ToolCallsFailed);
         Assert.Equal(1, outcomes.ToolCallsRefusedByBudget);
         Assert.Equal(2, outcomes.RefutedAnswerSentences);
+        Assert.Equal(new BenchmarkBatteryVerdictCounts(Checked: 1, Supported: 0, Refuted: 1, Indeterminate: 0), outcomes.AccusedSentences);
 
         var withoutSentences = await BenchmarkBatteryAnswerOutcomes.LoadAsync(db, new long[] { 1, 2 }, withRefutedSentences: false, Ct);
         Assert.Null(withoutSentences.RefutedAnswerSentences);
+        Assert.Null(withoutSentences.AccusedSentences);
         Assert.Equal(1, withoutSentences.ToolCallsFailed);
+    }
+
+    [Fact]
+    public void TheAccusedSentences_CountAccusationsAndStandaloneCriticalErrorQuotes_ApartFromTheAnswersOwnClaims()
+    {
+        // Battery 26's shape: one answer's refuted claim is also the sentence both members accused,
+        // and another answer has one refuted accused sentence. The refuted answer sentences of both
+        // populations are 2, not 3: the shared sentence counts once.
+        string sharedSentence = System.Text.Json.JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, "Killing him while peaceful costs Luck.", BenchmarkClaimVerdict.Refuted, "src/mon.c:1", null)
+            {
+                Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim }
+            },
+            new BenchmarkClaimVerification(1, "Killing him while peaceful costs Luck.", BenchmarkClaimVerdict.Refuted, "src/mon.c:1", null)
+            {
+                Roles = new[] { BenchmarkClaimRoles.AccusedQuote }
+            }
+        });
+        string oneAccused = Verifications(
+            ("A blessed book guarantees learning.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AccusedQuote),
+            ("Torches are applied to snuff them.", BenchmarkClaimVerdict.Supported, BenchmarkClaimRoles.AccusedQuote),
+            ("A grader's statement.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AssessorStatement));
+        // A critical-error quote counts as accused unless it is also a claim of the answer's own.
+        string quotes = System.Text.Json.JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, "A standalone quote.", BenchmarkClaimVerdict.Supported, "src/a.c:1", null)
+            {
+                Roles = new[] { BenchmarkClaimRoles.CriticalErrorQuote }
+            },
+            new BenchmarkClaimVerification(1, "A quoted claim.", BenchmarkClaimVerdict.Indeterminate, null, null)
+            {
+                Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim, BenchmarkClaimRoles.CriticalErrorQuote }
+            }
+        });
+        var jsons = new[] { sharedSentence, oneAccused, quotes, null };
+
+        Assert.Equal(
+            new BenchmarkBatteryVerdictCounts(Checked: 4, Supported: 2, Refuted: 2, Indeterminate: 0),
+            BenchmarkBatteryAnswerOutcomes.AccusedSentencesOf(jsons));
+        Assert.Equal(2, BenchmarkReportFacts.RefutedAnswerSentencesOf(
+            jsons.Select(json => new BenchmarkRunAnswer { ClaimVerificationJson = json })));
+    }
+
+    [Fact]
+    public void TheAccusedSentences_AreUncountable_WhenAVerificationRecordsNoRoles()
+    {
+        Assert.Null(BenchmarkBatteryAnswerOutcomes.AccusedSentencesOf(new[] { Verifications(("A sentence.", BenchmarkClaimVerdict.Refuted, null)) }));
+        Assert.Equal(new BenchmarkBatteryVerdictCounts(0, 0, 0, 0), BenchmarkBatteryAnswerOutcomes.AccusedSentencesOf(Array.Empty<string?>()));
     }
 
     [Fact]

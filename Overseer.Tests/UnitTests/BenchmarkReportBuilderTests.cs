@@ -2332,8 +2332,25 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("- **Knowledge base under-use:** 1 of 2 knowledge-base-topic question(s) made zero `get_knowledge_article` calls." + Environment.NewLine
+        Assert.Contains("- **Knowledge base under-use:** 1 of 2 knowledge-base-topic question(s) (Q1, Q2) made zero `get_knowledge_article` calls (Q1)." + Environment.NewLine
             + "- *Prompt observation:* 1 of 1 other answered question(s) made zero `get_knowledge_article` calls. The prompt (`Overseer/Services/ChatService.cs` § \"Information Routing\")", report);
+    }
+
+    [Fact]
+    public void KnowledgeBaseRouting_NamesTheTopicQuestions_AndNoZeroCallListWhenEveryOneCalledTheArticle()
+    {
+        var mechanics = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        mechanics.QuestionText = "In GnollHack, what do Exceptional and Elite give to body armor?";
+        mechanics.ToolCallSummary = "source_code_search×2";
+        var identify = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 80);
+        identify.QuestionText = "How do I identify an unknown wand?";
+        identify.ToolCallSummary = "get_knowledge_article×1";
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, mechanics, identify);
+        BenchmarkRunFinalizer.Apply(run, new[] { mechanics, identify });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **Knowledge base under-use:** 0 of 1 knowledge-base-topic question(s) (Q2) made zero `get_knowledge_article` calls." + Environment.NewLine, report);
     }
 
     [Fact]
@@ -4219,6 +4236,41 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
+    public void IssuesText_RubricContradiction_NamesTheChargingMemberTheRubricQuoteAndTheVerdict()
+    {
+        var q9 = RubricContradictedAnswer(9);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q9);
+        run.HarnessVersion = "46";
+        BenchmarkRunFinalizer.Apply(run, new[] { q9 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("Rubric-charged deduction contradicted by source: a sentence docked against the rubric was supported with a citation (advisory, changed no score) — charged by the assessor, rubric \"Wis/Cha\", verifier: supported (src/spell.c:1210)", report);
+    }
+
+    [Fact]
+    public void IssuesText_RubricContradiction_SaysNoRubricTextWasQuoted_WhenNoQuoteIsStored()
+    {
+        var q9 = RubricContradictedAnswer(9);
+        q9.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, ClericalRow, BenchmarkClaimVerdict.Supported, "src/spell.c:1210", "Clerical spells use Wisdom alone.")
+            {
+                Roles = new[] { BenchmarkClaimRoles.AccusedQuote },
+                RubricCited = true,
+                AccusedBy = new[] { "B" }
+            }
+        });
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q9);
+        run.HarnessVersion = "46";
+        BenchmarkRunFinalizer.Apply(run, new[] { q9 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("(advisory, changed no score) — charged by member B, (no rubric text quoted), verifier: supported (src/spell.c:1210)", report);
+    }
+
+    [Fact]
     public void RunIntegrity_RubricContradiction_SaysTheGraderQuotedNoRubricText_WhenNoQuoteIsStored()
     {
         var q9 = RubricContradictedAnswer(9);
@@ -5095,6 +5147,34 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains("- **Accused Sentences Checked:** 3 across 1 answer(s) (Q1) — supported 1, refuted 1, indeterminate 1.", report);
         Assert.Contains("- **Supported Accusations:** 1 (Q1)", report);
+    }
+
+    [Fact]
+    public void QuotedModelText_WithLineBreaks_StaysOnOneBlockquoteLine()
+    {
+        var q1 = BoardGradedAnswer(1, 60);
+        q1.AccuracyLevel = 4;
+        q1.UnverifiedClaimsJson = JsonSerializer.Serialize(new[] { "Claims the following:\n- item one\r\n- item two" });
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            RoleItem(0, "Charged list:\n- item", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", BenchmarkClaimRoles.AccusedQuote)
+        });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
+
+        Assert.Contains("> - **Unverified Claims (1):** \"Claims the following: - item one - item two\"", report);
+        Assert.Contains("returned **refuted** — \"Charged list: - item\" (src/zap.c:9).", report);
+    }
+
+    [Theory]
+    [InlineData("a\r\nb", "a b")]
+    [InlineData("a\nb", "a b")]
+    [InlineData("a\rb", "a b")]
+    [InlineData("a\n\nb", "a  b")]
+    [InlineData(null, "")]
+    public void QuoteLine_ReplacesEveryLineBreakWithASpace(string? text, string expected)
+    {
+        Assert.Equal(expected, BenchmarkReportBuilder.QuoteLine(text));
     }
 
     // -------------------------------------------------------------------------------------
@@ -6449,6 +6529,20 @@ public class BenchmarkReportBuilderTests
         Assert.True(report.IndexOf("- **ICC(A,1):**", StringComparison.Ordinal) < report.IndexOf("- **Member spread:**", StringComparison.Ordinal));
         Assert.True(report.IndexOf("- **Member spread:**", StringComparison.Ordinal) < report.IndexOf("- **Critical-error splits:**", StringComparison.Ordinal));
         Assert.DoesNotContain("Both members used a narrow range", report);
+    }
+
+    [Fact]
+    public void PanelRun_AgreementStatesThatItComparesScoresAsGraded_AndASplitSaysOnlyAnUpheldCapEntersTheMean()
+    {
+        var run = PanelReportRun();
+        run.Answers.Single(a => a.OrderIndex == 2).CriticalError = true;
+        run.PanelCriticalErrorSplitCount = null;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- *ICC, mean |B − A| and the member-alone indices compare the members' scores as graded, caps included.*", report);
+        Assert.Contains("- **Critical-error splits:** 1 of 5 — Q2. The members disagree on whether the answer contains a critical error. Since scoring method 13 a one-member cap enters the panel mean only when the claim verifier upholds it; an overturned cap does not.", report);
+        Assert.DoesNotContain("contains a fabrication; each member's own cap enters the mean", report);
     }
 
     [Fact]

@@ -21,7 +21,7 @@ namespace Overseer.Tests.UnitTests;
 /// </summary>
 public class BenchmarkCandidatePromptOptionsTests
 {
-    private const string ProductionPromptSha256 = "4786789ece8381282edeadadfdbf5f4785f5131c20e5c2e07c337a77771c5a76";
+    private const string ProductionPromptSha256 = "135f0a86150d993d2aa5a2e2e8c25c45e1b64286ef37754faf71fb78db5e158c";
     private const string ProductionCanonicalJson =
         "{\"verboseMode\":false,\"spoilerFreeMode\":false,\"overseerMode\":0,\"enableToolUse\":true,\"enableWebSearch\":false,\"allowSourceCodeReferences\":true,\"enableSubAgents\":false,\"isGameOn\":false,\"developerMode\":false,\"hasMessageHistory\":false,\"hasWikiContext\":false,\"hasGameSnapshot\":false}";
 

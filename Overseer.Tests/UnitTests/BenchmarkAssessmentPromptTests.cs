@@ -224,11 +224,12 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsSixtyTwo()
+    public void HarnessVersion_IsSixtyThree()
     {
-        // Harness 62: call telemetry records the thinking level each request carried; the run
-        // report names it beside Default.
-        Assert.Equal("62", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 63: next-line "{" enum and struct definitions resolve, get_item_stats notes the
+        // weight unit, the source-citation line is gone from _policy.md, and OpenAI message items
+        // are separated by a paragraph break.
+        Assert.Equal("63", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     private static readonly IReadOnlyList<string> ConfiguredCandidateTools = new[]
@@ -544,7 +545,7 @@ public class BenchmarkAssessmentPromptTests
         Assert.Contains(
             "--- CLAIM VERIFICATION TOTALS (counted by the harness; copy these figures rather than adding up the per-question lines) ---",
             prompt);
-        Assert.Contains("Unverified claims: 5 across 2 answer(s); verified: 3 supported, 1 refuted, 1 indeterminate", prompt);
+        Assert.Contains("Unverified claims: 5 raised across 2 answer(s), 5 of them verified: 3 supported, 1 refuted, 1 indeterminate", prompt);
 
         int totalsAt = prompt.IndexOf("--- CLAIM VERIFICATION TOTALS", StringComparison.Ordinal);
         int verdictsAt = prompt.IndexOf("--- PER-QUESTION VERDICTS AND ASSESSMENTS ---", StringComparison.Ordinal);
@@ -576,12 +577,32 @@ public class BenchmarkAssessmentPromptTests
 
         string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { q1 }, panelRunClaimTotals: totals);
 
-        Assert.Contains("Claims you raised: 2 across 1 answer(s); verified: 1 supported, 1 refuted, 0 indeterminate", prompt);
+        Assert.Contains("Claims you raised: 2 across 1 answer(s), 2 of them verified: 1 supported, 1 refuted, 0 indeterminate", prompt);
         Assert.Contains(
-            "All claims checked in this run (both members, each counted once): 5 across 3 answer(s); verified: 3 supported, 1 refuted, 1 indeterminate",
+            "All claims checked in this run (both members, each counted once): 5 across 3 answer(s), 5 of them verified: 3 supported, 1 refuted, 1 indeterminate",
             prompt);
         Assert.DoesNotContain("Unverified claims: ", prompt);
         Assert.Contains("When you state a run-wide claim total, copy the 'All claims checked' line.", prompt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_PanelRun_RaisedClaimsBeyondTheVerifiedOnes_NamesTheVerifiedSubset()
+    {
+        // Battery run 26: member B was handed "116 claims … 103 supported, 1 refuted, 10
+        // indeterminate", parts that sum to 114 because two raised claims were never verified.
+        var q1 = Verdict(1, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+        q1.UnverifiedClaimCount = 116;
+        q1.ClaimsSupportedCount = 103;
+        q1.ClaimsRefutedCount = 1;
+        q1.ClaimsIndeterminateCount = 10;
+        var totals = new BenchmarkRunClaimTotals(Claims: 120, Answers: 18, Supported: 105, Refuted: 1, Indeterminate: 11);
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { q1 }, panelRunClaimTotals: totals);
+
+        Assert.Contains("Claims you raised: 116 across 1 answer(s), 114 of them verified: 103 supported, 1 refuted, 10 indeterminate", prompt);
+        Assert.Contains(
+            "All claims checked in this run (both members, each counted once): 120 across 18 answer(s), 117 of them verified: 105 supported, 1 refuted, 11 indeterminate",
+            prompt);
     }
 
     [Fact]
@@ -595,7 +616,7 @@ public class BenchmarkAssessmentPromptTests
 
         string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { q1 });
 
-        Assert.Contains("Unverified claims: 2 across 1 answer(s); verified: 2 supported, 0 refuted, 0 indeterminate", prompt);
+        Assert.Contains("Unverified claims: 2 raised across 1 answer(s), 2 of them verified: 2 supported, 0 refuted, 0 indeterminate", prompt);
         Assert.DoesNotContain("Claims you raised", prompt);
         Assert.DoesNotContain("All claims checked", prompt);
     }

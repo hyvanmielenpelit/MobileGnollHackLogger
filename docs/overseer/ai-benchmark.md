@@ -8251,6 +8251,104 @@ Title model fallback follow-up round (2026-10-27). `HarnessVersion` moves to **"
   configured levels: an unset and an explicit-`high` configuration are still two candidates, and a
   change of `ExplicitDefaultEffort` between two runs still does not show there. Pin explicit levels.
 
+### Harness Version 63 Updates
+
+GnollBench battery runs 24–26 round (2026-10-28). `HarnessVersion` moves to **"63"**;
+`ScoringMethodVersion` stays **14**. No migration. `HarnessImpactLedger` classifies 63 as
+`CandidateInput`: the candidate's tool output, its prompt and its streamed text change.
+`ToolGuidesSha256` and `CandidateSystemPromptSha256` move against 62 through the `_policy.md` edit
+alone; no other guide or prompt text changed.
+
+**The chat system.**
+
+- **Next-line `{` definitions are found (T1).** `search_definitions` and `get_function_definition`
+  accept, after their same-line patterns, a head line that is only `[typedef] enum <name>` or
+  `[typedef] struct <name>` (a trailing comment allowed) when the next non-blank line starts with `{`.
+  The look-ahead is that one line. A prototype, an `enum` parameter and a struct member list do not
+  match. A run stamped 62 or earlier missed every such definition: `enum layer_types`
+  (`include/layer.h:13-14`) on run 136 Q15, and 87 of 250 named enums in GnollHack are written that way.
+- **`get_item_stats` states the weight unit (T2).** Every result whose `weight` is a number carries the
+  note *"weight is in ounces (16 to a pound); the game shows N lbs (printweight, …)"*, N formatted as
+  `printweight` (`src/do.c:656-731`) prints it with its default options. Silver dragon scale mail's 550
+  shows "34 lbs". Minification keeps the note. `get_monster_stats` is unchanged: the game never shows a
+  monster's weight.
+- **`_policy.md` no longer demands file names and line numbers (T3).** The line *"When citing source
+  code, always mention the file name and approximate line number."* is gone. It contradicted the
+  disallowed-references branch of `ChatService.BuildSystemPrompt`, the production default, and the
+  allowed branch carries its own citation sentence.
+- **OpenAI message items are separated (T4).** `OpenAiResponsesProvider` tracks `message` output
+  items: when a second or later item starts after visible text, the sanitizer's held tail is flushed
+  and the item's first text is preceded by the newlines a paragraph break still needs (none when the
+  emitted text already ends in a blank line). A single-item stream is byte-identical to harness 62, and
+  a function-call item adds nothing. Run 137 Q11's *"…was complete.**Invoke…"* is the motivating case.
+
+**The benchmarking system.**
+
+- **The synthesis claim totals name the verified subset (H6).** A raised claim is not always verified,
+  so each line of the *CLAIM VERIFICATION TOTALS* block now reads *"Claims you raised: N across A
+  answer(s), V of them verified: S supported, R refuted, I indeterminate"* (and the same shape for
+  *Unverified claims* and *All claims checked in this run*), where V = S + R + I. Member B's synthesis
+  on battery run 26 had been handed 116 claims with parts summing to 114.
+- **An interrupted admission is an admission (H1).** `FactualErrorsAdmittedRegex` allows one
+  comma-delimited interjection of up to three words between *cannot / can not / can't* and *be*, so
+  *"The run cannot, however, be described as free of factual error"* no longer raises a false
+  *Synthesis Accuracy Divergence*. *"can, however, be described as factually clean"* is not an admission.
+- **Knowledge-base under-use is keyed on real topics and names its questions (H2).** The bare keywords
+  *glyph* and *identify* are replaced by *map glyph*, *glyphs on the map*, *identify an item*, *identify
+  items* and *how do i identify*, so a rendering-internals or scroll-mechanics question is no longer
+  counted. The line names the topic questions and the zero-call ones, *"1 of 2
+  knowledge-base-topic question(s) (Q1, Q2) made zero `get_knowledge_article` calls (Q1)."*
+  (`BenchmarkToolRoutingAnalysis.KnowledgeBaseTopicQuestions`, `KnowledgeBaseTopicZeroCallQuestions`).
+- **Model text stays inside its blockquote (H3).** Every claim, quote, evidence and comment string the
+  per-answer evaluation blockquote carries has its line breaks turned into spaces
+  (`BenchmarkReportBuilder.QuoteLine`); run 132 Q1's claims had broken out of it with 163 bare LFs.
+- **The critical-error split sentence follows scoring method 13 (H4).** It reads *"The members disagree
+  on whether the answer contains a critical error. Since scoring method 13 a one-member cap enters the
+  panel mean only when the claim verifier upholds it; an overturned cap does not."*, and the Panel
+  Agreement block adds *"ICC, mean |B − A| and the member-alone indices compare the members' scores as
+  graded, caps included."*
+- **The battery report names its two claim populations (H5).** The usage section prints *"Answers' own
+  claims: N checked — s supported, r refuted, i indeterminate"* and *"Sentences graders accused: M
+  checked — s supported, r refuted, i indeterminate; refuted answer sentences, both kinds: K"*, where a
+  sentence in both populations counts once (`BenchmarkBatteryAnswerOutcomes.AccusedSentences`). A
+  verification that records no roles makes a figure *not countable*. Battery run 26's 3 was right: run
+  137 Q1's refuted claim is the same sentence both members accused.
+- **A rubric contradiction names who charged what (H7).** Each per-answer *Issues* entry for
+  `RubricContradictedBySource` ends with the charging member, the rubric text the grader quoted or
+  *"(no rubric text quoted)"*, and the verifier's verdict with its citation. The run-level list already
+  carried them.
+
+**The Model Comparison documents and charts.**
+
+- **A cut name says so (D1).** When `BenchmarkPdfFileNames` cuts a comparison name or a covered-models
+  join at a hyphen within 40 characters, the slug ends in `-and-more` (outside the 40), and the client's
+  `comparisonNameSlug` does the same: Comparison #5's three-model name gives
+  `gpt-6-luna-high-vs-gpt-6.1-terra-medium-and-more`.
+- **The root-cause engine moves to version 15 (D2–D6, D10, D13).** HQ8 states the direction the data
+  shows; HQ9 shares the net narrowing of a gap; HC1 is not raised for one model at two levels on one
+  price card; WC2 states what its test checks; HS5 compares waits as printed; in comparison scope WQ6
+  is stated once, for the model whose members are furthest apart against its half-width, tie broken by
+  the lower panel ICC (`RootCauseModelInput.PanelIcc`, the mean of the entry's runs'). The rules are in
+  `ai-benchmark-report-pack.md`'s hypothesis table. A time-of-day replicate's *When* text now ends
+  *"…would run them back to back, which this run must not do."*. Stored results keep the engine version
+  they were computed with.
+- **The documents read as they should (D7–D9, D11, D12).** An established cost pair's *Result* cell in
+  the RCA paired-test table names the cheaper model, as speed and intelligence do. The
+  `pair.*.reference` and `pair.*.allPairs` facts name both models (*"Model A was faster than Model B on
+  the same questions, …"*, *"no cost difference between Model A and Model B established …"*). A battery
+  entry's same-provider delta is restated from the member-alone composites the panel table prints, not
+  from per-run integers (Comparison #5's Luna: 0.0, not +1). The Executive Summary's reference table
+  heads its columns *Time ratio of medians* and *Cost ratio of means*, and the pair ratio facts say
+  *paired ratio*; no number changes. In the RCA hypothesis chart, a model label that the label column
+  would cut and that shares its leading words with another is shortened from the middle, so the
+  distinguishing suffix stays visible; the alt text keeps the full names.
+- **The profile chart's cost axis names its unit (G1)**: *Cost (candidate, per battery pass)* or *per
+  suite run*. **The provider-error dot plot mentions whiskers only when it draws one (G2)**; a 0/128
+  entry with intervals on draws its upper whisker to the Wilson bound.
+- **Step 4's note is inset as the Download Center body is (U1)**: 20px 24px, 16px inline under 600px.
+
+No answer flag is added, and the grading prompts are unchanged.
+
 ---
 
 ## 3. Assessor Strategy

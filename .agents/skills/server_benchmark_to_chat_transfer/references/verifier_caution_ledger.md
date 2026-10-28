@@ -94,6 +94,9 @@ Reading the tables:
 | 68 | run 97, Q18 (battery run 11) | Gemini 3.8 Flash @ `medium` | The first component of a `matcomps.c` entry read as the whole entry ("protection needs no wood") | `src/matcomps.c:2607-2621` † | — | None stated | Not stated |
 | 69 | run 97, Q15 (battery run 11) | Gemini 3.8 Flash @ `medium` | A hedge ("about 1500 turns") refuted as false | — | — | None stated | No — run 99 Q15 (battery run 12) again refuted the same hedge |
 | 70 | run 125, Q11 | Gemini 3.8 Flash @ `medium` | A sentence refuted from one branch of an `if … else if` chain, missing the sibling branch that makes it partly true | `src/eat.c:3806-3828` | `src/eat.c:3829-4002`, the corpse confirmation (`ParanoidCorpse`, on by default through `flags.paranoia_bits` at `src/options.c:871`), which warns a character who has neither edibility appraisal nor active blessed food detection about a corpse's or glob's known dangers and uncertain freshness | None; instruction 3n names a `switch` or `if` condition but not its sibling branches | No |
+| 71 | run 132, Q7 (battery run 24) | Gemini 3.8 Flash @ `medium` | A wrong Supported clears a charged sentence that the applying code contradicts (Unskilled gives +15 % to the save) | Not recorded in this pass | `src/zap.c:364` | None | No |
+| 72 | run 136, Q5 (battery run 26) | Gemini 3.8 Flash @ `medium` | Supported on a false basis: the verdict calls `rne` unbounded | Not recorded in this pass | `src/rnd.c:200-202` (`rne` is capped) | None | No |
+| 73 | run 137, Q16 (battery run 26) | Gemini 3.8 Flash @ `medium` | A general exception applied against the board: "a blessed book guarantees learning" refuted from the confused-reading branch, for a hero the board shows unconfused | `src/spell.c:965-967` † | `src/spell.c:898` with the board's status lines (no *Conf*) | None | No |
 
 ## Shapes
 
@@ -142,6 +145,8 @@ Reading the tables:
 | The first component of an entry read as the whole entry | 68 | 1 | Not stated |
 | A hedge refuted as false | 69 | 1 | **No**: recurred on run 99 Q15 (battery run 12), not numbered |
 | One branch of a conditional chain read as the whole behavior | 70 | 1 | Not stated |
+| A wrong Supported: an accused sentence cleared against the applying code, or supported for a false reason | 71, 72 | 2 | **No** (caution only): § 11 *distrust a Supported accused sentence most* |
+| A general exception applied against the board's state | 73 | 1 | **No** (caution only) |
 
 Instruction 3c (harness 29) sends the board to the claim verifier and allows `board:` citations; it
 answers no instance. Instruction 3p, as § 11's battery run 4 row names it, is the claim-verifier

@@ -172,10 +172,17 @@ public sealed class BenchmarkBatteryAnswerOutcomes
     public int? RefutedAnswerSentences { get; init; }
 
     /// <summary>
+    /// The answer sentences graders accused, with the verifier's rulings, as <see cref="AccusedSentencesOf"/>
+    /// counts them; null when they were not loaded, or an answer's verifications are unreadable or carry no roles.
+    /// </summary>
+    public BenchmarkBatteryVerdictCounts? AccusedSentences { get; init; }
+
+    /// <summary>
     /// Counts over the runs <paramref name="runIds"/>. The tool-call query loads only the columns the
     /// classification reads (the call's status and error, its answer's status and finish reason), never
     /// a call's arguments or result. With <paramref name="withRefutedSentences"/>, the answers'
-    /// claim verifications are loaded as well, for <see cref="RefutedAnswerSentences"/>.
+    /// claim verifications are loaded as well, for <see cref="RefutedAnswerSentences"/> and
+    /// <see cref="AccusedSentences"/>.
     /// </summary>
     public static async Task<BenchmarkBatteryAnswerOutcomes> LoadAsync(
         ApplicationDbContext db, IReadOnlyCollection<long> runIds, bool withRefutedSentences, CancellationToken ct)
@@ -184,6 +191,7 @@ public sealed class BenchmarkBatteryAnswerOutcomes
         var ids = (runIds ?? Array.Empty<long>()).Distinct().ToList();
 
         int? refutedSentences = null;
+        BenchmarkBatteryVerdictCounts? accusedSentences = null;
         if (withRefutedSentences)
         {
             var verifications = await db.BenchmarkRunAnswers
@@ -193,6 +201,7 @@ public sealed class BenchmarkBatteryAnswerOutcomes
                 .ToListAsync(ct);
             refutedSentences = BenchmarkReportFacts.RefutedAnswerSentencesOf(
                 verifications.Select(json => new BenchmarkRunAnswer { ClaimVerificationJson = json }));
+            accusedSentences = AccusedSentencesOf(verifications);
         }
 
         var harnessVersions = await db.BenchmarkRuns
@@ -208,7 +217,8 @@ public sealed class BenchmarkBatteryAnswerOutcomes
             return new BenchmarkBatteryAnswerOutcomes
             {
                 ToolCallsUnavailableReason = ToolRecordsReason,
-                RefutedAnswerSentences = refutedSentences
+                RefutedAnswerSentences = refutedSentences,
+                AccusedSentences = accusedSentences
             };
         }
 
@@ -233,10 +243,51 @@ public sealed class BenchmarkBatteryAnswerOutcomes
         {
             ToolCallsFailed = failed,
             ToolCallsRefusedByBudget = refused,
-            RefutedAnswerSentences = refutedSentences
+            RefutedAnswerSentences = refutedSentences,
+            AccusedSentences = accusedSentences
         };
     }
+
+    /// <summary>
+    /// The verifier's rulings on the answer sentences graders accused, read from the stored
+    /// verifications by role as a run report reads them: every sentence quoted as false when a grader
+    /// docked Accuracy, and every critical-error quote that is neither such a sentence nor a claim of
+    /// the answer's own. A demoted verdict counts as its effective one. Null when an answer's
+    /// verifications are unreadable or carry no roles.
+    /// </summary>
+    internal static BenchmarkBatteryVerdictCounts? AccusedSentencesOf(IEnumerable<string?> claimVerificationJsons)
+    {
+        int supported = 0, refuted = 0, indeterminate = 0;
+        foreach (string? json in claimVerificationJsons ?? Array.Empty<string?>())
+        {
+            if (string.IsNullOrWhiteSpace(json)) continue;
+
+            var verifications = BenchmarkReportContent.ReadVerifications(json);
+            if (verifications == null) return null;
+            if (verifications.Count == 0) continue;
+            if (!BenchmarkClaimRoles.HasRoles(verifications)) return null;
+
+            foreach (var v in verifications)
+            {
+                bool accused = BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.AccusedQuote)
+                    || (BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.CriticalErrorQuote)
+                        && !BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.UnverifiedClaim));
+                if (!accused) continue;
+
+                switch (v.EffectiveVerdict)
+                {
+                    case BenchmarkClaimVerdict.Supported: supported++; break;
+                    case BenchmarkClaimVerdict.Refuted: refuted++; break;
+                    default: indeterminate++; break;
+                }
+            }
+        }
+        return new BenchmarkBatteryVerdictCounts(supported + refuted + indeterminate, supported, refuted, indeterminate);
+    }
 }
+
+/// <summary>A population of verifier rulings: how many were checked, and how many of them were supported, refuted and indeterminate.</summary>
+public sealed record BenchmarkBatteryVerdictCounts(int Checked, int Supported, int Refuted, int Indeterminate);
 
 /// <summary>
 /// Builds the fact sheet of a battery result against the other battery results of its comparison.

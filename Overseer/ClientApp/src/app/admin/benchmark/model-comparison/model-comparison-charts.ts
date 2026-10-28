@@ -3172,11 +3172,12 @@ export const AVAILABILITY_FIGURE_IDS: readonly string[] = [P1_AVAILABILITY_ID, A
 
 /** The definition under the dot plot's badges: the numerator and the denominator, where the number appears. */
 export const AVAILABILITY_DETAIL_STRICT =
-  'Share of valid candidate attempts that failed at the provider, as observed in GnollBench runs; ' +
-  'whiskers are 95% intervals widened for bursts of errors.';
+  'Share of valid candidate attempts that failed at the provider, as observed in GnollBench runs.';
 export const AVAILABILITY_DETAIL_INCLUSIVE =
   'Share of valid candidate attempts that failed at the provider or for a reason that could not be ' +
-  'attributed, as observed in GnollBench runs: an upper bound; whiskers are 95% intervals widened for bursts of errors.';
+  'attributed, as observed in GnollBench runs: an upper bound.';
+/** Appended to the definition only when the plot draws at least one whisker. */
+export const AVAILABILITY_DETAIL_WHISKERS = ' Whiskers are 95% intervals widened for bursts of errors.';
 
 const DOT_RADIUS = 5;
 const DOT_HOVER_RADIUS = 7;
@@ -3394,8 +3395,9 @@ function buildAvailabilityDotPlot(
   if (points.some((point) => point?.fewAttempts)) {
     key.push({ glyph: 'hollow', text: 'Fewer than 100 attempts' });
   }
-  const whiskered = errHighs.some((err) => drawnWhisker(err) > 0) || errLows.some((err) => drawnWhisker(err) > 0);
-  if (style.intervals && whiskered) {
+  const whiskered = style.intervals &&
+    (errHighs.some((err) => drawnWhisker(err) > 0) || errLows.some((err) => drawnWhisker(err) > 0));
+  if (whiskered) {
     key.push({ glyph: 'interval', text: '95% interval' });
   }
   key.push(...providerKeyItems(drawn, theme));
@@ -3418,7 +3420,8 @@ function buildAvailabilityDotPlot(
     title,
     badges: visibleBadges(countBadges(plotted, context), style.hiddenBadges),
     ...(directionShown ? { direction } : {}),
-    detail: measure === 'strict' ? AVAILABILITY_DETAIL_STRICT : AVAILABILITY_DETAIL_INCLUSIVE,
+    detail: (measure === 'strict' ? AVAILABILITY_DETAIL_STRICT : AVAILABILITY_DETAIL_INCLUSIVE) +
+      (whiskered ? AVAILABILITY_DETAIL_WHISKERS : ''),
     key,
     highlight: '',
     notes,
@@ -3651,7 +3654,9 @@ function prepareProfile(
       format: (v) => formatMeasure(v, speedKey, numbers[speedKey], timeUnit),
     },
     cost: {
-      title: costMeasure === 'candidateSuite' ? 'Cost (candidate, suite)' : 'Cost (total run)',
+      title: costMeasure === 'candidateSuite'
+        ? `Cost (candidate, per ${options.context.costUnit ?? 'suite run'})`
+        : 'Cost (total run)',
       noun: 'cost',
       suffix: costMeasure === 'candidateSuite' ? ` per ${options.context.costUnit ?? 'suite run'}` : ' per run, all roles',
       lowerIsBetter: true,

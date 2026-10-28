@@ -8,6 +8,7 @@ import {
   ACCENT,
   AVAILABILITY_DETAIL_INCLUSIVE,
   AVAILABILITY_DETAIL_STRICT,
+  AVAILABILITY_DETAIL_WHISKERS,
   AVAILABILITY_FIGURE_IDS,
   AVAILABILITY_MARKER_NOTE,
   AVAILABILITY_MARKER_THRESHOLD,
@@ -102,6 +103,7 @@ import type {
 import { figureFont } from './figure-fonts';
 import { resolveFigureTheme } from './figure-theme';
 import type { NumberFormatStyle } from './measure-format';
+import { wilson95 } from '../shared/provider-availability/provider-availability';
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import { CONFIG_ANALYTICS_CHART_TYPE } from '../../config-analytics/config-analytics.component';
 
@@ -1102,7 +1104,29 @@ describe('model-comparison-charts', () => {
       expect(y.min!).toBeLessThan(0);
       expect(y.max!).toBeGreaterThan(1);
       expect((tile as { data: { labels: unknown[] } }).data.labels)
-        .toEqual(['Intelligence', 'Speed Index', ['Cost', '(candidate, suite)']]);
+        .toEqual(['Intelligence', 'Speed Index', ['Cost', '(candidate, per suite run)']]);
+    });
+
+    it('names the cost axis by its unit: a suite run, or a battery pass for batteries', () => {
+      const costTitle = (spec: ProfileFigure): unknown =>
+        (profileTiles(spec)[0] as { data: { labels: unknown[] } }).data.labels[2];
+      const battery = buildProfilePlot(PROFILE_FIXTURE, {
+        ...PROFILE_OPTIONS,
+        context: { ...PROFILE_OPTIONS.context, costUnit: 'battery pass' },
+      });
+      expect(costTitle(battery)).toEqual(['Cost', '(candidate, per battery pass)']);
+      const runs = buildProfilePlot(PROFILE_FIXTURE, {
+        ...PROFILE_OPTIONS,
+        context: { ...PROFILE_OPTIONS.context, costUnit: 'suite run' },
+      });
+      expect(costTitle(runs)).toEqual(['Cost', '(candidate, per suite run)']);
+      // The total run cost is per run whatever the entries are.
+      const total = buildProfilePlot(PROFILE_FIXTURE, {
+        ...PROFILE_OPTIONS,
+        costMeasure: 'totalRun',
+        context: { ...PROFILE_OPTIONS.context, costUnit: 'battery pass' },
+      });
+      expect(costTitle(total)).toEqual(['Cost', '(total run)']);
     });
 
     it('says whether any model is best on every axis, keys its marks and names its scales', () => {
@@ -3136,7 +3160,7 @@ describe('number formats in the figures', () => {
     }).callbacks.label;
     expect(label(0)({ datasetIndex: 0, dataIndex: 0 })).toBe('A — Intelligence: 71.4');
     expect(label(1)({ datasetIndex: 0, dataIndex: 1 })).toBe('B — Speed (mean model time): 0.85 s');
-    expect(label(0)({ datasetIndex: 0, dataIndex: 2 })).toBe('A — Cost (candidate, suite): $0.08');
+    expect(label(0)({ datasetIndex: 0, dataIndex: 2 })).toBe('A — Cost (candidate, per suite run): $0.08');
     expect(label(0)({ datasetIndex: 0, dataIndex: 7 })).toBe('');
     expect(label(0)({ datasetIndex: -1, dataIndex: -1 })).toBe('');
     // The printed values on the points follow the same decimals.
@@ -4127,8 +4151,42 @@ describe('provider availability', () => {
 
     const inclusive = dotPlot(styleWith({ measure: 'inclusive' }));
     expect(labelsOf(inclusive)).toEqual(['15/1,480', '63/1,480', '4/40', 'not recorded']);
-    expect(inclusive.chrome.detail).toBe(AVAILABILITY_DETAIL_INCLUSIVE);
-    expect(dotPlot().chrome.detail).toBe(AVAILABILITY_DETAIL_STRICT);
+    expect(inclusive.chrome.detail).toBe(AVAILABILITY_DETAIL_INCLUSIVE + AVAILABILITY_DETAIL_WHISKERS);
+    expect(dotPlot().chrome.detail).toBe(AVAILABILITY_DETAIL_STRICT + AVAILABILITY_DETAIL_WHISKERS);
+  });
+
+  it('names the whiskers in the definition only when it draws one', () => {
+    expect(dotPlot().chrome.detail).toContain('Whiskers are 95% intervals');
+
+    const hidden = { ...DEFAULT_FIGURE_STYLE, bar: { ...DEFAULT_FIGURE_STYLE.bar, intervals: false } };
+    expect(dotPlot(hidden).chrome.detail).toBe(AVAILABILITY_DETAIL_STRICT);
+    expect(dotPlot({ ...hidden, availability: { ...hidden.availability, measure: 'inclusive' } }).chrome.detail)
+      .toBe(AVAILABILITY_DETAIL_INCLUSIVE);
+    expect(dotPlot(hidden).chrome.detail).not.toContain('Whiskers');
+
+    // Only models without a dot: intervals on, yet nothing to draw.
+    const undrawn = buildSmallMultiples([ENTRIES[3]], smallMultiplesOptions()).availability;
+    expect(undrawn.chrome.detail).toBe(AVAILABILITY_DETAIL_STRICT);
+    expect(undrawn.chrome.key.map((item) => item.glyph)).not.toContain('interval');
+  });
+
+  it('draws the upper whisker of a model with no errors, up to its Wilson bound', () => {
+    const clean = makeEntry({
+      key: 'Z',
+      provider: 'google',
+      availability: availabilityOf(0, 128, 0, 0, { unattributedErrors: 0, inclusiveRate: 0, low: null, high: null, inclusiveLow: null, inclusiveHigh: null }),
+    });
+    const upper = wilson95(0, 128)!.high;
+    expect(upper).toBeGreaterThan(0);
+
+    const spec = buildSmallMultiples([clean], smallMultiplesOptions({ style: styleWith({ scale: 'linear' }) })).availability;
+    const data = (spec as unknown as DotProbe).config.data.datasets[0]['data'] as { y: number; yErrLow?: number; yErrHigh?: number }[];
+    expect(data[0].y).toBe(0);
+    expect(data[0].yErrLow).toBe(0);
+    expect(data[0].yErrHigh).toBeCloseTo(upper * 100, 10);
+    expect(labelsOf(spec)).toEqual(['0/128']);
+    expect(spec.chrome.detail).toBe(AVAILABILITY_DETAIL_STRICT + AVAILABILITY_DETAIL_WHISKERS);
+    expect(spec.chrome.key).toContainEqual({ glyph: 'interval', text: '95% interval' });
   });
 
   it('turns with P1 when the bars turn horizontal', () => {
