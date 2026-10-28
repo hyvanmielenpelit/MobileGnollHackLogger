@@ -20,6 +20,7 @@ using Overseer.Services.Benchmarking;
 using Overseer.Services.Benchmarking.Pdf;
 using Overseer.Services.Benchmarking.Word;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 [Route("api/admin/benchmark")]
 [Authorize(Policy = "AdminOnly")]
@@ -50,6 +51,7 @@ public class AdminBenchmarkController : ControllerBase
     private readonly BenchmarkSeriesOrchestrator _seriesOrchestrator;
     private readonly BenchmarkGroupAnalysisService _groupAnalysisService;
     private readonly ModelPricingService? _modelPricingService;
+    private readonly ILogger<AdminBenchmarkController> _logger;
     private BenchmarkProviderAvailabilityService? _providerAvailability;
 
     /// <summary>The provider availability loader over this request's context.</summary>
@@ -75,7 +77,8 @@ public class AdminBenchmarkController : ControllerBase
         BenchmarkRunLauncher runLauncher,
         BenchmarkSeriesOrchestrator seriesOrchestrator,
         BenchmarkGroupAnalysisService groupAnalysisService,
-        ModelPricingService? modelPricingService = null)
+        ModelPricingService? modelPricingService = null,
+        ILogger<AdminBenchmarkController>? logger = null)
     {
         _dbContext = dbContext;
         _benchmarkService = benchmarkService;
@@ -97,6 +100,7 @@ public class AdminBenchmarkController : ControllerBase
         _seriesOrchestrator = seriesOrchestrator;
         _groupAnalysisService = groupAnalysisService;
         _modelPricingService = modelPricingService;
+        _logger = logger ?? NullLogger<AdminBenchmarkController>.Instance;
     }
 
     private static BenchmarkSuiteDto ToSuiteDto(BenchmarkSuite s) => new()
@@ -762,12 +766,12 @@ public class AdminBenchmarkController : ControllerBase
             return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
         }
 
-        _ = Task.Run(async () =>
+        _ = DetachedWork.Start(_logger, $"difficulty assessment {job.Id}", async () =>
         {
             using var scope = _scopeFactory.CreateScope();
             var svc = scope.ServiceProvider.GetRequiredService<BenchmarkService>();
             await svc.RunDifficultyAssessmentAsync(job.Id, cts.Token);
-        });
+        }, _ => _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Failed));
 
         return Accepted(new { jobId = job.Id });
     }
@@ -2800,12 +2804,12 @@ public class AdminBenchmarkController : ControllerBase
             }
 
             // The job outlives the request; nothing request-scoped may be used past this point.
-            _ = Task.Run(async () =>
+            _ = DetachedWork.Start(_logger, $"question generation {job.Id}", async () =>
             {
                 using var scope = _scopeFactory.CreateScope();
                 var svc = scope.ServiceProvider.GetRequiredService<BenchmarkGenerationService>();
                 await svc.RunGenerationAsync(job.Id, cts.Token);
-            });
+            }, _ => _generationJobManager.Complete(job.Id, BenchmarkGenerationJobStatus.Failed));
 
             return Accepted(new { jobId = job.Id });
         }
@@ -2919,12 +2923,12 @@ public class AdminBenchmarkController : ControllerBase
             var cts = job.Cts;
 
             // The job outlives the request; nothing request-scoped may be used past this point.
-            _ = Task.Run(async () =>
+            _ = DetachedWork.Start(_logger, $"question generation {job.Id}", async () =>
             {
                 using var scope = _scopeFactory.CreateScope();
                 var svc = scope.ServiceProvider.GetRequiredService<BenchmarkGenerationService>();
                 await svc.RunGenerationAsync(job.Id, cts.Token);
-            });
+            }, _ => _generationJobManager.Complete(job.Id, BenchmarkGenerationJobStatus.Failed));
 
             return Accepted(new { jobId = job.Id });
         }
@@ -3024,12 +3028,12 @@ public class AdminBenchmarkController : ControllerBase
             var cts = job.Cts;
 
             // The job outlives the request; nothing request-scoped may be used past this point.
-            _ = Task.Run(async () =>
+            _ = DetachedWork.Start(_logger, $"question generation {job.Id}", async () =>
             {
                 using var scope = _scopeFactory.CreateScope();
                 var svc = scope.ServiceProvider.GetRequiredService<BenchmarkGenerationService>();
                 await svc.RunGenerationAsync(job.Id, cts.Token);
-            });
+            }, _ => _generationJobManager.Complete(job.Id, BenchmarkGenerationJobStatus.Failed));
 
             return Accepted(new { jobId = job.Id });
         }
@@ -3132,12 +3136,12 @@ public class AdminBenchmarkController : ControllerBase
             }
 
             // The job outlives the request; nothing request-scoped may be used past this point.
-            _ = Task.Run(async () =>
+            _ = DetachedWork.Start(_logger, $"rubric check {job.Id}", async () =>
             {
                 using var scope = _scopeFactory.CreateScope();
                 var svc = scope.ServiceProvider.GetRequiredService<BenchmarkRubricCheckService>();
                 await svc.RunRubricCheckAsync(job.Id, cts.Token);
-            });
+            }, _ => _rubricCheckJobManager.Complete(job.Id, BenchmarkRubricCheckJobStatus.Failed));
 
             return Accepted(new { jobId = job.Id });
         }
@@ -3275,12 +3279,12 @@ public class AdminBenchmarkController : ControllerBase
             var evidenceByKey = eligible.ToDictionary(e => e.Evidence.ClusterKey, e => e.Evidence, StringComparer.Ordinal);
 
             // The job outlives the request; nothing request-scoped may be used past this point.
-            _ = Task.Run(async () =>
+            _ = DetachedWork.Start(_logger, $"rubric gap author {job.Id}", async () =>
             {
                 using var scope = _scopeFactory.CreateScope();
                 var svc = scope.ServiceProvider.GetRequiredService<BenchmarkRubricGapAuthorService>();
                 await svc.RunRubricGapAuthorAsync(job.Id, evidenceByKey, cts.Token);
-            });
+            }, _ => _rubricGapAuthorJobManager.Complete(job.Id, BenchmarkRubricGapAuthorJobStatus.Failed));
 
             return Accepted(new { jobId = job.Id });
         }
@@ -4653,9 +4657,11 @@ public class AdminBenchmarkController : ControllerBase
         run.CompletedAtUtc = null;
         await _dbContext.SaveChangesAsync();
 
-        _ = Task.Run(() => _benchmarkService.ReassessSingleQuestionAsync(
-            run.Id, answerId, request?.AssessorModelConfigurationId, trial,
-            originalStatus, originalCompletedAtUtc, cts.Token, member));
+        _ = DetachedWork.Start(_logger, $"single-question reassessment for run {run.Id}",
+            () => _benchmarkService.ReassessSingleQuestionAsync(
+                run.Id, answerId, request?.AssessorModelConfigurationId, trial,
+                originalStatus, originalCompletedAtUtc, cts.Token, member),
+            _ => _runManager.Complete(run.Id));
         return Accepted(new { runId = id, trial });
     }
 
@@ -4735,7 +4741,7 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         string? userName = User?.Identity?.Name;
-        _ = Task.Run(async () =>
+        _ = DetachedWork.Start(_logger, $"assessor calibration for run {id}", async () =>
         {
             try
             {
@@ -4880,7 +4886,9 @@ public class AdminBenchmarkController : ControllerBase
         run.ErrorMessage = null;
         await _dbContext.SaveChangesAsync();
 
-        _ = Task.Run(() => _benchmarkService.RerunSingleQuestionAsync(run.Id, answerId, request?.AssessorModelConfigurationId, cts.Token));
+        _ = DetachedWork.Start(_logger, $"single-question rerun for run {run.Id}",
+            () => _benchmarkService.RerunSingleQuestionAsync(run.Id, answerId, request?.AssessorModelConfigurationId, cts.Token),
+            _ => _runManager.Complete(run.Id));
         return Accepted(new { runId = id });
     }
 
@@ -4957,7 +4965,9 @@ public class AdminBenchmarkController : ControllerBase
         run.Status = BenchmarkRunStatus.Running;
         await _dbContext.SaveChangesAsync();
 
-        _ = Task.Run(() => _benchmarkService.RerunFinalSynthesisAsync(id, request?.AssessorModelConfigurationId, cts.Token));
+        _ = DetachedWork.Start(_logger, $"final synthesis rerun for run {id}",
+            () => _benchmarkService.RerunFinalSynthesisAsync(id, request?.AssessorModelConfigurationId, cts.Token),
+            _ => _runManager.Complete(run.Id));
         return Accepted(new { runId = id });
     }
 
@@ -5043,7 +5053,9 @@ public class AdminBenchmarkController : ControllerBase
         run.Status = BenchmarkRunStatus.Running;
         await _dbContext.SaveChangesAsync();
 
-        _ = Task.Run(() => _benchmarkService.RetryFailedAssessmentsAsync(id, request?.AssessorModelConfigurationId, cts.Token));
+        _ = DetachedWork.Start(_logger, $"failed-assessment retry for run {id}",
+            () => _benchmarkService.RetryFailedAssessmentsAsync(id, request?.AssessorModelConfigurationId, cts.Token),
+            _ => _runManager.Complete(run.Id));
         return Accepted(new { runId = id });
     }
 
@@ -5109,7 +5121,9 @@ public class AdminBenchmarkController : ControllerBase
         run.Status = BenchmarkRunStatus.Running;
         await _dbContext.SaveChangesAsync();
 
-        _ = Task.Run(() => _benchmarkService.RetryFailedClaimVerificationAsync(id, targetVerifierId, cts.Token));
+        _ = DetachedWork.Start(_logger, $"claim verification retry for run {id}",
+            () => _benchmarkService.RetryFailedClaimVerificationAsync(id, targetVerifierId, cts.Token),
+            _ => _runManager.Complete(run.Id));
         return Accepted(new { runId = id });
     }
 
@@ -5226,7 +5240,9 @@ public class AdminBenchmarkController : ControllerBase
         run.ErrorMessage = null;
         await _dbContext.SaveChangesAsync();
 
-        _ = Task.Run(() => _benchmarkService.RunFailedQuestionsAsync(run.Id, cts.Token));
+        _ = DetachedWork.Start(_logger, $"failed-question rerun for run {run.Id}",
+            () => _benchmarkService.RunFailedQuestionsAsync(run.Id, cts.Token),
+            _ => _runManager.Complete(run.Id));
 
         return Accepted(new { runId = run.Id });
     }

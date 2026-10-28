@@ -1174,11 +1174,15 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
         var cts = job.Cts;
         // The job outlives the request; nothing request-scoped may be used past this point.
-        _ = Task.Run(async () =>
+        _ = DetachedWork.Start(_logger, $"report pack {job.Id}", async () =>
         {
             using var scope = _scopeFactory.CreateScope();
             var service = scope.ServiceProvider.GetRequiredService<BenchmarkReportPackService>();
             await service.RunAsync(job.Id, cts.Token);
+        }, ex =>
+        {
+            job.AddLog($"Unexpected failure: {ExceptionDetails.DescribeShort(ex)}", "error");
+            _jobManager.Complete(job.Id, BenchmarkReportPackJobStatus.Failed);
         });
 
         return Accepted(new BenchmarkReportPackStartResponse { JobId = job.Id });

@@ -377,7 +377,8 @@ public class SessionController : ControllerBase
             if (termsAccepted)
             {
                 var starter = new HandoffGreetingStarter(_dbContext, _configuration, _scopeFactory, _ongoingChatManager,
-                    turnLimiter, turnGate, securityEvents);
+                    turnLimiter, turnGate, securityEvents,
+                    HttpContext?.RequestServices?.GetService<ILogger<HandoffGreetingStarter>>());
                 await starter.TryStartAsync(user, Overseer.Services.Privacy.SessionRef.Persistent(session.Id), request.InitialPrompt, remoteIp);
             }
             else

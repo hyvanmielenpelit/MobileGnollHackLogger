@@ -570,6 +570,27 @@ public class UserTurnLimitsTests : IDisposable
     }
 
     [Fact]
+    public async Task AFaultedHandoffGreetingRecordsAnErrorOnTheSession()
+    {
+        using var db = CreateDb();
+        var config = CreateConfig();
+        var ongoing = new OngoingChatManager(config);
+        var controller = CreateSessionController(db, config, ongoing);
+
+        var result = await controller.Create(HandoffRequest("Hello, Overseer"), guardOptions: Guard(), turnGate: Gate(4));
+
+        var (sessionId, _) = ReadCreated(result);
+        var sessionRef = SessionRef.Persistent(sessionId);
+        await WaitUntilAsync(() => ongoing.TryGet(sessionRef)?.IsCompleted == true,
+            "The background turn did not complete.");
+
+        // The scope factory throws, so the greeting faults before it generates anything.
+        var state = ongoing.TryGet(sessionRef)!;
+        Assert.Contains(state.AccumulatedEvents,
+            e => e.Type == "error" && e.Data == "The generation failed unexpectedly.");
+    }
+
+    [Fact]
     public async Task ARefusedRateLimitStillReturnsTheSessionAndTheHandoffToken()
     {
         var ct = TestContext.Current.CancellationToken;

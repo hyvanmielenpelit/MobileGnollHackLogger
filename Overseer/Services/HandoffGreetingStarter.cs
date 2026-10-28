@@ -16,6 +16,7 @@ public sealed class HandoffGreetingStarter
     private readonly Overseer.Security.UserTurnRateLimiter? _turnLimiter;
     private readonly Overseer.Security.UserTurnConcurrencyGate? _turnGate;
     private readonly Overseer.Services.Security.ISecurityEventRecorder? _securityEvents;
+    private readonly ILogger<HandoffGreetingStarter>? _logger;
 
     public HandoffGreetingStarter(
         ApplicationDbContext dbContext,
@@ -24,7 +25,8 @@ public sealed class HandoffGreetingStarter
         OngoingChatManager ongoingChatManager,
         Overseer.Security.UserTurnRateLimiter? turnLimiter = null,
         Overseer.Security.UserTurnConcurrencyGate? turnGate = null,
-        Overseer.Services.Security.ISecurityEventRecorder? securityEvents = null)
+        Overseer.Services.Security.ISecurityEventRecorder? securityEvents = null,
+        ILogger<HandoffGreetingStarter>? logger = null)
     {
         _dbContext = dbContext;
         _configuration = configuration;
@@ -33,6 +35,7 @@ public sealed class HandoffGreetingStarter
         _turnLimiter = turnLimiter;
         _turnGate = turnGate;
         _securityEvents = securityEvents;
+        _logger = logger;
     }
 
     /// <summary>Whether the turn was started.</summary>
@@ -84,6 +87,16 @@ public sealed class HandoffGreetingStarter
                 using var scope = _scopeFactory.CreateScope();
                 var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
                 await chatService.GenerateAndBroadcastMessageAsync(sessionRef, initialPrompt, null, userId, true, cts.Token);
+            }
+            catch (Exception ex)
+            {
+                // Detached from the request: the session's confidentiality is no longer resolvable, so telemetry fails closed.
+                using (Overseer.Services.Privacy.ConfidentialExecutionScope.Enter(true))
+                {
+                    _logger?.LogError(ex, "Handoff greeting for session {SessionId} faulted.", sessionRef.ToWireString());
+                }
+
+                _ongoingChatManager.Fail(sessionRef, "The generation failed unexpectedly.");
             }
             finally
             {
