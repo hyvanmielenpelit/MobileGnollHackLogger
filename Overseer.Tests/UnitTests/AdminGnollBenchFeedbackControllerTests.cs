@@ -141,9 +141,13 @@ public sealed class AdminGnollBenchFeedbackControllerTests : IDisposable
         return await AddReportAsync(answer, fingerprint, subject, accepted: accepted);
     }
 
-    private async Task AddTriageAsync(string fingerprint, BenchmarkFeedbackTriageStatus status, DateTime? resolvedUtc = null)
+    private async Task AddTriageAsync(string fingerprint, BenchmarkFeedbackTriageStatus status, DateTime? resolvedUtc = null,
+        string? resolvedVia = null)
     {
-        _db.BenchmarkFeedbackTriages.Add(new BenchmarkFeedbackTriage { Fingerprint = fingerprint, Status = status, ResolvedUtc = resolvedUtc });
+        _db.BenchmarkFeedbackTriages.Add(new BenchmarkFeedbackTriage
+        {
+            Fingerprint = fingerprint, Status = status, ResolvedUtc = resolvedUtc, ResolvedVia = resolvedVia
+        });
         await _db.SaveChangesAsync(Ct);
     }
 
@@ -556,6 +560,50 @@ public sealed class AdminGnollBenchFeedbackControllerTests : IDisposable
         Assert.Equal(new[] { "none", AblationName, "race-role-tool-v1" }, facets.Variants.Select(v => v.Value));
         Assert.Equal(new[] { "9", "60", "61" }, facets.Harnesses.Select(h => h.Value));
         Assert.Equal(2, facets.Harnesses[1].Count);
+    }
+
+    [Fact]
+    public async Task ResolvedVia_FiltersByTheTriageRow_AndAnIssueWithoutOneReadsAsNone()
+    {
+        await AddSimpleReportAsync(Fp(1), T0);
+        await AddSimpleReportAsync(Fp(2), T0);
+        await AddSimpleReportAsync(Fp(3), T0);
+        await AddSimpleReportAsync(Fp(4), T0);
+        await AddTriageAsync(Fp(1), BenchmarkFeedbackTriageStatus.Resolved, T0.AddDays(1), "wiki");
+        await AddTriageAsync(Fp(2), BenchmarkFeedbackTriageStatus.Resolved, T0.AddDays(1), "wiki,knowledge_base");
+        await AddTriageAsync(Fp(3), BenchmarkFeedbackTriageStatus.Acknowledged);
+
+        Assert.Equal(Sorted(Fp(1), Fp(2)), await MatchingAsync(new GnollBenchFeedbackFilterQuery { ResolvedVia = "wiki" }));
+        Assert.Equal(Sorted(Fp(2)), await MatchingAsync(new GnollBenchFeedbackFilterQuery { ResolvedVia = "knowledge_base,other" }));
+        Assert.Equal(Sorted(Fp(3), Fp(4)), await MatchingAsync(new GnollBenchFeedbackFilterQuery { ResolvedVia = "none" }));
+        Assert.Equal(Sorted(Fp(2), Fp(3), Fp(4)),
+            await MatchingAsync(new GnollBenchFeedbackFilterQuery { ResolvedVia = "knowledge_base,none" }));
+
+        var bad = Assert.IsType<BadRequestObjectResult>(await _controller.ListIssues(
+            new GnollBenchFeedbackFilterQuery { ResolvedVia = "wiki,bogus" }, 0, 100, Ct));
+        string message = System.Text.Json.JsonSerializer.Serialize(bad.Value);
+        Assert.Contains("Unknown resolved-via value", message);
+        Assert.Contains("bogus", message);
+    }
+
+    [Fact]
+    public async Task Facets_CountResolvedViaPerIssueInOrder_WithNoneLast()
+    {
+        await AddSimpleReportAsync(Fp(1), T0);
+        await AddSimpleReportAsync(Fp(1), T0.AddHours(1));
+        await AddSimpleReportAsync(Fp(2), T0);
+        await AddSimpleReportAsync(Fp(3), T0);
+        await AddSimpleReportAsync(Fp(4), T0);
+        await AddSimpleReportAsync(Fp(5), T0.AddDays(20));
+        await AddTriageAsync(Fp(1), BenchmarkFeedbackTriageStatus.Resolved, T0.AddDays(1), "server_configuration,other");
+        await AddTriageAsync(Fp(2), BenchmarkFeedbackTriageStatus.Resolved, T0.AddDays(1), "other");
+        await AddTriageAsync(Fp(3), BenchmarkFeedbackTriageStatus.Dismissed);
+        await AddTriageAsync(Fp(5), BenchmarkFeedbackTriageStatus.Resolved, T0.AddDays(21), "wiki");
+
+        var facets = OkValue<GnollBenchFeedbackFacetsDto>(await _controller.GetFacets(T0.Date, T0.AddDays(5).Date, ct: Ct));
+
+        Assert.Equal(new[] { ("server_configuration", 1), ("other", 2), ("none", 2) },
+            facets.ResolvedVia.Select(o => (o.Value, o.Count)));
     }
 
     [Fact]

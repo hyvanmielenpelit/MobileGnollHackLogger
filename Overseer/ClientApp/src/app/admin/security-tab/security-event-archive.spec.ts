@@ -271,7 +271,7 @@ describe('security-event-archive', () => {
     expect(rows('ip-events')[0]).toEqual(['#9', 'Rate limit', 'Overseer sign-in, per IP address', '4']);
     expect(rows('user-events')).toEqual([
       ['#10', 'Provider refusal', 'refusal', 'Provider request id r1'],
-      ['#11', 'Attachment rejected', 'Content check failed', 'image/png, 48,213 bytes'],
+      ['#11', 'Attachment rejected', 'Contents refused: empty, too large or not the declared type', 'image/png, 48,213 bytes'],
       ['#12', 'Blocked by admin', '—', 'Spam']
     ]);
   });

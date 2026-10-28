@@ -167,6 +167,9 @@ public sealed class AdminFeedbackFilterQuery
     /// <summary><c>with</c> or <c>without</c> a written resolution.</summary>
     public string? Resolution { get; set; }
 
+    /// <summary><c>FeedbackResolvedVia</c> ids, and <c>none</c> for issues with none stored.</summary>
+    public string? ResolvedVia { get; set; }
+
     /// <summary>Issue ids.</summary>
     public string? Ids { get; set; }
 
@@ -210,6 +213,9 @@ public sealed class AdminFeedbackFacetsDto
     /// <summary>Newest version first.</summary>
     public List<AdminFeedbackFacetValueDto> Versions { get; set; } = new();
     public List<AdminFeedbackFacetValueDto> Tools { get; set; } = new();
+
+    /// <summary><c>FeedbackResolvedVia</c> ids in their order, then <c>none</c> last.</summary>
+    public List<AdminFeedbackFacetValueDto> ResolvedVia { get; set; } = new();
 }
 
 public sealed class AdminFeedbackOccurrencePageDto

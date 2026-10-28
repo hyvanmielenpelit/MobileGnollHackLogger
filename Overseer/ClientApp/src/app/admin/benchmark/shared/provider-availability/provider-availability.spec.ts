@@ -11,6 +11,7 @@ import {
   formatPercent,
   formatRate,
   formatReruns,
+  outcomeLabel,
   wilson95
 } from './provider-availability';
 
@@ -79,6 +80,23 @@ describe('answer failure text', () => {
   it('is null for an answer that did not fail or was not recorded', () => {
     expect(answerFailureText('None', null, null)).toBeNull();
     expect(answerFailureText(null, null, 503)).toBeNull();
+  });
+});
+
+describe('outcome labels', () => {
+  it('labels every known class', () => {
+    expect(outcomeLabel('ProviderOverloaded')).toBe('Overloaded');
+    expect(outcomeLabel('OurCanceled')).toBe('Canceled or question time budget');
+  });
+
+  it('reads an unknown class in words', () => {
+    expect(outcomeLabel('ProviderQuotaExceeded')).toBe('Provider quota exceeded');
+  });
+
+  it('never reads an inherited property as a label', () => {
+    expect(outcomeLabel('constructor')).toBe('Constructor');
+    expect(outcomeLabel('__proto__')).toBe('Proto');
+    expect(outcomeLabel('toString')).toBe('To string');
   });
 });
 

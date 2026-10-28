@@ -2434,6 +2434,12 @@ filter bar adds a *Self-reports* select (*Accepted only* / *Accepted and refused
 use the same storage and selection bar under the `gnollbench` source, keyed by fingerprint. See
 `docs/overseer/ai-feedback-reports.md` § 11 and § 12.
 
+*Changed 2026-10-28 (Resolved via facet):* both sub-tabs list a multiple-select *Resolved via* facet right
+after *Status* (address key `resolvedVia`; options from the server with counts, labeled by
+`resolvedViaFilterLabel`, with *None recorded* for `none`). It is issue-level: it never narrows the
+occurrences or self-reports shown, and it is listed under the usual rule (two or more options, or a
+selection).
+
 *Changed 2026-10-27 (triage dialog):* on both Feedback sub-tabs the inline triage form is gone. Each card
 ends in a **footer** under a hairline: the *Triaged … by …* line (or *Not triaged yet*) and the last
 save's `role="status"` result at the start, and at the end a `role="group"` named *Actions for {subject}*

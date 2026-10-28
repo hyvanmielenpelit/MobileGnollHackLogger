@@ -81,7 +81,7 @@ public sealed class AdminFeedbackControllerTests : IDisposable
     private async Task<OverseerFeedbackIssue> AddIssueAsync(string subject, string category = MissingInformation,
         OverseerFeedbackStatus status = OverseerFeedbackStatus.New, DateTime? firstSeen = null, DateTime? lastSeen = null,
         int occurrenceCount = 1, string summary = "Something was missing.", string? triagedBy = null,
-        DateTime? triagedUtc = null, int regressionCount = 0, string? resolution = null)
+        DateTime? triagedUtc = null, int regressionCount = 0, string? resolution = null, string? resolvedVia = null)
     {
         var issue = new OverseerFeedbackIssue
         {
@@ -96,7 +96,8 @@ public sealed class AdminFeedbackControllerTests : IDisposable
             Status = status,
             TriagedByUserId = triagedBy,
             TriagedUtc = triagedUtc ?? (triagedBy == null ? null : (DateTime?)T0),
-            Resolution = resolution
+            Resolution = resolution,
+            ResolvedVia = resolvedVia
         };
         _db.OverseerFeedbackIssues.Add(issue);
         await _db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -378,6 +379,45 @@ public sealed class AdminFeedbackControllerTests : IDisposable
         Assert.Equal(new[] { "A", "C" }, await SubjectsAsync(new AdminFeedbackFilterQuery { Ids = $"{a.Id}, {c.Id}, 99999" }));
         Assert.Equal(new[] { "C" }, await SubjectsAsync(new AdminFeedbackFilterQuery { Ids = $"{a.Id},{c.Id}", Resolution = "without" }));
         Assert.Equal(new[] { "B" }, await SubjectsAsync(new AdminFeedbackFilterQuery { Ids = b.Id.ToString(), Resolution = "without", Status = "new" }));
+    }
+
+    [Fact]
+    public async Task TheResolvedViaFilterMatchesAnyChosenId_AndNoneMatchesIssuesWithoutOne()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await AddIssueAsync("Wiki", resolvedVia: "wiki");
+        await AddIssueAsync("Wiki and KB", resolvedVia: "wiki,knowledge_base");
+        await AddIssueAsync("Release", resolvedVia: "overseer_release");
+        await AddIssueAsync("Nothing");
+
+        Assert.Equal(new[] { "Wiki", "Wiki and KB" }, await SubjectsAsync(new AdminFeedbackFilterQuery { ResolvedVia = "wiki" }));
+        Assert.Equal(new[] { "Release", "Wiki and KB" },
+            await SubjectsAsync(new AdminFeedbackFilterQuery { ResolvedVia = "knowledge_base, overseer_release" }));
+        Assert.Equal(new[] { "Nothing" }, await SubjectsAsync(new AdminFeedbackFilterQuery { ResolvedVia = "none" }));
+        Assert.Equal(new[] { "Nothing", "Release" }, await SubjectsAsync(new AdminFeedbackFilterQuery { ResolvedVia = "overseer_release,none" }));
+
+        var caseMismatch = await _controller.ListIssues(new AdminFeedbackFilterQuery { ResolvedVia = "wiki,Wiki" }, ct: ct);
+        AssertBadRequest(caseMismatch, "Unknown resolved-via value");
+        AssertBadRequest(caseMismatch, "Wiki");
+        AssertBadRequest(await _controller.ListIssueIds(new AdminFeedbackFilterQuery { ResolvedVia = "bogus" }, ct: ct), "bogus");
+    }
+
+    [Fact]
+    public async Task TheResolvedViaFacetCountsIssuesPerIdInOrder_WithNoneLast()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await AddIssueAsync("A", resolvedVia: "wiki,other");
+        await AddIssueAsync("B", resolvedVia: "wiki");
+        await AddIssueAsync("C", resolvedVia: "gnollhack_release");
+        await AddIssueAsync("D");
+        await AddIssueAsync("Outside", firstSeen: new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc),
+            lastSeen: new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc), resolvedVia: "knowledge_base");
+
+        var start = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+        var facets = OkValue<AdminFeedbackFacetsDto>(await _controller.GetFacets(start, null, ct));
+
+        Assert.Equal(new[] { "wiki:2", "gnollhack_release:1", "other:1", "none:1" },
+            facets.ResolvedVia.Select(o => $"{o.Value}:{o.Count}"));
     }
 
     [Fact]

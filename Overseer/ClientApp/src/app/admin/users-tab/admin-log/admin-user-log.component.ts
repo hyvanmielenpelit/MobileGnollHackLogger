@@ -17,64 +17,13 @@ import { parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { AdminPageStore, AdminUsersLogFilter } from '../../admin-page.store';
 import { formatUtcDateTime } from '../user-status/admin-user-status';
+import { AdminLogKindTone, adminLogKindLabel, adminLogKindTone } from './admin-log-kinds';
 
 /** Where the log's view settings are kept, per browser. */
 export const ADMIN_LOG_VIEW_STORAGE_KEY = 'overseer.admin.users.log.view';
 
 /** The entries the log fetches at first, and how many more Show more fetches. */
 export const ADMIN_LOG_BATCH = 20;
-
-/** The tone of an action's tag: the word carries the meaning, the outline reinforces it. */
-export type AdminLogKindTone = 'ok' | 'info' | 'warning' | 'danger';
-
-const KIND_LABELS: Readonly<Record<AdminUserActionKind, string>> = {
-  LockedOut: 'Locked out',
-  Unlocked: 'Unlocked',
-  Banned: 'Banned',
-  Unbanned: 'Unbanned',
-  GameRestrictionsChanged: 'Game restrictions changed',
-  SignedOutEverywhere: 'Signed out everywhere',
-  EmailConfirmed: 'Email confirmed',
-  TwoFactorReset: 'Two-factor reset',
-  Deleted: 'Deleted',
-  AiChatBlocked: 'Blocked from AI chat',
-  AiChatUnblocked: 'Unblocked from AI chat',
-  HoldPlaced: 'Deletion hold placed',
-  HoldReleased: 'Deletion hold released',
-  DeletionRequestApproved: 'Deletion request approved',
-  DeletionRequestDeclined: 'Deletion request declined',
-  EmailChanged: 'Email changed',
-  GameSignInBlockCleared: 'Game sign-in block cleared'
-};
-
-const KIND_TONES: Readonly<Record<AdminUserActionKind, AdminLogKindTone>> = {
-  LockedOut: 'danger',
-  Unlocked: 'ok',
-  Banned: 'danger',
-  Unbanned: 'ok',
-  GameRestrictionsChanged: 'warning',
-  SignedOutEverywhere: 'info',
-  EmailConfirmed: 'ok',
-  TwoFactorReset: 'warning',
-  Deleted: 'danger',
-  AiChatBlocked: 'warning',
-  AiChatUnblocked: 'ok',
-  HoldPlaced: 'warning',
-  HoldReleased: 'ok',
-  DeletionRequestApproved: 'danger',
-  DeletionRequestDeclined: 'info',
-  EmailChanged: 'warning',
-  GameSignInBlockCleared: 'ok'
-};
-
-/** The word of an admin log kind: `Locked out`, `Deletion hold placed`; an unknown kind reads as its name. */
-export function adminLogKindLabel(kind: string): string {
-  return KIND_LABELS[kind as AdminUserActionKind] ?? kind;
-}
-
-export function adminLogKindTone(kind: string): AdminLogKindTone {
-  return KIND_TONES[kind as AdminUserActionKind] ?? 'info';
-}
 
 /** The second row a deletion that failed part-way writes starts with this. */
 const DELETION_FAILED_PREFIX = 'Deletion failed';

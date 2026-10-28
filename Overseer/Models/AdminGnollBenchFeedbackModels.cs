@@ -45,6 +45,9 @@ public sealed class GnollBenchFeedbackFilterQuery
     /// <summary>Variant names without the hash; <c>none</c> for production instructions.</summary>
     public string? Variant { get; set; }
     public string? Harness { get; set; }
+
+    /// <summary><c>FeedbackResolvedVia</c> ids, and <c>none</c> for issues with none stored or no triage row.</summary>
+    public string? ResolvedVia { get; set; }
     public string? Fingerprints { get; set; }
     public string? Search { get; set; }
 
@@ -206,6 +209,9 @@ public sealed class GnollBenchFeedbackFacetsDto
 
     /// <summary>Harness versions in numeric order.</summary>
     public List<GnollBenchFeedbackFacetValueDto> Harnesses { get; set; } = new();
+
+    /// <summary><c>FeedbackResolvedVia</c> ids in their order, then <c>none</c> last.</summary>
+    public List<GnollBenchFeedbackFacetValueDto> ResolvedVia { get; set; } = new();
 }
 
 /// <summary>

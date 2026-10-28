@@ -14,6 +14,7 @@ import type {
   ProviderAvailabilityCardFields,
   ProviderAvailabilityDto
 } from '../../../../services/admin-benchmark.service';
+import { wordsLabel } from '../../../../utils/display-labels.util';
 
 /** Below this many valid attempts a figure carries the tag "few attempts". */
 export const FEW_ATTEMPTS_THRESHOLD = 100;
@@ -166,9 +167,9 @@ export const OUTCOME_LABELS: Readonly<Record<string, string>> = {
   OurNetwork: 'Our network'
 };
 
-/** The label of an outcome class name; the name itself when unknown. */
+/** The label of an outcome class name; an unknown name reads in words. */
 export function outcomeLabel(outcome: string): string {
-  return OUTCOME_LABELS[outcome] ?? outcome;
+  return Object.hasOwn(OUTCOME_LABELS, outcome) ? OUTCOME_LABELS[outcome] : wordsLabel(outcome);
 }
 
 /** Headings of the breakdown's sides. */

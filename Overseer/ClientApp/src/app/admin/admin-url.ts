@@ -60,11 +60,12 @@ export const ADMIN_SUBTAB_SLUGS: Readonly<Partial<Record<AdminTabId, readonly Ad
 };
 
 /**
- * Every filter parameter of the Feedback tab's sub-tabs, which share some names (`status`, `category`,
- * `model`, `provider`, `group`, `q`). A sub-tab switch removes them all, so none leaks into the other sub-tab.
+ * Every filter parameter of the Feedback tab's sub-tabs, which share some names (`status`, `resolvedVia`,
+ * `category`, `model`, `provider`, `group`, `q`). A sub-tab switch removes them all, so none leaks into the
+ * other sub-tab.
  */
 export const FEEDBACK_FILTER_QUERY_PARAMS: readonly string[] = [
-  'status', 'category', 'model', 'provider', 'user', 'group', 'source', 'config', 'version', 'tool', 'resolution', 'ids', 'q',
+  'status', 'resolvedVia', 'category', 'model', 'provider', 'user', 'group', 'source', 'config', 'version', 'tool', 'resolution', 'ids', 'q',
   'accepted', 'run', 'series', 'battery', 'batch', 'suite', 'question', 'condition', 'corpus', 'variant', 'harness', 'fingerprints'
 ];
 

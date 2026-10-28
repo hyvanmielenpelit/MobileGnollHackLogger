@@ -179,7 +179,8 @@ describe('admin URL scheme', () => {
     });
 
     it('names every Feedback filter parameter, so a sub-tab switch can remove them', () => {
-      for (const name of ['status', 'category', 'model', 'provider', 'user', 'group', 'source', 'config', 'version', 'tool', 'resolution', 'ids', 'q']) {
+      for (const name of ['status', 'resolvedVia', 'category', 'model', 'provider', 'user', 'group', 'source', 'config', 'version', 'tool',
+        'resolution', 'ids', 'q']) {
         expect(FEEDBACK_FILTER_QUERY_PARAMS).toContain(name);
       }
       const cleared = clearedFeedbackQueryParams();

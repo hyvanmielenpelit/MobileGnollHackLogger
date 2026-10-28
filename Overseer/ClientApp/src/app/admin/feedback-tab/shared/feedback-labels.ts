@@ -50,6 +50,15 @@ export const RESOLVED_VIA_OPTIONS: readonly { readonly id: FeedbackResolvedVia; 
 const RESOLVED_VIA_LABELS: Readonly<Record<string, string>> =
   Object.fromEntries(RESOLVED_VIA_OPTIONS.map(option => [option.id, option.label]));
 
+/** The *Resolved via* filter value for an issue with no resolved-via id recorded. */
+export const RESOLVED_VIA_FILTER_NONE = 'none';
+
+/** What the *Resolved via* filter's `none` reads as. */
+export const RESOLVED_VIA_NONE_LABEL = 'None recorded';
+
+/** Every *Resolved via* filter value, in the facet's order: the ids in the canonical order, then `none`. */
+export const RESOLVED_VIA_FILTER_VALUES: readonly string[] = [...FEEDBACK_RESOLVED_VIA_IDS, RESOLVED_VIA_FILTER_NONE];
+
 /**
  * A value of a fixed label map, or `fallback(value)` (by default the value itself); never an inherited property.
  * Empty for an empty value.
@@ -87,6 +96,11 @@ export function feedbackNoticedViaLabel(noticedVia: string | null | undefined): 
 /** A *Resolved via* id's label (`wiki` reads *GnollHack wiki*); an unknown id reads in words, empty for none. */
 export function resolvedViaLabel(id: string | null | undefined): string {
   return labelFrom(RESOLVED_VIA_LABELS, id, wordsLabel);
+}
+
+/** A *Resolved via* filter value's label: *None recorded* for `none`, an id as `resolvedViaLabel` reads it. */
+export function resolvedViaFilterLabel(value: string): string {
+  return value === RESOLVED_VIA_FILTER_NONE ? RESOLVED_VIA_NONE_LABEL : resolvedViaLabel(value);
 }
 
 /**

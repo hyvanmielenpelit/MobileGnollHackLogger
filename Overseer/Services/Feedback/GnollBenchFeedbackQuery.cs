@@ -156,6 +156,12 @@ public sealed class GnollBenchFeedbackFilter
     /// <summary>Experimental-changes specs without the hash, ids sorted; <see cref="NoVariant"/> matches a run without one.</summary>
     public List<string> Variants { get; set; } = new();
     public List<string> Harnesses { get; set; } = new();
+
+    /// <summary><see cref="FeedbackResolvedVia"/> ids; an issue matches when its triage row has any of them.</summary>
+    public IReadOnlyList<string> ResolvedVia { get; set; } = Array.Empty<string>();
+
+    /// <summary>Also match issues with no stored resolved-via ids, or no triage row.</summary>
+    public bool IncludeNoResolvedVia { get; set; }
     public List<string> Fingerprints { get; set; } = new();
     public string? Search { get; set; }
     public string Sort { get; set; } = SortLastSeen;
@@ -190,6 +196,10 @@ public sealed class GnollBenchFeedbackFilter
             if (!GnollBenchFeedbackStatuses.TryParse(part, out var status)) { error = $"Unknown status '{part}'."; return false; }
             if (!filter.Statuses.Contains(status)) filter.Statuses.Add(status);
         }
+
+        if (!FeedbackResolvedVia.TryParseFilter(query.ResolvedVia, out var resolvedVia, out bool noResolvedVia, out error)) return false;
+        filter.ResolvedVia = resolvedVia;
+        filter.IncludeNoResolvedVia = noResolvedVia;
 
         foreach (var part in Split(query.Category))
         {
@@ -838,6 +848,16 @@ public sealed class GnollBenchFeedbackQuery
             .ThenBy(v => v.Value, StringComparer.Ordinal)
             .ToList();
 
+        // Resolved via, from the triage rows; a fingerprint without one reads as none.
+        var inRange = rows.Select(r => r.Fingerprint).Distinct(StringComparer.Ordinal).ToList();
+        var storedResolvedVia = await _db.BenchmarkFeedbackTriages.AsNoTracking()
+            .Where(t => inRange.Contains(t.Fingerprint))
+            .Select(t => new { t.Fingerprint, t.ResolvedVia })
+            .ToDictionaryAsync(t => t.Fingerprint, t => t.ResolvedVia, StringComparer.Ordinal, ct);
+        dto.ResolvedVia = FeedbackResolvedVia.FacetCounts(inRange.Select(fp => storedResolvedVia.GetValueOrDefault(fp)))
+            .Select(o => new GnollBenchFeedbackFacetValueDto { Value = o.Value, Label = o.Value, Count = o.Count })
+            .ToList();
+
         // Series.
         var seriesRuns = runList.Where(r => r.SeriesId.HasValue).GroupBy(r => r.SeriesId!.Value).ToDictionary(g => g.Key, g => g.Select(r => r.Id).ToList());
         if (seriesRuns.Count > 0)
@@ -1100,6 +1120,8 @@ public sealed class GnollBenchFeedbackQuery
             DateTime? last = lastAccepted.TryGetValue(a.Fingerprint, out var l) ? l : null;
             var status = GnollBenchFeedbackStatuses.Derive(triage, last);
             if (filter.Statuses.Count > 0 && !filter.Statuses.Contains(status)) continue;
+            if ((filter.ResolvedVia.Count > 0 || filter.IncludeNoResolvedVia)
+                && !FeedbackResolvedVia.MatchesFilter(triage?.ResolvedVia, filter.ResolvedVia, filter.IncludeNoResolvedVia)) continue;
             candidates.Add(new Candidate
             {
                 Fingerprint = a.Fingerprint,

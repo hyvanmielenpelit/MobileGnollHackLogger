@@ -31,7 +31,7 @@ describe('AdminGnollBenchFeedbackService', () => {
 
   it('sends every filter under its server name, each list comma-joined', () => {
     service.getIssues({
-      startDate: '2026-09-21', endDate: '2026-10-21', statuses: ['new', 'regressed'], accepted: 'all',
+      startDate: '2026-09-21', endDate: '2026-10-21', statuses: ['new', 'regressed'], resolvedVia: ['wiki', 'none'], accepted: 'all',
       categories: ['tool_problem'], models: ['claude-x', 'gpt-x'], providers: ['Anthropic'], runs: ['12', '13'],
       series: ['4'], groups: ['5'], batteries: ['6'], batches: ['7'], suites: ['8'], questions: ['9', '10'],
       conditions: ['sourceOnly'], corpora: ['live', 'scarce-1'], variants: ['none', 'asker-search-words-v1+race-role-tool-v1'],
@@ -45,6 +45,8 @@ describe('AdminGnollBenchFeedbackService', () => {
     expect(p.get('endDate')).toBe('2026-10-21');
     expect(p.get('status')).toBe('new,regressed');
     expect(p.getAll('status')).toEqual(['new,regressed']);
+    expect(p.get('resolvedVia')).toBe('wiki,none');
+    expect(p.getAll('resolvedVia')).toEqual(['wiki,none']);
     expect(p.get('accepted')).toBe('all');
     expect(p.get('category')).toBe('tool_problem');
     expect(p.get('model')).toBe('claude-x,gpt-x');
@@ -69,7 +71,7 @@ describe('AdminGnollBenchFeedbackService', () => {
   });
 
   it('leaves empty filters, the accepted default and a zero skip out of the issues query', () => {
-    service.getIssues({ statuses: [], categories: [' '], search: '  ', accepted: 'accepted', skip: 0, take: 1 }).subscribe();
+    service.getIssues({ statuses: [], resolvedVia: [], categories: [' '], search: '  ', accepted: 'accepted', skip: 0, take: 1 }).subscribe();
     const req = http.expectOne(r => r.url === `${BASE}/issues`);
     expect(req.request.params.keys()).toEqual(['take']);
     req.flush({ totalCount: 0, rows: [] });
@@ -77,10 +79,11 @@ describe('AdminGnollBenchFeedbackService', () => {
 
   it('fetches the matching fingerprints with the same filters and no paging', () => {
     let ids: unknown;
-    service.getIssueIds({ runs: ['12'], fingerprints: [FP], sort: 'count' }).subscribe(value => ids = value);
+    service.getIssueIds({ runs: ['12'], resolvedVia: ['knowledge_base'], fingerprints: [FP], sort: 'count' }).subscribe(value => ids = value);
     const req = http.expectOne(r => r.url === `${BASE}/issues/ids`);
     expect(req.request.method).toBe('GET');
     expect(req.request.params.get('run')).toBe('12');
+    expect(req.request.params.get('resolvedVia')).toBe('knowledge_base');
     expect(req.request.params.get('fingerprints')).toBe(FP);
     expect(req.request.params.has('skip')).toBe(false);
     expect(req.request.params.has('take')).toBe(false);
@@ -90,7 +93,7 @@ describe('AdminGnollBenchFeedbackService', () => {
 
   it('pages an issue\'s self-reports with the occurrence-level filters, or all of them', () => {
     service.getOccurrences(FP, {
-      filters: { startDate: '2026-09-21', statuses: ['new'], sort: 'count', runs: ['12'], accepted: 'refused' },
+      filters: { startDate: '2026-09-21', statuses: ['new'], resolvedVia: ['wiki'], sort: 'count', runs: ['12'], accepted: 'refused' },
       skip: 10, take: 10
     }).subscribe();
     const req = http.expectOne(r => r.url === `${BASE}/issues/${FP}/occurrences`);
@@ -102,6 +105,7 @@ describe('AdminGnollBenchFeedbackService', () => {
     expect(p.get('take')).toBe('10');
     expect(p.has('startDate')).toBe(false);
     expect(p.has('status')).toBe(false);
+    expect(p.has('resolvedVia')).toBe(false);
     expect(p.has('sort')).toBe(false);
     expect(p.has('all')).toBe(false);
     req.flush({ totalCount: 0, rows: [] });

@@ -144,6 +144,12 @@ public sealed class OverseerFeedbackFilter
 
     /// <summary>True: a non-empty resolution; false: none; null: either.</summary>
     public bool? HasResolution { get; init; }
+
+    /// <summary><see cref="FeedbackResolvedVia"/> ids; an issue matches when it has any of them.</summary>
+    public IReadOnlyList<string> ResolvedVia { get; init; } = Array.Empty<string>();
+
+    /// <summary>Also match issues with no stored resolved-via ids.</summary>
+    public bool IncludeNoResolvedVia { get; init; }
     public IReadOnlyList<long> IssueIds { get; init; } = Array.Empty<long>();
 
     /// <summary>Trimmed; at most <see cref="MaxSearchLength"/> characters.</summary>
@@ -215,6 +221,8 @@ public sealed class OverseerFeedbackFilter
             else { error = $"Unknown resolution filter '{value}'."; return false; }
         }
 
+        if (!FeedbackResolvedVia.TryParseFilter(query.ResolvedVia, out var resolvedVia, out bool noResolvedVia, out error)) return false;
+
         string? search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim();
         if (search != null && search.Length > MaxSearchLength)
         {
@@ -238,6 +246,8 @@ public sealed class OverseerFeedbackFilter
             Versions = versions,
             Tools = tools,
             HasResolution = hasResolution,
+            ResolvedVia = resolvedVia,
+            IncludeNoResolvedVia = noResolvedVia,
             IssueIds = issueIds,
             Search = search
         };
@@ -321,6 +331,9 @@ public sealed class OverseerFeedbackQuery
 
         if (filter.HasResolution == true) query = query.Where(i => i.Resolution != null && i.Resolution != "");
         else if (filter.HasResolution == false) query = query.Where(i => i.Resolution == null || i.Resolution == "");
+
+        if (filter.ResolvedVia.Count > 0 || filter.IncludeNoResolvedVia)
+            query = query.Where(HasAnyResolvedVia(filter.ResolvedVia, filter.IncludeNoResolvedVia));
 
         if (filter.HasOccurrenceFilters)
         {
@@ -547,6 +560,11 @@ public sealed class OverseerFeedbackQuery
                 Count = g.Select(p => p.IssueId).Distinct().Count()
             })
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Id, StringComparer.Ordinal)
+            .ToList();
+
+        var resolvedVia = await issues.Select(i => i.ResolvedVia).ToListAsync(ct);
+        dto.ResolvedVia = FeedbackResolvedVia.FacetCounts(resolvedVia)
+            .Select(o => new AdminFeedbackFacetValueDto { Value = o.Value, Count = o.Count })
             .ToList();
 
         return dto;
@@ -847,6 +865,34 @@ public sealed class OverseerFeedbackQuery
         }
         var body = Expression.AndAlso(Expression.NotEqual(json, Expression.Constant(null, typeof(string))), any!);
         return Expression.Lambda<Func<OverseerFeedbackReport, bool>>(body, r);
+    }
+
+    /// <summary>
+    /// The issue's stored resolved-via list holds any of <paramref name="ids"/>, or is null or empty when
+    /// <paramref name="includeNone"/>: one <c>OR</c> of comma-bracketed <c>LIKE</c>s over the canonical stored form.
+    /// </summary>
+    private static Expression<Func<OverseerFeedbackIssue, bool>> HasAnyResolvedVia(IReadOnlyList<string> ids, bool includeNone)
+    {
+        var i = Expression.Parameter(typeof(OverseerFeedbackIssue), "i");
+        var stored = Expression.Property(i, nameof(OverseerFeedbackIssue.ResolvedVia));
+        var concat = typeof(string).GetMethod(nameof(string.Concat), new[] { typeof(string), typeof(string), typeof(string) })!;
+        var contains = typeof(string).GetMethod(nameof(string.Contains), new[] { typeof(string) })!;
+        var bracketed = Expression.Call(concat, Expression.Constant(","), stored, Expression.Constant(","));
+
+        Expression? any = null;
+        foreach (var id in ids)
+        {
+            Expression match = Expression.Call(bracketed, contains, Expression.Constant("," + id + ","));
+            any = any == null ? match : Expression.OrElse(any, match);
+        }
+        if (includeNone)
+        {
+            Expression none = Expression.OrElse(
+                Expression.Equal(stored, Expression.Constant(null, typeof(string))),
+                Expression.Equal(stored, Expression.Constant("")));
+            any = any == null ? none : Expression.OrElse(any, none);
+        }
+        return Expression.Lambda<Func<OverseerFeedbackIssue, bool>>(any ?? Expression.Constant(true), i);
     }
 
     /// <summary>At most <see cref="MaxModelIdsShown"/> model ids, then <c>+N</c> for the ones left out.</summary>

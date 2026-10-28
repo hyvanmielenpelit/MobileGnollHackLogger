@@ -171,6 +171,11 @@ export interface GnollBenchFeedbackFacets {
   suites: GnollBenchFeedbackFacetEntity[];
   /** Named by the question text, cut to 200 characters. */
   questions: GnollBenchFeedbackFacetEntity[];
+  /**
+   * The *Resolved via* ids present, in the canonical order, then `none` for issues with none recorded; the label is
+   * the value. The server always sends it; optional so a fixture without it still types.
+   */
+  resolvedVia?: GnollBenchFeedbackFacetValue[];
 }
 
 /**
@@ -182,6 +187,8 @@ export interface GnollBenchFeedbackFilters {
   startDate?: string;
   endDate?: string;
   statuses?: readonly string[];
+  /** *Resolved via* ids, and `none` for issues with none recorded; an issue-level filter. */
+  resolvedVia?: readonly string[];
   accepted?: GnollBenchAcceptedScope;
   categories?: readonly string[];
   /** Tested model ids. */
@@ -240,6 +247,7 @@ export interface GnollBenchFeedbackStatusUpdate {
 /** The list fields of `GnollBenchFeedbackFilters` and the query parameter each one is sent as. */
 const LIST_PARAMS: readonly (readonly [keyof GnollBenchFeedbackFilters, string])[] = [
   ['statuses', 'status'],
+  ['resolvedVia', 'resolvedVia'],
   ['categories', 'category'],
   ['models', 'model'],
   ['providers', 'provider'],
@@ -303,11 +311,12 @@ export class AdminGnollBenchFeedbackService {
 
   /** One page of an issue's self-reports, newest first. 404 for an unknown fingerprint. */
   getOccurrences(fingerprint: string, query: GnollBenchFeedbackOccurrencesQuery = {}): Observable<GnollBenchFeedbackOccurrencePage> {
-    // The date range and the status never narrow the self-reports, and the sort is the server's own.
+    // The date range, the status and Resolved via never narrow the self-reports, and the sort is the server's own.
     const occurrenceFilters: GnollBenchFeedbackFilters = { ...query.filters };
     delete occurrenceFilters.startDate;
     delete occurrenceFilters.endDate;
     delete occurrenceFilters.statuses;
+    delete occurrenceFilters.resolvedVia;
     delete occurrenceFilters.sort;
     let params = gnollBenchFilterParams(occurrenceFilters);
     if (query.all) params = params.set('all', 'true');

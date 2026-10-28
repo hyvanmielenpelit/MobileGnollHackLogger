@@ -61,8 +61,10 @@ import {
   feedbackCauseLabel,
   feedbackNoticedViaLabel,
   feedbackStatusLabel,
+  RESOLVED_VIA_FILTER_VALUES,
   formatResolvedVia,
-  labelFrom
+  labelFrom,
+  resolvedViaFilterLabel
 } from '../shared/feedback-labels';
 import { FeedbackSelectionBarComponent, FeedbackSelectionId } from '../shared/feedback-selection-bar.component';
 import { hiddenCharactersOf } from '../shared/feedback-hidden-characters';
@@ -179,7 +181,8 @@ export function feedbackModelSourceText(occurrence: Pick<AdminFeedbackOccurrence
 }
 
 /** The facets of the filter bar, in the order it lists them; each is a column of the table and a query parameter. */
-type FacetColumn = 'status' | 'category' | 'model' | 'provider' | 'user' | 'group' | 'source' | 'config' | 'version' | 'tool' | 'resolution' | 'ids';
+type FacetColumn = 'status' | 'resolvedVia' | 'category' | 'model' | 'provider' | 'user' | 'group' | 'source' | 'config' | 'version' | 'tool' |
+  'resolution' | 'ids';
 
 interface FacetDefinition {
   column: FacetColumn;
@@ -197,6 +200,7 @@ interface FacetDefinition {
 
 const FACETS: readonly FacetDefinition[] = [
   { column: 'status', label: 'Status', mode: 'multiple', alwaysListed: true },
+  { column: 'resolvedVia', label: 'Resolved via', mode: 'multiple' },
   { column: 'category', label: 'Category', mode: 'multiple', alwaysListed: true },
   { column: 'model', label: 'Model', mode: 'multiple', occurrenceLevel: true },
   { column: 'provider', label: 'Provider', mode: 'multiple', occurrenceLevel: true },
@@ -253,7 +257,7 @@ interface TriageResult {
 /**
  * The Feedback tab's Overseer sub-tab: the issues the assistant's `report_feedback` tool has reported
  * in the Overseer chat within the shell's date range, as a server-paged card list. Its filter bar has a
- * search, Sort by, the Status, Category, Model, Provider, User, Group, Model source, Configuration,
+ * search, Sort by, the Status, Resolved via, Category, Model, Provider, User, Group, Model source, Configuration,
  * Version, Tool and Has resolution facets, and chips, which also show an `ids` filter a link from the
  * GnollBench sub-tab sets (`status=all` is no status filter); the facets and the search live in the address and,
  * with the sort and the range, in the remembered view. Each issue has its figures, latest facts,
@@ -587,6 +591,8 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     switch (column) {
       case 'status':
         return this.statusOptions;
+      case 'resolvedVia':
+        return (data?.resolvedVia ?? []).map(v => ({ value: v.value, label: resolvedViaFilterLabel(v.value), count: v.count }));
       case 'category':
         return ADMIN_FEEDBACK_CATEGORIES.map(c => ({ value: c, label: feedbackCategoryLabel(c), count: countOf(data?.categories, c) }));
       case 'model':
@@ -631,6 +637,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     const data = this.facetData();
     switch (column) {
       case 'status': return feedbackStatusLabel(value);
+      case 'resolvedVia': return resolvedViaFilterLabel(value);
       case 'category': return feedbackCategoryLabel(value);
       case 'source': return labelFrom(MODEL_SOURCE_LABELS, value);
       case 'resolution': return labelFrom(RESOLUTION_FILTER_LABELS, value);
@@ -676,6 +683,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
       : raw.status.includes(FEEDBACK_STATUS_QUERY_ALL) ? [] : known(raw.status, ADMIN_FEEDBACK_STATUSES);
     const values: Record<FacetColumn, readonly string[]> = {
       status: statuses,
+      resolvedVia: known(raw.resolvedVia, RESOLVED_VIA_FILTER_VALUES),
       category: known(raw.category, ADMIN_FEEDBACK_CATEGORIES),
       model: unique(raw.model),
       provider: unique(raw.provider),
@@ -866,6 +874,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     return {
       ...this.dateFilters(),
       statuses: list('status'),
+      resolvedVia: list('resolvedVia'),
       categories: list('category'),
       modelIds: list('model'),
       providers: list('provider'),

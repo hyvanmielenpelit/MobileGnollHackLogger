@@ -7,7 +7,7 @@ import { AdminUserLogEntry, AdminUserLogPage, AdminUserLogQuery, AdminUsersServi
 import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
 import { AdminPageStore } from '../../admin-page.store';
 import { configureAdminTestBed } from '../../admin.component.testing';
-import { ADMIN_LOG_BATCH, ADMIN_LOG_VIEW_STORAGE_KEY, AdminUserLogComponent, adminLogKindLabel } from './admin-user-log.component';
+import { ADMIN_LOG_BATCH, ADMIN_LOG_VIEW_STORAGE_KEY, AdminUserLogComponent } from './admin-user-log.component';
 
 const settle = (ms = 0): Promise<void> => new Promise<void>(resolve => setTimeout(resolve, ms));
 
@@ -339,14 +339,5 @@ describe('AdminUserLogComponent', () => {
 
       expect(lastListQuery().kinds).toEqual(['Banned']);
     });
-  });
-
-  it('labels every kind in words', () => {
-    expect(adminLogKindLabel('AiChatBlocked')).toBe('Blocked from AI chat');
-    expect(adminLogKindLabel('HoldPlaced')).toBe('Deletion hold placed');
-    expect(adminLogKindLabel('DeletionRequestDeclined')).toBe('Deletion request declined');
-    expect(adminLogKindLabel('EmailChanged')).toBe('Email changed');
-    expect(adminLogKindLabel('GameSignInBlockCleared')).toBe('Game sign-in block cleared');
-    expect(adminLogKindLabel('SomethingNew')).toBe('SomethingNew');
   });
 });

@@ -48,7 +48,8 @@ describe('AdminFeedbackService', () => {
 
   it('sends every issue criterion, each list comma-joined, the models as modelId', () => {
     service.getIssues({
-      startDate: '2026-09-21', endDate: '2026-10-21', statuses: ['new', 'regressed'], categories: ['tool_problem', 'own_mistake'],
+      startDate: '2026-09-21', endDate: '2026-10-21', statuses: ['new', 'regressed'], resolvedVia: ['wiki', 'none'],
+      categories: ['tool_problem', 'own_mistake'],
       modelIds: ['claude-x', 'gpt-x'], providers: ['Anthropic'], users: ['u-1', 'u-2'], groups: ['3', 'none'],
       sources: ['system', 'unknown'], configs: ['7'], versions: ['1.4.2'], tools: ['wiki_search'], resolution: 'without',
       ids: [4, 9], search: ' crystal ', sort: 'regressions', skip: 25, take: 25
@@ -61,6 +62,8 @@ describe('AdminFeedbackService', () => {
     expect(p.get('endDate')).toBe('2026-10-21');
     expect(p.get('status')).toBe('new,regressed');
     expect(p.getAll('status')).toEqual(['new,regressed']);
+    expect(p.get('resolvedVia')).toBe('wiki,none');
+    expect(p.getAll('resolvedVia')).toEqual(['wiki,none']);
     expect(p.get('category')).toBe('tool_problem,own_mistake');
     expect(p.get('modelId')).toBe('claude-x,gpt-x');
     expect(p.has('model')).toBe(false);
@@ -81,7 +84,7 @@ describe('AdminFeedbackService', () => {
   });
 
   it('leaves empty criteria and a zero skip out of the issues query', () => {
-    service.getIssues({ statuses: [], categories: [], modelIds: [' '], search: '  ', ids: [], skip: 0, take: 1 }).subscribe();
+    service.getIssues({ statuses: [], resolvedVia: [' '], categories: [], modelIds: [' '], search: '  ', ids: [], skip: 0, take: 1 }).subscribe();
     const req = http.expectOne(r => r.url === `${BASE}/issues`);
     expect(req.request.params.keys()).toEqual(['take']);
     req.flush({ totalCount: 0, rows: [] });
@@ -89,10 +92,12 @@ describe('AdminFeedbackService', () => {
 
   it('fetches the matching issue ids with the same filters and the sort', () => {
     let result: unknown;
-    service.getIssueIds({ statuses: ['new'], categories: ['tool_problem'], search: 'wand' }, 'count').subscribe(r => result = r);
+    service.getIssueIds({ statuses: ['new'], resolvedVia: ['knowledge_base'], categories: ['tool_problem'], search: 'wand' }, 'count')
+      .subscribe(r => result = r);
     const req = http.expectOne(r => r.url === `${BASE}/issues/ids`);
     expect(req.request.method).toBe('GET');
     expect(req.request.params.get('status')).toBe('new');
+    expect(req.request.params.get('resolvedVia')).toBe('knowledge_base');
     expect(req.request.params.get('category')).toBe('tool_problem');
     expect(req.request.params.get('search')).toBe('wand');
     expect(req.request.params.get('sort')).toBe('count');
@@ -109,7 +114,8 @@ describe('AdminFeedbackService', () => {
   it('fetches the facets of a date range, and the counts', () => {
     const facets: AdminFeedbackFacets = {
       categories: [{ value: 'tool_problem', count: 2 }], models: [], providers: [], sources: [], versions: [], tools: [],
-      users: [{ id: 'u-1', name: 'alice', count: 1 }], groups: [{ id: 'none', name: 'No group', count: 1 }], configs: []
+      users: [{ id: 'u-1', name: 'alice', count: 1 }], groups: [{ id: 'none', name: 'No group', count: 1 }], configs: [],
+      resolvedVia: [{ value: 'wiki', label: '', count: 1 }, { value: 'none', label: '', count: 3 }]
     };
     let read: AdminFeedbackFacets | undefined;
     service.getFacets('2026-09-21', '2026-10-21').subscribe(value => read = value);

@@ -190,6 +190,11 @@ export interface AdminFeedbackFacets {
   users: AdminFeedbackFacetEntity[];
   groups: AdminFeedbackFacetEntity[];
   configs: AdminFeedbackFacetEntity[];
+  /**
+   * The *Resolved via* ids present, in the canonical order, then `none` for issues with none recorded; the label is
+   * empty. The server always sends it; optional so a fixture without it still types.
+   */
+  resolvedVia?: AdminFeedbackFacetValue[];
 }
 
 /** Issue counts per status over all dates. */
@@ -227,6 +232,8 @@ export interface AdminFeedbackIssueFilters {
   startDate?: string;
   endDate?: string;
   statuses?: readonly string[];
+  /** *Resolved via* ids, and `none` for issues with none recorded; an issue-level filter. */
+  resolvedVia?: readonly string[];
   categories?: readonly string[];
   /** Sent as `modelId`. */
   modelIds?: readonly string[];
@@ -276,6 +283,7 @@ function filterParams(filters: AdminFeedbackIssueFilters, params = new HttpParam
   if (filters.startDate) params = params.set('startDate', filters.startDate);
   if (filters.endDate) params = params.set('endDate', filters.endDate);
   list('status', filters.statuses);
+  list('resolvedVia', filters.resolvedVia);
   list('category', filters.categories);
   list('modelId', filters.modelIds);
   list('provider', filters.providers);

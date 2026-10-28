@@ -3,6 +3,9 @@ import {
   FEEDBACK_NOTICED_VIA_LABELS,
   FEEDBACK_STATUS_LABELS,
   FEEDBACK_SUSPECTED_CAUSE_LABELS,
+  RESOLVED_VIA_FILTER_NONE,
+  RESOLVED_VIA_FILTER_VALUES,
+  RESOLVED_VIA_NONE_LABEL,
   RESOLVED_VIA_OPTIONS,
   feedbackCategoryLabel,
   feedbackCauseLabel,
@@ -10,6 +13,7 @@ import {
   feedbackStatusLabel,
   formatResolvedVia,
   labelFrom,
+  resolvedViaFilterLabel,
   resolvedViaLabel
 } from './feedback-labels';
 import { FEEDBACK_RESOLVED_VIA_IDS } from '../../../services/feedback-transfer.service';
@@ -113,6 +117,22 @@ describe('feedback labels', () => {
       expect(formatResolvedVia(null)).toBe('None');
       expect(formatResolvedVia(undefined)).toBe('None');
       expect(formatResolvedVia([' '])).toBe('None');
+    });
+
+    it('filters by every id, then none, which reads None recorded', () => {
+      expect(RESOLVED_VIA_FILTER_NONE).toBe('none');
+      expect(RESOLVED_VIA_NONE_LABEL).toBe('None recorded');
+      expect(RESOLVED_VIA_FILTER_VALUES).toEqual([...FEEDBACK_RESOLVED_VIA_IDS, 'none']);
+      expect(RESOLVED_VIA_FILTER_VALUES.map(resolvedViaFilterLabel)).toEqual([
+        'GnollHack wiki', 'Knowledge base', 'Overseer release', 'GnollHack release', 'Server configuration', 'Other', 'None recorded'
+      ]);
+    });
+
+    it('labels a filter value as resolvedViaLabel does, apart from none', () => {
+      expect(resolvedViaFilterLabel('none')).toBe('None recorded');
+      expect(resolvedViaFilterLabel('wiki')).toBe('GnollHack wiki');
+      expect(resolvedViaFilterLabel('mobile_release')).toBe('Mobile release');
+      expect(resolvedViaFilterLabel('constructor')).toBe('Constructor');
     });
   });
 });

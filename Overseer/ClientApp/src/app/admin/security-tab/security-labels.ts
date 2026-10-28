@@ -38,7 +38,7 @@ export const SECURITY_CODE_LABELS: ReadonlyMap<string, ReadonlyMap<string, strin
     ['game-api-signin', 'Game sign-in throttle, game APIs'],
     ['session-create', 'Game sign-in throttle, GnollHack sign-in to Overseer'],
     ['session-create-turn', 'First chat turn from GnollHack, per user'],
-    ['unknown', 'Unnamed limit']
+    ['unknown', 'Rate limit without a policy name']
   ])],
   // SystemAiConfigService; AiUsageGuard.
   ['QuotaRefused', new Map([
@@ -55,8 +55,8 @@ export const SECURITY_CODE_LABELS: ReadonlyMap<string, ReadonlyMap<string, strin
   // ChatService attachment checks.
   ['AttachmentRejected', new Map([
     ['count', 'Too many attachments'],
-    ['validation', 'Name, type or size refused'],
-    ['content', 'Content check failed'],
+    ['validation', 'File extension, type or size refused'],
+    ['content', 'Contents refused: empty, too large or not the declared type'],
     ['malware', 'Malware found'],
     ['scan-failed', 'Malware scan failed']
   ])],
@@ -81,7 +81,7 @@ export const SECURITY_CODE_LABELS: ReadonlyMap<string, ReadonlyMap<string, strin
 /** The game API routes `GameApiAuthenticator` names in a `game-api:<route>` code. */
 const GAME_API_ROUTE_LABELS: ReadonlyMap<string, string> = new Map([
   ['bones', 'bones upload'],
-  ['xlogfile', 'game log upload'],
+  ['xlogfile', 'finished-game record upload'],
   ['replay', 'replay upload'],
   ['savefiletracking', 'save file tracking']
 ]);

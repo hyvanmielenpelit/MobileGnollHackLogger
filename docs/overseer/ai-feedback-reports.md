@@ -430,8 +430,9 @@ to an empty string. The helpers:
 - **The filter bar**: a search over the issue's subject and summary and its occurrences' details,
   *searched for* and expected location (at most 200 characters); *Sort by* *Last seen* (the default),
   *First seen*, *Most occurrences*, *Most users*, *Most regressions*, *Recently triaged* or *Subject (A–Z)*;
-  the facets *Status* (defaulting to **New and Regressed**, the open work), *Category*, *Model*,
-  *Provider*, *User*, *Group* (with *No group*, which also matches occurrences with no user), *Model
+  the facets *Status* (defaulting to **New and Regressed**, the open work), *Resolved via* (the channels
+  of § 9 by label, and *None recorded* for an issue with none; an issue matches when it has any chosen
+  one), *Category*, *Model*, *Provider*, *User*, *Group* (with *No group*, which also matches occurrences with no user), *Model
   source* (*System configuration*, *User's own model*, *Unknown*), *Configuration*, *Version*, *Tool* (a
   related tool) and *Has resolution* (*Any*, with or without); and removable chips, with *Issue: #42* for
   an `ids` address. Facet options come from `GET facets` for the range, each with its count of issues.
@@ -518,15 +519,17 @@ to an empty string. The helpers:
 optional, every list comma-separated: `startDate`, `endDate`, `status`, `category`, `modelId`,
 `provider`, `user` (Identity ids), `group` (group ids, plus `none`), `source` (`system`, `user`,
 `unknown`), `config` (configuration ids), `version`, `tool` (matched against the occurrence's related
-tools), `resolution` (`with` or `without`), `ids` (at most 500) and `search` (at most 200 characters).
-Unknown values are 400.
+tools), `resolution` (`with` or `without`), `resolvedVia` (ids of § 9, plus `none` for an issue with none
+stored; an issue matches when it has any of them, and the filter is issue-level), `ids` (at most 500) and
+`search` (at most 200 characters). Unknown values are 400; an unknown `resolvedVia` value reads *Unknown
+resolved-via value `x`.*
 
 | Method and path | Purpose |
 |---|---|
 | `GET switch` · `POST switch/{target}` (`{ enabled }`) | The switch's state, `{ chat }`, as `{ enabled, setAtUtc, setByUserName, seeded }`; appending a change to it, `target` `chat` (case-insensitive; anything else, `gnollbench` included, 400 *Unknown switch.*), which returns it |
 | `GET issues?<filters>&sort&skip&take` | A page of issues (`sort` `lastSeen`, `firstSeen`, `count`, `users`, `regressions`, `triaged` or `subject`; `take` 1–100). Each issue also carries `providers`, `modelSources` (`{ system, user, unknown }` over retained occurrences), `resolution`, `fixedInVersion`, `resolvedVia` (a list of ids, always present, possibly empty), `modelLabels` (aligned with `modelIds`) and `alsoInGnollBench` (`{ selfReportCount, status }` or null) |
 | `GET issues/ids?<filters>&sort` | Every matching id, at most 1,000, with `totalCount` and `truncated` |
-| `GET facets?startDate&endDate` | The options present in the range, each with its count of issues: categories, models, providers, sources, versions and tools as `{ value, count, label }`, `label` the model's display name for models and empty for the rest; users, groups (with `none`, *No group*) and configurations as `{ id, name, count }`, a deleted configuration named *Configuration #id (deleted)*. It replaced `GET models` |
+| `GET facets?startDate&endDate` | The options present in the range, each with its count of issues: categories, models, providers, sources, versions, tools and `resolvedVia` (the ids of § 9 in their order, then `none`) as `{ value, count, label }`, `label` the model's display name for models and empty for the rest; users, groups (with `none`, *No group*) and configurations as `{ id, name, count }`, a deleted configuration named *Configuration #id (deleted)*. It replaced `GET models` |
 | `GET issues/{id}/occurrences?<filters>&all&skip&take` | A page of one issue's occurrences, newest first, filtered by the occurrence-level filters unless `all=true`; each also carries `modelSource`, `systemConfigurationId`, `systemConfigurationName`, `groupNames` and `modelLabel` (null only without a model id) |
 | `GET counts` | Issue counts per status over all dates |
 | `POST issues/{id}/status` (`{ status, note?, resolution?, fixedInVersion?, resolvedVia? }`) | Triage (404 unknown id; 400 unknown status or `regressed`). For the note, the resolution and the fixed-in version an absent or null value keeps the stored one and an empty one clears it, so a status change without a note keeps the note. A note over 1,000 characters, a resolution over 4,000 or a fixed-in version that does not match `^[0-9A-Za-z.+\-]{1,64}$` is 400. `resolvedVia` is a list of ids (§ 9): absent or null keeps the stored list, `[]` clears it, and an unknown id is 400 (*Unknown resolved-via value `x`; allowed: wiki, knowledge_base, …*); ids are trimmed, compared case-sensitively, de-duplicated and stored in the fixed order |
@@ -591,7 +594,8 @@ only an administrator's triage is stored.
 - **The filter bar**: a search over the subject, summary, details and question text; *Sort by* *Last
   seen* (the default), *First seen*, *Most self-reports*, *Most runs*, *Most models* or *Subject (A–Z)*; the
   *Self-reports* select; and the facets *Status* (default New and Regressed, with the sub-tab's own counts
-  from `GET counts`), *Category*, *Model*, *Provider*, *Run*, *Series*, *Analysis group* (Multi-Run
+  from `GET counts`), *Resolved via* (as in § 10, read from the triage row; a fingerprint without one
+  reads *None recorded*), *Category*, *Model*, *Provider*, *Run*, *Series*, *Analysis group* (Multi-Run
   Analysis), *Battery run*, *Model batch* (a batch member that names the run, its series or a battery run
   it belongs to), *Suite*, *Question*, *Information condition*, *Corpus* (`live` for none), *Experimental
   Changes* (a run's change titles joined by commas, its ids while the catalog is not loaded, or *None*;
@@ -615,15 +619,15 @@ only an administrator's triage is stored.
   filters, every list comma-separated: `startDate`, `endDate`, `status`, `accepted`, `category`, `model`,
   `provider`, `run`, `series`, `group`, `battery`, `batch`, `suite`, `question`, `condition`
   (`production`, `sourceOnly`, `closedBook`), `corpus`, `variant` (experimental-changes specs, spaces read
-  as `+`, or `none`), `harness`, `fingerprints` (at most 500)
-  and `search` (at most 200 characters).
+  as `+`, or `none`), `harness`, `resolvedVia` (as in § 10, matched against the triage row, no row reading as
+  `none`), `fingerprints` (at most 500) and `search` (at most 200 characters).
 
   | Method and path | Purpose |
   |---|---|
   | `GET issues?<filters>&sort&skip&take` | A page of issues: `fingerprint`, `category`, `subject`, `summary`, first and last seen, `selfReportCount`, `runCount`, `modelCount`, `models` and `suites` (at most five, then *+N*), `providers`, the derived `status`, the triage fields with `resolvedVia` (a list of ids, always present), `resolvedUtc` and `alsoInOverseer` (`{ issueId, status }` or null; the cross-link limit of § 10 applies) |
   | `GET issues/ids?<filters>` | Every matching fingerprint, at most 1,000, with `totalCount` and `truncated` |
   | `GET issues/{fingerprint}/occurrences?<filters>&all&skip&take` | A page of one issue's self-reports, newest first |
-  | `GET facets?startDate&endDate&accepted` | The facet options with their counts |
+  | `GET facets?startDate&endDate&accepted` | The facet options with their counts; `resolvedVia` counts fingerprints per id of § 9, then `none` |
   | `GET counts` | Issue counts per derived status over all dates |
   | `POST issues/{fingerprint}/status` (`{ status, note?, resolution?, fixedInVersion?, resolvedVia? }`) | Upserts the triage row with the Overseer sub-tab's keep and clear, length and `resolvedVia` rules; `regressed` 400; a fingerprint with no self-report 404 |
 
@@ -1047,6 +1051,10 @@ The YAML format, *Resolved via* and the labels have their own:
   absent, cleared by `[]` and refused for an unknown id, its projection on the issue, and the model labels
   with a stub `ModelMetadataService` and without one. `AdminGnollBenchFeedbackControllerTests`:
   `resolvedVia` in the triage upsert.
+- **The Resolved via facet.** `AdminFeedbackControllerTests` and `AdminGnollBenchFeedbackControllerTests`: the
+  filter (one id, two ids, `none`, an unknown value 400) and the facet's counts and order, a fingerprint without a
+  triage row counted as `none`; `OverseerFeedbackQueryResolvedViaTests`: the Overseer filter translated on SQLite,
+  where a partial id such as `wiki_fix` does not match `wiki`.
 - **The client.** `display-labels.util.spec.ts` and `shared/feedback-labels.spec.ts`: every map, the
   fallbacks, and no inherited property (`constructor`, `__proto__`) read as a label;
   `feedback-formats-tip.component.spec.ts` the formats dialog, its lazy load and downloads; the `opened`
@@ -1080,7 +1088,6 @@ Not in this version, and named so nobody assumes otherwise:
   to a built-in change's description file alone does not stop a series from resuming; only a re-run's
   stamp check catches it ([`ai-benchmark-conditions-and-variants.md`](ai-benchmark-conditions-and-variants.md)
   § 6.13).
-- **A *Resolved via* facet** in either sub-tab's filter bar.
 
 ### Rejected
 

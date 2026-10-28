@@ -39,7 +39,7 @@ const EXPECTED_CODE_LABELS: Readonly<Record<string, Readonly<Record<string, stri
     'game-api-signin': 'Game sign-in throttle, game APIs',
     'session-create': 'Game sign-in throttle, GnollHack sign-in to Overseer',
     'session-create-turn': 'First chat turn from GnollHack, per user',
-    unknown: 'Unnamed limit'
+    unknown: 'Rate limit without a policy name'
   },
   QuotaRefused: {
     user: 'User\'s limit on the configuration',
@@ -54,8 +54,8 @@ const EXPECTED_CODE_LABELS: Readonly<Record<string, Readonly<Record<string, stri
   },
   AttachmentRejected: {
     count: 'Too many attachments',
-    validation: 'Name, type or size refused',
-    content: 'Content check failed',
+    validation: 'File extension, type or size refused',
+    content: 'Contents refused: empty, too large or not the declared type',
     malware: 'Malware found',
     'scan-failed': 'Malware scan failed'
   },
@@ -93,7 +93,7 @@ describe('security-labels', () => {
 
     it('names the game API route of a game sign-in failure', () => {
       expect(securityCodeLabel('LoginFailed', 'game-api:bones')).toBe('Game API, bones upload');
-      expect(securityCodeLabel('LoginFailed', 'game-api:xlogfile')).toBe('Game API, game log upload');
+      expect(securityCodeLabel('LoginFailed', 'game-api:xlogfile')).toBe('Game API, finished-game record upload');
       expect(securityCodeLabel('LoginFailed', 'game-api:replay')).toBe('Game API, replay upload');
       expect(securityCodeLabel('LoginFailed', 'game-api:savefiletracking')).toBe('Game API, save file tracking');
       expect(securityCodeLabel('LoginFailed', 'game-api:new_route')).toBe('Game API, new route');

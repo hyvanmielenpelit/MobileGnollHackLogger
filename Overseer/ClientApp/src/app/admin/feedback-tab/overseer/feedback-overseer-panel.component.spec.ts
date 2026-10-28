@@ -908,6 +908,125 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(lastQuery().statuses).toEqual(['regressed']);
       expect(document.activeElement?.getAttribute('aria-label')).toBe('Remove filter Status: Regressed');
     });
+
+    describe('Resolved via', () => {
+      const RESOLVED_VIA_IDS = /knowledge_base|server_configuration|\bnone\b/;
+      const chipTexts = (): string[] => Array.from(el.querySelectorAll('.tl-fb-chips .gh-filter-chip'))
+        .map(c => `${textOf(c.querySelector('.gh-filter-chip-facet'))} ${textOf(c.querySelector('.gh-filter-chip-value'))}`);
+
+      beforeEach(() => {
+        facetsSpy.mockReturnValue(of(facets({
+          resolvedVia: [
+            { value: 'wiki', label: '', count: 2 },
+            { value: 'server_configuration', label: '', count: 1 },
+            { value: 'none', label: '', count: 5 }
+          ]
+        })));
+      });
+
+      it('lists the facet right after Status, its options in labels with counts and None recorded last', async () => {
+        await create();
+
+        expect(facetIds().slice(0, 3)).toEqual(['tl-fb-facet-status', 'tl-fb-facet-resolvedVia', 'tl-fb-facet-category']);
+        const resolvedVia = facet('tl-fb-facet-resolvedVia')!;
+        expect(resolvedVia.label).toBe('Resolved via');
+        expect(resolvedVia.mode).toBe('multiple');
+        expect(resolvedVia.options.map(o => o.value)).toEqual(['wiki', 'server_configuration', 'none']);
+        expect(resolvedVia.options.map(o => `${o.label} ${o.count}`)).toEqual(
+          ['GnollHack wiki 2', 'Server configuration 1', 'None recorded 5']);
+        expect(resolvedVia.options.map(o => o.label).join(' ')).not.toMatch(RESOLVED_VIA_IDS);
+      });
+
+      it('is not listed with one option and no selection', async () => {
+        facetsSpy.mockReturnValue(of(facets({ resolvedVia: [{ value: 'none', label: '', count: 5 }] })));
+        await create();
+
+        expect(facetIds()).not.toContain('tl-fb-facet-resolvedVia');
+      });
+
+      it('refetches page 1 with the chosen ids, shows them as chips in labels, and keeps them in the address and the view', async () => {
+        await create();
+
+        choose('tl-fb-facet-resolvedVia', ['server_configuration', 'none']);
+
+        expect(lastQuery()).toEqual(expect.objectContaining({
+          resolvedVia: ['server_configuration', 'none'], statuses: ['new', 'regressed'], skip: 0
+        }));
+        expect(chipLabels()).toEqual([
+          'Remove filter Status: New', 'Remove filter Status: Regressed',
+          'Remove filter Resolved via: Server configuration', 'Remove filter Resolved via: None recorded'
+        ]);
+        expect(chipTexts()).toContainEqual('Resolved via: Server configuration');
+        expect(chipTexts()).toContainEqual('Resolved via: None recorded');
+        expect(textOf(q('.tl-fb-chips'))).not.toMatch(RESOLVED_VIA_IDS);
+        await settle();
+        expect(queryParams()['resolvedVia']).toBe('server_configuration,none');
+        expect(queryParams()['status']).toBeUndefined();
+        expect(loadFeedbackView('overseer')).toEqual(expect.objectContaining({
+          filters: expect.objectContaining({ resolvedVia: ['server_configuration', 'none'] })
+        }));
+      });
+
+      it('takes it from the address it opens on, dropping an unknown value, and Clear filters removes it', async () => {
+        await create('/admin/feedback?resolvedVia=none,bogus,wiki');
+
+        expect(listQueries().length).toBe(1);
+        expect(lastQuery()).toEqual(expect.objectContaining({ resolvedVia: ['wiki', 'none'] }));
+        expect([...facet('tl-fb-facet-resolvedVia')!.selected]).toEqual(['wiki', 'none']);
+        expect(chipLabels()).toEqual([
+          'Remove filter Status: New', 'Remove filter Status: Regressed',
+          'Remove filter Resolved via: GnollHack wiki', 'Remove filter Resolved via: None recorded'
+        ]);
+
+        q<HTMLButtonElement>('#tl-fb-clear')!.click();
+        fixture.detectChanges();
+
+        expect(lastQuery().resolvedVia).toBeUndefined();
+        await settle();
+        expect(queryParams()['resolvedVia']).toBeUndefined();
+        expect(storedView().filters.resolvedVia).toEqual([]);
+      });
+
+      it('keeps a selected value the range does not list, in its label, so it can still be cleared', async () => {
+        await create('/admin/feedback?resolvedVia=knowledge_base');
+
+        expect(facet('tl-fb-facet-resolvedVia')!.options.map(o => `${o.label} ${o.count}`)).toEqual(
+          ['GnollHack wiki 2', 'Server configuration 1', 'None recorded 5', 'Knowledge base 0']);
+        expect(chipLabels()).toContainEqual('Remove filter Resolved via: Knowledge base');
+      });
+
+      it('takes it from the remembered view when the address names no filter, and writes it into the address', async () => {
+        saveFeedbackView('overseer', {
+          version: 1, sort: 'lastSeen', filters: { resolvedVia: ['knowledge_base'] }, search: '', range: CUSTOM_RANGE
+        });
+        await create('/admin/feedback?sessionId=s1');
+
+        expect(lastQuery()).toEqual(expect.objectContaining({ resolvedVia: ['knowledge_base'], statuses: ['new', 'regressed'] }));
+        await settle();
+        expect(queryParams()).toEqual({ sessionId: 's1', resolvedVia: 'knowledge_base' });
+      });
+
+      it('removes one value with its chip', async () => {
+        await create('/admin/feedback?resolvedVia=wiki,none');
+
+        Array.from(el.querySelectorAll<HTMLButtonElement>('.tl-fb-chips .gh-filter-chip'))
+          .find(c => c.getAttribute('aria-label') === 'Remove filter Resolved via: GnollHack wiki')!.click();
+        fixture.detectChanges();
+
+        expect(lastQuery().resolvedVia).toEqual(['none']);
+        await settle();
+        expect(queryParams()['resolvedVia']).toBe('none');
+      });
+
+      it('never narrows the occurrences, so it offers no toggle to show them all', async () => {
+        occurrencesSpy.mockReturnValue(of<AdminFeedbackOccurrencePage>({ totalCount: 1, rows: [occurrence(5)] }));
+        await create('/admin/feedback?resolvedVia=wiki');
+        const details = openOccurrences(cards()[0]);
+
+        expect(occurrencesSpy).toHaveBeenLastCalledWith(1, 0, 10, {}, false);
+        expect(details.querySelector('.tl-fb-occ-all')).toBeNull();
+      });
+    });
   });
 
   describe('empty states', () => {

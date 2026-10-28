@@ -2,6 +2,7 @@ namespace Overseer.Services.Feedback;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
 /// <summary>
@@ -17,6 +18,9 @@ public static class FeedbackResolvedVia
     public const string GnollHackRelease = "gnollhack_release";
     public const string ServerConfiguration = "server_configuration";
     public const string Other = "other";
+
+    /// <summary>The filter and facet value for an issue with no stored ids.</summary>
+    public const string NoneFilterValue = "none";
 
     public static IReadOnlyList<string> All { get; } = new[]
     {
@@ -44,6 +48,59 @@ public static class FeedbackResolvedVia
         }
         ids = All.Where(chosen.Contains).ToList();
         return true;
+    }
+
+    /// <summary>
+    /// Reads the comma list of the Resolved via filter: ids and <see cref="NoneFilterValue"/>, each trimmed and
+    /// compared case-sensitively, duplicates dropped, ids in <see cref="All"/> order. Null or blank filters nothing.
+    /// False with an error naming the first unknown value.
+    /// </summary>
+    public static bool TryParseFilter(string? commaList, out IReadOnlyList<string> ids, out bool includeNone,
+        [NotNullWhen(false)] out string? error)
+    {
+        ids = Array.Empty<string>();
+        includeNone = false;
+        error = null;
+        if (string.IsNullOrWhiteSpace(commaList)) return true;
+
+        var chosen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var value in commaList.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (value == NoneFilterValue) { includeNone = true; continue; }
+            if (!All.Contains(value, StringComparer.Ordinal))
+            {
+                error = $"Unknown resolved-via value `{value}`.";
+                return false;
+            }
+            chosen.Add(value);
+        }
+        ids = All.Where(chosen.Contains).ToList();
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a stored value holds any of <paramref name="ids"/>, or is null or empty when
+    /// <paramref name="includeNone"/>. The in-memory form of the Resolved via filter.
+    /// </summary>
+    public static bool MatchesFilter(string? stored, IReadOnlyCollection<string> ids, bool includeNone)
+    {
+        if (string.IsNullOrEmpty(stored)) return includeNone;
+        return FromStored(stored).Any(ids.Contains);
+    }
+
+    /// <summary>
+    /// How many of <paramref name="storedValues"/>, one per issue, hold each id, in <see cref="All"/> order, then
+    /// <see cref="NoneFilterValue"/> for the null or empty ones. Only present values.
+    /// </summary>
+    public static List<(string Value, int Count)> FacetCounts(IEnumerable<string?> storedValues)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var stored in storedValues)
+        {
+            var ids = string.IsNullOrEmpty(stored) ? new List<string> { NoneFilterValue } : FromStored(stored);
+            foreach (var id in ids) counts[id] = counts.GetValueOrDefault(id) + 1;
+        }
+        return All.Append(NoneFilterValue).Where(counts.ContainsKey).Select(v => (v, counts[v])).ToList();
     }
 
     /// <summary>The stored form: comma-separated ids, null for none.</summary>

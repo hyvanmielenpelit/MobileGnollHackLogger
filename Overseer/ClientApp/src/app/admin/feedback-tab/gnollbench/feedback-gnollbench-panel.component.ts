@@ -53,8 +53,10 @@ import {
   feedbackCauseLabel,
   feedbackNoticedViaLabel,
   feedbackStatusLabel,
+  RESOLVED_VIA_FILTER_VALUES,
   formatResolvedVia,
-  labelFrom
+  labelFrom,
+  resolvedViaFilterLabel
 } from '../shared/feedback-labels';
 import { FeedbackSelectionBarComponent } from '../shared/feedback-selection-bar.component';
 import { hiddenCharactersOf } from '../shared/feedback-hidden-characters';
@@ -103,7 +105,7 @@ export const GNOLLBENCH_ACCEPTED_QUERY = 'accepted';
 
 /** The facets of the filter bar, in order. Each key is also its query parameter and its record key. */
 export type GnollBenchFacetKey =
-  'status' | 'category' | 'model' | 'provider' | 'run' | 'series' | 'group' | 'battery' | 'batch' |
+  'status' | 'resolvedVia' | 'category' | 'model' | 'provider' | 'run' | 'series' | 'group' | 'battery' | 'batch' |
   'suite' | 'question' | 'condition' | 'corpus' | 'variant' | 'harness';
 
 interface GnollBenchFacetSpec {
@@ -115,10 +117,13 @@ interface GnollBenchFacetSpec {
   known?: readonly string[];
   /** Ids: only whole numbers are taken from an address or a record. */
   numeric?: boolean;
+  /** Matched against the issue rather than its self-reports, so it never narrows the self-reports shown. */
+  issueLevel?: boolean;
 }
 
 export const GNOLLBENCH_FACETS: readonly GnollBenchFacetSpec[] = [
-  { key: 'status', label: 'Status', field: 'statuses', known: GNOLLBENCH_FEEDBACK_STATUSES },
+  { key: 'status', label: 'Status', field: 'statuses', known: GNOLLBENCH_FEEDBACK_STATUSES, issueLevel: true },
+  { key: 'resolvedVia', label: 'Resolved via', field: 'resolvedVia', known: RESOLVED_VIA_FILTER_VALUES, issueLevel: true },
   { key: 'category', label: 'Category', field: 'categories', known: GNOLLBENCH_FEEDBACK_CATEGORIES },
   { key: 'model', label: 'Model', field: 'models' },
   { key: 'provider', label: 'Provider', field: 'providers' },
@@ -367,7 +372,7 @@ interface TriageResult {
 /**
  * The Feedback tab's GnollBench sub-tab: the issues GnollBench candidates reported about themselves with
  * `report_feedback`, grouped by fingerprint, as a server-paged card list. Its filter bar has a search, Sort by,
- * the base set (accepted, all or refused calls), a facet for every run fact (status, category, model,
+ * the base set (accepted, all or refused calls), a facet for every run fact (status, resolved via, category, model,
  * provider, run, series, analysis group, battery run, model batch, suite, question, information condition,
  * corpus, Experimental Changes and harness) and chips; its selection bar holds a selection by fingerprint for
  * the export and the resolution import. Each card has the issue's figures, its self-reports on demand, a
@@ -512,10 +517,10 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     return chips;
   });
 
-  /** Whether a filter other than the status or the base set narrows each issue's self-reports. */
+  /** Whether a filter other than the status, Resolved via or the base set narrows each issue's self-reports. */
   readonly hasOccurrenceFilters = computed(() => {
     const filters = this.filters();
-    return this.searchTerm() !== '' || GNOLLBENCH_FACETS.some(spec => spec.key !== 'status' && filters[spec.key].length > 0);
+    return this.searchTerm() !== '' || GNOLLBENCH_FACETS.some(spec => !spec.issueLevel && filters[spec.key].length > 0);
   });
 
   /** The server filters, sorts and pages; the table carries the search and the sort. */
@@ -710,6 +715,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     switch (key) {
       case 'status':
         return GNOLLBENCH_FEEDBACK_STATUSES.map(status => ({ value: status, label: feedbackStatusLabel(status), count: counts?.[status] ?? 0 }));
+      case 'resolvedVia': return values(data?.resolvedVia, v => resolvedViaFilterLabel(v.value));
       case 'category': return values(data?.categories, v => feedbackCategoryLabel(v.value));
       case 'model': return values(data?.models, v => v.label || v.value);
       case 'provider': return values(data?.providers, v => providerLabel(v.value) || v.label || v.value);
@@ -733,6 +739,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     if (idLabel) return `${idLabel} #${value}`;
     switch (key) {
       case 'status': return feedbackStatusLabel(value);
+      case 'resolvedVia': return resolvedViaFilterLabel(value);
       case 'category': return feedbackCategoryLabel(value);
       case 'condition': return gnollBenchConditionLabel(value);
       case 'provider': return providerLabel(value) || value;

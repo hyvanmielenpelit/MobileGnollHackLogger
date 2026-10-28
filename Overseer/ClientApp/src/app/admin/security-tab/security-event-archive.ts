@@ -9,7 +9,7 @@ import { providerLabel } from '../../utils/display-labels.util';
 import { safeFileName } from '../../utils/download.util';
 import { ArchiveEntry, buildTextArchive, uniqueFileNames } from '../benchmark/download-center/text-archive';
 import { outcomeLabel } from '../benchmark/shared/provider-availability/provider-availability';
-import { adminLogKindLabel } from '../users-tab/admin-log/admin-user-log.component';
+import { adminLogKindLabel } from '../users-tab/admin-log/admin-log-kinds';
 import {
   isProviderCodeKind,
   messageRoleLabel,
@@ -25,7 +25,7 @@ import {
 } from './security-labels';
 
 // The words, tables and ZIP entries of one security event, shared by the Security tab's cards, the
-// event dialog and the event's download. Pure functions: no component state, no HTTP.
+// event dialog and the event's download. Pure: no Angular, no HTTP.
 
 const KIND_LABELS: Readonly<Record<string, string>> = {
   LoginFailed: 'Sign-in failed',

@@ -206,6 +206,14 @@ describe('FeedbackGnollBenchPanelComponent', () => {
       expect(gnollBenchStateFromQuery(convertToParamMap({ status: 'all' })).facets.status).toEqual([]);
       expect(gnollBenchQueryParams(gnollBenchStateFromQuery(convertToParamMap({ status: 'all' })))['status']).toBe('all');
     });
+
+    it('reads Resolved via from the address, its ids and none only, and writes it back as resolvedVia', () => {
+      const state = gnollBenchStateFromQuery(convertToParamMap({ resolvedVia: 'knowledge_base,bogus,none' }));
+      expect(state.facets.resolvedVia).toEqual(['knowledge_base', 'none']);
+      expect(state.facets.status).toEqual(['new', 'regressed']);
+      expect(gnollBenchQueryParams(state)).toEqual(expect.objectContaining({ resolvedVia: 'knowledge_base,none', status: null }));
+      expect(gnollBenchQueryParams(gnollBenchStateFromQuery(convertToParamMap({})))['resolvedVia']).toBeNull();
+    });
   });
 
   describe('the panel', () => {
@@ -616,6 +624,114 @@ describe('FeedbackGnollBenchPanelComponent', () => {
 
         expect(lastQuery().statuses).toEqual(['regressed']);
         expect(document.activeElement?.getAttribute('aria-label')).toBe('Remove filter Status: Regressed');
+      });
+
+      describe('Resolved via', () => {
+        const RESOLVED_VIA_IDS = /knowledge_base|server_configuration|\bnone\b/;
+        const chipTexts = (): string[] => Array.from(el.querySelectorAll('.tl-gbfb-chips .gh-filter-chip'))
+          .map(c => `${textOf(c.querySelector('.gh-filter-chip-facet'))} ${textOf(c.querySelector('.gh-filter-chip-value'))}`);
+
+        beforeEach(() => {
+          facetsSpy.mockReturnValue(of(facets({
+            resolvedVia: [
+              { value: 'wiki', label: 'wiki', count: 2 },
+              { value: 'server_configuration', label: 'server_configuration', count: 1 },
+              { value: 'none', label: 'none', count: 5 }
+            ]
+          })));
+        });
+
+        it('lists the facet right after Status, its options in labels with counts and None recorded last', async () => {
+          await create();
+
+          const listed = fixture.debugElement.queryAll(By.directive(FilterFacetComponent))
+            .map(d => (d.componentInstance as FilterFacetComponent).label);
+          expect(listed.slice(0, 3)).toEqual(['Status', 'Resolved via', 'Category']);
+          const resolvedVia = facet('resolvedVia')!;
+          expect(resolvedVia.mode).toBe('multiple');
+          expect(resolvedVia.options.map(o => o.value)).toEqual(['wiki', 'server_configuration', 'none']);
+          expect(resolvedVia.options.map(o => `${o.label} ${o.count}`)).toEqual(
+            ['GnollHack wiki 2', 'Server configuration 1', 'None recorded 5']);
+          expect(resolvedVia.options.map(o => o.label).join(' ')).not.toMatch(RESOLVED_VIA_IDS);
+        });
+
+        it('is not listed with one option and no selection', async () => {
+          facetsSpy.mockReturnValue(of(facets({ resolvedVia: [{ value: 'none', label: 'none', count: 5 }] })));
+          await create();
+
+          expect(facet('resolvedVia')).toBeUndefined();
+        });
+
+        it('refetches page 1 with the chosen ids, shows them as chips in labels, and keeps them in the address and the view', async () => {
+          await create();
+
+          choose('resolvedVia', ['server_configuration', 'none']);
+
+          expect(lastQuery()).toEqual(expect.objectContaining({
+            resolvedVia: ['server_configuration', 'none'], statuses: ['new', 'regressed'], skip: 0
+          }));
+          expect(chipLabels()).toEqual([
+            'Remove filter Status: New', 'Remove filter Status: Regressed',
+            'Remove filter Resolved via: Server configuration', 'Remove filter Resolved via: None recorded'
+          ]);
+          expect(chipTexts()).toContainEqual('Resolved via: Server configuration');
+          expect(chipTexts()).toContainEqual('Resolved via: None recorded');
+          expect(textOf(q('.tl-gbfb-chips'))).not.toMatch(RESOLVED_VIA_IDS);
+          await settle();
+          expect(queryParams()['resolvedVia']).toBe('server_configuration,none');
+          expect(loadFeedbackView('gnollbench')!.filters['resolvedVia']).toEqual(['server_configuration', 'none']);
+        });
+
+        it('takes it from the address it opens on, dropping an unknown value, and Clear filters removes it', async () => {
+          await create('/admin/feedback/gnollbench?resolvedVia=wiki,bogus,none');
+
+          expect(listQueries().length).toBe(1);
+          expect(lastQuery()).toEqual(expect.objectContaining({ resolvedVia: ['wiki', 'none'] }));
+          expect([...facet('resolvedVia')!.selected]).toEqual(['wiki', 'none']);
+          expect(chipLabels()).toContainEqual('Remove filter Resolved via: GnollHack wiki');
+          expect(chipLabels()).toContainEqual('Remove filter Resolved via: None recorded');
+
+          q<HTMLButtonElement>('#tl-gbfb-clear')!.click();
+          fixture.detectChanges();
+
+          expect(lastQuery().resolvedVia).toBeUndefined();
+          await settle();
+          expect(queryParams()['resolvedVia']).toBeUndefined();
+          expect(loadFeedbackView('gnollbench')!.filters['resolvedVia']).toEqual([]);
+        });
+
+        it('takes it from the remembered view when the address names no filter', async () => {
+          localStorage.setItem(GNOLLBENCH_FEEDBACK_VIEW_STORAGE_KEY, JSON.stringify({
+            version: 1, sort: 'lastSeen', filters: { resolvedVia: ['knowledge_base'] }, search: '', range: CUSTOM_RANGE
+          }));
+          await create();
+
+          expect(lastQuery()).toEqual(expect.objectContaining({ resolvedVia: ['knowledge_base'] }));
+          expect(chipLabels()).toContainEqual('Remove filter Resolved via: Knowledge base');
+          await settle();
+          expect(queryParams()['resolvedVia']).toBe('knowledge_base');
+        });
+
+        it('removes one value with its chip', async () => {
+          await create('/admin/feedback/gnollbench?resolvedVia=wiki,none');
+
+          Array.from(el.querySelectorAll<HTMLButtonElement>('.tl-gbfb-chips .gh-filter-chip'))
+            .find(c => c.getAttribute('aria-label') === 'Remove filter Resolved via: GnollHack wiki')!.click();
+          fixture.detectChanges();
+
+          expect(lastQuery().resolvedVia).toEqual(['none']);
+          await settle();
+          expect(queryParams()['resolvedVia']).toBe('none');
+        });
+
+        it('never narrows the self-reports, so it offers no toggle to include those outside the filters', async () => {
+          occurrencesSpy.mockReturnValue(of<GnollBenchFeedbackOccurrencePage>({ totalCount: 1, rows: [occurrence(5)] }));
+          await create('/admin/feedback/gnollbench?resolvedVia=wiki');
+          const details = openOccurrences(cards()[0]);
+
+          expect(occurrencesSpy).toHaveBeenCalledWith(fp(1), expect.objectContaining({ all: false, skip: 0 }));
+          expect(details.querySelector('.tl-gbfb-occ-all')).toBeNull();
+        });
       });
 
       it('refetches the facets and the first page for a new range, and remembers it', async () => {
