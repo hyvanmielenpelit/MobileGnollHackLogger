@@ -161,15 +161,21 @@ describe('FeedbackSelectionBarComponent', () => {
     const dialog = q<HTMLDialogElement>('dialog.feedback-export-dialog')!;
     expect(dialog.open).toBe(true);
     expect(text(dialog.querySelector('h3'))).toBe('Export 2 issues');
-    expect(dialog.querySelector<HTMLInputElement>('input[type="radio"][value="25"]')!.checked).toBe(true);
+    expect(dialog.querySelector('h3')!.id).toBe('gnollbench-selection-feedback-export-title');
+    expect(dialog.querySelector('.fx-issue')).toBeNull();
+    const select = dialog.querySelector<HTMLSelectElement>('select.fx-occurrences-select')!;
+    expect(select.value).toBe('25');
 
+    select.value = 'all';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
     dialog.querySelector<HTMLButtonElement>('.fx-export-btn')!.click();
     fixture.detectChanges();
 
     expect(exportIssues).toHaveBeenCalledWith({
-      source: 'gnollbench', format: 'yaml', fingerprints: [FP, 'b'.repeat(64)], occurrencesPerIssue: 25, includeQuestionText: true
+      source: 'gnollbench', format: 'yaml', fingerprints: [FP, 'b'.repeat(64)], allOccurrences: true, includeQuestionText: true
     });
-    expect(exported).toEqual([{ missing: [FP], exportOptions: { occurrencesPerIssue: 25, includeQuestionText: true, format: 'yaml' } }]);
+    expect(exported).toEqual([{ missing: [FP], exportOptions: { occurrencesPerIssue: 'all', includeQuestionText: true, format: 'yaml' } }]);
     expect(text(q('.fsb-status'))).toBe(
       'Saved overseer-feedback-gnollbench-20261023-1234.yaml with 1 issue. 1 selected issue no longer exists and has left the selection.');
   });

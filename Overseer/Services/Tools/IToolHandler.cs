@@ -137,6 +137,12 @@ namespace Overseer.Services.Tools
         /// <summary>The id of the model running this turn.</summary>
         public string? ActiveModelId { get; set; }
 
+        /// <summary>The thinking level requested for the model running this turn.</summary>
+        public string? ActiveThinkingLevel { get; set; }
+
+        /// <summary>The reasoning mode requested for the model running this turn.</summary>
+        public string? ActiveReasoningMode { get; set; }
+
         public ToolExecutionContext CloneFor(string toolCallId)
         {
             return new ToolExecutionContext
@@ -170,7 +176,9 @@ namespace Overseer.Services.Tools
                 TurnUserMessageId = this.TurnUserMessageId,
                 IsBenchmarkCandidate = this.IsBenchmarkCandidate,
                 ActiveProvider = this.ActiveProvider,
-                ActiveModelId = this.ActiveModelId
+                ActiveModelId = this.ActiveModelId,
+                ActiveThinkingLevel = this.ActiveThinkingLevel,
+                ActiveReasoningMode = this.ActiveReasoningMode
             };
         }
     }

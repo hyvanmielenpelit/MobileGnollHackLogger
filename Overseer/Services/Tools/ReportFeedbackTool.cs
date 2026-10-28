@@ -301,6 +301,8 @@ public sealed class ReportFeedbackTool : IToolHandler
         AgentName = Bounded(context.AgentName, 128),
         Provider = Bounded(context.ActiveProvider, 64),
         ModelId = Bounded(context.ActiveModelId, 256),
+        ThinkingLevel = Bounded(context.ActiveThinkingLevel, 32),
+        ReasoningMode = Bounded(context.ActiveReasoningMode, 32),
         AppVersion = AppVersion.Value,
         // From the context: the turn's messages and tool-call rows are saved only after the turn ends.
         ModelSource = context.ActiveSystemModelId.HasValue ? FeedbackModelSources.System
@@ -333,6 +335,8 @@ public sealed class ReportFeedbackTool : IToolHandler
         AgentName = r.AgentName,
         Provider = r.Provider,
         ModelId = r.ModelId,
+        ThinkingLevel = r.ThinkingLevel,
+        ReasoningMode = r.ReasoningMode,
         AppVersion = r.AppVersion,
         ModelSource = r.ModelSource,
         SystemAiConfigurationId = r.SystemAiConfigurationId,

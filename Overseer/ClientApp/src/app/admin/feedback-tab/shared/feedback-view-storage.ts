@@ -5,18 +5,29 @@
  */
 
 import type { FeedbackTimeSpan } from '../../admin-page.store';
-import type { FeedbackExportFormat } from '../../../services/feedback-transfer.service';
+import {
+  FEEDBACK_EXPORT_MAX_OCCURRENCES_PER_ISSUE,
+  type FeedbackExportFormat
+} from '../../../services/feedback-transfer.service';
 
 export type FeedbackSource = 'overseer' | 'gnollbench';
 
 /** Empty dates mean no bound. */
 export interface FeedbackRange { preset: FeedbackTimeSpan; start: string; end: string; }
 
-/** The remembered export options. `format` absent reads `yaml`, as does any value but `markdown` read from storage. */
+/**
+ * The remembered export options. `occurrencesPerIssue` is a whole number from 1 to 1,000, or `all`. `format` absent
+ * reads `yaml`, as does any value but `markdown` read from storage.
+ */
 export interface FeedbackExportOptions {
-  occurrencesPerIssue: 5 | 10 | 25;
+  occurrencesPerIssue: number | 'all';
   includeQuestionText: boolean;
   format?: FeedbackExportFormat;
+}
+
+/** A count of occurrences per issue an export may ask for: a whole number from 1 to 1,000. */
+export function isFeedbackOccurrenceCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= FEEDBACK_EXPORT_MAX_OCCURRENCES_PER_ISSUE;
 }
 
 /** The export format the options choose: `markdown` only when they say so, `yaml` otherwise. */
@@ -49,7 +60,6 @@ const GNOLLBENCH_SELECTION_KEY = 'overseer.admin.feedback.gnollbench.selection';
 const LEGACY_OVERSEER_SORT_KEY = 'overseer.admin.telemetry.feedback.view';
 
 const TIME_SPANS: readonly FeedbackTimeSpan[] = ['all', '7d', '30d', '90d', '1y', 'custom'];
-const OCCURRENCES_PER_ISSUE: readonly number[] = [5, 10, 25];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** All time: no bound. */
@@ -94,9 +104,12 @@ function readFilters(value: unknown): Record<string, string[]> {
 }
 
 function readExportOptions(value: unknown): FeedbackExportOptions | undefined {
-  if (!isObject(value) || !OCCURRENCES_PER_ISSUE.includes(value['occurrencesPerIssue'] as number)) return undefined;
+  if (!isObject(value)) return undefined;
+  const stored = value['occurrencesPerIssue'];
+  const occurrences = stored === 'all' ? 'all' : isFeedbackOccurrenceCount(stored) ? stored : null;
+  if (occurrences === null) return undefined;
   const options: FeedbackExportOptions = {
-    occurrencesPerIssue: value['occurrencesPerIssue'] as 5 | 10 | 25,
+    occurrencesPerIssue: occurrences,
     includeQuestionText: value['includeQuestionText'] !== false
   };
   const format = value['format'];

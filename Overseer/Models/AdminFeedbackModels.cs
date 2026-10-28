@@ -31,6 +31,12 @@ public sealed class AdminFeedbackIssueDto
     /// <summary>Distinct providers of the retained occurrences, in ordinal order.</summary>
     public List<string> Providers { get; set; } = new();
 
+    /// <summary>Distinct models with their settings among the retained occurrences, at most five, by label, id and thinking level.</summary>
+    public List<FeedbackModelIdentityDto> ModelIdentities { get; set; } = new();
+
+    /// <summary>Identities beyond <see cref="ModelIdentities"/>.</summary>
+    public int MoreModelIdentities { get; set; }
+
     /// <summary>Retained occurrences per model source.</summary>
     public AdminFeedbackModelSourceCountsDto ModelSources { get; set; } = new();
     public int RegressionCount { get; set; }
@@ -54,6 +60,16 @@ public sealed class AdminFeedbackIssueDto
     /// the redacted arguments, so a subject the scrub changed is not linked.
     /// </summary>
     public AdminFeedbackGnollBenchLinkDto? AlsoInGnollBench { get; set; }
+}
+
+/// <summary>One model as it ran when an issue was reported: id, catalog label, provider and settings.</summary>
+public sealed class FeedbackModelIdentityDto
+{
+    public string ModelId { get; set; } = "";
+    public string ModelLabel { get; set; } = "";
+    public string? Provider { get; set; }
+    public string? ThinkingLevel { get; set; }
+    public string? ReasoningMode { get; set; }
 }
 
 /// <summary>Retained occurrences of an issue by where the turn's model came from.</summary>
@@ -96,6 +112,8 @@ public sealed class AdminFeedbackOccurrenceDto
 
     /// <summary>The catalog's display name of <see cref="ModelId"/>, or the id when it has none.</summary>
     public string? ModelLabel { get; set; }
+    public string? ThinkingLevel { get; set; }
+    public string? ReasoningMode { get; set; }
     public string? AppVersion { get; set; }
     public string? UserName { get; set; }          // joined from AspNetUsers; null once erased
 

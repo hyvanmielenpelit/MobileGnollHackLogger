@@ -3,6 +3,7 @@ import {
   FeedbackViewRecord,
   defaultFeedbackRange,
   feedbackExportFormat,
+  isFeedbackOccurrenceCount,
   loadFeedbackView,
   loadGnollBenchSelection,
   loadOverseerSelection,
@@ -69,7 +70,7 @@ describe('feedback-view-storage', () => {
   it('drops malformed parts of a record and keeps the rest', () => {
     localStorage.setItem('overseer.admin.feedback.overseer.view', JSON.stringify({
       version: 1, sort: 7, filters: { status: ['new', 3], model: 'gpt-x', tool: ['wiki_search'] }, search: null,
-      range: { preset: 'forever', start: 'x', end: 'y' }, exportOptions: { occurrencesPerIssue: 7 }
+      range: { preset: 'forever', start: 'x', end: 'y' }, exportOptions: { occurrencesPerIssue: 0 }
     }));
 
     expect(loadFeedbackView('overseer')).toEqual({
@@ -99,6 +100,29 @@ describe('feedback-view-storage', () => {
     expect(feedbackExportFormat(loadFeedbackView('overseer')!.exportOptions)).toBe('yaml');
     expect(feedbackExportFormat(undefined)).toBe('yaml');
     expect(feedbackExportFormat({ format: 'yaml' })).toBe('yaml');
+  });
+
+  it('keeps any whole occurrence count from 1 to 1,000, or all, and reads anything else as no options', () => {
+    for (const occurrencesPerIssue of [1, 5, 50, 100, 137, 1000, 'all'] as const) {
+      const stored = record({ exportOptions: { occurrencesPerIssue, includeQuestionText: true, format: 'yaml' } });
+      saveFeedbackView('overseer', stored);
+      expect(loadFeedbackView('overseer')!.exportOptions).toEqual({ occurrencesPerIssue, includeQuestionText: true, format: 'yaml' });
+    }
+
+    for (const occurrencesPerIssue of [0, -5, 1001, 2.5, '10', 'All', null, true]) {
+      localStorage.setItem('overseer.admin.feedback.overseer.view', JSON.stringify({
+        ...record(), exportOptions: { occurrencesPerIssue, includeQuestionText: true }
+      }));
+      expect(loadFeedbackView('overseer')!.exportOptions).toBeUndefined();
+      expect(loadFeedbackView('overseer')!.sort).toBe('count');
+    }
+
+    expect(isFeedbackOccurrenceCount(1)).toBe(true);
+    expect(isFeedbackOccurrenceCount(1000)).toBe(true);
+    expect(isFeedbackOccurrenceCount(1001)).toBe(false);
+    expect(isFeedbackOccurrenceCount(0.5)).toBe(false);
+    expect(isFeedbackOccurrenceCount(Number.NaN)).toBe(false);
+    expect(isFeedbackOccurrenceCount('5')).toBe(false);
   });
 
   it('reads the Overseer sort from the key it had before the sub-tabs, once, and leaves that key in place', () => {

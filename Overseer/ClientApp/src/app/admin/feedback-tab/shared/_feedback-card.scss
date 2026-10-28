@@ -1,0 +1,166 @@
+/* Rules shared by the Feedback tab's two issue cards: the Overseer sub-tab's (`tl-fb-`) and the GnollBench
+ * sub-tab's (`tl-gbfb-`). Each mixin takes the selectors it styles and is included at the top level of the
+ * panel's stylesheet, so every class stays the panel's own.
+ */
+
+/* The status edge: 3 px at the card's inline start from its `data-status`, drawn inside the border so nothing
+   moves; gold New, red Regressed, blue Acknowledged, green Resolved, dashed gray Dismissed. The status badge's
+   word carries the meaning; forced-colors mode draws the edge as a border. A card that sets its background
+   sets `background-color` only, so the dashed edge stays. */
+@mixin status-edge($card) {
+  #{$card} {
+    --fb-status-edge: transparent;
+    box-shadow: inset 3px 0 0 var(--fb-status-edge);
+
+    &[data-status="new"] {
+      --fb-status-edge: var(--primary-color);
+    }
+
+    &[data-status="regressed"] {
+      --fb-status-edge: var(--color-error);
+    }
+
+    &[data-status="acknowledged"] {
+      --fb-status-edge: #3b82f6;
+    }
+
+    &[data-status="resolved"] {
+      --fb-status-edge: var(--color-success);
+    }
+
+    &:dir(rtl) {
+      box-shadow: inset -3px 0 0 var(--fb-status-edge);
+    }
+
+    &[data-status="dismissed"] {
+      box-shadow: none;
+      background-image: repeating-linear-gradient(to bottom, #71717a 0 6px, transparent 6px 10px);
+      background-position: left top;
+      background-repeat: no-repeat;
+      background-size: 3px 100%;
+
+      &:dir(rtl) {
+        background-position: right top;
+      }
+    }
+  }
+
+  @media (forced-colors: active) {
+    #{$card} {
+      box-shadow: none;
+      background-image: none;
+      border-inline-start: 3px solid CanvasText;
+
+      &[data-status="dismissed"] {
+        background-image: none;
+        border-inline-start-style: dashed;
+      }
+    }
+  }
+}
+
+/* Hovered, or holding keyboard focus: the border brightens. The panel's transition carries it, and its
+   reduced-motion rule drops it. */
+@mixin card-interaction($card) {
+  #{$card}:is(:hover, :has(:focus-visible)) {
+    border-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
+  }
+}
+
+/* The kicker's models: one item per identity (the name, then its thinking, reasoning and provider badges),
+   wrapping as whole items, and a closing "+N more". */
+@mixin model-list($list, $more) {
+  #{$list} {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    > li {
+      display: inline-flex;
+      min-inline-size: 0;
+    }
+  }
+
+  #{$more} {
+    color: #a1a1aa;
+    white-space: nowrap;
+  }
+}
+
+/* The facts area: the Latest report group, then the Triage group when set, each a section headed by an
+   `h5.gh-section-title` over its `dl`. */
+@mixin fact-groups($groups, $title) {
+  #{$groups} {
+    grid-area: facts;
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-row-gap);
+    min-inline-size: 0;
+  }
+
+  #{$title} {
+    margin: 0 0 0.5rem;
+    padding-block-end: 4px;
+  }
+}
+
+/* A placeholder value such as "Not recorded": muted italic, so recorded values stand out; its size stays the
+   value's. `$scope` is the `dl` it sits in, so the rule outranks the scope's own `dd` color. */
+@mixin muted-value($scope, $muted) {
+  #{$scope} #{$muted} {
+    font-style: italic;
+    color: #a1a1aa;
+  }
+}
+
+/* The occurrences disclosure's summary reads as a heading at the section title's size and face, so it no longer
+   outranks the card title; the count sits in a chip in the body face. */
+@mixin disclosure-heading($details, $count) {
+  #{$details} > summary {
+    font-family: "Cinzel", serif;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--primary-color);
+  }
+
+  #{$count} {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 1.5rem;
+    padding: 0 0.4rem;
+    border: 1px solid var(--border-glass);
+    border-radius: 999px;
+    font-family: "Lato", sans-serif;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: normal;
+    text-transform: none;
+    color: #e4e4e7;
+  }
+}
+
+/* The footer's triage line: a 14 px glyph before the words, a circle while untriaged and a check circle once
+   triaged; the words carry the state. */
+@mixin triage-line($line, $icon) {
+  #{$line} {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  #{$icon} {
+    flex: none;
+
+    &.is-triaged {
+      color: var(--color-success);
+    }
+  }
+}

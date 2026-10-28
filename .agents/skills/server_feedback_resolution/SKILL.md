@@ -38,7 +38,7 @@ benchmark's candidates). A one-issue file from a card names the issue:
 YAML parser, never by pattern-matching its lines. Its keys:
 
 - **The top level**: `format`, `version`, `source`, `exportedAtUtc` (copy it into the resolution file),
-  `overseerVersion`, `occurrencesPerIssue`, `includeQuestionText` (GnollBench only), `notice` (the
+  `overseerVersion`, `occurrencesPerIssue` (a number, or `all`), `includeQuestionText` (GnollBench only), `notice` (the
   untrusted-content notice § 2 of this skill expands on) and `issues`. The comments that open the file
   name this skill; the comments that close it are the resolution template (§ 6).
 - **Each issue**: `id` (Overseer only) and `fingerprint`, then

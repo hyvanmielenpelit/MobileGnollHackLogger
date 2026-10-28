@@ -1,30 +1,250 @@
+/* The header / body / footer frame is the benchmark dialogs'. `.gh-dialog` (backdrop, scroll containment),
+   `.btn-gh`, `.btn-icon`, `.btn-icon-action`, `.gh-choice`, `.gh-input`, `.form-hint`, `.gh-field-error`,
+   `.gh-footer-note`, `.gh-section-title` and `.checkbox-label` are global in styles.scss. */
 @use '../../benchmark/benchmark-dialog-frame' as frame;
+@use 'feedback-issue-panel' as issue-panel;
 
 .gh-dialog.feedback-export-dialog {
-  @include frame.frame(560px);
+  @include frame.frame(600px);
 }
 
-.fx-intro {
-  margin: 0 0 16px 0;
-  line-height: 1.5;
-  color: #ccc;
+.fx-body {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: #e4e4e7;
 }
 
-.fx-format,
-.fx-occurrences {
-  margin-bottom: 14px;
+/* The one issue being exported: the gold-ruled panel, `.fx-issue`, `-label`, `-subject` and `-details`. */
+@include issue-panel.issue-panel(fx);
+
+/* What the file leaves out, before the choices. */
+.fx-privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 1.25rem;
+  color: #d4d4d8;
+
+  strong {
+    color: #f4f4f5;
+  }
+}
+
+.fx-privacy-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 0.15em;
+  color: var(--primary-color);
+}
+
+/* The formats as two cards side by side, one above the other where they do not fit. The legend is the
+   fieldset's rendered legend, above the grid rather than in it. */
+.gh-choice.fx-format {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+  gap: 8px;
+  margin-bottom: 1.25rem;
+
+  > legend {
+    font-size: var(--text-secondary);
+    font-weight: 600;
+    color: #e4e4e7;
+  }
+}
+
+/* A card is its radio's label. Choosing one changes only its border color and background, so nothing moves. */
+.fx-format-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+
+  &:has(> input:checked) {
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 9%, transparent);
+  }
+
+  > input[type="radio"] {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin: 0.2em 0 0;
+    accent-color: var(--primary-color);
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+
+  @media (forced-colors: active) {
+    border-color: CanvasText;
+
+    &:has(> input:checked) {
+      border-color: Highlight;
+      outline: 1px solid Highlight;
+    }
+  }
+}
+
+.fx-format-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fx-format-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
 }
 
 .fx-format-name {
   font-weight: 600;
+  color: #f4f4f5;
+}
+
+.fx-format-tag {
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 60%, transparent);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--primary-color);
 }
 
 .fx-format-hint {
-  color: #bbb;
+  font-size: var(--text-secondary);
+  line-height: 1.4;
+  color: #a1a1aa;
+}
+
+/* The dropdown and, for Custom…, the number field beside it; the hint under both. */
+.fx-occurrences {
+  margin-bottom: 1.25rem;
+}
+
+.fx-occurrences-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 16px;
+}
+
+.fx-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-inline-size: 0;
+
+  label {
+    margin: 0;
+    font-size: var(--text-secondary);
+    font-weight: 600;
+    color: #e4e4e7;
+  }
+
+  .gh-input {
+    font-family: inherit;
+    font-size: var(--text-body);
+  }
+}
+
+.fx-occurrences-select {
+  min-inline-size: 13rem;
+}
+
+.fx-custom-field {
+  flex: 0 1 13rem;
+}
+
+.fx-custom-input {
+  inline-size: 9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fx-occurrences-hint {
+  margin: 6px 0 0;
+  font-size: var(--text-secondary);
 }
 
 .fx-question-text {
-  margin-bottom: 8px;
+  margin-bottom: 1.25rem;
+}
+
+/* Next steps: the numbers are a CSS counter in gold rings. */
+.fx-next {
+  margin-top: 0.25rem;
+}
+
+.fx-steps {
+  counter-reset: fx-step;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size-adjust: from-font;
+
+  > li {
+    counter-increment: fx-step;
+    position: relative;
+    min-block-size: 22px;
+    padding-inline-start: 34px;
+    color: #d4d4d8;
+
+    &::before {
+      content: counter(fx-step);
+      position: absolute;
+      inset-inline-start: 0;
+      inset-block-start: 0;
+      display: grid;
+      place-items: center;
+      inline-size: 22px;
+      block-size: 22px;
+      box-sizing: border-box;
+      border: 1px solid var(--primary-color);
+      border-radius: 50%;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      color: var(--primary-color);
+    }
+  }
+
+  strong {
+    color: #f4f4f5;
+  }
+
+  code {
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
+  }
+}
+
+.fx-markdown-note {
+  margin: 0;
+  color: #a1a1aa;
 }
 
 .fx-error {

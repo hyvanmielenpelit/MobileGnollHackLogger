@@ -7,7 +7,8 @@ using System.Text.Json.Serialization;
 
 /// <summary>
 /// An export of feedback issues. Overseer takes <see cref="IssueIds"/>, GnollBench <see cref="Fingerprints"/>;
-/// at most 200 issues. <see cref="OccurrencesPerIssue"/> is 5, 10 (the default) or 25.
+/// at most 200 issues. <see cref="OccurrencesPerIssue"/> is 1–1,000 (default 10), or <see cref="AllOccurrences"/>
+/// true for every stored occurrence.
 /// </summary>
 public sealed class AdminFeedbackExportRequestDto
 {
@@ -19,6 +20,9 @@ public sealed class AdminFeedbackExportRequestDto
     public List<long>? IssueIds { get; set; }
     public List<string>? Fingerprints { get; set; }
     public int? OccurrencesPerIssue { get; set; }
+
+    /// <summary>True for every stored occurrence of each issue; not together with <see cref="OccurrencesPerIssue"/>.</summary>
+    public bool? AllOccurrences { get; set; }
 
     /// <summary>GnollBench only: include each occurrence's question text. Null reads true.</summary>
     public bool? IncludeQuestionText { get; set; }

@@ -1,8 +1,10 @@
 /* The filter bar, the status line, Load more, `.gh-disclosure`, `.gh-tag`, `.status-badge`, `.gh-filter-toggle`,
    `.gh-section-title` and `.gh-field-error` are global in styles.scss. The card surface, the title and the sticky
    clearance come from _telemetry-cards.scss; the metric columns are fixed, as Run History's are. The look
-   matches the Overseer sub-tab's issue cards. */
+   matches the Overseer sub-tab's issue cards: the status edge, the model list, the fact groups, the muted
+   values, the self-reports heading and the triage line come from the _feedback-card.scss both share. */
 @use '../../telemetry-tab/telemetry-cards' as cards;
+@use '../shared/feedback-card' as fbcard;
 
 :host {
   display: flex;
@@ -164,9 +166,12 @@ time {
   /* A selected card: the tick, a gold border and a tint together. */
   &:has(.tl-gbfb-check:checked) {
     border-color: var(--primary-color);
-    background: color-mix(in srgb, var(--primary-color) 7%, rgba(14, 14, 16, 0.72));
+    background-color: color-mix(in srgb, var(--primary-color) 7%, rgba(14, 14, 16, 0.72));
   }
 }
+
+@include fbcard.status-edge('.tl-gbfb-card');
+@include fbcard.card-interaction('.tl-gbfb-card');
 
 .tl-gbfb-select {
   grid-area: select;
@@ -226,10 +231,7 @@ time {
   color: #a1a1aa;
 }
 
-.tl-gbfb-models {
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
-}
+@include fbcard.model-list('.tl-gbfb-model-list', '.tl-gbfb-model-more');
 
 .tl-gbfb-title {
   @include cards.card-title;
@@ -286,9 +288,10 @@ time {
   }
 }
 
+@include fbcard.fact-groups('.tl-gbfb-fact-groups', '.tl-gbfb-group-title');
+
 /* A step below the title and the summary: small terms over secondary-size values. */
 .tl-gbfb-facts {
-  grid-area: facts;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
   gap: 0.5rem 1.5rem;
@@ -318,12 +321,16 @@ time {
   white-space: pre-wrap;
 }
 
+@include fbcard.muted-value('.tl-gbfb-facts', '.tl-gbfb-muted');
+
 /* --- Self-reports --------------------------------------------------------------------------------- */
 
 .tl-gbfb-occurrences {
   grid-area: occurrences;
   min-inline-size: 0;
 }
+
+@include fbcard.disclosure-heading('.tl-gbfb-occurrences', '.tl-gbfb-count');
 
 .tl-gbfb-occ-toolbar {
   display: flex;
@@ -503,6 +510,8 @@ time {
   font-size: var(--text-secondary);
   color: #a1a1aa;
 }
+
+@include fbcard.triage-line('.tl-gbfb-triaged', '.tl-gbfb-triaged-icon');
 
 .tl-gbfb-result {
   font-size: var(--text-secondary);

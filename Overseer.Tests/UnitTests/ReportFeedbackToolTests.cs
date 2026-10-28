@@ -493,6 +493,38 @@ public sealed class ReportFeedbackToolTests : IDisposable
         Assert.Equal(expectedConfigurationId, report.SystemAiConfigurationId);
     }
 
+    [Theory]
+    [InlineData("high", "summary", "high", "summary")]
+    [InlineData(null, null, null, null)]
+    [InlineData(" ", "", null, null)]
+    public async Task TheThinkingLevel_AndTheReasoningMode_AreRecordedFromTheContext(
+        string? activeThinkingLevel, string? activeReasoningMode, string? expectedThinkingLevel, string? expectedReasoningMode)
+    {
+        var (tool, _) = CreateTool();
+        var context = Chat();
+        context.ActiveThinkingLevel = activeThinkingLevel;
+        context.ActiveReasoningMode = activeReasoningMode;
+
+        AssertRecorded(await tool.ExecuteAsync(Arguments(), context, Ct));
+
+        var report = Assert.Single(await ReportsAsync());
+        Assert.Equal(expectedThinkingLevel, report.ThinkingLevel);
+        Assert.Equal(expectedReasoningMode, report.ReasoningMode);
+    }
+
+    [Fact]
+    public void CloneFor_CopiesTheThinkingLevel_AndTheReasoningMode()
+    {
+        var context = Chat();
+        context.ActiveThinkingLevel = "medium";
+        context.ActiveReasoningMode = "detailed";
+
+        var clone = context.CloneFor("call-clone");
+
+        Assert.Equal("medium", clone.ActiveThinkingLevel);
+        Assert.Equal("detailed", clone.ActiveReasoningMode);
+    }
+
     [Fact]
     public async Task ASecondReport_FromAnotherSession_AddsAnOccurrence_AndAdvancesTheIssue()
     {
@@ -796,6 +828,8 @@ public sealed class ReportFeedbackToolTests : IDisposable
 
         var context = Chat(sessionId: 51);
         context.ActiveSystemModelId = 77;
+        context.ActiveThinkingLevel = "low";
+        context.ActiveReasoningMode = "auto";
 
         AssertRecorded(await tool.ExecuteAsync(Arguments(), context, Ct));
 
@@ -810,6 +844,8 @@ public sealed class ReportFeedbackToolTests : IDisposable
         var retried = reports.Single(r => r.ChatSessionId == 51);
         Assert.Equal("system", retried.ModelSource);
         Assert.Equal(77L, retried.SystemAiConfigurationId);
+        Assert.Equal("low", retried.ThinkingLevel);
+        Assert.Equal("auto", retried.ReasoningMode);
     }
 
     [Fact]

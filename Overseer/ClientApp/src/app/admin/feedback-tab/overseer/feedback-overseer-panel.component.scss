@@ -1,8 +1,11 @@
 /* The filter bar, the status line, Load more, `.gh-disclosure`, `.gh-tag`, `.status-badge`,
    `.gh-section-title`, `.gh-filter-toggle` and `.gh-field-error` are global in styles.scss. The card
    surface, the title and the sticky clearance come from _telemetry-cards.scss, the clearance's height
-   from the shell's header; the metric columns are fixed, as Run History's are. */
+   from the shell's header; the metric columns are fixed, as Run History's are. The status edge, the model
+   list, the fact groups, the muted values, the occurrences heading and the triage line come from
+   _feedback-card.scss, which the GnollBench sub-tab's cards share. */
 @use '../../telemetry-tab/telemetry-cards' as cards;
+@use '../shared/feedback-card' as fbcard;
 
 :host {
   display: flex;
@@ -165,9 +168,12 @@ time {
   /* A selected card: the tick, a gold border and a tint together, never color alone. */
   &:has(.tl-fb-select-input:checked) {
     border-color: var(--primary-color);
-    background: color-mix(in srgb, var(--primary-color) 7%, rgba(14, 14, 16, 0.72));
+    background-color: color-mix(in srgb, var(--primary-color) 7%, rgba(14, 14, 16, 0.72));
   }
 }
+
+@include fbcard.status-edge('.tl-fb-card');
+@include fbcard.card-interaction('.tl-fb-card');
 
 .tl-fb-select {
   grid-area: select;
@@ -229,10 +235,7 @@ time {
   color: #a1a1aa;
 }
 
-.tl-fb-models {
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
-}
+@include fbcard.model-list('.tl-fb-model-list', '.tl-fb-model-more');
 
 .tl-fb-title {
   @include cards.card-title;
@@ -300,9 +303,10 @@ time {
   }
 }
 
+@include fbcard.fact-groups('.tl-fb-fact-groups', '.tl-fb-group-title');
+
 /* A step below the title and the summary: small terms over secondary-size values. */
 .tl-fb-facts {
-  grid-area: facts;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
   gap: 0.5rem 1.5rem;
@@ -327,6 +331,8 @@ time {
   }
 }
 
+@include fbcard.muted-value('.tl-fb-facts', '.tl-fb-muted');
+
 /* The note and what was done, as the administrator wrote them: plain text with its line breaks. */
 .tl-fb-note-text,
 .tl-fb-resolution-text {
@@ -337,6 +343,8 @@ time {
   grid-area: occurrences;
   min-inline-size: 0;
 }
+
+@include fbcard.disclosure-heading('.tl-fb-occurrences', '.tl-fb-count');
 
 /* Whether the occurrence filters narrow the list, and the toggle that shows every occurrence. */
 .tl-fb-occ-scope {
@@ -507,6 +515,8 @@ time {
   font-size: var(--text-secondary);
   color: #a1a1aa;
 }
+
+@include fbcard.triage-line('.tl-fb-triaged', '.tl-fb-triaged-icon');
 
 .tl-fb-result {
   font-size: var(--text-secondary);

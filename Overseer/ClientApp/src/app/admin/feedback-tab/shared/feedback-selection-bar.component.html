@@ -44,6 +44,6 @@
 </div>
 <p class="fsb-status" role="status">{{ statusMessage }}</p>
 
-<app-feedback-export-dialog #exportDialog [source]="source" [ids]="selectedIds" [exportOptions]="exportOptions"
-                            (exported)="onExported($event)" />
+<app-feedback-export-dialog #exportDialog [source]="source" [idPrefix]="source + '-selection'" [ids]="selectedIds"
+                            [exportOptions]="exportOptions" (exported)="onExported($event)" />
 <app-feedback-import-dialog #importDialog [source]="source" (imported)="onImported()" />

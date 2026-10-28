@@ -303,6 +303,15 @@ and the configuration id; a null one gives `user`. A report whose tool-call row 
 null, *Unknown*, and is never guessed. The tests build their schema with `EnsureCreated` and never run a
 migration, so no test covers the backfill; it is verified by hand against the database.
 
+**The columns `AddFeedbackReportModelSettings` adds.** `OverseerFeedbackReports.ThinkingLevel` and
+`ReasoningMode` (`nvarchar(32)`, null): the model's settings in the turn that filed the report, which the
+cards show as badges beside the model. `ReportFeedbackTool` records them from the `ToolExecutionContext`
+(`ActiveThinkingLevel`, `ActiveReasoningMode`, which `AgentLoopRunner` fills from the request beside the
+provider and model). The migration's `Up` backfills the reports that existed before it, in SQL Server SQL,
+from the first assistant `ChatMessage` of the same session after the report's `TurnUserMessageId` whose
+`ModelUsed` equals the report's `ModelId` (its `ThinkingLevelUsed` and `ReasoningModeUsed`). It only fills
+nulls; a report whose turn no longer exists, or whose reply ran another model, stays without badges.
+
 **Why the links are what they are.**
 
 - `ChatSessionId` is a plain column, like `ChatAccessAuditLog.ChatSessionId`, because a cascading key to
@@ -461,29 +470,36 @@ to an empty string. The helpers:
   feedback issues* — *The assistant has not reported an issue in this date range.* when the range holds
   none, *No issues match these filters* with a *Clear filters* button when the filters leave none, and *No
   selected issue* under *Show selected only*.
-- **The cards** are a server-paged list, in batches of 25. Each issue card shows its category and status
-  badges (*Regressed 2×* when it regressed more than once) and the models that reported it; the subject as
+- **The cards** are a server-paged list, in batches of 25. Each issue card has a 3 px status edge on its
+  inline start (gold *new*, red *regressed*, blue *acknowledged*, green *resolved*, gray dashed
+  *dismissed*; the status badge's word carries the meaning, and forced colors draw the edge as a border).
+  It shows its category and status badges (*Regressed 2×* when it regressed more than once) and a list of
+  the models that reported it, each as `app-model-identity`: its name, then its thinking level, reasoning
+  mode and provider badges, at most five model identities (a model at two thinking levels is two), then
+  *+N more*; the subject as
   its title and the summary under it, and, when an accepted GnollBench self-report has the same
   fingerprint, how often and its status with an *Open in GnollBench* link (it opens the GnollBench sub-tab
   searched by the subject, because the Overseer issue DTO carries no fingerprint); four aligned metrics —
   *Occurrences* (with *N retained* when fewer remain), *Users*, *First seen* and *Last seen*, each date with
-  its time on a qualifier line under it; the latest expected location, related tools, *Model's suspected
-  cause (hypothesis)* and version (a build hash of 12 characters or more cut to its first 10, the whole
-  version in the value's tooltip), the providers, the model sources, and the fixed-in version, *Resolved
-  via* (its labels, comma-separated), the triage *Note* and the resolution when set, the note and the
-  resolution as plain text with their line breaks; an
-  *Occurrences* disclosure that loads the occurrences newest first, ten at a time, filtered by the
+  its time on a qualifier line under it; a **Latest report** section (an `h5.gh-section-title`) with the
+  latest expected location, related tools, *Model's suspected cause (hypothesis)*, version (a build hash of
+  12 characters or more cut to its first 10, the whole version in the value's tooltip) and the model
+  sources, *Not recorded* in muted italic; a **Triage** section, only when one of its values is set, with
+  *Resolved via* (its labels, comma-separated), the fixed-in version, the triage *Note* and the resolution,
+  the note and the resolution as plain text with their line breaks; an
+  *Occurrences* disclosure, its summary styled like a section title with the count in a chip, that loads
+  the occurrences newest first, ten at a time, each naming its *Model* with the same badges, filtered by the
   occurrence-level facets with a *Show all occurrences* toggle; and a footer under a hairline with
-  *Triaged … by …* (or *Not triaged yet*) and the last save's result at the start, and at the end a group
-  named *Actions for {subject}* holding the icon-only **Download as YAML**, **Edit triage** and the
+  *Triaged … by …* (with a *check-circle* glyph) or *Not triaged yet* (with a *circle* glyph) and the last
+  save's result at the start, and at the end a group
+  named *Actions for {subject}* holding the icon-only **Export issue…**, **Edit triage** and the
   icon-only *Delete issue*, whose confirmation says the occurrences go with it. The card holds no form.
-- **Download as YAML**, first in the card's actions group of both sub-tabs: an `.action-btn` with the
-  Feather *download* glyph, named *Download issue as YAML: {subject}*, tooltip *Download as YAML*. It
-  exports that one issue in YAML (§ 12) with the sub-tab's remembered export options (occurrences per
-  issue, and for GnollBench the question text), ignoring the remembered format, and opens no dialog. It is
-  `aria-busy` while its request runs, and a second click is ignored. Success writes *Downloaded
-  {fileName}.* to the card's result line; a 404 writes *This issue no longer exists.* and reloads the
-  list; another failure writes the error the same way.
+- **Export issue…**, first in the card's actions group of both sub-tabs: an `.action-btn` with the
+  Feather *download* glyph and `aria-haspopup="dialog"`, named *Export issue: {subject}*, tooltip *Export
+  issue…*. It opens the export dialog (§ 12) for that one issue, titled *Export issue* with the subject
+  and its stored occurrence count in a panel, with the sub-tab's remembered export options. **Download**
+  in the dialog then exports it; success writes *Downloaded {fileName}.* to the card's result line and
+  remembers the options; a 404 writes *This issue no longer exists.* and reloads the list.
 - **The triage dialog** (`app-feedback-triage-dialog`, `shared/`), opened by *Edit triage* with focus on
   *Status*, in the feedback export dialog's frame (a header with *Triage issue* and a close button, a
   scrolling body, a footer). The body starts with the issue in a panel — *Issue*, the subject, and its
@@ -527,10 +543,10 @@ resolved-via value `x`.*
 | Method and path | Purpose |
 |---|---|
 | `GET switch` · `POST switch/{target}` (`{ enabled }`) | The switch's state, `{ chat }`, as `{ enabled, setAtUtc, setByUserName, seeded }`; appending a change to it, `target` `chat` (case-insensitive; anything else, `gnollbench` included, 400 *Unknown switch.*), which returns it |
-| `GET issues?<filters>&sort&skip&take` | A page of issues (`sort` `lastSeen`, `firstSeen`, `count`, `users`, `regressions`, `triaged` or `subject`; `take` 1–100). Each issue also carries `providers`, `modelSources` (`{ system, user, unknown }` over retained occurrences), `resolution`, `fixedInVersion`, `resolvedVia` (a list of ids, always present, possibly empty), `modelLabels` (aligned with `modelIds`) and `alsoInGnollBench` (`{ selfReportCount, status }` or null) |
+| `GET issues?<filters>&sort&skip&take` | A page of issues (`sort` `lastSeen`, `firstSeen`, `count`, `users`, `regressions`, `triaged` or `subject`; `take` 1–100). Each issue also carries `providers`, `modelSources` (`{ system, user, unknown }` over retained occurrences), `resolution`, `fixedInVersion`, `resolvedVia` (a list of ids, always present, possibly empty), `modelLabels` (aligned with `modelIds`), `modelIdentities` (at most five `{ modelId, modelLabel, provider, thinkingLevel, reasoningMode }`, ordered by label, id and thinking level) with `moreModelIdentities` (the rest), and `alsoInGnollBench` (`{ selfReportCount, status }` or null) |
 | `GET issues/ids?<filters>&sort` | Every matching id, at most 1,000, with `totalCount` and `truncated` |
 | `GET facets?startDate&endDate` | The options present in the range, each with its count of issues: categories, models, providers, sources, versions, tools and `resolvedVia` (the ids of § 9 in their order, then `none`) as `{ value, count, label }`, `label` the model's display name for models and empty for the rest; users, groups (with `none`, *No group*) and configurations as `{ id, name, count }`, a deleted configuration named *Configuration #id (deleted)*. It replaced `GET models` |
-| `GET issues/{id}/occurrences?<filters>&all&skip&take` | A page of one issue's occurrences, newest first, filtered by the occurrence-level filters unless `all=true`; each also carries `modelSource`, `systemConfigurationId`, `systemConfigurationName`, `groupNames` and `modelLabel` (null only without a model id) |
+| `GET issues/{id}/occurrences?<filters>&all&skip&take` | A page of one issue's occurrences, newest first, filtered by the occurrence-level filters unless `all=true`; each also carries `modelSource`, `systemConfigurationId`, `systemConfigurationName`, `groupNames`, `modelLabel` (null only without a model id), `thinkingLevel` and `reasoningMode` |
 | `GET counts` | Issue counts per status over all dates |
 | `POST issues/{id}/status` (`{ status, note?, resolution?, fixedInVersion?, resolvedVia? }`) | Triage (404 unknown id; 400 unknown status or `regressed`). For the note, the resolution and the fixed-in version an absent or null value keeps the stored one and an empty one clears it, so a status change without a note keeps the note. A note over 1,000 characters, a resolution over 4,000 or a fixed-in version that does not match `^[0-9A-Za-z.+\-]{1,64}$` is 400. `resolvedVia` is a list of ids (§ 9): absent or null keeps the stored list, `[]` clears it, and an unknown id is 400 (*Unknown resolved-via value `x`; allowed: wiki, knowledge_base, …*); ids are trimmed, compared case-sensitively, de-duplicated and stored in the fixed order |
 | `DELETE issues/{id}` | The issue and its occurrences |
@@ -602,17 +618,19 @@ only an administrator's triage is stored.
   the value is the spec without its hash) and *Harness* (sorted
   numerically). The facet options count self-reports whose own time is in the range. The view, the
   selection and the address follow the Overseer sub-tab's rules (§ 10).
-- **The cards** show the category and derived status, the models, the subject and summary, four metrics
+- **The cards** have the Overseer cards' status edge and show the category and derived status, the
+  tested models with their thinking level, reasoning mode and provider badges (the run's tested model
+  snapshot, at most five identities, then *+N more*), the subject and summary, four metrics
   (*Self-reports* with the run count, *Models*, *First seen*, *Last seen*, the dates with their times on a
-  qualifier line), the providers, suites and the fingerprint's first 12 characters, when an
-  `OverseerFeedbackIssue` has the fingerprint *Also reported in the Overseer chat* with a link to that issue
-  (`/admin/feedback?ids=<id>&status=all`) and its status, and the stored *Fixed in version*, *Resolved
-  via* (its labels), *Note* and *Resolution* when set. Related tools and providers are labels (§ 10); the
-  models already were. A *Self-reports* disclosure lists them newest first: run (a link that opens the run
-  report download, since no route opens one run), suite, model and provider, information condition,
-  Experimental Changes, corpus, harness, *Refused because* for a refused call, the question, and the
-  report's text fields. The footer (with **Download as YAML**) and the triage dialog (with **Resolved
-  via**) are the Overseer sub-tab's, with this sub-tab's
+  qualifier line), a **Latest report** section with the suites, the fingerprint's first 12 characters and,
+  when an `OverseerFeedbackIssue` has the fingerprint, *Also reported in the Overseer chat* with a link to
+  that issue (`/admin/feedback?ids=<id>&status=all`) and its status, and a **Triage** section with the
+  stored *Fixed in version*, *Resolved via* (its labels), *Note* and *Resolution* when set. Related tools
+  are labels (§ 10); the models already were. A *Self-reports* disclosure lists them newest first: run (a
+  link that opens the run report download, since no route opens one run), suite, *Model* (with its
+  badges), information condition, Experimental Changes, corpus, harness, *Refused because* for a refused
+  call, the question, and the report's text fields. The footer (with **Export issue…**) and the triage
+  dialog (with **Resolved via**) are the Overseer sub-tab's, with this sub-tab's
   Status (i) (*A resolved issue that a run reports again becomes Regressed; a dismissed one stays
   dismissed.*) and without *Delete*: self-reports are run records and leave with their run.
 - **The API** (`AdminGnollBenchFeedbackController`, `api/admin/feedback/gnollbench`, `AdminOnly`). The
@@ -624,9 +642,9 @@ only an administrator's triage is stored.
 
   | Method and path | Purpose |
   |---|---|
-  | `GET issues?<filters>&sort&skip&take` | A page of issues: `fingerprint`, `category`, `subject`, `summary`, first and last seen, `selfReportCount`, `runCount`, `modelCount`, `models` and `suites` (at most five, then *+N*), `providers`, the derived `status`, the triage fields with `resolvedVia` (a list of ids, always present), `resolvedUtc` and `alsoInOverseer` (`{ issueId, status }` or null; the cross-link limit of § 10 applies) |
+  | `GET issues?<filters>&sort&skip&take` | A page of issues: `fingerprint`, `category`, `subject`, `summary`, first and last seen, `selfReportCount`, `runCount`, `modelCount`, `models` and `suites` (at most five, then *+N*), `providers`, `modelIdentities` and `moreModelIdentities` (as on the Overseer sub-tab, from the runs' tested model snapshots), the derived `status`, the triage fields with `resolvedVia` (a list of ids, always present), `resolvedUtc` and `alsoInOverseer` (`{ issueId, status }` or null; the cross-link limit of § 10 applies) |
   | `GET issues/ids?<filters>` | Every matching fingerprint, at most 1,000, with `totalCount` and `truncated` |
-  | `GET issues/{fingerprint}/occurrences?<filters>&all&skip&take` | A page of one issue's self-reports, newest first |
+  | `GET issues/{fingerprint}/occurrences?<filters>&all&skip&take` | A page of one issue's self-reports, newest first; each carries the run's `thinkingLevel` and `reasoningMode` |
   | `GET facets?startDate&endDate&accepted` | The facet options with their counts; `resolvedVia` counts fingerprints per id of § 9, then `none` |
   | `GET counts` | Issue counts per derived status over all dates |
   | `POST issues/{fingerprint}/status` (`{ status, note?, resolution?, fixedInVersion?, resolvedVia? }`) | Upserts the triage row with the Overseer sub-tab's keep and clear, length and `resolvedVia` rules; `regressed` 400; a fingerprint with no self-report 404 |
@@ -637,7 +655,8 @@ the diagnostic consequence in the `server_benchmark_tool_diagnostics` skill.
 ## 12. Export and import
 
 The selection bar of either sub-tab hands selected issues to an AI coding assistant as a YAML file (the
-default) or a Markdown file, and each card's **Download as YAML** (§ 10) hands over one issue. The answer
+default) or a Markdown file, and each card's **Export issue…** (§ 10) hands over one issue through the
+same dialog. The answer
 comes back one of two ways: for one issue, a **resolution message** pasted into *Edit triage*; for several,
 a YAML **resolution file** imported with a preview. The assistant's method is the project skill
 `server-feedback-resolution` (`.agents/skills/server_feedback_resolution/SKILL.md`). The controller is
@@ -648,7 +667,7 @@ export moves the list.
 
 | Step | One issue | Several issues |
 |---|---|---|
-| 1. Hand over | The card's **Download as YAML** | Select, **Export…** (YAML, the default) |
+| 1. Hand over | The card's **Export issue…**, then **Download YAML** | Select, **Export…** (YAML, the default) |
 | 2. Resolve | A coding-assistant session reads the file with the `server-feedback-resolution` skill, triages, fixes and verifies | Same |
 | 3. Agent output | A resolution message per issue, in chat | A resolution message per issue, and `agent-feedback-resolutions-<slug>_v<N>.yaml` (version 2) |
 | 4. Commit | The developer reviews and commits in each repository the fix touched (Overseer, the GnollHack wiki clone, the knowledge-base clone), using the resolution message as the commit message | Same, one commit per repository or per issue |
@@ -659,19 +678,36 @@ Nothing is uploaded for a single issue.
 ### The export
 
 `POST api/admin/feedback/export` takes `{ source: "overseer" | "gnollbench", format?: "yaml" | "markdown",
-issueIds?, fingerprints?, occurrencesPerIssue?: 5 | 10 | 25 (default 10), includeQuestionText?: bool
-(GnollBench, default true) }`. The Overseer source takes `issueIds` and refuses `fingerprints`, GnollBench
-the reverse; at most 200 issues. `format` is read ignoring case; absent or blank reads `markdown` on the
+issueIds?, fingerprints?, occurrencesPerIssue?: 1–1000 (default 10), allOccurrences?: bool,
+includeQuestionText?: bool (GnollBench, default true) }`. The Overseer source takes `issueIds` and refuses
+`fingerprints`, GnollBench the reverse; at most 200 issues. `allOccurrences: true` takes every retained
+occurrence; with `occurrencesPerIssue` as well it is 400 *Choose a number of occurrences or all of them,
+not both.*, and a number outside 1–1,000 is 400 *Occurrences per issue must be between 1 and 1,000.* An
+export whose chosen occurrences exceed 5,000 in total is 400 *This export would hold N occurrences, more
+than 5,000. Select fewer issues or fewer occurrences per issue.* `format` is read ignoring case; absent or blank reads `markdown` on the
 server (the client always sends it), and anything else is 400 *Unknown format 'x'. Use yaml or markdown.*
 It returns `{ fileName, content, mediaType, issueCount, missingIds, missingFingerprints }`, where the two
 lists name the requested issues that no longer exist; 404 with those lists when none exists, 400 with a
 `message` for an invalid request. `content` is the file's text (the field was `markdown` before the YAML
 format existed), and `mediaType` is `application/yaml;charset=utf-8` or `text/markdown;charset=utf-8`.
-The export dialog, titled *Export N issues*, chooses the **File format** (a radio group: **YAML**,
-*for an AI coding assistant*, the default; **Markdown**, *to read*), the occurrences per issue and, for
-GnollBench, whether to include the question text; the choice is remembered with the sub-tab's view
-(`exportOptions.format`, read tolerantly: a record without it, or with anything else, reads `yaml`). The
-client saves the file and drops the missing ids from the remembered selection.
+The export dialog (`app-feedback-export-dialog`), titled *Export N issues* from the selection bar or
+*Export issue* from a card (the issue's subject and stored occurrence count in the triage dialog's
+gold-ruled panel), says first that the file is anonymized (no user names, no links to conversations). It
+chooses the **File format** as two radio cards (**YAML**, *Recommended*, for an AI coding assistant, ending
+in a resolution template, the default; **Markdown**, for reading); the **Occurrences per issue** in a
+select (5, 10, 25, 50 or 100 newest, *All occurrences*, or *Custom…*, which shows a *Number of occurrences*
+field checked on Download: anything but a whole number from 1 to 1,000 says *Enter a whole number from 1 to
+1,000.* at the field and sends nothing), with the hint *Newest first.* (*This issue has N.* for one issue);
+and, for GnollBench, whether to include the question text. With YAML chosen, numbered **Next steps** follow:
+download, hand the file to an AI coding assistant with the `server-feedback-resolution` skill, review and
+commit its fixes, and import its resolutions file with **Import resolutions…** (for one issue, paste its
+resolution message into **Edit triage**); with Markdown, one line says Markdown is for reading. The
+primary button reads **Download YAML** or **Download Markdown**. The choices are remembered with the
+sub-tab's view (`exportOptions`, read tolerantly: a record without `format`, or with anything else, reads
+`yaml`; `occurrencesPerIssue` is a whole number from 1 to 1,000 or `all`, and anything else reads as no
+remembered options). Every id in the dialog takes the `idPrefix` input, so the selection bar's and a card's
+instances never collide. The client saves the file and drops the missing ids from the remembered
+selection.
 
 `FeedbackExportService` loads the issues once through the two query services, maps them to one
 `FeedbackExportDocument` that holds no user identity, and renders that document with `FeedbackYamlExport`
@@ -686,7 +722,8 @@ The Markdown file:
 
 1. **A header**: a facts table with the format `overseer-feedback-export`, format version 1, the source,
    the export time in UTC (which the template copies as `exportedAtUtc`), the Overseer version (the full
-   `AssemblyInformationalVersion`), the issue count, the occurrences per issue and, for GnollBench,
+   `AssemblyInformationalVersion`), the issue count, the occurrences per issue (*at most N, newest first*
+   or *all, newest first*) and, for GnollBench,
    whether the question text is included; then *Work on this file with the `server-feedback-resolution`
    skill.*
 2. **Untrusted content**: the report fields are model output (a chat user can steer the chat's; the
@@ -804,7 +841,7 @@ issues:
 ```
 
 - **The top level**, in order: `format`, `version`, `source`, `exportedAtUtc`, `overseerVersion`,
-  `occurrencesPerIssue`, `includeQuestionText` (GnollBench only), `notice` (the Markdown's untrusted-content
+  `occurrencesPerIssue` (a number, or `all`), `includeQuestionText` (GnollBench only), `notice` (the Markdown's untrusted-content
   paragraph, one sentence per line), `issues` (`[]` when empty); then the resolution template as `#`
   comments, which say what the Markdown's template lines say.
 - **An issue**: `id` (Overseer) and `fingerprint`, then `facts`, the server-controlled values, `texts`,
@@ -1062,6 +1099,17 @@ The YAML format, *Resolved via* and the labels have their own:
   `feedback-view-storage.spec.ts` (`exportOptions.format`), `feedback-resolution-yaml.spec.ts`
   (versions 1 and 2, `resolvedVia`, R14), `feedback-selection-bar.component.spec.ts`, both panel specs (the
   labels, the card download and the *Resolved via* read-out), and the three service specs.
+- **Occurrences per issue and model identities.** `FeedbackMarkdownExportTests` and `FeedbackYamlExportTests`:
+  a custom count, 0 and 1,001 refused, both given refused, all occurrences written `all`, and the 5,000
+  total cap (with a small cap through an internal constructor parameter). `ReportFeedbackToolTests`: the
+  thinking level and reasoning mode stored from the context. `AdminFeedbackControllerTests` and
+  `AdminGnollBenchFeedbackControllerTests`: one model at two thinking levels is two identities, six give
+  five and `moreModelIdentities` 1. The client: the export dialog's presets, *All occurrences*, a custom
+  count (an invalid one blocks the request and focuses the field), a remembered custom count, the
+  single-issue title and panel, the next steps following the format, and distinct ids for two instances;
+  both panel specs: the card button opening the dialog with its one issue, the `exported` result line,
+  remembered options and a missing issue, the model badges and *+N more*, no *Providers* fact, the *Triage*
+  section only when set.
 
 ## 15. Deferred
 

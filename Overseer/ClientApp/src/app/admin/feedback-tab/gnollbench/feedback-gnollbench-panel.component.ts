@@ -35,19 +35,19 @@ import {
   GnollBenchFeedbackStatusUpdate,
   GnollBenchFeedbackTriageStatus
 } from '../../../services/admin-gnollbench-feedback.service';
+import type { FeedbackModelIdentity } from '../../../services/admin-feedback.service';
 import { adminApiError } from '../../../services/admin-users.service';
-import { FeedbackTransferService, feedbackTransferStatus } from '../../../services/feedback-transfer.service';
 import { CardListSort, CardListState } from '../../../shared/data-table/card-list-state';
 import { FilterFacetComponent, FilterFacetOption } from '../../../shared/data-table/filter-facet.component';
 import { TableState, customFilter } from '../../../shared/data-table/table-state';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
+import { ModelIdentityComponent } from '../../../shared/model-identity/model-identity.component';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { providerLabel, toolLabel } from '../../../utils/display-labels.util';
-import { downloadTextFile } from '../../../utils/download.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { adminQueryList, readAdminQueryList } from '../../admin-url';
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
-import { DEFAULT_FEEDBACK_EXPORT_OPTIONS } from '../shared/feedback-export-dialog.component';
+import { FeedbackExportDialogComponent, FeedbackExportDone } from '../shared/feedback-export-dialog.component';
 import {
   feedbackCategoryLabel,
   feedbackCauseLabel,
@@ -90,6 +90,8 @@ export const GNOLLBENCH_FIXED_IN_VERSION_PATTERN = /^[0-9A-Za-z.+\-]{1,64}$/;
 
 /** The longest search the server takes. */
 export const GNOLLBENCH_SEARCH_MAX = 200;
+
+const NO_IDENTITIES: readonly FeedbackModelIdentity[] = [];
 
 /** The Status facet's selection while nothing else names one: the open work. */
 export const DEFAULT_GNOLLBENCH_FEEDBACK_STATUSES: readonly GnollBenchFeedbackStatus[] = ['new', 'regressed'];
@@ -375,20 +377,23 @@ interface TriageResult {
  * the base set (accepted, all or refused calls), a facet for every run fact (status, resolved via, category, model,
  * provider, run, series, analysis group, battery run, model batch, suite, question, information condition,
  * corpus, Experimental Changes and harness) and chips; its selection bar holds a selection by fingerprint for
- * the export and the resolution import. Each card has the issue's figures, its self-reports on demand, a
- * one-issue YAML download and Edit triage, which opens the triage dialog. The shell supplies the date range and a Refresh token. The view
+ * the export and the resolution import. Each card has the issue's models with their badges, its figures, its
+ * latest facts and triage facts, its self-reports on demand, Export issue…, which opens the export dialog for
+ * that one issue, and Edit triage, which opens the triage dialog. The shell supplies the date range and a Refresh token. The view
  * is remembered per browser and the filters are kept in the address. Report text is model output and is
  * rendered as plain text only.
  */
 @Component({
   selector: 'app-feedback-gnollbench-panel',
-  imports: [FilterFacetComponent, InfoTipComponent, RouterLink, FeedbackSelectionBarComponent, FeedbackTriageDialogComponent],
+  imports: [
+    FilterFacetComponent, InfoTipComponent, RouterLink, FeedbackSelectionBarComponent, FeedbackTriageDialogComponent,
+    FeedbackExportDialogComponent, ModelIdentityComponent
+  ],
   templateUrl: './feedback-gnollbench-panel.component.html',
   styleUrl: './feedback-gnollbench-panel.component.scss'
 })
 export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDestroy {
   private readonly feedback = inject(AdminGnollBenchFeedbackService);
-  private readonly transfer = inject(FeedbackTransferService);
   private readonly benchmark = inject(AdminBenchmarkService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -402,6 +407,8 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   @Input() refreshToken = 0;
 
   @ViewChild(FeedbackTriageDialogComponent, { static: true }) triageDialog!: FeedbackTriageDialogComponent;
+  /** The export dialog a card's Export issue… opens; the selection bar has its own. */
+  @ViewChild('issueExportDialog', { static: true }) issueExportDialog!: FeedbackExportDialogComponent;
 
   readonly sorts = GNOLLBENCH_SORTS;
   readonly acceptedScopes = GNOLLBENCH_ACCEPTED_SCOPES;
@@ -419,6 +426,8 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   readonly dateTimeText = gnollBenchDateTimeText;
   readonly formatInteger = formatInteger;
   readonly idOf = idPart;
+  /** A provider badge's word (`OpenAI`); empty, so no badge, for none. */
+  readonly providerLabel = providerLabel;
 
   // --- Filters ---
 
@@ -454,8 +463,13 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   /** The long texts shown in full, as `details-{id}` or `question-{id}`. */
   readonly expandedTexts = signal<ReadonlySet<string>>(new Set<string>());
   readonly savingFingerprint = signal<string | null>(null);
-  /** The issue whose YAML download is running; another download waits until it ends. */
-  readonly downloadingId = signal<string | null>(null);
+  /** The issue whose Export issue… last opened the export dialog. */
+  readonly exportIssue = signal<GnollBenchFeedbackIssue | null>(null);
+  /** That issue's fingerprint, as the export dialog takes it. */
+  readonly exportIds = computed<readonly string[]>(() => {
+    const issue = this.exportIssue();
+    return issue ? [issue.fingerprint] : [];
+  });
   readonly triageResults = signal<Readonly<Record<string, TriageResult>>>({});
 
   // --- Selection ---
@@ -558,7 +572,6 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   private selectAllSub: Subscription | null = null;
   private readonly occurrenceSubs = new Map<string, Subscription>();
   private changesSub: Subscription | null = null;
-  private downloadSub: Subscription | null = null;
   private initialized = false;
 
   ngOnInit(): void {
@@ -599,7 +612,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   ngOnDestroy(): void {
     this.list.dispose();
     for (const sub of [this.listSub, this.probeSub, this.facetsSub, this.countsSub, this.querySub, this.selectionSub,
-      this.matchingSub, this.pruneSub, this.selectAllSub, this.changesSub, this.downloadSub]) {
+      this.matchingSub, this.pruneSub, this.selectAllSub, this.changesSub]) {
       sub?.unsubscribe();
     }
     this.occurrenceSubs.forEach(sub => sub.unsubscribe());
@@ -1224,14 +1237,19 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     }
   }
 
-  /** `Claude Opus · Anthropic`; whichever is known. */
-  modelText(occurrence: GnollBenchFeedbackOccurrence): string {
-    return [occurrence.modelLabel || occurrence.modelId, providerLabel(occurrence.provider)].filter(part => !!part).join(' · ');
+  /** The issue's tested models as their runs ran them, at most five; none when the server sent none. */
+  modelIdentities(issue: GnollBenchFeedbackIssue): readonly FeedbackModelIdentity[] {
+    return issue.modelIdentities ?? NO_IDENTITIES;
   }
 
-  /** The issue's providers by name (`OpenAI`); empty for none. */
-  providersText(issue: GnollBenchFeedbackIssue): string {
-    return issue.providers.map(provider => providerLabel(provider) || provider).join(', ');
+  /** The models beyond the five shown, for `+N more`. */
+  moreModelIdentities(issue: GnollBenchFeedbackIssue): number {
+    return issue.moreModelIdentities ?? 0;
+  }
+
+  /** Whether any triage fact is set: Resolved via, the fixed-in version, the note or the resolution. */
+  hasTriageFacts(issue: GnollBenchFeedbackIssue): boolean {
+    return !!issue.resolvedVia?.length || !!issue.fixedInVersion || !!issue.triageNote || !!issue.resolution;
   }
 
   /** `GnollHack wiki search, Item stats`; empty for none. */
@@ -1274,42 +1292,41 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     this.expandedTexts.set(next);
   }
 
-  // --- Download ---
+  // --- Export one issue ---
+
+  /** Opens the export dialog for one issue, on the options the last export of this sub-tab used. */
+  exportOne(issue: GnollBenchFeedbackIssue): void {
+    this.exportIssue.set(issue);
+    this.setTriageResult(issue.fingerprint, { message: '', error: null });
+    // The dialog takes the issue through its inputs before it opens.
+    this.cdr.detectChanges();
+    this.issueExportDialog.open();
+  }
 
   /**
-   * Downloads one issue as a YAML issues file with the remembered export options, and says so on the card's
-   * result line. An issue the server no longer has is said so, and the list is fetched again. Ignored while
-   * a download runs.
+   * A card's export finished: its options are remembered for both exports, and the card's result line names the
+   * saved file. An issue the server no longer has closes the dialog, is said so on the card and leaves the
+   * selection; the list is fetched again.
    */
-  downloadIssue(issue: GnollBenchFeedbackIssue): void {
-    if (this.downloadingId() !== null) return;
-    const fingerprint = issue.fingerprint;
-    const options = this.exportOptions() ?? DEFAULT_FEEDBACK_EXPORT_OPTIONS;
-    this.downloadingId.set(fingerprint);
-    this.setTriageResult(fingerprint, { message: '', error: null });
-    this.downloadSub?.unsubscribe();
-    this.downloadSub = this.transfer.exportIssues({
-      source: 'gnollbench', format: 'yaml', fingerprints: [fingerprint],
-      occurrencesPerIssue: options.occurrencesPerIssue, includeQuestionText: options.includeQuestionText !== false
-    }).subscribe({
-      next: result => {
-        this.downloadingId.set(null);
-        downloadTextFile(result.fileName, result.content, result.mediaType);
-        this.setTriageResult(fingerprint, { message: `Downloaded ${result.fileName}.`, error: null });
-        this.cdr.markForCheck();
-      },
-      error: err => {
-        this.downloadingId.set(null);
-        if (feedbackTransferStatus(err) === 404) {
-          this.setTriageResult(fingerprint, { message: 'This issue no longer exists.', error: null });
-          this.reloadIssues();
-          this.notice.set(`The issue “${issue.subject}” no longer exists.`);
-        } else {
-          this.setTriageResult(fingerprint, { message: 'The issue could not be downloaded: ' + adminApiError(err).message, error: null });
+  onIssueExported(done: FeedbackExportDone): void {
+    const issue = this.exportIssue();
+    this.exportOptions.set(done.exportOptions);
+    this.persist();
+    if (issue) {
+      const fingerprint = issue.fingerprint;
+      if (done.fileName) {
+        this.setTriageResult(fingerprint, { message: `Downloaded ${done.fileName}.`, error: null });
+      } else if (done.missing.some(id => String(id) === fingerprint)) {
+        this.issueExportDialog.close();
+        this.setTriageResult(fingerprint, { message: 'This issue no longer exists.', error: null });
+        if (this.selection().has(fingerprint)) {
+          this.setSelection(new Set([...this.selection()].filter(f => f !== fingerprint)));
         }
-        this.cdr.markForCheck();
+        this.reloadIssues();
+        this.notice.set(`The issue “${issue.subject}” no longer exists.`);
       }
-    });
+    }
+    this.cdr.markForCheck();
   }
 
   // --- Triage ---

@@ -63,7 +63,9 @@ public sealed class FeedbackExportDocument
     /// <summary>Written to the file as <c>exportedAtUtc</c>, to the second.</summary>
     public DateTime ExportedAtUtc { get; init; }
     public string OverseerVersion { get; init; } = "unknown";
-    public int OccurrencesPerIssue { get; init; }
+
+    /// <summary>The most occurrences shown per issue; null for all of them.</summary>
+    public int? OccurrencesPerIssue { get; init; }
 
     /// <summary>GnollBench: whether each occurrence carries its question text.</summary>
     public bool IncludeQuestionText { get; init; } = true;
@@ -235,7 +237,9 @@ public static class FeedbackMarkdownExport
         Row(sb, "Exported at (UTC)", exportedAt);
         Row(sb, "Overseer version", document.OverseerVersion);
         Row(sb, "Issues", document.Issues.Count.ToString(CultureInfo.InvariantCulture));
-        Row(sb, "Occurrences per issue", $"at most {document.OccurrencesPerIssue.ToString(CultureInfo.InvariantCulture)}, newest first");
+        Row(sb, "Occurrences per issue", document.OccurrencesPerIssue is int perIssue
+            ? $"at most {perIssue.ToString(CultureInfo.InvariantCulture)}, newest first"
+            : "all, newest first");
         if (gnollBench) Row(sb, "Question text", document.IncludeQuestionText ? "included" : "left out");
         Line(sb);
         Line(sb, $"Work on this file with the `{SkillName}` skill.");
@@ -649,6 +653,18 @@ public sealed class FeedbackExportResult
     public List<string> MissingFingerprints { get; init; } = new();
 }
 
+/// <summary>Thrown when the occurrences chosen for an export exceed its cap; <see cref="Count"/> is how many were chosen.</summary>
+public sealed class FeedbackExportTooLargeException : Exception
+{
+    public FeedbackExportTooLargeException(int count)
+        : base($"The export would hold {count.ToString(CultureInfo.InvariantCulture)} occurrences.")
+    {
+        Count = count;
+    }
+
+    public int Count { get; }
+}
+
 /// <summary>
 /// Loads the issues of an export through <see cref="OverseerFeedbackQuery"/> and <see cref="GnollBenchFeedbackQuery"/>,
 /// maps them to a <see cref="FeedbackExportDocument"/> that holds no user identity, and renders that one document with
@@ -659,30 +675,37 @@ public sealed class FeedbackExportService
 {
     public const int MaxIssues = 200;
     public const int DefaultOccurrencesPerIssue = 10;
-    public static IReadOnlyList<int> AllowedOccurrencesPerIssue { get; } = new[] { 5, 10, 25 };
+    public const int MinOccurrencesPerIssue = 1;
+    public const int MaxOccurrencesPerIssue = 1000;
+
+    /// <summary>The most occurrences one export holds, over all its issues.</summary>
+    public const int MaxOccurrencesPerExport = 5000;
 
     private readonly ApplicationDbContext _db;
     private readonly OverseerFeedbackQuery _overseer;
     private readonly GnollBenchFeedbackQuery _gnollBench;
     private readonly TimeProvider _clock;
+    private readonly int _maxOccurrencesPerExport;
 
     public FeedbackExportService(ApplicationDbContext db, OverseerFeedbackQuery overseer, GnollBenchFeedbackQuery gnollBench)
         : this(db, overseer, gnollBench, TimeProvider.System)
     {
     }
 
-    internal FeedbackExportService(ApplicationDbContext db, OverseerFeedbackQuery overseer, GnollBenchFeedbackQuery gnollBench, TimeProvider clock)
+    internal FeedbackExportService(ApplicationDbContext db, OverseerFeedbackQuery overseer, GnollBenchFeedbackQuery gnollBench, TimeProvider clock,
+        int maxOccurrencesPerExport = MaxOccurrencesPerExport)
     {
         _db = db;
         _overseer = overseer;
         _gnollBench = gnollBench;
         _clock = clock;
+        _maxOccurrencesPerExport = maxOccurrencesPerExport;
     }
 
     /// <summary>
     /// Validates the request and builds the export. Invalid for a bad source, occurrence count, id or fingerprint, an
-    /// empty selection, the other source's selection, or more than <see cref="MaxIssues"/> issues; NotFound when none
-    /// of the requested issues exists.
+    /// empty selection, the other source's selection, more than <see cref="MaxIssues"/> issues, or more than
+    /// <see cref="MaxOccurrencesPerExport"/> occurrences in total; NotFound when none of the requested issues exists.
     /// </summary>
     public async Task<FeedbackExportResult> ExportAsync(AdminFeedbackExportRequestDto? request, string overseerVersion, CancellationToken ct = default)
     {
@@ -693,17 +716,35 @@ public sealed class FeedbackExportService
         if (!FeedbackExportFormats.TryParse(request.Format, out var format))
             return Invalid($"Unknown format '{request.Format}'. Use yaml or markdown.");
 
-        int perIssue = request.OccurrencesPerIssue ?? DefaultOccurrencesPerIssue;
-        if (!AllowedOccurrencesPerIssue.Contains(perIssue))
-            return Invalid("Occurrences per issue must be 5, 10 or 25.");
+        // Null takes every stored occurrence.
+        int? perIssue;
+        if (request.AllOccurrences == true)
+        {
+            if (request.OccurrencesPerIssue != null) return Invalid("Choose a number of occurrences or all of them, not both.");
+            perIssue = null;
+        }
+        else
+        {
+            perIssue = request.OccurrencesPerIssue ?? DefaultOccurrencesPerIssue;
+            if (perIssue < MinOccurrencesPerIssue || perIssue > MaxOccurrencesPerIssue)
+                return Invalid("Occurrences per issue must be between 1 and 1,000.");
+        }
 
         DateTime now = _clock.GetUtcNow().UtcDateTime;
         DateTime exportedAt = new(now.Ticks - now.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
         string version = string.IsNullOrWhiteSpace(overseerVersion) ? "unknown" : overseerVersion.Trim();
 
-        var result = source == FeedbackTransferSources.Overseer
-            ? await ExportOverseerAsync(request, perIssue, exportedAt, version, ct)
-            : await ExportGnollBenchAsync(request, perIssue, request.IncludeQuestionText ?? true, exportedAt, version, ct);
+        FeedbackExportResult result;
+        try
+        {
+            result = source == FeedbackTransferSources.Overseer
+                ? await ExportOverseerAsync(request, perIssue, exportedAt, version, ct)
+                : await ExportGnollBenchAsync(request, perIssue, request.IncludeQuestionText ?? true, exportedAt, version, ct);
+        }
+        catch (FeedbackExportTooLargeException e)
+        {
+            return TooLarge(e.Count);
+        }
         if (result.Outcome != FeedbackExportOutcome.Exported || result.Document == null) return result;
 
         var document = result.Document;
@@ -715,6 +756,7 @@ public sealed class FeedbackExportService
         return new FeedbackExportResult
         {
             Outcome = FeedbackExportOutcome.Exported,
+            Document = document,
             MissingIds = result.MissingIds,
             MissingFingerprints = result.MissingFingerprints,
             Export = new AdminFeedbackExportResultDto
@@ -733,7 +775,7 @@ public sealed class FeedbackExportService
 
     // --- Overseer ---
 
-    private async Task<FeedbackExportResult> ExportOverseerAsync(AdminFeedbackExportRequestDto request, int perIssue, DateTime exportedAt,
+    private async Task<FeedbackExportResult> ExportOverseerAsync(AdminFeedbackExportRequestDto request, int? perIssue, DateTime exportedAt,
         string version, CancellationToken ct)
     {
         if (request.Fingerprints is { Count: > 0 }) return Invalid("Fingerprints select GnollBench issues; the Overseer export takes issue ids.");
@@ -761,12 +803,17 @@ public sealed class FeedbackExportService
             .Select(r => new { r.IssueId, r.Id, r.CreatedUtc })
             .ToListAsync(ct);
         var chosen = light.GroupBy(x => x.IssueId)
-            .SelectMany(g => g.OrderByDescending(x => x.CreatedUtc).ThenByDescending(x => x.Id).Take(perIssue).Select(x => x.Id))
+            .SelectMany(g => g.OrderByDescending(x => x.CreatedUtc).ThenByDescending(x => x.Id).Take(perIssue ?? int.MaxValue).Select(x => x.Id))
             .ToList();
+        if (chosen.Count > _maxOccurrencesPerExport) return TooLarge(chosen.Count);
+
+        // Without a limit every occurrence is chosen, so they are read by issue id rather than by a list of report ids.
+        var selected = perIssue == null
+            ? _db.OverseerFeedbackReports.AsNoTracking().Where(r => foundIds.Contains(r.IssueId))
+            : _db.OverseerFeedbackReports.AsNoTracking().Where(r => chosen.Contains(r.Id));
 
         // Projected without the user, conversation, message and tool call columns, which the export never shows.
-        var occurrences = await _db.OverseerFeedbackReports.AsNoTracking()
-            .Where(r => chosen.Contains(r.Id))
+        var occurrences = await selected
             .Select(r => new
             {
                 r.Id,
@@ -871,7 +918,7 @@ public sealed class FeedbackExportService
 
     // --- GnollBench ---
 
-    private async Task<FeedbackExportResult> ExportGnollBenchAsync(AdminFeedbackExportRequestDto request, int perIssue, bool includeQuestionText,
+    private async Task<FeedbackExportResult> ExportGnollBenchAsync(AdminFeedbackExportRequestDto request, int? perIssue, bool includeQuestionText,
         DateTime exportedAt, string version, CancellationToken ct)
     {
         if (request.IssueIds is { Count: > 0 }) return Invalid("Issue ids select Overseer issues; the GnollBench export takes fingerprints.");
@@ -886,13 +933,24 @@ public sealed class FeedbackExportService
         if (fingerprints.Count > MaxIssues) return Invalid($"At most {MaxIssues} issues can be exported at once.");
 
         // An issue with refused self-reports only still exists; it is read over all self-reports.
-        var issues = await _gnollBench.LoadIssuesAsync(fingerprints, perIssue, GnollBenchAcceptedScope.Accepted, ct);
+        int newest = perIssue ?? int.MaxValue;
+        var issues = await _gnollBench.LoadIssuesAsync(fingerprints, newest, GnollBenchAcceptedScope.Accepted, ct, _maxOccurrencesPerExport);
         var acceptedFps = issues.Select(i => i.Fingerprint).ToHashSet(StringComparer.Ordinal);
         var rest = fingerprints.Where(f => !acceptedFps.Contains(f)).ToList();
         var refusedOnly = new List<string>();
         if (rest.Count > 0)
         {
-            var more = await _gnollBench.LoadIssuesAsync(rest, perIssue, GnollBenchAcceptedScope.All, ct);
+            // The cap covers both loads together.
+            int loaded = issues.Sum(i => i.Occurrences.Count);
+            List<GnollBenchFeedbackIssue> more;
+            try
+            {
+                more = await _gnollBench.LoadIssuesAsync(rest, newest, GnollBenchAcceptedScope.All, ct, _maxOccurrencesPerExport - loaded);
+            }
+            catch (FeedbackExportTooLargeException e)
+            {
+                throw new FeedbackExportTooLargeException(loaded + e.Count);
+            }
             issues.AddRange(more);
             refusedOnly.AddRange(more.Select(i => i.Fingerprint));
         }
@@ -1014,6 +1072,10 @@ public sealed class FeedbackExportService
         };
 
     private static FeedbackExportResult Invalid(string message) => new() { Outcome = FeedbackExportOutcome.Invalid, Message = message };
+
+    private FeedbackExportResult TooLarge(int count)
+        => Invalid($"This export would hold {count.ToString("N0", CultureInfo.InvariantCulture)} occurrences, more than "
+            + $"{_maxOccurrencesPerExport.ToString("N0", CultureInfo.InvariantCulture)}. Select fewer issues or fewer occurrences per issue.");
 
     private static FeedbackExportResult NotFound(List<long> missingIds, List<string> missingFingerprints)
         => new()

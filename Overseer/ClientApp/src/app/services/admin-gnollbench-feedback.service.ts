@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import type { FeedbackModelIdentity } from './admin-feedback.service';
 
 /** The route prefix of `AdminGnollBenchFeedbackController`. */
 export const ADMIN_GNOLLBENCH_FEEDBACK_ENDPOINT = '/api/admin/feedback/gnollbench';
@@ -53,6 +54,13 @@ export interface GnollBenchFeedbackIssue {
   modelCount: number;
   /** Model labels, at most five, then `+N`. */
   models: string[];
+  /**
+   * The tested models as their runs ran them, with provider, thinking level and reasoning mode, at most five, by
+   * label. The server always sends it; optional so a fixture without it still types.
+   */
+  modelIdentities?: FeedbackModelIdentity[];
+  /** The identities beyond the five in `modelIdentities`. Optional like it. */
+  moreModelIdentities?: number;
   providers: string[];
   /** Suite names, at most five, then `+N`. */
   suites: string[];
@@ -85,6 +93,9 @@ export interface GnollBenchFeedbackOccurrence {
   modelId: string;
   modelLabel: string;
   provider: string;
+  /** The run's thinking level and reasoning mode; null while not recorded. Optional so a fixture without them still types. */
+  thinkingLevel?: string | null;
+  reasoningMode?: string | null;
   condition: string;
   /** The stored stamp, `spec:hash12`. */
   variant: string | null;

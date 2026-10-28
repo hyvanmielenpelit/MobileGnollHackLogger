@@ -17,12 +17,13 @@ import {
   AdminFeedbackIssuesQuery,
   AdminFeedbackOccurrence,
   AdminFeedbackOccurrencePage,
-  AdminFeedbackService
+  AdminFeedbackService,
+  FeedbackModelIdentity
 } from '../../../services/admin-feedback.service';
-import { FeedbackExportResult, FeedbackTransferService } from '../../../services/feedback-transfer.service';
 import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
 import { AdminPageStore } from '../../admin-page.store';
 import { adminTestRoutes } from '../../admin.component.testing';
+import { FeedbackExportDialogComponent, FeedbackExportDone } from '../shared/feedback-export-dialog.component';
 import { FeedbackSelectionBarComponent, FeedbackSelectionId } from '../shared/feedback-selection-bar.component';
 import {
   FeedbackExportOptions,
@@ -44,6 +45,11 @@ import {
 const settle = (ms = 0): Promise<void> => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 const textOf = (el: Element | null | undefined): string => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+/** A model identity's name and badges, space-separated; the element's text when it holds none. */
+const identityTextOf = (el: Element | null | undefined): string => {
+  const parts = Array.from(el?.querySelectorAll('.model-identity-name, .thinking-badge, .reasoning-badge, .provider-badge') ?? []);
+  return parts.length ? parts.map(p => textOf(p)).join(' ') : textOf(el);
+};
 
 const VIEW_KEY = 'overseer.admin.feedback.overseer.view';
 const STORAGE_KEYS = [VIEW_KEY, 'overseer.admin.feedback.overseer.selection', 'overseer.admin.telemetry.feedback.view'];
@@ -54,13 +60,20 @@ function clearStorage(): void {
   }
 }
 
+function identity(modelId: string, overrides: Partial<FeedbackModelIdentity> = {}): FeedbackModelIdentity {
+  return { modelId, modelLabel: modelId, provider: null, thinkingLevel: null, reasoningMode: null, ...overrides };
+}
+
 function issue(id: number, overrides: Partial<AdminFeedbackIssue> = {}): AdminFeedbackIssue {
   return {
     id, category: 'missing_information', subject: id === 1 ? 'Dilithium crystal' : `Subject ${id}`,
     summary: 'The wiki has no page for it.',
     firstSeenUtc: '2026-09-02T08:00:00Z', lastSeenUtc: '2026-10-20T12:30:00Z',
     occurrenceCount: 12, retainedCount: 12, distinctUserCount: 3,
-    modelIds: ['claude-x', 'gpt-x'], providers: ['Anthropic', 'OpenAI'], modelSources: { system: 2, user: 1, unknown: 0 },
+    modelIds: ['claude-x', 'gpt-x'],
+    modelIdentities: [identity('claude-x', { provider: 'Anthropic' }), identity('gpt-x', { provider: 'OpenAI' })],
+    moreModelIdentities: 0,
+    providers: ['Anthropic', 'OpenAI'], modelSources: { system: 2, user: 1, unknown: 0 },
     regressionCount: 0, lastRegressionUtc: null,
     latestExpectedLocation: 'wiki page Dilithium crystal', latestRelatedTools: ['wiki_search', 'item_lookup'],
     latestSuspectedCause: 'corpus_or_tool_limit', latestAppVersion: '1.4.2+abc',
@@ -128,6 +141,28 @@ class SelectionBarStub {
   @Output() readonly imported = new EventEmitter<void>();
 }
 
+/** The export dialog, as a panel sees it: its inputs, its output, and open and close, which record the inputs they saw. */
+@Component({ selector: 'app-feedback-export-dialog', template: '' })
+class ExportDialogStub {
+  @Input() source: unknown;
+  @Input() idPrefix: string | null | undefined;
+  @Input() ids: readonly FeedbackSelectionId[] = [];
+  @Input() issueSubject: string | null = null;
+  @Input() occurrenceTotal: number | null = null;
+  @Input() exportOptions: FeedbackExportOptions | undefined;
+  @Output() readonly exported = new EventEmitter<FeedbackExportDone>();
+  readonly opened: { ids: readonly FeedbackSelectionId[]; issueSubject: string | null; occurrenceTotal: number | null }[] = [];
+  closed = 0;
+
+  open(): void {
+    this.opened.push({ ids: [...this.ids], issueSubject: this.issueSubject, occurrenceTotal: this.occurrenceTotal });
+  }
+
+  close(): void {
+    this.closed++;
+  }
+}
+
 describe('FeedbackOverseerPanelComponent', () => {
   let fixture: ComponentFixture<FeedbackOverseerPanelComponent>;
   let component: FeedbackOverseerPanelComponent;
@@ -150,8 +185,8 @@ describe('FeedbackOverseerPanelComponent', () => {
       imports: [FeedbackOverseerPanelComponent],
       providers: [provideRouter(adminTestRoutes()), provideLocationMocks(), provideHttpClient(), provideHttpClientTesting(), AdminPageStore]
     }).overrideComponent(FeedbackOverseerPanelComponent, {
-      remove: { imports: [FeedbackSelectionBarComponent] },
-      add: { imports: [SelectionBarStub] }
+      remove: { imports: [FeedbackSelectionBarComponent, FeedbackExportDialogComponent] },
+      add: { imports: [SelectionBarStub, ExportDialogStub] }
     }).compileComponents();
 
     service = TestBed.inject(AdminFeedbackService);
@@ -362,7 +397,10 @@ describe('FeedbackOverseerPanelComponent', () => {
 
       expect(textOf(card.querySelector('.tl-fb-category'))).toBe('Missing information');
       expect(textOf(card.querySelector('.tl-fb-status-badge [aria-hidden="true"]'))).toBe('New');
-      expect(textOf(card.querySelector('.tl-fb-models'))).toBe('Models: claude-x, gpt-x');
+      const models = card.querySelector('.tl-fb-kicker ul.tl-fb-model-list')!;
+      expect(models.getAttribute('role')).toBe('list');
+      expect(models.getAttribute('aria-label')).toBe('Models');
+      expect(Array.from(models.querySelectorAll('li')).map(li => identityTextOf(li))).toEqual(['claude-x Anthropic', 'gpt-x OpenAI']);
       expect(textOf(card.querySelector('.tl-fb-summary'))).toBe('The wiki has no page for it.');
 
       const metrics = Array.from(card.querySelectorAll('.tl-fb-metrics > .tl-fb-metric'));
@@ -382,13 +420,40 @@ describe('FeedbackOverseerPanelComponent', () => {
         ['Latest related tools', 'GnollHack wiki search, GnollHack wiki item lookup'],
         ["Model's suspected cause (hypothesis)", 'Corpus or tool limit'],
         ['Latest version', '1.4.2+abc'],
-        ['Providers', 'Anthropic, OpenAI'],
         ['Model sources', 'System configuration 2 · User\'s own model 1']
       ]);
+      expect(card.querySelector('.tl-fb-fact-providers')).toBeNull();
+      expect(card.querySelector('.tl-fb-facts .tl-fb-muted')).toBeNull();
       expect(card.querySelector('.tl-fb-crosslink')).toBeNull();
     });
 
-    it('leaves out the retained qualifier while every occurrence remains, and says Not recorded for missing facts', async () => {
+    it('heads the latest facts as Latest report, in a section it labels, and leaves out Triage while nothing is triaged', async () => {
+      await create();
+      const card = cards()[0];
+
+      const sections = Array.from(card.querySelectorAll<HTMLElement>('.tl-fb-fact-groups > section'));
+      expect(sections.length).toBe(1);
+      const heading = card.querySelector('#' + sections[0].getAttribute('aria-labelledby'))!;
+      expect(heading.tagName).toBe('H5');
+      expect(heading.classList.contains('gh-section-title')).toBe(true);
+      expect(textOf(heading)).toBe('Latest report');
+      expect(sections[0].querySelector('dl.tl-fb-facts')).not.toBeNull();
+    });
+
+    it('groups Resolved via, the fixed-in version, the note and the resolution under Triage once one is set', async () => {
+      nextPage = page([issue(1, { triageNote: 'Seen.' }), issue(2, { fixedInVersion: '1.4.3' }), issue(3)], 3);
+      await create();
+      const [first, second, third] = cards();
+
+      const triage = first.querySelector<HTMLElement>('.tl-fb-fact-group-triage')!;
+      expect(textOf(triage.querySelector('#' + triage.getAttribute('aria-labelledby')))).toBe('Triage');
+      expect(Array.from(triage.querySelectorAll('dt')).map(d => textOf(d))).toEqual(['Note']);
+      expect(first.querySelector('.tl-fb-fact-group-latest .tl-fb-fact-note')).toBeNull();
+      expect(textOf(second.querySelector('.tl-fb-fact-group-triage .tl-fb-fact-fixed dd'))).toBe('1.4.3');
+      expect(third.querySelector('.tl-fb-fact-group-triage')).toBeNull();
+    });
+
+    it('leaves out the retained qualifier while every occurrence remains, and says Not recorded, muted, for missing facts', async () => {
       nextPage = page([issue(1, {
         latestExpectedLocation: null, latestRelatedTools: [], latestSuspectedCause: null, latestAppVersion: null,
         providers: [], modelSources: { system: 0, user: 0, unknown: 0 }
@@ -397,8 +462,56 @@ describe('FeedbackOverseerPanelComponent', () => {
       const card = cards()[0];
 
       expect(card.querySelector('.tl-fb-metric-occurrences .tl-fb-metric-note')).toBeNull();
-      expect(Array.from(card.querySelectorAll('.tl-fb-facts dd')).map(d => textOf(d))).toEqual(
-        ['Not recorded', 'Not recorded', 'Not recorded', 'Not recorded', 'Not recorded', 'Not recorded']);
+      const values = Array.from(card.querySelectorAll('.tl-fb-facts dd'));
+      expect(values.map(d => textOf(d))).toEqual(['Not recorded', 'Not recorded', 'Not recorded', 'Not recorded', 'Not recorded']);
+      expect(values.every(d => d.classList.contains('tl-fb-muted'))).toBe(true);
+      expect(getComputedStyle(values[0]).fontStyle).toBe('italic');
+      expect(values[3].classList.contains('tl-fb-mono')).toBe(false);
+    });
+
+    it('names each model with its thinking level, reasoning mode and provider badges, then the rest as +N more', async () => {
+      nextPage = page([issue(1, {
+        modelIdentities: [
+          identity('gpt-x', { modelLabel: 'GPT X', provider: 'openai', thinkingLevel: 'high', reasoningMode: 'pro' }),
+          identity('gpt-x', { modelLabel: 'GPT X', provider: 'openai', thinkingLevel: 'low' }),
+          identity('custom-x', { modelLabel: '', provider: null })
+        ],
+        moreModelIdentities: 3
+      })]);
+      await create();
+      const items = Array.from(cards()[0].querySelectorAll<HTMLElement>('.tl-fb-model-list > li'));
+
+      expect(items.length).toBe(4);
+      const first = items[0].querySelector('app-model-identity')!;
+      expect(textOf(first.querySelector('.model-identity-name'))).toBe('GPT X');
+      expect(textOf(first.querySelector('.thinking-badge'))).toBe('thinking level high');
+      expect(textOf(first.querySelector('.reasoning-badge'))).toBe('reasoning mode pro');
+      expect(textOf(first.querySelector('app-provider-badge'))).toBe('OpenAI');
+      expect(items[1].querySelector('.reasoning-badge')).toBeNull();
+      expect(textOf(items[2].querySelector('.model-identity-name'))).toBe('custom-x');
+      expect(items[2].querySelector('app-provider-badge')).toBeNull();
+      expect(textOf(items[3])).toBe('+3 more');
+      expect(items[3].classList.contains('tl-fb-model-more')).toBe(true);
+    });
+
+    it('leaves the models out of the kicker when the issue has none', async () => {
+      nextPage = page([issue(1, { modelIdentities: [], moreModelIdentities: 0 })]);
+      await create();
+      const card = cards()[0];
+
+      expect(card.querySelector('.tl-fb-model-list')).toBeNull();
+      expect(card.querySelector('.tl-fb-kicker .tl-fb-sep')).toBeNull();
+    });
+
+    it('edges the card with its status, the badge carrying the word', async () => {
+      nextPage = page([issue(1, { status: 'acknowledged' }), issue(2, { status: 'dismissed' })], 2);
+      await create();
+      const [first, second] = cards();
+
+      expect(first.getAttribute('data-status')).toBe('acknowledged');
+      expect(getComputedStyle(first).boxShadow).toContain('inset');
+      expect(second.getAttribute('data-status')).toBe('dismissed');
+      expect(getComputedStyle(second).backgroundImage).toContain('repeating-linear-gradient');
     });
 
     it('shows the fixed-in version and the resolution as plain text with its line breaks', async () => {
@@ -508,7 +621,8 @@ describe('FeedbackOverseerPanelComponent', () => {
       }));
       await create();
       const card = cards()[0];
-      expect(textOf(card.querySelector('details.tl-fb-occurrences > summary'))).toBe('Occurrences (12)');
+      expect(textOf(card.querySelector('details.tl-fb-occurrences > summary'))).toBe('Occurrences 12');
+      expect(textOf(card.querySelector('details.tl-fb-occurrences > summary .tl-fb-count'))).toBe('12');
       expect(occurrencesSpy).not.toHaveBeenCalled();
 
       const details = openOccurrences(card);
@@ -550,11 +664,11 @@ describe('FeedbackOverseerPanelComponent', () => {
 
       expect(textOf(first.querySelector('h5'))).toBe(feedbackDateTimeText('2026-10-20T12:30:00Z'));
       const factsOf = (item: HTMLElement) => Object.fromEntries(Array.from(item.querySelectorAll('.tl-fb-occ-facts > div'))
-        .map(f => [textOf(f.querySelector('dt')), textOf(f.querySelector('dd'))]));
+        .map(f => [textOf(f.querySelector('dt')), identityTextOf(f.querySelector('dd'))]));
       expect(factsOf(first)).toEqual(expect.objectContaining({
         'User': 'Account erased',
         'Groups': 'Testers',
-        'Provider and model': 'Anthropic · claude-x',
+        'Model': 'claude-x Anthropic',
         'Model source': 'System configuration Claude (fast)',
         'Version': '1.4.2+abc',
         'Conversation': 'Session 812 · message 4410',
@@ -1502,29 +1616,40 @@ describe('FeedbackOverseerPanelComponent', () => {
     it('shows tools, providers and models by their labels on the card and its occurrences, and an unlabeled tool in words', async () => {
       nextPage = page([issue(1, {
         modelIds: ['claude-x', 'gpt-x', '+2'], modelLabels: ['Claude X', 'GPT X', '+2'],
+        modelIdentities: [
+          identity('claude-x', { modelLabel: 'Claude X', provider: 'anthropic' }),
+          identity('gpt-x', { modelLabel: 'GPT X', provider: 'openai' })
+        ],
+        moreModelIdentities: 2,
         providers: ['anthropic', 'openai'], latestRelatedTools: ['wiki_search', 'some_new_tool']
       })]);
       occurrencesSpy.mockReturnValue(of<AdminFeedbackOccurrencePage>({
         totalCount: 1,
         rows: [occurrence(5, {
           provider: 'anthropic', modelId: 'claude-x', modelLabel: 'Claude X', relatedTools: ['item_lookup', 'some_new_tool'],
-          searchedFor: 'the dilithium page'
+          searchedFor: 'the dilithium page', thinkingLevel: 'medium'
         })]
       }));
       await create();
       const card = cards()[0];
       const details = openOccurrences(card);
 
-      expect(textOf(card.querySelector('.tl-fb-models'))).toBe('Models: Claude X, GPT X, +2');
+      expect(Array.from(card.querySelectorAll('.tl-fb-model-list > li')).map(li => identityTextOf(li))).toEqual(
+        ['Claude X Anthropic', 'GPT X OpenAI', '+2 more']);
       const tools = card.querySelector('.tl-fb-fact-tools dd')!;
       expect(textOf(tools)).toBe('GnollHack wiki search, Some new tool');
       expect(tools.classList.contains('tl-fb-mono')).toBe(false);
-      expect(textOf(card.querySelector('.tl-fb-fact-providers dd'))).toBe('Anthropic, OpenAI');
+      expect(card.querySelector('.tl-fb-fact-providers')).toBeNull();
+      expect(Array.from(card.querySelectorAll('.tl-fb-facts dt')).map(d => textOf(d))).not.toContain('Providers');
 
       const item = details.querySelector<HTMLElement>('li.tl-fb-occ')!;
       const facts = Object.fromEntries(Array.from(item.querySelectorAll('.tl-fb-occ-facts > div'))
         .map(f => [textOf(f.querySelector('dt')), f.querySelector('dd')!]));
-      expect(textOf(facts['Provider and model'])).toBe('Anthropic · Claude X');
+      expect(facts['Provider and model']).toBeUndefined();
+      const model = facts['Model'].querySelector('app-model-identity')!;
+      expect(textOf(model.querySelector('.model-identity-name'))).toBe('Claude X');
+      expect(textOf(model.querySelector('.thinking-badge'))).toBe('thinking level medium');
+      expect(textOf(model.querySelector('app-provider-badge'))).toBe('Anthropic');
       expect(textOf(facts['Related tools'])).toBe('GnollHack wiki item lookup, Some new tool');
       expect(facts['Related tools'].classList.contains('tl-fb-mono')).toBe(false);
 
@@ -1532,14 +1657,17 @@ describe('FeedbackOverseerPanelComponent', () => {
     });
 
     it('shows a model id when the server sent no label for it', async () => {
-      nextPage = page([issue(1, { modelIds: ['claude-x', 'gpt-x'], modelLabels: ['Claude X', ''] })]);
+      nextPage = page([issue(1, {
+        modelIds: ['claude-x', 'gpt-x'], modelLabels: ['Claude X', ''],
+        modelIdentities: [identity('claude-x', { modelLabel: 'Claude X' }), identity('gpt-x', { modelLabel: '' })]
+      })]);
       occurrencesSpy.mockReturnValue(of<AdminFeedbackOccurrencePage>({ totalCount: 1, rows: [occurrence(5, { modelLabel: null })] }));
       await create();
       const card = cards()[0];
       const details = openOccurrences(card);
 
-      expect(textOf(card.querySelector('.tl-fb-models'))).toBe('Models: Claude X, gpt-x');
-      expect(details.textContent).toContain('Anthropic · claude-x');
+      expect(Array.from(card.querySelectorAll('.tl-fb-model-list .model-identity-name')).map(n => textOf(n))).toEqual(['Claude X', 'gpt-x']);
+      expect(textOf(details.querySelector('.tl-fb-occ-model .model-identity-name'))).toBe('claude-x');
     });
 
     it('labels the Model, Provider and Tool facets and their chips, and filters by the ids', async () => {
@@ -1580,7 +1708,7 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(textOf(first.querySelector('.tl-fb-fact-resolved dt'))).toBe('Resolved via');
       expect(textOf(first.querySelector('.tl-fb-fact-resolved dd'))).toBe('GnollHack wiki, Overseer release');
       expect(first.querySelector('.tl-fb-fact-resolved')!.nextElementSibling!.classList.contains('tl-fb-fact-fixed')).toBe(true);
-      expect(textOf(first.querySelector('.tl-fb-facts'))).not.toMatch(/overseer_release/);
+      expect(textOf(first.querySelector('.tl-fb-fact-group-triage'))).not.toMatch(/overseer_release/);
       expect(second.querySelector('.tl-fb-fact-resolved')).toBeNull();
       expect(third.querySelector('.tl-fb-fact-resolved')).toBeNull();
     });
@@ -1632,125 +1760,108 @@ describe('FeedbackOverseerPanelComponent', () => {
     });
   });
 
-  describe('download as YAML', () => {
-    let exportSpy: Mock;
-    let saved: { names: string[]; types: string[] };
-    let restore: (() => void)[];
+  describe('export one issue', () => {
+    const button = (card: HTMLElement = cards()[0]): HTMLButtonElement => card.querySelector<HTMLButtonElement>('.tl-fb-export')!;
+    const dialog = (): ExportDialogStub => fixture.debugElement.query(By.directive(ExportDialogStub)).componentInstance as ExportDialogStub;
 
-    function result(overrides: Partial<FeedbackExportResult> = {}): FeedbackExportResult {
-      return {
-        fileName: 'overseer-feedback-overseer-issue-1-20261028-0915.yaml', content: 'format: overseer-feedback-issues\n',
-        mediaType: 'application/yaml;charset=utf-8', issueCount: 1, missingIds: [], missingFingerprints: [], ...overrides
-      };
-    }
-
-    const button = (card: HTMLElement = cards()[0]): HTMLButtonElement => card.querySelector<HTMLButtonElement>('.tl-fb-download')!;
-
-    function clickDownload(): void {
-      button().click();
+    function clickExport(card?: HTMLElement): void {
+      button(card).click();
       fixture.detectChanges();
     }
 
-    beforeEach(() => {
-      exportSpy = vi.spyOn(TestBed.inject(FeedbackTransferService), 'exportIssues').mockReturnValue(of(result()));
-      saved = { names: [], types: [] };
-      const blob = vi.spyOn(URL, 'createObjectURL').mockImplementation((source: Blob | MediaSource) => {
-        saved.types.push((source as Blob).type);
-        return 'blob:feedback-download-test';
-      });
-      const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-      const anchor = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-        saved.names.push(this.download);
-      });
-      restore = [() => blob.mockRestore(), () => revoke.mockRestore(), () => anchor.mockRestore()];
-    });
+    function done(overrides: Partial<FeedbackExportDone> = {}): FeedbackExportDone {
+      return {
+        missing: [], exportOptions: { occurrencesPerIssue: 'all', includeQuestionText: true, format: 'markdown' },
+        fileName: 'overseer-feedback-overseer-issue-1-20261028-0915.md', issueCount: 1, ...overrides
+      };
+    }
 
-    afterEach(() => restore.forEach(undo => undo()));
-
-    it('leads the card\'s actions as an icon button named for the issue, with a Download as YAML tooltip', async () => {
+    it('leads the card\'s actions as an icon button named for the issue, with an Export issue… tooltip, that opens a dialog', async () => {
       await create();
       const group = cards()[0].querySelector('.tl-fb-actions')!;
-      const download = button();
+      const exportButton = button();
 
-      expect(group.querySelector('button')).toBe(download);
-      expect(download.classList.contains('action-btn')).toBe(true);
-      expect(download.getAttribute('aria-label')).toBe('Download issue as YAML: Dilithium crystal');
-      expect(textOf(download)).toBe('');
-      expect(download.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
-      const tip = el.querySelector<HTMLElement>('#' + download.getAttribute('interestfor'))!;
+      expect(group.querySelector('button')).toBe(exportButton);
+      expect(exportButton.classList.contains('action-btn')).toBe(true);
+      expect(exportButton.getAttribute('aria-label')).toBe('Export issue: Dilithium crystal');
+      expect(exportButton.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(textOf(exportButton)).toBe('');
+      expect(exportButton.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+      const tip = el.querySelector<HTMLElement>('#' + exportButton.getAttribute('interestfor'))!;
       expect(tip.getAttribute('popover')).toBe('hint');
       expect(tip.classList.contains('gh-tooltip')).toBe(true);
-      expect(textOf(tip)).toBe('Download as YAML');
-      expect(download.getAttribute('style')).toContain('anchor-name: --tl-fb-1-download-tip');
-      expect(tip.getAttribute('style')).toContain('position-anchor: --tl-fb-1-download-tip');
-      expect(download.hasAttribute('title')).toBe(false);
+      expect(textOf(tip)).toBe('Export issue…');
+      expect(exportButton.getAttribute('style')).toContain('anchor-name: --tl-fb-1-export-tip');
+      expect(tip.getAttribute('style')).toContain('position-anchor: --tl-fb-1-export-tip');
+      expect(exportButton.hasAttribute('title')).toBe(false);
+      expect(group.querySelector('.tl-fb-download')).toBeNull();
     });
 
-    it('exports the one issue in YAML with the remembered occurrences, saves the file and says so', async () => {
+    it('opens the export dialog on that one issue, its subject and its stored occurrences, with the remembered options', async () => {
       saveFeedbackView('overseer', {
         version: 1, sort: 'lastSeen', filters: {}, search: '', range: CUSTOM_RANGE,
         exportOptions: { occurrencesPerIssue: 25, includeQuestionText: false, format: 'markdown' }
       });
+      nextPage = page([issue(1, { retainedCount: 9 }), issue(2)], 2);
       await create();
-      clickDownload();
 
-      expect(exportSpy).toHaveBeenCalledWith({ source: 'overseer', format: 'yaml', issueIds: [1], occurrencesPerIssue: 25 });
-      expect(saved.names).toEqual(['overseer-feedback-overseer-issue-1-20261028-0915.yaml']);
-      expect(saved.types).toEqual(['application/yaml;charset=utf-8']);
+      expect(dialog().source).toBe('overseer');
+      expect(dialog().idPrefix).toBe('overseer-card');
+      expect(dialog().opened).toEqual([]);
+
+      clickExport(cards()[1]);
+      expect(dialog().opened).toEqual([{ ids: [2], issueSubject: 'Subject 2', occurrenceTotal: 12 }]);
+
+      clickExport(cards()[0]);
+      expect(dialog().opened[1]).toEqual({ ids: [1], issueSubject: 'Dilithium crystal', occurrenceTotal: 9 });
+      expect(dialog().exportOptions).toEqual({ occurrencesPerIssue: 25, includeQuestionText: false, format: 'markdown' });
+    });
+
+    it('names the saved file on the card\'s result line and remembers the options for both exports', async () => {
+      await create();
+      clickExport();
+
+      dialog().exported.emit(done());
+      fixture.detectChanges();
+
       const line = cards()[0].querySelector('#tl-fb-1-result')!;
       expect(line.getAttribute('role')).toBe('status');
-      expect(textOf(line)).toBe('Downloaded overseer-feedback-overseer-issue-1-20261028-0915.yaml.');
-      expect(q('dialog[open]')).toBeNull();
+      expect(textOf(line)).toBe('Downloaded overseer-feedback-overseer-issue-1-20261028-0915.md.');
+      expect(loadFeedbackView('overseer')!.exportOptions).toEqual(done().exportOptions);
+      expect(bar().exportOptions).toEqual(done().exportOptions);
+      expect(dialog().exportOptions).toEqual(done().exportOptions);
+      expect(dialog().closed).toBe(0);
     });
 
-    it('uses ten occurrences when no export options are remembered', async () => {
+    it('says an issue the server no longer has is gone, closes the dialog, fetches the list again and drops it from the selection', async () => {
+      saveOverseerSelection([1, 2]);
       await create();
-      clickDownload();
-
-      expect(exportSpy).toHaveBeenCalledWith({ source: 'overseer', format: 'yaml', issueIds: [1], occurrencesPerIssue: 10 });
-    });
-
-    it('is busy while its request runs and ignores a second click', async () => {
-      const response = new Subject<FeedbackExportResult>();
-      exportSpy.mockReturnValue(response.asObservable());
-      await create();
-
-      clickDownload();
-      expect(button().getAttribute('aria-busy')).toBe('true');
-      clickDownload();
-      expect(exportSpy).toHaveBeenCalledTimes(1);
-
-      response.next(result());
-      response.complete();
-      fixture.detectChanges();
-      expect(button().getAttribute('aria-busy')).toBeNull();
-      expect(saved.names.length).toBe(1);
-    });
-
-    it('says an issue the server no longer has is gone, and fetches the list again', async () => {
-      exportSpy.mockReturnValue(throwError(() => ({ status: 404, error: { message: 'None of the requested issues exist.', missingIds: [1], missingFingerprints: [] } })));
-      await create();
+      clickExport();
       const before = listQueries().length;
+      idsSpy.mockImplementation((filters?: AdminFeedbackIssueFilters) => {
+        const ids = (filters?.ids ?? [2]).filter(id => id !== 1);
+        return of<AdminFeedbackIssueIds>({ ids, totalCount: ids.length, truncated: false });
+      });
 
-      clickDownload();
+      dialog().exported.emit(done({ missing: [1], fileName: null, issueCount: 0 }));
+      fixture.detectChanges();
 
+      expect(dialog().closed).toBe(1);
       expect(listQueries().length).toBe(before + 1);
       expect(textOf(cards()[0].querySelector('#tl-fb-1-result'))).toBe('This issue no longer exists.');
       expect(status()).toContain('The issue “Dilithium crystal” no longer exists.');
-      expect(saved.names).toEqual([]);
-      expect(button().getAttribute('aria-busy')).toBeNull();
+      expect(loadOverseerSelection()).toEqual([2]);
     });
 
-    it('writes another failure to the card\'s result line', async () => {
-      exportSpy.mockReturnValue(throwError(() => ({ status: 500, error: { message: 'The export failed on the server.' } })));
+    it('clears the card\'s last result when the dialog opens again', async () => {
       await create();
-      const before = listQueries().length;
+      clickExport();
+      dialog().exported.emit(done());
+      fixture.detectChanges();
 
-      clickDownload();
+      clickExport();
 
-      expect(textOf(cards()[0].querySelector('#tl-fb-1-result'))).toBe('The issue could not be downloaded: The export failed on the server.');
-      expect(listQueries().length).toBe(before);
-      expect(saved.names).toEqual([]);
+      expect(textOf(cards()[0].querySelector('#tl-fb-1-result'))).toBe('');
     });
   });
 

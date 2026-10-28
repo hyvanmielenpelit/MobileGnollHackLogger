@@ -120,9 +120,21 @@
                 @if (hidden.length > 0) {
                   <span class="gh-tag tl-fb-mark-hidden" [attr.title]="'Invisible characters: ' + hidden.join(', ')">Hidden characters</span><span class="visually-hidden">: {{ hidden.join(', ') }}</span>
                 }
-                @if (issue.modelIds.length > 0) {
+                @let identities = modelIdentities(issue);
+                @if (identities.length > 0) {
                   <span class="tl-fb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                  <span class="tl-fb-models"><span class="visually-hidden">Models: </span>{{ modelsText(issue) }}</span>
+                  <!-- Each model as it ran: the name, then its thinking, reasoning and provider badges. -->
+                  <ul class="tl-fb-model-list" role="list" aria-label="Models">
+                    @for (identity of identities; track $index) {
+                      <li class="tl-fb-model">
+                        <app-model-identity [name]="identity.modelLabel || identity.modelId" [provider]="providerLabel(identity.provider)"
+                                            [thinkingLevel]="identity.thinkingLevel" [reasoningMode]="identity.reasoningMode"></app-model-identity>
+                      </li>
+                    }
+                    @if (moreModelIdentities(issue) > 0) {
+                      <li class="tl-fb-model-more">+{{ formatInteger(moreModelIdentities(issue)) }} more</li>
+                    }
+                  </ul>
                 }
               </div>
               <!-- Focused after Show more and after a delete. -->
@@ -162,61 +174,75 @@
               </div>
             </dl>
 
-            <dl class="tl-fb-facts">
-              <div class="tl-fb-fact tl-fb-fact-location">
-                <dt>Latest expected location</dt>
-                <dd>{{ issue.latestExpectedLocation || 'Not recorded' }}</dd>
-              </div>
-              <div class="tl-fb-fact tl-fb-fact-tools">
-                <dt>Latest related tools</dt>
-                <dd>{{ toolsText(issue.latestRelatedTools) || 'Not recorded' }}</dd>
-              </div>
-              <div class="tl-fb-fact tl-fb-fact-cause">
-                <dt>Model's suspected cause (hypothesis)</dt>
-                <dd>{{ causeLabel(issue.latestSuspectedCause) || 'Not recorded' }}</dd>
-              </div>
-              <div class="tl-fb-fact tl-fb-fact-version">
-                <dt>Latest version</dt>
-                @let shortVersion = versionShort(issue.latestAppVersion);
-                <dd class="tl-fb-mono" [attr.title]="shortVersion !== issue.latestAppVersion ? issue.latestAppVersion : null">{{ shortVersion || 'Not recorded' }}</dd>
-              </div>
-              <div class="tl-fb-fact tl-fb-fact-providers">
-                <dt>Providers</dt>
-                <dd>{{ providersText(issue) || 'Not recorded' }}</dd>
-              </div>
-              <div class="tl-fb-fact tl-fb-fact-sources">
-                <dt>Model sources</dt>
-                <dd>{{ modelSourcesText(issue) || 'Not recorded' }}</dd>
-              </div>
-              <!-- Where the fix went, beside the version that has it. -->
-              @if (resolvedViaText(issue); as resolvedVia) {
-                <div class="tl-fb-fact tl-fb-fact-resolved">
-                  <dt>Resolved via</dt>
-                  <dd>{{ resolvedVia }}</dd>
-                </div>
+            <!-- The latest report's facts, then the triage's when one is set, each group under its own heading. A
+                 value that was not recorded is muted. -->
+            <div class="tl-fb-fact-groups">
+              <section class="tl-fb-fact-group tl-fb-fact-group-latest" [attr.aria-labelledby]="'tl-fb-' + issue.id + '-facts-latest'">
+                <h5 class="gh-section-title tl-fb-group-title" [id]="'tl-fb-' + issue.id + '-facts-latest'">Latest report</h5>
+                <dl class="tl-fb-facts">
+                  <div class="tl-fb-fact tl-fb-fact-location">
+                    <dt>Latest expected location</dt>
+                    <dd [class.tl-fb-muted]="!issue.latestExpectedLocation">{{ issue.latestExpectedLocation || 'Not recorded' }}</dd>
+                  </div>
+                  <div class="tl-fb-fact tl-fb-fact-tools">
+                    @let tools = toolsText(issue.latestRelatedTools);
+                    <dt>Latest related tools</dt>
+                    <dd [class.tl-fb-muted]="!tools">{{ tools || 'Not recorded' }}</dd>
+                  </div>
+                  <div class="tl-fb-fact tl-fb-fact-cause">
+                    @let cause = causeLabel(issue.latestSuspectedCause);
+                    <dt>Model's suspected cause (hypothesis)</dt>
+                    <dd [class.tl-fb-muted]="!cause">{{ cause || 'Not recorded' }}</dd>
+                  </div>
+                  <div class="tl-fb-fact tl-fb-fact-version">
+                    <dt>Latest version</dt>
+                    @let shortVersion = versionShort(issue.latestAppVersion);
+                    <dd [class.tl-fb-mono]="!!shortVersion" [class.tl-fb-muted]="!shortVersion"
+                        [attr.title]="shortVersion !== issue.latestAppVersion ? issue.latestAppVersion : null">{{ shortVersion || 'Not recorded' }}</dd>
+                  </div>
+                  <div class="tl-fb-fact tl-fb-fact-sources">
+                    @let sources = modelSourcesText(issue);
+                    <dt>Model sources</dt>
+                    <dd [class.tl-fb-muted]="!sources">{{ sources || 'Not recorded' }}</dd>
+                  </div>
+                </dl>
+              </section>
+              @if (hasTriageFacts(issue)) {
+                <section class="tl-fb-fact-group tl-fb-fact-group-triage" [attr.aria-labelledby]="'tl-fb-' + issue.id + '-facts-triage'">
+                  <h5 class="gh-section-title tl-fb-group-title" [id]="'tl-fb-' + issue.id + '-facts-triage'">Triage</h5>
+                  <dl class="tl-fb-facts">
+                    <!-- Where the fix went, beside the version that has it. -->
+                    @if (resolvedViaText(issue); as resolvedVia) {
+                      <div class="tl-fb-fact tl-fb-fact-resolved">
+                        <dt>Resolved via</dt>
+                        <dd>{{ resolvedVia }}</dd>
+                      </div>
+                    }
+                    @if (issue.fixedInVersion) {
+                      <div class="tl-fb-fact tl-fb-fact-fixed">
+                        <dt>Fixed in version</dt>
+                        <dd class="tl-fb-mono">{{ issue.fixedInVersion }}</dd>
+                      </div>
+                    }
+                    @if (issue.triageNote) {
+                      <div class="tl-fb-fact tl-fb-fact-note">
+                        <dt>Note</dt>
+                        <dd class="tl-fb-note-text">{{ issue.triageNote }}</dd>
+                      </div>
+                    }
+                    @if (issue.resolution) {
+                      <div class="tl-fb-fact tl-fb-fact-resolution">
+                        <dt>Resolution</dt>
+                        <dd class="tl-fb-resolution-text">{{ issue.resolution }}</dd>
+                      </div>
+                    }
+                  </dl>
+                </section>
               }
-              @if (issue.fixedInVersion) {
-                <div class="tl-fb-fact tl-fb-fact-fixed">
-                  <dt>Fixed in version</dt>
-                  <dd class="tl-fb-mono">{{ issue.fixedInVersion }}</dd>
-                </div>
-              }
-              @if (issue.triageNote) {
-                <div class="tl-fb-fact tl-fb-fact-note">
-                  <dt>Note</dt>
-                  <dd class="tl-fb-note-text">{{ issue.triageNote }}</dd>
-                </div>
-              }
-              @if (issue.resolution) {
-                <div class="tl-fb-fact tl-fb-fact-resolution">
-                  <dt>Resolution</dt>
-                  <dd class="tl-fb-resolution-text">{{ issue.resolution }}</dd>
-                </div>
-              }
-            </dl>
+            </div>
 
             <details class="gh-disclosure tl-fb-occurrences" [attr.data-issue-id]="issue.id" (toggle)="onOccurrencesToggle(issue, $event)">
-              <summary>Occurrences ({{ formatInteger(issue.retainedCount) }})</summary>
+              <summary>Occurrences <span class="tl-fb-count">{{ formatInteger(issue.retainedCount) }}</span></summary>
               <div class="gh-disclosure-body">
                 @if (hasOccurrenceFilters && !showSelectedOnly()) {
                   <div class="tl-fb-occ-scope">
@@ -256,8 +282,12 @@
                         <dl class="tl-fb-occ-facts">
                           <div><dt>User</dt><dd>{{ o.userName || 'Account erased' }}</dd></div>
                           <div><dt>Groups</dt><dd>{{ groupsText(o) }}</dd></div>
-                          @if (modelText(o); as model) {
-                            <div><dt>Provider and model</dt><dd>{{ model }}</dd></div>
+                          @if (o.modelId || o.provider) {
+                            <div class="tl-fb-occ-model">
+                              <dt>Model</dt>
+                              <dd><app-model-identity [name]="o.modelLabel || o.modelId || ''" [provider]="providerLabel(o.provider)"
+                                                      [thinkingLevel]="o.thinkingLevel" [reasoningMode]="o.reasoningMode"></app-model-identity></dd>
+                            </div>
                           }
                           <div><dt>Model source</dt><dd>{{ modelSourceText(o) }}</dd></div>
                           @if (o.appVersion) {
@@ -328,7 +358,15 @@
                  triage form is a dialog. -->
             <div class="tl-fb-footer">
               <div class="tl-fb-footer-text">
-                <p class="tl-fb-triaged">{{ triagedText(issue) || 'Not triaged yet' }}</p>
+                <p class="tl-fb-triaged">
+                  @if (triagedText(issue); as triaged) {
+                    <svg class="tl-fb-triaged-icon is-triaged" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    <span>{{ triaged }}</span>
+                  } @else {
+                    <svg class="tl-fb-triaged-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle></svg>
+                    <span>Not triaged yet</span>
+                  }
+                </p>
                 <p class="tl-fb-result" [id]="'tl-fb-' + issue.id + '-result'" role="status">{{ result?.message ?? '' }}</p>
                 @if (result?.error; as triageError) {
                   <p class="gh-field-error tl-fb-triage-error" [id]="'tl-fb-' + issue.id + '-error'">
@@ -338,16 +376,15 @@
                 }
               </div>
               <div class="tl-fb-actions" role="group" [attr.aria-label]="'Actions for ' + issue.subject">
-                <button type="button" class="action-btn tl-fb-download"
-                        [attr.aria-label]="'Download issue as YAML: ' + issue.subject"
-                        [attr.aria-busy]="downloadingId() === issue.id ? 'true' : null"
-                        [attr.interestfor]="'tl-fb-' + issue.id + '-download-tip'"
-                        [attr.style]="'anchor-name: --tl-fb-' + issue.id + '-download-tip'"
-                        (click)="downloadIssue(issue)">
+                <button type="button" class="action-btn tl-fb-export" aria-haspopup="dialog"
+                        [attr.aria-label]="'Export issue: ' + issue.subject"
+                        [attr.interestfor]="'tl-fb-' + issue.id + '-export-tip'"
+                        [attr.style]="'anchor-name: --tl-fb-' + issue.id + '-export-tip'"
+                        (click)="exportOne(issue)">
                   <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                 </button>
-                <div popover="hint" class="gh-tooltip" [id]="'tl-fb-' + issue.id + '-download-tip'"
-                     [attr.style]="'position-anchor: --tl-fb-' + issue.id + '-download-tip'">Download as YAML</div>
+                <div popover="hint" class="gh-tooltip" [id]="'tl-fb-' + issue.id + '-export-tip'"
+                     [attr.style]="'position-anchor: --tl-fb-' + issue.id + '-export-tip'">Export issue…</div>
                 <button type="button" class="btn-ghost tl-fb-edit" aria-haspopup="dialog"
                         [attr.aria-busy]="savingId() === issue.id ? 'true' : null"
                         (click)="editTriage(issue)">
@@ -383,3 +420,8 @@
 
 <app-admin-confirm-dialog />
 <app-feedback-triage-dialog />
+<!-- A card's Export issue… opens it for that one issue. -->
+<app-feedback-export-dialog #issueExportDialog source="overseer" idPrefix="overseer-card"
+                            [ids]="exportIds()" [issueSubject]="exportIssue()?.subject ?? null"
+                            [occurrenceTotal]="exportIssue()?.retainedCount ?? null" [exportOptions]="exportOptions"
+                            (exported)="onIssueExported($event)" />

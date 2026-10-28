@@ -60,6 +60,20 @@ export interface AdminFeedbackModelSourceCounts {
   unknown: number;
 }
 
+/**
+ * One model as it ran when an issue was reported (`FeedbackModelIdentityDto`): its id, catalog label, provider and
+ * settings. The GnollBench sub-tab's issues carry the same shape.
+ */
+export interface FeedbackModelIdentity {
+  modelId: string;
+  /** The catalog display name, else the id. */
+  modelLabel: string;
+  provider: string | null;
+  /** Null while not recorded. */
+  thinkingLevel: string | null;
+  reasoningMode: string | null;
+}
+
 /** The GnollBench issue with the same fingerprint, when an accepted self-report has it. */
 export interface AdminFeedbackGnollBenchLink {
   selfReportCount: number;
@@ -86,6 +100,13 @@ export interface AdminFeedbackIssue {
    * has no name). The server always sends it; optional so a fixture without it still types.
    */
   modelLabels?: string[];
+  /**
+   * The distinct models with their provider, thinking level and reasoning mode, at most five, by label. The server
+   * always sends it; optional so a fixture without it still types.
+   */
+  modelIdentities?: FeedbackModelIdentity[];
+  /** The identities beyond the five in `modelIdentities`. Optional like it. */
+  moreModelIdentities?: number;
   /** The providers of the retained occurrences. */
   providers: string[];
   modelSources: AdminFeedbackModelSourceCounts;
@@ -132,6 +153,9 @@ export interface AdminFeedbackOccurrence {
   modelId: string | null;
   /** The model's catalog display name, else the id; null when `modelId` is. Optional like `modelLabels`. */
   modelLabel?: string | null;
+  /** The settings the reply ran with; null while not recorded. Optional like `modelLabel`. */
+  thinkingLevel?: string | null;
+  reasoningMode?: string | null;
   appVersion: string | null;
   /** Null once the account is erased. */
   userName: string | null;

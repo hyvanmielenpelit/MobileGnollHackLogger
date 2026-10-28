@@ -4967,6 +4967,10 @@ namespace GnollHackServer.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("ReasoningMode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<bool>("Redacted")
                         .HasColumnType("bit");
 
@@ -4998,6 +5002,10 @@ namespace GnollHackServer.Data.Migrations
 
                     b.Property<long?>("SystemAiConfigurationId")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("ThinkingLevel")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
 
                     b.Property<string>("ToolCallId")
                         .HasMaxLength(128)

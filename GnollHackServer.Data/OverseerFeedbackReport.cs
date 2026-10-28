@@ -83,6 +83,12 @@ public class OverseerFeedbackReport
     [MaxLength(256)]
     public string? ModelId { get; set; }
 
+    [MaxLength(32)]
+    public string? ThinkingLevel { get; set; }
+
+    [MaxLength(32)]
+    public string? ReasoningMode { get; set; }
+
     [MaxLength(64)]
     public string? AppVersion { get; set; }
 

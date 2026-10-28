@@ -597,7 +597,8 @@ public sealed class FeedbackMarkdownExportTests : IDisposable
 
         Assert.Equal(FeedbackExportOutcome.Invalid, await Outcome(null));
         Assert.Equal(FeedbackExportOutcome.Invalid, await Outcome(new AdminFeedbackExportRequestDto { Source = "chat", IssueIds = new List<long> { 1 } }));
-        Assert.Equal(FeedbackExportOutcome.Invalid, await Outcome(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { 1 }, OccurrencesPerIssue = 7 }));
+        Assert.Equal(FeedbackExportOutcome.Invalid, await Outcome(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { 1 }, OccurrencesPerIssue = 0 }));
+        Assert.Equal(FeedbackExportOutcome.Invalid, await Outcome(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { 1 }, OccurrencesPerIssue = 1001 }));
         Assert.Equal(FeedbackExportOutcome.Invalid, await Outcome(new AdminFeedbackExportRequestDto { Source = "overseer" }));
         Assert.Equal(FeedbackExportOutcome.Invalid, await Outcome(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { 0 } }));
         Assert.Equal(FeedbackExportOutcome.Invalid, await Outcome(new AdminFeedbackExportRequestDto
@@ -614,6 +615,133 @@ public sealed class FeedbackMarkdownExportTests : IDisposable
         var none = await _service.ExportAsync(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { 5, 6 } }, Version, Ct);
         Assert.Equal(FeedbackExportOutcome.NotFound, none.Outcome);
         Assert.Equal(new long[] { 5, 6 }, none.MissingIds);
+    }
+
+    // --- Occurrences per issue ---
+
+    [Fact]
+    public async Task Export_RefusesAnOccurrenceCountOutsideTheRange_AndACountTogetherWithAll()
+    {
+        var (issue, _) = await SeedOverseerIssueAsync();
+
+        var zero = await _service.ExportAsync(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { issue.Id }, OccurrencesPerIssue = 0 }, Version, Ct);
+        var tooMany = await _service.ExportAsync(new AdminFeedbackExportRequestDto
+        {
+            Source = "overseer",
+            IssueIds = new List<long> { issue.Id },
+            OccurrencesPerIssue = FeedbackExportService.MaxOccurrencesPerIssue + 1
+        }, Version, Ct);
+        var both = await _service.ExportAsync(new AdminFeedbackExportRequestDto
+        {
+            Source = "overseer",
+            IssueIds = new List<long> { issue.Id },
+            OccurrencesPerIssue = 5,
+            AllOccurrences = true
+        }, Version, Ct);
+
+        Assert.Equal(FeedbackExportOutcome.Invalid, zero.Outcome);
+        Assert.Equal("Occurrences per issue must be between 1 and 1,000.", zero.Message);
+        Assert.Equal(FeedbackExportOutcome.Invalid, tooMany.Outcome);
+        Assert.Equal("Occurrences per issue must be between 1 and 1,000.", tooMany.Message);
+        Assert.Equal(FeedbackExportOutcome.Invalid, both.Outcome);
+        Assert.Equal("Choose a number of occurrences or all of them, not both.", both.Message);
+    }
+
+    [Fact]
+    public async Task Export_TakesACustomOccurrenceCount()
+    {
+        var (issue, _) = await SeedOverseerIssueAsync(reports: 9);
+
+        var result = await _service.ExportAsync(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { issue.Id }, OccurrencesPerIssue = 7 }, Version, Ct);
+
+        Assert.Equal(FeedbackExportOutcome.Exported, result.Outcome);
+        Assert.Equal<int?>(7, result.Document!.OccurrencesPerIssue);
+        Assert.Equal(7, result.Document.Issues.Single().Occurrences.Count);
+        Assert.Contains("| Occurrences per issue | at most 7, newest first |", result.Export!.Content);
+        Assert.Contains("The newest 7 of 9 retained occurrences, newest first.", result.Export.Content);
+        Assert.Contains("Details 8.", result.Export.Content);
+        Assert.DoesNotContain("Details 1.", result.Export.Content);
+    }
+
+    [Fact]
+    public async Task Export_AllOccurrences_TakesEveryRetainedOccurrence_AndWritesAll()
+    {
+        var (issue, _) = await SeedOverseerIssueAsync(reports: FeedbackExportService.DefaultOccurrencesPerIssue + 2);
+        var request = new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { issue.Id }, AllOccurrences = true };
+
+        var markdown = await _service.ExportAsync(request, Version, Ct);
+        request.Format = "yaml";
+        var yaml = await _service.ExportAsync(request, Version, Ct);
+
+        Assert.Equal(FeedbackExportOutcome.Exported, markdown.Outcome);
+        Assert.Null(markdown.Document!.OccurrencesPerIssue);
+        Assert.Equal(12, markdown.Document.Issues.Single().Occurrences.Count);
+        Assert.Contains("| Occurrences per issue | all, newest first |", markdown.Export!.Content);
+        Assert.Contains("The newest 12 of 12 retained occurrences, newest first.", markdown.Export.Content);
+        Assert.Contains("Details 0.", markdown.Export.Content);
+        Assert.Contains("Details 11.", markdown.Export.Content);
+        Assert.Contains("\noccurrencesPerIssue: all\n", yaml.Export!.Content);
+    }
+
+    [Fact]
+    public async Task Export_RefusesMoreOccurrencesInTotalThanTheCap_WithTheCountInTheMessage()
+    {
+        var (issue, _) = await SeedOverseerIssueAsync(reports: 4);
+        var capped = new FeedbackExportService(_db, new OverseerFeedbackQuery(_db), new GnollBenchFeedbackQuery(_db), new FixedClock(Now), maxOccurrencesPerExport: 3);
+
+        var counted = await capped.ExportAsync(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { issue.Id } }, Version, Ct);
+        var all = await capped.ExportAsync(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { issue.Id }, AllOccurrences = true }, Version, Ct);
+        var fits = await capped.ExportAsync(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = new List<long> { issue.Id }, OccurrencesPerIssue = 3 }, Version, Ct);
+
+        Assert.Equal(FeedbackExportOutcome.Invalid, counted.Outcome);
+        Assert.Equal("This export would hold 4 occurrences, more than 3. Select fewer issues or fewer occurrences per issue.", counted.Message);
+        Assert.Equal(FeedbackExportOutcome.Invalid, all.Outcome);
+        Assert.Equal(counted.Message, all.Message);
+        Assert.Equal(FeedbackExportOutcome.Exported, fits.Outcome);
+    }
+
+    [Fact]
+    public async Task Export_GnollBench_AllOccurrences_TakesEverySelfReport_AndTheCapCoversThem()
+    {
+        var run = new BenchmarkRun
+        {
+            SuiteName = "Suite One",
+            BenchmarkSuiteIdUsed = 3,
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model("OpenAI", "model-a", displayName: "Model A"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model("Google", "grader"),
+            HarnessVersion = "60",
+            StartedAtUtc = T0
+        };
+        _db.BenchmarkRuns.Add(run);
+        for (int i = 0; i < 12; i++)
+        {
+            var answer = new BenchmarkRunAnswer { BenchmarkRun = run, QuestionText = $"Question {i}?", AnswerText = "A.", BenchmarkQuestionIdUsed = 11 + i, StartedAtUtc = T0.AddHours(i + 1) };
+            _db.BenchmarkRunAnswers.Add(answer);
+            _db.BenchmarkRunAnswerSelfReports.Add(new BenchmarkRunAnswerSelfReport
+            {
+                BenchmarkRunAnswer = answer,
+                Fingerprint = Fp(9),
+                Accepted = true,
+                Category = MissingInformation,
+                Subject = "Gnoll lord speed",
+                Summary = "No speed.",
+                Details = $"Self-report details {i}."
+            });
+        }
+        await _db.SaveChangesAsync(Ct);
+        var request = new AdminFeedbackExportRequestDto { Source = "gnollbench", Fingerprints = new List<string> { Fp(9) }, AllOccurrences = true };
+        var capped = new FeedbackExportService(_db, new OverseerFeedbackQuery(_db), new GnollBenchFeedbackQuery(_db), new FixedClock(Now), maxOccurrencesPerExport: 11);
+
+        var all = await _service.ExportAsync(request, Version, Ct);
+        var refused = await capped.ExportAsync(request, Version, Ct);
+
+        Assert.Equal(FeedbackExportOutcome.Exported, all.Outcome);
+        Assert.Equal(12, all.Document!.Issues.Single().Occurrences.Count);
+        Assert.Contains("| Occurrences per issue | all, newest first |", all.Export!.Content);
+        Assert.Contains("The newest 12 of 12 self-reports, newest first.", all.Export.Content);
+        Assert.Contains("Self-report details 0.", all.Export.Content);
+        Assert.Equal(FeedbackExportOutcome.Invalid, refused.Outcome);
+        Assert.Equal("This export would hold 12 occurrences, more than 11. Select fewer issues or fewer occurrences per issue.", refused.Message);
     }
 
     [Fact]

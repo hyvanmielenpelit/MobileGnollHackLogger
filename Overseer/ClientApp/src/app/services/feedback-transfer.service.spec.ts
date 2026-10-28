@@ -3,6 +3,7 @@ import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
 import {
+  FEEDBACK_EXPORT_MAX_OCCURRENCES_PER_ISSUE,
   FEEDBACK_RESOLVED_VIA_IDS,
   FEEDBACK_TRANSFER_ENDPOINT,
   FeedbackResolutionRequest,
@@ -54,6 +55,21 @@ describe('FeedbackTransferService', () => {
       fileName: 'overseer-feedback-overseer-20261023-1234.yaml', content: 'format: overseer-feedback-issues\n',
       mediaType: 'application/yaml;charset=utf-8'
     });
+  });
+
+  it('posts any occurrence count, or all occurrences without a count', () => {
+    expect(FEEDBACK_EXPORT_MAX_OCCURRENCES_PER_ISSUE).toBe(1000);
+
+    service.exportIssues({ source: 'overseer', format: 'markdown', issueIds: [42], occurrencesPerIssue: 137 }).subscribe();
+    const custom = http.expectOne(`${FEEDBACK_TRANSFER_ENDPOINT}/export`);
+    expect(custom.request.body).toEqual({ source: 'overseer', format: 'markdown', issueIds: [42], occurrencesPerIssue: 137 });
+    custom.flush({ fileName: 'a.md', content: '', mediaType: 'text/markdown;charset=utf-8', issueCount: 1, missingIds: [], missingFingerprints: [] });
+
+    service.exportIssues({ source: 'gnollbench', format: 'yaml', fingerprints: [FP], allOccurrences: true, includeQuestionText: false }).subscribe();
+    const all = http.expectOne(`${FEEDBACK_TRANSFER_ENDPOINT}/export`);
+    expect(all.request.body).toEqual({ source: 'gnollbench', format: 'yaml', fingerprints: [FP], allOccurrences: true, includeQuestionText: false });
+    expect('occurrencesPerIssue' in all.request.body).toBe(false);
+    all.flush({ fileName: 'a.yaml', content: '', mediaType: 'application/yaml;charset=utf-8', issueCount: 1, missingIds: [], missingFingerprints: [] });
   });
 
   it('gets the format examples of a source', () => {

@@ -603,6 +603,21 @@ public sealed class OverseerFeedbackQuery
             .ToDictionary(g => g.Key, g => g.Select(p => p.ModelId!).OrderBy(m => m, StringComparer.Ordinal).ToList());
         var modelProviders = await ModelProvidersAsync(reports, ct);
 
+        var identityRows = await reports
+            .Where(r => r.ModelId != null && r.ModelId != "")
+            .Select(r => new { r.IssueId, r.Provider, r.ModelId, r.ThinkingLevel, r.ReasoningMode })
+            .Distinct()
+            .ToListAsync(ct);
+        var identitiesByIssue = identityRows.GroupBy(p => p.IssueId)
+            .ToDictionary(g => g.Key, g => g.Select(p => new FeedbackModelIdentityDto
+            {
+                ModelId = p.ModelId!,
+                ModelLabel = ModelLabel(string.IsNullOrWhiteSpace(p.Provider) ? modelProviders.GetValueOrDefault(p.ModelId!) : p.Provider, p.ModelId!),
+                Provider = string.IsNullOrWhiteSpace(p.Provider) ? null : p.Provider,
+                ThinkingLevel = string.IsNullOrWhiteSpace(p.ThinkingLevel) ? null : p.ThinkingLevel,
+                ReasoningMode = string.IsNullOrWhiteSpace(p.ReasoningMode) ? null : p.ReasoningMode
+            }).ToList());
+
         var providerPairs = await reports
             .Where(r => r.Provider != null && r.Provider != "")
             .Select(r => new { r.IssueId, r.Provider })
@@ -645,6 +660,7 @@ public sealed class OverseerFeedbackQuery
         {
             latest.TryGetValue(issue.Id, out var newest);
             var shownModels = ShownModelIds(modelsByIssue.GetValueOrDefault(issue.Id));
+            var (identities, moreIdentities) = ShownModelIdentities(identitiesByIssue.GetValueOrDefault(issue.Id));
             rows.Add(new AdminFeedbackIssueDto
             {
                 Id = issue.Id,
@@ -659,6 +675,8 @@ public sealed class OverseerFeedbackQuery
                 ModelIds = shownModels,
                 ModelLabels = shownModels.Select(m => m.StartsWith('+') ? m : ModelLabel(modelProviders.GetValueOrDefault(m), m)).ToList(),
                 Providers = providersByIssue.GetValueOrDefault(issue.Id) ?? new List<string>(),
+                ModelIdentities = identities,
+                MoreModelIdentities = moreIdentities,
                 ModelSources = sourcesByIssue.GetValueOrDefault(issue.Id) ?? new AdminFeedbackModelSourceCountsDto(),
                 RegressionCount = issue.RegressionCount,
                 LastRegressionUtc = issue.LastRegressionUtc,
@@ -723,6 +741,8 @@ public sealed class OverseerFeedbackQuery
             Provider = r.Provider,
             ModelId = r.ModelId,
             ModelLabel = string.IsNullOrWhiteSpace(r.ModelId) ? r.ModelId : ModelLabel(r.Provider, r.ModelId),
+            ThinkingLevel = r.ThinkingLevel,
+            ReasoningMode = r.ReasoningMode,
             AppVersion = r.AppVersion,
             UserName = r.AspNetUserId != null && names.TryGetValue(r.AspNetUserId, out var name) ? name : null,
             ModelSource = r.ModelSource,
@@ -903,6 +923,25 @@ public sealed class OverseerFeedbackQuery
         var shown = models.Take(MaxModelIdsShown).ToList();
         shown.Add($"+{models.Count - MaxModelIdsShown}");
         return shown;
+    }
+
+    /// <summary>
+    /// The distinct identities ordered by label (ignoring case), id, thinking level, reasoning mode and provider: at
+    /// most <see cref="MaxModelIdsShown"/>, and how many were left out.
+    /// </summary>
+    public static (List<FeedbackModelIdentityDto> Shown, int More) ShownModelIdentities(IEnumerable<FeedbackModelIdentityDto>? identities)
+    {
+        if (identities == null) return (new List<FeedbackModelIdentityDto>(), 0);
+        var distinct = identities
+            .GroupBy(m => (m.Provider, m.ModelId, m.ThinkingLevel, m.ReasoningMode))
+            .Select(g => g.First())
+            .OrderBy(m => m.ModelLabel, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(m => m.ModelId, StringComparer.Ordinal)
+            .ThenBy(m => m.ThinkingLevel, StringComparer.Ordinal)
+            .ThenBy(m => m.ReasoningMode, StringComparer.Ordinal)
+            .ThenBy(m => m.Provider, StringComparer.Ordinal)
+            .ToList();
+        return (distinct.Take(MaxModelIdsShown).ToList(), Math.Max(0, distinct.Count - MaxModelIdsShown));
     }
 
     private static List<AdminFeedbackFacetValueDto> ValueFacet(IEnumerable<(long IssueId, string Value)> pairs, Comparison<string> order)

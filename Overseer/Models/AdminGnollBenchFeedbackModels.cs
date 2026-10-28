@@ -83,6 +83,12 @@ public sealed class GnollBenchFeedbackIssueDto
     public List<string> Models { get; set; } = new();
     public List<string> Providers { get; set; } = new();
 
+    /// <summary>Distinct tested models with their settings, at most five, by label, id and thinking level.</summary>
+    public List<FeedbackModelIdentityDto> ModelIdentities { get; set; } = new();
+
+    /// <summary>Identities beyond <see cref="ModelIdentities"/>.</summary>
+    public int MoreModelIdentities { get; set; }
+
     /// <summary>Suite names, at most five, then <c>+N</c> for the rest.</summary>
     public List<string> Suites { get; set; } = new();
     public string Status { get; set; } = "new";    // new | acknowledged | resolved | regressed | dismissed
@@ -112,6 +118,8 @@ public sealed class GnollBenchFeedbackOccurrenceDto
     public string ModelId { get; set; } = "";
     public string ModelLabel { get; set; } = "";
     public string Provider { get; set; } = "";
+    public string? ThinkingLevel { get; set; }
+    public string? ReasoningMode { get; set; }
     public string Condition { get; set; } = "production"; // production | sourceOnly | closedBook
     public string? Variant { get; set; }                  // the stored stamp, name:hash12
     public string? VariantName { get; set; }

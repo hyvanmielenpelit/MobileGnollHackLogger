@@ -321,6 +321,12 @@ public sealed class GnollBenchFeedbackIssue
     public IReadOnlyList<string> ModelLabels { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> Providers { get; init; } = Array.Empty<string>();
 
+    /// <summary>Distinct tested models with their settings, at most five (<see cref="OverseerFeedbackQuery.ShownModelIdentities"/>).</summary>
+    public IReadOnlyList<FeedbackModelIdentityDto> ModelIdentities { get; init; } = Array.Empty<FeedbackModelIdentityDto>();
+
+    /// <summary>Identities beyond <see cref="ModelIdentities"/>.</summary>
+    public int MoreModelIdentities { get; init; }
+
     /// <summary>Distinct suite names, ordered.</summary>
     public IReadOnlyList<string> Suites { get; init; } = Array.Empty<string>();
     public GnollBenchFeedbackStatus Status { get; init; }
@@ -364,6 +370,12 @@ public sealed class GnollBenchFeedbackOccurrence
     public string ModelId { get; init; } = "";
     public string ModelLabel { get; init; } = "";
     public string Provider { get; init; } = "";
+
+    /// <summary>The run's tested model snapshot's thinking level; null when it has none.</summary>
+    public string? ThinkingLevel { get; init; }
+
+    /// <summary>The run's tested model snapshot's reasoning mode; null when it has none.</summary>
+    public string? ReasoningMode { get; init; }
 
     /// <summary>The information condition's wire name.</summary>
     public string Condition { get; init; } = BenchmarkInformationConditions.ProductionWire;
@@ -531,18 +543,19 @@ public sealed class GnollBenchFeedbackQuery
 
     /// <summary>
     /// The issues of <paramref name="fingerprints"/> over the <paramref name="scope"/> base set, ordered by last seen,
-    /// each with its <paramref name="newestOccurrences"/> newest occurrences (0 for none). A fingerprint with no
-    /// self-report in the base set is left out.
+    /// each with its <paramref name="newestOccurrences"/> newest occurrences (0 for none, <see cref="int.MaxValue"/> for
+    /// all). A fingerprint with no self-report in the base set is left out. Throws
+    /// <see cref="FeedbackExportTooLargeException"/> when the chosen occurrences exceed <paramref name="maxTotal"/>.
     /// </summary>
     public async Task<List<GnollBenchFeedbackIssue>> LoadIssuesAsync(IReadOnlyCollection<string> fingerprints, int newestOccurrences = 0,
-        GnollBenchAcceptedScope scope = GnollBenchAcceptedScope.Accepted, CancellationToken ct = default)
+        GnollBenchAcceptedScope scope = GnollBenchAcceptedScope.Accepted, CancellationToken ct = default, int? maxTotal = null)
     {
         var normalized = fingerprints.Select(NormalizeFingerprint).Where(f => f.Length > 0).Distinct().ToList();
         if (normalized.Count == 0) return new List<GnollBenchFeedbackIssue>();
         var filter = new GnollBenchFeedbackFilter { Accepted = scope, Fingerprints = normalized };
         var selection = await SelectAsync(filter, ct);
         var sorted = await SortAsync(selection, GnollBenchFeedbackFilter.SortLastSeen, ct);
-        return await MaterializeAsync(selection, sorted, Math.Max(0, newestOccurrences), ct);
+        return await MaterializeAsync(selection, sorted, Math.Max(0, newestOccurrences), ct, maxTotal);
     }
 
     /// <summary>Issue counts per derived status over accepted self-reports and all dates.</summary>
@@ -1009,6 +1022,8 @@ public sealed class GnollBenchFeedbackQuery
         public string ModelId { get; init; } = "";
         public string ModelLabel { get; init; } = "";
         public string Provider { get; init; } = "";
+        public string? ThinkingLevel { get; init; }
+        public string? ReasoningMode { get; init; }
         public BenchmarkInformationCondition Condition { get; init; }
         public string? Variant { get; init; }
         public string? VariantName { get; init; }
@@ -1158,9 +1173,13 @@ public sealed class GnollBenchFeedbackQuery
         return ordered.ThenBy(c => c.Fingerprint, StringComparer.Ordinal).ToList();
     }
 
-    /// <summary>Builds the issues of <paramref name="page"/>, in its order, with up to <paramref name="newestOccurrences"/> occurrences each.</summary>
+    /// <summary>
+    /// Builds the issues of <paramref name="page"/>, in its order, with up to <paramref name="newestOccurrences"/> occurrences
+    /// each (<see cref="int.MaxValue"/> for all). Throws <see cref="FeedbackExportTooLargeException"/> when the chosen
+    /// occurrences exceed <paramref name="maxTotal"/>.
+    /// </summary>
     private async Task<List<GnollBenchFeedbackIssue>> MaterializeAsync(Selection selection, List<Candidate> page, int newestOccurrences,
-        CancellationToken ct)
+        CancellationToken ct, int? maxTotal = null)
     {
         if (page.Count == 0) return new List<GnollBenchFeedbackIssue>();
         await EnrichRunsAsync(selection, page, ct);
@@ -1187,7 +1206,12 @@ public sealed class GnollBenchFeedbackQuery
             var ids = light.GroupBy(x => x.Fingerprint)
                 .SelectMany(g => g.OrderByDescending(x => x.Time).ThenByDescending(x => x.Id).Take(newestOccurrences).Select(x => x.Id))
                 .ToList();
-            var rows = await ProjectOccurrences(_db.BenchmarkRunAnswerSelfReports.AsNoTracking().Where(s => ids.Contains(s.Id))).ToListAsync(ct);
+            if (maxTotal is int max && ids.Count > max) throw new FeedbackExportTooLargeException(ids.Count);
+            // Without a limit every occurrence is chosen, so they are read by fingerprint rather than by a list of self-report ids.
+            var chosen = newestOccurrences == int.MaxValue
+                ? selection.Scoped.Where(s => fps.Contains(s.Fingerprint!))
+                : _db.BenchmarkRunAnswerSelfReports.AsNoTracking().Where(s => ids.Contains(s.Id));
+            var rows = await ProjectOccurrences(chosen).ToListAsync(ct);
             foreach (var occurrence in await CompleteOccurrencesAsync(rows, ct))
             {
                 if (!occurrences.TryGetValue(occurrence.Fingerprint, out var list)) occurrences[occurrence.Fingerprint] = list = new();
@@ -1205,6 +1229,16 @@ public sealed class GnollBenchFeedbackQuery
                 .Select(g => (Id: g.Key, Label: g.Select(r => r.ModelLabel).FirstOrDefault(l => l != g.Key) ?? g.Key))
                 .OrderBy(m => m.Label, StringComparer.OrdinalIgnoreCase).ThenBy(m => m.Id, StringComparer.Ordinal)
                 .ToList();
+            var (identities, moreIdentities) = OverseerFeedbackQuery.ShownModelIdentities(runs
+                .Where(r => r.ModelId != "")
+                .Select(r => new FeedbackModelIdentityDto
+                {
+                    ModelId = r.ModelId,
+                    ModelLabel = r.ModelLabel != "" ? r.ModelLabel : r.ModelId,
+                    Provider = r.Provider != "" ? r.Provider : null,
+                    ThinkingLevel = r.ThinkingLevel,
+                    ReasoningMode = r.ReasoningMode
+                }));
             overseer.TryGetValue(c.Fingerprint, out var link);
             issues.Add(new GnollBenchFeedbackIssue
             {
@@ -1220,7 +1254,9 @@ public sealed class GnollBenchFeedbackQuery
                 ModelIds = models.Select(m => m.Id).ToList(),
                 ModelLabels = models.Select(m => m.Label).ToList(),
                 Providers = runs.Select(r => r.Provider).Distinct(StringComparer.Ordinal).OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToList(),
-                Suites = runs.Select(r => r.SuiteName).Distinct(StringComparer.Ordinal).OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList(),
+                ModelIdentities = identities,
+                MoreModelIdentities = moreIdentities,
+                Suites =runs.Select(r => r.SuiteName).Distinct(StringComparer.Ordinal).OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList(),
                 Status = c.Status,
                 StoredStatus = c.Triage?.Status,
                 TriageNote = c.Triage?.TriageNote,
@@ -1495,6 +1531,8 @@ public sealed class GnollBenchFeedbackQuery
             ModelId = r.Model?.ModelId ?? "",
             ModelLabel = r.Model.Label() ?? "",
             Provider = r.Model?.Provider ?? "",
+            ThinkingLevel = string.IsNullOrWhiteSpace(r.Model?.ThinkingLevel) ? null : r.Model.ThinkingLevel,
+            ReasoningMode = string.IsNullOrWhiteSpace(r.Model?.ReasoningMode) ? null : r.Model.ReasoningMode,
             Condition = BenchmarkCandidatePromptOptions.FromJson(r.CandidatePromptOptionsJson).Condition,
             Variant = r.InstructionVariant,
             VariantName = VariantNameOf(r.InstructionVariant),
@@ -1552,6 +1590,8 @@ public sealed class GnollBenchFeedbackQuery
                 ModelId = run?.ModelId ?? "",
                 ModelLabel = run?.ModelLabel ?? "",
                 Provider = run?.Provider ?? "",
+                ThinkingLevel = run?.ThinkingLevel,
+                ReasoningMode = run?.ReasoningMode,
                 Condition = (run?.Condition ?? BenchmarkInformationCondition.Production).ToWire(),
                 Variant = run?.Variant,
                 VariantName = run?.VariantName,

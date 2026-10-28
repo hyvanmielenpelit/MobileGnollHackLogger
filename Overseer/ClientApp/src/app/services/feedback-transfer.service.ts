@@ -17,6 +17,9 @@ export type FeedbackResolutionStatus = Exclude<FeedbackTransferStatus, 'regresse
 /** The most issues one export holds. */
 export const FEEDBACK_EXPORT_MAX_ISSUES = 200;
 
+/** The largest number of occurrences per issue an export may ask for; the smallest is 1. */
+export const FEEDBACK_EXPORT_MAX_OCCURRENCES_PER_ISSUE = 1000;
+
 /** The file format of an export: YAML for an AI coding assistant, Markdown to read. */
 export type FeedbackExportFormat = 'yaml' | 'markdown';
 
@@ -31,13 +34,17 @@ export const FEEDBACK_RESOLVED_VIA_IDS = [
 /** One *Resolved via* id. The wire types carry `string[]`, so an id a newer server adds still reads. */
 export type FeedbackResolvedVia = typeof FEEDBACK_RESOLVED_VIA_IDS[number];
 
-/** The body of `POST export`. Overseer sends `issueIds`, GnollBench `fingerprints`. */
+/**
+ * The body of `POST export`. Overseer sends `issueIds`, GnollBench `fingerprints`. The newest `occurrencesPerIssue`
+ * (1–1,000, 10 when absent) or, with `allOccurrences: true`, every occurrence; the server refuses both together.
+ */
 export interface FeedbackExportRequest {
   source: FeedbackTransferSource;
   format: FeedbackExportFormat;
   issueIds?: number[];
   fingerprints?: string[];
-  occurrencesPerIssue?: 5 | 10 | 25;
+  occurrencesPerIssue?: number;
+  allOccurrences?: boolean;
   /** GnollBench only. */
   includeQuestionText?: boolean;
 }

@@ -174,6 +174,24 @@ public sealed class FeedbackYamlExportTests
     }
 
     [Fact]
+    public void Build_WritesAll_WhenEveryOccurrenceIsExported()
+    {
+        var root = Root(FeedbackYamlExport.Build(new FeedbackExportDocument
+        {
+            Source = FeedbackTransferSources.Overseer,
+            ExportedAtUtc = ExportedAt,
+            OverseerVersion = Version,
+            OccurrencesPerIssue = null,
+            Issues = new[] { Issue() }
+        }));
+
+        Assert.Equal(new[] { "format", "version", "source", "exportedAtUtc", "overseerVersion", "occurrencesPerIssue", "notice", "issues" }, Keys(root));
+        var scalar = Assert.IsType<YamlScalarNode>(Get(root, "occurrencesPerIssue"));
+        Assert.Equal("all", scalar.Value);
+        Assert.Equal(YamlDotNet.Core.ScalarStyle.Plain, scalar.Style);
+    }
+
+    [Fact]
     public void Build_Overseer_HasEveryFactTheMarkdownShows()
     {
         var issue = OnlyIssue(Root(FeedbackYamlExport.Build(Document(FeedbackTransferSources.Overseer, Issue()))));

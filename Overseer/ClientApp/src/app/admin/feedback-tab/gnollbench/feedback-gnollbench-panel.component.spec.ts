@@ -6,7 +6,7 @@ import { Router, convertToParamMap, provideRouter } from '@angular/router';
 import { provideLocationMocks } from '@angular/common/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { Subject, of, throwError } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import {
   AdminBenchmarkService,
   BenchmarkExperimentalChangeCatalogDto,
@@ -24,8 +24,9 @@ import {
   GnollBenchFeedbackOccurrence,
   GnollBenchFeedbackOccurrencePage
 } from '../../../services/admin-gnollbench-feedback.service';
-import { FeedbackExportResult, FeedbackTransferService } from '../../../services/feedback-transfer.service';
+import type { FeedbackModelIdentity } from '../../../services/admin-feedback.service';
 import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
+import { FeedbackExportDialogComponent, FeedbackExportDone } from '../shared/feedback-export-dialog.component';
 import { FeedbackSelectionBarComponent } from '../shared/feedback-selection-bar.component';
 import { FeedbackExportOptions, FeedbackRange, loadFeedbackView, loadGnollBenchSelection } from '../shared/feedback-view-storage';
 import {
@@ -44,6 +45,11 @@ const SELECTION_KEY = 'overseer.admin.feedback.gnollbench.selection';
 const settle = (ms = 0): Promise<void> => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 const textOf = (el: Element | null | undefined): string => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+/** A model identity's name and badges, space-separated; the element's text when it holds none. */
+const identityTextOf = (el: Element | null | undefined): string => {
+  const parts = Array.from(el?.querySelectorAll('.model-identity-name, .thinking-badge, .reasoning-badge, .provider-badge') ?? []);
+  return parts.length ? parts.map(p => textOf(p)).join(' ') : textOf(el);
+};
 
 /** A 64-character lowercase hex fingerprint. */
 const fp = (n: number): string => n.toString(16).padStart(2, '0').repeat(32);
@@ -57,12 +63,22 @@ function clearStorage(): void {
   }
 }
 
+function identity(modelId: string, overrides: Partial<FeedbackModelIdentity> = {}): FeedbackModelIdentity {
+  return { modelId, modelLabel: modelId, provider: null, thinkingLevel: null, reasoningMode: null, ...overrides };
+}
+
 function issue(n: number, overrides: Partial<GnollBenchFeedbackIssue> = {}): GnollBenchFeedbackIssue {
   return {
     fingerprint: fp(n), category: 'missing_information', subject: n === 1 ? 'Dilithium crystal' : `Subject ${n}`,
     summary: 'The wiki has no page for it.',
     firstSeenUtc: '2026-09-02T08:00:00Z', lastSeenUtc: '2026-10-20T12:30:00Z',
-    selfReportCount: 12, runCount: 3, modelCount: 2, models: ['Claude X', 'GPT X'], providers: ['Anthropic', 'OpenAI'],
+    selfReportCount: 12, runCount: 3, modelCount: 2, models: ['Claude X', 'GPT X'],
+    modelIdentities: [
+      identity('claude-x', { modelLabel: 'Claude X', provider: 'Anthropic' }),
+      identity('gpt-x', { modelLabel: 'GPT X', provider: 'OpenAI' })
+    ],
+    moreModelIdentities: 0,
+    providers: ['Anthropic', 'OpenAI'],
     suites: ['Suite A'], status: 'new', triageNote: null, resolution: null, fixedInVersion: null,
     triagedByUserName: null, triagedUtc: null, resolvedUtc: null, alsoInOverseer: null,
     ...overrides
@@ -158,6 +174,28 @@ class SelectionBarStubComponent {
   @Output() imported = new EventEmitter<void>();
 }
 
+/** Stands in for the export dialog, which has its own spec; open and close record the inputs they saw. */
+@Component({ selector: 'app-feedback-export-dialog', template: '' })
+class ExportDialogStubComponent {
+  @Input() source = '';
+  @Input() idPrefix: string | null | undefined;
+  @Input() ids: readonly (string | number)[] = [];
+  @Input() issueSubject: string | null = null;
+  @Input() occurrenceTotal: number | null = null;
+  @Input() exportOptions: FeedbackExportOptions | undefined;
+  @Output() exported = new EventEmitter<FeedbackExportDone>();
+  readonly opened: { ids: readonly (string | number)[]; issueSubject: string | null; occurrenceTotal: number | null }[] = [];
+  closed = 0;
+
+  open(): void {
+    this.opened.push({ ids: [...this.ids], issueSubject: this.issueSubject, occurrenceTotal: this.occurrenceTotal });
+  }
+
+  close(): void {
+    this.closed++;
+  }
+}
+
 describe('FeedbackGnollBenchPanelComponent', () => {
   describe('labels and the address', () => {
     it('names the experimental changes by title when the catalog has them, by id otherwise, and drops a stamp\'s hash', () => {
@@ -244,8 +282,8 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         ]
       })
         .overrideComponent(FeedbackGnollBenchPanelComponent, {
-          remove: { imports: [FeedbackSelectionBarComponent] },
-          add: { imports: [SelectionBarStubComponent] }
+          remove: { imports: [FeedbackSelectionBarComponent, FeedbackExportDialogComponent] },
+          add: { imports: [SelectionBarStubComponent, ExportDialogStubComponent] }
         })
         .compileComponents();
 
@@ -370,7 +408,10 @@ describe('FeedbackGnollBenchPanelComponent', () => {
 
         expect(textOf(card.querySelector('.tl-gbfb-category'))).toBe('Missing information');
         expect(textOf(card.querySelector('.tl-gbfb-status-badge'))).toBe('New');
-        expect(textOf(card.querySelector('.tl-gbfb-models'))).toBe('Models: Claude X, GPT X');
+        const models = card.querySelector('.tl-gbfb-kicker ul.tl-gbfb-model-list')!;
+        expect(models.getAttribute('role')).toBe('list');
+        expect(models.getAttribute('aria-label')).toBe('Models');
+        expect(Array.from(models.querySelectorAll('li')).map(li => identityTextOf(li))).toEqual(['Claude X Anthropic', 'GPT X OpenAI']);
         expect(textOf(card.querySelector('.tl-gbfb-summary'))).toBe('The wiki has no page for it.');
         const metrics = Array.from(card.querySelectorAll('.tl-gbfb-metrics > .tl-gbfb-metric'));
         expect(metrics.map(m => textOf(m.querySelector('dt')))).toEqual(['Self-reports', 'Models', 'First seen', 'Last seen']);
@@ -383,10 +424,60 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         expect(card.querySelector('.tl-gbfb-metric-last time')!.getAttribute('datetime')).toBe('2026-10-20T12:30:00Z');
         const facts = Array.from(card.querySelectorAll('.tl-gbfb-facts > div')).map(f => [textOf(f.querySelector('dt')), textOf(f.querySelector('dd'))]);
         expect(facts).toEqual([
-          ['Providers', 'Anthropic, OpenAI'],
           ['Suites', 'Suite A'],
           ['Fingerprint', fp(1).slice(0, 12)]
         ]);
+        expect(card.querySelector('.tl-gbfb-fact-providers')).toBeNull();
+        const sections = Array.from(card.querySelectorAll<HTMLElement>('.tl-gbfb-fact-groups > section'));
+        expect(sections.length).toBe(1);
+        const heading = card.querySelector('#' + sections[0].getAttribute('aria-labelledby'))!;
+        expect(heading.tagName).toBe('H5');
+        expect(heading.classList.contains('gh-section-title')).toBe(true);
+        expect(textOf(heading)).toBe('Latest report');
+      });
+
+      it('says Not recorded, muted, for an issue without suites', async () => {
+        nextPage = page([issue(1, { suites: [] })]);
+        await create();
+
+        const value = cards()[0].querySelector('.tl-gbfb-fact-suites dd')!;
+        expect(textOf(value)).toBe('Not recorded');
+        expect(value.classList.contains('tl-gbfb-muted')).toBe(true);
+        expect(getComputedStyle(value).fontStyle).toBe('italic');
+      });
+
+      it('names each model with its thinking level, reasoning mode and provider badges, then the rest as +N more', async () => {
+        nextPage = page([issue(1, {
+          modelIdentities: [
+            identity('gpt-x', { modelLabel: 'GPT X', provider: 'openai', thinkingLevel: 'high', reasoningMode: 'pro' }),
+            identity('claude-x', { modelLabel: '', provider: null })
+          ],
+          moreModelIdentities: 4
+        })]);
+        await create();
+        const items = Array.from(cards()[0].querySelectorAll<HTMLElement>('.tl-gbfb-model-list > li'));
+
+        expect(items.length).toBe(3);
+        expect(textOf(items[0].querySelector('.model-identity-name'))).toBe('GPT X');
+        expect(textOf(items[0].querySelector('.thinking-badge'))).toBe('thinking level high');
+        expect(textOf(items[0].querySelector('.reasoning-badge'))).toBe('reasoning mode pro');
+        expect(textOf(items[0].querySelector('app-provider-badge'))).toBe('OpenAI');
+        expect(textOf(items[1].querySelector('.model-identity-name'))).toBe('claude-x');
+        expect(items[1].querySelector('app-provider-badge')).toBeNull();
+        expect(textOf(items[2])).toBe('+4 more');
+      });
+
+      it('groups the triage facts under Triage only once one is set, and edges the card with its status', async () => {
+        nextPage = page([issue(1, { status: 'acknowledged', triageNote: 'Seen.' }), issue(2, { status: 'dismissed' })]);
+        await create();
+        const [first, second] = cards();
+
+        const triage = first.querySelector<HTMLElement>('.tl-gbfb-fact-group-triage')!;
+        expect(textOf(triage.querySelector('#' + triage.getAttribute('aria-labelledby')))).toBe('Triage');
+        expect(Array.from(triage.querySelectorAll('dt')).map(d => textOf(d))).toEqual(['Note']);
+        expect(second.querySelector('.tl-gbfb-fact-group-triage')).toBeNull();
+        expect(getComputedStyle(first).boxShadow).toContain('inset');
+        expect(getComputedStyle(second).backgroundImage).toContain('repeating-linear-gradient');
       });
 
       it('links an issue also reported in the Overseer chat to that issue in the Overseer sub-tab', async () => {
@@ -813,7 +904,7 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         }));
         await create('/admin/feedback/gnollbench?run=12');
         const card = cards()[0];
-        expect(textOf(card.querySelector('details.tl-gbfb-occurrences > summary'))).toBe('Self-reports (12)');
+        expect(textOf(card.querySelector('details.tl-gbfb-occurrences > summary'))).toBe('Self-reports 12');
         expect(occurrencesSpy).not.toHaveBeenCalled();
 
         const details = openOccurrences(card);
@@ -877,11 +968,11 @@ describe('FeedbackGnollBenchPanelComponent', () => {
 
         expect(textOf(first.querySelector('h5'))).toBe(gnollBenchDateTimeText('2026-10-20T12:30:00Z'));
         const facts = Object.fromEntries(Array.from(first.querySelectorAll('.tl-gbfb-occ-facts > div'))
-          .map(f => [textOf(f.querySelector('dt')), textOf(f.querySelector('dd'))]));
+          .map(f => [textOf(f.querySelector('dt')), identityTextOf(f.querySelector('dd'))]));
         expect(facts).toEqual(expect.objectContaining({
           'Run': 'Run #12 report, opens in a new tab · series #4',
           'Suite': 'Suite A',
-          'Model and provider': 'Claude X · Anthropic',
+          'Model': 'Claude X Anthropic',
           'Information condition': 'Closed book',
           'Experimental Changes': 'Search with the player\'s race and role, Race and role lookup tool asker-search-words-v1+race-role-tool-v1:0123456789ab',
           'Corpus': 'Live',
@@ -966,15 +1057,16 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         fixture.detectChanges();
       }
 
-      it('ends each card in a footer: the triaged line, then Download and Edit triage in a group named for the issue; no form in the card', async () => {
+      it('ends each card in a footer: the triaged line, then Export issue and Edit triage in a group named for the issue; no form in the card', async () => {
         await create();
         const card = cards()[0];
 
         expect(textOf(card.querySelector('.tl-gbfb-footer .tl-gbfb-triaged'))).toBe('Not triaged yet');
+        expect(card.querySelector('.tl-gbfb-triaged svg')!.getAttribute('aria-hidden')).toBe('true');
         const group = card.querySelector('.tl-gbfb-footer [role="group"]')!;
         expect(group.getAttribute('aria-label')).toBe('Actions for Dilithium crystal');
         expect(Array.from(group.querySelectorAll('button')).map(b => b.getAttribute('aria-label') ?? textOf(b))).toEqual(
-          ['Download issue as YAML: Dilithium crystal', 'Edit triage: Dilithium crystal']);
+          ['Export issue: Dilithium crystal', 'Edit triage: Dilithium crystal']);
         expect(group.querySelector('.tl-gbfb-edit')!.getAttribute('aria-haspopup')).toBe('dialog');
         expect(card.querySelector('select, textarea, input[type="text"]')).toBeNull();
       });
@@ -1106,20 +1198,35 @@ describe('FeedbackGnollBenchPanelComponent', () => {
       const IDS = /wiki_search|item_lookup|\banthropic\b|\bopenai\b/;
 
       it('shows providers and tools by their labels on the card and its self-reports, and an unlabeled tool in words', async () => {
-        nextPage = page([issue(1, { providers: ['anthropic', 'openai'] })]);
+        nextPage = page([issue(1, {
+          providers: ['anthropic', 'openai'],
+          modelIdentities: [
+            identity('claude-x', { modelLabel: 'Claude X', provider: 'anthropic' }),
+            identity('gpt-x', { modelLabel: 'GPT X', provider: 'openai' })
+          ]
+        })]);
         occurrencesSpy.mockReturnValue(of<GnollBenchFeedbackOccurrencePage>({
           totalCount: 1,
-          rows: [occurrence(5, { provider: 'anthropic', relatedTools: ['wiki_search', 'some_new_tool'], searchedFor: 'the dilithium page' })]
+          rows: [occurrence(5, {
+            provider: 'anthropic', relatedTools: ['wiki_search', 'some_new_tool'], searchedFor: 'the dilithium page',
+            thinkingLevel: 'max', reasoningMode: 'pro'
+          })]
         }));
         await create();
         const card = cards()[0];
         const details = openOccurrences(card);
 
-        expect(textOf(card.querySelector('.tl-gbfb-fact-providers dd'))).toBe('Anthropic, OpenAI');
+        expect(Array.from(card.querySelectorAll('.tl-gbfb-model-list app-provider-badge')).map(b => textOf(b))).toEqual(['Anthropic', 'OpenAI']);
+        expect(card.querySelector('.tl-gbfb-fact-providers')).toBeNull();
         const item = details.querySelector<HTMLElement>('li.tl-gbfb-occ')!;
         const facts = Object.fromEntries(Array.from(item.querySelectorAll('.tl-gbfb-occ-facts > div'))
           .map(f => [textOf(f.querySelector('dt')), f.querySelector('dd')!]));
-        expect(textOf(facts['Model and provider'])).toBe('Claude X · Anthropic');
+        expect(facts['Model and provider']).toBeUndefined();
+        const model = facts['Model'].querySelector('app-model-identity')!;
+        expect(textOf(model.querySelector('.model-identity-name'))).toBe('Claude X');
+        expect(textOf(model.querySelector('.thinking-badge'))).toBe('thinking level max');
+        expect(textOf(model.querySelector('.reasoning-badge'))).toBe('reasoning mode pro');
+        expect(textOf(model.querySelector('app-provider-badge'))).toBe('Anthropic');
         expect(textOf(facts['Related tools'])).toBe('GnollHack wiki search, Some new tool');
         expect(facts['Related tools'].classList.contains('tl-gbfb-mono')).toBe(false);
         expect(textOf(card)).not.toMatch(IDS);
@@ -1149,128 +1256,95 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         expect(textOf(first.querySelector('.tl-gbfb-fact-resolved dt'))).toBe('Resolved via');
         expect(textOf(first.querySelector('.tl-gbfb-fact-resolved dd'))).toBe('GnollHack wiki, GnollHack release');
         expect(first.querySelector('.tl-gbfb-fact-resolved')!.nextElementSibling!.classList.contains('tl-gbfb-fact-fixed')).toBe(true);
-        expect(textOf(first.querySelector('.tl-gbfb-facts'))).not.toMatch(/gnollhack_release/);
+        expect(textOf(first.querySelector('.tl-gbfb-fact-group-triage'))).not.toMatch(/gnollhack_release/);
         expect(second.querySelector('.tl-gbfb-fact-resolved')).toBeNull();
         expect(third.querySelector('.tl-gbfb-fact-resolved')).toBeNull();
       });
     });
 
-    describe('download as YAML', () => {
-      let exportSpy: Mock;
-      let saved: { names: string[]; types: string[] };
-      let restore: (() => void)[];
+    describe('export one issue', () => {
+      const button = (card: HTMLElement = cards()[0]): HTMLButtonElement => card.querySelector<HTMLButtonElement>('.tl-gbfb-export')!;
+      const dialog = (): ExportDialogStubComponent =>
+        fixture.debugElement.query(By.directive(ExportDialogStubComponent)).componentInstance as ExportDialogStubComponent;
 
-      function result(overrides: Partial<FeedbackExportResult> = {}): FeedbackExportResult {
-        return {
-          fileName: `overseer-feedback-gnollbench-${fp(1).slice(0, 12)}-20261028-0915.yaml`, content: 'format: overseer-feedback-issues\n',
-          mediaType: 'application/yaml;charset=utf-8', issueCount: 1, missingIds: [], missingFingerprints: [], ...overrides
-        };
-      }
-
-      const button = (): HTMLButtonElement => cards()[0].querySelector<HTMLButtonElement>('.tl-gbfb-download')!;
-
-      function clickDownload(): void {
-        button().click();
+      function clickExport(card?: HTMLElement): void {
+        button(card).click();
         fixture.detectChanges();
       }
 
-      beforeEach(() => {
-        exportSpy = vi.spyOn(TestBed.inject(FeedbackTransferService), 'exportIssues').mockReturnValue(of(result()));
-        saved = { names: [], types: [] };
-        const blob = vi.spyOn(URL, 'createObjectURL').mockImplementation((source: Blob | MediaSource) => {
-          saved.types.push((source as Blob).type);
-          return 'blob:feedback-download-test';
-        });
-        const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-        const anchor = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-          saved.names.push(this.download);
-        });
-        restore = [() => blob.mockRestore(), () => revoke.mockRestore(), () => anchor.mockRestore()];
-      });
+      function done(overrides: Partial<FeedbackExportDone> = {}): FeedbackExportDone {
+        return {
+          missing: [], exportOptions: { occurrencesPerIssue: 50, includeQuestionText: false, format: 'markdown' },
+          fileName: `overseer-feedback-gnollbench-${fp(1).slice(0, 12)}-20261028-0915.md`, issueCount: 1, ...overrides
+        };
+      }
 
-      afterEach(() => restore.forEach(undo => undo()));
-
-      it('leads the card\'s actions as an icon button named for the issue, with a Download as YAML tooltip', async () => {
+      it('leads the card\'s actions as an icon button named for the issue, with an Export issue… tooltip, that opens a dialog', async () => {
         await create();
-        const download = button();
+        const exportButton = button();
 
-        expect(cards()[0].querySelector('.tl-gbfb-actions button')).toBe(download);
-        expect(download.classList.contains('action-btn')).toBe(true);
-        expect(download.getAttribute('aria-label')).toBe('Download issue as YAML: Dilithium crystal');
-        expect(textOf(download)).toBe('');
-        const tip = el.querySelector<HTMLElement>('#' + download.getAttribute('interestfor'))!;
+        expect(cards()[0].querySelector('.tl-gbfb-actions button')).toBe(exportButton);
+        expect(exportButton.classList.contains('action-btn')).toBe(true);
+        expect(exportButton.getAttribute('aria-label')).toBe('Export issue: Dilithium crystal');
+        expect(exportButton.getAttribute('aria-haspopup')).toBe('dialog');
+        expect(textOf(exportButton)).toBe('');
+        const tip = el.querySelector<HTMLElement>('#' + exportButton.getAttribute('interestfor'))!;
         expect(tip.getAttribute('popover')).toBe('hint');
-        expect(textOf(tip)).toBe('Download as YAML');
-        expect(download.getAttribute('style')).toContain(`anchor-name: --${cid(1)}-download-tip`);
-        expect(tip.getAttribute('style')).toContain(`position-anchor: --${cid(1)}-download-tip`);
-        expect(download.hasAttribute('title')).toBe(false);
+        expect(textOf(tip)).toBe('Export issue…');
+        expect(exportButton.getAttribute('style')).toContain(`anchor-name: --${cid(1)}-export-tip`);
+        expect(tip.getAttribute('style')).toContain(`position-anchor: --${cid(1)}-export-tip`);
+        expect(exportButton.hasAttribute('title')).toBe(false);
+        expect(cards()[0].querySelector('.tl-gbfb-download')).toBeNull();
       });
 
-      it('exports the one issue in YAML with the remembered options, saves the file and says so', async () => {
+      it('opens the export dialog on that one issue, its subject and its self-reports, with the remembered options', async () => {
         localStorage.setItem(GNOLLBENCH_FEEDBACK_VIEW_STORAGE_KEY, JSON.stringify({
           version: 1, sort: 'lastSeen', filters: {}, search: '', range: CUSTOM_RANGE,
           exportOptions: { occurrencesPerIssue: 5, includeQuestionText: false, format: 'markdown' }
         }));
+        nextPage = page([issue(1, { selfReportCount: 7 }), issue(2)]);
         await create();
-        clickDownload();
 
-        expect(exportSpy).toHaveBeenCalledWith({
-          source: 'gnollbench', format: 'yaml', fingerprints: [fp(1)], occurrencesPerIssue: 5, includeQuestionText: false
-        });
-        expect(saved.names).toEqual([result().fileName]);
-        expect(saved.types).toEqual(['application/yaml;charset=utf-8']);
-        expect(textOf(cards()[0].querySelector(`#${cid(1)}-result`))).toBe(`Downloaded ${result().fileName}.`);
+        expect(dialog().source).toBe('gnollbench');
+        expect(dialog().idPrefix).toBe('gnollbench-card');
+        expect(dialog().opened).toEqual([]);
+
+        clickExport(cards()[1]);
+        expect(dialog().opened).toEqual([{ ids: [fp(2)], issueSubject: 'Subject 2', occurrenceTotal: 12 }]);
+
+        clickExport(cards()[0]);
+        expect(dialog().opened[1]).toEqual({ ids: [fp(1)], issueSubject: 'Dilithium crystal', occurrenceTotal: 7 });
+        expect(dialog().exportOptions).toEqual({ occurrencesPerIssue: 5, includeQuestionText: false, format: 'markdown' });
       });
 
-      it('uses ten occurrences with the question text when no export options are remembered', async () => {
+      it('names the saved file on the card\'s result line and remembers the options for both exports', async () => {
         await create();
-        clickDownload();
+        clickExport();
 
-        expect(exportSpy).toHaveBeenCalledWith({
-          source: 'gnollbench', format: 'yaml', fingerprints: [fp(1)], occurrencesPerIssue: 10, includeQuestionText: true
-        });
-      });
-
-      it('is busy while its request runs and ignores a second click', async () => {
-        const response = new Subject<FeedbackExportResult>();
-        exportSpy.mockReturnValue(response.asObservable());
-        await create();
-
-        clickDownload();
-        expect(button().getAttribute('aria-busy')).toBe('true');
-        clickDownload();
-        expect(exportSpy).toHaveBeenCalledTimes(1);
-
-        response.next(result());
-        response.complete();
+        dialog().exported.emit(done());
         fixture.detectChanges();
-        expect(button().getAttribute('aria-busy')).toBeNull();
-        expect(saved.names.length).toBe(1);
+
+        expect(textOf(cards()[0].querySelector(`#${cid(1)}-result`))).toBe(`Downloaded ${done().fileName}.`);
+        expect(loadFeedbackView('gnollbench')!.exportOptions).toEqual(done().exportOptions);
+        expect(bar().exportOptions).toEqual(done().exportOptions);
+        expect(dialog().exportOptions).toEqual(done().exportOptions);
+        expect(dialog().closed).toBe(0);
       });
 
-      it('says an issue the server no longer has is gone, and fetches the list again', async () => {
-        exportSpy.mockReturnValue(throwError(() => ({ status: 404, error: { message: 'None of the requested issues exist.', missingIds: [], missingFingerprints: [fp(1)] } })));
+      it('says an issue the server no longer has is gone, closes the dialog, fetches the list again and drops it from the selection', async () => {
+        localStorage.setItem(SELECTION_KEY, JSON.stringify({ version: 1, fingerprints: [fp(1), fp(2)] }));
         await create();
+        clickExport();
         const before = listQueries().length;
 
-        clickDownload();
+        dialog().exported.emit(done({ missing: [fp(1)], fileName: null, issueCount: 0 }));
+        fixture.detectChanges();
 
+        expect(dialog().closed).toBe(1);
         expect(listQueries().length).toBe(before + 1);
         expect(textOf(cards()[0].querySelector(`#${cid(1)}-result`))).toBe('This issue no longer exists.');
         expect(status()).toContain('The issue “Dilithium crystal” no longer exists.');
-        expect(saved.names).toEqual([]);
-      });
-
-      it('writes another failure to the card\'s result line', async () => {
-        exportSpy.mockReturnValue(throwError(() => ({ status: 500, error: { message: 'The export failed on the server.' } })));
-        await create();
-        const before = listQueries().length;
-
-        clickDownload();
-
-        expect(textOf(cards()[0].querySelector(`#${cid(1)}-result`))).toBe('The issue could not be downloaded: The export failed on the server.');
-        expect(listQueries().length).toBe(before);
-        expect(saved.names).toEqual([]);
+        expect(loadGnollBenchSelection()).toEqual([fp(2)]);
       });
     });
 

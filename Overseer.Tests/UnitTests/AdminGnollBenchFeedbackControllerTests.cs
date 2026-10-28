@@ -252,6 +252,49 @@ public sealed class AdminGnollBenchFeedbackControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task ListIssues_ModelIdentities_SeparateThinkingLevels_AndOccurrencesCarryTheRunsSettings()
+    {
+        var high = BenchmarkModelSnapshots.Model("OpenAI", "model-a", displayName: "Model A", thinkingLevel: "high", reasoningMode: "summary");
+        var low = BenchmarkModelSnapshots.Model("OpenAI", "model-a", displayName: "Model A", thinkingLevel: "low");
+        var runHigh = await AddRunAsync(high);
+        var runLow = await AddRunAsync(low);
+        var runHighAgain = await AddRunAsync(high);
+        await AddReportAsync(await AddAnswerAsync(runHigh, T0.AddHours(1)), Fp(1));
+        await AddReportAsync(await AddAnswerAsync(runLow, T0.AddHours(2)), Fp(1));
+        await AddReportAsync(await AddAnswerAsync(runHighAgain, T0.AddHours(3)), Fp(1));
+
+        var issue = Assert.Single((await ListAsync()).Rows);
+
+        Assert.Equal(
+            new (string, string, string?, string?, string?)[] { ("model-a", "Model A", "OpenAI", "high", "summary"), ("model-a", "Model A", "OpenAI", "low", null) },
+            issue.ModelIdentities.Select(m => (m.ModelId, m.ModelLabel, m.Provider, m.ThinkingLevel, m.ReasoningMode)));
+        Assert.Equal(0, issue.MoreModelIdentities);
+        Assert.Equal(new[] { "Model A" }, issue.Models);
+
+        var occurrences = OkValue<GnollBenchFeedbackOccurrencePageDto>(await _controller.ListOccurrences(Fp(1), null, ct: Ct));
+        Assert.Equal(new[] { runHighAgain.Id, runLow.Id, runHigh.Id }, occurrences.Rows.Select(r => r.RunId));
+        Assert.Equal(new[] { "high", "low", "high" }, occurrences.Rows.Select(r => r.ThinkingLevel));
+        Assert.Equal(new[] { "summary", null, "summary" }, occurrences.Rows.Select(r => r.ReasoningMode));
+    }
+
+    [Fact]
+    public async Task ListIssues_ModelIdentities_AreCappedAtFive_ByLabel_AndCountTheRest()
+    {
+        string[] models = { "model-f", "model-b", "model-e", "model-a", "model-d", "model-c" };
+        for (int i = 0; i < models.Length; i++)
+        {
+            var run = await AddRunAsync(BenchmarkModelSnapshots.Model("Google", models[i], thinkingLevel: "medium"));
+            await AddReportAsync(await AddAnswerAsync(run, T0.AddHours(i)), Fp(1));
+        }
+
+        var issue = Assert.Single((await ListAsync()).Rows);
+
+        Assert.Equal(new[] { "model-a", "model-b", "model-c", "model-d", "model-e" }, issue.ModelIdentities.Select(m => m.ModelId));
+        Assert.All(issue.ModelIdentities, m => Assert.Equal("medium", m.ThinkingLevel));
+        Assert.Equal(1, issue.MoreModelIdentities);
+    }
+
+    [Fact]
     public async Task ListIssues_TimeFallsBackToTheRunStart_WhenTheAnswerHasNone()
     {
         await AddSimpleReportAsync(Fp(1), started: T0.AddDays(3));

@@ -10,6 +10,7 @@ import {
   Output,
   SimpleChanges,
   ViewChild,
+  computed,
   inject,
   signal
 } from '@angular/core';
@@ -40,22 +41,22 @@ import {
   AdminFeedbackService,
   AdminFeedbackStatus,
   AdminFeedbackTriageChanges,
-  AdminFeedbackTriageStatus
+  AdminFeedbackTriageStatus,
+  FeedbackModelIdentity
 } from '../../../services/admin-feedback.service';
 import { adminApiError } from '../../../services/admin-users.service';
-import { FeedbackTransferService, feedbackTransferStatus } from '../../../services/feedback-transfer.service';
 import { CardListChip, CardListFacetSpec, CardListSort, CardListState } from '../../../shared/data-table/card-list-state';
 import { FilterFacetComponent, FilterFacetOption } from '../../../shared/data-table/filter-facet.component';
 import { TableState, anyOfFilter, customFilter } from '../../../shared/data-table/table-state';
+import { ModelIdentityComponent } from '../../../shared/model-identity/model-identity.component';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { providerLabel, toolLabel } from '../../../utils/display-labels.util';
-import { downloadTextFile } from '../../../utils/download.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { AdminConfirmDialogComponent } from '../../admin-dialogs/admin-confirm-dialog.component';
 import { AdminPageStore } from '../../admin-page.store';
 import { ADMIN_TAB_SLUGS, adminCommands, adminQueryList, clearedFeedbackQueryParams, readAdminQueryList } from '../../admin-url';
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
-import { DEFAULT_FEEDBACK_EXPORT_OPTIONS } from '../shared/feedback-export-dialog.component';
+import { FeedbackExportDialogComponent, FeedbackExportDone } from '../shared/feedback-export-dialog.component';
 import {
   feedbackCategoryLabel,
   feedbackCauseLabel,
@@ -131,6 +132,8 @@ const RESOLUTION_FILTER_LABELS: Readonly<Record<AdminFeedbackResolutionFilter, s
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const NO_VALUES: readonly string[] = [];
+
+const NO_IDENTITIES: readonly FeedbackModelIdentity[] = [];
 
 /** `21 Oct 2026`, local time; the raw value when it does not parse. */
 export function feedbackDateText(utc: string | null | undefined): string {
@@ -260,20 +263,23 @@ interface TriageResult {
  * search, Sort by, the Status, Resolved via, Category, Model, Provider, User, Group, Model source, Configuration,
  * Version, Tool and Has resolution facets, and chips, which also show an `ids` filter a link from the
  * GnollBench sub-tab sets (`status=all` is no status filter); the facets and the search live in the address and,
- * with the sort and the range, in the remembered view. Each issue has its figures, latest facts,
- * occurrences on demand, a selection checkbox, a one-issue YAML download, and Edit triage and Delete,
- * which open the triage dialog and a confirmation; the selection bar exports and imports the selection.
- * Report text is model output and is rendered as plain text only.
+ * with the sort and the range, in the remembered view. Each issue has its models with their badges, its
+ * figures, its latest facts and triage facts, occurrences on demand, a selection checkbox, Export issue…,
+ * which opens the export dialog for that one issue, and Edit triage and Delete, which open the triage dialog
+ * and a confirmation; the selection bar exports and imports the selection. Report text is model output and
+ * is rendered as plain text only.
  */
 @Component({
   selector: 'app-feedback-overseer-panel',
-  imports: [FilterFacetComponent, AdminConfirmDialogComponent, FeedbackTriageDialogComponent, FeedbackSelectionBarComponent, RouterLink],
+  imports: [
+    FilterFacetComponent, AdminConfirmDialogComponent, FeedbackTriageDialogComponent, FeedbackSelectionBarComponent,
+    FeedbackExportDialogComponent, ModelIdentityComponent, RouterLink
+  ],
   templateUrl: './feedback-overseer-panel.component.html',
   styleUrl: './feedback-overseer-panel.component.scss'
 })
 export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDestroy {
   private readonly feedback = inject(AdminFeedbackService);
-  private readonly transfer = inject(FeedbackTransferService);
   private readonly store = inject(AdminPageStore);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -291,6 +297,8 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
 
   @ViewChild(AdminConfirmDialogComponent, { static: true }) confirmDialog!: AdminConfirmDialogComponent;
   @ViewChild(FeedbackTriageDialogComponent, { static: true }) triageDialog!: FeedbackTriageDialogComponent;
+  /** The export dialog a card's Export issue… opens; the selection bar has its own. */
+  @ViewChild('issueExportDialog', { static: true }) issueExportDialog!: FeedbackExportDialogComponent;
 
   readonly sorts = FEEDBACK_SORTS;
   readonly searchMax = SEARCH_MAX;
@@ -303,6 +311,8 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   readonly versionShort = feedbackVersionShort;
   readonly modelSourceText = feedbackModelSourceText;
   readonly formatInteger = formatInteger;
+  /** A provider badge's word (`OpenAI`); empty, so no badge, for none. */
+  readonly providerLabel = providerLabel;
 
   /** Issue counts per status over all dates, as the page store last fetched them. */
   readonly counts = signal<AdminFeedbackCounts | null>(null);
@@ -331,8 +341,13 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   readonly expandedDetails = signal<ReadonlySet<number>>(new Set<number>());
   readonly savingId = signal<number | null>(null);
   readonly deletingId = signal<number | null>(null);
-  /** The issue whose YAML download is running; another download waits until it ends. */
-  readonly downloadingId = signal<number | null>(null);
+  /** The issue whose Export issue… last opened the export dialog. */
+  readonly exportIssue = signal<AdminFeedbackIssue | null>(null);
+  /** That issue's id, as the export dialog takes it. */
+  readonly exportIds = computed<readonly number[]>(() => {
+    const issue = this.exportIssue();
+    return issue ? [issue.id] : [];
+  });
   readonly triageResults = signal<Readonly<Record<number, TriageResult>>>({});
 
   // --- Selection ---
@@ -392,7 +407,6 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   private selectionSub: Subscription | null = null;
   private notShownSub: Subscription | null = null;
   private selectAllSub: Subscription | null = null;
-  private downloadSub: Subscription | null = null;
   private readonly occurrenceSubs = new Map<number, Subscription>();
   /** Set once the address of this sub-tab has been applied the first time. */
   private initialized = false;
@@ -445,7 +459,6 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     this.selectionSub?.unsubscribe();
     this.notShownSub?.unsubscribe();
     this.selectAllSub?.unsubscribe();
-    this.downloadSub?.unsubscribe();
     this.occurrenceSubs.forEach(sub => sub.unsubscribe());
   }
 
@@ -1185,14 +1198,19 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     return issue.retainedCount < issue.occurrenceCount ? `${formatInteger(issue.retainedCount)} retained` : '';
   }
 
-  /** The issue's models by their catalog names, `+N` as it is; an id the server sent no name for reads as the id. */
-  modelsText(issue: AdminFeedbackIssue): string {
-    return issue.modelIds.map((id, index) => issue.modelLabels?.[index] || id).join(', ');
+  /** The issue's models as they ran, at most five; none when the server sent none. */
+  modelIdentities(issue: AdminFeedbackIssue): readonly FeedbackModelIdentity[] {
+    return issue.modelIdentities ?? NO_IDENTITIES;
   }
 
-  /** The issue's providers by name (`OpenAI`); empty for none. */
-  providersText(issue: AdminFeedbackIssue): string {
-    return issue.providers.map(provider => providerLabel(provider) || provider).join(', ');
+  /** The models beyond the five shown, for `+N more`. */
+  moreModelIdentities(issue: AdminFeedbackIssue): number {
+    return issue.moreModelIdentities ?? 0;
+  }
+
+  /** Whether any triage fact is set: Resolved via, the fixed-in version, the note or the resolution. */
+  hasTriageFacts(issue: AdminFeedbackIssue): boolean {
+    return !!issue.resolvedVia?.length || !!issue.fixedInVersion || !!issue.triageNote || !!issue.resolution;
   }
 
   /** `GnollHack wiki search, Item stats`; empty for none. */
@@ -1336,11 +1354,6 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     }
   }
 
-  /** `Anthropic · Claude X`: the provider's and the model's labels, whichever is known; the model id without a label. */
-  modelText(occurrence: AdminFeedbackOccurrence): string {
-    return [providerLabel(occurrence.provider), occurrence.modelLabel || occurrence.modelId].filter(part => !!part).join(' · ');
-  }
-
   /** The reporting user's groups, or `No group`. */
   groupsText(occurrence: AdminFeedbackOccurrence): string {
     return occurrence.groupNames?.length ? occurrence.groupNames.join(', ') : 'No group';
@@ -1385,41 +1398,38 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     this.expandedDetails.set(next);
   }
 
-  // --- Download ---
+  // --- Export one issue ---
+
+  /** Opens the export dialog for one issue, on the options the last export of this sub-tab used. */
+  exportOne(issue: AdminFeedbackIssue): void {
+    this.exportIssue.set(issue);
+    this.setTriageResult(issue.id, { message: '', error: null });
+    // The dialog takes the issue through its inputs before it opens.
+    this.cdr.detectChanges();
+    this.issueExportDialog.open();
+  }
 
   /**
-   * Downloads one issue as a YAML issues file with the remembered export options, and says so on the card's
-   * result line. An issue the server no longer has is said so, and the list is fetched again. Ignored while
-   * a download runs.
+   * A card's export finished: its options are remembered for both exports, and the card's result line names the
+   * saved file. An issue the server no longer has closes the dialog and is said so on the card; the list is
+   * fetched again and the selection checked.
    */
-  downloadIssue(issue: AdminFeedbackIssue): void {
-    if (this.downloadingId() !== null) return;
-    const options = this.exportOptions ?? DEFAULT_FEEDBACK_EXPORT_OPTIONS;
-    this.downloadingId.set(issue.id);
-    this.setTriageResult(issue.id, { message: '', error: null });
-    this.downloadSub?.unsubscribe();
-    this.downloadSub = this.transfer.exportIssues({
-      source: 'overseer', format: 'yaml', issueIds: [issue.id], occurrencesPerIssue: options.occurrencesPerIssue
-    }).subscribe({
-      next: result => {
-        this.downloadingId.set(null);
-        downloadTextFile(result.fileName, result.content, result.mediaType);
-        this.setTriageResult(issue.id, { message: `Downloaded ${result.fileName}.`, error: null });
-        this.cdr.markForCheck();
-      },
-      error: err => {
-        this.downloadingId.set(null);
-        if (feedbackTransferStatus(err) === 404) {
-          this.setTriageResult(issue.id, { message: 'This issue no longer exists.', error: null });
-          this.reloadIssues();
-          this.pruneSelection();
-          this.notice.set(`The issue “${issue.subject}” no longer exists.`);
-        } else {
-          this.setTriageResult(issue.id, { message: 'The issue could not be downloaded: ' + adminApiError(err).message, error: null });
-        }
-        this.cdr.markForCheck();
+  onIssueExported(done: FeedbackExportDone): void {
+    const issue = this.exportIssue();
+    this.exportOptions = { ...done.exportOptions };
+    this.saveView();
+    if (issue) {
+      if (done.fileName) {
+        this.setTriageResult(issue.id, { message: `Downloaded ${done.fileName}.`, error: null });
+      } else if (done.missing.some(id => Number(id) === issue.id)) {
+        this.issueExportDialog.close();
+        this.setTriageResult(issue.id, { message: 'This issue no longer exists.', error: null });
+        this.reloadIssues();
+        this.pruneSelection();
+        this.notice.set(`The issue “${issue.subject}” no longer exists.`);
       }
-    });
+    }
+    this.cdr.markForCheck();
   }
 
   // --- Triage ---

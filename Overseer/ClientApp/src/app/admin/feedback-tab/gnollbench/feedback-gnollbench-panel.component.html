@@ -123,9 +123,21 @@
                 @if (hidden.length > 0) {
                   <span class="gh-tag tl-gbfb-mark-hidden" [attr.title]="'Invisible characters: ' + hidden.join(', ')">Hidden characters</span><span class="visually-hidden">: {{ hidden.join(', ') }}</span>
                 }
-                @if (issue.models.length > 0) {
+                @let identities = modelIdentities(issue);
+                @if (identities.length > 0) {
                   <span class="tl-gbfb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                  <span class="tl-gbfb-models"><span class="visually-hidden">Models: </span>{{ issue.models.join(', ') }}</span>
+                  <!-- Each tested model as its runs ran it: the name, then its thinking, reasoning and provider badges. -->
+                  <ul class="tl-gbfb-model-list" role="list" aria-label="Models">
+                    @for (identity of identities; track $index) {
+                      <li class="tl-gbfb-model">
+                        <app-model-identity [name]="identity.modelLabel || identity.modelId" [provider]="providerLabel(identity.provider)"
+                                            [thinkingLevel]="identity.thinkingLevel" [reasoningMode]="identity.reasoningMode"></app-model-identity>
+                      </li>
+                    }
+                    @if (moreModelIdentities(issue) > 0) {
+                      <li class="tl-gbfb-model-more">+{{ formatInteger(moreModelIdentities(issue)) }} more</li>
+                    }
+                  </ul>
                 }
               </div>
               <!-- Focused after Show more. A click on the title selects the card. -->
@@ -156,58 +168,68 @@
               </div>
             </dl>
 
-            <dl class="tl-gbfb-facts">
-              <div class="tl-gbfb-fact tl-gbfb-fact-providers">
-                <dt>Providers</dt>
-                <dd>{{ providersText(issue) || 'Not recorded' }}</dd>
-              </div>
-              <div class="tl-gbfb-fact tl-gbfb-fact-suites">
-                <dt>Suites</dt>
-                <dd>{{ issue.suites.length > 0 ? issue.suites.join(', ') : 'Not recorded' }}</dd>
-              </div>
-              <div class="tl-gbfb-fact tl-gbfb-fact-fingerprint">
-                <dt>Fingerprint</dt>
-                <dd class="tl-gbfb-mono">{{ issue.fingerprint.slice(0, 12) }}</dd>
-              </div>
-              @if (issue.alsoInOverseer; as overseer) {
-                <div class="tl-gbfb-fact tl-gbfb-fact-overseer">
-                  <dt>Also reported in the Overseer chat</dt>
-                  <dd>
-                    <a class="tl-gbfb-overseer-link" routerLink="/admin/feedback" [queryParams]="overseerQuery(issue)">Overseer issue #{{ overseer.issueId }}</a>
-                    <span class="tl-gbfb-sep"><span aria-hidden="true"> &middot; </span><span class="visually-hidden">, </span></span>
-                    <span class="tl-gbfb-overseer-status">{{ statusLabel(overseer.status) }}</span>
-                  </dd>
-                </div>
+            <!-- The latest report's facts, then the triage's when one is set, each group under its own heading. A
+                 value that was not recorded is muted. -->
+            <div class="tl-gbfb-fact-groups">
+              <section class="tl-gbfb-fact-group tl-gbfb-fact-group-latest" [attr.aria-labelledby]="cid + '-facts-latest'">
+                <h5 class="gh-section-title tl-gbfb-group-title" [id]="cid + '-facts-latest'">Latest report</h5>
+                <dl class="tl-gbfb-facts">
+                  <div class="tl-gbfb-fact tl-gbfb-fact-suites">
+                    <dt>Suites</dt>
+                    <dd [class.tl-gbfb-muted]="issue.suites.length === 0">{{ issue.suites.length > 0 ? issue.suites.join(', ') : 'Not recorded' }}</dd>
+                  </div>
+                  <div class="tl-gbfb-fact tl-gbfb-fact-fingerprint">
+                    <dt>Fingerprint</dt>
+                    <dd class="tl-gbfb-mono">{{ issue.fingerprint.slice(0, 12) }}</dd>
+                  </div>
+                  @if (issue.alsoInOverseer; as overseer) {
+                    <div class="tl-gbfb-fact tl-gbfb-fact-overseer">
+                      <dt>Also reported in the Overseer chat</dt>
+                      <dd>
+                        <a class="tl-gbfb-overseer-link" routerLink="/admin/feedback" [queryParams]="overseerQuery(issue)">Overseer issue #{{ overseer.issueId }}</a>
+                        <span class="tl-gbfb-sep"><span aria-hidden="true"> &middot; </span><span class="visually-hidden">, </span></span>
+                        <span class="tl-gbfb-overseer-status">{{ statusLabel(overseer.status) }}</span>
+                      </dd>
+                    </div>
+                  }
+                </dl>
+              </section>
+              @if (hasTriageFacts(issue)) {
+                <section class="tl-gbfb-fact-group tl-gbfb-fact-group-triage" [attr.aria-labelledby]="cid + '-facts-triage'">
+                  <h5 class="gh-section-title tl-gbfb-group-title" [id]="cid + '-facts-triage'">Triage</h5>
+                  <dl class="tl-gbfb-facts">
+                    <!-- Where the fix went, beside the version that has it. -->
+                    @if (resolvedViaText(issue); as resolvedVia) {
+                      <div class="tl-gbfb-fact tl-gbfb-fact-resolved">
+                        <dt>Resolved via</dt>
+                        <dd>{{ resolvedVia }}</dd>
+                      </div>
+                    }
+                    @if (issue.fixedInVersion) {
+                      <div class="tl-gbfb-fact tl-gbfb-fact-fixed">
+                        <dt>Fixed in version</dt>
+                        <dd class="tl-gbfb-mono">{{ issue.fixedInVersion }}</dd>
+                      </div>
+                    }
+                    @if (issue.triageNote) {
+                      <div class="tl-gbfb-fact tl-gbfb-fact-note">
+                        <dt>Note</dt>
+                        <dd class="tl-gbfb-plain-text">{{ issue.triageNote }}</dd>
+                      </div>
+                    }
+                    @if (issue.resolution) {
+                      <div class="tl-gbfb-fact tl-gbfb-fact-resolution">
+                        <dt>Resolution</dt>
+                        <dd class="tl-gbfb-plain-text">{{ issue.resolution }}</dd>
+                      </div>
+                    }
+                  </dl>
+                </section>
               }
-              <!-- Where the fix went, beside the version that has it. -->
-              @if (resolvedViaText(issue); as resolvedVia) {
-                <div class="tl-gbfb-fact tl-gbfb-fact-resolved">
-                  <dt>Resolved via</dt>
-                  <dd>{{ resolvedVia }}</dd>
-                </div>
-              }
-              @if (issue.fixedInVersion) {
-                <div class="tl-gbfb-fact tl-gbfb-fact-fixed">
-                  <dt>Fixed in version</dt>
-                  <dd class="tl-gbfb-mono">{{ issue.fixedInVersion }}</dd>
-                </div>
-              }
-              @if (issue.triageNote) {
-                <div class="tl-gbfb-fact tl-gbfb-fact-note">
-                  <dt>Note</dt>
-                  <dd class="tl-gbfb-plain-text">{{ issue.triageNote }}</dd>
-                </div>
-              }
-              @if (issue.resolution) {
-                <div class="tl-gbfb-fact tl-gbfb-fact-resolution">
-                  <dt>Resolution</dt>
-                  <dd class="tl-gbfb-plain-text">{{ issue.resolution }}</dd>
-                </div>
-              }
-            </dl>
+            </div>
 
             <details class="gh-disclosure tl-gbfb-occurrences" [attr.data-fingerprint]="issue.fingerprint" (toggle)="onOccurrencesToggle(issue, $event)">
-              <summary>Self-reports ({{ formatInteger(issue.selfReportCount) }})</summary>
+              <summary>Self-reports <span class="tl-gbfb-count">{{ formatInteger(issue.selfReportCount) }}</span></summary>
               <div class="gh-disclosure-body">
                 @if (hasOccurrenceFilters() && occ?.loaded) {
                   <div class="tl-gbfb-occ-toolbar">
@@ -257,8 +279,12 @@
                             </dd>
                           </div>
                           <div><dt>Suite</dt><dd>{{ o.suiteName || 'Not recorded' }}</dd></div>
-                          @if (modelText(o); as model) {
-                            <div><dt>Model and provider</dt><dd>{{ model }}</dd></div>
+                          @if (o.modelId || o.provider) {
+                            <div class="tl-gbfb-occ-model">
+                              <dt>Model</dt>
+                              <dd><app-model-identity [name]="o.modelLabel || o.modelId" [provider]="providerLabel(o.provider)"
+                                                      [thinkingLevel]="o.thinkingLevel" [reasoningMode]="o.reasoningMode"></app-model-identity></dd>
+                            </div>
                           }
                           <div><dt>Information condition</dt><dd>{{ conditionLabel(o.condition) }}</dd></div>
                           <div class="tl-gbfb-occ-variant">
@@ -359,20 +385,27 @@
                  triage form is a dialog. -->
             <div class="tl-gbfb-footer">
               <div class="tl-gbfb-footer-text">
-                <p class="tl-gbfb-triaged">{{ triagedText(issue) || 'Not triaged yet' }}</p>
+                <p class="tl-gbfb-triaged">
+                  @if (triagedText(issue); as triaged) {
+                    <svg class="tl-gbfb-triaged-icon is-triaged" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    <span>{{ triaged }}</span>
+                  } @else {
+                    <svg class="tl-gbfb-triaged-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle></svg>
+                    <span>Not triaged yet</span>
+                  }
+                </p>
                 <p class="tl-gbfb-result" [id]="cid + '-result'" role="status">{{ result?.message ?? '' }}</p>
               </div>
               <div class="tl-gbfb-actions" role="group" [attr.aria-label]="'Actions for ' + issue.subject">
-                <button type="button" class="action-btn tl-gbfb-download"
-                        [attr.aria-label]="'Download issue as YAML: ' + issue.subject"
-                        [attr.aria-busy]="downloadingId() === issue.fingerprint ? 'true' : null"
-                        [attr.interestfor]="cid + '-download-tip'"
-                        [attr.style]="'anchor-name: --' + cid + '-download-tip'"
-                        (click)="downloadIssue(issue)">
+                <button type="button" class="action-btn tl-gbfb-export" aria-haspopup="dialog"
+                        [attr.aria-label]="'Export issue: ' + issue.subject"
+                        [attr.interestfor]="cid + '-export-tip'"
+                        [attr.style]="'anchor-name: --' + cid + '-export-tip'"
+                        (click)="exportOne(issue)">
                   <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                 </button>
-                <div popover="hint" class="gh-tooltip" [id]="cid + '-download-tip'"
-                     [attr.style]="'position-anchor: --' + cid + '-download-tip'">Download as YAML</div>
+                <div popover="hint" class="gh-tooltip" [id]="cid + '-export-tip'"
+                     [attr.style]="'position-anchor: --' + cid + '-export-tip'">Export issue…</div>
                 <button type="button" class="btn-ghost tl-gbfb-edit" aria-haspopup="dialog"
                         [attr.aria-busy]="savingFingerprint() === issue.fingerprint ? 'true' : null"
                         (click)="editTriage(issue)">
@@ -396,3 +429,8 @@
 </section>
 
 <app-feedback-triage-dialog />
+<!-- A card's Export issue… opens it for that one issue. -->
+<app-feedback-export-dialog #issueExportDialog source="gnollbench" idPrefix="gnollbench-card"
+                            [ids]="exportIds()" [issueSubject]="exportIssue()?.subject ?? null"
+                            [occurrenceTotal]="exportIssue()?.selfReportCount ?? null" [exportOptions]="exportOptions()"
+                            (exported)="onIssueExported($event)" />

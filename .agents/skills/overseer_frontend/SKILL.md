@@ -529,9 +529,10 @@ To find specific popups, look in the corresponding component's `.html` template:
     `requestBulkWizard`. Its state is discarded on close; a running operation continues.
   - `app-feedback-triage-dialog` (`feedback-tab/shared/`): *Triage issue*, opened by **Edit triage** on a
     card of either Feedback sub-tab (`dialog.gh-dialog.ftd-dialog` in the benchmark dialog frame at
-    640px, like the feedback export dialog: header with a close button, scrolling body, footer;
+    640px (the feedback export dialog uses the same frame at 600px): header with a close button, scrolling body, footer;
     `showModal()`, focus on *Status*, no `closedby="any"`) — the issue in a gold-ruled panel (*Issue*, the
-    subject, its category, status and count), *Status* and *Fixed in version* side by side from 32 rem of
+    subject, its category, status and count; the `.ftd-issue*` rules come from the mixin in
+    `shared/_feedback-issue-panel.scss`, shared with the export dialog), *Status* and *Fixed in version* side by side from 32 rem of
     the body (a container query), then *Note* and *Resolution* with character counts. Save
     checks the fields and says what is wrong at the field (`aria-invalid`, focus on the first), hands the
     trimmed values to the host's `submit` observable, closes when it completes and keeps the values and
@@ -540,6 +541,15 @@ To find specific popups, look in the corresponding component's `.html` template:
     the close button on a changed form first shows *You have unsaved changes.* and a **Discard changes**
     `.btn-link` in the footer's leftover space, reserved with `visibility` so no button moves; a second
     Escape or Discard closes. *Delete issue* stays on the Overseer card, not here.
+  - `app-feedback-export-dialog` (`feedback-tab/shared/`): *Export N issues*, opened by the selection bar's
+    **Export…**, or *Export issue* with that issue in the shared gold-ruled panel, opened by a card's
+    **Export issue…** (each panel embeds its own instance). Every id in it is prefixed by the `idPrefix`
+    input, so the selection bar's and a panel's instances never share ids. The file format is two radio
+    cards (`label.fx-format-card` wrapping a visible radio; YAML *Recommended*, Markdown), *Occurrences per
+    issue* a `select.gh-input` (5, 10, 25, 50, 100, *All occurrences*, *Custom…* revealing a 1–1,000 number
+    field checked on Download), and the numbered next steps show while YAML is chosen. A missing issue
+    emits `exported` with the id in `missing` and keeps the dialog open; the card closes it. The last options are
+    remembered per sub-tab (`feedback-view-storage.ts`); no `closedby="any"`.
   - `#editConfigOverrideDialog`: Edit Config Override (`admin-dialogs/admin-config-override-dialog.component.html`)
   - `#rateLimitsDialog`: Rate Limits (`admin-dialogs/admin-rate-limits-dialog.component.html`)
   - `#analyticsDialog`: Analytics (`configs-tab/`)

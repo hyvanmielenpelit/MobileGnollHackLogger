@@ -115,6 +115,8 @@ public class AgentLoopRunner
         var execContext = request.ToolExecutionContext ?? new ToolExecutionContext();
         execContext.ActiveProvider ??= request.ProviderName;
         execContext.ActiveModelId ??= request.ModelId;
+        execContext.ActiveThinkingLevel ??= request.ThinkingLevel;
+        execContext.ActiveReasoningMode ??= request.ReasoningMode;
         int maxToolIterations = request.MaxToolIterations;
         int maxParallelTools = request.MaxParallelTools;
         int maxParallelClientTools = request.MaxParallelClientTools;

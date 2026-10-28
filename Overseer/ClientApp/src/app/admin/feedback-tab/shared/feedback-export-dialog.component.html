@@ -1,14 +1,16 @@
 <!-- EXPORT
-     The selected issues as one file: YAML for an AI coding assistant, or Markdown to read. No closedby="any": a
-     click beside the dialog must not abandon an export in flight. -->
+     The selected issues, or one issue, as one file: YAML for an AI coding assistant, or Markdown to read. Every id
+     starts with `prefix`, so two instances on one page never share one. No closedby="any": a click beside the
+     dialog must not abandon an export in flight. -->
 <dialog #dialog class="gh-dialog feedback-transfer-dialog feedback-export-dialog"
-        [attr.aria-labelledby]="source + '-feedback-export-title'"
+        [attr.aria-labelledby]="prefix + '-feedback-export-title'"
+        [attr.aria-describedby]="isSingleIssue ? prefix + '-feedback-export-issue' : null"
         [attr.aria-busy]="exporting ? 'true' : null"
         (cancel)="onCancel($event)">
   <div class="dialog-content">
     <div class="dialog-header">
       <div class="dialog-title-group">
-        <h3 [id]="source + '-feedback-export-title'">{{ title }}</h3>
+        <h3 [id]="prefix + '-feedback-export-title'">{{ title }}</h3>
       </div>
       <button type="button" class="btn-icon-action" aria-label="Close feedback export" (click)="close()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
@@ -18,40 +20,97 @@
       </button>
     </div>
 
-    <div class="dialog-body">
-      <p class="fx-intro">
-        The file holds each issue's facts and its newest reports, without user names or links to conversations,
-        and ends in a resolution template. An AI coding assistant works on it with the
-        <code>server-feedback-resolution</code> skill and writes a resolution file you import here.
+    <div class="dialog-body fx-body">
+      @if (isSingleIssue) {
+        <!-- The issue being exported; also the dialog's description. -->
+        <div class="fx-issue" [id]="prefix + '-feedback-export-issue'">
+          <p class="fx-issue-label">Issue</p>
+          <p class="fx-issue-subject">{{ issueSubject }}</p>
+          @if (storedOccurrencesText; as stored) {
+            <p class="fx-issue-details">{{ stored }}</p>
+          }
+        </div>
+      }
+
+      <p class="fx-privacy">
+        <svg class="fx-privacy-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        <span><strong>Anonymized:</strong> no user names and no links to conversations.</span>
       </p>
 
+      <!-- The formats as radio cards: the whole card is the radio's label, and the radio stays visible. -->
       <fieldset class="gh-choice fx-format">
         <legend>File format</legend>
         @for (choice of formatChoices; track choice.value) {
-          <label class="gh-radio">
-            <input type="radio" [name]="source + '-feedback-export-format'" [attr.value]="choice.value"
+          <label class="fx-format-card">
+            <input type="radio" [name]="prefix + '-feedback-export-format'" [attr.value]="choice.value"
                    [checked]="format === choice.value" (change)="setFormat(choice.value)">
-            <span><span class="fx-format-name">{{ choice.label }}</span>&ngsp;<span class="fx-format-hint">{{ choice.hint }}</span></span>
+            <span class="fx-format-text">
+              <span class="fx-format-head">
+                <span class="fx-format-name">{{ choice.label }}</span>
+                @if (choice.recommended) {
+                  <span class="fx-format-tag">Recommended</span>
+                }
+              </span>
+              <span class="fx-format-hint">{{ choice.hint }}</span>
+            </span>
           </label>
         }
       </fieldset>
 
-      <fieldset class="gh-choice fx-occurrences">
-        <legend>Occurrences per issue</legend>
-        @for (choice of occurrenceChoices; track choice) {
-          <label class="gh-radio">
-            <input type="radio" [name]="source + '-feedback-export-occurrences'" [attr.value]="choice"
-                   [checked]="occurrencesPerIssue === choice" (change)="setOccurrences(choice)">
-            <span>{{ choice }} newest</span>
-          </label>
-        }
-      </fieldset>
+      <div class="fx-occurrences">
+        <div class="fx-occurrences-row">
+          <div class="fx-field">
+            <label [for]="prefix + '-feedback-export-occurrences'">Occurrences per issue</label>
+            <select class="gh-input fx-occurrences-select" [id]="prefix + '-feedback-export-occurrences'"
+                    [attr.aria-describedby]="prefix + '-feedback-export-occurrences-hint'"
+                    (change)="onOccurrenceChoice($event)">
+              @for (preset of occurrencePresets; track preset) {
+                <option [value]="'' + preset" [selected]="occurrenceChoice === '' + preset">{{ preset }} newest</option>
+              }
+              <option value="all" [selected]="occurrenceChoice === 'all'">All occurrences</option>
+              <option value="custom" [selected]="occurrenceChoice === 'custom'">Custom…</option>
+            </select>
+          </div>
+          @if (isCustom) {
+            <div class="fx-field fx-custom-field">
+              <label [for]="prefix + '-feedback-export-custom'">Number of occurrences</label>
+              <input #customInput type="number" class="gh-input fx-custom-input" [id]="prefix + '-feedback-export-custom'"
+                     min="1" [attr.max]="maxOccurrences" step="1" inputmode="numeric" autocomplete="off"
+                     [value]="customOccurrences"
+                     [attr.aria-invalid]="customError ? 'true' : null"
+                     [attr.aria-describedby]="customDescribedBy"
+                     (input)="onCustomInput($event)">
+              @if (customError) {
+                <p class="gh-field-error fx-custom-error" [id]="prefix + '-feedback-export-custom-error'">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                  <span>{{ customError }}</span>
+                </p>
+              }
+            </div>
+          }
+        </div>
+        <p class="form-hint fx-occurrences-hint" [id]="prefix + '-feedback-export-occurrences-hint'">{{ occurrencesHint }}</p>
+      </div>
 
       @if (isGnollBench) {
         <label class="checkbox-label fx-question-text">
           <input type="checkbox" [checked]="includeQuestionText" (change)="onIncludeQuestionTextChange($event)">
           <span>Include the question text of each occurrence</span>
         </label>
+      }
+
+      @if (format === 'yaml') {
+        <section class="fx-next" [attr.aria-labelledby]="prefix + '-feedback-export-steps-title'">
+          <h4 class="gh-section-title" [id]="prefix + '-feedback-export-steps-title'">Next steps</h4>
+          <ol class="fx-steps">
+            <li><strong>Download</strong> the file.</li>
+            <li><strong>Hand it to an AI coding assistant</strong> in this repository, asking it to use the <code>server-feedback-resolution</code> skill.</li>
+            <li><strong>Review and commit</strong> the fixes it makes.</li>
+            <li><strong>Import</strong> the resolutions file it writes with <strong>Import resolutions…</strong> — for one issue, paste its resolution message into <strong>Edit triage</strong> instead.</li>
+          </ol>
+        </section>
+      } @else {
+        <p class="fx-markdown-note">Markdown is for reading. Choose YAML to hand the issues to an assistant.</p>
       }
 
       @if (error) {
@@ -64,7 +123,7 @@
 
     <div class="dialog-footer">
       @if (blockedReason && !exporting) {
-        <p class="gh-footer-note" [id]="source + '-feedback-export-reason'">
+        <p class="gh-footer-note" [id]="prefix + '-feedback-export-reason'">
           <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
           <span>{{ blockedReason }}</span>
         </p>
@@ -73,8 +132,11 @@
       <button type="button" class="btn-gh fx-export-btn"
               [attr.aria-disabled]="blockedReason ? 'true' : null"
               [attr.aria-busy]="exporting ? 'true' : null"
-              [attr.aria-describedby]="blockedReason && !exporting ? source + '-feedback-export-reason' : null"
-              (click)="runExport()">{{ exporting ? 'Exporting…' : 'Export' }}</button>
+              [attr.aria-describedby]="blockedReason && !exporting ? prefix + '-feedback-export-reason' : null"
+              (click)="runExport()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        {{ downloadLabel }}
+      </button>
     </div>
   </div>
 </dialog>

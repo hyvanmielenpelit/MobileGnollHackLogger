@@ -107,7 +107,8 @@ public sealed class AdminFeedbackControllerTests : IDisposable
     private async Task<OverseerFeedbackReport> AddReportAsync(OverseerFeedbackIssue issue, long sessionId, DateTime createdUtc,
         string? userId = "user-1", string? modelId = "model-a", string? expectedLocation = null, string? relatedToolsJson = null,
         string? suspectedCause = null, string? appVersion = null, string? provider = "TestProvider", string? modelSource = null,
-        long? configurationId = null, string? details = null, string? searchedFor = null)
+        long? configurationId = null, string? details = null, string? searchedFor = null, string? thinkingLevel = null,
+        string? reasoningMode = null)
     {
         var report = new OverseerFeedbackReport
         {
@@ -121,6 +122,8 @@ public sealed class AdminFeedbackControllerTests : IDisposable
             AspNetUserId = userId,
             ModelId = modelId,
             Provider = provider,
+            ThinkingLevel = thinkingLevel,
+            ReasoningMode = reasoningMode,
             ExpectedLocation = expectedLocation,
             RelatedToolsJson = relatedToolsJson,
             SuspectedCause = suspectedCause,
@@ -1055,6 +1058,54 @@ public sealed class AdminFeedbackControllerTests : IDisposable
         Assert.Equal("Model Zero", row.ModelLabels[0]);
         var occurrence = Assert.Single(await query.BuildOccurrenceDtosAsync(new List<OverseerFeedbackReport> { noProvider }, ct));
         Assert.Equal("model-0", occurrence.ModelLabel);
+    }
+
+    [Fact]
+    public async Task ModelIdentities_SeparateThinkingLevels_AndOccurrencesCarryTheSettings()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var issue = await AddIssueAsync("Dilithium crystal");
+        await AddReportAsync(issue, 1, T0, modelId: "model-a", provider: "Anthropic", thinkingLevel: "high", reasoningMode: "summary");
+        await AddReportAsync(issue, 2, T0.AddMinutes(1), modelId: "model-a", provider: "Anthropic", thinkingLevel: "low");
+        await AddReportAsync(issue, 3, T0.AddMinutes(2), modelId: "model-a", provider: "Anthropic", thinkingLevel: "high", reasoningMode: "summary");
+        await AddReportAsync(issue, 4, T0.AddMinutes(3), modelId: null);
+
+        var query = new OverseerFeedbackQuery(_db, new StubModelMetadata(new() { ["model-a"] = "Model A" }));
+        var row = (await query.BuildIssueDtosAsync(new List<OverseerFeedbackIssue> { issue }, ct))[0];
+
+        Assert.Equal(
+            new (string, string, string?, string?, string?)[] { ("model-a", "Model A", "Anthropic", "high", "summary"), ("model-a", "Model A", "Anthropic", "low", null) },
+            row.ModelIdentities.Select(m => (m.ModelId, m.ModelLabel, m.Provider, m.ThinkingLevel, m.ReasoningMode)));
+        Assert.Equal(0, row.MoreModelIdentities);
+        Assert.Equal(new[] { "model-a" }, row.ModelIds);
+
+        var occurrences = await query.BuildOccurrenceDtosAsync(await query.Occurrences(issue.Id).ToListAsync(ct), ct);
+        var first = occurrences.Single(o => o.ChatSessionId == 1);
+        Assert.Equal("high", first.ThinkingLevel);
+        Assert.Equal("summary", first.ReasoningMode);
+        var second = occurrences.Single(o => o.ChatSessionId == 2);
+        Assert.Equal("low", second.ThinkingLevel);
+        Assert.Null(second.ReasoningMode);
+    }
+
+    [Fact]
+    public async Task ModelIdentities_AreCappedAtFive_ByLabel_AndCountTheRest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var issue = await AddIssueAsync("Dilithium crystal");
+        string[] models = { "model-f", "model-b", "model-e", "model-a", "model-d", "model-c" };
+        for (int i = 0; i < models.Length; i++)
+            await AddReportAsync(issue, i + 1, T0.AddMinutes(i), modelId: models[i], thinkingLevel: "medium");
+
+        var row = (await new OverseerFeedbackQuery(_db).BuildIssueDtosAsync(new List<OverseerFeedbackIssue> { issue }, ct))[0];
+
+        Assert.Equal(new[] { "model-a", "model-b", "model-c", "model-d", "model-e" }, row.ModelIdentities.Select(m => m.ModelId));
+        Assert.All(row.ModelIdentities, m => Assert.Equal("medium", m.ThinkingLevel));
+        Assert.Equal(1, row.MoreModelIdentities);
+
+        var listed = Assert.Single((await ListAsync()).Rows);
+        Assert.Equal(5, listed.ModelIdentities.Count);
+        Assert.Equal(1, listed.MoreModelIdentities);
     }
 
     // --- Delete ---
