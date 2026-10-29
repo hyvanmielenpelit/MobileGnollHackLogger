@@ -376,6 +376,12 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
 }
 
 .popover-option {
+  width: 100%;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: start;
   padding: 10px 12px;
   cursor: pointer;
   display: flex;
@@ -383,6 +389,11 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
   align-items: center;
   gap: 12px;
   transition: background-color 0.2s ease;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
 }
 
 .popover-option:hover {

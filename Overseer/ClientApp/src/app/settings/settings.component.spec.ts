@@ -132,6 +132,35 @@ describe('SettingsComponent', () => {
       expect(checkbox.checked).toBe(true);
     });
 
+    it('makes custom select options buttons that select their value and close the popover', fakeAsync(() => {
+      vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
+      showSection('performance');
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const trigger = compiled.querySelector<HTMLButtonElement>('[popovertarget="maxResultLengthPopover"]')!;
+      const popover = compiled.querySelector<HTMLElement>('#maxResultLengthPopover')!;
+      expect(trigger.getAttribute('aria-haspopup')).toBe('listbox');
+      expect(popover.getAttribute('role')).toBe('listbox');
+
+      popover.showPopover();
+      const options = Array.from(popover.querySelectorAll<HTMLButtonElement>('.popover-option'));
+      expect(options.length).toBeGreaterThan(0);
+      for (const o of options) {
+        expect(o.tagName).toBe('BUTTON');
+        expect(o.type).toBe('button');
+        expect(o.getAttribute('role')).toBe('option');
+      }
+
+      const high = options.find(o => o.querySelector('.opt-label')!.textContent!.trim() === 'High')!;
+      high.click();
+      tick();
+      fixture.detectChanges();
+
+      expect(component.maxResultLengthSelect).toBe(20000);
+      expect(popover.matches(':popover-open')).toBe(false);
+      expect(high.getAttribute('aria-selected')).toBe('true');
+    }));
+
     it('should forward showChatCost as the sixteenth saveSettings argument', fakeAsync(() => {
       const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
 

@@ -977,6 +977,20 @@ describe('ModelPickerComponent view toolbar', () => {
     expect(document.activeElement).toBe(listbox(p));
   });
 
+  describe('in the GnollHack client\'s controller mode', () => {
+    afterEach(() => { delete document.documentElement.dataset['gnhPad']; });
+
+    it('focuses the listbox on open with a remembered search, even on a fine pointer', async () => {
+      document.documentElement.dataset['gnhPad'] = 'active';
+      store('spec.one', { search: 'luna' });
+      await create();
+      const p = picker('one');
+      open(p);
+      expect(search(p).value).toBe('luna');
+      expect(document.activeElement).toBe(listbox(p));
+    });
+  });
+
   it('expands the toolbar and opens the field with a printable key typed in the listbox', async () => {
     await create();
     const p = picker('one');

@@ -1,7 +1,7 @@
 @if (!isOffline) {
   <app-admin-alerts></app-admin-alerts>
   <div class="layout" [class.is-resizing]="isResizing" [class.sidebar-open]="isSidebarOpen">
-    <div class="sidebar gh-main-container" #sidebar [style.width.px]="sidebarWidth">
+    <div class="sidebar gh-main-container" #sidebar data-gnh-pad-area="s" [style.width.px]="sidebarWidth">
       <button class="sidebar-close-btn" (click)="closeSidebar()" title="Close Sidebar" aria-label="Close sidebar">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
@@ -24,7 +24,7 @@
           spellcheck="false" />
         <button *ngIf="sessionSearchQuery" class="search-clear-btn" (click)="clearSessionSearch()" title="Clear search" aria-label="Clear search">✕</button>
       </div>
-      <ul>
+      <ul data-gnh-pad-scroll>
         @if (loadingSessions) {
           <li class="sessions-loader">
             <div class="sidebar-spinner"></div>
@@ -38,17 +38,17 @@
         }
         @for (s of sessions; track s.id) {
           <li [class.active]="isCurrentSession(s.id)" [class.is-pinned]="s.isPinned" (click)="navigateToSession(s.id)">
-            <div class="session-info">
-              <div class="session-title" title="{{ s.title }}">
+            <button type="button" class="session-info" [attr.aria-current]="isCurrentSession(s.id) ? 'page' : null">
+              <span class="session-title" title="{{ s.title }}">
                 @if (s.isConfidential) {
                   <svg class="session-lock" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span class="visually-hidden">Confidential chat: </span>
                 }
                 {{ s.title }}
-              </div>
+              </span>
               @if (s.lastMessageUtc) {
-                <div class="session-time" [title]="s.lastMessageUtc | date:'medium'">{{ s.lastMessageUtc | relativeTime }}</div>
+                <span class="session-time" [title]="s.lastMessageUtc | date:'medium'">{{ s.lastMessageUtc | relativeTime }}</span>
               }
-            </div>
+            </button>
             <div class="session-item-actions" (click)="$event.stopPropagation()">
               <button class="session-delete-btn" (click)="requestDeleteSession(s.id, $event)" title="Move to Trash" aria-label="Move to Trash">✕</button>
               <button class="session-action-btn session-pin-btn" [class.pinned]="s.isPinned" (click)="togglePinSession(s.id, $event)" [title]="s.isPinned ? 'Unpin Chat' : ((pinnedSessionCount || 0) >= (maxPinnedQuota || 5) ? 'Pin limit reached (max ' + (maxPinnedQuota || 5) + ') - unpin another chat first' : 'Pin Chat')" [attr.aria-label]="s.isPinned ? 'Unpin Chat' : ((pinnedSessionCount || 0) >= (maxPinnedQuota || 5) ? 'Pin limit reached (max ' + (maxPinnedQuota || 5) + ') - unpin another chat first' : 'Pin Chat')">
@@ -64,9 +64,8 @@
         }
         <!-- Load More link -->
         @if (hasMoreSessions && !loadingMoreSessions && !loadingSessions) {
-          <li
-            class="load-more-item" (click)="loadMoreSessions()">
-            Load more
+          <li class="load-more-item">
+            <button type="button" class="load-more-btn" (click)="loadMoreSessions()">Load more</button>
           </li>
         }
         <!-- Loading spinner for additional pages -->
@@ -120,7 +119,7 @@
     </div>
     <div class="resizer" (mousedown)="startResize($event)" (touchstart)="startResize($event)"></div>
     <div class="sidebar-backdrop" [class.visible]="isSidebarOpen" (click)="closeSidebar()"></div>
-    <div class="chat-area gh-main-container">
+    <div class="chat-area gh-main-container" data-gnh-pad-area="m">
       <div class="chat-header">
         <button class="sidebar-toggle" (click)="toggleSidebar()" title="Toggle Sidebar" aria-label="Toggle sidebar">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
@@ -255,7 +254,7 @@
           </div>
         }
       </div>
-      <div class="messages" #messagesContainer (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 0 || showThoughtsAndTools === 1">
+      <div class="messages" #messagesContainer data-gnh-pad-scroll (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (gnhpadscroll)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 0 || showThoughtsAndTools === 1">
         @if (isLoadingSession) {
           <div class="conversation-loader">
             <div class="sidebar-spinner"></div>
@@ -292,7 +291,7 @@
             </div>
           }
           @for (msg of messages; track msg; let i = $index) {
-            <div class="message-box" [ngClass]="msg.role">
+            <div class="message-box" [ngClass]="msg.role" data-gnh-pad-section>
               <div class="message-header">
                 @if (msg.role === 'assistant') {
                   @if (isLastAssistantMessage(i)) {
@@ -393,17 +392,17 @@
                           <details>
                             <summary>
                               <span>Result</span>
-                              <button class="tool-copy-btn" (click)="copyToolResult(tc.result, i + '-' + tIndex, $event)" title="Copy Result">
-                                @if (copiedToolCallId === (i + '-' + tIndex)) {
-                                  <span>✅</span>
-                                }
-                                @if (copiedToolCallId !== (i + '-' + tIndex)) {
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                                }
-                              </button>
                             </summary>
                             <pre>{{ tc.result }}</pre>
                           </details>
+                          <button class="tool-copy-btn" (click)="copyToolResult(tc.result, i + '-' + tIndex, $event)" title="Copy Result">
+                            @if (copiedToolCallId === (i + '-' + tIndex)) {
+                              <span>✅</span>
+                            }
+                            @if (copiedToolCallId !== (i + '-' + tIndex)) {
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            }
+                          </button>
                         </div>
                       }
                       @if (tc.status === 'canceled') {
@@ -453,7 +452,7 @@
             </div>
           }
           @if (isStreaming || streamingMessage) {
-            <div class="message-box assistant">
+            <div class="message-box assistant" data-gnh-pad-section>
               <div class="message-header">
                 <img [src]="streamingAvatarSrc" (load)="onAvatarLoaded()" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
                 <strong>Overseer</strong>
@@ -526,17 +525,17 @@
                           <details>
                             <summary>
                               <span>Result</span>
-                              <button class="tool-copy-btn" (click)="copyToolResult(tc.result, 'stream-' + tIndex, $event)" title="Copy Result">
-                                @if (copiedToolCallId === ('stream-' + tIndex)) {
-                                  <span>✅</span>
-                                }
-                                @if (copiedToolCallId !== ('stream-' + tIndex)) {
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                                }
-                              </button>
                             </summary>
                             <pre>{{ tc.result }}</pre>
                           </details>
+                          <button class="tool-copy-btn" (click)="copyToolResult(tc.result, 'stream-' + tIndex, $event)" title="Copy Result">
+                            @if (copiedToolCallId === ('stream-' + tIndex)) {
+                              <span>✅</span>
+                            }
+                            @if (copiedToolCallId !== ('stream-' + tIndex)) {
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            }
+                          </button>
                         </div>
                       }
                       @if (tc.status === 'canceled') {
@@ -919,7 +918,7 @@
             </button>
             <input type="file" id="fileInput" hidden multiple [attr.accept]="attachmentAcceptAttr" (change)="onFileSelected($event)">
             <div class="auto-resize-wrapper" [attr.data-replicated-value]="currentInput">
-              <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keydown.enter)="onEnter($event)" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus class="transparent-textarea"></textarea>
+              <textarea #promptInput data-gnh-pad-key="compose" data-gnh-pad-initial [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keydown.enter)="onEnter($event)" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus class="transparent-textarea"></textarea>
             </div>
             <!-- While blocked or awaiting the Terms: aria-disabled rather than disabled, so the button stays focusable and its tooltip says why. -->
             <button type="button" class="icon-btn send-icon" (click)="sendMessage()"

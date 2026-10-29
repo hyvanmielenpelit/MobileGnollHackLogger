@@ -297,6 +297,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   isOffline = !navigator.onLine;
   private onlineHandler = () => { this.isOffline = false; this.cdr.detectChanges(); this.loadSessions(true); };
   private offlineHandler = () => { this.isOffline = true; this.cdr.detectChanges(); };
+  private gnhPadModeHandler = (event: Event) => {
+    if ((event as CustomEvent<{ active?: boolean }>).detail?.active) this.releaseIdlePromptFocus();
+  };
   sessions: ChatSession[] = [];
   hasMoreSessions = false;
   loadingMoreSessions = false;
@@ -1484,6 +1487,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     window.removeEventListener('online', this.onlineHandler);
     window.removeEventListener('offline', this.offlineHandler);
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+    document.removeEventListener('gnhpadmode', this.gnhPadModeHandler);
     this.navigationStartSub?.unsubscribe();
     if (this.ephemeralNoticeTimeout) {
       clearTimeout(this.ephemeralNoticeTimeout);
@@ -1560,6 +1564,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   ngAfterViewInit() {
     this.focusPromptInput();
+    // Re-created while the controller is active (back from Settings): no gnhpadmode event follows.
+    // The frame callback runs after the browser's autofocus step.
+    if (this.controllerActive) {
+      requestAnimationFrame(() => this.releaseIdlePromptFocus());
+    }
     /* After this check finishes: opening starts the dialog's own loading state. */
     if (this.termsGatePending) {
       this.termsGatePending = false;
@@ -1588,22 +1597,37 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.cancelKatexPrefetch = this.katexLoader.prefetchWhenIdle();
   }
 
+  /** True while the GnollHack client's gamepad navigator drives the page. */
+  private get controllerActive(): boolean {
+    return document.documentElement.dataset['gnhPad'] === 'active';
+  }
+
+  /** Does nothing in controller mode, where the client decides when an edit starts. */
   private focusPromptInput() {
+    if (this.controllerActive) return;
     setTimeout(() => {
-      if (this.promptInput && this.promptInput.nativeElement) {
+      if (!this.controllerActive && this.promptInput && this.promptInput.nativeElement) {
         this.promptInput.nativeElement.focus();
       }
     }, 100);
     setTimeout(() => {
-      if (this.promptInput && this.promptInput.nativeElement) {
+      if (!this.controllerActive && this.promptInput && this.promptInput.nativeElement) {
         this.promptInput.nativeElement.focus();
       }
     }, 500);
     setTimeout(() => {
-      if (this.promptInput && this.promptInput.nativeElement) {
+      if (!this.controllerActive && this.promptInput && this.promptInput.nativeElement) {
         this.promptInput.nativeElement.focus();
       }
     }, 1000);
+  }
+
+  /** Blurs the message box when it holds the focus with nothing typed, so the controller's D-pad moves its ring. */
+  private releaseIdlePromptFocus() {
+    const input = this.promptInput?.nativeElement;
+    if (input && document.activeElement === input && !input.value) {
+      input.blur();
+    }
   }
 
   perfLog(tag: string, message: string, startTime?: number) {
@@ -1842,6 +1866,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     window.addEventListener('online', this.onlineHandler);
     window.addEventListener('offline', this.offlineHandler);
     window.addEventListener('beforeunload', this.beforeUnloadHandler);
+    document.addEventListener('gnhpadmode', this.gnhPadModeHandler);
 
     if (!("popover" in HTMLElement.prototype)) {
       import("@oddbird/popover-polyfill").catch(err => console.warn('Failed to load popover polyfill', err));

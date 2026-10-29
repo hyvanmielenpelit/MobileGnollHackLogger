@@ -531,8 +531,9 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     this.cdr.markForCheck();
     this.cdr.detectChanges();
     // The field takes focus only when it opens with a remembered search, and on a touch screen not
-    // even then, so the on-screen keyboard waits for a tap on the field.
-    if (this.toolsShown && this.toolsRef?.searchShown && finePointer()) {
+    // even then, so the on-screen keyboard waits for a tap on the field. In the GnollHack client's
+    // controller mode the listbox takes it, so a D-pad press cannot blur the field and close the list.
+    if (this.toolsShown && this.toolsRef?.searchShown && finePointer() && document.documentElement.dataset['gnhPad'] !== 'active') {
       this.toolsRef.focusSearch();
     } else {
       this.listboxRef?.nativeElement.focus();
