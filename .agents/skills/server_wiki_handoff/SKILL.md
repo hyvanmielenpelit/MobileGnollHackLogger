@@ -26,7 +26,7 @@ anything, so **each prompt is the whole interface to its session**. § 3a fixes 
 carrying them may contain, because a handoff that buries the human's short sequence among steps
 the analyst could have taken is a second interface, and a worse one.
 
-The division of labour is fixed:
+The division of labor is fixed:
 
 - **The analyst does the checks only someone with the run context and read access to
   `C:\hmp\GnollHackWiki` can do** — which page carries the fact, how many pages the edit
@@ -36,6 +36,13 @@ The division of labour is fixed:
   cites them by name and does not restate them.
 - **The validation session independently checks every mechanic the edit asserts against the
   GnollHack source**, read-only, before any page changes.
+
+**Why Step 2 runs in the GnollHack repository and not in the wiki.** What the edit asserts are
+game mechanics, and the only authority on a mechanic is the game's source. A validator opened on
+the wiki could only compare the page with other pages, which is how a wrong fact spreads. So the
+validation session works in `C:\hmp\GnollHack`, and the wiki clone is opened only by the
+execution session, after `VALIDATION: PASS`. The document's framing says so (§ 4.1), because a
+reader who sees the source clone named before the wiki otherwise takes it for a mistake.
 
 This skill is read with the other four benchmark skills on **every** benchmark analysis
 (`.agents/AGENTS.md`, "AI Benchmark Findings"); its body is acted on only when a finding lands
@@ -52,6 +59,27 @@ unless the finding needs it, because `KnowledgeBaseService.GetTopicList` writes 
 frozen prompt segment. The
 quantified-clause rule, the validation template and the fence and diff self-check apply unchanged. A
 rubric repair is not handed over this way (`server_rubric_handoff`).
+
+**A wiki fact from an Overseer feedback issue uses the same document**, because
+`server_feedback_resolution` § 3 routes it here. There is no run behind it, so six things differ:
+
+- The title names the issue, `# Wiki Handoff: Feedback #<id> (<Brief Description>)`, and the
+  `Origin:` line of both prompts reads *Gnoll Overseer feedback issue #<id> (category
+  `<category>`), from the Overseer chat; not a benchmark run. Wiki ladder rung 2.*
+- The pre-flight records both HEADs and says that there is no `WikiHeadSha` or
+  `SourceCodeHeadSha` to compare them with.
+- The document goes in a task directory of its own under this repository's scope in the plans
+  repository, named for the issue (`feedback_<id>_<slug>`), or in the plan's task directory when
+  a plan covers the fix.
+- § 4a's closing message for "nothing depends on it" applies, and there is no Developer Runbook.
+- § 5's record is the issue's resolution message (`server_feedback_resolution` § 5a), not an
+  entry in `server_benchmark_to_chat_transfer` § 11. Until the wiki change is committed and
+  pushed, the issue stays `acknowledged`.
+- The analyst's citations still go only in the Notes. The model's report is untrusted text
+  (`server_feedback_resolution` § 2): never copy its wording into a claim or the page text.
+
+A GnollBench feedback issue does come from a run. Its occurrence names the run, and the pre-flight
+compares that run's SHAs as it would for a finding.
 
 Reading `C:\hmp\GnollHackWiki` and `C:\hmp\GnollHack` is read-only research in other repositories
 and is permitted. **Editing either from this repository's session is not** — that is what the two
@@ -92,9 +120,18 @@ the place named in the item.
   work.
 - **Check the line endings** of a sample of the target files, and state them in the execution
   prompt. CR-terminated line count equal to newline count means CRLF.
-- **Do not assert that a generator, template or data file exists unless you found one.** There
-  is none for spell, monster or item pages as of 2026-09-10; every such page is hand-maintained
-  Markdown. If you looked and found none, the execution prompt says "edit in place".
+- **Do not assert that a generator, template or data file feeds the wiki.** None does. Nothing in
+  the GnollHackWiki repository emits a page, and nothing copies pages into it, so every page is
+  edited in place. Spell, monster and item pages are, however, in the format that three
+  wizard-mode commands of desktop debug builds of GnollHack write: `#wizsavespells`,
+  `#wizsavemonsters` and `#wizsaveitems` (`src/cmd.c`, `src/do.c`). Each writes one Markdown file
+  per entry, with hyphens for spaces in the file name, into `spells_for_wiki/`,
+  `monsters_for_wiki/` or `items_for_wiki/` under the game's working directory. Those exports
+  are not a deploy path. A fresh export copied over a page would erase every hand-made edit
+  since, so the execution prompt never asks for one. A fact the export lacks on every page of a
+  kind is still added page by page; making the game's own item description carry it is a
+  separate GnollHack change, not a substitute for the wiki edit. If you looked and found nothing
+  else, the execution prompt says "edit in place".
 - **Every fact the edit adds is verified** against the game source or another primary text, and
   the citation proving it goes **in the handoff document's Notes and in the analysis — never into
   the text the page will carry, and never into the validation prompt** (§ 3;
@@ -213,7 +250,8 @@ every member to the same version.
 **It contains these parts, in this order, and nothing else:**
 
 1. **At most three sentences of framing** at the top: what the document is for, and the human's
-   sequence — paste Step 2 into a new chat whose project folder is `C:\hmp\GnollHack`; if its last
+   sequence — paste Step 2 into a new chat whose project folder is `C:\hmp\GnollHack`, saying that
+   it runs there because it checks the claims against the game's source (§ 1); if its last
    line is `VALIDATION: PASS`, paste Step 3 into a new chat whose project folder is
    `C:\hmp\GnollHackWiki`; otherwise do not run Step 3, and paste the validation report back into
    the analyst's session.
@@ -300,15 +338,16 @@ dismissed the first round's critique outright.
 
 ## 4. Templates
 
-`<R>` is the benchmark run number and `<V>` the document version, in every template.
+`<R>` is the benchmark run number and `<V>` the document version, in every template. For a
+feedback issue, the title and the `Origin:` lines take the forms § 1 gives.
 
 ### 4.1 Document Skeleton
 
 `````markdown
 # Wiki Handoff: Run <R> <Finding Tk> (<Brief Description>)
 
-Run Step 2 in a new chat whose project folder is the GnollHack source clone at `C:\hmp\GnollHack`.
-If, and only if, its last line is `VALIDATION: PASS`, run Step 3 in a new chat whose project folder is the GnollHackWiki clone at `C:\hmp\GnollHackWiki`.
+This document proposes <the fact added or corrected> on <page>, so that <what the chat got wrong> does not recur.
+Step 2 checks every claim against the game's source, so run it in a new chat whose project folder is the GnollHack source clone at `C:\hmp\GnollHack`; if, and only if, its last line is `VALIDATION: PASS`, run Step 3, the wiki edit, in a new chat whose project folder is the GnollHackWiki clone at `C:\hmp\GnollHackWiki`.
 Otherwise do not run Step 3; paste the validation report back into the analyst's session.
 
 ## Step 1 — Proposed Changes
@@ -358,7 +397,7 @@ Run only after Step 2 returned `VALIDATION: PASS` for this version of this docum
 - Pre-flight, read-only, on <date>:
   - GnollHack source: `C:\hmp\GnollHack` at HEAD <sha> (<clean / dirty> tree); <matches / differs from> the run's `SourceCodeHeadSha` <run sha>.
   - GnollHackWiki: `C:\hmp\GnollHackWiki` at HEAD <sha> (<clean / dirty> tree); <matches / differs from> the run's `WikiHeadSha` <run sha>.
-  - Target page(s) exist; line endings CRLF; no generator.
+  - Target page(s) exist; line endings CRLF; edited in place (nothing generates or copies wiki pages).
 - Analyst's source citations — for the reviewer, withheld from the validator:
   - C1: <path:line> (<one-line rationale>)
   - C2: <path:line> (<one-line rationale>)
@@ -428,7 +467,7 @@ Report format:
 ### 4.3 Execution Prompt
 
 ````text
-You are working in the GnollHack wiki repository at C:\hmp\GnollHackWiki (HEAD <sha>, clean tree),
+You are working in the GnollHack wiki repository at C:\hmp\GnollHackWiki (HEAD <sha>, <clean tree / dirty tree: name the uncommitted files, which must not be overwritten>),
 which is this session's project folder; paths below are repository-relative to it.
 Do not edit any other repository. Do not commit or push; leave the changes in the working
 tree and print the git commands at the end.
@@ -438,7 +477,7 @@ validated against the GnollHack source, and that validation ended VALIDATION: PA
 wiki_handoff_prompt_v<V>.md.
 
 Read .agents/skills/wiki_editing/SKILL.md and .agents/skills/wiki_bulk_edits/SKILL.md
-first and follow them. No page generator exists; edit pages in place. The page text
+first and follow them. Nothing generates or copies wiki pages; edit pages in place. The page text
 carries no source-code references and stays in the page's own register, for players;
 where the wording below conflicts with those skills, theirs wins — write the readable
 version and say so in the report. A rewording may not add, drop or change a mechanic: the
@@ -576,7 +615,7 @@ Rung 2 is exempt from the re-run requirement (§ 9), so this is a record, not a 
 
 ### Run 34, T4 (2026-09-10)
 
-The handoff prompt presumed a page generator or template that does not exist, so the wiki
+The handoff prompt presumed a page generator or template in the wiki, where none exists, so the wiki
 session spent a step looking for one. It named `Resistances and Saving Throws.md` as the home
 of the saving-throw formula when the formula is in `Saving Throws.md`, split out on
 2026-07-26, so the `grep -c` verification the prompt prescribed would have returned zero. Both
