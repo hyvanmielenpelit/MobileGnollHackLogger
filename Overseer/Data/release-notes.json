@@ -1,5 +1,48 @@
 [
   {
+    "version": "1.4.3",
+    "date": "2026-10-29T22:19:33Z",
+    "summary": "A release that makes the Overseer comfortable to use with a game controller on the Steam Deck, adds a new OpenAI model, and makes game lookups and chat titles more dependable.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "When you open the Overseer from GnollHack on the Steam Deck, you can now use the chat with the controller: move between the chat list, the messages and the message box with the D-pad, and scroll long answers without touching the screen."
+      },
+      {
+        "type": "improvement",
+        "text": "The chat list, its Load more button and the option lists under Settings can now be reached and used with the keyboard as well as the mouse."
+      },
+      {
+        "type": "feature",
+        "text": "GPT-6.1 Terra is now available as an OpenAI model."
+      },
+      {
+        "type": "fix",
+        "text": "If the model you chose for chat titles is no longer available, titles are now made with Default (First Available) instead, and the Models settings tell you so."
+      },
+      {
+        "type": "fix",
+        "text": "Item weights from game lookups are now given as the game shows them, so the AI no longer mistakes the stored weight for pounds."
+      },
+      {
+        "type": "fix",
+        "text": "Source code lookups now find game structures and lists whose opening brace is on the line after their name, so the AI can read more of the game's definitions."
+      },
+      {
+        "type": "fix",
+        "text": "With OpenAI models, an answer written in several parts no longer runs its parts together into one paragraph."
+      },
+      {
+        "type": "improvement",
+        "text": "The privacy options and the Privacy page now say that game text flagged by the Overseer's safety check is kept, encrypted, for 30 days for abuse review, in every chat mode including incognito and confidential chats."
+      },
+      {
+        "type": "improvement",
+        "text": "The Overseer now says \"chat\" everywhere instead of mixing \"chat\" and \"conversation\", for example in the sidebar's Chats list."
+      }
+    ]
+  },
+  {
     "version": "1.4.2",
     "date": "2026-10-26T18:13:11Z",
     "summary": "A small reliability release for the chat: starting a conversation is more dependable, and the chat no longer shows a misleading waiting screen.",
