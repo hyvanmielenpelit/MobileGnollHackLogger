@@ -152,18 +152,31 @@
       }
     }
 
-    // Controller mode: the gamepad ring does not move DOM focus, so every row shows all its actions
-    :host-context([data-gnh-pad="active"]) .sidebar li & {
+    // Controller mode: the gamepad ring does not move DOM focus, so the row that has the ring shows its
+    // actions, at once: the script reads their visibility in the same instant it marks the row
+    :host-context([data-gnh-pad="active"]) .sidebar li:has([data-gnh-pad-focused]) & {
       opacity: 1;
       pointer-events: auto;
+      transition: none;
     }
-    :host-context([data-gnh-pad="active"]) .sidebar li.is-pinned & .session-delete-btn {
+    :host-context([data-gnh-pad="active"]) .sidebar li.is-pinned:has([data-gnh-pad-focused]) & .session-delete-btn {
       display: flex;
     }
   }
 
   @media (hover: none) or (pointer: coarse) {
     opacity: 0.85;
+
+    // Controller mode: while the ring is in the chat list, only its row shows its actions. A touch hides
+    // the ring and removes the mark, and every row shows them again.
+    :host-context([data-gnh-pad="active"]) .sidebar ul:has([data-gnh-pad-focused]) li:not(:has([data-gnh-pad-focused])) & {
+      opacity: 0;
+      pointer-events: none;
+    }
+    :host-context([data-gnh-pad="active"]) .sidebar li:has([data-gnh-pad-focused]) & {
+      opacity: 1;
+      transition: none;
+    }
   }
 }
 

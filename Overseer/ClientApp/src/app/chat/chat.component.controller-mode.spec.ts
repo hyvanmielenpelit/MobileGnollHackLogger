@@ -36,6 +36,7 @@ describe('ChatComponent keyboard and controller reachability', () => {
   });
 
   afterEach(() => {
+    document.querySelectorAll('[data-gnh-pad-focused]').forEach(el => el.removeAttribute('data-gnh-pad-focused'));
     delete document.documentElement.dataset['gnhPad'];
     (document.activeElement as HTMLElement | null)?.blur();
   });
@@ -96,6 +97,62 @@ describe('ChatComponent keyboard and controller reachability', () => {
       expect(host().querySelector('.messages')!.hasAttribute('data-gnh-pad-scroll')).toBe(true);
       expect(prompt().getAttribute('data-gnh-pad-key')).toBe('compose');
       expect(prompt().hasAttribute('data-gnh-pad-initial')).toBe(true);
+    });
+
+    it('puts the sidebar, the chat list, the chat, the notices and the composer in their controller zones', () => {
+      const zone = (selector: string) => host().querySelector(selector)!.getAttribute('data-gnh-pad-zone');
+      expect(zone('.sidebar')).toBe('1');
+      expect(zone('.sidebar ul')).toBe('2');
+      expect(zone('.chat-header')).toBe('3');
+      expect(zone('.messages')).toBe('3');
+      expect(zone('app-admin-alerts')).toBe('3');
+      expect(zone('.toast-error')).toBe('3');
+      expect(zone('.input-area-container')).toBe('4');
+    });
+
+    it('makes each chat a controller row with its actions as secondary buttons, and Load more a plain stop', () => {
+      const rows = Array.from(host().querySelectorAll<HTMLLIElement>('.sidebar li')).filter(li => li.querySelector('.session-info'));
+      expect(rows.length).toBe(2);
+      for (const row of rows) {
+        expect(row.hasAttribute('data-gnh-pad-row')).toBe(true);
+        expect(row.querySelector('.session-item-actions')!.hasAttribute('data-gnh-pad-secondary')).toBe(true);
+      }
+      expect(host().querySelector('.load-more-item')!.hasAttribute('data-gnh-pad-row')).toBe(false);
+    });
+
+    it('shows the actions of the row that has the controller ring at once, and hides them when it leaves', ({ skip }) => {
+      if (!matchMedia('(hover: hover) and (pointer: fine)').matches) {
+        skip('The browser does not match the (hover: hover) and (pointer: fine) block these rules live in.');
+      }
+      const [first, pinned] = Array.from(host().querySelectorAll<HTMLLIElement>('.sidebar li')).filter(li => li.querySelector('.session-info'));
+      const opacity = (row: HTMLLIElement) => getComputedStyle(row.querySelector('.session-item-actions')!).opacity;
+      const deleteDisplay = (row: HTMLLIElement) => getComputedStyle(row.querySelector('.session-delete-btn')!).display;
+      const mark = (row: HTMLLIElement) => row.querySelector('button.session-info')!.setAttribute('data-gnh-pad-focused', '');
+      const unmark = (row: HTMLLIElement) => row.querySelector('button.session-info')!.removeAttribute('data-gnh-pad-focused');
+      const finishFadeOut = () => document.getAnimations().forEach(a => a.finish());
+
+      document.documentElement.dataset['gnhPad'] = 'active';
+      expect(opacity(first)).toBe('0');
+      expect(opacity(pinned)).toBe('1');
+      expect(deleteDisplay(pinned)).toBe('none');
+
+      // Read in the same tick as the mark: a transition would still report the before-change opacity
+      mark(first);
+      expect(opacity(first)).toBe('1');
+      expect(deleteDisplay(pinned)).toBe('none');
+
+      unmark(first);
+      mark(pinned);
+      expect(opacity(pinned)).toBe('1');
+      expect(deleteDisplay(pinned)).toBe('flex');
+      finishFadeOut();
+      expect(opacity(first)).toBe('0');
+
+      unmark(pinned);
+      finishFadeOut();
+      expect(opacity(first)).toBe('0');
+      expect(opacity(pinned)).toBe('1');
+      expect(deleteDisplay(pinned)).toBe('none');
     });
   });
 
