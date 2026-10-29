@@ -1607,6 +1607,165 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(deleteSpy).not.toHaveBeenCalled();
       expect(cards().length).toBe(1);
     });
+
+    it('shows the filters\' empty state when the last card is deleted', async () => {
+      rangePage = page([], 4);
+      const response = new Subject<void>();
+      vi.spyOn(service, 'deleteIssue').mockReturnValue(response.asObservable());
+      await create();
+      expect(rangeProbes().length).toBe(0);
+
+      const button = cards()[0].querySelector<HTMLButtonElement>('.tl-fb-delete')!;
+      button.focus();
+      button.click();
+      fixture.detectChanges();
+      const dialog = el.querySelector('app-admin-confirm-dialog dialog') as HTMLDialogElement;
+      (Array.from(dialog.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Delete Issue') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      response.next();
+      response.complete();
+      fixture.detectChanges();
+
+      expect(cards().length).toBe(0);
+      expect(rangeProbes().length).toBe(1);
+      expect(q('.tl-fb-empty-filters')).not.toBeNull();
+      expect(document.activeElement?.id).toBe('tl-fb-issues-title');
+    });
+
+    describe('when the saved issue leaves the filters', () => {
+      const LEFT = '“Dilithium crystal” is now Resolved and no longer matches the filters.';
+      /** The membership answer, held so that it arrives after the dialog has closed, as a real request does. */
+      let answer: Subject<AdminFeedbackIssueIds>;
+
+      beforeEach(() => {
+        answer = new Subject<AdminFeedbackIssueIds>();
+        vi.spyOn(service, 'updateStatus').mockReturnValue(of(issue(1, { status: 'resolved' })));
+      });
+
+      /** Saves issue 1 as Resolved with the membership answer held, and checks the dialog gave focus back first. */
+      function resolveFirst(): void {
+        idsSpy.mockReturnValueOnce(answer.asObservable());
+        const card = cards()[0];
+        editTriage(card);
+        selectValue(field<HTMLSelectElement>('status'), 'resolved');
+        saveTriage();
+        expect(triageDialog().open).toBe(false);
+        expect(document.activeElement).toBe(card.querySelector('.tl-fb-edit'));
+      }
+
+      function answerWith(ids: number[]): void {
+        answer.next({ ids, totalCount: ids.length, truncated: false });
+        answer.complete();
+        fixture.detectChanges();
+      }
+
+      it('drops the card once the server says it no longer matches, announces it and focuses the next card', async () => {
+        nextPage = page([issue(1), issue(2)]);
+        await create();
+
+        resolveFirst();
+        expect(idsSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+          startDate: '2026-09-21', endDate: '2026-10-21', statuses: ['new', 'regressed'], ids: [1]
+        }));
+        answerWith([]);
+
+        expect(cards().map(c => c.getAttribute('data-issue-id'))).toEqual(['2']);
+        expect(status()).toBe(`${LEFT} One issue`);
+        expect(document.activeElement?.id).toBe('tl-fb-2-title');
+      });
+
+      it('counts the dropped card out of a longer list', async () => {
+        nextPage = page([issue(1), issue(2)], 3);
+        await create();
+
+        resolveFirst();
+        answerWith([]);
+
+        expect(status()).toBe(`${LEFT} Showing 1 of 2 issues`);
+      });
+
+      it('keeps the card when the membership check fails', async () => {
+        nextPage = page([issue(1), issue(2)]);
+        await create();
+
+        resolveFirst();
+        answer.error({ status: 500, error: { message: 'Down.' } });
+        fixture.detectChanges();
+
+        expect(cards().length).toBe(2);
+        expect(textOf(cards()[0].querySelector('#tl-fb-1-result'))).toBe('Saved. The issue is Resolved.');
+        expect(cards()[0].querySelector('.tl-fb-triage-error')).toBeNull();
+        expect(status()).not.toContain('no longer matches');
+      });
+
+      it('keeps the card under Show selected only, asking about the issue alone', async () => {
+        saveOverseerSelection([1]);
+        await create();
+        bar().showSelectedOnlyChange.emit(true);
+        fixture.detectChanges();
+
+        editTriage(cards()[0]);
+        selectValue(field<HTMLSelectElement>('status'), 'resolved');
+        saveTriage();
+
+        expect(idsSpy).toHaveBeenLastCalledWith({ ids: [1] });
+        expect(cards().length).toBe(1);
+        expect(textOf(cards()[0].querySelector('#tl-fb-1-result'))).toBe('Saved. The issue is Resolved.');
+      });
+
+      it('keeps a selected issue selected and counts it as not shown, with no further request', async () => {
+        nextPage = page([issue(1), issue(2)]);
+        saveOverseerSelection([1]);
+        await create();
+        expect(bar().notShownCount).toBe(0);
+        idsSpy.mockClear();
+
+        resolveFirst();
+        answerWith([]);
+
+        expect(cards().length).toBe(1);
+        expect(loadOverseerSelection()).toEqual([1]);
+        expect(bar().selectedIds).toEqual([1]);
+        expect(bar().notShownCount).toBe(1);
+        expect(idsSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it('shows the filters\' empty state when the last card leaves', async () => {
+        rangePage = page([], 4);
+        await create();
+        expect(rangeProbes().length).toBe(0);
+
+        resolveFirst();
+        answerWith([]);
+
+        expect(cards().length).toBe(0);
+        expect(rangeProbes().length).toBe(1);
+        expect(q('.tl-fb-empty-filters')).not.toBeNull();
+        expect(document.activeElement?.id).toBe('tl-fb-issues-title');
+      });
+
+      it('ignores an answer that arrives after the list was refetched', async () => {
+        nextPage = page([issue(1), issue(2)]);
+        await create();
+
+        resolveFirst();
+        fixture.componentRef.setInput('refreshToken', 1);
+        fixture.detectChanges();
+        answerWith([]);
+
+        expect(cards().map(c => c.getAttribute('data-issue-id'))).toEqual(['1', '2']);
+        expect(status()).not.toContain('no longer matches');
+      });
+
+      it('refetches the facets after a save', async () => {
+        await create();
+        facetsSpy.mockClear();
+
+        resolveFirst();
+
+        expect(facetsSpy).toHaveBeenCalledTimes(1);
+      });
+    });
   });
 
   describe('readable labels', () => {

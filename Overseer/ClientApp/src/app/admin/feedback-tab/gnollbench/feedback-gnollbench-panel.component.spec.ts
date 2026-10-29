@@ -6,7 +6,7 @@ import { Router, convertToParamMap, provideRouter } from '@angular/router';
 import { provideLocationMocks } from '@angular/common/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import {
   AdminBenchmarkService,
   BenchmarkExperimentalChangeCatalogDto,
@@ -1190,6 +1190,147 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         saveTriage();
         expect(updateSpy).toHaveBeenLastCalledWith(fp(1), { status: 'resolved', resolvedVia: [] });
         expect(cards()[0].querySelector('.tl-gbfb-fact-resolved')).toBeNull();
+      });
+
+      describe('when the saved issue leaves the filters', () => {
+        const LEFT = '“Dilithium crystal” is now Resolved and no longer matches the filters.';
+        /** The membership answer, held so that it arrives after the dialog has closed, as a real request does. */
+        let answer: Subject<GnollBenchFeedbackIds>;
+        const shown = (): (string | null)[] => cards().map(c => c.getAttribute('data-fingerprint'));
+        const rangeProbes = (): number => issuesSpy.mock.calls.filter(call => (call[0] as GnollBenchFeedbackIssuesQuery).take === 1).length;
+
+        beforeEach(() => {
+          answer = new Subject<GnollBenchFeedbackIds>();
+          vi.spyOn(service, 'updateStatus').mockReturnValue(of(issue(1, { status: 'resolved' })));
+        });
+
+        /** Saves issue 1 as Resolved with the membership answer held, and checks the dialog gave focus back first. */
+        function resolveFirst(): void {
+          idsSpy.mockReturnValueOnce(answer.asObservable());
+          const card = cards()[0];
+          editTriage(card);
+          selectValue(field<HTMLSelectElement>('status'), 'resolved');
+          saveTriage();
+          expect(triageDialog().open).toBe(false);
+          expect(document.activeElement).toBe(card.querySelector('.tl-gbfb-edit'));
+        }
+
+        function answerWith(fingerprints: string[]): void {
+          answer.next({ fingerprints, totalCount: fingerprints.length, truncated: false });
+          answer.complete();
+          fixture.detectChanges();
+        }
+
+        it('drops the card once the server says it no longer matches, announces it and focuses the next card', async () => {
+          nextPage = page([issue(1), issue(2)]);
+          await create();
+
+          resolveFirst();
+          expect(idsSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+            startDate: '2026-09-21', endDate: '2026-10-21', statuses: ['new', 'regressed'], fingerprints: [fp(1)]
+          }));
+          answerWith([]);
+
+          expect(shown()).toEqual([fp(2)]);
+          expect(status()).toBe(`${LEFT} One issue`);
+          expect(document.activeElement?.id).toBe(`${cid(2)}-title`);
+          expect(bar().matchingCount).toBe(1);
+        });
+
+        it('counts the dropped card out of a longer list', async () => {
+          nextPage = page([issue(1), issue(2)], 3);
+          await create();
+
+          resolveFirst();
+          answerWith([]);
+
+          expect(status()).toBe(`${LEFT} Showing 1 of 2 issues`);
+        });
+
+        it('keeps the card when the membership check fails', async () => {
+          nextPage = page([issue(1), issue(2)]);
+          await create();
+
+          resolveFirst();
+          answer.error({ status: 500, error: { message: 'Down.' } });
+          fixture.detectChanges();
+
+          expect(shown()).toEqual([fp(1), fp(2)]);
+          expect(textOf(cards()[0].querySelector(`#${cid(1)}-result`))).toBe('Saved. The issue is Resolved.');
+          expect(status()).not.toContain('no longer matches');
+        });
+
+        it('drops a selected issue the filters exclude under Show selected only, and counts it as not shown', async () => {
+          localStorage.setItem(SELECTION_KEY, JSON.stringify({ version: 1, fingerprints: [fp(1), fp(2)] }));
+          nextPage = page([issue(1), issue(2)]);
+          await create();
+          bar().showSelectedOnlyChange.emit(true);
+          fixture.detectChanges();
+          expect(bar().notShownCount).toBe(0);
+
+          resolveFirst();
+          expect(idsSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+            startDate: '2026-09-21', endDate: '2026-10-21', statuses: ['new', 'regressed'], fingerprints: [fp(1)]
+          }));
+          answerWith([]);
+
+          expect(shown()).toEqual([fp(2)]);
+          expect(loadGnollBenchSelection()).toEqual([fp(1), fp(2)]);
+          expect(bar().notShownCount).toBe(1);
+        });
+
+        it('keeps a selected issue selected and counts it as not shown, with no further request', async () => {
+          localStorage.setItem(SELECTION_KEY, JSON.stringify({ version: 1, fingerprints: [fp(1)] }));
+          nextPage = page([issue(1), issue(2)]);
+          await create();
+          expect(bar().notShownCount).toBe(0);
+          idsSpy.mockClear();
+
+          resolveFirst();
+          answerWith([]);
+
+          expect(shown()).toEqual([fp(2)]);
+          expect(loadGnollBenchSelection()).toEqual([fp(1)]);
+          expect(bar().selectedIds).toEqual([fp(1)]);
+          expect(bar().notShownCount).toBe(1);
+          expect(idsSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('shows the filters\' empty state when the last card leaves', async () => {
+          rangePage = page([], 4);
+          await create();
+          expect(rangeProbes()).toBe(0);
+
+          resolveFirst();
+          answerWith([]);
+
+          expect(cards().length).toBe(0);
+          expect(rangeProbes()).toBe(1);
+          expect(q('.tl-gbfb-empty-filters')).not.toBeNull();
+          expect(document.activeElement?.id).toBe('tl-gbfb-issues-title');
+        });
+
+        it('ignores an answer that arrives after the list was refetched', async () => {
+          nextPage = page([issue(1), issue(2)]);
+          await create();
+
+          resolveFirst();
+          fixture.componentRef.setInput('refreshToken', 1);
+          fixture.detectChanges();
+          answerWith([]);
+
+          expect(shown()).toEqual([fp(1), fp(2)]);
+          expect(status()).not.toContain('no longer matches');
+        });
+
+        it('refetches the facets after a save', async () => {
+          await create();
+          facetsSpy.mockClear();
+
+          resolveFirst();
+
+          expect(facetsSpy).toHaveBeenCalledTimes(1);
+        });
       });
     });
 

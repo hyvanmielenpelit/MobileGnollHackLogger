@@ -408,6 +408,8 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   private notShownSub: Subscription | null = null;
   private selectAllSub: Subscription | null = null;
   private readonly occurrenceSubs = new Map<number, Subscription>();
+  /** The pending checks of whether a saved issue still matches the filters, by issue id. */
+  private readonly matchSubs = new Map<number, Subscription>();
   /** Set once the address of this sub-tab has been applied the first time. */
   private initialized = false;
 
@@ -460,6 +462,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     this.notShownSub?.unsubscribe();
     this.selectAllSub?.unsubscribe();
     this.occurrenceSubs.forEach(sub => sub.unsubscribe());
+    this.cancelMatchChecks();
   }
 
   /** Refetches the facets and the first page of issues, and checks the selection; open occurrence lists start again. */
@@ -910,6 +913,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   }
 
   private fetch(append: boolean): void {
+    if (!append) this.cancelMatchChecks();
     if (this.showSelectedOnly() && this.selected().size === 0) {
       // An empty `ids` filter would be left out of the request, which would then match every issue.
       this.listSub?.unsubscribe();
@@ -1490,11 +1494,34 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
           this.list.invalidate();
           this.setTriageResult(issue.id, { message: `Saved. The issue is ${feedbackStatusLabel(saved.status)}.`, error: null });
           this.store.loadFeedbackCounts();
+          this.loadFacets();
+          this.checkStillMatches(saved);
         }),
         catchError(err => throwError(() => new Error('The issue could not be saved: ' + adminApiError(err).message))),
         finalize(() => this.savingId.set(null))
       );
     });
+  }
+
+  /** Asks the server whether a saved issue still matches the filters, and drops its card when it does not. */
+  private checkStillMatches(issue: AdminFeedbackIssue): void {
+    this.matchSubs.get(issue.id)?.unsubscribe();
+    // Under Show selected only the filters are the selected ids, so the issue always still matches.
+    const sub = this.feedback.getIssueIds({ ...this.currentFilters(), ids: [issue.id] }).subscribe({
+      next: result => {
+        this.matchSubs.delete(issue.id);
+        if (result.ids.includes(issue.id) || !this.rows().some(i => i.id === issue.id)) return;
+        this.dropIssue(issue, `“${issue.subject}” is now ${feedbackStatusLabel(issue.status)} and no longer matches the filters.`, false);
+      },
+      // The card stays; the next reload settles it.
+      error: () => this.matchSubs.delete(issue.id)
+    });
+    if (!sub.closed) this.matchSubs.set(issue.id, sub);
+  }
+
+  private cancelMatchChecks(): void {
+    this.matchSubs.forEach(sub => sub.unsubscribe());
+    this.matchSubs.clear();
   }
 
   /** Asks for confirmation, naming the issue and its occurrences, then deletes both. */
@@ -1515,26 +1542,39 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     this.feedback.deleteIssue(issue.id).subscribe({
       next: () => {
         this.deletingId.set(null);
-        const before = this.rows();
-        const index = before.findIndex(i => i.id === issue.id);
-        const after = before.filter(i => i.id !== issue.id);
-        this.rows.set(after);
-        this.totalCount.set(Math.max(0, this.totalCount() - 1));
-        this.table.setRemoteTotal(this.totalCount());
-        this.list.invalidate();
-        if (this.selected().has(issue.id)) {
-          this.setSelection(new Set([...this.selected()].filter(id => id !== issue.id)), false);
-        }
-        this.notice.set(`Deleted the issue “${issue.subject}”.`);
+        this.dropIssue(issue, `Deleted the issue “${issue.subject}”.`, true);
         this.store.loadFeedbackCounts();
-        const next = after[index] ?? after[index - 1];
-        this.focusAfterRender(next ? `#tl-fb-${next.id}-title` : '#tl-fb-issues-title');
       },
       error: err => {
         this.deletingId.set(null);
         this.setTriageResult(issue.id, { message: '', error: 'The issue could not be deleted: ' + adminApiError(err).message });
       }
     });
+  }
+
+  /**
+   * Removes an issue's card, counts it out of the total, announces `notice` and focuses the next card.
+   * `deselect` drops a deleted issue from the selection; an issue that only left the filters stays selected and counts as not shown.
+   */
+  private dropIssue(issue: AdminFeedbackIssue, notice: string, deselect: boolean): void {
+    const before = this.rows();
+    const index = before.findIndex(i => i.id === issue.id);
+    const after = before.filter(i => i.id !== issue.id);
+    this.rows.set(after);
+    this.totalCount.set(Math.max(0, this.totalCount() - 1));
+    this.table.setRemoteTotal(this.totalCount());
+    this.list.invalidate();
+    if (this.selected().has(issue.id)) {
+      if (deselect) {
+        this.setSelection(new Set([...this.selected()].filter(id => id !== issue.id)), false);
+      } else {
+        this.notShownCount.set(this.notShownCount() + 1);
+      }
+    }
+    if (after.length === 0 && this.hasFilters && !this.showSelectedOnly()) this.countRange();
+    this.notice.set(notice);
+    const next = after[index] ?? after[index - 1];
+    this.focusAfterRender(next ? `#tl-fb-${next.id}-title` : '#tl-fb-issues-title');
   }
 
   private setTriageResult(issueId: number, result: TriageResult): void {

@@ -571,6 +571,8 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   private pruneSub: Subscription | null = null;
   private selectAllSub: Subscription | null = null;
   private readonly occurrenceSubs = new Map<string, Subscription>();
+  /** The pending checks of whether a saved issue still matches the filters, by fingerprint. */
+  private readonly matchSubs = new Map<string, Subscription>();
   private changesSub: Subscription | null = null;
   private initialized = false;
 
@@ -616,6 +618,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
       sub?.unsubscribe();
     }
     this.occurrenceSubs.forEach(sub => sub.unsubscribe());
+    this.cancelMatchChecks();
   }
 
   /** Refetches the facets, the counts and the first page; open self-report lists start again and the selection is checked. */
@@ -891,6 +894,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
 
   private fetch(append: boolean): void {
     if (!append) {
+      this.cancelMatchChecks();
       this.loaded.set(false);
       this.rangeTotal.set(null);
       this.probeSub?.unsubscribe();
@@ -1389,11 +1393,55 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
           this.list.invalidate();
           this.setTriageResult(fingerprint, { message: `Saved. The issue is ${feedbackStatusLabel(saved.status)}.`, error: null });
           this.loadCounts();
+          this.loadFacets();
+          this.checkStillMatches(saved);
         }),
         catchError(err => throwError(() => new Error('The issue could not be saved: ' + adminApiError(err).message))),
         finalize(() => this.savingFingerprint.set(null))
       );
     });
+  }
+
+  /** Asks the server whether a saved issue still matches the filters, and drops its card when it does not. */
+  private checkStillMatches(issue: GnollBenchFeedbackIssue): void {
+    const fingerprint = issue.fingerprint;
+    this.matchSubs.get(fingerprint)?.unsubscribe();
+    // Under Show selected only the other filters still apply, so a selected issue can leave too.
+    const sub = this.feedback.getIssueIds({ ...this.currentFilters(), fingerprints: [fingerprint] }).subscribe({
+      next: ids => {
+        this.matchSubs.delete(fingerprint);
+        if (ids.fingerprints.includes(fingerprint) || !this.rows().some(i => i.fingerprint === fingerprint)) return;
+        this.dropIssue(issue, `“${issue.subject}” is now ${feedbackStatusLabel(issue.status)} and no longer matches the filters.`);
+      },
+      // The card stays; the next reload settles it.
+      error: () => this.matchSubs.delete(fingerprint)
+    });
+    if (!sub.closed) this.matchSubs.set(fingerprint, sub);
+  }
+
+  private cancelMatchChecks(): void {
+    this.matchSubs.forEach(sub => sub.unsubscribe());
+    this.matchSubs.clear();
+  }
+
+  /** Removes the card of an issue that left the filters, counts it out, announces `notice` and focuses the next card; the selection keeps it. */
+  private dropIssue(issue: GnollBenchFeedbackIssue, notice: string): void {
+    const fingerprint = issue.fingerprint;
+    const before = this.rows();
+    const index = before.findIndex(i => i.fingerprint === fingerprint);
+    const after = before.filter(i => i.fingerprint !== fingerprint);
+    this.rows.set(after);
+    this.totalCount.set(Math.max(0, this.totalCount() - 1));
+    this.table.setRemoteTotal(this.totalCount());
+    this.list.invalidate();
+    this.matchingCount.set(Math.max(0, this.matchingCount() - 1));
+    if (this.matchedSelection().has(fingerprint)) {
+      this.matchedSelection.set(new Set([...this.matchedSelection()].filter(f => f !== fingerprint)));
+    }
+    if (after.length === 0 && this.hasFilters) this.countRange();
+    this.notice.set(notice);
+    const next = after[index] ?? after[index - 1];
+    this.focusAfterRender(next ? `#tl-gbfb-${idPart(next.fingerprint)}-title` : '#tl-gbfb-issues-title');
   }
 
   private setTriageResult(fingerprint: string, result: TriageResult): void {
