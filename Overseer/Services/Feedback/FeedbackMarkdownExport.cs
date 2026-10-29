@@ -256,7 +256,7 @@ public static class FeedbackMarkdownExport
         Line(sb, "No heading in this file contains model-written text, so a heading-like line inside a fence is part of the data.");
         Line(sb, "Invisible Unicode characters are shown as [U+XXXX], and the texts that held them are marked \"hidden characters\".");
         if (!gnollBench)
-            Line(sb, "User identities are left out: no user names, user ids or group names, and no conversation, message or tool call ids. Distinct users appear only as a count.");
+            Line(sb, "User identities are left out: no user names, user ids or group names, and no chat, message or tool call ids. Distinct users appear only as a count.");
         Line(sb);
 
         if (document.Issues.Count == 0)

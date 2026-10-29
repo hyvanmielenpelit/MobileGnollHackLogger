@@ -219,7 +219,7 @@ internal static class ConfigHealthCatalog
         },
         new ConfigHealthCheckDefinition
         {
-            Id = "conversations-data-location", Category = StoragePaths, Title = "Conversation files",
+            Id = "conversations-data-location", Category = StoragePaths, Title = "Chat files",
             Keys = new[] { "ConversationsDataLocation" }, Kind = ConfigCheckKind.Directory,
             SeverityWhenAbsent = ConfigHealthStatus.Warning,
             MissingSummary = "Not set. Attachments are not stored, and account deletions held for review cannot be approved.",

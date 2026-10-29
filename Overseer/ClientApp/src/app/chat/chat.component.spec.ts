@@ -231,7 +231,7 @@ describe('ChatComponent session loading and exclusivity', () => {
     const messageBoxes = compiled.querySelectorAll('.message-box');
 
     expect(loader).toBeTruthy();
-    expect(loader?.textContent).toContain('Loading conversation...');
+    expect(loader?.textContent).toContain('Loading chat...');
     expect(messageBoxes.length).toBe(0);
   });
 
@@ -1263,7 +1263,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       const dialog = openDeleteDialogFor(8);
 
       expect(component.deleteTargetPurgesImmediately).toBe(false);
-      expect(dialog.querySelector('h3')?.textContent).toContain('Move Conversation to Trash');
+      expect(dialog.querySelector('h3')?.textContent).toContain('Move Chat to Trash');
       expect(dialog.querySelector('.btn-gh-delete')?.textContent?.trim()).toBe('Move to Trash');
       dialog.close();
     });

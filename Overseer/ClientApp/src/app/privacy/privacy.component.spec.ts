@@ -215,7 +215,7 @@ describe('PrivacyComponent', () => {
     // The entries a reader could otherwise get wrong. Asserted by their actual wording, because
     // softening any one of them is the failure this section exists to prevent.
     const nonNegotiable = [
-      'The provider still sees the conversation.',
+      'The provider still sees the chat.',
       'A provider’s retention posture is a claim about a contract, not a technical control.',
       'A normal chat’s content is stored in plain text.',
       'Crypto-shredding does not reach a backup taken before the shred.',
@@ -235,7 +235,7 @@ describe('PrivacyComponent', () => {
   it('should say that RAM is not a legal or forensic boundary', () => {
     const text = textOf(host.querySelector('#limitations') as HTMLElement);
     expect(text).toContain('RAM is not a legal or forensic boundary');
-    expect(text).toContain('The conversation still reaches the AI provider');
+    expect(text).toContain('The chat still reaches the AI provider');
   });
 
   it('should name the snapshot guard exception on the incognito protection', () => {

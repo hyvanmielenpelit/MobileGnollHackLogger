@@ -116,7 +116,7 @@ export class PrivacyComponent {
   /** Drives the table of contents. Each id matches a `<section>` in the template. */
   readonly sections: readonly PrivacySection[] = [
     { id: 'data-sensitivity-ladder', title: 'The data sensitivity ladder' },
-    { id: 'conversation-data-map', title: 'What Overseer does with a conversation' },
+    { id: 'conversation-data-map', title: 'What Overseer does with a chat' },
     { id: 'limitations', title: 'What these protections do not reach' },
     { id: 'readable-metadata', title: 'What stays readable even in a confidential chat' },
     { id: 'subprocessors', title: 'Subprocessors' },
@@ -195,10 +195,10 @@ export class PrivacyComponent {
       sharedWith: 'Nobody outside Overseer.'
     },
     {
-      what: 'Assistant feedback reports: short notes the assistant writes for the developers when it cannot find information, a tool misbehaves, or it corrects a mistake. Credentials, card and account numbers, e-mail addresses and phone numbers are removed before storage. The same text is also kept, unredacted, with the conversation’s tool calls. You can turn these reports off under Settings → AI Permissions.',
-      storedWhere: 'Overseer database: one row per report, linked to the conversation and to you, and one row per issue (the problem itself, with a count of how often it was reported) that holds no reference to any conversation or user.',
-      howLong: 'The report row: until the conversation is permanently deleted or the account is erased. The issue row: until an administrator deletes it.',
-      sharedWith: 'Overseer administrators. Administrators may export the report text, without your name or any link to your conversation, to an AI coding assistant to help fix the problem it describes.'
+      what: 'Assistant feedback reports: short notes the assistant writes for the developers when it cannot find information, a tool misbehaves, or it corrects a mistake. Credentials, card and account numbers, e-mail addresses and phone numbers are removed before storage. The same text is also kept, unredacted, with the chat’s tool calls. You can turn these reports off under Settings → AI Permissions.',
+      storedWhere: 'Overseer database: one row per report, linked to the chat and to you, and one row per issue (the problem itself, with a count of how often it was reported) that holds no reference to any chat or user.',
+      howLong: 'The report row: until the chat is permanently deleted or the account is erased. The issue row: until an administrator deletes it.',
+      sharedWith: 'Overseer administrators. Administrators may export the report text, without your name or any link to your chat, to an AI coding assistant to help fix the problem it describes.'
     },
     {
       what: 'Provider safety identifier',
@@ -217,7 +217,7 @@ export class PrivacyComponent {
   readonly limitations: readonly LimitationRow[] = [
     {
       protection: 'Everything Overseer does, in every mode',
-      limit: 'The provider still sees the conversation. Nothing here changes what is sent to OpenAI, Anthropic or Google for the model to answer.'
+      limit: 'The provider still sees the chat. Nothing here changes what is sent to OpenAI, Anthropic or Google for the model to answer.'
     },
     {
       protection: 'The retention posture recorded against each provider key, and the badge that reports it',
@@ -233,7 +233,7 @@ export class PrivacyComponent {
     },
     {
       protection: 'Incognito, which writes no chat, message, tool-call or attachment row and puts no file on disk; game text the snapshot guard flags is kept as a security event, see above',
-      limit: 'An incognito chat is not saved by Overseer; that does not make it private. The conversation still reaches the AI provider, and RAM is not a legal or forensic boundary — process memory can be paged out by the operating system, captured in a crash dump, or read by anything with sufficient access to the server.'
+      limit: 'An incognito chat is not saved by Overseer; that does not make it private. The chat still reaches the AI provider, and RAM is not a legal or forensic boundary — process memory can be paged out by the operating system, captured in a crash dump, or read by anything with sufficient access to the server.'
     },
     {
       protection: 'Outbound masking, which replaces a recognised secret with a placeholder before the prompt leaves the server',
@@ -355,7 +355,7 @@ export class PrivacyComponent {
     },
     {
       name: 'Azure Communication Services',
-      receives: 'Transactional e-mail: the address it goes to and the body of the message. Reporting a message sends that message, the surrounding conversation and your own name and address to an operator mailbox.',
+      receives: 'Transactional e-mail: the address it goes to and the body of the message. Reporting a message sends that message, the surrounding chat and your own name and address to an operator mailbox.',
       why: 'To deliver account e-mail, and to carry a message you choose to report.',
       when: 'When you report a message, or when the account system sends you e-mail. Reporting is refused outright in a confidential chat.'
     },

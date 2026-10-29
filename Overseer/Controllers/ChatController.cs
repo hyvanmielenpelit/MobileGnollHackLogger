@@ -1716,7 +1716,7 @@ public class ChatController : ControllerBase
             return BadRequest(new
             {
                 message = "A message in a confidential chat cannot be reported: reporting sends the whole "
-                    + "conversation to an operator mailbox. Copy just the part you want to report into a "
+                    + "chat to an operator mailbox. Copy just the part you want to report into a "
                     + "normal chat, or describe it in a support message."
             });
         }

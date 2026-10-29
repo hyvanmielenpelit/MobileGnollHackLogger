@@ -112,7 +112,7 @@ describe('FeedbackExportDialogComponent', () => {
     expect(text(q('h3'))).toBe('Export 2 issues');
     expect(q('.fx-issue')).toBeNull();
     expect(q<HTMLDialogElement>('dialog')!.getAttribute('aria-describedby')).toBeNull();
-    expect(text(q('.fx-privacy'))).toBe('Anonymized: no user names and no links to conversations.');
+    expect(text(q('.fx-privacy'))).toBe('Anonymized: no user names and no links to chats.');
     expect(q('.fx-privacy svg')!.getAttribute('aria-hidden')).toBe('true');
     expect(q('.fx-question-text')).toBeNull();
     expect(exportButton().getAttribute('aria-disabled')).toBeNull();

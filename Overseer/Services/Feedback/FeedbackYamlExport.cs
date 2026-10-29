@@ -76,7 +76,7 @@ public static class FeedbackYamlExport
             "Invisible Unicode characters are shown as [U+XXXX], and the items that held them are marked `hidden_characters`."
         };
         if (!gnollBench)
-            lines.Add("User identities are left out: no user names, user ids or group names, and no conversation, message or tool call ids. Distinct users appear only as a count.");
+            lines.Add("User identities are left out: no user names, user ids or group names, and no chat, message or tool call ids. Distinct users appear only as a count.");
         return lines;
     }
 

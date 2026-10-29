@@ -5,7 +5,7 @@
       <button class="sidebar-close-btn" (click)="closeSidebar()" title="Close Sidebar" aria-label="Close sidebar">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
-      <h3 class="sidebar-title">Conversations</h3>
+      <h3 class="sidebar-title">Chats</h3>
       <button class="btn-gh btn-new-chat" (click)="navigateToNewSession()">New Chat</button>
       <div class="sidebar-search-container">
         <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -28,12 +28,12 @@
         @if (loadingSessions) {
           <li class="sessions-loader">
             <div class="sidebar-spinner"></div>
-            <span>Loading Conversations...</span>
+            <span>Loading chats...</span>
           </li>
         }
         @if (!loadingSessions && sessions.length === 0) {
           <li class="empty-sessions-msg">
-            {{ sessionSearchQuery ? 'No conversations matching "' + sessionSearchQuery + '".' : 'No conversations yet.' }}
+            {{ sessionSearchQuery ? 'No chats matching "' + sessionSearchQuery + '".' : 'No chats yet.' }}
           </li>
         }
         @for (s of sessions; track s.id) {
@@ -259,7 +259,7 @@
         @if (isLoadingSession) {
           <div class="conversation-loader">
             <div class="sidebar-spinner"></div>
-            <span>Loading conversation...</span>
+            <span>Loading chat...</span>
           </div>
         } @else {
           @if (messages.length === 0 && (!hasApiKey || !hasModel)) {
@@ -954,8 +954,8 @@
     <h3>Delete Confidential Chat</h3>
     <p>This chat is destroyed at once. It does not go to Trash and cannot be restored.</p>
   } @else {
-    <h3>Move Conversation to Trash</h3>
-    <p>Are you sure you want to move this conversation to Trash? Chats in Trash are kept for 30 days before permanent deletion.</p>
+    <h3>Move Chat to Trash</h3>
+    <p>Are you sure you want to move this chat to Trash? Chats in Trash are kept for 30 days before permanent deletion.</p>
   }
   <div class="dialog-actions">
     <button class="btn-gh btn-gh-cancel" (click)="deleteConfirmDialog.close()">Cancel</button>
@@ -1157,7 +1157,7 @@
     </div>
   } @else {
     <p class="capture-description">
-      Save the attached game snapshot from this conversation as a benchmark snapshot. This creates a new stored snapshot and an empty benchmark suite bound to it.
+      Save the attached game snapshot from this chat as a benchmark snapshot. This creates a new stored snapshot and an empty benchmark suite bound to it.
     </p>
 
     @if (isLoadingCaptureInfo) {
@@ -1461,7 +1461,7 @@
 
   <h4 class="pb-section-title">What still happens</h4>
   <ul class="privacy-limits">
-    <li>The conversation is still sent to the AI provider to be answered. Incognito changes what Overseer keeps, not what is sent away for inference.</li>
+    <li>The chat is still sent to the AI provider to be answered. Incognito changes what Overseer keeps, not what is sent away for inference.</li>
     <li>A game snapshot, file listing, message history or game-tool result that the snapshot guard flags is kept encrypted for 30 days so an administrator can review it.</li>
   </ul>
 

@@ -671,7 +671,7 @@ describe('FeedbackOverseerPanelComponent', () => {
         'Model': 'claude-x Anthropic',
         'Model source': 'System configuration Claude (fast)',
         'Version': '1.4.2+abc',
-        'Conversation': 'Session 812 · message 4410',
+        'Chat': 'Session 812 · message 4410',
         'Searched for': 'wiki_search "dilithium"',
         'Expected location': 'wiki page Dilithium crystal',
         'Noticed via': 'The user corrected it'
