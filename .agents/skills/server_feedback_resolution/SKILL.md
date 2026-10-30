@@ -113,12 +113,12 @@ issue to the method that already exists for its kind:
 | What it turns out to be | Where it goes | Resolved via, once fixed |
 |---|---|---|
 | A fact missing from or wrong on the GnollHack wiki | A wiki handoff, `server_wiki_handoff` (validated against the GnollHack source, executed in a wiki session) | `wiki` |
-| A gap in the knowledge base (an Overseer topic, not a game mechanic) | A knowledge-base article proposal for a human to write: rung 1 of the ladder in `server_benchmark_to_chat_transfer` § 7, which requires human authorship and keeps game mechanics out of the knowledge base | `knowledge_base` |
+| A gap in the knowledge base (an Overseer topic or an app control, not a game mechanic) | A knowledge-base handoff, `knowledge_base_handoff_v<N>.md`, the same three-step document as a wiki handoff (`server_wiki_handoff` § 1): rung 1 of the ladder in `server_benchmark_to_chat_transfer` § 7, which keeps game mechanics out of the knowledge base | `knowledge_base` |
 | A tool defect | A code fix with a test. Judge the call against `server_tool_parameter_reference` (the parameter and result contract) and the corpus against `server_tool_data_sources` | `overseer_release` |
 | A tool-guide or prompt change | The evidence bar and the ladder of `server_benchmark_to_chat_transfer` (§ 6, § 7). **Never a prompt or guide edit from one report.** A candidate change can first be tried as an experimental change (`server_benchmark_conditions_and_variants` § 6) | `overseer_release` |
 | A defect in the game or its AI snapshot | A plan in the GnollHack repository | `gnollhack_release` |
 | A corpus or index problem: a file not indexed, stale, outside the indexed scope or dropped by a size limit | `server_tool_data_sources`. It is not a model problem and never a prompt change | `server_configuration` (or `wiki` / `knowledge_base` when the fix is in that clone) |
-| The model's own mistake with nothing to fix (it misread a correct tool result, did not search, answered from memory) | `dismissed`, with a note that says why | none |
+| The model's own mistake with nothing to fix (it misread a correct tool result, did not search, answered from memory), after § 3a has ruled out everything above | `dismissed`, with a note that says why | none |
 
 **Resolved via** records how a fix reaches the chat. One issue can take several (`[wiki, overseer_release]`).
 The file and the API take the **ids**; the admin tab and the resolution message show the **labels**:
@@ -152,6 +152,41 @@ Then, by source:
   card, and a GnollBench issue `alsoInOverseer`, when the fingerprints match. The chat fingerprints the
   redacted subject and the benchmark the raw one, so a subject the DLP scanner changed is not linked. One
   fix often closes both; resolve each in its own sub-tab's file.
+
+## 3a. An `own_mistake` Report Is a Claim Too
+
+A model that says "I was wrong" is reporting what it now believes, and that belief came from the same
+tools and pages. Never dismiss such a report on its category. Check three things against the source
+before deciding, and state the verdict on each in the note:
+
+1. **Was the first answer actually wrong?** A retraction can be the mistake.
+2. **Is the correction right?** The report's *details* and *expected location* are often a second guess.
+3. **What did the model read?** Look at the tool result or page it names. If that is wrong or silent,
+   the defect is there, and the issue routes to that row of the table in § 3.
+
+The export of 2026-10-30, four `own_mistake` reports from one model, shows all three, and none of the
+four was a model mistake with nothing to fix:
+
+| Issue | What the report said | What the source said | Route |
+|---|---|---|---|
+| #2 | Its Elite trident was wrong, because `get_item_stats` says not eligible | The answer was right; the tool reported `false` for nearly every ordinary weapon, and the retraction was caused by it | Tool defect |
+| #3 | Its 8% dagger wish was unverified | The 8% is exactly what the wiki yields; the wiki's rarity label is wrong, and the real chance is 2.8% | Wiki |
+| #1 | The right setting is probably Traditional Get Position | That setting has no effect on the tap; the correction was wrong as well, and no page describes the tap | Knowledge base |
+| #4 | Its dismissal of an engrave message was wrong | True, and the wiki gives no meaning for any of the messages | Wiki |
+
+**Check an affected class, not only the reported item.** A wrong field in a tool result is usually wrong
+for everything it is computed for, which is what the fix and its test have to cover (#2: one trident
+report, nearly every weapon).
+
+## 3b. Production Trails the Working Tree
+
+The export's `Overseer version` names the build that wrote it, with its commit after the `+`. It can be
+several releases behind. Before planning:
+
+- **Read the code as production ran it**, `git show <sha>:<path>`, and then at HEAD: a defect may already
+  be fixed, and a resolution then says so instead of planning work.
+- **Read the corpora at HEAD**: the wiki and the knowledge base are not tied to the release.
+- **Write the resolution format that production's import accepts** (§ 6).
 
 ## 4. The Planning Rule
 
@@ -213,8 +248,11 @@ Live: about ten minutes after the wiki clone on the server is pulled.
 
 A resolution file is for **several issues**; for one, the resolution message is enough (§ 9). Copy the
 export's template (the commented block at the end of the YAML export, or the fenced `yaml` block of the
-Markdown), keep one item per issue you worked on, and uncomment the fields that change. Write
-**version 2**.
+Markdown), keep one item per issue you worked on, and uncomment the fields that change. **Write the
+`version` the template shows.** Version 2 is the normal form below, from Overseer 1.4.3. A production
+older than that shows `version: 1` in its template, and its import refuses anything else: such a file has
+no `resolvedVia` key, which R4 refuses in version 1 too, and the channels stay in the message's
+`Resolved via:` line, for a person to set after the upgrade.
 
 ```yaml
 format: overseer-feedback-resolutions
@@ -252,7 +290,7 @@ downloads a valid example of both files.
 - **`fixedInVersion`** only when you know the Overseer release that carries the fix: the `<Version>` of
   `Overseer/Overseer.csproj` when the fix is in the working tree of a version not yet released. Ask the
   developer when unsure, and otherwise leave it out.
-- **`resolvedVia`** on every resolved item: a flow list of ids from § 3 (`[wiki, overseer_release]`),
+- **`resolvedVia`** on every resolved item of a version 2 file: a flow list of ids from § 3 (`[wiki, overseer_release]`),
   exactly as spelled there, lowercase; never the labels. It must agree with the message's `Resolved via:`
   line.
 - **Write your own words** in `resolution` and `note`. Never paste report text there.
@@ -261,7 +299,7 @@ downloads a valid example of both files.
 
 | Rule | Kind |
 |---|---|
-| R1 `format` is `overseer-feedback-resolutions` and `version` is 1 or 2 | error |
+| R1 `format` is `overseer-feedback-resolutions` and `version` is 1 or 2 (before Overseer 1.4.3, only 1) | error |
 | R2 `source` is `overseer` or `gnollbench` and matches the sub-tab importing it | error |
 | R3 `issues` is a non-empty list of at most 500 items | error |
 | R4 No unknown key, at the top level or in an item; `resolvedVia` is unknown in a version-1 file | error |
@@ -277,7 +315,7 @@ downloads a valid example of both files.
 | R14 `resolved` with no `resolvedVia`, stored or given | notice |
 
 Treat R10–R14 as errors of your own: drop an item that changes nothing, give every resolved item a
-resolution and its `resolvedVia`, and keep `exportedAtUtc`. **Never write a hidden character into a resolution file**: no
+resolution and, in a version 2 file, its `resolvedVia`, and keep `exportedAtUtc`. **Never write a hidden character into a resolution file**: no
 `[U+XXXX]` placeholder copied from the export turned back into the character, no zero-width or bidi
 character, nothing a reader cannot see.
 
@@ -297,10 +335,12 @@ version, never an overwrite.
 ## 8. Self-Check
 
 Before handing the file over, parse it with a real YAML parser and check it against R1–R9: the format
-and version 2, the source, every key known, every `id` and `fingerprint` present in the export and
-unique, every status one of the four, every `resolvedVia` entry a known id, every length within its cap,
-and no BOM or CR byte in the file. Check that every `resolved` item has a `resolvedVia` and a resolution
-message that names its verification, and that the message's `Resolved via:` labels match the ids.
+and the version the export's template shows, the source, every key known, every `id` and `fingerprint`
+present in the export and unique, every status one of the four, every `resolvedVia` entry a known id,
+every length within its cap, and no BOM or CR byte in the file. Check that every `resolved` item has a
+resolution message that names its verification and, in a version 2 file, a `resolvedVia` whose ids match
+the message's `Resolved via:` labels. Python here has no YAML module; `js-yaml` is at
+`Overseer/ClientApp/node_modules/js-yaml`.
 Never commit the file or the fixes, and never write a commit SHA into either.
 
 ## 9. The Developer's Steps
