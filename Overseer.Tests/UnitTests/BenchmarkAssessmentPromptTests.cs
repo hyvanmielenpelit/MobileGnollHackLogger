@@ -224,12 +224,11 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsSixtyFour()
+    public void HarnessVersion_IsSixtyFive()
     {
-        // Harness 63: next-line "{" enum and struct definitions resolve, get_item_stats notes the
-        // weight unit, the source-citation line is gone from _policy.md, and OpenAI message items
-        // are separated by a paragraph break.
-        Assert.Equal("64", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 65: get_item_stats reports exceptionality_eligible by the game's rule, and the
+        // damage, armor and wand notes reach the right items.
+        Assert.Equal("65", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     private static readonly IReadOnlyList<string> ConfiguredCandidateTools = new[]

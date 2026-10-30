@@ -8409,6 +8409,29 @@ flag and no comparability key is added. `PerQuestionBudgets` and `CandidatePromp
 values. `ComparabilitySignatureWithoutCondition` sets `HasWikiContext` true, so runs that differ only in condition
 still pair.
 
+### Harness Version 65 Updates
+
+Feedback round, `get_item_stats` exceptionality (2026-10-30). `HarnessVersion` moves to **"65"**;
+`ScoringMethodVersion` stays **14**. No migration. `HarnessImpactLedger` classifies 65 as `CandidateInput`: the
+results of `get_item_stats` change. `ToolGuidesSha256` and `CandidateSystemPromptSha256` do not move (no guide or
+prompt edit), so a 64- and a 65-stamped run differ on the harness key alone.
+
+- **Eligibility follows the game's rule.** `ObjectsMacroResolver.EmitExceptionality` mirrors
+  `can_otyp_have_exceptionality` (`include/obj.h:527`): a weapon by `is_otyp_weapon` is eligible unless it carries
+  `O4_NON_EXCEPTIONAL`, and `O4_CAN_HAVE_EXCEPTIONALITY` is needed only by a non-weapon. The damage note now reaches
+  every eligible weapon, weapon tools and weapons when worn included; the AC note reaches armor and an item with
+  `O1_IS_ARMOR_WHEN_WIELDED` (the main-gauche), and states that Celestial, Primordial and Infernal count as 3; a wand
+  gets a note of its own instead of the AC note, and any other item gets no note. A run stamped 64 or earlier reported
+  `false` for nearly every ordinary weapon, the feedback report's trident among them.
+- **The `ac_bonus` note follows how the entry stores the value.** An entry with `base_ac` keeps the `10 - ac`
+  wording. Other armor and the main-gauche, which store the value directly (`WEAPONSHIELD`, `WEAPONBOOTS`,
+  `WEAPONGLOVES`, `O1_IS_ARMOR_WHEN_WIELDED`), get a note saying so. A plain weapon gets no note, because
+  `ARM_AC_BONUS` does not read its slot unless the item has mythic defense. A run stamped 64 or earlier told every
+  `WEAPON_CLASS` entry that armor stores the value as `10 - ac` and that `base_ac` is its argument, a field those
+  entries do not have.
+
+No answer flag is added, and the grading and synthesis prompts are unchanged.
+
 ---
 
 ## 3. Assessor Strategy

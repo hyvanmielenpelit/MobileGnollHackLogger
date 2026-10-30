@@ -1171,8 +1171,11 @@ exists for all three tools, by two different mechanisms:**
     which armour writes as `10 - ac` (`src/objects.c:1005`), and `base_ac` is that `ac` argument —
     emitted only where the expansion actually contains the `10 - x` form, since
     `GENERAL_CHARGED_WEAPON`, `WEAPONSHIELD`, `WEAPONBOOTS` and `WEAPONGLOVES` store their `acbon`
-    raw. `src/do.c:5273` negates `ac_bonus` into the hero's AC, so a **positive** bonus lowers AC,
-    which is an improvement. `magic_cancellation` is the stored MC level, further adjusted by
+    raw. `src/do.c:5315` negates `ac_bonus` for the AC shown, so a **positive** bonus lowers AC,
+    which is an improvement. From harness 65 the `ac_bonus` note follows the same split: the `10 - ac`
+    wording only with `base_ac`, "stored directly" for other armor and `O1_IS_ARMOR_WHEN_WIELDED`, and
+    no note for a plain weapon, whose slot `ARM_AC_BONUS` reads only under mythic defense
+    (`include/hack.h:682`). `magic_cancellation` is the stored MC level, further adjusted by
     `ARM_MC_BONUS`. `spell_casting_penalty` is the stored value; the percentage a player
     experiences is emitted alongside it as `spell_casting_penalty_percent`, that value times
     `ARMOR_SPELL_CASTING_PENALTY_MULTIPLIER` (30).
@@ -1183,6 +1186,16 @@ exists for all three tools, by two different mechanisms:**
     scale mail, 550, shows "34 lbs"; a 3-ounce item "0.2 lbs"). Minification keeps it. Up to harness
     62 the bare value carried no unit, and run 134 Q3 printed "Weight: 550". `get_monster_stats`
     returns `cwt` raw with no note, since the game never displays a monster's weight.
+  - **`exceptionality_eligible` mirrors `can_otyp_have_exceptionality`** (`include/obj.h:527`): a
+    weapon by `is_otyp_weapon` (a `WEAPON_CLASS` entry, a weapon tool, `O1_IS_WEAPON_WHEN_WIELDED` or
+    `O5_IS_WEAPON_WHEN_WORN`) is eligible unless it carries `O4_NON_EXCEPTIONAL`; a non-weapon is
+    eligible only with `O4_CAN_HAVE_EXCEPTIONALITY`. `exceptionality_normally_absent`
+    (`O6_NORMALLY_NON_EXCEPTIONAL`) marks an item that neither random generation (`src/mkobj.c:2146`)
+    nor a wish (`src/objnam.c:5978`) gives a quality; the notes say what the quality does for a weapon,
+    an armor (or the main-gauche) and a wand. **A run stamped 64 or earlier reported `false` for nearly
+    every ordinary weapon**, because the resolver required the flag of every item, so a candidate of
+    such a run that retracted a weapon-quality recommendation on this field was misled by the tool, not
+    wrong.
   - **A Level 1 failure is logged and named in `message`, not left to the JSON's shape alone.**
     `ItemResolution.Failed` always carries a reason; `GetItemStats` logs it at *information* level
     (`"Level 1 parsing did not resolve item '{Name}' ({Reason}); returning the raw definition."`),

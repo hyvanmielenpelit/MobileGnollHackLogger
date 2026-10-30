@@ -699,6 +699,7 @@ version the changelog cannot tell apart is marked conservative.
 | 55 | G | Source-location grading rule names files and paths; claim verifier retries a provider error once; 'inverts' counts as a stated defect and a charge. |
 | 56 | PA | Provider attempt ledger and failure attribution; answers ended by our time budget, governor or network are Failed, which the synthesis lists as excluded like ProviderError and which never carry text to grade. |
 | 64 | CI, G | wiki_overview joins the allowed tools, so the grader's tool line and the claim verifier's tool set change; wiki searches fail clearly on a query with no searchable words; limit warnings and one recovery call for an unfinished answer; the caps are the chat's defaults (150 tool calls, 22 rounds, 48 model calls, 1,800 s); pre-injected wiki context under Production; web search stays off. |
+| 65 | CI | get_item_stats reports exceptionality_eligible by the game's rule, so an ordinary weapon is eligible; the damage, armor and wand notes reach the right items; the ac_bonus note states how the entry stores the value, and a plain weapon no longer gets it. |
 
 `HarnessImpactLedger` itself is the complete list; versions 57 to 63 are classified there.
 

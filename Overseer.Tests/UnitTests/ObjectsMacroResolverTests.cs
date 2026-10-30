@@ -225,7 +225,7 @@ public class ObjectsMacroResolverTests
         string notes = string.Join("\n", resolution.Notes);
 
         Assert.Contains("10 - ac", notes);
-        Assert.Contains("negates it into the hero's AC", notes);
+        Assert.Contains("negates it for the AC shown", notes);
         Assert.Contains("ARM_MC_BONUS", notes);
         Assert.Contains("ARMOR_SPELL_CASTING_PENALTY_MULTIPLIER", notes);
 
@@ -564,6 +564,68 @@ public class ObjectsMacroResolverTests
         Assert.True(r.Fields.ContainsKey("weight"));
         Assert.True(AsLong(r.Fields["weight"]) > 0);
         Assert.True(r.Fields.ContainsKey("skill"));
+    }
+
+    /// <summary>
+    /// exceptionality_eligible follows can_otyp_have_exceptionality (obj.h:527), and each note
+    /// reaches only the items it is true of. "fire" and "light" are names several classes share,
+    /// so those rows pass the class.
+    /// </summary>
+    [Theory]
+    [InlineData("trident", null, "WEAPON_CLASS", true, true, false, false)]
+    [InlineData("long sword", null, "WEAPON_CLASS", true, true, false, false)]
+    [InlineData("dagger", null, "WEAPON_CLASS", true, true, false, false)]
+    [InlineData("main-gauche", null, "WEAPON_CLASS", true, true, true, false)]
+    [InlineData("pick-axe", null, "TOOL_CLASS", true, true, false, false)]
+    [InlineData("spade of colossal excavation", null, "TOOL_CLASS", false, false, false, false)]
+    [InlineData("gauntlets of ogre power", null, "ARMOR_CLASS", true, true, true, false)]
+    [InlineData("fork", null, "WEAPON_CLASS", false, false, false, false)]
+    [InlineData("worm tooth", null, "WEAPON_CLASS", false, false, false, false)]
+    [InlineData("plate mail", null, "ARMOR_CLASS", true, false, true, false)]
+    [InlineData("cloak of protection", null, "ARMOR_CLASS", false, false, false, false)]
+    [InlineData("fire", "WAND_CLASS", "WAND_CLASS", true, false, false, true)]
+    [InlineData("light", "WAND_CLASS", "WAND_CLASS", false, false, false, false)]
+    public void RealCorpus_ExceptionalityEligibilityAndNotes(
+        string name,
+        string? objectClass,
+        string expectedClass,
+        bool eligible,
+        bool damageNote,
+        bool acNote,
+        bool wandNote)
+    {
+        var resolver = LoadRealCorpusOrSkip();
+        var r = resolver.Resolve(name, objectClass);
+
+        Assert.True(r.Success, r.FailureReason);
+        Assert.Equal(expectedClass, r.ObjectClass);
+        Assert.Equal(eligible, r.Fields["exceptionality_eligible"]);
+        Assert.Equal(damageNote, r.Notes.Any(n => n.Contains("damage rolls", StringComparison.Ordinal)));
+        Assert.Equal(acNote, r.Notes.Any(n => n.Contains("adds an AC bonus", StringComparison.Ordinal)));
+        Assert.Equal(wandNote, r.Notes.Any(n => n.Contains("damage dice", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// The ac_bonus note states how the entry stores the value, and a plain weapon, which
+    /// ARM_AC_BONUS does not read, gets none.
+    /// </summary>
+    [Theory]
+    [InlineData("plate mail", true, false)]
+    [InlineData("gauntlets of ogre power", false, true)]
+    [InlineData("spiked shield", false, true)]
+    [InlineData("main-gauche", false, true)]
+    [InlineData("trident", false, false)]
+    [InlineData("long sword", false, false)]
+    public void RealCorpus_AcBonusNoteFollowsHowTheEntryStoresIt(string name, bool inverted, bool direct)
+    {
+        var resolver = LoadRealCorpusOrSkip();
+        var r = resolver.Resolve(name);
+
+        Assert.True(r.Success, r.FailureReason);
+        Assert.True(r.Fields.ContainsKey("ac_bonus"));
+        Assert.Equal(inverted, r.Fields.ContainsKey("base_ac"));
+        Assert.Equal(inverted, r.Notes.Any(n => n.Contains("armor stores it as 10 - ac", StringComparison.Ordinal)));
+        Assert.Equal(direct, r.Notes.Any(n => n.Contains("stored directly for this item", StringComparison.Ordinal)));
     }
 
     [Fact]

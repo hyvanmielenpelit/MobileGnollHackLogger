@@ -859,8 +859,13 @@ public static class BenchmarkAssessmentPrompt
     ///     pre-injected wiki context under the Production condition; web search stays off.
     ///     ScoringMethodVersion stays 14; ToolGuidesSha256 moves with the new guide, CandidateSystemPromptSha256
     ///     does not move.
+    /// v65: get_item_stats reports exceptionality_eligible by the game's rule, so an ordinary weapon is
+    ///     eligible; its damage note reaches every weapon, its AC note reaches armor and the main-gauche, and
+    ///     a wand gets a wand note instead of the AC note. The ac_bonus note states how the entry stores the
+    ///     value, and a plain weapon no longer gets it.
+    ///     ScoringMethodVersion stays 14; ToolGuidesSha256 and CandidateSystemPromptSha256 do not move.
     /// </summary>
-    public const string HarnessVersion = "64";
+    public const string HarnessVersion = "65";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

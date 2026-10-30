@@ -2121,11 +2121,7 @@ namespace Overseer.Services
                 if (name == "ac_bonus")
                 {
                     EmitBaseAc(fields, site, structuralSlots, value);
-                    notes.Add("ac_bonus is oc_armor_class, the stored AC bonus, and armour stores it "
-                        + "as 10 - ac (src/objects.c:1005) — base_ac is that ac argument. "
-                        + "ARM_AC_BONUS (include/hack.h:681) reads oc_armor_class and src/do.c:5273 "
-                        + "negates it into the hero's AC, so a bonus of 9 lowers AC by 9, which is an "
-                        + "improvement.");
+                    EmitAcBonusNote(fields, notes, objectClass, slots);
                 }
                 else if (name == "magic_cancellation")
                 {
@@ -2181,6 +2177,27 @@ namespace Overseer.Services
             if (storedBonus is int bonus) fields["base_ac"] = Number(10 - bonus);
         }
 
+        private void EmitAcBonusNote(
+            Dictionary<string, object> fields, List<string> notes, string objectClass, List<string> slots)
+        {
+            const string effect = "ARM_AC_BONUS (include/hack.h:681) reads oc_armor_class and src/do.c:5315 "
+                + "negates it for the AC shown, so a bonus of 9 lowers AC by 9, which is an improvement.";
+
+            if (fields.ContainsKey("base_ac"))
+            {
+                notes.Add("ac_bonus is oc_armor_class, the stored AC bonus, and armor stores it "
+                    + "as 10 - ac (src/objects.c:1005) — base_ac is that ac argument. " + effect);
+                return;
+            }
+
+            /* A plain weapon's slot is outside ARM_AC_BONUS's first two conditions (hack.h:682). */
+            string flags1 = Normalise(Slot(slots, "oc_flags") ?? string.Empty);
+            if (objectClass == "ARMOR_CLASS" || flags1.Contains("O1_IS_ARMOR_WHEN_WIELDED", StringComparison.Ordinal))
+            {
+                notes.Add("ac_bonus is oc_armor_class, the AC bonus, stored directly for this item. " + effect);
+            }
+        }
+
         private void EmitDirSubtype(
             Dictionary<string, object> fields, List<string> notes, string objectClass, List<string> slots)
         {
@@ -2204,11 +2221,25 @@ namespace Overseer.Services
         private void EmitExceptionality(
             Dictionary<string, object> fields, List<string> notes, string objectClass, List<string> slots)
         {
+            string flags1 = Normalise(Slot(slots, "oc_flags") ?? string.Empty);
             string flags4 = Normalise(Slot(slots, "oc_flags4") ?? string.Empty);
+            string flags5 = Normalise(Slot(slots, "oc_flags5") ?? string.Empty);
             string flags6 = Normalise(Slot(slots, "oc_flags6") ?? string.Empty);
 
+            /* is_otyp_weapon (obj.h:455-459). */
+            bool isWeapon = objectClass == "WEAPON_CLASS"
+                || (objectClass == "TOOL_CLASS" && flags4.Contains("O4_WEAPON_TOOL", StringComparison.Ordinal))
+                || flags1.Contains("O1_IS_WEAPON_WHEN_WIELDED", StringComparison.Ordinal)
+                || flags5.Contains("O5_IS_WEAPON_WHEN_WORN", StringComparison.Ordinal);
+
+            /* can_otyp_have_exceptionality (obj.h:527). */
             bool forbidden = flags4.Contains("O4_NON_EXCEPTIONAL", StringComparison.Ordinal);
-            bool allowed = !forbidden && flags4.Contains("O4_CAN_HAVE_EXCEPTIONALITY", StringComparison.Ordinal);
+            bool allowed = !forbidden
+                && (isWeapon || flags4.Contains("O4_CAN_HAVE_EXCEPTIONALITY", StringComparison.Ordinal));
+
+            /* get_obj_exceptionality_ac_bonus (o_init.c:1850-1866). */
+            bool paysAcBonus = objectClass == "ARMOR_CLASS"
+                || flags1.Contains("O1_IS_ARMOR_WHEN_WIELDED", StringComparison.Ordinal);
 
             fields["exceptionality_eligible"] = allowed;
 
@@ -2219,18 +2250,26 @@ namespace Overseer.Services
 
             if (!allowed) return;
 
-            if (objectClass == "WEAPON_CLASS")
+            if (isWeapon)
             {
                 notes.Add("Exceptionality multiplies the number of damage rolls, not the die "
                     + "size (weapon.c:489-517): Normal 1, Exceptional 2, Elite 3, Celestial, "
                     + "Primordial and Infernal 4 (weapon.c:4669-4681). An Elite 1d8 weapon "
                     + "rolls 3d8.");
             }
-            else
+
+            if (paysAcBonus)
             {
-                notes.Add("Exceptionality adds an AC bonus rather than multiplying damage "
-                    + "rolls: the multiplier is 4 for a suit, 3 for a shield and 2 otherwise, "
-                    + "times the exceptionality level (o_init.c:1837-1852).");
+                notes.Add("Exceptionality adds an AC bonus: 4 for a suit, 3 for a shield and 2 "
+                    + "otherwise, times the exceptionality level, where Celestial, Primordial "
+                    + "and Infernal count as 3 (o_init.c:1850-1866).");
+            }
+
+            if (objectClass == "WAND_CLASS")
+            {
+                notes.Add("Exceptionality multiplies the number of the wand's damage dice: "
+                    + "Normal 1, Exceptional 2, Elite 3 (weapon.c:4656-4667, zap.c:163-166). "
+                    + "A wand cannot be Celestial, Primordial or Infernal (o_init.c:1563-1564).");
             }
         }
 
