@@ -42,7 +42,7 @@ public class AccountPagesRateLimitTests : IClassFixture<AccountPagesRateLimitTes
 
     /// <summary>
     /// Each limited page and what its GET answers within the limit. ResetPassword answers 400 without a code; the two
-    /// two-factor pages throw without the two-factor cookie, and the error page answers 500.
+    /// two-factor pages redirect to Login without the two-factor cookie.
     /// </summary>
     public static TheoryData<string, HttpStatusCode> Pages => new()
     {
@@ -51,8 +51,8 @@ public class AccountPagesRateLimitTests : IClassFixture<AccountPagesRateLimitTes
         { "/Identity/Account/ForgotPassword", HttpStatusCode.OK },
         { "/Identity/Account/ResendEmailConfirmation", HttpStatusCode.OK },
         { "/Identity/Account/ResetPassword?code=YQ", HttpStatusCode.OK },
-        { "/Identity/Account/LoginWith2fa", HttpStatusCode.InternalServerError },
-        { "/Identity/Account/LoginWithRecoveryCode", HttpStatusCode.InternalServerError },
+        { "/Identity/Account/LoginWith2fa", HttpStatusCode.Redirect },
+        { "/Identity/Account/LoginWithRecoveryCode", HttpStatusCode.Redirect },
     };
 
     [Theory]

@@ -16,6 +16,8 @@ public class AccountSessionTests : IClassFixture<AccountSessionTests.SessionFact
     private const string ManagePath = "/Identity/Account/Manage";
     private const string AcceptTermsPath = "/Identity/Account/AcceptTerms";
     private const string TokenPagePath = "/Identity/Account/Manage/Email";
+    private const string TwoFactorPath = "/Identity/Account/LoginWith2fa";
+    private const string RecoveryCodePath = "/Identity/Account/LoginWithRecoveryCode";
     private const byte IpBlock = 0x21;
 
     public static TheoryData<string> OffSiteReturnUrls => new()
@@ -142,14 +144,7 @@ public class AccountSessionTests : IClassFixture<AccountSessionTests.SessionFact
     [Fact]
     public async Task TwoFactorAccount_PasswordStepDoesNotSignIn()
     {
-        string userName = WebsiteTestData.UniqueUserName("session_2fa");
-        await _factory.WithScopeAsync(async sp =>
-        {
-            var user = await WebsiteTestData.CreateUserAsync(sp, userName);
-            var userManager = sp.GetRequiredService<UserManager<ApplicationUser>>();
-            Assert.True((await userManager.ResetAuthenticatorKeyAsync(user)).Succeeded);
-            Assert.True((await userManager.SetTwoFactorEnabledAsync(user, true)).Succeeded);
-        });
+        string userName = await CreateTwoFactorUserAsync("session_2fa");
         using var session = NewSession(_factory);
 
         var response = await PostLoginAsync(session, userName);
@@ -157,6 +152,42 @@ public class AccountSessionTests : IClassFixture<AccountSessionTests.SessionFact
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/Identity/Account/LoginWith2fa", PathOf(response.Headers.Location));
         AssertRedirectsToLogin(await session.GetAsync(ManagePath));
+    }
+
+    [Theory]
+    [InlineData(TwoFactorPath)]
+    [InlineData(RecoveryCodePath)]
+    public async Task TwoFactorPages_NoTwoFactorCookie_GetRedirectsToLoginKeepingReturnUrl(string path)
+    {
+        using var session = NewSession(_factory);
+
+        var response = await session.GetAsync(path + "?returnUrl=%2FTopScores");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal(LoginPath + "?ReturnUrl=%2FTopScores", response.Headers.Location?.OriginalString);
+    }
+
+    [Theory]
+    [InlineData(TwoFactorPath, "Input.TwoFactorCode", "123456")]
+    [InlineData(RecoveryCodePath, "Input.RecoveryCode", "ABCDE-12345")]
+    public async Task TwoFactorPages_NoTwoFactorCookie_PostRedirectsToLogin(string path, string field, string value)
+    {
+        using var session = NewSession(_factory);
+
+        var response = await session.PostFormAsync(path, new Dictionary<string, string> { [field] = value }, tokenFromPath: LoginPath);
+
+        AssertRedirectsToLogin(response);
+    }
+
+    [Fact]
+    public async Task TwoFactorAccount_AfterPasswordStep_TwoFactorPagesOpen()
+    {
+        string userName = await CreateTwoFactorUserAsync("session_2fa_pages");
+        using var session = NewSession(_factory);
+        await PostLoginAsync(session, userName);
+
+        Assert.Equal(HttpStatusCode.OK, (await session.GetAsync(TwoFactorPath)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await session.GetAsync(RecoveryCodePath)).StatusCode);
     }
 
     [Theory]
@@ -214,6 +245,19 @@ public class AccountSessionTests : IClassFixture<AccountSessionTests.SessionFact
     {
         string userName = WebsiteTestData.UniqueUserName(prefix);
         await _factory.WithScopeAsync(sp => WebsiteTestData.CreateUserAsync(sp, userName));
+        return userName;
+    }
+
+    private async Task<string> CreateTwoFactorUserAsync(string prefix)
+    {
+        string userName = WebsiteTestData.UniqueUserName(prefix);
+        await _factory.WithScopeAsync(async sp =>
+        {
+            var user = await WebsiteTestData.CreateUserAsync(sp, userName);
+            var userManager = sp.GetRequiredService<UserManager<ApplicationUser>>();
+            Assert.True((await userManager.ResetAuthenticatorKeyAsync(user)).Succeeded);
+            Assert.True((await userManager.SetTwoFactorEnabledAsync(user, true)).Succeeded);
+        });
         return userName;
     }
 

@@ -51,14 +51,22 @@ public class BonesTransactionsPageTests : IClassFixture<InMemoryWebsiteWebApplic
         Assert.DoesNotContain(">" + newPoolUser.UserName + "<", html);
     }
 
-    [Fact]
-    public async Task Get_CompatibilityOutOfRange_Returns500()
+    [Theory]
+    [InlineData("compatibility=2")]
+    [InlineData("compatibility=7")]
+    [InlineData("compatibility=-1")]
+    [InlineData("compatibility=abc")]
+    [InlineData("compatibility=")]
+    [InlineData("compatibility=0%27")]
+    [InlineData("compatibility=1%27")]
+    [InlineData("compatibility=0&compatibility=1")]
+    public async Task Get_InvalidCompatibility_Returns400(string query)
     {
         using var client = _factory.CreateGameClient();
 
-        var response = await client.GetAsync("/BonesTransactions?compatibility=7", Ct);
+        var response = await client.GetAsync("/BonesTransactions?" + query, Ct);
 
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     /// <summary>

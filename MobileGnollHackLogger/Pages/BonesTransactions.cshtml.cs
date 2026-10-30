@@ -56,7 +56,7 @@ namespace MobileGnollHackLogger.Pages
             }
         }
 
-        public void OnGet()
+        public IActionResult OnGet()
         {
             if (BonesHelper.VersionCompatibilityList != null && BonesHelper.VersionCompatibilityList.Count > 0)
             {
@@ -66,7 +66,7 @@ namespace MobileGnollHackLogger.Pages
                     var queryVal = Request.Query["compatibility"].ToString();
                     if (!int.TryParse(queryVal, out int parsedIndex) || parsedIndex < 0 || parsedIndex >= CompatibilityVersions.Count)
                     {
-                        throw new ArgumentOutOfRangeException("compatibility", "Compatibility version index is out of bounds or invalid.");
+                        return BadRequest();
                     }
                     index = parsedIndex;
                 }
@@ -76,6 +76,8 @@ namespace MobileGnollHackLogger.Pages
                 MinVersion = selectedVersionInfo.Version;
                 MaxVersion = selectedVersionInfo.MaxVersion;
             }
+
+            return Page();
         }
     }
 }

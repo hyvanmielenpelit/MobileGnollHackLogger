@@ -66,7 +66,7 @@ public class LoginWithRecoveryCodeModel : PageModel
         var user = await _signInManager.GetTwoFactorAuthenticationUserAsync();
         if (user == null)
         {
-            throw new InvalidOperationException($"Unable to load two-factor authentication user.");
+            return RedirectToPage("./Login", new { ReturnUrl = returnUrl });
         }
 
         ReturnUrl = returnUrl;
@@ -84,7 +84,7 @@ public class LoginWithRecoveryCodeModel : PageModel
         var user = await _signInManager.GetTwoFactorAuthenticationUserAsync();
         if (user == null)
         {
-            throw new InvalidOperationException($"Unable to load two-factor authentication user.");
+            return RedirectToPage("./Login", new { ReturnUrl = returnUrl });
         }
 
         var recoveryCode = Input.RecoveryCode.Replace(" ", string.Empty);
