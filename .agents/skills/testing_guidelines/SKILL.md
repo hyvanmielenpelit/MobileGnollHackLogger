@@ -34,11 +34,19 @@ Tests that call external APIs (like OpenAI, Anthropic, or Google) consume quota 
 
 ```json
 {
+  "sdk": {
+    "version": "10.0.403",
+    "rollForward": "latestPatch",
+    "allowPrerelease": false
+  },
   "test": {
     "runner": "Microsoft.Testing.Platform"
   }
 }
 ```
+
+The `sdk` entry pins the .NET SDK; the `server_nuget_packages` skill explains it. The `test` entry
+selects the test runner:
 
 `Overseer.Tests` references `xunit.v3` and `Microsoft.NET.Test.Sdk`, which make it a
 **Microsoft.Testing.Platform (MTP) application**. From the .NET 10 SDK onward `dotnet test`
@@ -49,8 +57,8 @@ error : Testing with VSTest target is no longer supported by Microsoft.Testing.P
 .NET 10 SDK and later. If you use dotnet test, you should opt-in to the new dotnet test experience.
 ```
 
-The `global.json` entry above is that opt-in. Delete the file and every `dotnet test` command in
-this repository stops working; the error names no file, so the cause is not obvious from it.
+The `test` entry above is that opt-in. Delete it and every `dotnet test` command in this
+repository stops working; the error names no file, so the cause is not obvious from it.
 
 > ⚠️ **`dotnet.config` is *not* the mechanism here, despite what current Microsoft documentation
 > says.** A repository-root `dotnet.config` carrying `[dotnet.test.runner] name =

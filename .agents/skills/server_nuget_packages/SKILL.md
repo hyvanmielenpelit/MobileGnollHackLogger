@@ -5,13 +5,13 @@ description: Guidelines for managing NuGet package references in the .NET projec
 
 # NuGet Packages in the .NET Projects
 
-The solution `MobileGnollHackLogger.slnx` holds four .NET projects, all targeting the same
+The solution `MobileGnollHackLogger.slnx` holds five .NET projects, all targeting the same
 `net10.0` framework: `GnollHackServer.Data` (the EF Core data layer), `MobileGnollHackLogger`
-(the Razor Pages site), `Overseer` (the ASP.NET Core API with the Angular client) and
-`Overseer.Tests`. There is no `Directory.Packages.props` and no central package management:
-each `.csproj` lists its own `PackageReference`s with explicit versions. `GnollHackServer.Data`
-is referenced by the other three projects, so a package it references, directly or
-transitively, reaches all four.
+(the Razor Pages site), `Overseer` (the ASP.NET Core API with the Angular client),
+`Overseer.Tests` and `MobileGnollHackLogger.Tests`. There is no `Directory.Packages.props` and no
+central package management: each `.csproj` lists its own `PackageReference`s with explicit
+versions. The other four projects reference `GnollHackServer.Data`, directly or through another
+project, so a package it references, directly or transitively, reaches all five.
 
 ## Conventions
 
@@ -23,6 +23,28 @@ transitively, reaches all four.
 - **Keep the build at zero warnings.** NuGet audit warnings (`NU1901`–`NU1904`) are build
   warnings this repository does not tolerate, so a vulnerable package is fixed, not suppressed.
   Do not add `NoWarn` or `NuGetAuditLevel` to hide one.
+
+## The .NET SDK Pin
+
+The repository-root `global.json` pins the .NET SDK with `rollForward: latestPatch` and
+`allowPrerelease: false`.
+
+- **Why it exists.** Without a pin, `dotnet` selects the newest SDK installed on the machine, so a
+  `net10.0` solution could be built by a newer major version or a prerelease.
+- **Moving to a new feature band** is a deliberate edit of `version`. Security patches within the
+  band need no repository edit, because `latestPatch` selects them once they are installed.
+- **The `test` entry must stay.** Every `dotnet test` command depends on it; see the
+  `testing-guidelines` skill § 1a.
+- **Runtime security fixes reach production through the server's Hosting Bundle.** The publish
+  profiles are framework-dependent, so upgrading the `10.0.x` package set does not deliver a fix in
+  the runtime itself. Install the matching Hosting Bundle on each server as well.
+
+## Lucene.NET
+
+- **The three Lucene packages in `Overseer/Overseer.csproj` move together**, always to the same
+  version.
+- **A Lucene upgrade can change what `wiki_search` and `nethack_wiki_search` return.** Check one by
+  comparing tokens, ranks and scores between the two versions over the real corpora.
 
 ## Tracing a NuGet Audit Warning
 

@@ -254,7 +254,7 @@ MobileGnollHackLogger/          # Solution root
 │   └── Migrations/             #   EF Core migrations
 ├── Overseer.Tests/             # Test project
 ├── MobileGnollHackLogger.Tests/ # Website test project
-├── global.json                 # .NET SDK settings; selects the Microsoft.Testing.Platform test runner
+├── global.json                 # Pins the .NET SDK; selects the Microsoft.Testing.Platform test runner
 ├── MobileGnollHackLogger.slnx  # Visual Studio solution file
 └── LICENSE                     # MIT License
 ```
@@ -263,7 +263,7 @@ MobileGnollHackLogger/          # Solution root
 
 ### Prerequisites
 
-- [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0): a 10.0.4xx SDK at 10.0.403 or later, as pinned in `global.json`
 - [Node.js](https://nodejs.org/) (LTS) and npm — required for the Overseer Angular frontend
 - [SQL Server Express](https://www.microsoft.com/en-us/sql-server/sql-server-downloads) — free edition of SQL Server for local development
 - [SQL Server Management Studio (SSMS)](https://learn.microsoft.com/en-us/ssms/download-sql-server-management-studio-ssms) — for creating and managing the database

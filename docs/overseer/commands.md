@@ -209,13 +209,23 @@ All test commands must be run from the `Overseer.Tests/` (or repository root) di
 > [!IMPORTANT]
 > **`dotnet test` depends on the repository-root `global.json`.** `Overseer.Tests` is a
 > Microsoft.Testing.Platform application, and from the .NET 10 SDK onward `dotnet test` will not
-> run one through the old VSTest path. `global.json` carries the opt-in:
+> run one through the old VSTest path. `global.json` pins the .NET SDK and carries the opt-in, the
+> `test` entry:
 >
 > ```json
-> { "test": { "runner": "Microsoft.Testing.Platform" } }
+> {
+>   "sdk": {
+>     "version": "10.0.403",
+>     "rollForward": "latestPatch",
+>     "allowPrerelease": false
+>   },
+>   "test": {
+>     "runner": "Microsoft.Testing.Platform"
+>   }
+> }
 > ```
 >
-> Without it every command in this section fails with *"Testing with VSTest target is no longer
+> Without the `test` entry every command in this section fails with *"Testing with VSTest target is no longer
 > supported by Microsoft.Testing.Platform on .NET 10 SDK and later."* On this toolchain
 > (SDK 10.0.401) a `dotnet.config` `[dotnet.test.runner]` entry does **not** work as a substitute,
 > despite current Microsoft documentation; see the `testing-guidelines` skill § 1a.
