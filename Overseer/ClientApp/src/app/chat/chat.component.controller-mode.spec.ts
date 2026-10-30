@@ -99,15 +99,47 @@ describe('ChatComponent keyboard and controller reachability', () => {
       expect(prompt().hasAttribute('data-gnh-pad-initial')).toBe(true);
     });
 
-    it('puts the sidebar, the chat list, the chat, the notices and the composer in their controller zones', () => {
+    it('puts the menu, the sidebar, the chat list, the chat, the notices and the composer in their controller zones', () => {
       const zone = (selector: string) => host().querySelector(selector)!.getAttribute('data-gnh-pad-zone');
-      expect(zone('.sidebar')).toBe('1');
-      expect(zone('.sidebar ul')).toBe('2');
-      expect(zone('.chat-header')).toBe('3');
-      expect(zone('.messages')).toBe('3');
-      expect(zone('app-admin-alerts')).toBe('3');
-      expect(zone('.toast-error')).toBe('3');
-      expect(zone('.input-area-container')).toBe('4');
+      expect(zone('.bottom-links')).toBe('1');
+      expect(zone('.sidebar')).toBe('2');
+      expect(zone('.sidebar ul')).toBe('3');
+      expect(zone('.chat-header')).toBe('4');
+      expect(zone('.messages')).toBe('4');
+      expect(zone('app-admin-alerts')).toBe('4');
+      expect(zone('.toast-error')).toBe('4');
+      expect(zone('.input-area-container')).toBe('5');
+    });
+
+    it('makes the composer a linear zone', () => {
+      expect(host().querySelector('.input-area-container')!.hasAttribute('data-gnh-pad-linear')).toBe(true);
+    });
+
+    it('marks New Chat and Settings as the targets of the L2 and R2 shortcuts', () => {
+      const settings = Array.from(host().querySelectorAll('.bottom-links a')).find(a => a.textContent!.trim() === 'Settings')!;
+      expect(host().querySelector('button.btn-new-chat')!.getAttribute('data-gnh-pad-shortcut')).toBe('lt');
+      expect(settings.getAttribute('data-gnh-pad-shortcut')).toBe('rt');
+    });
+
+    it('marks the composer\'s model picker as the target of the Y shortcut', () => {
+      component.hasModel = true;
+      component.userModels = [
+        { id: 1, provider: 'OpenAI', modelId: 'model-a' },
+        { id: 2, provider: 'OpenAI', modelId: 'model-b' }
+      ];
+      fixture.detectChanges();
+      expect(host().querySelector('app-model-picker.model-selector-wrapper')!.getAttribute('data-gnh-pad-shortcut')).toBe('y');
+    });
+
+    it('makes a finished message and the streaming reply whole controller items', () => {
+      component.messages = [
+        { id: 1, role: 'user', content: 'Visible message', timestampUtc: '2026-10-29T10:00:00Z' }
+      ];
+      component.isStreaming = true;
+      fixture.detectChanges();
+      const boxes = host().querySelectorAll('.message-box');
+      expect(boxes.length).toBe(2);
+      boxes.forEach(box => expect(box.getAttribute('data-gnh-pad-row')).toBe('item'));
     });
 
     it('makes each chat a controller row with its actions as secondary buttons, and Load more a plain stop', () => {

@@ -824,6 +824,13 @@ describe('ModelPickerComponent view toolbar', () => {
     expect(document.activeElement).toBe(listbox(p));
   });
 
+  it('marks the open popup as the controller\'s layer, so the tools beside the list are reachable', async () => {
+    await create();
+    const p = picker('one');
+    open(p);
+    expect(listbox(p)!.closest('.selector-popup')!.hasAttribute('data-gnh-pad-layer')).toBe(true);
+  });
+
   it('opens a closed picker with the toolbar expanded from the filter button', async () => {
     await create();
     const p = picker('one');

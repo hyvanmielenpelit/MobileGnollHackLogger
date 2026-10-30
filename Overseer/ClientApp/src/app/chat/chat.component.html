@@ -1,12 +1,12 @@
 @if (!isOffline) {
-  <app-admin-alerts data-gnh-pad-zone="3"></app-admin-alerts>
+  <app-admin-alerts data-gnh-pad-zone="4"></app-admin-alerts>
   <div class="layout" [class.is-resizing]="isResizing" [class.sidebar-open]="isSidebarOpen">
-    <div class="sidebar gh-main-container" #sidebar data-gnh-pad-area="s" data-gnh-pad-zone="1" [style.width.px]="sidebarWidth">
+    <div class="sidebar gh-main-container" #sidebar data-gnh-pad-area="s" data-gnh-pad-zone="2" [style.width.px]="sidebarWidth">
       <button class="sidebar-close-btn" (click)="closeSidebar()" title="Close Sidebar" aria-label="Close sidebar">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
       <h3 class="sidebar-title">Chats</h3>
-      <button class="btn-gh btn-new-chat" (click)="navigateToNewSession()">New Chat</button>
+      <button class="btn-gh btn-new-chat" data-gnh-pad-shortcut="lt" (click)="navigateToNewSession()">New Chat</button>
       <div class="sidebar-search-container">
         <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="11" cy="11" r="8"></circle>
@@ -24,7 +24,7 @@
           spellcheck="false" />
         <button *ngIf="sessionSearchQuery" class="search-clear-btn" (click)="clearSessionSearch()" title="Clear search" aria-label="Clear search">✕</button>
       </div>
-      <ul data-gnh-pad-scroll data-gnh-pad-zone="2">
+      <ul data-gnh-pad-scroll data-gnh-pad-zone="3">
         @if (loadingSessions) {
           <li class="sessions-loader">
             <div class="sidebar-spinner"></div>
@@ -103,8 +103,8 @@
           <span class="trash-btn-count">{{ trashCount }}</span>
         </button>
       </div>
-      <div class="bottom-links">
-        <a routerLink="/settings" queryParamsHandling="preserve">Settings</a>
+      <div class="bottom-links" data-gnh-pad-zone="1">
+        <a routerLink="/settings" queryParamsHandling="preserve" data-gnh-pad-shortcut="rt">Settings</a>
 
         @if (authService.user$ | async; as user) {
           @if (user.isAdmin) {
@@ -120,7 +120,7 @@
     <div class="resizer" (mousedown)="startResize($event)" (touchstart)="startResize($event)"></div>
     <div class="sidebar-backdrop" [class.visible]="isSidebarOpen" (click)="closeSidebar()"></div>
     <div class="chat-area gh-main-container" data-gnh-pad-area="m">
-      <div class="chat-header" data-gnh-pad-zone="3">
+      <div class="chat-header" data-gnh-pad-zone="4">
         <button class="sidebar-toggle" (click)="toggleSidebar()" title="Toggle Sidebar" aria-label="Toggle sidebar">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
         </button>
@@ -254,7 +254,7 @@
           </div>
         }
       </div>
-      <div class="messages" #messagesContainer data-gnh-pad-scroll data-gnh-pad-zone="3" (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (gnhpadscroll)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 0 || showThoughtsAndTools === 1">
+      <div class="messages" #messagesContainer data-gnh-pad-scroll data-gnh-pad-zone="4" (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (gnhpadscroll)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 0 || showThoughtsAndTools === 1">
         @if (isLoadingSession) {
           <div class="conversation-loader">
             <div class="sidebar-spinner"></div>
@@ -291,7 +291,7 @@
             </div>
           }
           @for (msg of messages; track msg; let i = $index) {
-            <div class="message-box" [ngClass]="msg.role" data-gnh-pad-section>
+            <div class="message-box" [ngClass]="msg.role" data-gnh-pad-section data-gnh-pad-row="item">
               <div class="message-header">
                 @if (msg.role === 'assistant') {
                   @if (isLastAssistantMessage(i)) {
@@ -452,7 +452,7 @@
             </div>
           }
           @if (isStreaming || streamingMessage) {
-            <div class="message-box assistant" data-gnh-pad-section>
+            <div class="message-box assistant" data-gnh-pad-section data-gnh-pad-row="item">
               <div class="message-header">
                 <img [src]="streamingAvatarSrc" (load)="onAvatarLoaded()" class="overseer-avatar" alt="Overseer" width="64" height="64" decoding="sync" />
                 <strong>Overseer</strong>
@@ -605,7 +605,7 @@
           }
         }
       </div>
-      <div class="input-area-container" data-gnh-pad-zone="4">
+      <div class="input-area-container" data-gnh-pad-zone="5" data-gnh-pad-linear>
         <!-- Stays for the page's life once the server says an administrator blocked the user. -->
         @if (overseerBlock) {
           <div class="alert alert-danger alert-compact overseer-blocked-banner" role="alert">
@@ -705,7 +705,7 @@
           <div class="input-area-top">
             @if (hasModel) {
               @if ((userModels.length + systemModels.length) > 1) {
-                <app-model-picker class="model-selector-wrapper" variant="compact" [dropsUp]="true"
+                <app-model-picker class="model-selector-wrapper" data-gnh-pad-shortcut="y" variant="compact" [dropsUp]="true"
                                   viewStateKey="chat.composer"
                                   [narrowHidesBadges]="true" label="Chat model" [triggerId]="chatModelPickerTriggerId"
                                   [options]="composerModelOptions" [selectedKey]="selectedModelKey"
@@ -1031,7 +1031,7 @@
   }
 </dialog>
 
-<div #errorToast popover="manual" class="toast-error" data-gnh-pad-zone="3" role="alert" aria-live="assertive">
+<div #errorToast popover="manual" class="toast-error" data-gnh-pad-zone="4" role="alert" aria-live="assertive">
   <div class="toast-content">
     <span class="toast-icon">⚠️</span>
     <div class="toast-body">

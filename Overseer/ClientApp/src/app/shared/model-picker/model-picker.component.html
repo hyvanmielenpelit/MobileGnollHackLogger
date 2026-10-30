@@ -103,7 +103,7 @@
   @if (toolsShown) {
     <!-- The toolbar, while expanded, is the popup's edge nearest the trigger: first downward, last upward.
          The popup keeps its frame and width while the toolbar is collapsed. -->
-    <div class="selector-popup" (focusout)="onFocusOut($event)" (mousedown)="onPopupMousedown($event)">
+    <div class="selector-popup" data-gnh-pad-layer (focusout)="onFocusOut($event)" (mousedown)="onPopupMousedown($event)">
       @if (dropsUp) {
         <ng-container [ngTemplateOutlet]="listboxTemplate"></ng-container>
         @if (toolsExpanded) {
