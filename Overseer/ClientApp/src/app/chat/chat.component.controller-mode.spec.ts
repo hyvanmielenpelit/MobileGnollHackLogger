@@ -99,16 +99,20 @@ describe('ChatComponent keyboard and controller reachability', () => {
       expect(prompt().hasAttribute('data-gnh-pad-initial')).toBe(true);
     });
 
-    it('puts the menu, the sidebar, the chat list, the chat, the notices and the composer in their controller zones', () => {
+    it('puts the menu, the quota bar, the sidebar, the chat list, the chat, the notices and the composer in their controller zones', () => {
+      component.activeSessionCount = 2;
+      fixture.detectChanges();
       const zone = (selector: string) => host().querySelector(selector)!.getAttribute('data-gnh-pad-zone');
       expect(zone('.bottom-links')).toBe('1');
-      expect(zone('.sidebar')).toBe('2');
-      expect(zone('.sidebar ul')).toBe('3');
-      expect(zone('.chat-header')).toBe('4');
-      expect(zone('.messages')).toBe('4');
-      expect(zone('app-admin-alerts')).toBe('4');
-      expect(zone('.toast-error')).toBe('4');
-      expect(zone('.input-area-container')).toBe('5');
+      expect(zone('.sidebar-quota-bar')).toBe('2');
+      expect(host().querySelector('.sidebar-quota-bar')!.hasAttribute('data-gnh-pad-zone-skip')).toBe(true);
+      expect(zone('.sidebar')).toBe('3');
+      expect(zone('.sidebar ul')).toBe('4');
+      expect(zone('.chat-header')).toBe('5');
+      expect(zone('.messages')).toBe('5');
+      expect(zone('app-admin-alerts')).toBe('5');
+      expect(zone('.toast-error')).toBe('5');
+      expect(zone('.input-area-container')).toBe('6');
     });
 
     it('makes the composer a linear zone', () => {

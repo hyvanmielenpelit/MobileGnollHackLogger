@@ -1,7 +1,7 @@
 @if (!isOffline) {
-  <app-admin-alerts data-gnh-pad-zone="4"></app-admin-alerts>
+  <app-admin-alerts data-gnh-pad-zone="5"></app-admin-alerts>
   <div class="layout" [class.is-resizing]="isResizing" [class.sidebar-open]="isSidebarOpen">
-    <div class="sidebar gh-main-container" #sidebar data-gnh-pad-area="s" data-gnh-pad-zone="2" [style.width.px]="sidebarWidth">
+    <div class="sidebar gh-main-container" #sidebar data-gnh-pad-area="s" data-gnh-pad-zone="3"[style.width.px]="sidebarWidth">
       <button class="sidebar-close-btn" (click)="closeSidebar()" title="Close Sidebar" aria-label="Close sidebar">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
@@ -24,7 +24,7 @@
           spellcheck="false" />
         <button *ngIf="sessionSearchQuery" class="search-clear-btn" (click)="clearSessionSearch()" title="Clear search" aria-label="Clear search">✕</button>
       </div>
-      <ul data-gnh-pad-scroll data-gnh-pad-zone="3">
+      <ul data-gnh-pad-scroll data-gnh-pad-zone="4">
         @if (loadingSessions) {
           <li class="sessions-loader">
             <div class="sidebar-spinner"></div>
@@ -78,7 +78,7 @@
           <li class="search-excluded-note">{{ confidentialExcludedCount }} confidential chat{{ confidentialExcludedCount === 1 ? '' : 's' }} not searched.</li>
         }
       </ul>
-      <div class="sidebar-quota-bar" *ngIf="activeSessionCount !== undefined">
+      <div class="sidebar-quota-bar" data-gnh-pad-zone="2" data-gnh-pad-zone-skip *ngIf="activeSessionCount !== undefined">
         <div class="quota-indicators">
           <button type="button" class="sidebar-quota-btn active-quota-btn" (click)="openBulkDeleteDialog()" [disabled]="activeSessionCount === 0" [title]="'Active chats: ' + activeSessionCount + '/' + maxSessionQuota + (activeSessionCount ? ' (click to move active chats to Trash)' : '')" [attr.aria-label]="'Active chats: ' + activeSessionCount + ' out of max ' + maxSessionQuota + (activeSessionCount ? ', click to move active chats to Trash' : '')">
             <svg class="svg-chat" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -120,7 +120,7 @@
     <div class="resizer" (mousedown)="startResize($event)" (touchstart)="startResize($event)"></div>
     <div class="sidebar-backdrop" [class.visible]="isSidebarOpen" (click)="closeSidebar()"></div>
     <div class="chat-area gh-main-container" data-gnh-pad-area="m">
-      <div class="chat-header" data-gnh-pad-zone="4">
+      <div class="chat-header" data-gnh-pad-zone="5">
         <button class="sidebar-toggle" (click)="toggleSidebar()" title="Toggle Sidebar" aria-label="Toggle sidebar">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
         </button>
@@ -254,7 +254,7 @@
           </div>
         }
       </div>
-      <div class="messages" #messagesContainer data-gnh-pad-scroll data-gnh-pad-zone="4" (wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (gnhpadscroll)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 0 || showThoughtsAndTools === 1">
+      <div class="messages" #messagesContainer data-gnh-pad-scroll data-gnh-pad-zone="5"(wheel)="onUserInteraction()" (touchstart)="onUserInteraction()" (gnhpadscroll)="onUserInteraction()" (scroll)="onScroll()" [class.hide-thoughts]="showThoughtsAndTools === 0 || showThoughtsAndTools === 1">
         @if (isLoadingSession) {
           <div class="conversation-loader">
             <div class="sidebar-spinner"></div>
@@ -618,7 +618,7 @@
       <!-- Always present, so that text a live turn's notice puts here is announced. -->
       <div class="visually-hidden turn-notice-status" role="status">{{ turnNoticeStatusAnnouncement }}</div>
       <div class="visually-hidden turn-notice-alert" role="alert">{{ turnNoticeAlertAnnouncement }}</div>
-      <div class="input-area-container" data-gnh-pad-zone="5" data-gnh-pad-linear>
+      <div class="input-area-container" data-gnh-pad-zone="6" data-gnh-pad-linear>
         <!-- Stays for the page's life once the server says an administrator blocked the user. -->
         @if (overseerBlock) {
           <div class="alert alert-danger alert-compact overseer-blocked-banner" role="alert">
@@ -1044,7 +1044,7 @@
   }
 </dialog>
 
-<div #errorToast popover="manual" class="toast-error" data-gnh-pad-zone="4" role="alert" aria-live="assertive">
+<div #errorToast popover="manual" class="toast-error" data-gnh-pad-zone="5"role="alert" aria-live="assertive">
   <div class="toast-content">
     <span class="toast-icon">⚠️</span>
     <div class="toast-body">
