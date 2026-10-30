@@ -1,5 +1,44 @@
 [
   {
+    "version": "1.4.4",
+    "date": "2026-10-30T19:55:49Z",
+    "summary": "A release that makes the chat honest about answers that stop early and better at finishing them, adds wiki article counts and lists, and continues the Steam Deck controller work.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "When a limit or an AI service problem stops or shortens an answer, a notice under the message now says what happened and what to do next, often with a button to try again or continue. The notice stays with the message when you reopen the chat, and it comes with a reference you can quote when reporting the problem."
+      },
+      {
+        "type": "feature",
+        "text": "You can now ask the Overseer how many articles the GnollHack and NetHack wikis have, which sections the GnollHack wiki has, or for a list of their articles."
+      },
+      {
+        "type": "improvement",
+        "text": "As the Overseer nears the limits for one question, it now plans ahead and writes its answer from what it has found, so long research is less likely to end in a cut-off answer."
+      },
+      {
+        "type": "fix",
+        "text": "If the Overseer finishes its research without writing a final answer, or its connection to the AI service closes before the answer is finished, it now tries once more to write the answer from what it has already found."
+      },
+      {
+        "type": "fix",
+        "text": "Item lookups now report which items can be exceptional the way the game decides it, and what exceptionality does for weapons, armor and wands, so the AI gives more accurate answers about them."
+      },
+      {
+        "type": "improvement",
+        "text": "On the Steam Deck, L2 now starts a new chat, R2 opens Settings and Y opens the model list, and the D-pad moves through a chat one message at a time."
+      },
+      {
+        "type": "improvement",
+        "text": "The login screen now keeps the Gnoll Overseer title on one line and centers the login card vertically, on small screens too."
+      },
+      {
+        "type": "improvement",
+        "text": "The Privacy page now describes the records kept when a limit or a provider failure ends or shortens an answer: what they hold, how long they are kept and who can read them."
+      }
+    ]
+  },
+  {
     "version": "1.4.3",
     "date": "2026-10-29T22:19:33Z",
     "summary": "A release that makes the Overseer comfortable to use with a game controller on the Steam Deck, adds a new OpenAI model, and makes game lookups and chat titles more dependable.",
