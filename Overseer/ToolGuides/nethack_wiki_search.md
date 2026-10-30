@@ -18,3 +18,7 @@ development), source-code pages, and forum and wiki administration pages are not
 
 Returns up to 5 articles (default 3), each capped at 3,000 characters with a truncation note
 pointing at nethack_wiki_view; the whole result is never cut mid-article.
+
+This search cannot count or list articles, and the number of articles it returns says nothing about
+the size of the wiki. Use wiki_overview with `wiki: "nethack"` for how many articles exist or a list
+of their titles.

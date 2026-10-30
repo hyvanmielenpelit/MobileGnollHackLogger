@@ -1229,11 +1229,30 @@ added for them. Usage rows now also carry an **estimated cost** and the thinking
 | `UserKeyAiUsageLog` | user id, model, tokens, estimated cost of a call on the user's own key | **not written** for an incognito turn on the user's own key | cascades with the account |
 | `ChatProviderAttempt` | outcome class, HTTP status and a sanitized error code per provider attempt; a user id **only on user-key rows** | not written for an incognito turn on the user's own key; system-configuration incognito turns record as other operator-funded calls do | pruned after 400 days (`PruneChatProviderAttemptDays`); user-key rows cascade with the account |
 | `OverseerDailyActivity` | per user per UTC day: chats created and messages sent and received | incognito chats and messages are counted **only on an anonymous daily row** that names nobody | cascades with the account (a deletion held for review keeps it until approved) |
+| `ChatTurnLimitEvent` | which limit or provider failure ended or cut a turn: code, severity, the numbers behind it, the model, the turn's counters, tokens and estimated cost, a finish reason, an HTTP status and a sanitized error code; a user id, the chat and message ids | **not written** for an incognito turn on the user's own key; on a system configuration written with no chat or message ids | pruned after 180 days (`PruneChatTurnLimitEventDays`); cascades with the account; a chat's purge clears its ids and keeps the row |
 
 The incognito promise covers the four chat tables; these rows are outside them, hold no content, and
-are disclosed in the privacy notice (*Cost and token accounting*, *Activity counts*). The one table
+are disclosed in the privacy notice (*Cost and token accounting*, *Activity counts*, *Limit records*). The one table
 outside the four that does hold content is the snapshot guard quarantine below, a bounded and
 disclosed exception (§8.7).
+
+**An administrator can read the prompt behind a limit event, on demand and journaled.** The event holds
+the id of the user's message, never its text. **Show prompt** in Admin → AI Telemetry → Limits
+(`POST api/admin/ai-telemetry/limits/{id}/prompt`, `ChatTurnLimitQueryService`) reads the live message, up
+to 4,000 characters with attachments excluded, and writes one `ChatAccessAuditLog` row
+(`AdminReadLimitPrompt`, §8.1) with the administrator as actor and the event's user as subject. **If the
+journal row cannot be written, the prompt is not returned**, because the privacy notice promises that each
+read is recorded. A confidential chat is refused without decrypting anything, whether the event recorded it
+as confidential or the session is confidential now. An incognito turn stored no message to read. A deleted
+or purged chat's prompt is gone, so an old event can say so. The prompt was deliberately not copied into
+the event: a copy would outlive the user's deletion. Reading it widens what an administrator can see, and
+the *Limit records* row of the privacy notice says so.
+
+**A limit notice on a message holds no content either.** `ChatMessage.TurnNoticeCode` and
+`TurnNoticeFactsJson` are numbers and sanitized codes, stored in plain text in every mode, like token
+counts, and included in the portability export. A provider's error body can echo prompt text, so it is never
+stored: not on the message, not on the event, and not in `Content`. A live turn's administrator sees it
+bounded, and the server log has it (`chat-response-telemetry.md` § 6).
 
 **Security events, the block and account-deletion holds** (`security-monitoring.md`):
 
@@ -1773,8 +1792,9 @@ the mode without opening each chat, and it reveals nothing about what any of the
 logging said a URL was fetched and cost accounting said tokens were spent, but nothing recorded
 an access — so a suspected incident could not be investigated at all.
 
-Five actions are recorded: a conversation read, an attachment read, an export, an erasure, and an
-administrator's read of the game text kept behind a security event (`SecurityContentRead`, §8.7).
+Six actions are recorded: a conversation read, an attachment read, an export, an erasure, an
+administrator's read of the game text kept behind a security event (`SecurityContentRead`, §8.7), and
+an administrator's read of the prompt behind a limit event (`AdminReadLimitPrompt`, §5.6).
 Each row carries the actor, their user name at the time, whether they held administrator rights,
 the subject, the session and attachment identifiers, the session reference, whether the session
 was confidential, the caller's address and a short detail.

@@ -138,6 +138,12 @@ Verified against `WikiService`, `NetHackWikiService`, `SourceCodeService`,
 | Dumplog store | `DumpLogPath` | User Secrets | none — `SearchServerDumplogsTool` reads on demand, per call | `<DumpLogPath>\<game.Name>\gnollhack.<game.Name>.<StartTimeUTC>.txt`, located from `GameLog` rows | Any file not matching that exact name. Games older than the newest `BatchSize × MaxBatches` rows — **100 × 5 = 500** by `Tools:search_server_dumplogs` in `appsettings.json`. An unconfigured key returns `Success = false`, *not* "not found" | none | none — read live from disk on every call, so never stale and never warm | no | **none** |
 | Tool guides | none — `<AppBase>\ToolGuides` | n/a | `ToolRegistry.LoadGuides` | `_policy.md`, `spoiler_policy.md`, `_policy_parallel_disabled.md`, `_policy_parallel_on_request.md`, `<tool_name>.md` | A guide file is only picked up if the directory exists at the application base; the `Content` item in `Overseer.csproj` copies `ToolGuides\**` on build | none | loaded once, in the `ToolRegistry` constructor | in this repository | `ToolGuidesSha256` — hashed over the **copied output** directory, not the source tree |
 
+**The wiki readers.** `wiki_search`, `wiki_view`, `monster_lookup`, `item_lookup` and `wiki_overview` read the
+GnollHack wiki; `nethack_wiki_search`, `nethack_wiki_view` and `wiki_overview` with `wiki: "nethack"` read the NetHack
+wiki. `wiki_overview` answers from the statistics published with the index, so its count is what was indexed:
+a file the exclusions or a size limit dropped is not counted, and the count can differ from the folder on disk and
+the live site.
+
 **A dated fact to re-measure rather than to cite: what the dot-directory exclusion above removed.**
 The GnollHack wiki's `WikiPath` is a git repository that also holds this project's own agent and
 planning files, and before the run-30 exclusion the index took in **20 documents that are not
@@ -309,8 +315,8 @@ a corpus revision:**
   Every source tool accepts `repository: "nethack"`.
 - **NetHack wiki** (`NetHackWikiPath`) is **not version-controlled at all** — it is generated
   wholesale by `Overseer/Scripts/NetHackWiki/convert_nethackwiki_dump_md.py`, so there is no
-  revision to record. `nethack_wiki_search` and `nethack_wiki_view` are both in
-  `Benchmark:AllowedTools`.
+  revision to record. `nethack_wiki_search`, `nethack_wiki_view` and `wiki_overview`, which reads either wiki,
+  are all in `Benchmark:AllowedTools`.
 
 **For those two corpora on a run before harness 48, and for any run before harness 16, there is no recorded provenance.** Fall
 back to comparing the run's `StartedAtUtc` against the corpus on disk — the ref mtime from § 5 for

@@ -328,6 +328,8 @@ public static class HarnessImpactLedger
                 "Call telemetry records the thinking level each request carried, an Anthropic default for an unset level included; the run report names it beside \"Default\" and Profile Fit reads it."),
             new("63", CI,
                 "Definition tools find an enum or struct whose \"{\" is on the next line; get_item_stats notes the weight in ounces and pounds; _policy.md drops the file-name-and-line citation rule (the tool guides hash moves); OpenAI message output items are separated by a paragraph break."),
+            new("64", CI | G,
+                "wiki_overview counts and lists wiki articles and joins the allowed tools, so the grader's tool line and the claim verifier's tool set change; wiki_search and nethack_wiki_search fail clearly on a query with no searchable words; candidates are warned before tool rounds, time and tool output run out, and an answer whose stream ends early, ends empty or ends on commentary gets one final call without tools; the per-question caps are the chat's defaults (150 tool calls, 22 rounds, 48 model calls, 1,800 s), and the candidate gets the chat's pre-injected wiki context under the Production condition; web search stays off."),
         };
 
         return table.OrderBy(e => e.Number).ToList();

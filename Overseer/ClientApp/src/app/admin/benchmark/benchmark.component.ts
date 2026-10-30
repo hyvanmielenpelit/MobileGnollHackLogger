@@ -2704,7 +2704,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
                   totalCalls += count;
                   if (['source_code_search', 'source_code_view', 'search_definitions', 'get_function_definition', 'get_constants', 'list_indexed_files'].includes(name)) {
                     sourceCalls += count;
-                  } else if (['wiki_search', 'wiki_view', 'nethack_wiki_search', 'nethack_wiki_view'].includes(name)) {
+                  } else if (['wiki_search', 'wiki_view', 'wiki_overview', 'nethack_wiki_search', 'nethack_wiki_view'].includes(name)) {
                     wikiCalls += count;
                   } else if (['monster_lookup', 'item_lookup', 'get_monster_stats', 'get_item_stats'].includes(name)) {
                     lookupCalls += count;

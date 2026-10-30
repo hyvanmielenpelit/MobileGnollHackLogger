@@ -13,8 +13,9 @@ namespace Overseer.Tests.UnitTests;
 /// <summary>
 /// <see cref="CorpusToolUsageService"/> over EF InMemory: status counts and guard refusals per tool and
 /// per corpus, nearest-rank percentiles, the UTC day buckets at the edges of the window, that only the
-/// seven corpus tools are counted, the clamping of <c>days</c>, and the per-period cache entry with
-/// <c>Size = 1</c>. Calls are dated by their <see cref="ChatMessage"/>, so every call is seeded with one.
+/// corpus tools are counted, which wiki a <c>wiki_overview</c> call counts under, the clamping of
+/// <c>days</c>, and the per-period cache entry with <c>Size = 1</c>. Calls are dated by their
+/// <see cref="ChatMessage"/>, so every call is seeded with one.
 /// </summary>
 public sealed class CorpusToolUsageServiceTests : IDisposable
 {
@@ -23,8 +24,8 @@ public sealed class CorpusToolUsageServiceTests : IDisposable
 
     private static readonly string[] AllCorpusTools =
     {
-        "wiki_search", "wiki_view", "monster_lookup", "item_lookup",
-        "nethack_wiki_search", "nethack_wiki_view",
+        "wiki_search", "wiki_view", "monster_lookup", "item_lookup", "wiki_overview",
+        "nethack_wiki_search", "nethack_wiki_view", "wiki_overview",
         "get_knowledge_article"
     };
 
@@ -66,7 +67,7 @@ public sealed class CorpusToolUsageServiceTests : IDisposable
     }
 
     /// <summary>Adds one assistant message at <paramref name="timestampUtc"/> carrying one tool call.</summary>
-    private void AddCall(string? name, string? status, DateTime timestampUtc, int? executionMs = null, string? error = null)
+    private void AddCall(string? name, string? status, DateTime timestampUtc, int? executionMs = null, string? error = null, string argsText = "{}")
     {
         _session ??= _db.ChatSession.Add(new ChatSession
         {
@@ -90,7 +91,7 @@ public sealed class CorpusToolUsageServiceTests : IDisposable
                     Status = status,
                     Error = error,
                     ExecutionMs = executionMs,
-                    ArgsText = "{}",
+                    ArgsText = argsText,
                     Result = status == "completed" ? "fixture result" : null
                 }
             }
@@ -173,7 +174,7 @@ public sealed class CorpusToolUsageServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetAsync_NothingStored_ReturnsAllSevenToolsAndThreeCorporaWithZeroCounts()
+    public async Task GetAsync_NothingStored_ReturnsEveryToolAndThreeCorporaWithZeroCounts()
     {
         var ct = TestContext.Current.CancellationToken;
 
@@ -203,10 +204,38 @@ public sealed class CorpusToolUsageServiceTests : IDisposable
         Assert.Equal(
             new[] { CorpusKind.GnollHackWiki, CorpusKind.NetHackWiki, CorpusKind.KnowledgeBase },
             usage.Corpora.Select(c => c.Corpus).ToArray());
-        Assert.Equal(new[] { "wiki_search", "wiki_view", "monster_lookup", "item_lookup" }, CorpusOf(usage, CorpusKind.GnollHackWiki).Tools);
-        Assert.Equal(new[] { "nethack_wiki_search", "nethack_wiki_view" }, CorpusOf(usage, CorpusKind.NetHackWiki).Tools);
+        Assert.Equal(new[] { "wiki_search", "wiki_view", "monster_lookup", "item_lookup", "wiki_overview" }, CorpusOf(usage, CorpusKind.GnollHackWiki).Tools);
+        Assert.Equal(new[] { "nethack_wiki_search", "nethack_wiki_view", "wiki_overview" }, CorpusOf(usage, CorpusKind.NetHackWiki).Tools);
         Assert.Equal(new[] { "get_knowledge_article" }, CorpusOf(usage, CorpusKind.KnowledgeBase).Tools);
         Assert.All(usage.Corpora, corpus => Assert.Equal(0, corpus.Calls));
+    }
+
+    [Fact]
+    public async Task GetAsync_CountsAWikiOverviewCallUnderTheWikiItRead()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        DateTime at = Now.AddHours(-1);
+        AddCall("wiki_overview", "completed", at, 1);
+        AddCall("wiki_overview", "completed", at, 2, argsText: "{\"wiki\":\"gnollhack\"}");
+        AddCall("wiki_overview", "error", at, 3, ToolGuardMessages.WikiIndexingInProgress);
+        AddCall("wiki_overview", "completed", at, 4, argsText: "{\"wiki\": \"NetHack\"}");
+        AddCall("wiki_overview", "error", at, 5, ToolGuardMessages.NetHackWikiIndexingInProgress, "{\"wiki\":\"nethack\"}");
+        await SaveAsync();
+
+        var usage = await _service.GetAsync(30, ct);
+
+        var gnollHack = Assert.Single(usage.Tools, t => t.Tool == "wiki_overview" && t.Corpus == CorpusKind.GnollHackWiki);
+        Assert.Equal(3, gnollHack.Calls);
+        Assert.Equal(2, gnollHack.Completed);
+        Assert.Equal(1, gnollHack.GuardRefusals);
+
+        var netHack = Assert.Single(usage.Tools, t => t.Tool == "wiki_overview" && t.Corpus == CorpusKind.NetHackWiki);
+        Assert.Equal(2, netHack.Calls);
+        Assert.Equal(1, netHack.Completed);
+        Assert.Equal(1, netHack.GuardRefusals);
+
+        Assert.Equal(3, CorpusOf(usage, CorpusKind.GnollHackWiki).Calls);
+        Assert.Equal(2, CorpusOf(usage, CorpusKind.NetHackWiki).Calls);
     }
 
     // -- percentiles ----------------------------------------------------------------------------------

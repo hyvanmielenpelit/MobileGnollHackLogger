@@ -10,6 +10,8 @@ Results are heading-scoped excerpts (snippets) from the most relevant sections o
 
 The query is matched word by word against article titles (weighted 5×) and bodies, with English stemming, so `material` and `materials` match alike. Articles matching more of the query's distinct words rank first. Use two to four distinctive words — the subject and the mechanic — not a sentence. When a result ends with a `Showing N of M` line, the query matched more articles than were returned: replace a generic word with a more distinctive one. Adding words widens the set of matches; it does not narrow it.
 
+This search cannot count or list articles: `Showing N of M` counts one query's matches, not the wiki. Use `wiki_overview` for how many articles exist, which directories exist or a list of articles.
+
 `category` is **not** a taxonomy field. It is a case-insensitive substring of the article's
 path inside the wiki, so it selects a directory — `Monsters`, `Items`, `Spells`, `Skills`,
 `Races`, `Artifacts`, `Rooms`, `Roles`, `Dungeon`, `Difficulties`, `Conducts`, `Development`,

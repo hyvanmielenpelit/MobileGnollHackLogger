@@ -63,6 +63,8 @@ public sealed class EphemeralMessage
     public long? SystemAiConfigurationIdUsed { get; init; }
     public decimal? SubAgentEstimatedCost { get; init; }
     public decimal? OperatorEstimatedCost { get; init; }
+    public string? TurnNoticeCode { get; init; }
+    public string? TurnNoticeFactsJson { get; init; }
 
     private byte[] _content = Array.Empty<byte>();
 
@@ -110,7 +112,9 @@ public sealed class EphemeralMessage
         PricingSource = PricingSource,
         SystemAiConfigurationIdUsed = SystemAiConfigurationIdUsed,
         SubAgentEstimatedCost = SubAgentEstimatedCost,
-        OperatorEstimatedCost = OperatorEstimatedCost
+        OperatorEstimatedCost = OperatorEstimatedCost,
+        TurnNoticeCode = TurnNoticeCode,
+        TurnNoticeFactsJson = TurnNoticeFactsJson
     };
 
     /// <summary>
@@ -156,6 +160,8 @@ public sealed class EphemeralMessage
             SystemAiConfigurationIdUsed = source.SystemAiConfigurationIdUsed,
             SubAgentEstimatedCost = source.SubAgentEstimatedCost,
             OperatorEstimatedCost = source.OperatorEstimatedCost,
+            TurnNoticeCode = source.TurnNoticeCode,
+            TurnNoticeFactsJson = source.TurnNoticeFactsJson,
             Content = source.Content ?? ""
         };
 

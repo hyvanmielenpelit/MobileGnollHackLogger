@@ -74,6 +74,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<AccountDeletionRequest> AccountDeletionRequests { get; set; } = null!;
         public DbSet<UserKeyAiUsageLog> UserKeyAiUsageLogs { get; set; } = null!;
         public DbSet<ChatProviderAttempt> ChatProviderAttempts { get; set; } = null!;
+        public DbSet<ChatTurnLimitEvent> ChatTurnLimitEvents { get; set; } = null!;
         public DbSet<OverseerDailyActivity> OverseerDailyActivities { get; set; } = null!;
         public DbSet<AdminUserAction> AdminUserActions { get; set; } = null!;
         public DbSet<AdminBulkOperation> AdminBulkOperations { get; set; } = null!;
@@ -182,6 +183,16 @@ namespace MobileGnollHackLogger.Data
                 e.HasOne(a => a.AspNetUser).WithMany(u => u.ChatProviderAttempts).HasForeignKey(a => a.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
                 e.HasIndex(a => a.StartedAtUtc);
                 e.HasIndex(a => new { a.Provider, a.RequestedModelId, a.StartedAtUtc });
+            });
+
+            // Explicit cascade, as above. The session and message ids are plain columns, so a purge can clear them.
+            modelBuilder.Entity<ChatTurnLimitEvent>(e =>
+            {
+                e.HasOne(a => a.AspNetUser).WithMany(u => u.ChatTurnLimitEvents).HasForeignKey(a => a.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
+                e.Property(a => a.EstimatedCost).HasPrecision(18, 8);
+                e.HasIndex(a => a.OccurredUtc);
+                e.HasIndex(a => new { a.Code, a.OccurredUtc });
+                e.HasIndex(a => new { a.AspNetUserId, a.OccurredUtc });
             });
 
             // One row per user per day, and one anonymous row per day: without HasFilter(null) EF filters NULLs out

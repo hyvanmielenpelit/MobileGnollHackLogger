@@ -186,6 +186,23 @@ public sealed class AccountErasureTests : IDisposable
     }
 
     [Fact]
+    public async Task ChatTurnLimitEventsGoWithTheUserByCascade()
+    {
+        await SeedAsync();
+        var ct = TestContext.Current.CancellationToken;
+        _db.ChatTurnLimitEvents.AddRange(
+            new ChatTurnLimitEvent { OccurredUtc = Seeded, Code = "research_rounds", AspNetUserId = UserId },
+            new ChatTurnLimitEvent { OccurredUtc = Seeded, Code = "research_rounds", AspNetUserId = OtherUserId });
+        await _db.SaveChangesAsync(ct);
+        _db.ChangeTracker.Clear();
+
+        await EraseAsync(new AccountErasurePaths(DumpLogRoot, ConversationsRoot));
+
+        Assert.False(await _db.ChatTurnLimitEvents.AnyAsync(e => e.AspNetUserId == UserId, ct));
+        Assert.Equal(1, await _db.ChatTurnLimitEvents.CountAsync(e => e.AspNetUserId == OtherUserId, ct));
+    }
+
+    [Fact]
     public async Task SessionsBonesTransactionsAndSaveTrackingAreRemoved()
     {
         await SeedAsync();

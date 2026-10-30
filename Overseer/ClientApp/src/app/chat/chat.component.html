@@ -425,7 +425,12 @@
                   }
                 </div>
               }
-              <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
+              @if (!isNoticeOnlyMessage(msg)) {
+                <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
+              }
+              @if (msg.turnNotice; as notice) {
+                <app-turn-notice [notice]="notice" [actionAvailable]="turnNoticeActionAvailable(i)" (actionTriggered)="runTurnNoticeAction(i)"></app-turn-notice>
+              }
               @if (msg.role === 'assistant' && showChatCost && msg.estimatedCost != null) {
                 <div class="msg-cost-footer" title="Estimated cost of this response, sub-agent runs included">
                   {{ formatCost(msg.estimatedCost) }}@if (operatorCostLabel(msg.estimatedCost, msg.operatorCost); as op) {<span class="msg-cost-operator">{{ op }}</span>}@if (msg.subAgentCost) {<span class="msg-cost-subagents">· sub-agents {{ formatCost(msg.subAgentCost) }}</span>}
@@ -441,14 +446,16 @@
                   }
                 </button>
               }
-              <button class="copy-btn" (click)="copyToClipboard(msg.content, i)" title="Copy">
-                @if (copiedMsgIndex === i) {
-                  <span>✅</span>
-                }
-                @if (copiedMsgIndex !== i) {
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                }
-              </button>
+              @if (!isNoticeOnlyMessage(msg)) {
+                <button class="copy-btn" (click)="copyToClipboard(msg.content, i)" title="Copy">
+                  @if (copiedMsgIndex === i) {
+                    <span>✅</span>
+                  }
+                  @if (copiedMsgIndex !== i) {
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  }
+                </button>
+              }
             </div>
           }
           @if (isStreaming || streamingMessage) {
@@ -565,6 +572,9 @@
                 </div>
               }
               <div [innerHTML]="streamingMessage | markdown" class="markdown-body" [style.display]="(isStreaming && (showThoughtsAndTools === 0 || showThoughtsAndTools === 1) && !hasRealContent) ? 'none' : 'block'"></div>
+              @if (currentTurnNotice; as notice) {
+                <app-turn-notice [notice]="notice"></app-turn-notice>
+              }
               @if (showChatCost && liveCost != null) {
                 <div class="msg-cost-footer" title="Estimated cost of this response, sub-agent runs included">
                   {{ formatCost(liveCost) }}@if (operatorCostLabel(liveCost, liveOperatorCost); as op) {<span class="msg-cost-operator">{{ op }}</span>}@if (liveSubAgentCost) {<span class="msg-cost-subagents">· sub-agents {{ formatCost(liveSubAgentCost) }}</span>}
@@ -605,6 +615,9 @@
           }
         }
       </div>
+      <!-- Always present, so that text a live turn's notice puts here is announced. -->
+      <div class="visually-hidden turn-notice-status" role="status">{{ turnNoticeStatusAnnouncement }}</div>
+      <div class="visually-hidden turn-notice-alert" role="alert">{{ turnNoticeAlertAnnouncement }}</div>
       <div class="input-area-container" data-gnh-pad-zone="5" data-gnh-pad-linear>
         <!-- Stays for the page's life once the server says an administrator blocked the user. -->
         @if (overseerBlock) {

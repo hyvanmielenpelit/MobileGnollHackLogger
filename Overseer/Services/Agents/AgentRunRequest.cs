@@ -106,5 +106,22 @@ public class AgentRunRequest
     /// </remarks>
     public Overseer.Services.Privacy.Dlp.DlpTokenVault? DlpVault { get; set; }
 
+    /// <summary>
+    /// Limit warnings on tool results, and one recovery call for an unfinished answer: what the model
+    /// experiences. Set by the chat, both GnollBench candidate requests and sub-agents; off for graders,
+    /// generators, report writers and title generation.
+    /// </summary>
+    public bool ApplyTurnGuidance { get; set; }
+
+    /// <summary>When the turn's time runs out, the clock of the time warning; null means no time warning.</summary>
+    public DateTime? TurnDeadlineUtc { get; set; }
+
+    /// <summary>
+    /// Limit and provider failures become <see cref="AgentRunResult.LimitHits"/> instead of text, and a
+    /// stream cut mid-way ends the run normally instead of throwing. Chat only: GnollBench reads the error
+    /// text and its own record of the run.
+    /// </summary>
+    public bool ReportTurnLimits { get; set; }
+
     public IAiProvider? AiProvider { get; set; }
 }

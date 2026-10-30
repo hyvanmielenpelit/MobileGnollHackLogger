@@ -124,7 +124,7 @@ public static class BenchmarkToolResultClassifier
     /// <summary>
     /// Not-found openings, by tool. Producers: <c>SourceCodeSearchTool</c> (both the "for '" report
     /// and the bare fallback), <c>SourceMissContentBuilder.MissPrefix</c>, <c>GetConstantsTool</c>,
-    /// <c>ListIndexedFilesTool</c>, <c>WikiSearchTool</c>, <c>WikiViewTool</c>,
+    /// <c>ListIndexedFilesTool</c>, <c>WikiSearchTool</c>, <c>WikiViewTool</c>, <c>WikiOverviewTool</c>,
     /// <c>NetHackWikiSearchTool</c>, <c>NetHackWikiViewTool</c>, <c>MonsterLookupTool</c> and
     /// <c>ItemLookupTool</c>.
     /// </summary>
@@ -137,6 +137,7 @@ public static class BenchmarkToolResultClassifier
         ["list_indexed_files"] = new[] { "No indexed files found matching" },
         ["wiki_search"] = new[] { "No GnollHack wiki article matched '", "No relevant information found in the GnollHack wiki." },
         ["wiki_view"] = new[] { "No wiki article matched '", "Wiki article matching '" },
+        ["wiki_overview"] = new[] { "No GnollHack wiki article path contains '" },
         ["nethack_wiki_search"] = new[] { "No relevant information found in the NetHack wiki." },
         ["nethack_wiki_view"] = new[] { "No NetHack wiki article matched '", "NetHack wiki article matching '" },
         ["monster_lookup"] = new[] { "No GnollHack wiki article matched the monster '", "No information found for monster: " },

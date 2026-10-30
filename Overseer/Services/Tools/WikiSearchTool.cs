@@ -39,7 +39,7 @@ namespace Overseer.Services.Tools
                 ""type"": ""object"",
                 ""properties"": {{
                     ""query"": {{ ""type"": ""string"", ""description"": ""The search terms to look up in the wiki"" }},
-                    ""category"": {{ ""type"": ""string"", ""description"": ""Optional. Case-insensitive substring of the article's path inside the wiki, i.e. its directory: Artifacts, Conducts, Development, Difficulties, Dungeon, Guides, Items, Monsters, Races, Roles, Rooms, Skills, Spells. Omit it unless you know the directory."" }},
+                    ""category"": {{ ""type"": ""string"", ""description"": ""Optional. Case-insensitive substring of the article's path inside the wiki, file name included. The directories are Artifacts, Conducts, Development, Difficulties, Dungeon, Guides, Items, Monsters, Races, Roles, Rooms, Skills, Spells. Omit it unless you know the directory."" }},
                     ""max_results"": {{ ""type"": ""integer"", ""description"": ""Maximum number of wiki articles to return (default and maximum {_configuredMaxResults}; larger values are clamped)."" }}
                 }},
                 ""required"": [""query""]
@@ -61,7 +61,16 @@ namespace Overseer.Services.Tools
 
             if (string.IsNullOrWhiteSpace(query))
             {
-                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing query parameter" });
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing query parameter. To count or list articles, use wiki_overview." });
+            }
+
+            if (!_wikiService.IsSearchableQuery(query))
+            {
+                return Task.FromResult(new ToolResult
+                {
+                    Success = false,
+                    ErrorMessage = $"'{query}' contains no searchable words. wiki_search matches whole words, has no wildcards and ignores very common words such as \"the\". To count or list articles, use wiki_overview."
+                });
             }
 
             int maxResults = _configuredMaxResults;

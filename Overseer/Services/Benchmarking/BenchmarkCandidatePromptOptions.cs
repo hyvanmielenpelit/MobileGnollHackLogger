@@ -51,7 +51,7 @@ public sealed record BenchmarkCandidatePromptOptions
     public bool HasMessageHistory { get; init; }        // false
 
     [JsonPropertyName("hasWikiContext")]
-    public bool HasWikiContext { get; init; }           // false — chat pre-injects; the benchmark does not
+    public bool HasWikiContext { get; init; }           // true under Production, where the candidate gets the chat's pre-injected articles
 
     [JsonPropertyName("hasGameSnapshot")]
     public bool HasGameSnapshot { get; init; }          // false — defaulted or from suite (suiteHasBoard)
@@ -110,11 +110,12 @@ public sealed record BenchmarkCandidatePromptOptions
 
     /// <summary>
     /// <see cref="ComparabilitySignature"/> of the record as a production run would hold it: the
-    /// condition cleared and tools enabled, because a closed-book record also disables tools. Two
-    /// runs that differ only in their information condition share it.
+    /// condition cleared, tools enabled and wiki context on, because a closed-book record also disables
+    /// tools and every other condition withholds the wiki context. Two runs that differ only in their
+    /// information condition share it.
     /// </summary>
     public string ComparabilitySignatureWithoutCondition(ParallelExecutionMode parallelMode)
-        => (this with { InformationCondition = null, EnableToolUse = true }).ComparabilitySignature(parallelMode);
+        => (this with { InformationCondition = null, EnableToolUse = true, HasWikiContext = true }).ComparabilitySignature(parallelMode);
 
     public static BenchmarkCandidatePromptOptions FromJson(string? json)
     {
@@ -139,10 +140,11 @@ public sealed record BenchmarkCandidatePromptOptions
     /// The source-only notice and then <paramref name="appendix"/> (the experimental changes' instructions)
     /// follow the production prompt as final paragraphs.
     /// </summary>
-    public string BuildSystemPrompt(ChatService chatService, ParallelExecutionMode parallelMode, string? appendix = null)
+    public string BuildSystemPrompt(ChatService chatService, ParallelExecutionMode parallelMode, string? appendix = null,
+        IEnumerable<string>? wikiContext = null)
     {
         string prompt = chatService.BuildSystemPrompt(
-            wikiContext: Array.Empty<string>(),
+            wikiContext: wikiContext ?? Array.Empty<string>(),
             spoilerFreeMode: SpoilerFreeMode,
             verboseMode: VerboseMode,
             isGameOn: IsGameOn,
@@ -165,10 +167,11 @@ public sealed record BenchmarkCandidatePromptOptions
     /// what the run snapshot still hashes; the benchmark's own paragraphs end the volatile suffix.
     /// </summary>
     public (string frozenPrefix, string sessionPrefix, string volatileSuffix) BuildSegmentedSystemPrompt(
-        ChatService chatService, ParallelExecutionMode parallelMode, string? appendix = null)
+        ChatService chatService, ParallelExecutionMode parallelMode, string? appendix = null,
+        IEnumerable<string>? wikiContext = null)
     {
         var (frozen, session, volatileSuffix) = chatService.BuildSegmentedSystemPrompt(
-            wikiContext: Array.Empty<string>(),
+            wikiContext: wikiContext ?? Array.Empty<string>(),
             spoilerFreeMode: SpoilerFreeMode,
             verboseMode: VerboseMode,
             isGameOn: IsGameOn,

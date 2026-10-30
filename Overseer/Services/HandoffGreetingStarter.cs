@@ -75,7 +75,10 @@ public sealed class HandoffGreetingStarter
         }
 
         var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-        _ongoingChatManager.TryStart(sessionRef, cts, out _);
+        if (_ongoingChatManager.TryStart(sessionRef, cts, out var ongoingState))
+        {
+            ongoingState.DeadlineUtc = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        }
 
         // The gate slot this turn holds, released by the background task's finally.
         var heldGate = gateEntered ? _turnGate : null;

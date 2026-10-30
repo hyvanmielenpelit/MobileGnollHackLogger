@@ -1412,6 +1412,48 @@ public class AdminController : ControllerBase
     }
 
     /// <param name="keys">system (default) | user | both.</param>
+    /// <summary>Limit hits by code, turns without an answer and users affected, in the selected key sources.</summary>
+    [HttpGet("ai-telemetry/limits/summary")]
+    public async Task<IActionResult> GetAiTelemetryLimitSummary([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromQuery] string? keys, [FromServices] Overseer.Services.Telemetry.ChatTurnLimitQueryService limits)
+        => Ok(await limits.GetSummaryAsync(startDate, endDate, keys, HttpContext.RequestAborted));
+
+    /// <summary>A page of limit events, newest first; <paramref name="take"/> is clamped to 1-100.</summary>
+    [HttpGet("ai-telemetry/limits")]
+    public async Task<IActionResult> GetAiTelemetryLimits([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromQuery] string? keys, [FromQuery] string? codes, [FromQuery] string? severities, [FromQuery] string? search,
+        [FromQuery] int skip, [FromQuery] int take, [FromServices] Overseer.Services.Telemetry.ChatTurnLimitQueryService limits)
+        => Ok(await limits.GetEventsAsync(startDate, endDate, keys, codes, severities, search, skip, take, HttpContext.RequestAborted));
+
+    /// <summary>All facts of one limit event and whether its prompt can be read; 404 when none.</summary>
+    [HttpGet("ai-telemetry/limits/{id:long}")]
+    public async Task<IActionResult> GetAiTelemetryLimit(long id, [FromServices] Overseer.Services.Telemetry.ChatTurnLimitQueryService limits)
+    {
+        var detail = await limits.GetEventAsync(id, HttpContext.RequestAborted);
+        if (detail == null) return NotFound(new { message = "No limit event has that id." });
+        return Ok(detail);
+    }
+
+    /// <summary>
+    /// The prompt of a turn that hit a limit. A POST because each read writes a row to the access journal;
+    /// 403 for a confidential chat, 404 when the message is gone, 500 when the journal could not record the read.
+    /// </summary>
+    [HttpPost("ai-telemetry/limits/{id:long}/prompt")]
+    public async Task<IActionResult> ReadAiTelemetryLimitPrompt(long id, [FromServices] Overseer.Services.Telemetry.ChatTurnLimitQueryService limits)
+    {
+        var (status, prompt) = await limits.ReadPromptAsync(id, AdminUserId, User.Identity?.Name,
+            HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.RequestAborted);
+        return status switch
+        {
+            Overseer.Services.Telemetry.ChatTurnLimitQueryService.PromptReadStatus.Ok => Ok(prompt),
+            Overseer.Services.Telemetry.ChatTurnLimitQueryService.PromptReadStatus.Confidential =>
+                StatusCode(StatusCodes.Status403Forbidden, new { message = "This chat is confidential, so its prompt is withheld." }),
+            Overseer.Services.Telemetry.ChatTurnLimitQueryService.PromptReadStatus.JournalFailed =>
+                StatusCode(StatusCodes.Status500InternalServerError, new { message = "The read could not be recorded in the access journal, so the prompt was not returned." }),
+            _ => NotFound(new { message = "The message is no longer available." })
+        };
+    }
+
     [HttpGet("ai-telemetry/summary")]
     public async Task<IActionResult> GetAiTelemetrySummary([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
         [FromQuery] string? keys, [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
@@ -1711,6 +1753,7 @@ public class AdminController : ControllerBase
                 PrunedAiErrorLogCount = r.PrunedAiErrorLogCount,
                 PrunedSecurityEventCount = r.PrunedSecurityEventCount,
                 PrunedChatProviderAttemptCount = r.PrunedChatProviderAttemptCount,
+                PrunedChatTurnLimitEventCount = r.PrunedChatTurnLimitEventCount,
                 DeletedDiskFolderCount = r.DeletedDiskFolderCount,
                 DeletedDiskFileCount = r.DeletedDiskFileCount,
                 SweptOrphanFolderCount = r.SweptOrphanFolderCount,
@@ -1867,6 +1910,22 @@ public class AdminController : ControllerBase
         {
             result.PrunedChatProviderAttemptCount = await retentionService.PruneChatProviderAttemptsAsync(days, isDryRun);
             result.Logs.Add($"{DryRunPrefix(isDryRun)}Pruned {result.PrunedChatProviderAttemptCount} chat provider attempts older than {days} days.");
+        });
+    }
+
+    [HttpPost("maintenance/prune-chat-turn-limit-events")]
+    public async Task<IActionResult> PruneChatTurnLimitEvents([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
+    {
+        var isDryRun = request?.DryRun ?? false;
+        var days = request?.ChatTurnLimitEventPruneDays ?? retentionService.Settings.PruneChatTurnLimitEventDays;
+
+        if (days <= 0)
+            return BadRequest(new { message = "The chat turn limit event window must be a positive number of days." });
+
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.PruneChatTurnLimitEvents, isDryRun, async result =>
+        {
+            result.PrunedChatTurnLimitEventCount = await retentionService.PruneChatTurnLimitEventsAsync(days, isDryRun);
+            result.Logs.Add($"{DryRunPrefix(isDryRun)}Pruned {result.PrunedChatTurnLimitEventCount} chat turn limit events older than {days} days.");
         });
     }
 

@@ -94,6 +94,13 @@ public interface IAiProvider
     /// </summary>
     void AppendUserTextToHistory(List<object> messageHistory, string text) { }
 
+    /// <summary>
+    /// Appends a text-only assistant turn in this provider's wire shape. With no text and nothing else
+    /// worth replaying it appends nothing, because an empty assistant turn is rejected. The default adds
+    /// nothing; every production provider implements it.
+    /// </summary>
+    void AppendAssistantTextToHistory(List<object> messageHistory, string visibleText, List<JsonElement>? providerHistoryItems = null) { }
+
     bool TryRewriteToolResult(
         List<object> messageHistory,
         string toolCallId,

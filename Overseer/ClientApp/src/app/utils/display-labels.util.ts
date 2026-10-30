@@ -32,6 +32,7 @@ const TOOL_LABELS: ReadonlyMap<string, string> = new Map([
   ['get_constants', 'Constants search'],
   ['get_knowledge_article', 'Knowledge base article'],
   ['wiki_view', 'GnollHack wiki article'],
+  ['wiki_overview', 'Wiki overview'],
   ['search_definitions', 'Definitions search'],
   ['get_function_definition', 'Function definition'],
   ['get_item_stats', 'Item stats'],

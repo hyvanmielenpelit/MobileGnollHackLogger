@@ -59,7 +59,7 @@ public class BenchmarkRubricGapAuthorService
     /// </summary>
     private static readonly List<string> DefaultAllowedTools = new()
     {
-        "wiki_search", "wiki_view", "get_knowledge_article",
+        "wiki_search", "wiki_view", "wiki_overview", "get_knowledge_article",
         "nethack_wiki_search", "nethack_wiki_view",
         "monster_lookup", "item_lookup", "get_monster_stats",
         "get_item_stats", "get_artifact_stats", "get_constants",

@@ -18,6 +18,8 @@ public class ChatEvent
     // Machine-readable failure code; set only on "error" events: "model_unavailable", "overseer_blocked"
     // (Detail then carries the administrator's block reason) or "terms_not_accepted".
     public string? ErrorCode { get; set; }
+    // The TurnLimitCodes value of an "error" event; the agent loop consumes it and never yields it onward.
+    public string? LimitCode { get; set; }
     public TokenUsageReport? UsageReport { get; set; }
     // Set only on "call_meta" events, which the agent loop consumes and never yields onward.
     public ProviderCallMeta? CallMeta { get; set; }

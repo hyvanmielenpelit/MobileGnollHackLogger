@@ -16,6 +16,7 @@ public class BenchmarkChatTransferTests
     [InlineData("list_indexed_files", BenchmarkToolFamily.SourceCode)]
     [InlineData("wiki_search", BenchmarkToolFamily.Wiki)]
     [InlineData("wiki_view", BenchmarkToolFamily.Wiki)]
+    [InlineData("wiki_overview", BenchmarkToolFamily.Wiki)]
     [InlineData("nethack_wiki_search", BenchmarkToolFamily.Wiki)]
     [InlineData("nethack_wiki_view", BenchmarkToolFamily.Wiki)]
     [InlineData("monster_lookup", BenchmarkToolFamily.StructuredLookup)]
@@ -41,7 +42,7 @@ public class BenchmarkChatTransferTests
         // Benchmark:AllowedTools as Overseer/appsettings.json and BenchmarkService's default list carry it.
         var allowedTools = new[]
         {
-            "wiki_search", "wiki_view", "get_knowledge_article",
+            "wiki_search", "wiki_view", "wiki_overview", "get_knowledge_article",
             "nethack_wiki_search", "nethack_wiki_view",
             "monster_lookup", "item_lookup", "get_monster_stats",
             "get_item_stats", "get_artifact_stats", "get_constants",

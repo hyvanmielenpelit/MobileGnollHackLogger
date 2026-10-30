@@ -32,7 +32,7 @@ export type AdminUsersSubTab = 'users' | 'groups' | 'deletions' | 'log';
 export type AdminDevtoolsSubTab = 'source' | 'gnollhack-wiki' | 'nethack-wiki' | 'knowledge-base' | 'config-health' | 'sentry';
 
 /** The AI Telemetry tab's sub-tabs. */
-export type AdminTelemetrySubTab = 'summary' | 'models' | 'users' | 'groups';
+export type AdminTelemetrySubTab = 'summary' | 'models' | 'users' | 'groups' | 'limits';
 
 /** The Security tab's sub-tabs. */
 export type AdminSecuritySubTab = 'summary' | 'events' | 'settings';

@@ -8,6 +8,7 @@
       "get_knowledge_article",
       "wiki_search",
       "wiki_view",
+      "wiki_overview",
       "nethack_wiki_search",
       "nethack_wiki_view"
     ],

@@ -150,6 +150,13 @@ public class AgentLoopRunner
         bool hitBudgetLimit = false;
         bool hitIterationLimit = false;
         bool forcedFinalInstructionAppended = false;
+        bool applyTurnGuidance = request.ApplyTurnGuidance;
+        bool reportTurnLimits = request.ReportTurnLimits;
+        bool recoveryPending = false;
+        bool anyErrorEvent = false;
+        string? lastIterationVisibleText = null;
+        var guidanceState = new TurnGuidanceState();
+        DateTime turnStartUtc = DateTime.UtcNow;
 
         int maxTurnResultLength = _configuration.GetValue<int>("ToolExecutionLimits:MaxTurnResultLength", 120000);
         int cumulativeTurnResultLength = 0;
@@ -164,6 +171,10 @@ public class AgentLoopRunner
             {
                 forcingFinalResponse = true;
                 hitBudgetLimit = true;
+                if (reportTurnLimits)
+                {
+                    AddLimitHit(result, TurnLimitCodes.ModelCalls, budget.MaxTotalModelCalls, budget.MaxTotalModelCalls);
+                }
                 if (request.ShowDebugLog)
                 {
                     yield return new ChatEvent
@@ -177,11 +188,18 @@ public class AgentLoopRunner
                 enableClientTools = false;
                 enableGameActions = false;
             }
-            else if (toolIterations == maxToolIterations && hasToolsToRun)
+            else if (toolIterations == maxToolIterations && hasToolsToRun && !recoveryPending)
             {
                 forcingFinalResponse = true;
                 hitIterationLimit = true;
-                yield return new ChatEvent { Type = "tool_error", Data = "Tool call limit reached. Forcing final response." };
+                if (reportTurnLimits)
+                {
+                    AddLimitHit(result, TurnLimitCodes.ResearchRounds, maxToolIterations, toolIterations);
+                }
+                else
+                {
+                    yield return new ChatEvent { Type = "tool_error", Data = "Tool call limit reached. Forcing final response." };
+                }
                 enableToolUse = false;
                 enableWebSearch = false;
                 enableClientTools = false;
@@ -198,6 +216,10 @@ public class AgentLoopRunner
             }
 
             hasToolsToRun = false;
+            recoveryPending = false;
+            result.LastAssistantPhase = null;
+            bool iterationHadError = false;
+            bool sawCallMeta = false;
             StringBuilder iterationText = new();
             bool lastEventWasToolCall = false;
 
@@ -295,7 +317,8 @@ public class AgentLoopRunner
                 request.ApiKey,
                 request.ModelId,
                 chatStreamUrl,
-                call))
+                call,
+                reportTurnLimits))
             {
                 if (evt.Type == "service_tier")
                 {
@@ -335,6 +358,11 @@ public class AgentLoopRunner
                             wasTruncatedByMaxTokens = true;
                         }
                     }
+                    continue;
+                }
+                else if (evt.Type == "assistant_phase")
+                {
+                    result.LastAssistantPhase = evt.Data;
                     continue;
                 }
                 else if (evt.Type == "provider_history_reset")
@@ -388,6 +416,8 @@ public class AgentLoopRunner
                     if (evt.CallMeta != null)
                     {
                         callRecord.ApplyMeta(evt.CallMeta, call.SendTicks);
+                        callRecord.CompletionSeen = evt.CallMeta.CompletedTicks != null;
+                        sawCallMeta = true;
                     }
                     continue;
                 }
@@ -428,6 +458,26 @@ public class AgentLoopRunner
 
                     if (evt.Type == "error")
                     {
+                        iterationHadError = true;
+                        anyErrorEvent = true;
+
+                        if (reportTurnLimits)
+                        {
+                            result.LiveProviderErrorBody ??= BoundErrorBody(evt.Detail ?? evt.Data);
+                            evt.Detail = null;
+
+                            // Its text is already safe and the composer notice reads it.
+                            if (evt.ErrorCode == null)
+                            {
+                                int? status = callRecord.FinalHttpStatus;
+                                var hit = AddLimitHit(result, evt.LimitCode ?? TurnLimitCodes.ProviderError);
+                                hit.HttpStatus ??= status is >= 200 and <= 299 ? null : status;
+                                thoughtWriter.CloseOpenThoughtDiv(sbFullResponse);
+                                continue;
+                            }
+                        }
+
+                        evt.LimitCode = null;
                         thoughtWriter.CloseOpenThoughtDiv(sbFullResponse);
                         sbFullResponse.Append($"\n\n**Error:** {evt.Data}");
                     }
@@ -466,15 +516,51 @@ public class AgentLoopRunner
                 // wrapped. Wrapping the whole visible run would move the answer into the thought
                 // block and leave the answer empty.
                 var visibleText = thoughtWriter.GetIterationVisibleText(sbFullResponse);
+                string iterationVisibleText = thoughtWriter.GetAllIterationVisibleText(sbFullResponse);
                 if (!string.IsNullOrEmpty(visibleText) &&
                     ReasoningTextSanitizer.TryFindLastLeakedArtifactEnd(visibleText, out int leakEnd))
                 {
                     thoughtWriter.WrapLeadingVisibleText(sbFullResponse, leakEnd);
+                    iterationVisibleText = visibleText.Substring(Math.Min(leakEnd, visibleText.Length));
+                }
+                lastIterationVisibleText = iterationVisibleText;
+
+                // Every production provider reports call_meta at the end of its stream, so its presence
+                // without a completion marker means the stream closed early.
+                bool streamClosedEarly = sawCallMeta && !callRecord.CompletionSeen
+                    && !iterationHadError && !cancellationToken.IsCancellationRequested;
+                if (reportTurnLimits && streamClosedEarly)
+                {
+                    AddLimitHit(result, TurnLimitCodes.ConnectionLost);
+                }
+
+                bool unfinished = streamClosedEarly
+                    || string.IsNullOrWhiteSpace(iterationVisibleText)
+                    || IsCommentary(result.LastAssistantPhase);
+                bool budgetHasRoom = budget == null || budget.TotalModelCalls < budget.MaxTotalModelCalls;
+                if (applyTurnGuidance && unfinished && budgetHasRoom
+                    && !iterationHadError && !cancellationToken.IsCancellationRequested
+                    && toolIterations > 0 && toolIterations < maxToolIterations
+                    && !forcedFinalInstructionAppended)
+                {
+                    thoughtWriter.WrapPreToolVisibleText(sbFullResponse);
+                    aiProvider.AppendAssistantTextToHistory(messageHistory, iterationVisibleText, currentIterationProviderItems);
+                    aiProvider.AppendUserTextToHistory(messageHistory, ForcedFinalInstruction);
+                    forcedFinalInstructionAppended = true;
+                    enableToolUse = false;
+                    enableWebSearch = false;
+                    enableClientTools = false;
+                    enableGameActions = false;
+                    result.UnfinishedAnswerRecovered = true;
+                    recoveryPending = true;
+                    hasToolsToRun = true;
+                    lastIterationVisibleText = null;
                 }
             }
 
             if (hasToolsToRun && currentIterationToolCalls.Count > 0)
             {
+                lastIterationVisibleText = null;
                 thoughtWriter.WrapPreToolVisibleText(sbFullResponse);
 
                 aiProvider.AppendAssistantToolCallsToHistory(messageHistory, iterationText.ToString(), currentIterationToolCalls, currentIterationProviderItems);
@@ -587,6 +673,11 @@ public class AgentLoopRunner
                     {
                         result.ToolBudgetExhausted = true;
                         result.ToolCallsBlocked++;
+                        if (reportTurnLimits)
+                        {
+                            int callLimit = _toolExecutor.GetEffectiveCallLimit(execContext);
+                            AddLimitHit(result, TurnLimitCodes.ToolBudget, callLimit, callLimit);
+                        }
                     }
 
                     // The exemption exists so a handler override larger than the batch budget is not
@@ -612,16 +703,21 @@ public class AgentLoopRunner
                         {
                             finalContent = "[Tool output omitted: cumulative turn limit reached]";
                         }
+                        if (reportTurnLimits)
+                        {
+                            AddLimitHit(result, TurnLimitCodes.ToolOutput, maxTurnResultLength, maxTurnResultLength);
+                        }
                     }
                     cumulativeTurnResultLength += finalContent.Length;
 
                     if (!budgetNoticeEmittedThisIteration && outcome.RemainingBudget.HasValue)
                     {
-                        int totalBudget = execContext.MaxCallsPerSession;
+                        int totalBudget = _toolExecutor.GetEffectiveCallLimit(execContext);
                         int threshold = Math.Max(3, (int)(totalBudget * 0.20));
                         if (outcome.RemainingBudget.Value <= threshold)
                         {
-                            string notice = $"[Tool budget: {outcome.RemainingBudget.Value} of {totalBudget} calls remaining for this question.]";
+                            string budgetScope = execContext.ToolBudgetScopeId == null ? "in this chat" : "for this question";
+                            string notice = $"[Tool budget: {outcome.RemainingBudget.Value} of {totalBudget} calls remaining {budgetScope}.]";
                             finalContent = string.IsNullOrEmpty(finalContent)
                                 ? notice
                                 : $"{finalContent}\n\n{notice}";
@@ -706,11 +802,65 @@ public class AgentLoopRunner
                     }
                 }
 
+                // Only in what the model receives: the stored row and the tool_result event hold outcome.Content.
+                if (applyTurnGuidance && providerResults.Count > 0)
+                {
+                    string? limitNotices = TurnGuidance.BuildNotices(
+                        guidanceState,
+                        TurnGuidance.RoundsLeft(maxToolIterations, toolIterations, budget?.MaxTotalModelCalls, budget?.TotalModelCalls ?? 0),
+                        DateTime.UtcNow,
+                        turnStartUtc,
+                        request.TurnDeadlineUtc,
+                        cumulativeTurnResultLength,
+                        maxTurnResultLength);
+                    if (limitNotices != null)
+                    {
+                        var lastResult = providerResults[^1];
+                        lastResult.Content = string.IsNullOrEmpty(lastResult.Content)
+                            ? limitNotices
+                            : $"{lastResult.Content}\n\n{limitNotices}";
+                    }
+                }
+
                 aiProvider.AppendToolResultsToHistory(messageHistory, providerResults);
             }
 
             toolIterations++;
             result.IterationsUsed = toolIterations;
+        }
+
+        if (applyTurnGuidance && !anyErrorEvent && !cancellationToken.IsCancellationRequested)
+        {
+            bool endedOnCommentary = result.ToolCalls.Count > 0 && IsCommentary(result.LastAssistantPhase);
+            if (endedOnCommentary || string.IsNullOrWhiteSpace(lastIterationVisibleText))
+            {
+                if (endedOnCommentary)
+                {
+                    thoughtWriter.WrapPreToolVisibleText(sbFullResponse);
+                }
+                result.EndedWithoutFinalAnswer = true;
+                if (reportTurnLimits)
+                {
+                    AddLimitHit(result, TurnLimitCodes.NoFinalAnswer);
+                }
+            }
+        }
+
+        foreach (var hit in result.LimitHits)
+        {
+            if (TurnLimitCodes.IsProviderFailure(hit.Code))
+            {
+                hit.ProviderErrorCode ??= result.TerminalErrorCode;
+            }
+            hit.Recovered = hit.Code == TurnLimitCodes.ConnectionLost
+                && result.UnfinishedAnswerRecovered && !result.EndedWithoutFinalAnswer && !anyErrorEvent;
+        }
+
+        if (result.ToolCalls.Count > 0)
+        {
+            _logger.LogInformation(
+                "[Session {SessionId}] Final message phase: {Phase}",
+                request.ToolExecutionContext?.SessionId, result.LastAssistantPhase ?? "none");
         }
 
         thoughtWriter.CloseOpenThoughtDiv(sbFullResponse);
@@ -728,7 +878,11 @@ public class AgentLoopRunner
         result.RetryAttemptCount = result.ModelCalls.Sum(c => Math.Max(0, c.AttemptCount - 1));
 
         var fullResponse = ReasoningTextSanitizer.SanitizeStateless(sbFullResponse.ToString());
-        if (wasTruncatedByMaxTokens && !fullResponse.Contains("[Response truncated: output token limit reached.]"))
+        if (wasTruncatedByMaxTokens && reportTurnLimits)
+        {
+            AddLimitHit(result, TurnLimitCodes.AnswerLength);
+        }
+        else if (wasTruncatedByMaxTokens && !fullResponse.Contains("[Response truncated: output token limit reached.]"))
         {
             fullResponse += "\n\n_[Response truncated: output token limit reached.]_";
         }
@@ -761,6 +915,26 @@ public class AgentLoopRunner
         }
     }
 
+    private static bool IsCommentary(string? phase) =>
+        string.Equals(phase, "commentary", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Records one hit per code; a limit met again in the same turn is the same hit.</summary>
+    private static TurnLimitHit AddLimitHit(AgentRunResult result, string code, int? limitValue = null, int? observedValue = null)
+    {
+        var existing = result.LimitHits.FirstOrDefault(h => h.Code == code);
+        if (existing != null) return existing;
+
+        var hit = new TurnLimitHit { Code = code, LimitValue = limitValue, ObservedValue = observedValue };
+        result.LimitHits.Add(hit);
+        return hit;
+    }
+
+    private static string? BoundErrorBody(string? body) =>
+        body != null && body.Length > MaxLoggedErrorBodyLength ? body.Substring(0, MaxLoggedErrorBodyLength) : body;
+
+    private static string ApiKeyLimitCode(ApiKeyAlerts.ApiKeyFailureKind kind) =>
+        kind == ApiKeyAlerts.ApiKeyFailureKind.InsufficientBalance ? TurnLimitCodes.ApiKeyBalance : TurnLimitCodes.ApiKeyRejected;
+
     private async IAsyncEnumerable<ChatEvent> ExecuteApiWithRetriesAsync(
         Func<CancellationToken, Task<HttpResponseMessage>> requestFactory,
         Func<HttpResponseMessage, CancellationToken, IAsyncEnumerable<ChatEvent>> streamParser,
@@ -777,7 +951,8 @@ public class AgentLoopRunner
         string? apiKey,
         string modelId,
         string? requestUri,
-        ModelCallTracker call)
+        ModelCallTracker call,
+        bool reportTurnLimits)
     {
         int[] retryDelays = { 1, 5, 10, 20, 30, 60 };
         int attempt = 0;
@@ -800,6 +975,7 @@ public class AgentLoopRunner
             try
             {
                 string? throttleError = null;
+                bool canceledAwaitingPermit = false;
                 if (_governor != null && !string.IsNullOrEmpty(credentialKey))
                 {
                     // The governor's cooldown sleeps inside AcquirePermitAsync, so it counts as permit wait.
@@ -816,7 +992,8 @@ public class AgentLoopRunner
                     {
                         record.ErrorKind ??= "canceled";
                         draft.CanceledBeforeSend = true;
-                        throw;
+                        if (!reportTurnLimits) throw;
+                        canceledAwaitingPermit = true;
                     }
                     finally
                     {
@@ -824,12 +1001,17 @@ public class AgentLoopRunner
                     }
                 }
 
+                if (canceledAwaitingPermit)
+                {
+                    yield break;
+                }
+
                 if (throttleError != null)
                 {
                     record.ErrorKind ??= "permit_timeout";
                     draft.GovernorRefused = true;
                     draft.EndTicks = ProviderCallMeta.Now();
-                    yield return new ChatEvent { Type = "error", Data = throttleError };
+                    yield return new ChatEvent { Type = "error", Data = throttleError, LimitCode = TurnLimitCodes.ProviderBusy };
                     yield break;
                 }
 
@@ -878,7 +1060,7 @@ public class AgentLoopRunner
                         {
                             yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] HTTP request timed out after {elapsedSeconds}s (HttpClient.Timeout). Exception: {requestException.Message}" };
                         }
-                        yield return new ChatEvent { Type = "error", Data = $"The request to {providerName} timed out after {elapsedSeconds} seconds. The AI provider may be overloaded or unresponsive. Please try again." };
+                        yield return new ChatEvent { Type = "error", Data = $"The request to {providerName} timed out after {elapsedSeconds} seconds. The AI provider may be overloaded or unresponsive. Please try again.", LimitCode = TurnLimitCodes.ProviderTimeout };
                     }
                     else if (cancellationToken.IsCancellationRequested)
                     {
@@ -893,7 +1075,7 @@ public class AgentLoopRunner
                         {
                             yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Request failed in {elapsedSeconds}s: {requestException.GetType().Name}: {requestException.Message}" };
                         }
-                        yield return new ChatEvent { Type = "error", Data = $"Request failed: {requestException.Message}" };
+                        yield return new ChatEvent { Type = "error", Data = $"Request failed: {requestException.Message}", LimitCode = TurnLimitCodes.ConnectionLost };
                     }
                     yield break;
                 }
@@ -961,7 +1143,9 @@ public class AgentLoopRunner
                             {
                                 draft.Exception ??= ex;
                                 draft.EndTicks ??= ProviderCallMeta.Now();
-                                throw;
+                                if (!reportTurnLimits) throw;
+                                streamException = ex;
+                                break;
                             }
 
                             if (!hasNext) break;
@@ -1006,6 +1190,7 @@ public class AgentLoopRunner
                                 var streamKeyFailure = ApiKeyAlerts.ApiKeyFailureClassifier.Classify(providerName, null, streamErrorText);
                                 if (streamKeyFailure != null)
                                 {
+                                    evt.LimitCode = ApiKeyLimitCode(streamKeyFailure.Value);
                                     await RecordAndReportKeyFailureAsync(
                                         streamKeyFailure.Value, providerName, systemModelId, alertContext, apiKey, modelId, requestUri,
                                         null, null, streamErrorText, response.Headers, sw.ElapsedMilliseconds, attempt + 1, requestedServiceTier);
@@ -1066,7 +1251,8 @@ public class AgentLoopRunner
                                         Type = "error",
                                         Data = $"The {providerName} API is currently overloaded. Max retries ({retryDelays.Length + 1}) exceeded. Please try again later.",
                                         // The provider's own last failure payload, so the cause survives the retry loop.
-                                        Detail = evt.Detail
+                                        Detail = evt.Detail,
+                                        LimitCode = TurnLimitCodes.ProviderOverloaded
                                     };
                                     break;
                                 }
@@ -1121,6 +1307,8 @@ public class AgentLoopRunner
                             {
                                 yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Stream interrupted after {elapsedSeconds}s — request timeout reached." };
                             }
+                            // The partial text, tool calls and costs reach the chat's save; ChatService tells a cancel from a timeout.
+                            if (reportTurnLimits) yield break;
                             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(streamException).Throw();
                         }
                         else
@@ -1129,7 +1317,8 @@ public class AgentLoopRunner
                             {
                                 yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Stream reading failed after {elapsedSeconds}s: {streamException.GetType().Name}: {streamException.Message}" };
                             }
-                            yield return new ChatEvent { Type = "error", Data = $"Stream interrupted: {streamException.Message}" };
+                            yield return new ChatEvent { Type = "error", Data = $"Stream interrupted: {streamException.Message}", LimitCode = TurnLimitCodes.ConnectionLost };
+                            if (reportTurnLimits) yield break;
                             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(streamException).Throw();
                         }
                     }
@@ -1177,7 +1366,7 @@ public class AgentLoopRunner
                         record.ErrorKind ??= HttpErrorKind((int)response.StatusCode);
                         if (keyFailure == ApiKeyAlerts.ApiKeyFailureKind.InsufficientBalance && systemModelId.HasValue)
                         {
-                            yield return new ChatEvent { Type = "error", Data = "The system provider budget has been exhausted. Please contact the administrator." };
+                            yield return new ChatEvent { Type = "error", Data = "The system provider budget has been exhausted. Please contact the administrator.", LimitCode = TurnLimitCodes.ApiKeyBalance };
                         }
                         else
                         {
@@ -1185,7 +1374,8 @@ public class AgentLoopRunner
                             {
                                 Type = "error",
                                 Data = $"API Error: {(int)response.StatusCode} - {errorBody}",
-                                Detail = boundedErrorBody
+                                Detail = boundedErrorBody,
+                                LimitCode = ApiKeyLimitCode(keyFailure.Value)
                             };
                         }
                         yield break;
@@ -1271,7 +1461,7 @@ public class AgentLoopRunner
                                 var errService = errScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
                                 await errService.RecordErrorAsync(systemModelId.Value, "429 Too Many Requests (retries exhausted)");
                             }
-                            yield return new ChatEvent { Type = "error", Data = $"429 Rate Limited. Max retries ({maxRetries}) exceeded. Please try again later." };
+                            yield return new ChatEvent { Type = "error", Data = $"429 Rate Limited. Max retries ({maxRetries}) exceeded. Please try again later.", LimitCode = TurnLimitCodes.ProviderBusy };
                             yield break;
                         }
                     }
@@ -1306,7 +1496,7 @@ public class AgentLoopRunner
                         else
                         {
                             record.ErrorKind ??= "http_5xx";
-                            yield return new ChatEvent { Type = "error", Data = "503 Unavailable. Max retries exceeded." };
+                            yield return new ChatEvent { Type = "error", Data = "503 Unavailable. Max retries exceeded.", LimitCode = TurnLimitCodes.ProviderOverloaded };
                             yield break;
                         }
                     }
@@ -1317,7 +1507,8 @@ public class AgentLoopRunner
                         {
                             Type = "error",
                             Data = $"API Error: {(int)response.StatusCode} - {errorBody}",
-                            Detail = boundedErrorBody
+                            Detail = boundedErrorBody,
+                            LimitCode = TurnLimitCodes.ProviderError
                         };
                         yield break;
                     }

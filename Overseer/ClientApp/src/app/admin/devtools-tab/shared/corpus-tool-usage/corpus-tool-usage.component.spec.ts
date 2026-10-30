@@ -154,7 +154,7 @@ describe('CorpusToolUsageComponent', () => {
       'Tool', 'Calls', 'Completed', 'Errors', 'Other', 'Refusals', 'Median', 'p95', 'Trend'
     ]);
     const rows = Array.from(el.querySelectorAll('.ctu-table tbody tr'));
-    expect(rows.map(r => text(r.querySelector('th[scope="row"]')))).toEqual(['wiki_search', 'wiki_view', 'monster_lookup', 'item_lookup']);
+    expect(rows.map(r => text(r.querySelector('th[scope="row"]')))).toEqual(['wiki_search', 'wiki_view', 'monster_lookup', 'item_lookup', 'wiki_overview']);
     const first = rows[0];
     const cell = (label: string) => text(first.querySelector(`td[data-label="${label}"]`));
     expect(cell('Calls')).toBe('100');

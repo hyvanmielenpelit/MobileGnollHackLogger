@@ -41,6 +41,18 @@ the score moves toward "did the model open the page that says it". The condition
 | Source code only | the launcher field | A cheap bound on Scarce; it also changes the action space, so read it as a sensitivity check |
 | Closed book | the launcher field | The parametric floor and the contamination probe |
 
+**Wiki context follows the condition (from harness 64).** A Production candidate, and so a Scarce one, gets the
+articles the chat would pre-inject for the question, in the volatile suffix, recorded per answer in
+`WikiContextArticles`. Source code only and Closed book get none, because they withhold the wiki by definition.
+`hasWikiContext` in the prompt options says which, and `ComparabilitySignatureWithoutCondition` sets it true, so runs
+that differ only in condition still pair. Under Scarce the context comes from the scrubbed index, so it cannot hand a
+scrubbed fact back. `wiki_overview` is withheld under Source code only, and the `SourceOnlyNotice` names it, which moved
+`CandidateSystemPromptSha256` for those runs at harness 64 and not for Production ones.
+
+**Web search is a recorded divergence.** It is off under every condition, Production included, although the chat's
+default is on, so that a run's answers stay reproducible from the local corpora and a retrieval finding never depends
+on what the web returned that day (`server_benchmark_to_chat_transfer` § 3). Do not read Production as "web search too".
+
 The feedback tool `report_feedback` (harness 60) is neither an experimental tool nor part of any
 condition's candidate tool list: it is declared outside the allow-list, under every condition that has
 a tool loop, and a closed-book candidate, which has none, is not offered it. The one exception is a

@@ -1,0 +1,46 @@
+/* The box, its icon and its heading are the global .alert; this file holds the content's layout. */
+:host {
+  display: block;
+  margin-block-start: 8px;
+}
+
+.turn-notice-text,
+.turn-notice-reference {
+  margin: 0;
+}
+
+.turn-notice-action {
+  align-self: flex-start;
+  margin-block: 4px;
+}
+
+.turn-notice-reference {
+  font-size: var(--text-xs);
+  opacity: 0.8;
+}
+
+.turn-notice-details {
+  font-size: var(--text-xs);
+
+  summary {
+    cursor: pointer;
+  }
+
+  dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 2px 12px;
+    margin: 6px 0 0;
+  }
+
+  dt {
+    font-weight: normal;
+    opacity: 0.8;
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+}

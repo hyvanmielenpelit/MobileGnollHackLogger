@@ -147,6 +147,24 @@ export interface ChatMessage {
   operatorCost?: number | null;
   /** The delegated sub-agent runs' share of `estimatedCost`; null when the viewer may not see the whole turn. */
   subAgentCost?: number | null;
+  /** Why the turn stopped, on an assistant message a limit or a provider failure ended. */
+  turnNotice?: ChatTurnNotice | null;
+}
+
+export type ChatTurnNoticeAction = 'try_again' | 'continue' | 'new_chat' | 'none';
+
+/** The server's notice about a turn: a stored message's `turnNotice`, and the JSON `data` of a `turn_notice` event. */
+export interface ChatTurnNotice {
+  code: string;
+  severity: 'warning' | 'error';
+  title: string;
+  message: string;
+  advice: string;
+  action: ChatTurnNoticeAction;
+  /** The limit event's id, shown as `L-<id>`; absent when no event row was written. */
+  reference?: number | null;
+  /** The numbers and sanitized codes this viewer may see; absent when there are none. */
+  adminFacts?: Record<string, unknown> | null;
 }
 
 /**
@@ -175,7 +193,7 @@ export interface SnapshotRefusal {
 
 export interface ChatStreamEvent {
   /** `snapshot_refused`: the snapshot guard withheld a client tool's result; `data` is JSON `{ code, message }`. */
-  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'context' | 'cost' | 'final' | 'confidential_gate' | 'private_badge' | 'snapshot_refused';
+  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'context' | 'cost' | 'final' | 'confidential_gate' | 'private_badge' | 'snapshot_refused' | 'turn_notice';
   data: string;
   seqNo?: number;
   /**

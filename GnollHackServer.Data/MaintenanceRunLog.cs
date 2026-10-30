@@ -44,6 +44,8 @@ public class MaintenanceRunLog
 
     public int PrunedChatProviderAttemptCount { get; set; }
 
+    public int PrunedChatTurnLimitEventCount { get; set; }
+
     public int DeletedDiskFolderCount { get; set; }
 
     public int DeletedDiskFileCount { get; set; }

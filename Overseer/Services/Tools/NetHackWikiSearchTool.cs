@@ -64,7 +64,16 @@ namespace Overseer.Services.Tools
 
             if (string.IsNullOrWhiteSpace(query))
             {
-                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing query parameter" });
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing query parameter. To count or list articles, use wiki_overview." });
+            }
+
+            if (!_netHackWikiService.IsSearchableQuery(query))
+            {
+                return Task.FromResult(new ToolResult
+                {
+                    Success = false,
+                    ErrorMessage = $"'{query}' contains no searchable words. nethack_wiki_search matches whole words, has no wildcards and ignores very common words such as \"the\". To count or list articles, use wiki_overview."
+                });
             }
 
             int maxResults = 3;

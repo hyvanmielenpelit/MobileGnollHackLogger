@@ -11,6 +11,9 @@ public class OngoingGenerationState
     public CancellationTokenSource Cts { get; set; } = null!;
     public int EventSequence = 0;
     public DateTime StartedAtUtc { get; set; } = DateTime.UtcNow;
+
+    /// <summary>When the turn's <see cref="Cts"/> fires on its own timer; null when it has none.</summary>
+    public DateTime? DeadlineUtc { get; set; }
     public bool IsCompleted { get; set; } = false;
     public DateTime? CompletedAtUtc { get; set; } = null;
     public long? SavedMessageId { get; set; } = null;

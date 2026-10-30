@@ -371,15 +371,15 @@ describe('AdminTelemetryTabComponent', () => {
     const subTabButtons = (): HTMLButtonElement[] =>
       Array.from(host().querySelectorAll<HTMLButtonElement>('.tl-subtabs [role="tab"]'));
 
-    it('is a named tablist of Summary, Models, Users and Groups, each tab paired with its panel', () => {
+    it('is a named tablist of Summary, Models, Users, Groups and Limits, each tab paired with its panel', () => {
       openTab();
 
       const tablist = host().querySelector('.tl-subtabs') as HTMLElement;
       expect(tablist.getAttribute('role')).toBe('tablist');
       expect(tablist.getAttribute('aria-label')).toBe('AI Telemetry sections');
-      expect(subTabButtons().map(b => b.textContent?.trim())).toEqual(['Summary', 'Models', 'Users', 'Groups']);
-      expect(subTabButtons().map(b => b.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
-      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1']);
+      expect(subTabButtons().map(b => b.textContent?.trim())).toEqual(['Summary', 'Models', 'Users', 'Groups', 'Limits']);
+      expect(subTabButtons().map(b => b.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false', 'false']);
+      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1', '-1']);
       expect(host().querySelector('#tl-subpanel-feedback')).toBeNull();
       for (const tab of subTabButtons()) {
         expect(tab.getAttribute('type')).toBe('button');
@@ -409,7 +409,7 @@ describe('AdminTelemetryTabComponent', () => {
       fixture.detectChanges();
       expect(goTo).toHaveBeenLastCalledWith('telemetry', 'users', 'replace');
       expect(document.activeElement).toBe(host().querySelector('#tl-subtab-users'));
-      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['-1', '-1', '0', '-1']);
+      expect(subTabButtons().map(b => b.getAttribute('tabindex'))).toEqual(['-1', '-1', '0', '-1', '-1']);
     });
 
     it('puts Date range and Keys in the header, named by visually hidden labels', () => {
@@ -675,6 +675,61 @@ describe('AdminTelemetryTabComponent', () => {
       component.refreshFromHeader();
 
       expect(groupsSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // --- Limits view ---
+
+    describe('Limits view', () => {
+      let limitSummarySpy: Mock;
+      let limitEventsSpy: Mock;
+
+      beforeEach(() => {
+        limitSummarySpy = vi.spyOn(adminService, 'getChatTurnLimitSummary').mockReturnValue(of({
+          totalHits: 0, turnsWithoutAnswer: 0, usersAffected: 0, byCode: [], bySeverity: []
+        }));
+        limitEventsSpy = vi.spyOn(adminService, 'getChatTurnLimitEvents').mockReturnValue(of({ totalCount: 0, items: [] }));
+      });
+
+      it('mounts the Limits panel on first selection, at /admin/telemetry/limits, with the range and keys', () => {
+        openTab();
+        const goTo = vi.spyOn(store, 'goTo');
+        expect(host().querySelector('#tl-subpanel-limits app-telemetry-limits')).toBeNull();
+        expect(limitEventsSpy).not.toHaveBeenCalled();
+
+        subTabButtons()[4].click();
+        fixture.detectChanges();
+
+        expect(goTo).toHaveBeenLastCalledWith('telemetry', 'limits', 'push');
+        expect((host().querySelector('#tl-subpanel-limits') as HTMLElement).hidden).toBe(false);
+        expect(host().querySelector('#tl-subpanel-limits app-telemetry-limits')).not.toBeNull();
+        expect(limitSummarySpy).toHaveBeenCalledWith(component.telemetryStartDate, component.telemetryEndDate, 'system');
+        expect(limitEventsSpy).toHaveBeenCalledWith(expect.objectContaining({
+          startDate: component.telemetryStartDate, endDate: component.telemetryEndDate, keys: 'system', skip: 0
+        }));
+      });
+
+      it('refetches the Limits view when the Keys filter changes', () => {
+        openTab('limits');
+        limitEventsSpy.mockClear();
+
+        const select = host().querySelector('#telemetryKeysSelect') as HTMLSelectElement;
+        select.value = 'user';
+        select.dispatchEvent(new Event('change'));
+        fixture.detectChanges();
+
+        expect(limitEventsSpy).toHaveBeenCalledWith(expect.objectContaining({ keys: 'user', skip: 0 }));
+      });
+
+      it('reloads the Limits view on Refresh once it is mounted', () => {
+        openTab('limits');
+        limitSummarySpy.mockClear();
+        limitEventsSpy.mockClear();
+
+        component.refreshFromHeader();
+
+        expect(limitSummarySpy).toHaveBeenCalledTimes(1);
+        expect(limitEventsSpy).toHaveBeenCalledTimes(1);
+      });
     });
 
     it('selects and mounts the Users panel for a Usage request made on Summary, and its first request carries the user', () => {

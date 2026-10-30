@@ -58,6 +58,7 @@ All retention policies are configured under `"ChatRetentionSettings"` in `appset
   "PruneSecurityEventDays": 180,
   "PruneSnapshotQuarantineDays": 30,
   "PruneChatProviderAttemptDays": 400,
+  "PruneChatTurnLimitEventDays": 180,
   "MaintenanceHistoryRetentionDays": 180,
   "MaintenanceRunHourUtc": 3,
   "DatabaseMaxSizeMbOverride": 0,
@@ -82,6 +83,7 @@ All retention policies are configured under `"ChatRetentionSettings"` in `appset
 | **Security Event Retention** | `PruneSecurityEventDays` | `180` | `SecurityEvent` runs last seen more than this many days ago are deleted. `0` disables pruning. **Events of a user with an active `AccountHold` or a pending `AccountDeletionRequest` are kept** until it is decided: they are the evidence an administrator is reviewing (see `security-monitoring.md`). |
 | **Snapshot Guard Quarantine Retention** | `PruneSnapshotQuarantineDays` | `30` | `SnapshotGuardQuarantine` rows (the encrypted game text the snapshot guard found something in, `security-monitoring.md` § 3a) received more than this many days ago (`OccurredUtc`) are deleted. `0` disables pruning. **Rows of held users are not exempt**: the event stays for the review, the text does not need to. A row is also deleted with its `SecurityEvent`, by a database cascade. The privacy notice states 30 days, so changing this value changes what the notice must say. |
 | **Chat Provider Attempt Retention** | `PruneChatProviderAttemptDays` | `400` | `ChatProviderAttempt` rows (one provider attempt of a chat or title-generation call) older than this are deleted. `0` disables pruning. See `ai-telemetry.md`. |
+| **Chat Turn Limit Event Retention** | `PruneChatTurnLimitEventDays` | `180` | `ChatTurnLimitEvent` rows (one limit or provider failure of a chat turn) older than this are deleted. `0` disables pruning. The privacy notice states 180 days, so changing this value changes what the notice must say. See `ai-telemetry.md` § 12c. |
 | **Maintenance History Retention** | `MaintenanceHistoryRetentionDays` | `180` | `MaintenanceRunLog` rows older than this are deleted. `0` disables pruning. |
 | **Daily Schedule** | `MaintenanceRunHourUtc` | `3` (03:00 UTC) | Automated maintenance pass runs daily at 03:00 UTC (and 60 seconds after server startup). |
 | **Size Limit Override** | `DatabaseMaxSizeMbOverride` | `0` (auto-detect) | Forces the capacity ceiling in MB, overriding detection. Use it to pre-configure a limit before an upgrade, or to budget Overseer to less than the engine allows on a shared instance. The panel labels an overridden ceiling as a *Budget* rather than a *Limit*. |
@@ -185,7 +187,7 @@ delete dialogs can say which chats are destroyed at once instead of going to the
 - **Error Handling**: Wrapped in resilient try-catch logic with automatic 1-hour retry on unexpected database failures.
 
 ### 2. Full Maintenance Pass (`RunFullMaintenanceAsync`)
-When executed (either automatically by the background service or manually from the Admin dashboard), the maintenance engine carries out 11 phases in sequence, all in `ChatRetentionService`:
+When executed (either automatically by the background service or manually from the Admin dashboard), the maintenance engine carries out 12 phases in sequence, all in `ChatRetentionService`:
 
 1. **Expire Inactive Chats** (`SoftDeleteInactiveSessionsAsync`):
    - Queries `ChatSession` where `!IsDeleted && !IsPinned && LastMessageUtc < (Now - InactivityTtlDays) && EffectiveRetentionDays == null`.
@@ -199,8 +201,10 @@ When executed (either automatically by the background service or manually from t
    - Executes bulk delete in relational dependency order:
      1. `ChatMessageAttachment`
      2. `ChatMessageToolCall`
-     3. `ChatMessage`
-     4. `ChatSession`
+     3. `OverseerFeedbackReport`
+     4. `ChatMessage`
+     5. `ChatSession`
+   - Before the messages are deleted, `ChatTurnLimitEvent` rows of those sessions have `ChatSessionId`, `UserMessageId` and `AssistantMessageId` cleared. The content-free event stays until it is pruned, and its prompt can no longer be read.
 4. **Prune Aged Tool Results** (`PruneAgedToolCallResultsAsync`):
    - Updates `ChatMessageToolCall` where message timestamp is older than `PruneToolCallResultsDays`, setting `Result = NULL` and `ArgsText = NULL`.
 5. **Prune Aged Benchmark Tool Payloads** (`PruneAgedBenchmarkToolCallPayloadsAsync`):
@@ -216,7 +220,9 @@ When executed (either automatically by the background service or manually from t
    - Then deletes `SecurityEvent` rows where `LastOccurredUtc < (Now - PruneSecurityEventDays)`, except those of a user with an active `AccountHold` or a pending `AccountDeletionRequest`. The predicate is `ChatRetentionService.PrunableSecurityEvents`, which the dry run and the tab's preview count with, so the count and the deletion cannot disagree.
 10. **Prune Chat Provider Attempts** (`PruneChatProviderAttemptsAsync`):
    - Deletes `ChatProviderAttempt` rows where `StartedAtUtc < (Now - PruneChatProviderAttemptDays)`.
-11. **Prune Maintenance History** (`PruneMaintenanceHistoryAsync`):
+11. **Prune Chat Turn Limit Events** (`PruneChatTurnLimitEventsAsync`):
+   - Deletes `ChatTurnLimitEvent` rows where `OccurredUtc < (Now - PruneChatTurnLimitEventDays)`.
+12. **Prune Maintenance History** (`PruneMaintenanceHistoryAsync`):
    - Deletes `MaintenanceRunLog` rows older than `MaintenanceHistoryRetentionDays`.
 
 Every phase honours `DryRun`: it counts what it would change and changes nothing. A failure sets `Success = false` and `ErrorMessage` on the result, and the exception is rethrown to the caller.
@@ -256,6 +262,8 @@ The third holds no key material, so its rows are deleted rather than nulled. It 
 explicitly rather than left to the account's cascade, so account deletion reaches everything the
 user said about their own confidentiality whichever project runs it.
 
+`ChatTurnLimitEvent` rows go with the account by a database cascade, as `ChatProviderAttempt` rows do.
+
 ---
 
 ## 5. Storage Metrics & Telemetry
@@ -278,6 +286,7 @@ Each query, and each counter group below, has its own `try`/`catch`, so one fail
 - **AI error log**: undismissed, dismissed, and prunable dismissed counts.
 - **Security events**: row count, oldest row, and rows past `PruneSecurityEventDays` (held users excluded, the prune's own predicate).
 - **Chat provider attempts**: row count, oldest row, and rows past `PruneChatProviderAttemptDays`.
+- **Chat turn limit events**: row count, oldest row, and rows past `PruneChatTurnLimitEventDays`.
 - **Next-pass preview**: expired trash sessions and prunable chat and benchmark payloads, using the same predicates as the pass, plus the next scheduled run time.
 - **Schema**: applied migration count, last applied migration, and pending migrations. Overseer does not migrate at startup, so a database behind its binaries shows here first.
 - **Policy echo**: the effective `ChatRetentionSettings`, the report address, and whether an email sender is configured.
@@ -304,12 +313,13 @@ The Admin **Database** tab exposes:
 | `POST` | `/api/admin/maintenance/prune-ai-error-log` | Phase 8; a window of zero or less is refused with 400 |
 | `POST` | `/api/admin/maintenance/prune-security-events` | Phase 9; a window of zero or less is refused with 400. It also prunes the snapshot guard quarantine over the configured `PruneSnapshotQuarantineDays` (not the request's day count) and reports that count in its log line |
 | `POST` | `/api/admin/maintenance/prune-chat-provider-attempts` | Phase 10; a window of zero or less is refused with 400 |
+| `POST` | `/api/admin/maintenance/prune-chat-turn-limit-events` | Phase 11; a window of zero or less is refused with 400 |
 | `POST` | `/api/admin/maintenance/sweep-orphans` | Phase 6 |
 | `POST` | `/api/admin/maintenance/clear-report-charts` | Clear Report Chart Files (not a phase of the full pass); 400 when chart storage is not configured |
 | `GET` | `/api/admin/maintenance/history` | Maintenance history, newest first |
 | `POST` | `/api/admin/maintenance/send-report-email` | On-demand storage report email |
 
-Every `POST` takes an optional `MaintenanceRequestDto` with `DryRun` and returns a `MaintenanceResultDto`. Granular day counts default to the configured setting; the full pass always uses the configured audit, AI error, security event and chat provider attempt windows.
+Every `POST` takes an optional `MaintenanceRequestDto` with `DryRun` and returns a `MaintenanceResultDto`. Granular day counts default to the configured setting; the full pass always uses the configured audit, AI error, security event, chat provider attempt and chat turn limit event windows.
 
 ---
 
@@ -328,5 +338,5 @@ Unit tests in `Overseer.Tests/UnitTests/ChatRetentionServiceTests.cs` validate a
 Further files cover the rest:
 - `Overseer.Tests/UnitTests/ConfidentialRetentionTests.cs`: per-session TTL and immediate purge across the four deletion paths.
 - `Overseer.Tests/UnitTests/DatabaseStorageMetricsServiceTests.cs`: edition detection, caching, the failure path of every metric group, and the next-run computation.
-- `Overseer.Tests/UnitTests/SecurityEventMaintenanceTests.cs` and `ChatProviderAttemptMaintenanceTests.cs`: the two granular endpoints (dry run, trigger, refused windows), and a held user's events kept.
+- `Overseer.Tests/UnitTests/SecurityEventMaintenanceTests.cs`, `ChatProviderAttemptMaintenanceTests.cs` and `ChatTurnLimitMaintenanceTests.cs`: the three granular endpoints (dry run, trigger, refused windows), and a held user's events kept.
 - `Overseer/ClientApp/src/app/admin/database-tab/admin-database-tab.component.spec.ts`: the day-count selects send numbers, and granular actions honour the shared dry-run switch.

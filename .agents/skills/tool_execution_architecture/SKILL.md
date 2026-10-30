@@ -41,6 +41,43 @@ When modifying limits or investigating latency bottlenecks, refer to the multi-t
 
 ---
 
+## 2a. Turn Limits, Warnings and Notices
+
+What can end or cut a turn in `AgentLoopRunner`, what the model is told first, and the code a chat turn records (`TurnLimitCodes`):
+
+| Limit | Config Key | Default | Warned Before It Hits | At the Limit | Code |
+|---|---|---|---|---|---|
+| Tool rounds | `AiPerformanceSettings:MaxToolIterations:Default` | `22` | `[Limit notice: …]` at 3 or fewer rounds left, and a last-chance notice at 1 | Forced final call: `ForcedFinalInstruction`, no tools | `research_rounds` |
+| Model calls, shared with sub-agents | `SubAgentSettings:MaxTotalModelCalls` | `48` | Counts toward the rounds left, `min(iterations left, model calls left)` | Forced final call | `model_calls` |
+| Time | `AiPerformanceSettings:ChatRequestTimeout:Default` | `1,800` s | At 75 % and at 90 % of the time to `TurnDeadlineUtc` | The turn's token is canceled | `time_limit` |
+| Cumulative tool output | `ToolExecutionLimits:MaxTurnResultLength` | `120,000` chars | At 80 % | Later results are cut; the stored row keeps the full text | `tool_output` (administrators only) |
+| Tool-call budget | `AiPerformanceSettings:MaxCallsPerSession:Default` | `150` per chat, per question in GnollBench | `[Tool budget: …]` at `max(3, 20 %)` remaining | Further calls are refused | `tool_budget` |
+| Output tokens | the model's catalog maximum | | Not warned: nothing can be said in the middle of a response | The answer is cut | `answer_length` |
+
+Rate limits and provider failures are not warned, because the model cannot act on them, and neither are per-result and per-batch sizes, whose markers `_policy.md` explains. Provider failures record `provider_busy`, `provider_overloaded`, `provider_timeout`, `provider_error`, `connection_lost`, `api_key_rejected` or `api_key_balance`. A turn that ends with no answer records `no_final_answer`.
+
+**Three request flags, all off by default, so graders, generators, report writers and title generation are unchanged:**
+
+| `AgentRunRequest` Member | Set By | Effect |
+|---|---|---|
+| `ApplyTurnGuidance` | `ChatService`, both GnollBench candidate sites, `DelegateToSubAgentTool` | Limit warnings and recovery: what the model experiences. A change to `TurnGuidance` needs a harness bump |
+| `TurnDeadlineUtc` | `ChatService` from `OngoingGenerationState.DeadlineUtc`, the candidate sites | The time warning's clock. Sub-agents leave it null and get no time notice |
+| `ReportTurnLimits` | `ChatService` only | Hits become `AgentRunResult.LimitHits`, notices and event rows; a timeout or a broken stream ends the loop normally; provider error text stays out of the conversation |
+
+**Warnings (`TurnGuidance`).** At most one notice block per batch, combining whatever is due, on the **last** tool result of the batch. Each fires once per turn. The block goes into `providerResults` only: the stored row and the `tool_result` event hold `outcome.Content`, so the user never sees it, later turns do not replay it, and the cached prompt prefix is not disturbed. It does not count against the output ceilings. The `[Tool budget: …]` note keeps its existing once-per-iteration path, and says "in this chat" when there is no budget scope, with a sub-agent's real total.
+
+**Recovery for an unfinished answer.** After a tool-free iteration, under `ApplyTurnGuidance`, when the turn has used tools, no error event occurred, the token is not canceled, `toolIterations < maxToolIterations`, no forced final instruction was sent and the model-call budget has room, one of three triggers earns **one** more call with tools off and `ForcedFinalInstruction`:
+
+- the stream closed early: the provider reported `call_meta` without a completion marker (every production provider reports it), which with `ReportTurnLimits` also records `connection_lost`;
+- the iteration has no visible text;
+- the last OpenAI message phase is `commentary` (`assistant_phase`, an internal event the runner consumes).
+
+The iteration's visible text moves into a thought and joins the history through `IAiProvider.AppendAssistantTextToHistory`, not `AppendAssistantToolCallsToHistory`, whose empty tool list Anthropic and Gemini reject. With empty text and no items that method appends nothing, and a reasoning-only OpenAI item list is not replayed. If the recovery call answers, a `connection_lost` hit is marked `Recovered`: it still writes an event row, and the user sees no notice for it. If the final text is still empty, or the turn ends on `commentary` after tools, `EndedWithoutFinalAnswer` is set and a chat turn records `no_final_answer`. `TerminationReason` keeps its four values, and a recovered turn stays `completed`.
+
+**Provider errors under `ReportTurnLimits`.** Every `error` event from the provider path becomes a hit, without being appended to `Content` or yielded; `CaptureStreamError` and `CaptureErrorResponse` read it first, so the attempt ledger's evidence is unchanged. An `error` carrying an `ErrorCode` (`model_unavailable`) stays, because its text is safe and the composer notice reads it. No event carries `Detail`. The sanitizing sits here, never in the providers, because GnollBench parses the same error text for its answer status. Text and audiences: `ChatTurnNoticeCatalog`, `ChatTurnNoticeDisclosure`, `docs/overseer/chat-response-telemetry.md` § 6.
+
+---
+
 ## 3. Tool Classification & Execution Locations
 
 Tools are defined via `IToolHandler` implementations registered in `ToolRegistry`.
@@ -103,3 +140,6 @@ When writing or modifying unit tests for tool execution, follow the existing tes
 
 ### 5. `SystemPromptPolicyTests.cs`
 - Assert that `ToolGuides/_policy.md` exists and contains mandatory batching and accuracy directives.
+
+### 6. `AgentLoopRunnerTurnLimitTests.cs`, `AgentLoopRunnerTurnGuidanceTests.cs`, `ChatProviderErrorSanitizingTests.cs`
+- Fake-provider tests over `TurnLimitTestHarness`: one hit per limit, the notice schedule, recovery, and a marker string in a provider body that reaches only a live administrator's facts. With the flags off, the events stay byte-identical.

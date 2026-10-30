@@ -98,7 +98,7 @@ Three qualifications that the phrase "verbatim production prompt" hides, and tha
   `BenchmarkCandidatePromptOptions.FromJson` from the stored `CandidatePromptOptionsJson`), and the
   prompt preview, which builds it as a launch does. That record is the authoritative statement of
   what was graded; read it, not this section, when attributing a result.
-- **"Verbatim" is true of the builder, not of every input.** `wikiContext` is always empty in a benchmark run, while live chat pre-injects wiki articles. The prompt-building *code* is identical; the prompt *text* a benchmark candidate sees is not the text a live user's model sees. See § 4.
+- **"Verbatim" is true of the builder, not of every input.** From harness 64 a Production candidate gets the wiki articles live chat would pre-inject, in the volatile suffix; `wikiContext` is empty under Source code only and Closed book, and was empty in every run through harness 63. The prompt-building *code* is identical; the prompt *text* a benchmark candidate sees still differs from a live user's by what § 4 lists.
 - **"Grades the production prompt" was true of the builder, not of the wire, before harness 29.** `CandidatePromptOptionsJson` records the prompt the harness *built*; nothing recorded what a provider's request body actually *contained*, until `BenchmarkCandidateRequestProbe` began checking the serialized request itself (§ 4a below, and `docs/overseer/ai-benchmark.md` § *Harness Version 29 Updates*). Before that round a Google or Anthropic candidate on a snapshot suite was silently graded with no board, and an OpenAI candidate with no system prompt at all, behind a report that read `HasGameSnapshot: true` as if nothing were wrong.
 
 ---
@@ -162,26 +162,30 @@ Before attributing any score, weakness, or behavior to a model's underlying inte
 | `spoilerFreeMode` | Filters what may be revealed, independent of what was retrieved |
 | `overseerMode` | Selects the persona and task framing (`0` = Gameplay Help) |
 | `enableToolUse` | With tools off, every answer is closed-book |
-| `enableWebSearch` | Adds a provider-side retrieval path outside the tool runner |
+| `enableWebSearch` | Adds a provider-side retrieval path outside the tool runner. **Off in every run, under every condition: a deliberate, recorded divergence from the chat, whose default is on** (decided 2026-10-30). A run's answers must stay reproducible from the local corpora, and a retrieval finding must never depend on what the web returned that day. `BenchmarkChatParityTests` pins it off, so do not "align" it |
 | `allowSourceCodeReferences` | Gates whether source citations are permitted at all, and selects one of two opposite prompt branches (cite file and line / never cite them). Set per run by the launcher's **Source Code References** field from harness 44, default *Disallowed — production default*, which is what a user with *Show source code references* off receives; every run before harness 44 graded *Allowed* |
 | `enableSubAgents` | Adds `delegate_to_subagent` and its prompt section |
 | `isGameOn` | Changes the framing from reference lookup to live advice |
 | `developerMode` | Injects runtime debug data and its prompt section |
 | `hasMessageHistory` | Adds the history section and the "reference earlier events" instruction |
-| `hasWikiContext` | See the callout below |
+| `hasWikiContext` | Pre-injected wiki articles in the volatile suffix. See the note below |
 | `hasGameSnapshot` | Adds the board, inventory, Discoveries and Pets sections |
 | `parallelMode` | **Passed separately**, from `testedConfig.ParallelExecutionMode`. Overrides the batching policy, and therefore directly moves the tool-call counts and latency that § 5 Axis 2 and Axis 3 read |
 
-> ⚠️ **`hasWikiContext` is not a per-run setting — it is a permanent divergence.**
-> Its declaration comment (`BenchmarkCandidatePromptOptions.cs:52`) reads
-> *"false — chat pre-injects; the benchmark does not."* No benchmark run has ever graded the
-> prompt a live user actually receives on this axis. Treat any finding about retrieval or
-> tool routing as measured under a condition live chat does not share.
+> ⚠️ **`hasWikiContext`: a divergence until harness 63, aligned from harness 64 (noted 2026-10-30).**
+> Through harness 63 it was false in every run: chat pre-injected wiki articles and the benchmark did
+> not, so treat a finding about retrieval or tool routing from such a run as measured under a condition
+> live chat does not share. From harness 64 it is true under Production, where the candidate gets what
+> `WikiService.GetRelevantContext` returns for the question, and false under Source code only and Closed
+> book. `BenchmarkRunAnswer.WikiContextArticles` records what each candidate was handed, and the report
+> prints it per answer, so read a retrieval finding against it. `CandidateSystemPromptSha256` hashes the
+> context-free prompt and does not show this. A re-run follows what its run recorded.
 
 **Non-prompt confounds** must be checked in the same pass, because they change the result without changing the prompt:
 
 - Candidate thinking level and candidate model version
-- Per-question tool-call budget and tool-iteration budget (see § 7 rung 4)
+- Per-question tool-call budget and tool-iteration budget (see § 7 rung 4). From harness 64 all four caps are the chat's own keys (`docs/overseer/ai-benchmark.md` § 9), 150 calls, 22 rounds, 48 model calls and 1,800 s, against 45, 22, 28 and 420 to 720 s before
+- **Turn guidance** (from harness 64, `AgentRunRequest.ApplyTurnGuidance`, shared with the chat). `[Limit notice: …]` blocks on tool results warn the model before rounds, time and tool output run out, and one recovery call with no tools follows an answer whose stream closed early, is empty or ended on `commentary`. Neither is in the prompt, and neither is in a stored tool result. `UnfinishedAnswerRecovered` and `EndedWithoutFinalAnswer` record the recovery per answer. A research stop at a notice is the warnings' signature. Notices to the user and limit event rows are chat-only (`ReportTurnLimits`)
 - Harness version and scoring method version
 - Scoring profile (weights, level scores, critical-error ceiling)
 - Assessor roster, second-reader coverage, and blind vs. anchored
@@ -202,18 +206,19 @@ The benchmark covers one slice of Overseer chat. A finding transfers **only to t
 | Measured | Unmeasured |
 |---|---|
 | Single-turn questions | Multi-turn conversational context |
-| No pre-injected wiki context | **Pre-injected wiki context — which live chat always provides** |
+| Pre-injected wiki context for one question under Production, from harness 64 (none before) | Pre-injected wiki context across a conversation |
 | Spoiler-free off | Spoiler-free mode |
-| Web search disabled | Web search tool routing |
+| Web search disabled, on purpose (§ 3) | Web search tool routing |
 | Subagents disabled | Subagent delegation and parallel tasks |
 | Tools enabled, concise style, source references as the launcher's **Source Code References** field set them (always allowed before harness 44) | Any other combination of § 3's options |
 
-> 🛑 **Tool-routing findings are the most exposed.** Every routing measurement was taken with
-> `wikiContext` empty. Live chat hands the model wiki text before it decides anything —
-> precisely the condition most likely to change which tool it reaches for. A routing finding
-> is evidence about the benchmark configuration until a run with wiki context says otherwise.
+> 🛑 **Tool-routing findings are the most exposed.** Every routing measurement through harness 63
+> was taken with `wikiContext` empty. Live chat hands the model wiki text before it decides anything —
+> precisely the condition most likely to change which tool it reaches for. A routing finding from such
+> a run is evidence about the benchmark configuration until a run with wiki context says otherwise, and
+> a comparison across harness 64 reads the change in wiki context along with everything else that moved.
 
-The same caution applies in the other direction: a chat problem observed in a live session with history, wiki context or spoiler-free mode active is **not** contradicted by a benchmark run that scored well, because the benchmark never exercised that path.
+The same caution applies in the other direction: a chat problem observed in a live session with history, spoiler-free mode or web search active is **not** contradicted by a benchmark run that scored well, because the benchmark never exercised that path.
 
 ---
 

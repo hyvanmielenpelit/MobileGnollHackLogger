@@ -25,6 +25,7 @@ export const NO_CHANGES_READOUT = 'None — same as the live chat';
 const TOOL_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   wiki_search: 'wiki search',
   wiki_view: 'wiki page view',
+  wiki_overview: 'wiki overview',
   get_knowledge_article: 'knowledge base articles',
   nethack_wiki_search: 'NetHack wiki search',
   nethack_wiki_view: 'NetHack wiki page view',

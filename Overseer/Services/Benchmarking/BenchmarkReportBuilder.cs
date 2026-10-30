@@ -2663,7 +2663,9 @@ public static class BenchmarkReportBuilder
             }
             sb.AppendLine($"- **Spoiler-free mode:** {spoilerStr} · **Active game:** {activeGameStr} · **Message history:** {historyStr} · **Game snapshot:** {(promptOpts.HasGameSnapshot ? "yes" : "no")}");
             sb.AppendLine($"- **Tool batching policy:** {run.TestedModelSnapshot.ParallelExecutionMode ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled} — {ParallelPolicyDescription(run.TestedModelSnapshot.ParallelExecutionMode ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled)}");
-            sb.AppendLine("- **Pre-injected wiki context:** none — live chat pre-injects relevant articles, so this run is a strictly harder configuration than production and its tool counts are an upper bound on chat's.");
+            sb.AppendLine(promptOpts.HasWikiContext
+                ? "- **Pre-injected wiki context:** yes — each question got the articles live chat would pre-inject for it, listed per answer below."
+                : "- **Pre-injected wiki context:** none — live chat pre-injects relevant articles, so this run is a strictly harder configuration than production and its tool counts are an upper bound on chat's.");
             string? delivery = DeliveryStatement(run, promptOpts.HasGameSnapshot);
             if (delivery != null)
             {
@@ -4056,6 +4058,13 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Early Terminations:** {terminated.Count} of {totalQuestions} answer(s) did not end on their own — {reasonBreakdown} — *the answer is valid; the loop stopped before the model did, so it is the answer reachable under the cap*");
         }
 
+        int unfinishedRecovered = answers.Count(a => a.UnfinishedAnswerRecovered == true);
+        int endedWithoutAnswer = answers.Count(a => a.EndedWithoutFinalAnswer == true);
+        if (unfinishedRecovered > 0 || endedWithoutAnswer > 0)
+        {
+            sb.AppendLine($"- **Unfinished answers:** {unfinishedRecovered} recovered, {endedWithoutAnswer} ended without an answer");
+        }
+
         var nearCeiling = answers
             .Select(a => (Answer: a, Note: NearCeilingNote(run, a)))
             .Where(x => x.Note != null &&
@@ -5315,7 +5324,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Budget/Quality Correlation:** {budgetConstrainedBelowMean.Count} budget-constrained question(s) scored below the run's unweighted mean of {unweightedMean!.Value} — " +
                 string.Join(", ", budgetConstrainedBelowMean.Select(a =>
                     $"Q{a.OrderIndex} ({ScoreText(IndexQualityOf(a)!.Value)}, {(a.ToolBudgetExhausted || (a.ToolCallsBlocked ?? 0) > 0 ? "budget exhausted" : saturated.Contains(a) ? "budget saturated" : "budget pressured")})")) +
-                ". *The cap is a candidate explanation, not a demonstrated one — raise `Benchmark:ToolCallBudget` and re-run to test it.*");
+                ". *The cap is a candidate explanation, not a demonstrated one — raise `AiPerformanceSettings:MaxCallsPerSession:Default` and re-run to test it.*");
         }
 
         // Grounding. An Advanced question answered from memory is not necessarily wrong, but it
@@ -5485,6 +5494,10 @@ public static class BenchmarkReportBuilder
             if (!string.IsNullOrWhiteSpace(a.ToolCallSummary))
             {
                 sb.AppendLine($"- **Tools Called:** `{a.ToolCallSummary}`");
+            }
+            if (!string.IsNullOrWhiteSpace(a.WikiContextArticles))
+            {
+                sb.AppendLine($"- **Pre-injected Wiki Articles:** {a.WikiContextArticles.Replace(";", ", ")}");
             }
             // H6. Only when the loop did not end on its own: "completed" is the ordinary case and saying
             // so on every question would bury the four answers where it matters.

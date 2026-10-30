@@ -25,7 +25,10 @@ public enum ChatAccessAction
     Erasure,
 
     /// <summary>Quarantined game text behind a security event was read by an administrator.</summary>
-    SecurityContentRead
+    SecurityContentRead,
+
+    /// <summary>The prompt of a turn that hit a limit was read by an administrator.</summary>
+    AdminReadLimitPrompt
 }
 
 /// <summary>

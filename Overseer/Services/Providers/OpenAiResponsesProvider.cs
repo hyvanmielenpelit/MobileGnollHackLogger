@@ -258,6 +258,7 @@ public class OpenAiResponsesProvider : IAiProvider
                     ChatEvent? errorEvt = null;
                     ChatEvent? debugEvt = null;
                     ChatEvent? providerItemEvt = null;
+                    ChatEvent? phaseEvt = null;
                     ChatEvent? tierEvt = null;
                     ChatEvent? usageEvt = null;
                     ChatEvent? finishReasonEvt = null;
@@ -434,6 +435,14 @@ public class OpenAiResponsesProvider : IAiProvider
                                         if (!replayUnavailable)
                                         {
                                             providerItemEvt = new ChatEvent { Type = "provider_history_item", Data = item.GetRawText() };
+                                        }
+
+                                        // Optional: not every model labels its messages.
+                                        if (item.TryGetProperty("phase", out var phaseProp)
+                                            && phaseProp.ValueKind == JsonValueKind.String
+                                            && !string.IsNullOrEmpty(phaseProp.GetString()))
+                                        {
+                                            phaseEvt = new ChatEvent { Type = "assistant_phase", Data = phaseProp.GetString()! };
                                         }
                                     }
                                 }
@@ -616,6 +625,7 @@ public class OpenAiResponsesProvider : IAiProvider
                     if (finishReasonEvt != null) yield return finishReasonEvt;
                     if (errorEvt != null) yield return errorEvt;
                     if (providerItemEvt != null) yield return providerItemEvt;
+                    if (phaseEvt != null) yield return phaseEvt;
                     if (tierEvt != null) yield return tierEvt;
                     if (usageEvt != null) yield return usageEvt;
                     if (!string.IsNullOrEmpty(thinkingChunkStr)) yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
@@ -729,6 +739,27 @@ public class OpenAiResponsesProvider : IAiProvider
     {
         messageHistory.Add(new { role = "user", content = new List<object> { new { type = "input_text", text = text } } });
     }
+
+    public void AppendAssistantTextToHistory(List<object> messageHistory, string visibleText, List<JsonElement>? providerHistoryItems = null)
+    {
+        // A reasoning item the API requires a following item for is not replayed on its own.
+        if (providerHistoryItems != null && providerHistoryItems.Any(IsReplayableWithoutFollowingItem))
+        {
+            foreach (var item in providerHistoryItems)
+            {
+                messageHistory.Add(item);
+            }
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(visibleText))
+        {
+            messageHistory.Add(new { role = "assistant", content = new[] { new { type = "output_text", text = visibleText } } });
+        }
+    }
+
+    private static bool IsReplayableWithoutFollowingItem(JsonElement item) =>
+        !item.TryGetProperty("type", out var type) || type.GetString() != "reasoning";
 
     public bool TryRewriteToolResult(List<object> messageHistory, string toolCallId, string replacementText)
     {

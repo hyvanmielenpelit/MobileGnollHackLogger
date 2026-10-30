@@ -313,6 +313,7 @@ builder.Services.AddSingleton<Overseer.Services.Security.SnapshotGuardModeServic
 builder.Services.AddSingleton<Overseer.Services.Security.SnapshotGuardService>();
 builder.Services.AddSingleton<Overseer.Services.Security.SafetyIdentifierService>();
 builder.Services.AddScoped<Overseer.Services.Security.SecurityQueryService>();
+builder.Services.AddScoped<Overseer.Services.Telemetry.ChatTurnLimitQueryService>();
 builder.Services.AddScoped<Overseer.Services.Security.AccountDeletionReviewService>();
 builder.Services.AddSingleton(sp => builder.Configuration.GetSection("AccountHold").Get<GnollHackServer.Data.Security.AccountHoldOptions>()
     ?? new GnollHackServer.Data.Security.AccountHoldOptions());
@@ -476,6 +477,7 @@ builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Ser
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetArtifactStatsTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.GetCharacterInfoTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.WikiViewTool>();
+builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.WikiOverviewTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.SearchDefinitionsTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.ReportFeedbackTool>();
 

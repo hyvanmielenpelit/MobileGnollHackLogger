@@ -775,6 +775,17 @@ public class AnthropicProvider : IAiProvider
         messageHistory.AddRange(updated);
     }
 
+    public void AppendAssistantTextToHistory(List<object> messageHistory, string visibleText, List<JsonElement>? providerHistoryItems = null)
+    {
+        if (string.IsNullOrWhiteSpace(visibleText)) return;
+
+        messageHistory.Add(new { role = "assistant", content = new List<object> { new { type = "text", text = visibleText } } });
+
+        var updated = AlternateAnthropicMessages(messageHistory);
+        messageHistory.Clear();
+        messageHistory.AddRange(updated);
+    }
+
     public Dictionary<string, object> BuildTitleRequestBody(
         string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier = null)
     {

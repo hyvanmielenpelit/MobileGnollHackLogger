@@ -107,7 +107,7 @@ describe('PrivacyComponent', () => {
     const text = textOf(map);
     for (const label of ['The message you type', 'Documents and images you attach',
       'The call to the AI provider', 'Error telemetry', 'Cost and token accounting',
-      'Activity counts', 'Security events', 'Provider safety identifier', 'Terms of Service acceptance']) {
+      'Activity counts', 'Limit records', 'Security events', 'Provider safety identifier', 'Terms of Service acceptance']) {
       expect(text, label).toContain(label);
     }
   });

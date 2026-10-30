@@ -611,5 +611,24 @@ public class BenchmarkRunAnswer
     [MaxLength(64)]
     public string? ProviderFinishReason { get; set; }
 
+    /// <summary>
+    /// The answer got the one recovery call without tools, because a tool turn ended on a stream that closed
+    /// early, on no visible text, or on commentary. Null for answers recorded before this was captured.
+    /// </summary>
+    public bool? UnfinishedAnswerRecovered { get; set; }
+
+    /// <summary>
+    /// The turn ended without a final answer even after recovery. Null for answers recorded before this
+    /// was captured.
+    /// </summary>
+    public bool? EndedWithoutFinalAnswer { get; set; }
+
+    /// <summary>
+    /// The wiki-relative paths of the articles pre-injected into the prompt for this question, joined with
+    /// semicolons. Null when none were, and on answers recorded before pre-injection.
+    /// </summary>
+    [MaxLength(1000)]
+    public string? WikiContextArticles { get; set; }
+
     public int AnswerFlags { get; set; }
 }

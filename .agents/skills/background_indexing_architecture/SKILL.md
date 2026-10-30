@@ -107,6 +107,7 @@ The error message explicitly informs the LLM that the service is initializing in
 | `item_lookup` | `ItemLookupTool` | `WikiService` | `_wikiService.IsIndexingComplete` | `ToolGuardMessages.WikiIndexingInProgress` |
 | `nethack_wiki_search` | `NetHackWikiSearchTool` | `NetHackWikiService` | `_netHackWikiService.IsIndexingComplete` | `ToolGuardMessages.NetHackWikiIndexingInProgress` |
 | `nethack_wiki_view` | `NetHackWikiViewTool` | `NetHackWikiService` | `_netHackWikiService.IsIndexingComplete` | `ToolGuardMessages.NetHackWikiIndexingInProgress` |
+| `wiki_overview` | `WikiOverviewTool` | `WikiService` or `NetHackWikiService`, by its `wiki` argument | That service's `IsIndexingComplete` | That corpus's guard message, because `CorpusToolUsageService` counts guards by exact string |
 | `get_knowledge_article` | `KnowledgeBaseTool` | `KnowledgeBaseService` | `_knowledgeBaseService.IsIndexingComplete` | `ToolGuardMessages.KnowledgeBaseIndexingInProgress` |
 | `source_code_search` | `SourceCodeSearchTool` | `SourceCodeService` | `_sourceCodeService.IsIndexingComplete` | `ToolGuardMessages.SourceCodeIndexingInProgress` |
 | `source_code_view` | `SourceCodeViewTool` | `SourceCodeService` | `_sourceCodeService.IsIndexingComplete` | `ToolGuardMessages.SourceCodeIndexingInProgress` |

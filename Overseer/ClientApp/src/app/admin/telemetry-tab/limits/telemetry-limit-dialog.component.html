@@ -1,0 +1,82 @@
+<!-- LIMIT EVENT DETAILS: header / body (the facts, the prompt) / footer. Its own close and cancel events stop here. -->
+<dialog #dialog class="gh-dialog tl-lim-dialog" aria-labelledby="tl-lim-dialog-title"
+        (cancel)="onCancel($event)" (close)="onDialogClose($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group tl-lim-dialog-title-group">
+        <!-- The focus target on open. -->
+        <h3 #title id="tl-lim-dialog-title" tabindex="-1">{{ titleText() }}</h3>
+        @if (detail(); as d) {
+          <p class="dialog-subtitle tl-lim-dialog-subtitle">
+            <time [attr.datetime]="d.occurredUtc">{{ timeText(d.occurredUtc) }}</time>
+          </p>
+        }
+      </div>
+      <button type="button" class="btn-icon-action tl-lim-dialog-close-icon" aria-label="Close limit details" (click)="close()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+
+    <div class="dialog-body tl-lim-dialog-body" [attr.aria-busy]="loading() ? 'true' : null">
+      @if (loading() && !detail()) {
+        <p class="tl-lim-dialog-loading">
+          <svg class="dc-ring" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+            <circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle>
+            <circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle>
+          </svg>
+          <span class="visually-hidden">Loading the event…</span>
+        </p>
+      } @else if (error(); as message) {
+        <div class="tl-lim-dialog-error">
+          <p class="gh-field-error tl-lim-dialog-error-text" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ message }}</span>
+          </p>
+          <button type="button" class="btn-ghost tl-lim-dialog-retry" (click)="retry()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+            Retry
+          </button>
+        </div>
+      } @else if (detail(); as d) {
+        <section class="tl-lim-dialog-section" aria-labelledby="tl-lim-dialog-facts-title">
+          <h4 class="gh-section-title" id="tl-lim-dialog-facts-title">Facts</h4>
+          <dl class="tl-lim-dialog-facts">
+            @for (fact of facts(); track fact.label) {
+              <div><dt>{{ fact.label }}</dt><dd [class.tl-lim-dialog-mono]="fact.mono">{{ fact.value }}</dd></div>
+            }
+          </dl>
+        </section>
+
+        <section class="tl-lim-dialog-section tl-lim-prompt" aria-labelledby="tl-lim-dialog-prompt-title">
+          <h4 class="gh-section-title" id="tl-lim-dialog-prompt-title">Prompt</h4>
+          @if (d.promptState !== 'available') {
+            <p class="tl-lim-prompt-unavailable">{{ promptUnavailableText() }}</p>
+          } @else if (prompt(); as p) {
+            <!-- Untrusted text: plain interpolation, never the Markdown pipe. Focusable, so the keyboard can scroll it. -->
+            <pre #promptText class="tl-lim-prompt-text" tabindex="0" aria-labelledby="tl-lim-dialog-prompt-title">{{ p.text }}</pre>
+            <p class="tl-lim-prompt-note">
+              @if (p.truncated) {
+                Shows the first 4,000 characters.
+              }
+              Attachments are not included.
+            </p>
+          } @else {
+            <p class="tl-lim-prompt-note" id="tl-lim-prompt-journal">Reading the prompt is recorded in the access journal.</p>
+            <button type="button" class="btn-ghost tl-lim-prompt-show" aria-describedby="tl-lim-prompt-journal"
+                    [attr.aria-busy]="promptLoading() ? 'true' : null" (click)="showPrompt()">Show prompt</button>
+            @if (promptError(); as message) {
+              <p class="gh-field-error tl-lim-prompt-error" role="alert">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span>{{ message }}</span>
+              </p>
+            }
+          }
+        </section>
+      }
+    </div>
+
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel tl-lim-dialog-close" (click)="close()">Close</button>
+    </div>
+  </div>
+</dialog>

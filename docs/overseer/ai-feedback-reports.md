@@ -220,7 +220,7 @@ the not-available result, which it treats like any other tool failure.
 - **Outside the call budget.** `IToolHandler.CountsTowardCallBudget` defaults to `true`;
   `ReportFeedbackTool` returns `false`. `ToolExecutor` looks the handler up before its session-quota block
   and skips the block for an exempt handler, so a report counts against neither the chat's 150-call session
-  budget nor GnollBench's 45-call question budget. `RemainingBudget` stays null on that path, so the result
+  budget nor GnollBench's question budget of the same size. `RemainingBudget` stays null on that path, so the result
   carries no `[Tool budget: …]` notice; a `0` there would tell the model its budget is gone. Counting the
   tool would make it compete with real research and move *Budget Pressure* in every run.
 - **Its own caps.** Three recorded reports per agent run (`ReportFeedbackTool.MaxReportsPerTurn`, a

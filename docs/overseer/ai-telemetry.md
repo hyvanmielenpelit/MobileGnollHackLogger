@@ -5,10 +5,11 @@ and consume, how available the providers were to the chat, how many people use O
 user uses the system AI configurations and their own keys. The server side is `AiTelemetrySummaryService`
 (`Overseer/Services/Telemetry/`); the client is `admin/telemetry-tab/`.
 
-The tab has four sub-tabs, each a place in the URL (`admin-page-urls.md`): **Summary**
+The tab has five sub-tabs, each a place in the URL (`admin-page-urls.md`): **Summary**
 (`/admin/telemetry`, the default: the summary cards and the *Rate Limit Partitions* table), **Models**
 (`/admin/telemetry/models`: the breakdown, § 7), **Users** (`/admin/telemetry/users`: the Users view,
-§ 12) and **Groups** (`/admin/telemetry/groups`: the Groups view, § 12a). The assistant's feedback
+§ 12), **Groups** (`/admin/telemetry/groups`: the Groups view, § 12a) and **Limits**
+(`/admin/telemetry/limits`: the turns that a limit or a provider failure ended or cut, § 12c). The assistant's feedback
 issues are an Admin tab of their own (§ 12b). A panel is mounted when its sub-tab is first selected and then kept, hidden, so the Users list is
 not fetched until it is first shown, and each list keeps its state across switches.
 
@@ -19,6 +20,7 @@ not fetched until it is first shown, and each list keeps its state across switch
 | `SystemAiUsageLog` | `SystemAiConfigService.RecordUsageAsync` / `RecordCallsUsageAsync` | one row per recorded turn, title or GnollBench job on a **system AI configuration**: user, configuration, model, role context, thinking level, tokens, duration, estimated cost |
 | `UserKeyAiUsageLog` | `UserKeyUsageRecorder` | the same for turns, sub-agent runs and titles on a **user's own key**; no session, message or content; deleted with the user |
 | `ChatProviderAttempt` | `ChatProviderAttemptRecorder` | one row per **provider attempt** of a chat or title call (one HTTP request, or a governor refusal before one was sent); no content, headers or secrets; a user id only on user-key rows; pruned after 400 days |
+| `ChatTurnLimitEvent` | `ChatTurnLimitRecorder` | one row per **limit or provider failure** of a chat turn: code, severity, the numbers behind it, the model, the turn's counters and a sanitized error code; identifiers, never content; a user id on every row; pruned after 180 days (§ 12c) |
 | `OverseerDailyActivity` | `ActivityCounter` | chats and messages created per user per UTC day, and one anonymous row per day for incognito chats and messages; no content; deleted with the user |
 | `SecurityEvent` | see `security-monitoring.md` | the refusal counts of the Users view |
 
@@ -261,7 +263,9 @@ model-level aggregates group by provider and model and include these rows; the U
 `ChatRetentionSettings:PruneChatProviderAttemptDays` (400; 0 disables) prunes the ledger as full-pass
 phase 10, through `POST api/admin/maintenance/prune-chat-provider-attempts`, and in the Database tab
 (policy, Next Pass Preview, both pass-step lists, a granular card, and a *Provider Attempts* history
-column). See `chat-data-retention.md`.
+column). `ChatRetentionSettings:PruneChatTurnLimitEventDays` (180; 0 disables) prunes the limit events the
+same way, through `POST api/admin/maintenance/prune-chat-turn-limit-events`, with a *Limit Events* history
+column. See `chat-data-retention.md`.
 
 ## 11. Activity: users, chats and messages
 
@@ -411,6 +415,51 @@ the charts dialog equal no filter.
 Feedback is its own Admin tab since 2026-10-22 (`/admin/feedback`, with its own date range):
 [`ai-feedback-reports.md`](ai-feedback-reports.md) § 10.
 
+## 12c. Limits
+
+Every limit or provider failure a chat turn runs into is one `ChatTurnLimitEvent` row. `AgentLoopRunner`
+records the hit, `ChatService` saves the rows after the assistant message with `ChatTurnLimitRecorder`
+(its own scope, never throws), and the turn's most important code becomes the notice the user sees
+(`chat-response-telemetry.md` § 6). A row's id is the reference shown to the user, `L-<id>`. GnollBench
+writes no rows: it keeps its own record in `TerminationReason`, `ToolBudgetExhausted` and the attempt ledger.
+
+| Code | What happened |
+|---|---|
+| `no_final_answer` | the turn ended with no visible answer, or on a commentary message, and the recovery call, where one applied, did not change that |
+| `research_rounds` | `MaxToolIterations` used, so the final call had no tools |
+| `model_calls` | `SubAgentSettings:MaxTotalModelCalls` used, so the final call had no tools |
+| `tool_budget` | the chat's `MaxCallsPerSession` used |
+| `tool_output` | the cumulative tool output ceiling (`ToolExecutionLimits:MaxTurnResultLength`) cut a result; administrators only, no notice |
+| `answer_length` | the output token limit cut the answer |
+| `time_limit` | the turn's request timeout fired |
+| `provider_busy` | a permit timeout, or 429 retries exhausted |
+| `provider_overloaded` | stream-error or 5xx retries exhausted |
+| `provider_timeout` | the `HttpClient` timed out during the request |
+| `provider_error` | any other provider error |
+| `connection_lost` | the request failed, or the stream broke or closed without a completion marker |
+| `api_key_rejected`, `api_key_balance` | the provider refused the key, or the key or system budget has no credit |
+
+- **What a row holds.** Identifiers, codes and numbers: code, severity (*warning* when the turn has a
+  visible answer, *error* when it has none), user, chat and message ids, confidential and incognito flags,
+  key source and model, limit and observed values, the turn's counters, tokens, estimated cost, finish reason,
+  assistant phase, HTTP status, and a provider code restricted to `[A-Za-z0-9_.-]`. Model and tool call counts
+  include sub-agent work, and the UI says so.
+- **A recovered hit is still a hit.** A stream that closes early and whose recovery call then answers writes a
+  `connection_lost` row all the same, so it counts here. The hit is marked `Recovered` in the run's result, which
+  keeps it out of the notice; the row does not store the mark.
+- **Incognito.** An incognito turn on the user's own key writes no row. On a system configuration it writes
+  one with no chat or message ids.
+- **Not limit events.** The refusals before a turn runs: the system-model quotas, the one-answer gate and the
+  request rate limiter.
+- **The list.** The tab's date range and Keys filter apply. Stat cards *Limit hits*, *Turns without an answer*
+  and *Users affected*; a *By limit* table (Limit, Hits, Users, Last seen) whose limit names set the filter; a
+  user-name search with *Reason* and *Severity* facets; event cards, newest first, with *Show N more*.
+- **The Details dialog** lists every fact and has a **Prompt** section. *Show prompt* reads the user's message
+  for that turn, up to 4,000 characters without attachments, and rendered as plain text, and each read writes a
+  `ChatAccessAuditLog` row (`AdminReadLimitPrompt`). If the journal write fails, the prompt is not returned. The
+  prompt of a confidential chat is refused without decrypting anything, an incognito turn stored none, and a
+  purged chat's is gone; the dialog says which (`data-privacy-framework.md` § 5.6).
+
 ## 13. The charts dialog
 
 **Charts** opens a full-screen dialog on the shared GnollBench figure layer (`overseer_frontend` skill):
@@ -474,6 +523,10 @@ tab's label reads *Models (3)* while there is a partial choice.
 | `GET` | `api/admin/ai-telemetry/users?startDate&endDate&keys&search&userId&sort&direction&skip&take` | the Users view page (`take` 1–100; `direction` `asc` or `desc`, the default) |
 | `GET` | `api/admin/ai-telemetry/model-users?startDate&endDate&keys&provider&modelId&roles` | one model's usage by user, role context and thinking level (`keys` system or user; 400 without `provider` or `modelId`) |
 | `GET` | `api/admin/ai-telemetry/user-models?startDate&endDate&keys&userId` | one user's usage by key source, provider, model, role context and thinking level (`AiTelemetryUserModelsDto`; 400 `{ message: "userId is required." }` without `userId`) |
+| `GET` | `api/admin/ai-telemetry/limits/summary?startDate&endDate&keys` | totals, turns without an answer, users affected, and per code its hits, users and last seen |
+| `GET` | `api/admin/ai-telemetry/limits?startDate&endDate&keys&codes&severities&search&skip&take` | a page of limit events, newest first, with the user name (`take` 1–100) |
+| `GET` | `api/admin/ai-telemetry/limits/{id}` | every fact of one event, and `promptState`: `available`, `confidential`, `incognito` or `deleted` (404 when there is no such event) |
+| `POST` | `api/admin/ai-telemetry/limits/{id}/prompt` | the turn's prompt, up to 4,000 characters, with `truncated`, journaled; 403 for a confidential chat, 404 when the message is gone, 500 when the journal could not record the read |
 
 The breakdown's view settings are stored as `overseer.admin.telemetry.breakdown`
 (`{ version: 1, roles, separateThinkingLevels, keys, sort, providers, toolbarCollapsed }`, `sort` being
@@ -493,7 +546,9 @@ sources, order, the name sort, own-key lines, the controller's pass-through), `A
 `AdminTelemetryGroupModelsTests`, `AdminTelemetryModelUsersTests`, `AdminTelemetryUserModelsTests`,
 `ActivityCounterTests`, `ActivityCountingCallSiteTests`, `SystemAiUsageRecordingTests`,
 `ChatProviderAttemptLedgerTests`, `TitleAttemptClassificationTests`, `ProviderTitleUsageTests` and
-`ChatProviderAttemptMaintenanceTests` in `Overseer.Tests/UnitTests/`, and the spend alert's link in
+`ChatProviderAttemptMaintenanceTests`, and for the limits `AgentLoopRunnerTurnLimitTests`,
+`ChatProviderErrorSanitizingTests`, `ChatTurnNoticeCatalogTests`, `AdminChatTurnLimitsTests` and
+`ChatTurnLimitMaintenanceTests` in `Overseer.Tests/UnitTests/`, and the spend alert's link in
 `ConfigHealthServiceTests`; the client specs beside the tab (sub-tabs, mounting, Refresh and the dialog
 wiring), the Summary panel (`summary/telemetry-summary.component.spec.ts`), the Models panel
 (`models/telemetry-models.component.spec.ts`), the Users view (`telemetry-users-view.spec.ts`,
@@ -503,5 +558,7 @@ wiring), the Summary panel (`summary/telemetry-summary.component.spec.ts`), the 
 (`charts/selection/telemetry-chart-filters.spec.ts`, `telemetry-chart-{models,users,groups}.component.spec.ts`),
 the Usage by user dialog (`telemetry-model-users.spec.ts`,
 `telemetry-model-users-dialog.component.spec.ts`) and the Usage by model dialog
-(`telemetry-user-models.spec.ts`, `telemetry-user-models-dialog.component.spec.ts`), and the sub-tab paths
+(`telemetry-user-models.spec.ts`, `telemetry-user-models-dialog.component.spec.ts`), the Limits view
+(`limits/telemetry-limits.component.spec.ts`, `telemetry-limit-dialog.component.spec.ts`,
+`telemetry-limit-labels.spec.ts`), and the sub-tab paths
 in `admin-url.spec.ts`.

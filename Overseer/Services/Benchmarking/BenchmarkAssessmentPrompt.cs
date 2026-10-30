@@ -850,8 +850,17 @@ public static class BenchmarkAssessmentPrompt
     ///     panel synthesis input counts raised and verified claims as one population.
     ///     ScoringMethodVersion stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 move with the
     ///     _policy.md line.
+    /// v64: wiki_overview counts and lists wiki articles and joins the allowed tools, which also moves the
+    ///     per-question grader's tool line and the claim verifier's tool set; wiki_search and
+    ///     nethack_wiki_search fail clearly on a query with no searchable words. Candidates are warned before
+    ///     tool rounds, time and tool output run out, and an answer whose stream ends early, ends empty or
+    ///     ends on commentary gets one final call without tools. The per-question caps are the chat's
+    ///     defaults (150 tool calls, 22 rounds, 48 model calls, 1,800 s), and the candidate gets the chat's
+    ///     pre-injected wiki context under the Production condition; web search stays off.
+    ///     ScoringMethodVersion stays 14; ToolGuidesSha256 moves with the new guide, CandidateSystemPromptSha256
+    ///     does not move.
     /// </summary>
-    public const string HarnessVersion = "63";
+    public const string HarnessVersion = "64";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

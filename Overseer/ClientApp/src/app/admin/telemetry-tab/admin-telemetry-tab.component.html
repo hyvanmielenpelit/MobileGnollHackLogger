@@ -94,6 +94,13 @@
   }
 </div>
 
+<!-- Limits: the limits and provider failures that ended or cut chat turns. Mounted on first selection, then kept. -->
+<div role="tabpanel" class="tl-subpanel tl-limits" id="tl-subpanel-limits" aria-labelledby="tl-subtab-limits" tabindex="0" [hidden]="subTab !== 'limits'">
+  @if (isMounted('limits')) {
+    <app-telemetry-limits [startDate]="telemetryStartDate" [endDate]="telemetryEndDate" [keys]="keys" />
+  }
+</div>
+
 <app-telemetry-charts-dialog #chartsDialog />
 
 <app-telemetry-model-users-dialog #modelUsersDialog />

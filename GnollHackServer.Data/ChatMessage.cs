@@ -142,4 +142,14 @@ public class ChatMessage
     /// nothing, and on rows saved before this column existed — those are read through
     /// <see cref="SystemAiConfigurationIdUsed"/>.</summary>
     public decimal? OperatorEstimatedCost { get; set; }
+
+    /// <summary>The primary limit that ended or cut this turn, from <c>TurnLimitCodes</c>; null on a normal
+    /// turn. The text the user reads is rendered from it at read time.</summary>
+    [MaxLength(32)]
+    public string? TurnNoticeCode { get; set; }
+
+    /// <summary>The numbers and sanitized codes behind <see cref="TurnNoticeCode"/>, as JSON. Stored in plain
+    /// text in every mode, like token counts, and holds nothing the user typed or the model wrote.</summary>
+    [MaxLength(1000)]
+    public string? TurnNoticeFactsJson { get; set; }
 }

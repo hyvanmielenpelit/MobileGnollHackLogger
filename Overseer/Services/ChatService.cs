@@ -13,6 +13,7 @@ using Overseer.Extensions;
 using Overseer.Services.Tools;
 using Overseer.Services.Providers;
 using Overseer.Services.Agents;
+using Overseer.Services.Telemetry;
 using ParallelExecutionMode = MobileGnollHackLogger.Data.ParallelExecutionMode;
 
 namespace Overseer.Services;
@@ -909,6 +910,13 @@ public class ChatService
                    confidential session -- inverting the feature, silently, and only for the
                    sessions that asked for protection. */
                 var content = (decryptContent ? _contentProtection.Decrypt(session, pm.Content) : pm.Content) ?? "";
+
+                // A turn that ended with no answer stores empty Content; providers reject an empty message.
+                if (pm.Role == "assistant" && string.IsNullOrWhiteSpace(content))
+                {
+                    continue;
+                }
+
                 if (includeToolDigest && pm.Role == "assistant")
                 {
                     var digest = ToolCallHistoryDigest.Build(toolCallsLookup[pm.Id]);
@@ -1608,8 +1616,14 @@ public class ChatService
             ApiKeyAlert = apiKeyAlertContext,
             ShowDebugLog = _showDebugLog,
             AiProvider = aiProvider,
-            Budget = runBudget
+            Budget = runBudget,
+            ApplyTurnGuidance = true,
+            TurnDeadlineUtc = _ongoingChatManager.TryGet(sessionRef)?.DeadlineUtc,
+            ReportTurnLimits = true
         };
+
+        // What a viewer may see of the cost and of a notice's facts is decided from this.
+        bool requesterIsAdmin = _configuration.IsAdmin(userName);
 
         var runResult = new AgentRunResult();
 
@@ -1731,15 +1745,18 @@ public class ChatService
         int? totalDurationMs = runResult.TotalDurationMs;
         var streamToolCalls = runResult.ToolCalls;
 
-        if (cancellationToken.IsCancellationRequested)
+        // TryCancelAndRemove removes the state before it cancels, so a state still here means the timer fired.
+        if (cancellationToken.IsCancellationRequested && _ongoingChatManager.TryGet(sessionRef) is { } timedOutState)
         {
-            bool isUserCancel = _ongoingChatManager.TryGet(sessionRef) == null;
-            if (!isUserCancel)
+            int? timeLimitSeconds = timedOutState.DeadlineUtc.HasValue
+                ? (int)(timedOutState.DeadlineUtc.Value - timedOutState.StartedAtUtc).TotalSeconds
+                : null;
+            runResult.LimitHits.Add(new TurnLimitHit
             {
-                string errMsg = "The request timed out. The AI provider may be overloaded. Please try again.";
-                fullResponse += $"\n\n**Error:** {errMsg}";
-                yield return new ChatEvent { Type = "error", Data = errMsg };
-            }
+                Code = TurnLimitCodes.TimeLimit,
+                LimitValue = timeLimitSeconds,
+                ObservedValue = timeLimitSeconds
+            });
         }
 
         using (var scope = _scopeFactory.CreateScope())
@@ -1786,10 +1803,6 @@ public class ChatService
                 }
 
                 // What a viewer may see of the cost is decided in ChatCostDisclosure, which the history loads use too.
-                string? requesterUserName = await dbContext.Users
-                    .Where(u => u.Id == userId).Select(u => u.UserName)
-                    .FirstOrDefaultAsync(CancellationToken.None);
-                bool requesterIsAdmin = _configuration.IsAdmin(requesterUserName);
                 bool isOperatorFunded = systemModelId.HasValue;
 
                 decimal? mainCost = null;
@@ -1850,15 +1863,28 @@ public class ChatService
                     };
                 }
 
-                // The provider ended the turn with no text — observed on Gemini 3.1 Pro after minutes of work, on
-                // the same prompt builder chat uses. The row is kept because the tokens were spent and their cost
-                // is real; what it must not do is present emptiness as an answer.
-                if (string.IsNullOrWhiteSpace(fullResponse))
+                // A turn that ended with no text keeps its row because the tokens were spent and their cost is
+                // real; the notice, not the Content, tells the user there is no answer.
+                string? primaryNoticeCode = ChatTurnNoticeCatalog.PrimaryCode(runResult.LimitHits);
+                var primaryHit = runResult.LimitHits.FirstOrDefault(h => h.Code == primaryNoticeCode);
+                string noticeSeverity = ChatTurnNoticeCatalog.HasVisibleAnswer(fullResponse)
+                    ? ChatTurnNoticeCatalog.SeverityWarning
+                    : ChatTurnNoticeCatalog.SeverityError;
+                var noticeFacts = new ChatTurnNoticeFacts
                 {
-                    fullResponse = EmptyResponseNotice(runResult.ProviderFinishReason);
-
-                    yield return new ChatEvent { Type = "error", Data = "The model returned no answer text." };
-                }
+                    Severity = noticeSeverity,
+                    SystemKey = systemModelId.HasValue,
+                    LimitValue = primaryHit?.LimitValue,
+                    ObservedValue = primaryHit?.ObservedValue,
+                    IterationsUsed = runResult.IterationsUsed,
+                    ModelCallCount = runResult.ModelCallCount,
+                    ToolCallCount = runResult.ToolCallCount,
+                    TotalDurationMs = runResult.TotalDurationMs,
+                    HttpStatus = primaryHit?.HttpStatus,
+                    ProviderErrorCode = ChatTurnLimitRecorder.SanitizeCode(primaryHit?.ProviderErrorCode),
+                    ProviderFinishReason = runResult.ProviderFinishReason,
+                    AssistantPhase = runResult.LastAssistantPhase
+                };
 
                 var asstMsg = new ChatMessage
                 {
@@ -1889,7 +1915,9 @@ public class ChatService
                     PricingSource = turnCost.PricingSource,
                     SystemAiConfigurationIdUsed = systemModelId,
                     SubAgentEstimatedCost = turnCost.SubAgentEstimatedCost,
-                    OperatorEstimatedCost = turnCost.OperatorEstimatedCost
+                    OperatorEstimatedCost = turnCost.OperatorEstimatedCost,
+                    TurnNoticeCode = primaryNoticeCode,
+                    TurnNoticeFactsJson = primaryNoticeCode == null ? null : ChatTurnNoticeCatalog.SerializeFacts(noticeFacts)
                 };
                 /* THE encryption choke point for the assistant turn, and the reason
                    AgentLoopRunner never sees a key.
@@ -1977,6 +2005,41 @@ public class ChatService
                 }
 
                 if (_showDebugLog) yield return new ChatEvent { Type = "debug", Data = $"[Main Chat] Assistant message saved to DB (id={asstMsg.Id})" };
+
+                // An incognito turn on the user's own key writes nothing, and an incognito row names no chat.
+                long? noticeReference = null;
+                if (runResult.LimitHits.Count > 0 && (systemModelId.HasValue || !isEphemeralSession))
+                {
+                    var limitRows = ChatTurnLimitRecorder.Map(runResult, new ChatTurnLimitLinks(
+                        userId,
+                        isEphemeralSession ? null : currentSessionId,
+                        isEphemeralSession ? null : turnUserMessageId,
+                        isEphemeralSession ? null : asstMsg.Id,
+                        isConfidentialSession,
+                        isEphemeralSession,
+                        systemModelId,
+                        provider,
+                        model,
+                        modelDisplayName,
+                        sentThinkingLevel,
+                        turnCost.EstimatedCost,
+                        noticeSeverity));
+                    noticeReference = await ChatTurnLimitRecorder.TryRecordAsync(
+                        _scopeFactory, (ILogger?)_logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ChatService>.Instance,
+                        limitRows, primaryNoticeCode);
+                }
+
+                // Last, so the event row exists and the 5,000-event cap, which drops the oldest first, keeps it.
+                if (primaryNoticeCode != null)
+                {
+                    var notice = ChatTurnNoticeCatalog.Render(
+                        primaryNoticeCode, noticeFacts, noticeReference,
+                        ChatTurnNoticeDisclosure.For(requesterIsAdmin, primaryNoticeCode, noticeFacts, runResult.LiveProviderErrorBody));
+                    if (notice != null)
+                    {
+                        yield return new ChatEvent { Type = "turn_notice", Data = ChatTurnNoticeCatalog.SerializeNotice(notice) };
+                    }
+                }
             }
         }
     }

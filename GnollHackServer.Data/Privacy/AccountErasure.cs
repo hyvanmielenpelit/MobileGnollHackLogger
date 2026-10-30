@@ -13,7 +13,7 @@ public sealed record AccountErasureResult(int BonesFilesMissing, int FoldersMiss
 /// <summary>
 /// Erases a user's account and data: self-service deletion on the website and an administrator's approved
 /// deletion in Overseer run these same steps. Rows that reference the user by foreign key (security events,
-/// holds, game sign-in blocks, usage and attempt logs, activity, model order, terms acceptances, Overseer feedback reports) go with the user by
+/// holds, game sign-in blocks, usage and attempt logs, chat turn limit events, activity, model order, terms acceptances, Overseer feedback reports) go with the user by
 /// cascade; benchmark rows are kept with their attribution to the user removed. Overseer feedback issues are kept: they
 /// reference no user except a plain triager id, which is left as it is.
 /// </summary>

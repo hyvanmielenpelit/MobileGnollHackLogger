@@ -123,6 +123,7 @@ public class BenchmarkToolResultClassifierTests
     [InlineData("wiki_search", "No relevant information found in the GnollHack wiki.")]
     [InlineData("wiki_view", "No wiki article matched 'Holy Grail'. Did you mean: Grail?")]
     [InlineData("wiki_view", "Wiki article matching 'Holy Grail' not found.")]
+    [InlineData("wiki_overview", "No GnollHack wiki article path contains 'grail'.\nGnollHack wiki: 512 articles in Overseer's index, built 2026-10-29 14:02 UTC. The live site can differ slightly.")]
     [InlineData("nethack_wiki_search", "No relevant information found in the NetHack wiki.")]
     [InlineData("nethack_wiki_view", "No NetHack wiki article matched 'Grail'.")]
     [InlineData("nethack_wiki_view", "NetHack wiki article matching 'Grail' not found.")]

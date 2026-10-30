@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
+using Overseer.Services.Telemetry;
 using Overseer.Models;
 using Overseer.Extensions;
 using System.Security.Claims;
@@ -418,13 +419,26 @@ public class ChatController : ControllerBase
                 m.PricingSource,
                 m.SystemAiConfigurationIdUsed,
                 m.SubAgentEstimatedCost,
-                m.OperatorEstimatedCost
+                m.OperatorEstimatedCost,
+                m.TurnNoticeCode,
+                m.TurnNoticeFactsJson
             })
             .ToListAsync();
         swDb.Stop();
         var messagesMs = swDb.ElapsedMilliseconds;
 
         var messageIds = messages.Select(m => m.Id).ToList();
+
+        // The reference on a notice: the event row of the notice's own code.
+        var noticeMessageIds = messages.Where(m => m.TurnNoticeCode != null).Select(m => m.Id).ToList();
+        var noticeEvents = noticeMessageIds.Count > 0
+            ? await _dbContext.ChatTurnLimitEvents
+                .Where(e => e.AssistantMessageId != null && noticeMessageIds.Contains(e.AssistantMessageId.Value))
+                .Select(e => new { e.AssistantMessageId, e.Code, e.Id })
+                .AsNoTracking()
+                .ToListAsync()
+            : [];
+        var noticeEventsLookup = noticeEvents.ToLookup(e => e.AssistantMessageId!.Value);
 
         swDb.Restart();
         var attachments = messageIds.Count > 0
@@ -577,7 +591,9 @@ public class ChatController : ControllerBase
                 PricingSource = cost.PricingSource,
                 IsOperatorCost = cost.IsOperatorCost,
                 OperatorCost = cost.OperatorCost,
-                SubAgentCost = cost.SubAgentCost
+                SubAgentCost = cost.SubAgentCost,
+                TurnNotice = ChatTurnNoticeDisclosure.Render(isAdmin, m.TurnNoticeCode, m.TurnNoticeFactsJson,
+                    noticeEventsLookup[m.Id].FirstOrDefault(e => e.Code == m.TurnNoticeCode)?.Id)
             };
         }).ToList();
         swAsm.Stop();
@@ -774,7 +790,8 @@ public class ChatController : ControllerBase
                     PricingSource = cost.PricingSource,
                     IsOperatorCost = cost.IsOperatorCost,
                     OperatorCost = cost.OperatorCost,
-                    SubAgentCost = cost.SubAgentCost
+                    SubAgentCost = cost.SubAgentCost,
+                    TurnNotice = ChatTurnNoticeDisclosure.Render(isAdmin, m.TurnNoticeCode, m.TurnNoticeFactsJson, reference: null)
                 };
             })
             .ToList();
@@ -1574,6 +1591,7 @@ public class ChatController : ControllerBase
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
         int timeoutSeconds = settings?.RequestTimeout ?? _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Default", 300);
         var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+        var turnDeadlineUtc = DateTime.UtcNow.AddSeconds(timeoutSeconds);
 
         bool gateEntered = false;
         if (operatorFunded && turnGate != null)
@@ -1587,12 +1605,13 @@ public class ChatController : ControllerBase
             gateEntered = true;
         }
 
-        if (!_ongoingChatManager.TryStart(sessionRef, cts, out _))
+        if (!_ongoingChatManager.TryStart(sessionRef, cts, out var ongoingState))
         {
             if (gateEntered)
                 turnGate!.Exit(userId);
             return Conflict("Generation already in progress for this session.");
         }
+        ongoingState.DeadlineUtc = turnDeadlineUtc;
 
         // The gate slot this turn holds, released by the detached task's finally.
         var heldGate = gateEntered ? turnGate : null;
@@ -1752,6 +1771,14 @@ public class ChatController : ControllerBase
                 {
                     extra.Add($"service tier served: {m.ActualServiceTierUsed}");
                 }
+                if (!string.IsNullOrEmpty(m.TurnNoticeCode))
+                {
+                    long? reference = await _dbContext.ChatTurnLimitEvents.AsNoTracking()
+                        .Where(e => e.AssistantMessageId == m.Id && e.Code == m.TurnNoticeCode)
+                        .Select(e => (long?)e.Id)
+                        .FirstOrDefaultAsync();
+                    extra.Add($"notice: {m.TurnNoticeCode}" + (reference.HasValue ? $", reference L-{reference}" : ""));
+                }
                 modelDetails = $" [{m.ModelUsed}" + (extra.Count > 0 ? $" ({string.Join(", ", extra)})" : "") + "]";
             }
             mdBuilder.AppendLine($"### {roleName}{hiddenText}{modelDetails} ({m.TimestampUtc:yyyy-MM-dd HH:mm:ss} UTC)");
@@ -1778,6 +1805,13 @@ public class ChatController : ControllerBase
         }
 
         string toAddress = _configuration["ReportEmailAddress"] ?? "gnollhack@hyvanmielenpelit.fi";
+
+        long? noticeReference = string.IsNullOrEmpty(message.TurnNoticeCode)
+            ? null
+            : await _dbContext.ChatTurnLimitEvents.AsNoTracking()
+                .Where(e => e.AssistantMessageId == message.Id && e.Code == message.TurnNoticeCode)
+                .Select(e => (long?)e.Id)
+                .FirstOrDefaultAsync();
 
         string htmlBody = $@"
             <html>
@@ -1808,6 +1842,7 @@ public class ChatController : ControllerBase
                 <p><strong>Total Duration (ms):</strong> {message.TotalDurationMs?.ToString() ?? "N/A"}</p>
                 <p><strong>Context Prompt / Output Tokens:</strong> {message.ContextPromptTokens?.ToString() ?? "N/A"} / {message.ContextOutputTokens?.ToString() ?? "N/A"}</p>
                 <p><strong>Context Window / Input Limit:</strong> {message.ContextWindowTokens?.ToString() ?? "N/A"} / {message.ContextInputLimitTokens?.ToString() ?? "N/A"}</p>
+                <p><strong>Turn Notice:</strong> {message.TurnNoticeCode ?? "N/A"}{(noticeReference.HasValue ? $" (reference L-{noticeReference})" : "")}</p>
             </body>
             </html>
         ";

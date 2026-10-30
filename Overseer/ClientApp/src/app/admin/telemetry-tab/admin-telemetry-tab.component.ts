@@ -31,22 +31,25 @@ import {
 } from './telemetry-breakdown';
 import { TelemetryUserModelsRef, TelemetryUserRef, TelemetryUsersComponent } from './users/telemetry-users.component';
 import { TelemetryGroupModelsRef, TelemetryGroupRef, TelemetryGroupsComponent } from './groups/telemetry-groups.component';
+import { TelemetryLimitsComponent } from './limits/telemetry-limits.component';
 
 /** The sub-tabs' visible labels, in tab order. */
 export const TELEMETRY_SUBTAB_LABELS: Readonly<Record<AdminTelemetrySubTab, string>> = {
   summary: 'Summary',
   models: 'Models',
   users: 'Users',
-  groups: 'Groups'
+  groups: 'Groups',
+  limits: 'Limits'
 };
 
 const TIME_SPANS = Object.keys(TELEMETRY_TIME_SPAN_LABELS) as TelemetryTimeSpan[];
 
 /**
- * The Admin page's AI Telemetry tab, in four sub-tabs that share one date range and one key source:
+ * The Admin page's AI Telemetry tab, in five sub-tabs that share one date range and one key source:
  * Summary (usage, cost, provider availability, Overseer activity and the request governor's
- * partitions), Models (the breakdown by model and role), Users (the usage by user) and Groups (the
- * usage by group, each counting its current members). The tab fetches the summary and the governor
+ * partitions), Models (the breakdown by model and role), Users (the usage by user), Groups (the
+ * usage by group, each counting its current members) and Limits (the limits and provider failures
+ * that ended or cut chat turns). The tab fetches the summary and the governor
  * status for Summary and Models, and is the only owner and writer of the stored view record, which
  * holds the Keys filter and the breakdown's settings.
  */
@@ -54,7 +57,7 @@ const TIME_SPANS = Object.keys(TELEMETRY_TIME_SPAN_LABELS) as TelemetryTimeSpan[
   selector: 'app-admin-telemetry-tab',
   imports: [
     FormsModule, TelemetrySummaryComponent, TelemetryModelsComponent, TelemetryUsersComponent, TelemetryGroupsComponent,
-    TelemetryChartsDialogComponent, TelemetryModelUsersDialogComponent, TelemetryUserModelsDialogComponent
+    TelemetryLimitsComponent, TelemetryChartsDialogComponent, TelemetryModelUsersDialogComponent, TelemetryUserModelsDialogComponent
   ],
   templateUrl: './admin-telemetry-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
@@ -70,9 +73,10 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
   @ViewChild('userModelsDialog') userModelsDialog?: TelemetryUserModelsDialogComponent;
   @ViewChild(TelemetryUsersComponent) usersView?: TelemetryUsersComponent;
   @ViewChild(TelemetryGroupsComponent) groupsView?: TelemetryGroupsComponent;
+  @ViewChild(TelemetryLimitsComponent) limitsView?: TelemetryLimitsComponent;
   @ViewChild('tlHead') private tlHead?: ElementRef<HTMLElement>;
 
-  readonly subTabs: readonly AdminTelemetrySubTab[] = ['summary', 'models', 'users', 'groups'];
+  readonly subTabs: readonly AdminTelemetrySubTab[] = ['summary', 'models', 'users', 'groups', 'limits'];
   readonly subTabLabels = TELEMETRY_SUBTAB_LABELS;
   readonly keySources = KEY_SOURCES;
   readonly keySourceLabels = KEY_SOURCE_LABELS;
@@ -270,7 +274,7 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
   }
 
   /**
-   * Reloads the summary and the governor status together, and the users and groups views once they exist. Each request settles on its own, so one failure still shows the other's data; the feedback is a single toast
+   * Reloads the summary and the governor status together, and the users, groups and limits views once they exist. Each request settles on its own, so one failure still shows the other's data; the feedback is a single toast
    * either way.
    */
   refreshTelemetryTab(showFeedback = false) {
@@ -288,6 +292,7 @@ export class AdminTelemetryTabComponent implements OnInit, AfterViewInit, OnDest
     if (showFeedback) {
       this.usersView?.reload();
       this.groupsView?.reload();
+      this.limitsView?.reload();
     }
 
     forkJoin({

@@ -33,6 +33,7 @@ public static class BenchmarkInformationConditions
     {
         "wiki_search",
         "wiki_view",
+        "wiki_overview",
         "get_knowledge_article",
         "nethack_wiki_search",
         "nethack_wiki_view",
@@ -46,7 +47,7 @@ public static class BenchmarkInformationConditions
     /// the wiki first, so the notice says those instructions do not apply.
     /// </summary>
     public const string SourceOnlyNotice =
-        "In this session the GnollHack wiki, the NetHack wiki, the knowledge base and the monster and item lookup tools are not available, "
+        "In this session the GnollHack wiki, the NetHack wiki, the wiki overview, the knowledge base and the monster and item lookup tools are not available, "
         + "and instructions elsewhere in this prompt that tell you to consult them first do not apply. "
         + "Treat the GnollHack source code, read with the source code and stats tools, as the source of truth.";
 

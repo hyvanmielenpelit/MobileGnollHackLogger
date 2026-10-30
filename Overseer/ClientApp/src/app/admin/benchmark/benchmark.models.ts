@@ -191,7 +191,7 @@ export type BenchmarkToolFamilyName =
 export const BENCHMARK_TOOL_FAMILY_MEMBERSHIP: ReadonlyArray<readonly [BenchmarkToolFamilyName, readonly string[]]> = [
   ['SourceCode', ['source_code_search', 'source_code_view', 'search_definitions',
     'get_function_definition', 'get_constants', 'list_indexed_files']],
-  ['Wiki', ['wiki_search', 'wiki_view', 'nethack_wiki_search', 'nethack_wiki_view']],
+  ['Wiki', ['wiki_search', 'wiki_view', 'wiki_overview', 'nethack_wiki_search', 'nethack_wiki_view']],
   ['StructuredLookup', ['monster_lookup', 'item_lookup', 'get_monster_stats', 'get_item_stats']],
   ['KnowledgeBase', ['get_knowledge_article']]
 ];

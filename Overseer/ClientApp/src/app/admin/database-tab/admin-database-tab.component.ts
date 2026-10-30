@@ -50,6 +50,7 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
   aiErrorLogPruneDays = 90;
   securityEventPruneDays = 180;
   chatProviderAttemptPruneDays = 400;
+  chatTurnLimitEventPruneDays = 180;
   /** Day-count selects take the configured policy once, on the first metrics load. */
   private maintenanceDefaultsApplied = false;
   lastMaintenanceResult: MaintenanceResult | null = null;
@@ -160,7 +161,7 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
       purgedMessageCount: 0, purgedToolCallCount: 0, prunedToolResultCount: 0,
       prunedBenchmarkToolResultCount: 0, deletedDiskFolderCount: 0, deletedDiskFileCount: 0,
       reclaimedDiskBytes: 0, sweptOrphanFolderCount: 0, prunedAuditLogCount: 0, prunedAiErrorLogCount: 0,
-      prunedSecurityEventCount: 0, prunedChatProviderAttemptCount: 0,
+      prunedSecurityEventCount: 0, prunedChatProviderAttemptCount: 0, prunedChatTurnLimitEventCount: 0,
       elapsedMilliseconds: this.maintenanceRunElapsedMs, trigger: 'Manual', errorMessage: message, logs: []
     });
   }
@@ -295,6 +296,7 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
       ['Dismissed AI errors pruned', r.prunedAiErrorLogCount],
       ['Security events pruned', r.prunedSecurityEventCount],
       ['Chat provider attempts pruned', r.prunedChatProviderAttemptCount],
+      ['Chat turn limit events pruned', r.prunedChatTurnLimitEventCount],
       ['Disk folders removed', r.deletedDiskFolderCount],
       ['Disk files removed', r.deletedDiskFileCount],
       ['Orphan folders swept', r.sweptOrphanFolderCount]
@@ -413,6 +415,7 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
     if (p.pruneDismissedAiErrorLogDays > 0) this.aiErrorLogPruneDays = p.pruneDismissedAiErrorLogDays;
     if (p.pruneSecurityEventDays > 0) this.securityEventPruneDays = p.pruneSecurityEventDays;
     if (p.pruneChatProviderAttemptDays > 0) this.chatProviderAttemptPruneDays = p.pruneChatProviderAttemptDays;
+    if (p.pruneChatTurnLimitEventDays > 0) this.chatTurnLimitEventPruneDays = p.pruneChatTurnLimitEventDays;
   }
 
   /** `resetHistoryPage` returns the history to page 1, so a run that just finished is in view. */
@@ -447,7 +450,7 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
         this.maintenanceDryRun ? 'Previewing Maintenance Pass' : 'Executing Maintenance Pass',
         this.maintenanceDryRun
           ? 'Computing dry-run maintenance metrics...'
-          : 'Running the full maintenance pass (sessions, trash, payloads, orphan folders, access journal, dismissed AI errors, security events and chat provider attempts)...',
+          : 'Running the full maintenance pass (sessions, trash, payloads, orphan folders, access journal, dismissed AI errors, security events, chat provider attempts and chat turn limit events)...',
         true
       );
 
@@ -492,7 +495,7 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
     if (!this.maintenanceDryRun) {
       this.openConfirmationModal(
         'Run Scheduled Maintenance Pass',
-        'Are you sure you want to run the full maintenance pass? Expired trash, aged payloads, access journal rows past retention, old dismissed AI errors, and security events and chat provider attempts past retention will be permanently removed.',
+        'Are you sure you want to run the full maintenance pass? Expired trash, aged payloads, access journal rows past retention, old dismissed AI errors, and security events, chat provider attempts and chat turn limit events past retention will be permanently removed.',
         execute,
         'Execute Maintenance',
         'btn-gh btn-primary'
@@ -664,6 +667,19 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
       loadingMessage: `Deleting chat provider attempts older than ${days} days...`,
       errorPrefix: 'Failed to prune chat provider attempts',
       call: (dryRun) => this.adminService.pruneChatProviderAttempts({ chatProviderAttemptPruneDays: days, dryRun })
+    });
+  }
+
+  pruneChatTurnLimitEventsNow() {
+    const days = this.chatTurnLimitEventPruneDays;
+    this.runGranularMaintenance({
+      title: 'Prune Chat Turn Limit Events',
+      confirmMessage: `Are you sure you want to delete chat turn limit events older than ${days} days? ` +
+        'Chat sessions and their messages are not affected.',
+      confirmButton: 'Prune Limit Events',
+      loadingMessage: `Deleting chat turn limit events older than ${days} days...`,
+      errorPrefix: 'Failed to prune chat turn limit events',
+      call: (dryRun) => this.adminService.pruneChatTurnLimitEvents({ chatTurnLimitEventPruneDays: days, dryRun })
     });
   }
 

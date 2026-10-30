@@ -55,6 +55,9 @@ public sealed class ModelCallRecord
     public int StreamErrorRetryCount { get; set; }
     public int? FinalHttpStatus { get; set; }
 
+    /// <summary>The last attempt's stream reported its completion event.</summary>
+    public bool CompletionSeen { get; set; }
+
     // --- Marks, relative to the successful attempt's send ---------------------------------------
 
     public int? HeadersMs { get; set; }

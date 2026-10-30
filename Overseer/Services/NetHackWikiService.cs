@@ -171,6 +171,41 @@ public class NetHackWikiService : IDisposable
         };
     }
 
+    /// <summary>
+    /// The published index's article count, namespaces and build time; null until a pass publishes.
+    /// Reads no file and no Lucene reader, so a reindex cannot close anything under it.
+    /// </summary>
+    public NetHackWikiOverview? GetOverview()
+    {
+        PublishedIndex? published;
+        lock (_swapLock) published = _published;
+
+        return published == null
+            ? null
+            : new NetHackWikiOverview(published.Info.FileCount, published.Namespaces, published.Info.IndexedAtUtc);
+    }
+
+    /// <summary>One page of the published index's article titles, sorted.</summary>
+    public WikiArticlePage ListTitles(int offset, int limit)
+    {
+        PublishedIndex? published;
+        lock (_swapLock) published = _published;
+
+        return published == null ? WikiArticlePage.Empty : WikiArticlePage.Of(published.Titles, offset, limit);
+    }
+
+    /// <summary>
+    /// False when the index's analyzer leaves no term of <paramref name="query"/>: it holds only
+    /// punctuation or stop words. True while no index is published, so the search reports its own miss.
+    /// </summary>
+    public bool IsSearchableQuery(string query)
+    {
+        Analyzer? analyzer;
+        lock (_swapLock) analyzer = _analyzer;
+
+        return analyzer == null || WikiService.AnalyzeDistinctTerms(analyzer, query).Count > 0;
+    }
+
     private Task<string?> RunPassAsync(CorpusPassContext context, CancellationToken cancellationToken) =>
         Task.FromResult(IndexWikiFiles(context, cancellationToken));
 
@@ -378,7 +413,7 @@ public class NetHackWikiService : IDisposable
             doc.Add(new TextField("summary", summary, Field.Store.YES));
             writer.AddDocument(doc);
             fingerprint.Add(Path.GetRelativePath(_wikiPath, file), rawContent);
-            stats.AddIndexed(ns, fileInfo.Length);
+            stats.AddIndexed(ns, title, fileInfo.Length);
             return true;
         }
         catch (Exception ex)
@@ -578,7 +613,7 @@ public class NetHackWikiService : IDisposable
     }
 
     /// <summary>A published index's statistics, swapped in with the searcher.</summary>
-    private sealed record PublishedIndex(CorpusIndexInfoDto Info, IReadOnlyList<NetHackWikiNamespaceDto> Namespaces);
+    private sealed record PublishedIndex(CorpusIndexInfoDto Info, IReadOnlyList<NetHackWikiNamespaceDto> Namespaces, IReadOnlyList<string> Titles);
 
     /// <summary>What one pass read and left out; every member is safe to call from the parallel chunks.</summary>
     private sealed class PassStats
@@ -588,13 +623,15 @@ public class NetHackWikiService : IDisposable
         private readonly Dictionary<string, int> _namespaces = new(StringComparer.Ordinal);
         private readonly List<SkippedCorpusFileDto> _skippedBySize = new();
         private readonly List<FailedCorpusFileDto> _failedFiles = new();
+        private readonly List<string> _titles = new();
         private long _totalBytes;
 
-        public void AddIndexed(string ns, long bytes)
+        public void AddIndexed(string ns, string title, long bytes)
         {
             lock (_lock)
             {
                 _namespaces[ns] = _namespaces.TryGetValue(ns, out int count) ? count + 1 : 1;
+                _titles.Add(title);
                 _totalBytes += bytes;
             }
         }
@@ -643,7 +680,7 @@ public class NetHackWikiService : IDisposable
                     .ThenBy(n => n.Key, StringComparer.Ordinal)
                     .Select(n => new NetHackWikiNamespaceDto(n.Key, n.Value))
                     .ToList();
-                return new PublishedIndex(info, namespaces);
+                return new PublishedIndex(info, namespaces, WikiArticlePage.Sorted(_titles));
             }
         }
 
@@ -667,6 +704,9 @@ public class NetHackWikiService : IDisposable
 
 /// <summary>The number of indexed articles in one NetHack wiki namespace (the front matter's <c>namespace</c>, lowercased; <c>article</c> when absent).</summary>
 public sealed record NetHackWikiNamespaceDto(string Namespace, int Articles);
+
+/// <summary>What the published NetHack wiki index holds, as <c>wiki_overview</c> reports it.</summary>
+public sealed record NetHackWikiOverview(int FileCount, IReadOnlyList<NetHackWikiNamespaceDto> Namespaces, DateTime IndexedAtUtc);
 
 /// <summary>The NetHack wiki's corpus status: the common part, its namespaces and the converter's last report.</summary>
 public sealed class NetHackWikiStatusDto : CorpusIndexStatusDto

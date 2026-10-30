@@ -36,6 +36,8 @@ public sealed class ExportedChatMessage
     public int? InputTokens { get; set; }
     public int? OutputTokens { get; set; }
     public decimal? EstimatedCost { get; set; }
+    public string? TurnNoticeCode { get; set; }
+    public string? TurnNoticeFactsJson { get; set; }
     public List<ExportedToolCall> ToolCalls { get; set; } = new();
     public List<ExportedAttachment> Attachments { get; set; } = new();
 }
@@ -202,7 +204,9 @@ public static class ChatDataExport
                     ModelUsed = message.ModelUsed,
                     InputTokens = message.InputTokens,
                     OutputTokens = message.OutputTokens,
-                    EstimatedCost = message.EstimatedCost
+                    EstimatedCost = message.EstimatedCost,
+                    TurnNoticeCode = message.TurnNoticeCode,
+                    TurnNoticeFactsJson = message.TurnNoticeFactsJson
                 };
 
                 foreach (var call in toolCallsByMessage[message.Id])

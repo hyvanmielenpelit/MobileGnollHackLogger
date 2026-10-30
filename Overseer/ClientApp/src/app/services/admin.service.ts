@@ -1129,6 +1129,95 @@ export interface AiTelemetryUserModelsQuery {
   userId: string;
 }
 
+export type ChatTurnLimitSeverity = 'warning' | 'error';
+
+/** Whether an administrator can read a limit event's prompt, or why not. */
+export type ChatTurnLimitPromptState = 'available' | 'confidential' | 'incognito' | 'deleted';
+
+/** One limit code's hits in a date range. */
+export interface ChatTurnLimitCodeCount {
+  code: string;
+  hits: number;
+  users: number;
+  lastSeenUtc: string;
+}
+
+/** One severity's hits in a date range. */
+export interface ChatTurnLimitSeverityCount {
+  severity: ChatTurnLimitSeverity;
+  hits: number;
+}
+
+export interface ChatTurnLimitSummary {
+  totalHits: number;
+  turnsWithoutAnswer: number;
+  usersAffected: number;
+  byCode: ChatTurnLimitCodeCount[];
+  bySeverity: ChatTurnLimitSeverityCount[];
+}
+
+/** One limit or provider failure that ended or cut a chat turn. Numbers and codes only, never content. */
+export interface ChatTurnLimitEventSummary {
+  id: number;
+  occurredUtc: string;
+  code: string;
+  severity: ChatTurnLimitSeverity;
+  userId: string | null;
+  userName: string | null;
+  wasConfidential: boolean;
+  wasEphemeral: boolean;
+  keySource: 'system' | 'user';
+  provider: string | null;
+  requestedModelId: string | null;
+  modelDisplayName: string | null;
+  limitValue: number | null;
+  observedValue: number | null;
+  totalDurationMs: number | null;
+  /** Includes sub-agent tool calls. */
+  toolCallCount: number;
+}
+
+export interface ChatTurnLimitEventDetail extends ChatTurnLimitEventSummary {
+  thinkingLevel: string | null;
+  iterationsUsed: number;
+  modelCallCount: number;
+  toolCallsBlocked: number;
+  toolTimeMs: number;
+  permitWaitMs: number;
+  backoffWaitMs: number;
+  retryAttemptCount: number;
+  totalPromptTokens: number;
+  outputTokens: number;
+  estimatedCost: number | null;
+  providerFinishReason: string | null;
+  providerErrorCode: string | null;
+  httpStatus: number | null;
+  assistantPhase: string | null;
+  chatSessionId: number | null;
+  promptState: ChatTurnLimitPromptState;
+}
+
+export interface ChatTurnLimitEventsQuery {
+  startDate?: string;
+  endDate?: string;
+  keys?: AiTelemetryKeySource;
+  codes?: string[];
+  severities?: string[];
+  search?: string;
+  skip?: number;
+  take?: number;
+}
+
+export interface ChatTurnLimitEventsPage {
+  totalCount: number;
+  items: ChatTurnLimitEventSummary[];
+}
+
+export interface ChatTurnLimitPrompt {
+  text: string;
+  truncated: boolean;
+}
+
 export interface AiGovernorKeyStatusDto {
   credentialKey: string;
   isRateLimited: boolean;
@@ -1172,6 +1261,7 @@ export interface RetentionPolicy {
   pruneSecurityEventDays: number;
   pruneSnapshotQuarantineDays: number;
   pruneChatProviderAttemptDays: number;
+  pruneChatTurnLimitEventDays: number;
   maintenanceHistoryRetentionDays: number;
   maintenanceRunHourUtc: number;
   enableStorageWarningEmails: boolean;
@@ -1246,6 +1336,10 @@ export interface DatabaseStorageMetrics {
   chatProviderAttemptOldestUtc?: string;
   chatProviderAttemptPrunableCount: number;
 
+  chatTurnLimitEventRowCount: number;
+  chatTurnLimitEventOldestUtc?: string;
+  chatTurnLimitEventPrunableCount: number;
+
   expiredTrashSessionCount: number;
   prunableToolCallCount: number;
   prunableBenchmarkToolCallCount: number;
@@ -1274,6 +1368,7 @@ export interface MaintenanceRequest {
   securityEventPruneDays?: number;
   /** Granular prune only; the full pass reads the configured window. */
   chatProviderAttemptPruneDays?: number;
+  chatTurnLimitEventPruneDays?: number;
 }
 
 export interface MaintenanceResult {
@@ -1295,6 +1390,7 @@ export interface MaintenanceResult {
   prunedAiErrorLogCount: number;
   prunedSecurityEventCount: number;
   prunedChatProviderAttemptCount: number;
+  prunedChatTurnLimitEventCount: number;
   elapsedMilliseconds: number;
   /** "Scheduled", "Startup", "Manual", or "Manual:<Action>". */
   trigger: string;
@@ -1321,6 +1417,7 @@ export interface MaintenanceRunLog {
   prunedAiErrorLogCount: number;
   prunedSecurityEventCount: number;
   prunedChatProviderAttemptCount: number;
+  prunedChatTurnLimitEventCount: number;
   deletedDiskFolderCount: number;
   deletedDiskFileCount: number;
   sweptOrphanFolderCount: number;
@@ -1622,6 +1719,10 @@ export class AdminService {
     return this.http.post<MaintenanceResult>('/api/admin/maintenance/prune-chat-provider-attempts', request || {});
   }
 
+  pruneChatTurnLimitEvents(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/prune-chat-turn-limit-events', request || {});
+  }
+
   sweepOrphans(request?: MaintenanceRequest): Observable<MaintenanceResult> {
     return this.http.post<MaintenanceResult>('/api/admin/maintenance/sweep-orphans', request || {});
   }
@@ -1744,5 +1845,37 @@ export class AdminService {
     params.keys = query.keys;
     params.userId = query.userId;
     return this.http.get<AiTelemetryUserModelsDto>('/api/Admin/ai-telemetry/user-models', { params });
+  }
+
+  getChatTurnLimitSummary(startDate?: string, endDate?: string, keys?: AiTelemetryKeySource): Observable<ChatTurnLimitSummary> {
+    const params: any = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    if (keys) params.keys = keys;
+    return this.http.get<ChatTurnLimitSummary>('/api/Admin/ai-telemetry/limits/summary', { params });
+  }
+
+  /** Newest first. */
+  getChatTurnLimitEvents(query: ChatTurnLimitEventsQuery): Observable<ChatTurnLimitEventsPage> {
+    const params: any = {};
+    if (query.startDate) params.startDate = query.startDate;
+    if (query.endDate) params.endDate = query.endDate;
+    if (query.keys) params.keys = query.keys;
+    if (query.codes?.length) params.codes = query.codes.join(',');
+    if (query.severities?.length) params.severities = query.severities.join(',');
+    if (query.search) params.search = query.search;
+    if (query.skip) params.skip = query.skip;
+    if (query.take) params.take = query.take;
+    return this.http.get<ChatTurnLimitEventsPage>('/api/Admin/ai-telemetry/limits', { params });
+  }
+
+  /** 404 for an unknown id. */
+  getChatTurnLimitEvent(id: number): Observable<ChatTurnLimitEventDetail> {
+    return this.http.get<ChatTurnLimitEventDetail>(`/api/Admin/ai-telemetry/limits/${id}`);
+  }
+
+  /** Writes an access-journal row. 403 for a confidential chat, 404 when the message is gone. */
+  readChatTurnLimitPrompt(id: number): Observable<ChatTurnLimitPrompt> {
+    return this.http.post<ChatTurnLimitPrompt>(`/api/Admin/ai-telemetry/limits/${id}/prompt`, {});
   }
 }

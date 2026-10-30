@@ -659,6 +659,13 @@ public class GoogleProvider : IAiProvider
         messageHistory.Add(new { role = "user", parts = new List<object> { textPart } });
     }
 
+    public void AppendAssistantTextToHistory(List<object> messageHistory, string visibleText, List<JsonElement>? providerHistoryItems = null)
+    {
+        if (string.IsNullOrWhiteSpace(visibleText)) return;
+
+        messageHistory.Add(new { role = "model", parts = new List<object> { new { text = visibleText } } });
+    }
+
     public bool TryRewriteToolResult(List<object> messageHistory, string toolCallId, string replacementText)
     {
         for (int i = 0; i < messageHistory.Count; i++)

@@ -698,6 +698,16 @@ version the changelog cannot tell apart is marked conservative.
 | 54 | CI, G | Graders told when source references are disallowed; get_constants reads brace-on-next-line enums and the source miss probe is whole-word; streaming-rate bounds and report fixes. |
 | 55 | G | Source-location grading rule names files and paths; claim verifier retries a provider error once; 'inverts' counts as a stated defect and a charge. |
 | 56 | PA | Provider attempt ledger and failure attribution; answers ended by our time budget, governor or network are Failed, which the synthesis lists as excluded like ProviderError and which never carry text to grade. |
+| 64 | CI, G | wiki_overview joins the allowed tools, so the grader's tool line and the claim verifier's tool set change; wiki searches fail clearly on a query with no searchable words; limit warnings and one recovery call for an unfinished answer; the caps are the chat's defaults (150 tool calls, 22 rounds, 48 model calls, 1,800 s); pre-injected wiki context under Production; web search stays off. |
+
+`HarnessImpactLedger` itself is the complete list; versions 57 to 63 are classified there.
+
+**Harness 64 is one dated event with several keys.** `ToolGuidesSha256`, `CandidatePromptOptionsJson`
+(`hasWikiContext`, under Production), `TotalModelCallCapsJson`, `QuestionTimeoutSecondsJson`,
+`MaxToolCallsPerQuestionUsed` and `HarnessVersion` all move at one date; `ToolIterationCapsJson` stays at 22. They
+were bundled so that comparability breaks once. A difference across that date is the chat's system changing as well
+as the model, and with a question timeout of 1,800 s an answer that used to end on our time budget can now run on.
+The chat itself got the warnings, the recovery and the tool in the same round.
 
 **Same-stamp cases.** Harness 12 carries a same-stamp impact of CI, CA, G and S, and harness 18 of
 CA: runs stamped with one of those versions may still differ in those respects, so even two runs with

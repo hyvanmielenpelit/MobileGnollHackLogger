@@ -257,7 +257,6 @@ Wielding a lit torch increases visibility in dark areas.
 
     [Theory]
     [InlineData("wiki_search", "query", "gnoll AND (")]
-    [InlineData("wiki_search", "query", "*")]
     [InlineData("wiki_view", "article", "gnoll AND (")]
     [InlineData("wiki_view", "article", "*")]
     [InlineData("monster_lookup", "name", "gnoll AND (")]
@@ -284,6 +283,40 @@ Wielding a lit torch increases visibility in dark areas.
         Assert.Null(result.ErrorMessage);
         Assert.NotNull(result.Content);
         Assert.DoesNotContain("Error:", result.Content);
+    }
+
+    [Theory]
+    [InlineData("*")]
+    [InlineData("the")]
+    [InlineData("the of and")]
+    public async Task WikiSearchTool_NoSearchableWords_FailsAndPointsAtTheOverview(string query)
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiSearchTool(service, BuildConfig());
+
+        var jsonParams = JsonDocument.Parse(JsonSerializer.Serialize(new { query })).RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(
+            $"'{query}' contains no searchable words. wiki_search matches whole words, has no wildcards and ignores very common words such as \"the\". To count or list articles, use wiki_overview.",
+            result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task WikiSearchTool_EmptyQuery_PointsAtTheOverview()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiSearchTool(service, BuildConfig());
+
+        var jsonParams = JsonDocument.Parse("{\"query\": \"\"}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("Missing query parameter", result.ErrorMessage);
+        Assert.Contains("wiki_overview", result.ErrorMessage);
     }
 
     [Fact]

@@ -65,9 +65,20 @@ when it was not.
   (`SnapshotGuardQuarantine`, `data-privacy-framework.md` § 8.7): the game text a guard finding was
   about, sealed under the content keyring in a row of its own beside the event, never on the event row.
 - **Telemetry rows outside the four chat tables hold no content either.** `UserKeyAiUsageLog`,
-  `ChatProviderAttempt` and `OverseerDailyActivity` (`ai-telemetry.md`) are not written for an incognito
-  turn on a user's own key, and incognito activity is counted only on an anonymous daily row; each is
-  disclosed in the privacy notice.
+  `ChatProviderAttempt`, `ChatTurnLimitEvent` and `OverseerDailyActivity` (`ai-telemetry.md`) are not written
+  for an incognito turn on a user's own key, and incognito activity is counted only on an anonymous daily row; each is
+  disclosed in the privacy notice. A `ChatTurnLimitEvent` on a system configuration's incognito turn names no chat or
+  message, and a purge clears those ids and keeps the row.
+- **A limit event's prompt is read on demand and journaled, never copied.** The event holds the id of the
+  user's message. `ChatTurnLimitQueryService.ReadPromptAsync` reads the live message and writes a
+  `ChatAccessAuditLog` row (`AdminReadLimitPrompt`), and **if `RecordAsync` returns false it returns no text**,
+  unlike every other caller, because the privacy notice promises that each read is recorded. A confidential session is
+  refused without decrypting anything, an incognito turn stored nothing, and a purged chat's prompt is gone. A copy on
+  the event would outlive the user's deletion. This read widens what an administrator can see, so the notice's
+  *Limit records* row, `data-privacy-framework.md` § 5.6 and this paragraph change together.
+- **A provider's error body is never stored.** It can echo prompt text. `ChatMessage.TurnNoticeFactsJson` and the
+  event row hold the HTTP status and a code restricted to `[A-Za-z0-9_.-]`; the bounded body reaches only a live
+  administrator's `adminFacts`, and the server log.
 
 **Why `GnollHackServer.Data/Privacy/` exists at all.** `MobileGnollHackLogger` and `Overseer`
 each reference only `GnollHackServer.Data`, and **neither references the other**. Account

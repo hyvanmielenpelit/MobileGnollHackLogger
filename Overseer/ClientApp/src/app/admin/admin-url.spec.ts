@@ -127,15 +127,18 @@ describe('admin URL scheme', () => {
         { tab: 'telemetry', subTab: 'users', canonical: ['/admin', 'telemetry', 'users'], isCanonical: true });
       expect(parseAdminPath('telemetry', 'groups')).toEqual(
         { tab: 'telemetry', subTab: 'groups', canonical: ['/admin', 'telemetry', 'groups'], isCanonical: true });
+      expect(parseAdminPath('telemetry', 'limits')).toEqual(
+        { tab: 'telemetry', subTab: 'limits', canonical: ['/admin', 'telemetry', 'limits'], isCanonical: true });
       expect(parseAdminPath('telemetry', 'bogus')).toEqual(
         { tab: 'telemetry', subTab: 'summary', canonical: ['/admin', 'telemetry'], isCanonical: false });
       expect(adminCommands('telemetry', 'summary')).toEqual(['/admin', 'telemetry']);
       expect(adminCommands('telemetry', 'users')).toEqual(['/admin', 'telemetry', 'users']);
       expect(adminCommands('telemetry', 'groups')).toEqual(['/admin', 'telemetry', 'groups']);
+      expect(adminCommands('telemetry', 'limits')).toEqual(['/admin', 'telemetry', 'limits']);
     });
 
-    it('has four AI Telemetry sub-tabs and Feedback as a tab of its own at /admin/feedback', () => {
-      expect(ADMIN_SUBTAB_SLUGS.telemetry!.map(([id]) => id)).toEqual(['summary', 'models', 'users', 'groups']);
+    it('has five AI Telemetry sub-tabs and Feedback as a tab of its own at /admin/feedback', () => {
+      expect(ADMIN_SUBTAB_SLUGS.telemetry!.map(([id]) => id)).toEqual(['summary', 'models', 'users', 'groups', 'limits']);
       expect(adminCommands('feedback')).toEqual(['/admin', 'feedback']);
       expect(parseAdminPath('feedback', null)).toEqual(
         { tab: 'feedback', subTab: 'overseer', canonical: ['/admin', 'feedback'], isCanonical: true });
@@ -250,6 +253,7 @@ describe('admin URL scheme', () => {
       expect(legacy({ tab: 'telemetry', subtab: 'users' })).toEqual(['/admin', 'telemetry', 'users']);
       expect(legacy({ tab: 'telemetry', subtab: 'models' })).toEqual(['/admin', 'telemetry', 'models']);
       expect(legacy({ tab: 'telemetry', subtab: 'groups' })).toEqual(['/admin', 'telemetry', 'groups']);
+      expect(legacy({ tab: 'telemetry', subtab: 'limits' })).toEqual(['/admin', 'telemetry', 'limits']);
       expect(legacy({ tab: 'telemetry', subtab: 'bogus' })).toEqual(['/admin', 'telemetry']);
     });
 

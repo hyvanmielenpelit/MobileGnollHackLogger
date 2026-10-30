@@ -221,81 +221,34 @@ public class BenchmarkScoringTests
     }
 
     [Theory]
-    [InlineData(1)]
-    [InlineData(25)]
-    [InlineData(50)]
-    [InlineData(70)]
-    [InlineData(100)]
-    public void Speed_FloorIsUnreachableWithinThePerQuestionTimeout(int difficulty)
+    [InlineData(BenchmarkDifficultyBands.MinDifficulty, 615)]
+    [InlineData(BenchmarkDifficultyBands.SimpleMax + 1, 828)]
+    [InlineData(BenchmarkDifficultyBands.IntermediateMax + 1, 1041)]
+    public void Speed_FloorOfEachBandsLowestDifficulty_IsPinned(int lowestDifficulty, int expectedFloorSeconds)
     {
-        // Invariant 1 of the calibration: an answer that did not time out must always receive a
-        // distinguishing score. Violating this is what made the old constants useless — they
-        // floored at ~78 s against a 300 s timeout.
-        //
-        // The timeout is banded, so each difficulty is checked against the timeout that actually
-        // applies to it rather than against one flat number.
-        var band = BenchmarkDifficultyBands.BandOf(difficulty);
-        long timeoutMs = BenchmarkService.DefaultQuestionTimeoutSeconds(band) * 1000L;
-
-        int score = BenchmarkScoring.Speed(timeoutMs, difficulty);
-
-        Assert.True(score > 1,
-            $"difficulty {difficulty} floored at its band's timeout ({score}); the metric would saturate");
-    }
-
-    [Theory]
-    [InlineData(BenchmarkDifficulty.Simple, BenchmarkDifficultyBands.MinDifficulty)]
-    [InlineData(BenchmarkDifficulty.Intermediate, BenchmarkDifficultyBands.SimpleMax + 1)]
-    [InlineData(BenchmarkDifficulty.Advanced, BenchmarkDifficultyBands.IntermediateMax + 1)]
-    public void QuestionTimeoutBands_StayBelowTheirOwnSpeedFloor(BenchmarkDifficulty band, int lowestDifficulty)
-    {
-        // The binding case inside a band is its *lowest* difficulty: Target(q) grows with
-        // difficulty, so the smallest target in a band reaches the floor first. Documented in
-        // BenchmarkScoring's calibration comment as ~615 s / ~828 s / ~1,041 s against timeouts of
-        // 420 s / 600 s / 720 s.
-        //
-        // This test is the reason the timeout is banded rather than raised flat: a flat 720 s,
-        // which an Advanced question needs to spend 45 tool calls over 22 rounds, would put the
-        // Simple band's floor 105 s inside the timeout. It fails on any edit to either the speed
-        // constants or the timeout bands that breaks the coupling, in either direction.
+        // The binding case inside a band is its *lowest* difficulty: Target(q) grows with difficulty,
+        // so the smallest target in a band reaches the floor first.
         var constants = BenchmarkScoringConstants.Default;
-        Assert.Equal(band, BenchmarkDifficultyBands.BandOf(lowestDifficulty));
 
         // Speed = 100 - k * log2(t / Target) reaches 1 at t = Target * 2^(99/k).
         double targetMs = BenchmarkScoring.EffectiveSpeedTargetMs(lowestDifficulty, constants);
         double floorSeconds = targetMs * Math.Pow(2.0, 99.0 / constants.SpeedDecayK) / 1000.0;
-        int timeoutSeconds = BenchmarkService.DefaultQuestionTimeoutSeconds(band);
 
-        Assert.True(floorSeconds > timeoutSeconds,
-            $"{band}: the speed floor at difficulty {lowestDifficulty} is {floorSeconds:F0} s, " +
-            $"inside the band's {timeoutSeconds} s timeout — the Speed Index would flatten");
+        Assert.InRange(floorSeconds, expectedFloorSeconds - 2, expectedFloorSeconds + 2);
     }
 
-    [Fact]
-    public void PerQuestionCaps_AreOrderedSoTheToolBudgetBindsFirst()
+    [Theory]
+    [InlineData(BenchmarkDifficultyBands.MinDifficulty, 615)]
+    [InlineData(BenchmarkDifficultyBands.SimpleMax + 1, 828)]
+    [InlineData(BenchmarkDifficultyBands.IntermediateMax + 1, 1041)]
+    public void Speed_AnAnswerSlowerThanItsFloor_ScoresOne(int difficulty, int floorSeconds)
     {
-        // Three caps can stop a question, and only one of them explains itself to a reader. The
-        // tool call budget blocks further calls, flags the answer ToolBudgetExhausted, and is
-        // reported; the iteration cap yields a terse "Tool call limit reached"; the model-call
-        // cap is a runaway-loop net that leaves only a debug line. So the budget must be the one
-        // that normally binds.
-        //
-        // A [Fact] rather than a [Theory] since harness 13: the three resource caps are flat, so there
-        // is one ordering to check rather than one per difficulty band.
-        int budget = BenchmarkService.DefaultToolCallBudget();
-        int iterations = BenchmarkService.DefaultToolIterations();
-        int modelCalls = BenchmarkService.DefaultTotalModelCalls();
+        // The question timeout is the chat's, above every floor: an answer slower than its floor is
+        // still an answer a user received, and it scores 1 on speed.
+        Assert.True(BenchmarkService.DefaultQuestionTimeoutSeconds() > floorSeconds);
 
-        // An iteration consumes one model call, plus one more for the forced tool-free final
-        // turn. Anything tighter makes the safety net fire on a healthy question.
-        Assert.True(modelCalls > iterations + 1,
-            $"{modelCalls} model calls cannot cover {iterations} iterations plus a final turn");
-
-        // At the 2026-09-03 run's saturated batching rate of roughly three calls per round, this
-        // leaves the budget reachable; at two per round it is reachable exactly.
-        Assert.True(iterations >= budget / 3,
-            $"{iterations} iterations cannot spend a {budget}-call budget, so the " +
-            "iteration cap would bind before the budget it exists to serve");
+        Assert.Equal(1, BenchmarkScoring.Speed((floorSeconds + 5) * 1000L, difficulty));
+        Assert.True(BenchmarkScoring.Speed((floorSeconds - 30) * 1000L, difficulty) > 1);
     }
 
     [Fact]

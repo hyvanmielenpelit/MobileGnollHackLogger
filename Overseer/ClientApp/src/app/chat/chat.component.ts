@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef, HostListener, NgZone, AfterViewInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall, ChatContextUsage, ChatSessionStateResponse, PrivateBadge, SnapshotRefusal } from '../services/chat.service';
+import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall, ChatContextUsage, ChatSessionStateResponse, ChatTurnNotice, ChatTurnNoticeAction, PrivateBadge, SnapshotRefusal } from '../services/chat.service';
 import { AuthService, AuthUser, hasTermsStatus, needsTermsAcceptance } from '../services/auth.service';
 import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule, NavigationEnd, NavigationStart } from '@angular/router';
@@ -17,6 +17,7 @@ import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '.
 import { ModelAvailabilityNoticeComponent } from '../shared/model-availability/model-availability-notice.component';
 import { ModelResolutionDialogComponent } from '../shared/model-resolution-dialog/model-resolution-dialog.component';
 import { TermsAcceptedEvent, TermsDialogComponent } from '../shared/terms-dialog/terms-dialog.component';
+import { TurnNoticeComponent } from './turn-notice/turn-notice.component';
 import { ModelResolutionResult, isResolutionDeletion, needsAttention } from '../shared/model-availability/model-availability';
 import { AttachedSnapshotService, type AttachedSnapshotInfo } from '../services/attached-snapshot.service';
 import { KatexLoaderService } from '../services/katex-loader.service';
@@ -61,7 +62,7 @@ export interface AttachmentExcerptNotice {
 
 @Component({
     selector: 'app-chat',
-    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent, ProviderBadgeComponent, ModelPickerComponent, ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent, TermsDialogComponent],
+    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent, ProviderBadgeComponent, ModelPickerComponent, ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent, TermsDialogComponent, TurnNoticeComponent],
     styleUrl: './chat.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './chat.component.html'
@@ -87,6 +88,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'source_code_search': 'Searching GnollHack source code',
     'source_code_view': 'Viewing GnollHack source code',
     'wiki_search': 'Searching GnollHack Wiki',
+    'wiki_overview': 'Wiki Overview',
     'list_indexed_files': 'Listing GnollHack source files',
     'get_constants': 'Searching GnollHack constants',
     'get_knowledge_article': 'Searching knowledge base',
@@ -531,6 +533,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   private turnModelKey: string | null = null;
   /** Whether the turn in progress reported an error; a turn that finishes without one clears `modelUnavailableNotice`. */
   private currentTurnFailed = false;
+  /** The live turn's notice, until the message it belongs to is pushed. */
+  currentTurnNotice: ChatTurnNotice | null = null;
+  /** The text of the chat page's two always-present live regions: `error` severity uses the alert one. */
+  turnNoticeStatusAnnouncement = '';
+  turnNoticeAlertAnnouncement = '';
+  private static readonly CONTINUE_PROMPT = 'Please continue.';
 
   /** Why the composer refuses to send, or null when it may; an administrator's block wins over the Terms. */
   get sendRefusal(): string | null {
@@ -2269,6 +2277,40 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
          this.realContentTimeout = null;
       }
       this.cdr.detectChanges();
+    } else if (evt.type === 'turn_notice') {
+      const notice = ChatComponent.readTurnNotice(ChatComponent.parseEventJson(evt.data));
+      if (!notice) {
+        this.debugService.log('[Frontend] Ignored a turn_notice event of an unexpected shape.');
+        return;
+      }
+      /* A turn can reach its notice without a chunk on this page, and done only pushes while streaming. */
+      if (!this.isStreaming) {
+        this.resetAvatarState();
+        this.isStreaming = true;
+      }
+      this.currentTurnNotice = notice;
+      if (notice.severity === 'error') {
+        this.currentTurnFailed = true;
+      }
+      /* Events replayed into a reopened chat are history, and history is not announced. */
+      if (!this.suspendStreamRender) {
+        const announcement = `${notice.title}. ${notice.message} ${notice.advice}`;
+        if (notice.severity === 'error') {
+          this.turnNoticeAlertAnnouncement = announcement;
+        } else {
+          this.turnNoticeStatusAnnouncement = announcement;
+        }
+      }
+      this.flushPendingChunkBuffer();
+      this.flushStreamRender();
+      this.showSpinner = false;
+      this.hasRealContent = true;
+      if (this.realContentTimeout) {
+         clearTimeout(this.realContentTimeout);
+         this.realContentTimeout = null;
+      }
+      this.cdr.detectChanges();
+      this.scrollToBottomClamped(false);
     } else if (evt.type === 'tool_start') {
       try {
         // Close any active thinking div
@@ -2335,8 +2377,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.scrollToBottomClamped(false);
       } catch(e) {}
     } else if (evt.type === 'tool_error') {
+      const toolInfo: any = ChatComponent.parseEventJson(evt.data);
+      if (!toolInfo || typeof toolInfo !== 'object') {
+        /* Plain text is about the whole run, not one call, so there is no card to put it on. */
+        this.debugService.log(`[Backend] tool_error: ${evt.data}`);
+        return;
+      }
       try {
-        const toolInfo = JSON.parse(evt.data);
         const tc = this.streamingToolCalls.find(t => t.id === toolInfo.id && t.status === 'running');
         if (tc) {
           tc.status = toolInfo.status || 'error';
@@ -2447,7 +2494,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             estimatedCost: this.liveCost,
             isOperatorCost: this.liveIsOperatorCost,
             operatorCost: this.liveOperatorCost,
-            subAgentCost: this.liveSubAgentCost
+            subAgentCost: this.liveSubAgentCost,
+            turnNotice: this.currentTurnNotice
           });
 
           // Fold only here, on normal completion. Cancel and error paths deliberately do not
@@ -2466,6 +2514,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.liveIsOperatorCost = false;
     this.liveOperatorCost = null;
     this.liveSubAgentCost = null;
+          this.currentTurnNotice = null;
           this.totalDurationMs = null;
           this.showSpinner = false;
           this.currentStatusText = 'Generation complete.';
@@ -2874,6 +2923,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.liveIsOperatorCost = false;
     this.liveOperatorCost = null;
     this.liveSubAgentCost = null;
+    this.currentTurnNotice = null;
+    this.turnNoticeStatusAnnouncement = '';
+    this.turnNoticeAlertAnnouncement = '';
     this.totalDurationMs = null;
     this.contextUsage = null;
     this.hasOngoingGeneration = false;
@@ -3977,6 +4029,56 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return false;
   }
 
+  /** A message that holds nothing but its notice: no empty answer body and nothing to copy. */
+  isNoticeOnlyMessage(msg: ChatMessage): boolean {
+    return !!msg.turnNotice && !msg.content?.trim();
+  }
+
+  /** Whether the notice of the message at `index` offers its action. */
+  turnNoticeActionAvailable(index: number): boolean {
+    const action = this.messages[index]?.turnNotice?.action;
+    if (!action || !this.isLastAssistantMessage(index) || this.hasOngoingGeneration) return false;
+    if (action === 'new_chat') return true;
+    if (this.sendRefusal) return false;
+    return action === 'continue' || (action === 'try_again' && this.turnNoticeRetryText(index) !== null);
+  }
+
+  runTurnNoticeAction(index: number): void {
+    if (!this.turnNoticeActionAvailable(index)) return;
+    const action = this.messages[index].turnNotice!.action;
+    if (action === 'new_chat') {
+      this.navigateToNewSession();
+    } else if (action === 'continue') {
+      this.sendKeepingComposer(ChatComponent.CONTINUE_PROMPT);
+    } else if (action === 'try_again') {
+      this.sendKeepingComposer(this.turnNoticeRetryText(index)!);
+    }
+  }
+
+  /** The user message the assistant message at `index` answers, when it can be sent again as text alone. */
+  private turnNoticeRetryText(index: number): string | null {
+    for (let i = index - 1; i >= 0; i--) {
+      const m = this.messages[i];
+      if (m.role === 'assistant') return null;
+      if (m.role === 'user') return m.attachments?.length || !m.content?.trim() ? null : m.content;
+    }
+    return null;
+  }
+
+  /** Sends `text` as a turn; what the composer holds stays there for the user's next message. */
+  private sendKeepingComposer(text: string): void {
+    const draft = this.currentInput;
+    const attachments = this.pendingAttachments;
+    this.currentInput = text;
+    this.pendingAttachments = [];
+    void this.sendMessage();
+    this.currentInput = draft;
+    this.pendingAttachments = attachments;
+    if (draft) {
+      this.saveDraft();
+    }
+  }
+
   async sendMessage() {
     if (this.sendRefusal) return;
     const message = this.sanitizeInput(this.currentInput).trim();
@@ -4058,6 +4160,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.liveOperatorCost = null;
     this.liveSubAgentCost = null;
     this.totalDurationMs = null;
+    this.currentTurnNotice = null;
+    this.turnNoticeStatusAnnouncement = '';
+    this.turnNoticeAlertAnnouncement = '';
     this.lastSeenSeqNo = -1; // [NEW] Reset sequence tracker for new generation
 
     this.focusPromptInput();
@@ -4185,6 +4290,26 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     const v = value as { code?: unknown; message?: unknown; occurredUtc?: unknown };
     if (typeof v.code !== 'string' || typeof v.message !== 'string' || v.message.length === 0) return null;
     return { code: v.code, message: v.message, occurredUtc: typeof v.occurredUtc === 'string' ? v.occurredUtc : undefined };
+  }
+
+  /** A notice from a `turn_notice` event, or null for anything without a code, a severity, a title and a message. */
+  static readTurnNotice(value: unknown): ChatTurnNotice | null {
+    if (!value || typeof value !== 'object') return null;
+    const v = value as Record<string, unknown>;
+    if (typeof v['code'] !== 'string' || typeof v['title'] !== 'string' || typeof v['message'] !== 'string') return null;
+    if (v['severity'] !== 'warning' && v['severity'] !== 'error') return null;
+    const action = v['action'];
+    const facts = v['adminFacts'];
+    return {
+      code: v['code'],
+      severity: v['severity'] as ChatTurnNotice['severity'],
+      title: v['title'],
+      message: v['message'],
+      advice: typeof v['advice'] === 'string' ? v['advice'] : '',
+      action: action === 'try_again' || action === 'continue' || action === 'new_chat' ? action as ChatTurnNoticeAction : 'none',
+      reference: typeof v['reference'] === 'number' ? v['reference'] : null,
+      adminFacts: facts && typeof facts === 'object' && !Array.isArray(facts) ? facts as Record<string, unknown> : null
+    };
   }
 
   /** An event's JSON data, or null when it does not parse. */

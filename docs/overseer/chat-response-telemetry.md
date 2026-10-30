@@ -11,6 +11,7 @@ In the Overseer chat interface, assistant messages display operational telemetry
 1. **Response Timing**: TTFT (Time-to-First-Token) and Total Duration (e.g. `9s → 30s`).
 2. **Context Window Usage**: Real-time gauge and token usage of context window consumed.
 3. **Turn & Conversation Cost**: Per-message estimated cost, live streaming cost indicator, conversation total for loaded messages, and operator vs. user cost attribution.
+4. **Turn Notices**: Under the message, a notice when a limit or a provider failure ended or cut the turn (§ 6).
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -157,6 +158,8 @@ public long? CacheReadTokens { get; set; }
 public long? CacheCreationTokens { get; set; }
 public decimal? SubAgentEstimatedCost { get; set; }  // precision: (18, 8); the delegated runs' share of EstimatedCost
 public decimal? OperatorEstimatedCost { get; set; }  // precision: (18, 8); the operator-funded share of EstimatedCost
+public string? TurnNoticeCode { get; set; }          // the notice under this message, § 6
+public string? TurnNoticeFactsJson { get; set; }     // the numbers and sanitized codes behind it
 ```
 
 `SubAgentEstimatedCost` and `OperatorEstimatedCost` are **shares** of `EstimatedCost`, never
@@ -257,3 +260,42 @@ Timing follows a three-phase lifecycle:
 When `showContextWindowUsage` is enabled:
 - `ChatService` emits a `context` event containing `lastPromptTokens` and `contextWindowTokens`.
 - The chat footer renders a visual progress bar indicating percentage of the window consumed.
+
+---
+
+## 6. Turn Notices
+
+When a limit or a provider failure ends or cuts a chat turn, the user sees a notice under the assistant message: what happened and what to do, with no numbers, provider names, model output or raw errors. `ChatTurnNoticeCatalog` is the only place with this text, and it renders from the code at read time, so a wording fix also corrects old messages.
+
+| Code | Title | Action |
+|---|---|---|
+| `no_final_answer` | The Overseer stopped before answering | Try again |
+| `research_rounds`, `model_calls` | Research limit reached | Continue |
+| `tool_budget` | Research limit reached for this chat | New chat |
+| `answer_length` | Answer cut short | Continue |
+| `time_limit` | Time limit reached | Try again |
+| `provider_busy` | The AI service is busy | Try again |
+| `provider_overloaded` | The AI service is unavailable | Try again |
+| `provider_timeout` | The AI service did not respond | Try again |
+| `provider_error` | The AI service returned an error | Try again |
+| `connection_lost` | The connection to the AI service was lost | Try again |
+| `api_key_rejected` | The API key was rejected | None |
+| `api_key_balance` | The API key has no credit | None |
+
+`tool_output` has no notice: it is for administrators, on the Limits sub-tab. The two API key notices word themselves differently for the user's own key and a system model.
+
+**One notice per message.** All hits become event rows (`ai-telemetry.md` § 12c); the message shows the first of `api_key_*`, `time_limit`, `provider_*`, `connection_lost`, `no_final_answer`, `research_rounds`, `model_calls`, `tool_budget`, `answer_length`. Severity is `error` when the turn has no visible answer, otherwise `warning`. A `connection_lost` hit whose recovery call then produced an answer is marked `Recovered`: it still writes its event row, and the user sees no notice for it.
+
+**Persistence.** `ChatMessage.TurnNoticeCode` and `TurnNoticeFactsJson` hold the code and the numbers and sanitized codes behind it. They are plain text in every mode, like token counts, because they contain nothing the user typed or the model wrote, and the portability export carries them. `EphemeralSessionStore` keeps both for an incognito session. A turn with no answer stores empty `Content`; an assistant row with empty `Content` is not replayed to the model.
+
+**Streaming.** `ChatService` emits `turn_notice` last, after the message and the event rows are saved, with the JSON `{ code, severity, title, message, advice, action, reference, adminFacts }` in `Data`, the one field reconnect replay carries. The message projections in `ChatController` carry the same shape as `turnNotice`, so the notice survives a reload.
+
+**What each audience sees** (`ChatTurnNoticeDisclosure`):
+
+- **Everyone:** the catalog text, and the reference `L-<event id>` where a row exists.
+- **On their own API key:** for a provider failure, also the HTTP status and the sanitized provider code. The account is theirs, and neither is the provider's message.
+- **Administrators:** every stored fact, and, on a live turn only, the bounded provider error body. The body is never stored in `TurnNoticeFactsJson` or the event row, because a provider can echo prompt text; after a reload it is in the server log.
+
+**Provider errors do not reach the conversation.** In a chat turn (`AgentRunRequest.ReportTurnLimits`) a provider `error` event becomes a hit: its text goes into neither `Content`, the client nor later turns, and no event carries `Detail`. The exception is an `error` with an `ErrorCode` such as `model_unavailable`, whose text is already safe and which the composer notice reads. A timeout or a broken stream ends the loop normally, so the partial text, tool calls and costs are saved. A user's Stop adds no notice. Refusals before a turn runs (system-model quotas, the one-answer gate, the request rate limiter) stay as they are and are not limit events.
+
+**The notice card** (`app-turn-notice`) sits outside the message's Markdown, in every `showThoughtsAndTools` mode. Its one action shows only on the conversation's last assistant message and not while a turn runs: *Try again* resends the turn's user message and is left out when that message had attachments, *Continue* sends "Please continue.", *New chat* starts a new chat. Administrator facts are in a `<details>`. A live notice is announced through a status or alert region that is always on the page; the card has no live role, so loading a chat's history reads nothing aloud.

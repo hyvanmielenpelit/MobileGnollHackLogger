@@ -7,7 +7,7 @@ description: >-
   filter actually match against", or "is get_item_stats supposed to have no stats field".
   Covers, tool by tool: required and optional parameters, defaults and clamps and the
   config key each comes from, which corpus or service the tool reads, the shape of a
-  successful result, per-tool failure modes, which 16 tools Benchmark:AllowedTools
+  successful result, per-tool failure modes, which 17 tools Benchmark:AllowedTools
   permits, and how to tell a correct empty result from a broken one (a guard-message
   failure during indexing vs. an ordinary "not found" once indexed). This is the contract
   layer the diagnostic method in server_benchmark_tool_diagnostics checks a call against;

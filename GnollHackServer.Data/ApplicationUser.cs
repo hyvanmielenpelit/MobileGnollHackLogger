@@ -66,6 +66,7 @@ namespace MobileGnollHackLogger.Data
         public ICollection<UserSystemModelOrder>? SystemModelOrders { get; set; }
         public ICollection<UserKeyAiUsageLog>? UserKeyAiUsageLogs { get; set; }
         public ICollection<ChatProviderAttempt>? ChatProviderAttempts { get; set; }
+        public ICollection<ChatTurnLimitEvent>? ChatTurnLimitEvents { get; set; }
         public ICollection<OverseerDailyActivity>? DailyActivities { get; set; }
 
         public ApplicationUser() : base()

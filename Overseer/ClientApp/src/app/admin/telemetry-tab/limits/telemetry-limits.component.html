@@ -1,0 +1,187 @@
+<!-- The tab's Limits sub-tab panel holds this view; the Keys filter and date range are the tab's. -->
+@if (summaryError(); as message) {
+  <p class="gh-field-error tl-lim-summary-error" role="alert">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    <span>{{ message }}</span>
+  </p>
+}
+
+<ul class="tl-lim-summary" role="list" aria-label="Limit summary">
+  @for (stat of stats; track stat.id) {
+    <li class="tl-lim-stat" [attr.data-card]="stat.id">
+      <h4 class="tl-lim-stat-title">{{ stat.title }}</h4>
+      <p class="tl-lim-stat-value">{{ stat.value }}</p>
+    </li>
+  }
+</ul>
+
+@if (summary()?.byCode?.length) {
+  <div class="gh-datatable-scroll tl-lim-by-code">
+    <table class="gh-table">
+      <caption>By limit</caption>
+      <thead>
+        <tr>
+          <th scope="col">Limit</th>
+          <th scope="col" class="tl-lim-num">Hits</th>
+          <th scope="col" class="tl-lim-num">Users</th>
+          <th scope="col">Last seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of summary()!.byCode; track row.code) {
+          <tr>
+            <th scope="row">
+              <!-- Sets the Reason filter of the list below. -->
+              <button type="button" class="btn-link tl-lim-code-select" [attr.data-code]="row.code"
+                      [attr.aria-label]="'Show only ' + codeLabel(row.code)"
+                      (click)="selectCode(row.code)">{{ codeLabel(row.code) }}</button>
+            </th>
+            <td class="tl-lim-num">{{ formatInteger(row.hits) }}</td>
+            <td class="tl-lim-num">{{ formatInteger(row.users) }}</td>
+            <td><time [attr.datetime]="row.lastSeenUtc">{{ timeText(row.lastSeenUtc) }}</time></td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+<section class="tl-lim-events" aria-labelledby="tl-lim-events-title">
+  <div class="tl-lim-events-head">
+    <h4 class="gh-section-title" id="tl-lim-events-title">Limit hits</h4>
+    <!-- The list's one polite live region. -->
+    <p class="gh-list-status tl-lim-status" id="tl-lim-status" role="status">{{ listStatus }}</p>
+  </div>
+
+  <!-- Search, the facets and the active filters. -->
+  <search class="gh-filter-bar tl-lim-filter-bar">
+    <div class="gh-filter-bar-row">
+      <div class="gh-search-field tl-lim-search">
+        <label class="visually-hidden" for="tl-lim-search">Search limit hits by user name</label>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="search" class="gh-input" id="tl-lim-search" autocomplete="off" placeholder="Search user name"
+               [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+      </div>
+      @if (showCodeFacet || showSeverityFacet) {
+        <div class="gh-facet-row">
+          @if (showCodeFacet) {
+            <app-filter-facet facetId="tl-lim-facet-code" label="Reason" noun="hits"
+                              [options]="codeOptions" [selected]="selectedCodes"
+                              (selectedChange)="onCodeChange($event)"></app-filter-facet>
+          }
+          @if (showSeverityFacet) {
+            <app-filter-facet facetId="tl-lim-facet-severity" label="Severity" noun="hits"
+                              [options]="severityOptions" [selected]="selectedSeverities"
+                              (selectedChange)="onSeverityChange($event)"></app-filter-facet>
+          }
+        </div>
+      }
+    </div>
+
+    @if (chips.length > 0) {
+      <div class="gh-filter-bar-row">
+        <ul class="gh-filter-chips tl-lim-chips" role="list" aria-label="Active filters">
+          @for (chip of chips; track chip.key) {
+            <li>
+              <button type="button" class="gh-filter-chip"
+                      [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                      (click)="removeChip(chip)">
+                <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </li>
+          }
+        </ul>
+        <button type="button" class="gh-filter-clear tl-lim-clear-filters" (click)="clearFilters()">Clear all</button>
+      </div>
+    }
+  </search>
+
+  @if (eventsError(); as message) {
+    <p class="gh-field-error tl-lim-events-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ message }}</span>
+    </p>
+  } @else if (eventsLoaded() && events().length === 0) {
+    @if (hasFilters) {
+      <p class="tl-lim-empty">No limit hits match these filters.
+        <button type="button" class="gh-filter-clear" (click)="clearFilters()">Clear all filters</button>
+      </p>
+    } @else {
+      <p class="tl-lim-empty">No limit hits in this range.</p>
+    }
+  } @else if (events().length > 0) {
+    <ul class="tl-lim-cards" role="list" aria-labelledby="tl-lim-events-title">
+      @for (event of events(); track event.id) {
+        @let user = userLabel(event);
+        @let reason = codeLabel(event.code);
+        @let reference = referenceText(event.id);
+        @let stoppedAt = stoppedAtText(event);
+        <li class="tl-lim-item">
+          <article class="tl-lim-card" [attr.data-event-id]="event.id" [attr.data-code]="event.code"
+                   [attr.aria-labelledby]="'tl-lim-' + event.id + '-title'">
+            <div class="tl-lim-head">
+              <!-- A dot on screen between the parts, a comma for assistive technology. Every state is a word. -->
+              <div class="tl-lim-kicker">
+                <span class="tl-lim-reason">{{ reason }}</span>
+                <span class="tl-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                <time [attr.datetime]="event.occurredUtc">{{ timeText(event.occurredUtc) }}</time>
+                @if (event.wasConfidential) {
+                  <span class="gh-tag tl-lim-tag">Confidential</span>
+                }
+                @if (event.wasEphemeral) {
+                  <span class="gh-tag tl-lim-tag">Incognito</span>
+                }
+              </div>
+
+              <div class="tl-lim-title-row">
+                <!-- Focused after Show more. -->
+                <h5 class="tl-lim-title" [id]="'tl-lim-' + event.id + '-title'" tabindex="-1">{{ user }}</h5>
+                <div class="tl-lim-actions" role="group" [attr.aria-label]="'Actions for ' + user + ', ' + reference">
+                  <button #detailsButton type="button" class="action-btn tl-lim-details" aria-haspopup="dialog"
+                          [attr.aria-label]="'Details of ' + reason + ' for ' + user + ', ' + reference"
+                          [attr.interestfor]="'tl-lim-' + event.id + '-details-tip'"
+                          [attr.style]="'anchor-name: --tl-lim-' + event.id + '-details-tip'"
+                          (click)="openDetails(event, detailsButton)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tl-lim-' + event.id + '-details-tip'"
+                       [attr.style]="'position-anchor: --tl-lim-' + event.id + '-details-tip'">Details</div>
+                  @if (event.userId; as userId) {
+                    <button type="button" class="action-btn tl-lim-usage"
+                            [attr.aria-label]="'Show the AI usage of ' + user"
+                            [attr.interestfor]="'tl-lim-' + event.id + '-usage-tip'"
+                            [attr.style]="'anchor-name: --tl-lim-' + event.id + '-usage-tip'"
+                            (click)="showUsage(userId, event)">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'tl-lim-' + event.id + '-usage-tip'"
+                         [attr.style]="'position-anchor: --tl-lim-' + event.id + '-usage-tip'">AI usage</div>
+                  }
+                </div>
+              </div>
+            </div>
+
+            <dl class="tl-lim-facts">
+              <div class="tl-metric"><dt>Model</dt><dd>{{ modelText(event) }}</dd></div>
+              <div class="tl-metric"><dt>Stopped at</dt><dd [class.tl-metric-muted]="stoppedAt === null">{{ stoppedAt ?? '—' }}</dd></div>
+              <div class="tl-metric"><dt>Duration</dt><dd>{{ durationText(event.totalDurationMs) }}</dd></div>
+              <div class="tl-metric"><dt>Tools</dt><dd>{{ formatInteger(event.toolCallCount) }} <span class="tl-metric-note">including sub-agents</span></dd></div>
+              <div class="tl-metric"><dt>Reference</dt><dd>{{ reference }}</dd></div>
+            </dl>
+          </article>
+        </li>
+      }
+    </ul>
+
+    @if (remainingCount > 0) {
+      <div class="gh-load-more">
+        <button type="button" class="btn-ghost tl-lim-show-more" [attr.aria-busy]="eventsLoading() ? 'true' : null"
+                (click)="showMore()">Show {{ nextBatchCount }} more</button>
+      </div>
+    }
+  }
+</section>
+
+<app-telemetry-limit-dialog #eventDialog />

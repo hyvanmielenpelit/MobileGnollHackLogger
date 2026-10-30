@@ -483,9 +483,7 @@ public class BenchmarkTelemetryPersistenceTests
     /// <summary>A one-second question budget in every band, so a stalled provider is cut by our own budget.</summary>
     private static Dictionary<string, string?> OneSecondBudget() => new()
     {
-        { "Benchmark:QuestionTimeoutSeconds:Simple", "1" },
-        { "Benchmark:QuestionTimeoutSeconds:Intermediate", "1" },
-        { "Benchmark:QuestionTimeoutSeconds:Advanced", "1" }
+        { "AiPerformanceSettings:ChatRequestTimeout:Default", "1" }
     };
 
     [Fact]

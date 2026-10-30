@@ -41,7 +41,7 @@ public class BenchmarkService
     /// <summary>The candidate tool allowlist when <c>Benchmark:AllowedTools</c> is not configured.</summary>
     internal static readonly IReadOnlyList<string> DefaultAllowedTools = new[]
     {
-        "wiki_search", "wiki_view", "get_knowledge_article",
+        "wiki_search", "wiki_view", "wiki_overview", "get_knowledge_article",
         "nethack_wiki_search", "nethack_wiki_view",
         "monster_lookup", "item_lookup", "get_monster_stats",
         "get_item_stats", "get_artifact_stats", "get_constants",
@@ -1016,8 +1016,7 @@ public class BenchmarkService
             // three reads use, so the snapshot cannot drift from the figures that were applied.
             run.ToolIterationCapsJson = RenderBandedCaps(_ => ResolveToolIterations());
             run.TotalModelCallCapsJson = RenderBandedCaps(_ => ResolveTotalModelCalls());
-            run.QuestionTimeoutSecondsJson = RenderBandedCaps(
-                band => ResolveBandedCap("QuestionTimeoutSeconds", band, DefaultQuestionTimeoutSeconds(band)));
+            run.QuestionTimeoutSecondsJson = RenderBandedCaps(_ => ResolveQuestionTimeoutSeconds());
 
             await db.SaveChangesAsync(cancellationToken);
 
@@ -1637,41 +1636,6 @@ public class BenchmarkService
     }
 
     /// <summary>
-    /// The difficulty band whose caps apply to a question.
-    ///
-    /// Prefer the assessed difficulty: the authored band is the question writer's estimate, and
-    /// on the reference run Q2 was authored Simple yet consumed all 25 calls. All four
-    /// per-question caps resolve through this one helper so a question cannot take its budget
-    /// from one band and its timeout from another — a mismatch nothing downstream could detect.
-    /// </summary>
-    private static BenchmarkDifficulty BandFor(BenchmarkDifficulty authoredBand, int? assessedDifficulty)
-        => assessedDifficulty.HasValue
-            ? BenchmarkDifficultyBands.BandOf(assessedDifficulty.Value)
-            : authoredBand;
-
-    /// <summary>
-    /// Reads a banded per-question cap, falling back to the supplied band default.
-    ///
-    /// This now serves <c>QuestionTimeoutSeconds</c> alone. The three resource caps are no longer
-    /// banded — see <see cref="ResolveFlatCap"/> — and the timeout stays banded because it is pinned
-    /// to the speed-score floor by an invariant BenchmarkScoringTests asserts, which flattening
-    /// would break.
-    ///
-    /// The banded keys sit under their own section prefix on purpose: a configuration key cannot
-    /// be both a value and a section, so a flat <c>Benchmark:MaxFoo</c> and a banded
-    /// <c>Benchmark:MaxFoo:{Band}</c> cannot coexist — whichever was read second would break.
-    /// The flat keys the four banded sections replaced (<c>MaxToolCallsPerQuestion</c>,
-    /// <c>MaxToolIterations</c>, <c>MaxTotalModelCalls</c>, <c>PerQuestionTimeoutSeconds</c>)
-    /// were removed rather than kept as fallbacks, so there is exactly one place an operator can
-    /// set each cap.
-    /// </summary>
-    private int ResolveBandedCap(string section, BenchmarkDifficulty band, int bandDefault)
-    {
-        int banded = _configuration.GetValue<int>($"Benchmark:{section}:{band}", 0);
-        return banded > 0 ? banded : bandDefault;
-    }
-
-    /// <summary>
     /// A per-question cap rendered for every difficulty band, as canonical JSON:
     /// <c>{"Simple":n,"Intermediate":n,"Advanced":n}</c>, bands in that fixed order and numbers in
     /// the invariant culture, so two runs configured alike render byte-identical text and the value
@@ -1694,82 +1658,90 @@ public class BenchmarkService
     }
 
     /// <summary>
-    /// Reads a flat per-question cap, falling back to the compiled default.
-    ///
-    /// The three resource caps are no longer banded: every question gets what the Advanced band used
-    /// to get, so a benchmark question is never stopped by a limit a production chat session would
-    /// not have hit. Their configuration keys are plain values — a key cannot be both a value and a
-    /// section, so the banded sections were removed rather than kept as fallbacks, exactly as the
-    /// flat keys they had replaced were removed when banding was introduced. A leftover banded key
-    /// makes this read return 0 and silently fall through to the default, so upgrades must delete it.
+    /// Reads one of the chat's own limits, so a question runs under what a user's chat runs under.
+    /// A question is a fresh chat. An override in <c>UserAiSettings</c> is per user and does not apply.
     /// </summary>
-    private int ResolveFlatCap(string key, int fallback)
+    private int ResolveChatCap(string key, int fallback)
     {
-        int configured = _configuration.GetValue<int>($"Benchmark:{key}", 0);
+        int configured = _configuration.GetValue<int>(key, 0);
         return configured > 0 ? configured : fallback;
     }
 
     /// <summary>
-    /// Total tool calls a question may execute. This is the cap that is meant to bind on a
-    /// saturated question: exhausting it blocks further calls, flags the answer
-    /// <c>ToolBudgetExhausted</c>, and is explained in the run report. The other three caps are
-    /// sized so they do not bind first.
+    /// Total tool calls a question may execute. Exhausting it blocks further calls, flags the answer
+    /// <c>ToolBudgetExhausted</c>, and is explained in the run report.
     /// </summary>
-    private int ResolveToolCallBudget() => ResolveFlatCap("ToolCallBudget", DefaultToolCallBudget());
+    private int ResolveToolCallBudget() => ResolveChatCap("AiPerformanceSettings:MaxCallsPerSession:Default", DefaultToolCallBudget());
 
     /// <summary>
     /// Sequential tool rounds — one model call plus the batch of tool calls it emitted, then the
-    /// results fed back. This bounds an investigation's *depth*, not its width: a model batching
-    /// three calls per round spends three times the budget per iteration, and the 2026-09-03 run
-    /// batched at roughly that rate when saturated. Sized at about half the tool call budget, so
-    /// a model batching two calls per round can still spend the whole budget.
+    /// results fed back. This bounds an investigation's *depth*, not its width.
     /// </summary>
-    private int ResolveToolIterations() => ResolveFlatCap("ToolIterations", DefaultToolIterations());
+    private int ResolveToolIterations() => ResolveChatCap("AiPerformanceSettings:MaxToolIterations:Default", DefaultToolIterations());
+
+    /// <summary>Total provider requests for the question, a runaway-loop safety net.</summary>
+    private int ResolveTotalModelCalls() => ResolveChatCap("SubAgentSettings:MaxTotalModelCalls", DefaultTotalModelCalls());
 
     /// <summary>
-    /// Total provider requests for the question. A runaway-loop safety net, not a tuning knob:
-    /// hitting it forces a final response with only a debug line to show for it, so it is sized
-    /// four to six above the iteration cap and must never be the cap that stops a healthy
-    /// question.
+    /// The per-question wall-clock timeout, the same for every band. An answer slower than its band's
+    /// speed floor scores 1 on speed; <c>BenchmarkScoringTests</c> pins the floors.
     /// </summary>
-    private int ResolveTotalModelCalls() => ResolveFlatCap("TotalModelCalls", DefaultTotalModelCalls());
+    private int ResolveQuestionTimeoutSeconds() => ResolveChatCap("AiPerformanceSettings:ChatRequestTimeout:Default", DefaultQuestionTimeoutSeconds());
+
+    // The chat's defaults, which BenchmarkChatParityTests pins against appsettings.json.
+    internal static int DefaultToolCallBudget() => 150;
+    internal static int DefaultToolIterations() => 22;
+    internal static int DefaultTotalModelCalls() => 48;
+    internal static int DefaultQuestionTimeoutSeconds() => 1800;
 
     /// <summary>
-    /// The per-question wall-clock timeout.
-    ///
-    /// Banded rather than flat because it is pinned between two constraints. From above, a
-    /// saturated Advanced question spending 45 tool calls over 22 rounds approaches the old flat
-    /// 300 s. From below, <see cref="BenchmarkScoringConstants.SpeedTargetMs"/> and
-    /// <see cref="BenchmarkScoringConstants.SpeedDecayK"/> are pinned to the invariant that the
-    /// speed score floor stays unreachable within this timeout at every difficulty; the binding
-    /// case inside a band is its *lowest* difficulty, which has the smallest speed target and so
-    /// the earliest floor. A flat 720 s would put the Simple band's floor (about 468 s) 300 s
-    /// inside the timeout and flatten the Speed Index — the exact failure those constants exist
-    /// to avoid. <c>BenchmarkScoringTests</c> asserts the margins.
+    /// Whether a run under <paramref name="condition"/> gets the chat's pre-injected wiki context.
+    /// SourceOnly and ClosedBook withhold the wiki by definition.
     /// </summary>
-    private int ResolveQuestionTimeoutSeconds(BenchmarkDifficulty authoredBand, int? assessedDifficulty)
+    internal static bool CandidateHasWikiContext(BenchmarkInformationCondition condition)
+        => condition == BenchmarkInformationCondition.Production;
+
+    /// <summary>
+    /// The prompts for one question, with the articles the chat would pre-inject for it, and those
+    /// articles' wiki-relative paths joined with semicolons. The run's own prompts, unchanged and with
+    /// no paths, when the run records no wiki context or the index holds no match.
+    /// </summary>
+    private (string SystemPrompt, SegmentedPrompt? SegmentedPrompt, string? Articles) WithCandidateWikiContext(
+        BenchmarkRun run, SystemAiApiConfiguration testedConfig, string systemPrompt, SegmentedPrompt? segmentedPrompt,
+        string questionText, BenchmarkVariantContext? variant)
     {
-        var band = BandFor(authoredBand, assessedDifficulty);
-        return ResolveBandedCap("QuestionTimeoutSeconds", band, DefaultQuestionTimeoutSeconds(band));
+        var options = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson);
+        if (!options.HasWikiContext)
+        {
+            return (systemPrompt, segmentedPrompt, null);
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var wikiContext = scope.ServiceProvider.GetService<WikiService>()?.GetRelevantContext(questionText).ToList();
+        if (wikiContext == null || wikiContext.Count == 0)
+        {
+            return (systemPrompt, segmentedPrompt, null);
+        }
+
+        string withContext = options.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode, variant?.Appendix, wikiContext);
+        var segmentedWithContext = BuildCandidateSegmentedPrompt(options, testedConfig.ParallelExecutionMode, variant?.Appendix, wikiContext);
+        return (withContext, segmentedWithContext, WikiContextArticleList(wikiContext));
     }
 
-    // The three resource caps are flat: every question now gets what the Advanced band used to get.
-    // Banding them was a response to a flat 25 starving Advanced questions on the 2026-09-03 run —
-    // that is the evidence for choosing 45, not an argument for banding. Run 13 then showed two
-    // Intermediate questions stopped at 32 of 35 while running below the run's mean, so the band was
-    // still binding on questions a production chat session would have let run. Production applies no
-    // per-question cap at these levels, so matching the Advanced figures everywhere is what makes the
-    // harness comparable to production. QuestionTimeoutSeconds stays banded — see ResolveBandedCap.
-    internal static int DefaultToolCallBudget() => 45;
-    internal static int DefaultToolIterations() => 22;
-    internal static int DefaultTotalModelCalls() => 28;
-    internal static int DefaultQuestionTimeoutSeconds(BenchmarkDifficulty band) => band switch
+    /// <summary>The <c>--- path ---</c> labels of pre-injected articles, whole entries within the column's 1,000 characters.</summary>
+    internal static string? WikiContextArticleList(IEnumerable<string> wikiContext)
     {
-        BenchmarkDifficulty.Simple => 420,
-        BenchmarkDifficulty.Intermediate => 600,
-        BenchmarkDifficulty.Advanced => 720,
-        _ => 600
-    };
+        var joined = new StringBuilder();
+        foreach (string article in wikiContext)
+        {
+            int lineEnd = article.IndexOf('\n');
+            string label = (lineEnd < 0 ? article : article[..lineEnd]).Trim().Trim('-').Trim();
+            if (label.Length == 0 || joined.Length + label.Length + 1 > 1000) continue;
+            if (joined.Length > 0) joined.Append(';');
+            joined.Append(label);
+        }
+        return joined.Length == 0 ? null : joined.ToString();
+    }
 
     /// <summary>
     /// A model's pricing card — the candidate's or the claim verifier's — needed only for its
@@ -2095,15 +2067,13 @@ public class BenchmarkService
         bool enableToolUse = true,
         BenchmarkVariantContext? variant = null)
     {
-        // The three resource caps are the same for every question in a run; only the timeout is still
-        // resolved per difficulty band. A flat 25 starved advanced questions - Q11, Q16 and Q18 of the
-        // 2026-09-03 run each exhausted it and had further calls blocked mid-investigation, which alone
-        // moved an otherwise clean run to CompletedWithLimits. That is the evidence for 45, not for
-        // banding: run 13 then had two Intermediate questions stop at 32 of 35 while running below the
-        // run's mean, so the band was binding on questions production would have let run.
+        // The chat's own limits, the same for every question in a run.
         int toolCallBudget = ResolveToolCallBudget();
         int maxToolIterations = ResolveToolIterations();
         int maxTotalModelCalls = ResolveTotalModelCalls();
+        string? wikiContextArticles;
+        (systemPrompt, segmentedPrompt, wikiContextArticles) = WithCandidateWikiContext(
+            run, testedConfig, systemPrompt, segmentedPrompt, question.QuestionText, variant);
 
         // The stored tool-call record's payload caps, derived from the same maxResultLength the
         // agent context below is given, so the two cannot drift apart, and from the largest result
@@ -2161,12 +2131,16 @@ public class BenchmarkService
 
             // The run's own token, not the question's linked one, so the runner can tell an
             // operator cancel from the question time budget.
-            OperatorCancellation = cancellationToken
+            OperatorCancellation = cancellationToken,
+
+            // What the model experiences matches the chat; notices and event rows are for a user, and there is none.
+            ApplyTurnGuidance = true
         };
 
-        int perQuestionTimeoutSec = ResolveQuestionTimeoutSeconds(question.Difficulty, question.AssessedDifficulty);
+        int perQuestionTimeoutSec = ResolveQuestionTimeoutSeconds();
         using var questionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         questionCts.CancelAfter(TimeSpan.FromSeconds(perQuestionTimeoutSec));
+        runRequest.TurnDeadlineUtc = DateTime.UtcNow.AddSeconds(perQuestionTimeoutSec);
 
         var runResult = new AgentRunResult();
         var sw = Stopwatch.StartNew();
@@ -2371,6 +2345,9 @@ public class BenchmarkService
             ToolCallBudgetUsed = toolCallBudget,
             ToolTimeMs = runResult.ToolTimeMs,
             TerminationReason = runResult.TerminationReason,
+            UnfinishedAnswerRecovered = runResult.UnfinishedAnswerRecovered,
+            EndedWithoutFinalAnswer = runResult.EndedWithoutFinalAnswer,
+            WikiContextArticles = wikiContextArticles,
             ProviderFinishReason = TruncateFinishReason(runResult.ProviderFinishReason),
             ScrubbedArtifactText = sanitized.ScrubbedArtifactText,
             ScrubbedArtifactCount = sanitized.ScrubbedArtifactCount,
@@ -2455,6 +2432,9 @@ public class BenchmarkService
         int toolCallBudget = ResolveToolCallBudget();
         int maxToolIterations = ResolveToolIterations();
         int maxTotalModelCalls = ResolveTotalModelCalls();
+        string? wikiContextArticles;
+        (systemPrompt, segmentedPrompt, wikiContextArticles) = WithCandidateWikiContext(
+            run, testedConfig, systemPrompt, segmentedPrompt, answer.QuestionText, variant);
 
         // The stored tool-call record's payload caps, derived from the same maxResultLength the
         // agent context below is given, so the two cannot drift apart, and from the largest result
@@ -2503,12 +2483,14 @@ public class BenchmarkService
             SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, answer.QuestionText, variant),
 
             // See ExecuteSingleQuestionAsync.
-            OperatorCancellation = cancellationToken
+            OperatorCancellation = cancellationToken,
+            ApplyTurnGuidance = true
         };
 
-        int perQuestionTimeoutSec = ResolveQuestionTimeoutSeconds(answer.Difficulty, answer.AssessedDifficulty);
+        int perQuestionTimeoutSec = ResolveQuestionTimeoutSeconds();
         using var questionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         questionCts.CancelAfter(TimeSpan.FromSeconds(perQuestionTimeoutSec));
+        runRequest.TurnDeadlineUtc = DateTime.UtcNow.AddSeconds(perQuestionTimeoutSec);
 
         var runResult = new AgentRunResult();
         var sw = Stopwatch.StartNew();
@@ -2673,6 +2655,9 @@ public class BenchmarkService
         answer.ToolCallBudgetUsed = toolCallBudget;
         answer.ToolTimeMs = runResult.ToolTimeMs;
         answer.TerminationReason = runResult.TerminationReason;
+        answer.UnfinishedAnswerRecovered = runResult.UnfinishedAnswerRecovered;
+        answer.EndedWithoutFinalAnswer = runResult.EndedWithoutFinalAnswer;
+        answer.WikiContextArticles = wikiContextArticles;
         answer.ProviderFinishReason = TruncateFinishReason(runResult.ProviderFinishReason);
         answer.ScrubbedArtifactText = sanitized.ScrubbedArtifactText;
         answer.ScrubbedArtifactCount = sanitized.ScrubbedArtifactCount;
@@ -9499,7 +9484,7 @@ public class BenchmarkService
     /// </summary>
     private SegmentedPrompt? BuildCandidateSegmentedPrompt(
         BenchmarkCandidatePromptOptions promptOptions, MobileGnollHackLogger.Data.ParallelExecutionMode parallelMode,
-        string? appendix = null)
+        string? appendix = null, IEnumerable<string>? wikiContext = null)
     {
         if (!_configuration.GetValue<bool>("PromptCacheSettings:EnableSegmentedPrompt", true))
         {
@@ -9507,7 +9492,7 @@ public class BenchmarkService
         }
 
         var (frozen, session, volatileSuffix) =
-            promptOptions.BuildSegmentedSystemPrompt(_chatService, parallelMode, appendix);
+            promptOptions.BuildSegmentedSystemPrompt(_chatService, parallelMode, appendix, wikiContext);
         return new SegmentedPrompt(frozen, session, volatileSuffix);
     }
 
@@ -9725,7 +9710,8 @@ public class BenchmarkService
             HasGameSnapshot = hasGameSnapshot,
             EnableToolUse = informationCondition != BenchmarkInformationCondition.ClosedBook,
             InformationCondition = informationCondition.ToStoredWire(),
-            FeedbackToolWithheld = !feedbackToolOffered
+            FeedbackToolWithheld = !feedbackToolOffered,
+            HasWikiContext = CandidateHasWikiContext(informationCondition)
         };
 
     /// <summary>

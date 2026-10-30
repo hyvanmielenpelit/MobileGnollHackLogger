@@ -200,8 +200,8 @@ Both are conservative choices, stated here so that no reader mistakes them for c
 - **The HttpClient timeout** is 600 s (`AiRateLimitSettings:RequestTimeoutSeconds`, on the `AiProvider`
   client). A provider that sends no response headers in that time is unavailable: `ProviderTimeout`.
   The same timeout after the headers is a broken stream, `ProviderStreamFailure`.
-- **Our per-question time budget** (`Benchmark:QuestionTimeoutSeconds`: Simple 420 s, Intermediate
-  600 s, Advanced 720 s) spans the whole agent loop. When it cuts an attempt, the attempt is
+- **Our per-question time budget** (`AiPerformanceSettings:ChatRequestTimeout:Default`, the chat's
+  own 1,800 s, for every band) spans the whole agent loop. When it cuts an attempt, the attempt is
   `OurCanceled` and the answer is **Failed, our side: question time budget**, never a provider error.
 - **What that means in practice.** The budget starts with the question and the HttpClient timeout with
   the attempt, so on a Simple question the budget always fires first, and on an Intermediate question it

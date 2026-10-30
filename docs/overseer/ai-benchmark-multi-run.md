@@ -727,9 +727,9 @@ A practical order:
    and it shows what the candidate was told to do, which any attribution of a dimension to the model
    must check first. A group whose configuration was
    not recorded cannot support an attribution at all, and the block says so instead of printing
-   defaults. It also states whether wiki context was pre-injected — live chat always does, the
-   benchmark never does, so every retrieval and routing figure is measured under a condition
-   production does not share.
+   defaults. It also states whether wiki context was pre-injected — live chat always does, and a run
+   does from harness 64 under the Production condition; for any other run every retrieval and
+   routing figure is measured under a condition production does not share.
 3. **Read both interval components before the combined one.** If the reproducibility half-width is
    large relative to the effect you care about, more runs will help. If the item-sampling half-width
    dominates, more runs will not — you need more questions; under method 2 the planning figure (§ 5.6)

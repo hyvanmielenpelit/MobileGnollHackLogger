@@ -37,6 +37,32 @@ public class OpenAiResponsesProviderParseStreamTests
         return events;
     }
 
+    [Theory]
+    [InlineData("commentary")]
+    [InlineData("final_answer")]
+    public async Task ParseStreamAsync_AMessageItemWithAPhase_EmitsIt(string phase)
+    {
+        var sse =
+            "event: response.output_item.done\n" +
+            "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\",\"id\":\"msg_1\",\"phase\":\"" + phase + "\",\"content\":[]}}\n\n";
+
+        var events = await ParseAsync(sse);
+
+        Assert.Equal(phase, Assert.Single(events, e => e.Type == "assistant_phase").Data);
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_AMessageItemWithoutAPhase_EmitsNone()
+    {
+        var sse =
+            "event: response.output_item.done\n" +
+            "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\",\"id\":\"msg_1\",\"content\":[]}}\n\n";
+
+        var events = await ParseAsync(sse);
+
+        Assert.DoesNotContain(events, e => e.Type == "assistant_phase");
+    }
+
     [Fact]
     public async Task ParseStreamAsync_ResponseFailedWithNestedError_EmitsCodeAndMessage()
     {

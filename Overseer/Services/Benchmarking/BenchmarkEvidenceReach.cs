@@ -85,7 +85,7 @@ public static class BenchmarkEvidenceReach
         @"^(?<file>.+?):L(?<a>\d+)(?:-L(?<b>\d+))?(?: \((?<fn>[^,()]+), \d+ lines\))?$",
         RegexOptions.CultureInvariant);
 
-    private static readonly string[] WikiSurfacingTools = { "wiki_search", "item_lookup", "monster_lookup", "wiki_view" };
+    private static readonly string[] WikiSurfacingTools = { "wiki_search", "item_lookup", "monster_lookup", "wiki_view", "wiki_overview" };
     private static readonly string[] LookupTools = { "item_lookup", "monster_lookup" };
 
     public static string ClassLabel(BenchmarkEvidenceReachClass reachClass) => reachClass switch

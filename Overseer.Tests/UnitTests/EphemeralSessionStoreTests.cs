@@ -215,7 +215,9 @@ public class EphemeralSessionStoreTests
             SystemAiConfigurationIdUsed = 9,
             SubAgentEstimatedCost = 0.0011m,
             OperatorEstimatedCost = 0.0031m,
-            IsGameSnapshot = true
+            IsGameSnapshot = true,
+            TurnNoticeCode = "research_rounds",
+            TurnNoticeFactsJson = "{\"limitValue\":22}"
         };
         source.ToolCalls.Add(new ChatMessageToolCall
         {
@@ -253,6 +255,8 @@ public class EphemeralSessionStoreTests
         Assert.Equal(source.EstimatedCost, back.EstimatedCost);
         Assert.Equal(source.SubAgentEstimatedCost, back.SubAgentEstimatedCost);
         Assert.Equal(source.OperatorEstimatedCost, back.OperatorEstimatedCost);
+        Assert.Equal("research_rounds", back.TurnNoticeCode);
+        Assert.Equal("{\"limitValue\":22}", back.TurnNoticeFactsJson);
     }
 
     [Fact]

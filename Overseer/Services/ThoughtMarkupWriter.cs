@@ -105,6 +105,24 @@ public class ThoughtMarkupWriter
     }
 
     /// <summary>
+    /// All of this iteration's visible text, the runs a reasoning summary interrupted included, or an
+    /// empty string when it has emitted none.
+    /// </summary>
+    public string GetAllIterationVisibleText(StringBuilder fullResponse)
+    {
+        var text = new StringBuilder();
+        foreach (var (start, end) in _visibleSpans)
+        {
+            text.Append(fullResponse, start, Math.Min(end, fullResponse.Length) - start);
+        }
+        if (_openVisibleStart >= 0 && fullResponse.Length > _openVisibleStart)
+        {
+            text.Append(fullResponse, _openVisibleStart, fullResponse.Length - _openVisibleStart);
+        }
+        return text.ToString();
+    }
+
+    /// <summary>
     /// Wraps the first <paramref name="visibleLength"/> characters of this iteration's visible
     /// text in a thought div and leaves the remainder as answer prose.
     ///

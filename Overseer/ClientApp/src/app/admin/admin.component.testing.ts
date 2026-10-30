@@ -134,8 +134,10 @@ const USAGE_TOOLS: ReadonlyArray<{ tool: string; corpus: CorpusKind }> = [
   { tool: 'wiki_view', corpus: 'GnollHackWiki' },
   { tool: 'monster_lookup', corpus: 'GnollHackWiki' },
   { tool: 'item_lookup', corpus: 'GnollHackWiki' },
+  { tool: 'wiki_overview', corpus: 'GnollHackWiki' },
   { tool: 'nethack_wiki_search', corpus: 'NetHackWiki' },
   { tool: 'nethack_wiki_view', corpus: 'NetHackWiki' },
+  { tool: 'wiki_overview', corpus: 'NetHackWiki' },
   { tool: 'get_knowledge_article', corpus: 'KnowledgeBase' }
 ];
 

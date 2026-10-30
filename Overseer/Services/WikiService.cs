@@ -193,6 +193,52 @@ public class WikiService : IDisposable
         };
     }
 
+    /// <summary>
+    /// The published index's article count, directories and build time; null until a pass publishes.
+    /// Reads no file and no Lucene reader, so a reindex cannot close anything under it.
+    /// </summary>
+    public WikiOverview? GetOverview()
+    {
+        PublishedWikiIndex? published;
+        lock (_swapLock) published = _published;
+
+        return published == null
+            ? null
+            : new WikiOverview(published.Index.FileCount, published.Categories, published.Index.IndexedAtUtc);
+    }
+
+    /// <summary>
+    /// One page of the published index's article paths, such as <c>Races/Gnoll.md</c>, sorted. A
+    /// non-blank <paramref name="category"/> keeps the paths containing it, case-insensitively, as
+    /// <c>wiki_search</c>'s category does; a blank one is ignored.
+    /// </summary>
+    public WikiArticlePage ListArticles(string? category, int offset, int limit)
+    {
+        PublishedWikiIndex? published;
+        lock (_swapLock) published = _published;
+
+        if (published == null) return WikiArticlePage.Empty;
+        if (string.IsNullOrWhiteSpace(category)) return WikiArticlePage.Of(published.ArticlePaths, offset, limit);
+
+        string filter = category.Trim().ToLowerInvariant().Replace('\\', '/');
+        var matching = published.ArticlePaths
+            .Where(path => path.ToLowerInvariant().Contains(filter, StringComparison.Ordinal))
+            .ToList();
+        return WikiArticlePage.Of(matching, offset, limit);
+    }
+
+    /// <summary>
+    /// False when the index's analyzer leaves no term of <paramref name="query"/>: it holds only
+    /// punctuation or stop words. True while no index is published, so the search reports its own miss.
+    /// </summary>
+    public bool IsSearchableQuery(string query)
+    {
+        Analyzer? analyzer;
+        lock (_swapLock) analyzer = _analyzer;
+
+        return analyzer == null || AnalyzeDistinctTerms(analyzer, query).Count > 0;
+    }
+
     private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
     private Task<string?> RunPassAsync(CorpusPassContext context, CancellationToken cancellationToken)
@@ -326,6 +372,7 @@ public class WikiService : IDisposable
         context.SetPhase(CorpusIndexPhase.Publishing);
         var categories = stats.BuildCategories();
         var duplicateTitles = stats.BuildDuplicateTitles();
+        var articlePaths = stats.BuildArticlePaths();
         var skippedBySize = stats.SkippedBySize
             .OrderByDescending(f => f.Bytes)
             .ThenBy(f => f.Path, StringComparer.Ordinal)
@@ -380,7 +427,8 @@ public class WikiService : IDisposable
                     },
                     categories,
                     duplicateTitles.Take(MaxDuplicateTitleGroups).ToList(),
-                    duplicateTitles.Count);
+                    duplicateTitles.Count,
+                    articlePaths);
             }
         }
 
@@ -661,7 +709,7 @@ public class WikiService : IDisposable
     /// The query's distinct terms as the index's analyzer produces them — lowercased, stop words
     /// removed, Porter-stemmed — in first-occurrence order.
     /// </summary>
-    private static List<string> AnalyzeDistinctTerms(Analyzer analyzer, string query)
+    internal static List<string> AnalyzeDistinctTerms(Analyzer analyzer, string query)
     {
         var terms = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -1041,13 +1089,15 @@ public class WikiService : IDisposable
         CorpusIndexInfoDto Index,
         IReadOnlyList<WikiCategoryDto> Categories,
         IReadOnlyList<WikiDuplicateTitleDto> DuplicateTitles,
-        int DuplicateTitleCount);
+        int DuplicateTitleCount,
+        IReadOnlyList<string> ArticlePaths);
 
     /// <summary>What one pass counts while it reads the files.</summary>
     private sealed class PassStats
     {
         private readonly Dictionary<string, (int Articles, long Bytes)> _categories = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, (string Title, List<string> Paths)> _titles = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<string> _articlePaths = new();
 
         public System.Diagnostics.Stopwatch Stopwatch { get; } = System.Diagnostics.Stopwatch.StartNew();
         public long TotalBytes { get; private set; }
@@ -1060,6 +1110,7 @@ public class WikiService : IDisposable
         public void AddIndexed(string relativeFile, string relativePath, string title, long bytes)
         {
             TotalBytes += bytes;
+            _articlePaths.Add(relativeFile);
 
             int slash = relativeFile.IndexOf('/');
             string category = slash > 0 ? relativeFile.Substring(0, slash) : RootCategory;
@@ -1086,6 +1137,9 @@ public class WikiService : IDisposable
                 .ThenBy(c => c.Category, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
+
+        /// <summary>Every indexed article's wiki-relative path with its extension, sorted without regard to case.</summary>
+        public string[] BuildArticlePaths() => WikiArticlePage.Sorted(_articlePaths);
 
         /// <summary>Every title two or more indexed files share, by title; each group's paths sorted.</summary>
         public List<WikiDuplicateTitleDto> BuildDuplicateTitles()
@@ -1121,3 +1175,27 @@ public sealed record WikiCategoryDto(string Category, int Articles, long Bytes);
 
 /// <summary>A title shared by several indexed articles, with each article's path form, e.g. <c>Races/Gnoll</c>.</summary>
 public sealed record WikiDuplicateTitleDto(string Title, IReadOnlyList<string> Paths);
+
+/// <summary>What the published GnollHack wiki index holds, as <c>wiki_overview</c> reports it.</summary>
+public sealed record WikiOverview(int FileCount, IReadOnlyList<WikiCategoryDto> Categories, DateTime IndexedAtUtc);
+
+/// <summary>One page of a wiki's article paths or titles, with the count before paging.</summary>
+public sealed record WikiArticlePage(int Total, IReadOnlyList<string> Articles)
+{
+    public static readonly WikiArticlePage Empty = new(0, Array.Empty<string>());
+
+    /// <summary>The page of <paramref name="articles"/> at <paramref name="offset"/>; a negative offset reads as 0, a limit below 1 as 1.</summary>
+    public static WikiArticlePage Of(IReadOnlyList<string> articles, int offset, int limit)
+    {
+        return new WikiArticlePage(articles.Count, articles.Skip(Math.Max(offset, 0)).Take(Math.Max(limit, 1)).ToList());
+    }
+
+    /// <summary>A new array of <paramref name="articles"/> sorted without regard to case, ties in ordinal order.</summary>
+    public static string[] Sorted(IEnumerable<string> articles)
+    {
+        return articles
+            .OrderBy(article => article, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(article => article, StringComparer.Ordinal)
+            .ToArray();
+    }
+}

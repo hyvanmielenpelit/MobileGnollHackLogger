@@ -121,7 +121,7 @@ under a directory whose name begins with `.` and files over `MaxWikiFileSizeKB` 
 - **Duplicate titles**: every title that two or more indexed articles share, compared the way
   `wiki_view` compares a request (the normalized title, ignoring case), each with its paths. `wiki_view`
   answers such a title with a disambiguation list. At most 100 groups are listed, with the full count.
-- **Tool usage**: `wiki_search`, `wiki_view`, `monster_lookup`, `item_lookup`.
+- **Tool usage**: `wiki_search`, `wiki_view`, `monster_lookup`, `item_lookup`, `wiki_overview`.
 - **Search probe**: `wiki_search`, with an optional *Category*.
 - **Re-index** reads the wiki folder as it is now, uncommitted edits included, and swaps in the new
   index when it is complete; the chat keeps answering from the current index meanwhile. Automatic
@@ -153,7 +153,7 @@ no commit and no automatic refresh (§ 8).
   the tree to a new dated folder under `C:\Backup\NetHack Wiki`, run the converter as
   `Overseer/Scripts/NetHackWiki/README.md` says, remove the old generated files, then click
   **Re-index** here. The dashboard never runs the converter.
-- **Tool usage**: `nethack_wiki_search`, `nethack_wiki_view`.
+- **Tool usage**: `nethack_wiki_search`, `nethack_wiki_view`, `wiki_overview`.
 - **Search probe**: `nethack_wiki_search`, with no filter, because the tool takes no namespace
   argument.
 - **Re-index** indexes the wiki folder once, now. This corpus never refreshes on its own.
@@ -254,14 +254,17 @@ first time it scrolls into view.
 
 | Corpus | Tools |
 |---|---|
-| GnollHack wiki | `wiki_search`, `wiki_view`, `monster_lookup`, `item_lookup` |
-| NetHack wiki | `nethack_wiki_search`, `nethack_wiki_view` |
+| GnollHack wiki | `wiki_search`, `wiki_view`, `monster_lookup`, `item_lookup`, `wiki_overview` |
+| NetHack wiki | `nethack_wiki_search`, `nethack_wiki_view`, `wiki_overview` |
 | Knowledge base | `get_knowledge_article` |
 
 `CorpusToolUsageService` reads `ChatMessageToolCall` rows, dated by their message's `TimestampUtc`,
 and for each call only its name, status, execution time and whether its error is the corpus's
-*indexing in progress* guard message (`ToolGuardMessages`). It never reads the arguments, the result
-or the session's user. Per tool, and for the corpus's tools together:
+*indexing in progress* guard message (`ToolGuardMessages`). It never reads the result or the session's
+user, and the arguments only for `wiki_overview`, the one tool that reads either wiki: it has an entry for
+each corpus, and a call counts under the NetHack wiki when its error is that wiki's guard message or its
+arguments contain "nethack", without keeping them. A call stored encrypted counts under the GnollHack wiki.
+Per tool, and for the corpus's tools together:
 
 - **Calls**, **Completed** (status `completed`), **Errors** (status `error`, guard refusals included)
   and **Other** (any other status, or none).

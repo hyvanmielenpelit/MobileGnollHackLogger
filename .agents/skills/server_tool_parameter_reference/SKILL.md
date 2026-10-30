@@ -7,7 +7,7 @@ description: >-
   filter actually match against", or "is get_item_stats supposed to have no stats field".
   Covers, tool by tool: required and optional parameters, defaults and clamps and the
   config key each comes from, which corpus or service the tool reads, the shape of a
-  successful result, per-tool failure modes, which 16 tools Benchmark:AllowedTools
+  successful result, per-tool failure modes, which 17 tools Benchmark:AllowedTools
   permits, and how to tell a correct empty result from a broken one (a guard-message
   failure during indexing vs. an ordinary "not found" once indexed). This is the contract
   layer the diagnostic method in server_benchmark_tool_diagnostics checks a call against;
@@ -76,6 +76,7 @@ these figures.
 | `list_indexed_files` | Server | same | Yes | List indexed files, optionally substring-filtered |
 | `wiki_search` | Server | `WikiService` (Lucene/BM25) | Yes | Search the GnollHack wiki, return per-article snippets |
 | `wiki_view` | Server | `WikiService` | Yes | Fetch one GnollHack wiki article (optionally one section) |
+| `wiki_overview` | Server | `WikiService` / `NetHackWikiService` (statistics published with the index) | Yes | Count and list the articles of either wiki |
 | `nethack_wiki_search` | Server | `NetHackWikiService` (Lucene/BM25) | Yes | Search the NetHack wiki, return full article bodies |
 | `nethack_wiki_view` | Server | `NetHackWikiService` | Yes | Fetch one NetHack wiki article (optionally one section) |
 | `monster_lookup` | Server | `WikiService` | Yes | Wiki lookup for a monster, category-scoped with unfiltered fallback |
@@ -117,14 +118,14 @@ these figures.
 
 ---
 
-## 3. `Benchmark:AllowedTools` — the 16 That Can Appear
+## 3. `Benchmark:AllowedTools` — the 17 That Can Appear
 
 From `Overseer/appsettings.json`:
 
 ```json
 "Benchmark": {
   "AllowedTools": [
-    "wiki_search", "wiki_view", "get_knowledge_article",
+    "wiki_search", "wiki_view", "wiki_overview", "get_knowledge_article",
     "nethack_wiki_search", "nethack_wiki_view",
     "monster_lookup", "item_lookup",
     "get_monster_stats", "get_item_stats", "get_artifact_stats",
@@ -895,6 +896,39 @@ order above — trim, `\`→`/`, strip one trailing `.md`/`.txt`/`.html` — not
 branch's missing relevance floor, which this round deliberately left in place, scoped to that last
 branch only. Re-measure rather than citing this figure once a later round changes the resolver
 again.
+
+**`wiki_search` and `nethack_wiki_search` refuse a query with no searchable words, from harness 64.**
+`IsSearchableQuery` runs the index's analyzer over the query. When no term is left, as with `*` or `the`, the
+tool returns `Success = false`: *"'\*' contains no searchable words. wiki_search matches whole words, has no
+wildcards and ignores very common words such as "the". To count or list articles, use wiki_overview."*
+A run stamped 63 or earlier reported that as an ordinary miss with `Success = true`. The empty-query message,
+*"Missing query parameter. To count or list articles, use wiki_overview."*, carries the same pointer.
+
+**`wiki_overview`** (`WikiOverviewTool`, harness 64) counts and lists articles. It is in
+`SubAgentCatalog.json`'s `wiki_researcher`, excluded under Source code only, and counts toward the call budget.
+
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `wiki` | `gnollhack` or `nethack` | `gnollhack` | Which wiki; anything else fails with *"Unknown wiki. Use 'gnollhack' or 'nethack'."* |
+| `category` | string | none | GnollHack only: a case-insensitive substring of the article's wiki-relative path, file name included, as `wiki_search` applies it. A blank value is ignored. On the NetHack wiki it fails, because that wiki has no directories |
+| `list_titles` | boolean | `false` | Also list article paths (GnollHack) or titles (NetHack), one per line |
+| `offset`, `limit` | integer | `0`, `100` | Paging of the list; `limit` is clamped to 1–200 |
+
+- **Result.** A headline, *"GnollHack wiki: N articles in Overseer's index, built yyyy-MM-dd HH:mm UTC. The live site
+  can differ slightly."*, then the count per top-level directory, `(root)` included (GnollHack), or per namespace
+  (NetHack). With `category`, a line of how many paths match. With `list_titles`, *"Articles a-b of N."*, the next
+  offset when there are more, and the page. It never includes a filesystem path, commit id or byte count.
+- **Source.** The arrays and statistics published with the index (`WikiService.GetOverview` and `ListArticles`,
+  `NetHackWikiService.GetOverview` and `ListTitles`). It runs no Lucene query and does not call `GetStatus()`, which
+  reads the file system and returns server paths. A count therefore describes what was indexed: a file a size limit
+  dropped is not in it.
+- **Failure modes.** `Success = false` for invalid input; `ToolGuardMessages.WikiIndexingInProgress` or
+  `.NetHackWikiIndexingInProgress` for its own corpus while warming up; *"The wiki index is not available."* when
+  indexing finished with no published index, as after a missing folder.
+- **A correct empty result.** A category with no match returns `Success = true`, opening *"No GnollHack wiki article
+  path contains '…'."* followed by the counts; `BenchmarkToolResultClassifier` reads that opening as a miss.
+- **Spoiler-free mode.** With `list_titles`, the result ends in the same reminder `wiki_search` uses. Counts are not
+  spoilers.
 
 ---
 

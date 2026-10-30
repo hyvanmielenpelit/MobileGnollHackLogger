@@ -85,9 +85,7 @@ namespace Overseer.Services.Tools
                     var rateLimitKey = isSubAgentCall
                         ? $"tool_calls_session_{baseScope}_sub"
                         : $"tool_calls_session_{baseScope}";
-                    int sessionLimit = isSubAgentCall
-                        ? Math.Max(callContext.MaxCallsPerSession, _minCallsPerSessionWithSubAgents)
-                        : callContext.MaxCallsPerSession;
+                    int sessionLimit = GetEffectiveCallLimit(callContext);
                     TimeSpan expiry = callContext.ToolBudgetScopeId != null
                         ? TimeSpan.FromHours(1)
                         : TimeSpan.FromHours(4);
@@ -394,6 +392,11 @@ namespace Overseer.Services.Tools
         /// for any per-handler override. Returns <paramref name="contextMax"/> for
         /// unknown tools.
         /// </summary>
+        /// <summary>The tool-call limit a call in <paramref name="context"/> runs under.</summary>
+        public int GetEffectiveCallLimit(ToolExecutionContext context) => context.AgentDepth > 0
+            ? Math.Max(context.MaxCallsPerSession, _minCallsPerSessionWithSubAgents)
+            : context.MaxCallsPerSession;
+
         public int GetEffectiveMaxResultLength(string toolName, int contextMax)
         {
             var handler = _handlers.FirstOrDefault(

@@ -29,6 +29,7 @@ describe('AdminDatabaseTabComponent', () => {
       aiErrorLogUndismissedCount: 0, aiErrorLogDismissedCount: 0, aiErrorLogPrunableCount: 0,
       securityEventRowCount: 0, securityEventPrunableCount: 0,
       chatProviderAttemptRowCount: 0, chatProviderAttemptPrunableCount: 0,
+      chatTurnLimitEventRowCount: 0, chatTurnLimitEventPrunableCount: 0,
       expiredTrashSessionCount: 0, prunableToolCallCount: 0, prunableBenchmarkToolCallCount: 0,
       serviceStartedUtc: '2026-09-15T00:00:00Z', appliedMigrationCount: 0, pendingMigrations: [],
       schemaStatusAvailable: true,
@@ -36,7 +37,7 @@ describe('AdminDatabaseTabComponent', () => {
         maxActiveSessionsPerUser: 50, maxPinnedSessionsPerUser: 5, inactivityTtlDays: 90,
         softDeleteGracePeriodDays: 30, pruneToolCallResultsDays: 30, pruneBenchmarkToolCallResultsDays: 90,
         auditLogRetentionDays: 365, pruneDismissedAiErrorLogDays: 90, pruneSecurityEventDays: 180,
-        pruneSnapshotQuarantineDays: 30, pruneChatProviderAttemptDays: 400, maintenanceHistoryRetentionDays: 180,
+        pruneSnapshotQuarantineDays: 30, pruneChatProviderAttemptDays: 400, pruneChatTurnLimitEventDays: 180, maintenanceHistoryRetentionDays: 180,
         maintenanceRunHourUtc: 3,
         enableStorageWarningEmails: true, emailSenderConfigured: false
       }
@@ -47,7 +48,7 @@ describe('AdminDatabaseTabComponent', () => {
       purgedToolCallCount: 0, prunedToolResultCount: 0, prunedBenchmarkToolResultCount: 0,
       deletedDiskFolderCount: 0, deletedDiskFileCount: 0, reclaimedDiskBytes: 0, sweptOrphanFolderCount: 0,
       prunedAuditLogCount: 0, prunedAiErrorLogCount: 0, prunedSecurityEventCount: 0,
-      prunedChatProviderAttemptCount: 0, elapsedMilliseconds: 1,
+      prunedChatProviderAttemptCount: 0, prunedChatTurnLimitEventCount: 0, elapsedMilliseconds: 1,
       trigger: 'Manual', logs: []
     });
 
@@ -63,7 +64,7 @@ describe('AdminDatabaseTabComponent', () => {
       elapsedMilliseconds: 10, softDeletedCount: 0, purgedSessionCount: 0, purgedMessageCount: 0,
       purgedToolCallCount: 0, prunedToolResultCount: 0, prunedBenchmarkToolResultCount: 0,
       prunedAuditLogCount: 0, prunedAiErrorLogCount: 0, prunedSecurityEventCount: 0,
-      prunedChatProviderAttemptCount: 0, deletedDiskFolderCount: 0, deletedDiskFileCount: 0,
+      prunedChatProviderAttemptCount: 0, prunedChatTurnLimitEventCount: 0, deletedDiskFolderCount: 0, deletedDiskFileCount: 0,
       sweptOrphanFolderCount: 0, reclaimedDiskBytes: 0, errorMessage: null, hasLog
     });
 
@@ -230,6 +231,13 @@ describe('AdminDatabaseTabComponent', () => {
         spyOnPrune: () => vi.spyOn(adminService, 'pruneChatProviderAttempts').mockReturnValue(
           of({ ...result(true), prunedChatProviderAttemptCount: 6 })),
         request: { chatProviderAttemptPruneDays: 180, dryRun: true }
+      },
+      {
+        name: 'chat turn limit events', days: 90, count: 4, countLabel: 'Chat turn limit events pruned',
+        run: (c: AdminDatabaseTabComponent, days: number) => { c.chatTurnLimitEventPruneDays = days; c.pruneChatTurnLimitEventsNow(); },
+        spyOnPrune: () => vi.spyOn(adminService, 'pruneChatTurnLimitEvents').mockReturnValue(
+          of({ ...result(true), prunedChatTurnLimitEventCount: 4 })),
+        request: { chatTurnLimitEventPruneDays: 90, dryRun: true }
       }
     ])('prunes $name as a dry run at the chosen age without confirmation', ({ days, count, countLabel, run, spyOnPrune, request }) => {
       const pruneSpy = spyOnPrune();
@@ -273,6 +281,20 @@ describe('AdminDatabaseTabComponent', () => {
         policyLabel: 'Chat provider attempts kept',
         statLabel: 'Prunable provider attempts',
         statValue: '12 of 500, oldest 2025-08-03'
+      },
+      {
+        name: 'chat turn limit event',
+        overrides: (): Partial<DatabaseStorageMetrics> => ({
+          chatTurnLimitEventRowCount: 60, chatTurnLimitEventPrunableCount: 5,
+          chatTurnLimitEventOldestUtc: '2026-03-04T00:00:00Z',
+          policy: { ...metrics().policy, pruneChatTurnLimitEventDays: 365 }
+        }),
+        pruneDays: (c: AdminDatabaseTabComponent) => c.chatTurnLimitEventPruneDays,
+        selectId: '#maintenance-turn-limit-days',
+        options: ['Older than 30d', 'Older than 90d', 'Older than 180d', 'Older than 365d'],
+        policyLabel: 'Chat turn limit events kept',
+        statLabel: 'Prunable limit events',
+        statValue: '5 of 60, oldest 2026-03-04'
       }
     ])('takes the $name age from the policy and shows it in the template', async ({ overrides, pruneDays, selectId, options, policyLabel, statLabel, statValue }) => {
       (adminService.getStorageMetrics as Mock).mockReturnValue(of({ ...metrics(), ...overrides() }));
@@ -328,6 +350,7 @@ describe('AdminDatabaseTabComponent', () => {
       expect(cells[headers.indexOf('AI Errors')]).toBe('3');
       expect(cells[headers.indexOf('Security Events')]).toBe('11');
       expect(cells[headers.indexOf('Provider Attempts')]).toBe('25');
+      expect(headers.indexOf('Limit Events')).toBe(headers.indexOf('Provider Attempts') + 1);
 
       (host.querySelector('.history-log-toggle') as HTMLButtonElement).click();
       fixture.detectChanges();

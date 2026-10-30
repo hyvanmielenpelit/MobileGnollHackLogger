@@ -334,6 +334,14 @@ public class ChatRetentionService
                 .Where(r => sessionIds.Contains(r.ChatSessionId))
                 .ExecuteDeleteAsync(cancellationToken);
 
+            // The content-free event stays; nothing may lead back to the purged messages.
+            await _dbContext.ChatTurnLimitEvents
+                .Where(e => e.ChatSessionId != null && sessionIds.Contains(e.ChatSessionId.Value))
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(e => e.ChatSessionId, (long?)null)
+                    .SetProperty(e => e.UserMessageId, (long?)null)
+                    .SetProperty(e => e.AssistantMessageId, (long?)null), cancellationToken);
+
             await _dbContext.ChatMessage
                 .Where(m => sessionIds.Contains(m.ChatSessionId))
                 .ExecuteDeleteAsync(cancellationToken);
@@ -596,6 +604,27 @@ public class ChatRetentionService
     }
 
     /// <summary>
+    /// Deletes chat turn limit events older than <paramref name="daysOld"/> days, or only counts them on a
+    /// dry run. Zero or negative days returns zero.
+    /// </summary>
+    public async Task<int> PruneChatTurnLimitEventsAsync(int daysOld, bool isDryRun = false, CancellationToken cancellationToken = default)
+    {
+        if (daysOld <= 0)
+            return 0;
+
+        var cutoff = DateTime.UtcNow.AddDays(-daysOld);
+        var query = _dbContext.ChatTurnLimitEvents.Where(e => e.OccurredUtc < cutoff);
+
+        int count = await query.CountAsync(cancellationToken);
+        if (count > 0 && !isDryRun)
+        {
+            await query.ExecuteDeleteAsync(cancellationToken);
+            _logger.LogInformation("Pruned {Count} chat turn limit events older than {Days} days", count, daysOld);
+        }
+        return count;
+    }
+
+    /// <summary>
     /// Deletes maintenance history rows started more than <paramref name="daysOld"/> days ago, or
     /// only counts them on a dry run. Zero or negative days returns zero.
     /// </summary>
@@ -644,6 +673,7 @@ public class ChatRetentionService
             PrunedAiErrorLogCount = result.PrunedAiErrorLogCount,
             PrunedSecurityEventCount = result.PrunedSecurityEventCount,
             PrunedChatProviderAttemptCount = result.PrunedChatProviderAttemptCount,
+            PrunedChatTurnLimitEventCount = result.PrunedChatTurnLimitEventCount,
             DeletedDiskFolderCount = result.DeletedDiskFolderCount,
             DeletedDiskFileCount = result.DeletedDiskFileCount,
             SweptOrphanFolderCount = result.SweptOrphanFolderCount,
@@ -838,6 +868,18 @@ public class ChatRetentionService
             else
             {
                 result.Logs.Add("Chat provider attempt pruning is disabled; no rows were pruned.");
+            }
+
+            // 10b. Prune chat turn limit events
+            int turnLimitEventDays = _settings.PruneChatTurnLimitEventDays;
+            if (turnLimitEventDays > 0)
+            {
+                result.PrunedChatTurnLimitEventCount = await PruneChatTurnLimitEventsAsync(turnLimitEventDays, isDryRun, cancellationToken);
+                result.Logs.Add($"Chat turn limit events pruned (> {turnLimitEventDays}d): {result.PrunedChatTurnLimitEventCount}");
+            }
+            else
+            {
+                result.Logs.Add("Chat turn limit event pruning is disabled; no rows were pruned.");
             }
 
             // 11. Prune maintenance history

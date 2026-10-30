@@ -1,0 +1,193 @@
+/* The filter bar, the facets, the chips, the status line and Load more are the global card-list classes in
+   styles.scss; `.action-btn`, `.btn-ghost`, `.gh-tag` and `.gh-table` are global too. The card's grid and the
+   metrics are the breakdown cards', from _telemetry-cards.scss; the title is the Admin → Users card's. */
+@use '../../admin-shared' as shared;
+@use '../telemetry-cards' as cards;
+
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+@include cards.sticky-clearance;
+
+.tl-lim-summary-error,
+.tl-lim-events-error,
+.tl-lim-empty {
+  margin: 0;
+}
+
+.tl-lim-empty {
+  color: var(--nav-color);
+}
+
+/* --- Summary --------------------------------------------------------------------------------- */
+
+.tl-lim-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 15px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tl-lim-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+}
+
+.tl-lim-stat-title {
+  margin: 0;
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #aaa;
+  letter-spacing: 0.5px;
+}
+
+.tl-lim-stat-value {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-lim-by-code {
+  caption {
+    caption-side: top;
+    padding-block-end: 0.375rem;
+    text-align: start;
+    font-weight: 600;
+    color: #e4e4e7;
+  }
+
+  tbody th {
+    font-weight: 400;
+  }
+
+  time {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.tl-lim-num {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Events ---------------------------------------------------------------------------------- */
+
+.tl-lim-events {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* The heading and the status over one fine rule across the full width. */
+.tl-lim-events-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid var(--border-glass);
+
+  .gh-section-title {
+    margin: 0;
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .gh-list-status:empty {
+    display: none;
+  }
+}
+
+.tl-lim-search {
+  flex: 1 1 16rem;
+}
+
+.tl-lim-clear-filters {
+  margin-inline-start: 4px;
+}
+
+.tl-lim-cards {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: tl-lim-cards / inline-size;
+}
+
+.tl-lim-item {
+  min-inline-size: 0;
+}
+
+/* The breakdown cards' grid. Five facts stay in five columns on the widest lists. */
+@include cards.card-layout('.tl-lim-card', '.tl-lim-facts', tl-lim-cards);
+
+@container tl-lim-cards (inline-size >= 100rem) {
+  .tl-lim-card {
+    --tl-metric-cols: 5;
+  }
+}
+
+.tl-lim-head {
+  @include cards.card-head;
+}
+
+.tl-lim-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+
+  .gh-tag {
+    display: inline-flex;
+    margin: 0;
+  }
+
+  time {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.tl-lim-reason {
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.tl-lim-tag {
+  border-color: var(--border-glass);
+  color: #d4d4d8;
+}
+
+.tl-lim-title-row {
+  @include cards.card-title-row('.tl-lim-title');
+}
+
+.tl-lim-title {
+  @include shared.entity-card-title;
+}
+
+.tl-lim-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+@include cards.separator;
+@include cards.metric;

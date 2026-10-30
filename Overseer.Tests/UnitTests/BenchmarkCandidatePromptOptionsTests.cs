@@ -62,6 +62,24 @@ public class BenchmarkCandidatePromptOptionsTests
     }
 
     [Fact]
+    public void WikiContext_ReachesTheVolatileSuffix_AndLeavesTheCachedSegmentsAlone()
+    {
+        var chatService = CreateChatService();
+        var options = new BenchmarkCandidatePromptOptions();
+        var context = new[] { "--- Monsters/Gnoll.md ---\nA gnoll carries a flail." };
+
+        var without = options.BuildSegmentedSystemPrompt(chatService, ParallelExecutionMode.Enabled);
+        var with = options.BuildSegmentedSystemPrompt(chatService, ParallelExecutionMode.Enabled, null, context);
+
+        Assert.Equal(without.frozenPrefix, with.frozenPrefix);
+        Assert.Equal(without.sessionPrefix, with.sessionPrefix);
+        Assert.Contains("A gnoll carries a flail.", with.volatileSuffix);
+        Assert.Equal(
+            with.frozenPrefix + with.sessionPrefix + with.volatileSuffix,
+            options.BuildSystemPrompt(chatService, ParallelExecutionMode.Enabled, null, context));
+    }
+
+    [Fact]
     public void ARecordWithANullCondition_SerializesWithoutTheKey()
     {
         var options = new BenchmarkCandidatePromptOptions { InformationCondition = null };
@@ -186,7 +204,9 @@ public class BenchmarkCandidatePromptOptionsTests
         Assert.False(options.FeedbackToolWithheld);
         Assert.DoesNotContain("feedbackToolWithheld", options.ToCanonicalJson());
         Assert.Equal(ProductionCanonicalJson, options.ToCanonicalJson());
-        Assert.Equal(ProductionCanonicalJson, BenchmarkService.CandidatePromptOptionsFor(false, true, false, feedbackToolOffered: true).ToCanonicalJson());
+        Assert.Equal(
+            ProductionCanonicalJson.Replace("\"hasWikiContext\":false", "\"hasWikiContext\":true"),
+            BenchmarkService.CandidatePromptOptionsFor(false, true, false, feedbackToolOffered: true).ToCanonicalJson());
     }
 
     [Fact]

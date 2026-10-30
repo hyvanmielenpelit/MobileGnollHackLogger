@@ -422,7 +422,8 @@ public class DelegateToSubAgentTool : IToolHandler
                 ShowDebugLog = context.ShowDebugLog,
                 DisableProviderPromptCache = context.DisableProviderPromptCache,
                 AiProvider = aiProvider,
-                Budget = context.Budget
+                Budget = context.Budget,
+                ApplyTurnGuidance = true
             };
 
             var runner = scope.ServiceProvider.GetRequiredService<AgentLoopRunner>();

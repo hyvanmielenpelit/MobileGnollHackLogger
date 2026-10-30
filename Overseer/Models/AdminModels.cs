@@ -330,6 +330,95 @@ public class AnalyticsResponse
     public int TotalCount { get; set; }
 }
 
+/// <summary>AI Telemetry's Limits sub-tab: the totals of a date range.</summary>
+public class ChatTurnLimitSummaryDto
+{
+    public int TotalHits { get; set; }
+    public int TurnsWithoutAnswer { get; set; }
+    public int UsersAffected { get; set; }
+    public List<ChatTurnLimitCodeCountDto> ByCode { get; set; } = new();
+    public List<ChatTurnLimitSeverityCountDto> BySeverity { get; set; } = new();
+}
+
+public class ChatTurnLimitSeverityCountDto
+{
+    /// <summary><c>warning</c> or <c>error</c>.</summary>
+    public string Severity { get; set; } = string.Empty;
+    public int Hits { get; set; }
+}
+
+public class ChatTurnLimitCodeCountDto
+{
+    public string Code { get; set; } = string.Empty;
+    public int Hits { get; set; }
+    public int Users { get; set; }
+    public DateTime LastSeenUtc { get; set; }
+}
+
+public class ChatTurnLimitPageDto
+{
+    public int TotalCount { get; set; }
+    public List<ChatTurnLimitEventDto> Items { get; set; } = new();
+}
+
+/// <summary>One limit event in the list. Identifiers, codes and numbers, never content.</summary>
+public class ChatTurnLimitEventDto
+{
+    public long Id { get; set; }
+    public DateTime OccurredUtc { get; set; }
+    public string Code { get; set; } = string.Empty;
+
+    /// <summary><c>warning</c> or <c>error</c>.</summary>
+    public string Severity { get; set; } = string.Empty;
+    public string? UserId { get; set; }
+    public string? UserName { get; set; }
+    public bool WasConfidential { get; set; }
+    public bool WasEphemeral { get; set; }
+
+    /// <summary><c>system</c> or <c>user</c>.</summary>
+    public string KeySource { get; set; } = string.Empty;
+    public string? Provider { get; set; }
+    public string? RequestedModelId { get; set; }
+    public string? ModelDisplayName { get; set; }
+    public int? LimitValue { get; set; }
+    public int? ObservedValue { get; set; }
+    public int? TotalDurationMs { get; set; }
+
+    /// <summary>Includes sub-agent tool calls.</summary>
+    public int ToolCallCount { get; set; }
+}
+
+public class ChatTurnLimitEventDetailDto : ChatTurnLimitEventDto
+{
+    public string? ThinkingLevel { get; set; }
+    public int IterationsUsed { get; set; }
+
+    /// <summary>Includes sub-agent calls and refused budget increments.</summary>
+    public int ModelCallCount { get; set; }
+    public int ToolCallsBlocked { get; set; }
+    public long ToolTimeMs { get; set; }
+    public long PermitWaitMs { get; set; }
+    public long BackoffWaitMs { get; set; }
+    public int RetryAttemptCount { get; set; }
+    public int TotalPromptTokens { get; set; }
+    public int OutputTokens { get; set; }
+    public decimal? EstimatedCost { get; set; }
+    public string? ProviderFinishReason { get; set; }
+    public string? ProviderErrorCode { get; set; }
+    public int? HttpStatus { get; set; }
+    public string? AssistantPhase { get; set; }
+    public long? ChatSessionId { get; set; }
+
+    /// <summary><c>available</c>, <c>confidential</c>, <c>incognito</c> or <c>deleted</c>.</summary>
+    public string PromptState { get; set; } = string.Empty;
+}
+
+public class ChatTurnLimitPromptDto
+{
+    public string Text { get; set; } = string.Empty;
+    public bool Truncated { get; set; }
+}
+
 /// <summary>The AI Telemetry tab's figures for a date range. Token figures are normalized: see AiUsageRoles.</summary>
 public class AiTelemetrySummaryDto
 {

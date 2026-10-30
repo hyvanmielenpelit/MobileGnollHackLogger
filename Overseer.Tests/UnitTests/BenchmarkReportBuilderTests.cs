@@ -1401,7 +1401,7 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("**Budget/Quality Correlation:** 2 budget-constrained question(s)", report);
         Assert.Contains("Q10 (60, budget pressured)", report);
         Assert.Contains("Q11 (84, budget exhausted)", report);
-        Assert.Contains("Benchmark:ToolCallBudget", report);
+        Assert.Contains("AiPerformanceSettings:MaxCallsPerSession:Default", report);
     }
 
     [Fact]
@@ -7778,6 +7778,27 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("**Termination:** `iteration_limit`", report);
         Assert.Contains("- **Harness Limits:** 0 ", report);
         Assert.Contains("**Clean Answers:** 2 of 2", report);
+    }
+
+    [Fact]
+    public void BenchmarkReportBuilder_UnfinishedAnswers_AreCounted_OnlyWhenThereAreAny()
+    {
+        var recovered = ReportAnswer(1);
+        recovered.UnfinishedAnswerRecovered = true;
+        recovered.WikiContextArticles = "Monsters/Gnoll.md;Items/Lamp.md";
+        var unanswered = ReportAnswer(2);
+        unanswered.UnfinishedAnswerRecovered = true;
+        unanswered.EndedWithoutFinalAnswer = true;
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(ReportRun(recovered, unanswered), "1.0.0");
+
+        Assert.Contains("**Unfinished answers:** 2 recovered, 1 ended without an answer", report);
+        Assert.Contains("**Pre-injected Wiki Articles:** Monsters/Gnoll.md, Items/Lamp.md", report);
+
+        string clean = BenchmarkReportBuilder.BuildMarkdownReport(ReportRun(ReportAnswer(1), ReportAnswer(2)), "1.0.0");
+
+        Assert.DoesNotContain("Unfinished answers", clean);
+        Assert.DoesNotContain("Pre-injected Wiki Articles", clean);
     }
 
     /// <summary>

@@ -1,0 +1,133 @@
+/* The limit details dialog. `.gh-dialog`, `.gh-section-title`, `.dc-ring` and the button classes are global. */
+@use '../../benchmark/benchmark-dialog-frame' as frame;
+
+// The dialog lives in the top layer, so the host takes no box of its own.
+:host {
+  display: contents;
+}
+
+.gh-dialog.tl-lim-dialog {
+  @include frame.frame(760px);
+}
+
+.tl-lim-dialog-title-group h3:focus {
+  outline: none;
+}
+
+.tl-lim-dialog-subtitle {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-lim-dialog-body {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  container: tl-lim-dialog-body / inline-size;
+}
+
+.tl-lim-dialog-loading {
+  display: flex;
+  justify-content: center;
+  margin: 48px 0;
+}
+
+.tl-lim-dialog-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.tl-lim-dialog-error-text,
+.tl-lim-prompt-error {
+  margin: 0;
+}
+
+.tl-lim-dialog-section + .tl-lim-dialog-section {
+  margin-block-start: 22px;
+}
+
+.tl-lim-dialog-section > .gh-section-title {
+  margin-block-end: 8px;
+}
+
+.tl-lim-dialog-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem 1.5rem;
+  margin: 0;
+  font-size: var(--text-secondary);
+
+  > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-inline-size: 0;
+  }
+
+  dt {
+    color: var(--nav-color);
+  }
+
+  dd {
+    margin: 0;
+    min-inline-size: 0;
+    text-align: end;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@container tl-lim-dialog-body (inline-size < 32rem) {
+  .tl-lim-dialog-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.tl-lim-dialog-mono {
+  font-family: var(--font-mono, monospace);
+}
+
+.tl-lim-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+
+  > .gh-section-title {
+    align-self: stretch;
+    margin-block-end: 0;
+  }
+}
+
+.tl-lim-prompt-unavailable,
+.tl-lim-prompt-note {
+  margin: 0;
+  color: var(--nav-color);
+}
+
+.tl-lim-prompt-note {
+  font-size: var(--text-secondary);
+}
+
+.tl-lim-prompt-text {
+  align-self: stretch;
+  max-block-size: 18rem;
+  margin: 0;
+  padding: 0.75rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}

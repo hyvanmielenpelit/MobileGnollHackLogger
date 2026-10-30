@@ -195,6 +195,12 @@ export class PrivacyComponent {
       sharedWith: 'Nobody outside Overseer.'
     },
     {
+      what: 'Limit records',
+      storedWhere: 'A row in Overseer’s database when a limit or a provider failure ends or cuts an answer: which limit, the numbers behind it, the model and your user name, never message content. An administrator can open the prompt of that turn to find out what went wrong, except in a confidential or incognito chat, and each such read is recorded in the access journal. An incognito turn’s record names no chat and no message, and an incognito turn on your own API key writes none.',
+      howLong: '180 days by default, and deleted with your account. Deleting a chat removes the prompt and the record’s link to the chat; the record itself stays until then.',
+      sharedWith: 'Nobody outside Overseer.'
+    },
+    {
       what: 'Assistant feedback reports: short notes the assistant writes for the developers when it cannot find information, a tool misbehaves, or it corrects a mistake. Credentials, card and account numbers, e-mail addresses and phone numbers are removed before storage. The same text is also kept, unredacted, with the chat’s tool calls. You can turn these reports off under Settings → AI Permissions.',
       storedWhere: 'Overseer database: one row per report, linked to the chat and to you, and one row per issue (the problem itself, with a count of how often it was reported) that holds no reference to any chat or user.',
       howLong: 'The report row: until the chat is permanently deleted or the account is erased. The issue row: until an administrator deletes it.',

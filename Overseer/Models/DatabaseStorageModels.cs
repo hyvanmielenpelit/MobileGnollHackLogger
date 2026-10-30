@@ -54,6 +54,12 @@ public class ChatRetentionSettings
     /// </summary>
     public int PruneChatProviderAttemptDays { get; set; } = 400;
 
+    /// <summary>
+    /// Days a <c>ChatTurnLimitEvent</c> row (one limit or provider failure of a chat turn) is kept. Zero or
+    /// negative disables pruning.
+    /// </summary>
+    public int PruneChatTurnLimitEventDays { get; set; } = 180;
+
     /// <summary>Days a <c>MaintenanceRunLog</c> row is kept. Zero or negative disables pruning.</summary>
     public int MaintenanceHistoryRetentionDays { get; set; } = 180;
 
@@ -123,6 +129,7 @@ public class RetentionPolicyDto
     public int PruneSecurityEventDays { get; set; }
     public int PruneSnapshotQuarantineDays { get; set; }
     public int PruneChatProviderAttemptDays { get; set; }
+    public int PruneChatTurnLimitEventDays { get; set; }
     public int MaintenanceHistoryRetentionDays { get; set; }
     public int MaintenanceRunHourUtc { get; set; }
     public bool EnableStorageWarningEmails { get; set; }
@@ -222,6 +229,11 @@ public class DatabaseStorageMetricsDto
     public DateTime? ChatProviderAttemptOldestUtc { get; set; }
     public int ChatProviderAttemptPrunableCount { get; set; }
 
+    // Chat turn limit events
+    public long ChatTurnLimitEventRowCount { get; set; }
+    public DateTime? ChatTurnLimitEventOldestUtc { get; set; }
+    public int ChatTurnLimitEventPrunableCount { get; set; }
+
     // Next-pass preview
     public int ExpiredTrashSessionCount { get; set; }
     public int PrunableToolCallCount { get; set; }
@@ -258,6 +270,9 @@ public class MaintenanceRequestDto
 
     /// <summary>Granular prune only; the full pass always reads the configured window.</summary>
     public int? ChatProviderAttemptPruneDays { get; set; }
+
+    /// <summary>Granular prune only; the full pass always reads the configured window.</summary>
+    public int? ChatTurnLimitEventPruneDays { get; set; }
 }
 
 public static class MaintenanceTriggers
@@ -273,6 +288,7 @@ public static class MaintenanceTriggers
     public const string PruneAiErrorLog = "Manual:PruneAiErrorLog";
     public const string PruneSecurityEvents = "Manual:PruneSecurityEvents";
     public const string PruneChatProviderAttempts = "Manual:PruneChatProviderAttempts";
+    public const string PruneChatTurnLimitEvents = "Manual:PruneChatTurnLimitEvents";
     public const string SweepOrphans = "Manual:SweepOrphans";
     public const string ClearReportCharts = "Manual:ClearReportCharts";
 }
@@ -298,6 +314,7 @@ public class MaintenanceResultDto
     public int PrunedAiErrorLogCount { get; set; }
     public int PrunedSecurityEventCount { get; set; }
     public int PrunedChatProviderAttemptCount { get; set; }
+    public int PrunedChatTurnLimitEventCount { get; set; }
     public long ElapsedMilliseconds { get; set; }
 
     /// <summary>One of <see cref="MaintenanceTriggers"/>.</summary>
@@ -326,6 +343,7 @@ public class MaintenanceRunLogDto
     public int PrunedAiErrorLogCount { get; set; }
     public int PrunedSecurityEventCount { get; set; }
     public int PrunedChatProviderAttemptCount { get; set; }
+    public int PrunedChatTurnLimitEventCount { get; set; }
     public int DeletedDiskFolderCount { get; set; }
     public int DeletedDiskFileCount { get; set; }
     public int SweptOrphanFolderCount { get; set; }

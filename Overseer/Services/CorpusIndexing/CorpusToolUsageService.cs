@@ -10,7 +10,7 @@ using Overseer.Services.Tools;
 
 namespace Overseer.Services.CorpusIndexing;
 
-/// <summary>A chat tool that reads one corpus.</summary>
+/// <summary>A chat tool that reads a corpus; <c>wiki_overview</c>, which reads either wiki, has one for each.</summary>
 public sealed record CorpusTool(string Name, CorpusKind Corpus);
 
 /// <summary>Call counts and timings of one tool, or of a corpus's tools together.</summary>
@@ -89,8 +89,10 @@ public sealed class CorpusToolUsageDto
 
 /// <summary>
 /// Aggregates the chat's stored calls of the corpus tools from <c>ChatMessageToolCall</c>, dated by
-/// their message's <c>TimestampUtc</c>. It reads only each call's name, status, execution time and
-/// whether its error is a guard message; never its arguments, its result or the session's user.
+/// their message's <c>TimestampUtc</c>. It reads only each call's name, status, execution time,
+/// whether its error is a guard message and, for <c>wiki_overview</c>, whether its arguments mention
+/// the NetHack wiki; never the arguments themselves, its result or the session's user. A
+/// <c>wiki_overview</c> call stored encrypted counts under the GnollHack wiki.
 /// A result is cached per period for 5 minutes.
 /// </summary>
 public class CorpusToolUsageService
@@ -100,6 +102,9 @@ public class CorpusToolUsageService
     /// <summary>The periods <see cref="GetAsync"/> accepts; any other value becomes <see cref="DefaultDays"/>.</summary>
     public static readonly IReadOnlyList<int> AllowedDays = new[] { 7, 30, 90 };
 
+    /// <summary>The one tool that serves two corpora, told apart per call.</summary>
+    private const string OverviewTool = "wiki_overview";
+
     /// <summary>The corpus tools, grouped by corpus in <see cref="CorpusKind"/> order.</summary>
     public static readonly IReadOnlyList<CorpusTool> CorpusTools = new[]
     {
@@ -107,8 +112,10 @@ public class CorpusToolUsageService
         new CorpusTool("wiki_view", CorpusKind.GnollHackWiki),
         new CorpusTool("monster_lookup", CorpusKind.GnollHackWiki),
         new CorpusTool("item_lookup", CorpusKind.GnollHackWiki),
+        new CorpusTool(OverviewTool, CorpusKind.GnollHackWiki),
         new CorpusTool("nethack_wiki_search", CorpusKind.NetHackWiki),
         new CorpusTool("nethack_wiki_view", CorpusKind.NetHackWiki),
+        new CorpusTool(OverviewTool, CorpusKind.NetHackWiki),
         new CorpusTool("get_knowledge_article", CorpusKind.KnowledgeBase)
     };
 
@@ -156,7 +163,7 @@ public class CorpusToolUsageService
 
         DateTime now = _time.GetUtcNow().UtcDateTime;
         DateTime firstDay = DateTime.SpecifyKind(now.Date.AddDays(-(days - 1)), DateTimeKind.Utc);
-        List<string> toolNames = CorpusTools.Select(t => t.Name).ToList();
+        List<string> toolNames = CorpusTools.Select(t => t.Name).Distinct().ToList();
 
         var rows = await _dbContext.ChatMessageToolCall
             .AsNoTracking()
@@ -169,6 +176,9 @@ public class CorpusToolUsageService
                     : tc.Error == ToolGuardMessages.NetHackWikiIndexingInProgress ? (int)CorpusKind.NetHackWiki
                     : tc.Error == ToolGuardMessages.KnowledgeBaseIndexingInProgress ? (int)CorpusKind.KnowledgeBase
                     : NoGuard,
+                ReadsNetHackWiki = tc.Name == OverviewTool
+                    && (tc.Error == ToolGuardMessages.NetHackWikiIndexingInProgress
+                        || (tc.ArgsText != null && tc.ArgsText.ToLower().Contains("nethack"))),
                 ExecutionMs = tc.ExecutionMs,
                 TimestampUtc = tc.ChatMessage!.TimestampUtc
             })
@@ -185,17 +195,21 @@ public class CorpusToolUsageService
 
     private static CorpusToolUsageDto Aggregate(List<UsageRow> rows, int days, DateTime firstDay, DateTime now)
     {
-        var corpusOf = CorpusTools.ToDictionary(t => t.Name, t => t.Corpus, StringComparer.Ordinal);
-        var perTool = CorpusTools.ToDictionary(t => t.Name, _ => new StatsAccumulator(days), StringComparer.Ordinal);
+        // A tool listed twice takes its first corpus here; ReadsNetHackWiki moves the call to the second.
+        var corpusOf = CorpusTools
+            .GroupBy(t => t.Name, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Corpus, StringComparer.Ordinal);
+        var perTool = CorpusTools.ToDictionary(t => t, _ => new StatsAccumulator(days));
         var perCorpus = Enum.GetValues<CorpusKind>().ToDictionary(c => c, _ => new StatsAccumulator(days));
 
         foreach (var row in rows)
         {
             if (!corpusOf.TryGetValue(row.Name, out var corpus)) continue;
+            if (row.ReadsNetHackWiki) corpus = CorpusKind.NetHackWiki;
 
             int day = Math.Clamp((row.TimestampUtc.Date - firstDay).Days, 0, days - 1);
             bool guard = row.GuardCorpus == (int)corpus;
-            perTool[row.Name].Add(row, day, guard);
+            perTool[new CorpusTool(row.Name, corpus)].Add(row, day, guard);
             perCorpus[corpus].Add(row, day, guard);
         }
 
@@ -208,7 +222,7 @@ public class CorpusToolUsageService
             IncludesEphemeralSessions = false,
             IncludesSubAgentCalls = true,
             GuardRefusalsIncludeEncryptedSessions = false,
-            Tools = CorpusTools.Select(t => perTool[t.Name].ToToolDto(t)).ToList(),
+            Tools = CorpusTools.Select(t => perTool[t].ToToolDto(t)).ToList(),
             Corpora = perCorpus.OrderBy(p => p.Key).Select(p => p.Value.ToCorpusDto(p.Key, ToolsOf(p.Key))).ToList()
         };
     }
@@ -230,6 +244,9 @@ public class CorpusToolUsageService
 
         /// <summary>The <see cref="CorpusKind"/> whose guard message the error equals, or -1.</summary>
         public int GuardCorpus { get; init; }
+
+        /// <summary>A <c>wiki_overview</c> call that read the NetHack wiki rather than the GnollHack wiki.</summary>
+        public bool ReadsNetHackWiki { get; init; }
 
         public int? ExecutionMs { get; init; }
         public DateTime TimestampUtc { get; init; }

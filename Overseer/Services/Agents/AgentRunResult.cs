@@ -52,6 +52,25 @@ public class AgentRunResult
     public int ModelCallCount { get; set; }
     public int ToolCallCount { get; set; }
 
+    /// <summary>What the turn ran into, one entry per code. Filled only when the request sets
+    /// <see cref="AgentRunRequest.ReportTurnLimits"/>.</summary>
+    public List<TurnLimitHit> LimitHits { get; set; } = new();
+
+    /// <summary>The phase label of the final iteration's last assistant message; null when the provider sent none.</summary>
+    public string? LastAssistantPhase { get; set; }
+
+    /// <summary>The turn got its one recovery call without tools.</summary>
+    public bool UnfinishedAnswerRecovered { get; set; }
+
+    /// <summary>The turn ended with no visible answer, or still on commentary, and no error explains it.</summary>
+    public bool EndedWithoutFinalAnswer { get; set; }
+
+    /// <summary>
+    /// The bounded provider failure text of a reported hit, for an administrator watching the turn live.
+    /// In memory only: a provider can echo prompt text, so it is never stored.
+    /// </summary>
+    public string? LiveProviderErrorBody { get; set; }
+
     /// <summary>
     /// One entry per model call of this turn, in call order. Exists so cost can be computed per request:
     /// a long-context rate card is keyed on a single request's prompt size, and the aggregates above have

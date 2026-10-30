@@ -67,6 +67,7 @@ The retention strategy operates according to strict business logic rules configu
 | `InactivityTtlDays` | `90` | Days | Inactivity threshold. Unpinned active sessions with no messages for > 90 days are soft-deleted. |
 | `SoftDeleteGracePeriodDays` | `30` | Days | Grace period in Trash before soft-deleted sessions are permanently purged. |
 | `PruneToolCallResultsDays` | `30` | Days | Age threshold after which large tool call result payloads (`Result` and `ArgsText`) are nullified. |
+| `PruneChatTurnLimitEventDays` | `180` | Days | Age after which `ChatTurnLimitEvent` rows (one limit or provider failure of a chat turn) are deleted. `0` disables pruning. The privacy notice states the figure. |
 | `MaintenanceRunHourUtc` | `3` | Hour (UTC) | Scheduled daily execution hour (03:00 UTC) for automated maintenance. |
 | `DatabaseMaxSizeMbOverride` | `0` | MB | Forces the capacity ceiling, overriding edition detection. `0` means auto-detect. |
 | `DatabaseWarningThresholdPercent` | `75` | Percent | Share of the resolved limit at which a Warning notification email is sent. |
@@ -167,8 +168,9 @@ To maintain referential integrity without foreign key violations, permanent dele
 1. `ChatMessageAttachment` (matching `ChatSessionId`)
 2. `ChatMessageToolCall` (matching `ChatSessionId`)
 3. `OverseerFeedbackReport` occurrences (matching their plain `ChatSessionId` column; there is no foreign key, so this delete is the only thing that removes them). Their `OverseerFeedbackIssue` rows **stay**: an issue holds no session or user reference, and its `OccurrenceCount` is historical. The count is taken first into `MaintenanceResultDto.PurgedFeedbackReportCount`, in dry runs too, and the purge log line names it.
-4. `ChatMessage` (matching `ChatSessionId`)
-5. `ChatSession` (matching `Id`)
+4. `ChatTurnLimitEvent` rows are **updated, not deleted**: `ChatSessionId`, `UserMessageId` and `AssistantMessageId` are cleared. They are plain columns with no foreign key, the event holds no content and stays until it is pruned, and its `promptState` then reads `deleted`.
+5. `ChatMessage` (matching `ChatSessionId`)
+6. `ChatSession` (matching `Id`)
 
 ---
 
@@ -195,7 +197,7 @@ sequenceDiagram
     Retention->>DB: Soft-delete unpinned sessions > 90d (Reason="Inactivity"), expire own-TTL sessions
     Retention->>DB: Query soft-deleted sessions > 30d (Trash Cutoff)
     Retention->>Disk: Recursively delete session folders on disk
-    Retention->>DB: Execute bulk delete (Attachments -> ToolCalls -> FeedbackReports -> Messages -> Sessions)
+    Retention->>DB: Execute bulk delete (Attachments -> ToolCalls -> FeedbackReports -> clear limit event ids -> Messages -> Sessions)
     Retention->>DB: Prune tool call Results/Args older than 30d to NULL
     Retention->>DB: Prune benchmark tool call Results/Args for runs older than 90d
     Retention->>Disk: Sweep orphaned disk directories
@@ -203,6 +205,7 @@ sequenceDiagram
     Retention->>DB: Prune SystemAiErrorLog rows dismissed > 90d ago
     Retention->>DB: Prune SecurityEvent runs last seen > 180d ago (held users kept)
     Retention->>DB: Prune ChatProviderAttempt rows older than 400d
+    Retention->>DB: Prune ChatTurnLimitEvent rows older than 180d
     Retention->>DB: Prune MaintenanceRunLog rows older than 180d
     Retention->>Storage: RecordMaintenanceRun()
     Retention->>DB: RecordRunAsync() writes one MaintenanceRunLog row
@@ -232,6 +235,7 @@ Administrators can inspect live database storage metrics and trigger granular or
 | `POST` | `/api/admin/maintenance/prune-ai-error-log` | Deletes AI error rows dismissed more than the window ago; `<= 0` returns 400. Undismissed rows are never touched. |
 | `POST` | `/api/admin/maintenance/prune-security-events` | Deletes security events last seen more than `PruneSecurityEventDays` (or the request's value) ago, except those of a user with an active account hold or a pending deletion request; `<= 0` returns 400. |
 | `POST` | `/api/admin/maintenance/prune-chat-provider-attempts` | Deletes chat provider attempts older than `PruneChatProviderAttemptDays` (or the request's value); `<= 0` returns 400. |
+| `POST` | `/api/admin/maintenance/prune-chat-turn-limit-events` | Deletes chat turn limit events older than `PruneChatTurnLimitEventDays` (or the request's value); `<= 0` returns 400. |
 | `POST` | `/api/admin/maintenance/sweep-orphans` | Scans and deletes unreferenced disk folders in `ConversationsDataLocation`. |
 | `POST` | `/api/admin/maintenance/clear-report-charts` | Deletes every report chart image under `Benchmark:ReportPack:ChartsDataLocation` (numeric document folders and `.staging`; anything else is left alone and listed), trigger `Manual:ClearReportCharts`; the documents are kept. 400 when chart storage is not configured. Not part of the full pass. |
 | `GET` | `/api/admin/maintenance/history?take=20` | Recent `MaintenanceRunLog` rows, newest first; `take` clamped to 1..100. |

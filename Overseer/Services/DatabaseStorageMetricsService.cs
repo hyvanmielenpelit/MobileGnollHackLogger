@@ -557,6 +557,25 @@ public class DatabaseStorageMetricsService
             _logger.LogError(ex, "Failed to query chat provider attempt counts");
         }
 
+        // 3f-b. Chat turn limit events. The prunable predicate matches ChatRetentionService.PruneChatTurnLimitEventsAsync.
+        try
+        {
+            dto.ChatTurnLimitEventRowCount = await _dbContext.ChatTurnLimitEvents.LongCountAsync(cancellationToken);
+            var oldestLimitEvent = await _dbContext.ChatTurnLimitEvents.MinAsync(e => (DateTime?)e.OccurredUtc, cancellationToken);
+            dto.ChatTurnLimitEventOldestUtc = oldestLimitEvent.HasValue ? DateTime.SpecifyKind(oldestLimitEvent.Value, DateTimeKind.Utc) : null;
+
+            if (_settings.PruneChatTurnLimitEventDays > 0)
+            {
+                var limitEventCutoff = DateTime.UtcNow.AddDays(-_settings.PruneChatTurnLimitEventDays);
+                dto.ChatTurnLimitEventPrunableCount = await _dbContext.ChatTurnLimitEvents
+                    .CountAsync(e => e.OccurredUtc < limitEventCutoff, cancellationToken);
+            }
+        }
+        catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
+        {
+            _logger.LogError(ex, "Failed to query chat turn limit event counts");
+        }
+
         // 3g. Next-pass preview. Predicates match the corresponding ChatRetentionService steps.
         try
         {
@@ -703,6 +722,7 @@ public class DatabaseStorageMetricsService
         PruneSecurityEventDays = _settings.PruneSecurityEventDays,
         PruneSnapshotQuarantineDays = _settings.PruneSnapshotQuarantineDays,
         PruneChatProviderAttemptDays = _settings.PruneChatProviderAttemptDays,
+        PruneChatTurnLimitEventDays = _settings.PruneChatTurnLimitEventDays,
         MaintenanceHistoryRetentionDays = _settings.MaintenanceHistoryRetentionDays,
         MaintenanceRunHourUtc = _settings.MaintenanceRunHourUtc,
         EnableStorageWarningEmails = _settings.EnableStorageWarningEmails,

@@ -52,30 +52,25 @@ public record BenchmarkScoringConstants
 
     // Speed constants are pinned to two invariants rather than to a convention:
     //
-    //  1. The score floor must be unreachable within Benchmark:QuestionTimeoutSeconds:{Band} at
-    //     every difficulty, so any answer that did not time out gets a distinguishing score.
-    //     The previous 5000 ms / k=25 pair violated this — it floored at ~78 s, which tied six
-    //     of eighteen answers together on the 2026-09-03 run and made the index uninformative.
+    //  1. The score floor must sit far above any answer time a healthy run produces, so answers
+    //     get distinguishing scores. The previous 5000 ms / k=25 pair violated this — it floored
+    //     at ~78 s, which tied six of eighteen answers together on the 2026-09-03 run and made
+    //     the index uninformative.
     //  2. A perfect score stays reserved for a genuinely fast turn, so the metric does not
     //     compress at the top instead of at the bottom.
     //
-    // Invariant 1 is why the per-question timeout is banded rather than flat. The floor is
-    // reached at ModelTime / Target(q) = 2^(99/12) ≈ 304.4, and Target(q) grows with difficulty,
-    // so the binding case inside a band is its *lowest* difficulty — the smallest target, and
-    // therefore the earliest floor:
+    // The floor is reached at ModelTime / Target(q) = 2^(99/12) ≈ 304.4, and Target(q) grows with
+    // difficulty, so the binding case inside a band is its *lowest* difficulty — the smallest
+    // target, and therefore the earliest floor:
     //
-    //     Band          Lowest diff.  Target(q)   Floor at   Timeout   Margin
-    //     Simple                   1    2,020 ms    ~615 s     420 s   ~195 s
-    //     Intermediate            36    2,720 ms    ~828 s     600 s   ~228 s
-    //     Advanced                71    3,420 ms  ~1,041 s     720 s   ~321 s
+    //     Band          Lowest diff.  Target(q)   Floor at
+    //     Simple                   1    2,020 ms    ~615 s
+    //     Intermediate            36    2,720 ms    ~828 s
+    //     Advanced                71    3,420 ms  ~1,041 s
     //
-    // A flat 720 s — the value an Advanced question needs to spend 45 tool calls over 22 rounds
-    // — would let a Simple question run ~105 s past its own 615 s floor without timing out, so
-    // every Simple answer slower than 615 s would score 1 and be indistinguishable from every
-    // other slow one. That is the exact failure these constants exist to prevent, and it is what
-    // the old 5000 ms / k=25 pair actually did. BenchmarkScoringTests asserts
-    // every margin above, so editing either these constants or the timeout bands without
-    // re-deriving the table fails the build rather than quietly degrading the metric.
+    // The per-question timeout is the chat's 1,800 s, above every floor, so an answer slower than
+    // its floor scores 1: an honest reading of an answer a user did receive. BenchmarkScoringTests
+    // asserts the floors, so editing these constants without re-deriving the table fails the build.
     //
     // Invariant 2 binds at the top of the scale: under these constants a 3.4 s answer at
     // difficulty 61 scores 99, not 100, so the index still separates a fast agentic turn from an

@@ -8349,6 +8349,66 @@ alone; no other guide or prompt text changed.
 
 No answer flag is added, and the grading prompts are unchanged.
 
+### Harness Version 64 Updates
+
+Chat turn limits round (2026-10-30). `HarnessVersion` moves to **"64"**; `ScoringMethodVersion` stays
+**14**. Migration `AddChatTurnLimits` adds the answer columns below. `HarnessImpactLedger` classifies 64
+as `CandidateInput | Grading`: the candidate's tools, tool output, request sequence, caps and wiki context
+change, and the per-question grader's *Available tools* line and the claim verifier's tool set both read
+`Benchmark:AllowedTools`. **`ToolGuidesSha256` moves in every case**: `wiki_overview.md` is new and two
+guides changed. **`CandidateSystemPromptSha256` moves for a Source code only run and not for a Production
+run**: `_policy.md` is untouched, and only the `SourceOnlyNotice` prose changed. A run compares below Tier B
+with earlier runs, and on the chat-consistency timeline this round is one dated event.
+
+**What the candidate receives, identically to the chat.** `AgentRunRequest.ApplyTurnGuidance` is one flag
+for both the warnings and the recovery; the chat and both candidate request sites set it.
+
+- **`wiki_overview` is the 17th allowed tool.** It counts and lists the articles of either wiki from the
+  statistics published with each index (`server_tool_parameter_reference` § 5). `wiki_search` and
+  `nethack_wiki_search` now fail with `Success = false` on a query with no searchable words, such as `*` or
+  `the`, and name the new tool; before, that was an ordinary miss. Both search guides say that a search
+  cannot count or list.
+- **Limit notices.** After a tool batch, the last tool result of the batch can end in a `[Limit notice: …]`
+  block: at 3 or fewer rounds left (the rounds left being the lesser of the iterations and the model calls
+  remaining), a last-chance notice at 1, at 75 % and 90 % of the time limit, and at 80 % of the cumulative tool
+  output. Each is sent once per question. The text reaches the model only: the stored tool result, the event
+  and later history do not hold it, so a replay does not reproduce it. The existing `[Tool budget: …]` note
+  keeps its own once-per-iteration path and its wording, *for this question*, in a benchmark.
+- **One recovery call for an unfinished answer.** A tool-free call after a tool round gets one more call, with
+  tools off and `ForcedFinalInstruction`, when its stream closed without a completion marker, it has no visible
+  text, or its OpenAI message phase is `commentary`. The visible text moves into a thought. The stream-closed
+  check requires that the provider reported `call_meta`, which every production provider does. Neither a
+  provider error, a cancellation, nor a used-up model-call budget gets a recovery call.
+- **The caps are the chat's own keys** (§ 9): 150 tool calls, 22 rounds, 48 model calls and 1,800 s for every
+  band, in place of 45, 22, 28 and 420 / 600 / 720 s. The `Benchmark:ToolCallBudget`, `ToolIterations`,
+  `TotalModelCalls` and `QuestionTimeoutSeconds` keys are gone. The speed constants did not change, so an answer
+  slower than its band's speed floor (about 615, 828 or 1,041 s) scores 1 on speed.
+- **Pre-injected wiki context under Production.** `WithCandidateWikiContext` calls
+  `WikiService.GetRelevantContext(questionText)`, as the chat does for a message, and puts the articles in the
+  volatile suffix. `HasWikiContext` is recorded true under Production and false under Source code only and
+  Closed book, which withhold the wiki by definition, and a re-run follows what its run recorded, so a re-run of
+  an earlier run gets none. `CandidateSystemPromptSha256` still hashes the context-free prompt, so it does not
+  vary per question.
+- **Web search stays off** under every condition, a deliberate, recorded divergence (§ 9). Sub-agents stay off,
+  the production default.
+
+**What stays chat-only.** `ReportTurnLimits` (notices, event rows, the graceful timeout and the sanitized
+provider errors) is not set for a candidate: a benchmark has no user. GnollBench keeps its own record in
+`TerminationReason`, whose four values are unchanged, `ToolBudgetExhausted` and the attempt ledger, and its
+answer status and `HttpStatusCode` go on parsing the provider's error text.
+
+**What a run records.** `BenchmarkRunAnswer.UnfinishedAnswerRecovered` and `EndedWithoutFinalAnswer` (`bool?`, null
+before this version) and `WikiContextArticles` (the wiki-relative paths of the articles pre-injected for the
+question, semicolon-joined). The run report prints *Unfinished answers: N recovered, M ended without an answer*
+only when a count is above zero, outside the advisory-flag parenthetical, and *Pre-injected Wiki Articles* per
+answer.
+
+**Scoring and comparability.** An answer that still ends on commentary has empty answer text, because its text
+moved into a thought, so `IsModelProducedEmptyAnswer` scores it 0 when the finish reason is a normal stop. No answer
+flag and no comparability key is added. `PerQuestionBudgets` and `CandidatePromptOptions` move through their recorded
+values. `ComparabilitySignatureWithoutCondition` sets `HasWikiContext` true, so runs that differ only in condition
+still pair.
+
 ---
 
 ## 3. Assessor Strategy
@@ -9852,24 +9912,28 @@ Report Pack documents (see [`ai-benchmark-report-pack.md`](ai-benchmark-report-p
 
 ## 9. Keeping Chat Limits in Step with the Benchmark
 
-The benchmark measures what the Overseer chat can do, so the chat's own defaults must not be tighter than the caps the harness grants its hardest questions. They were: before harness version 6 the chat allowed 15 tool iterations against the Advanced band's 22, and 50 tool calls against the Advanced band's 45.
+The benchmark measures what the Overseer chat can do, so a candidate runs under the limits a user's chat runs under. **From harness 64 the per-question caps are the chat's own keys**, read by `BenchmarkService.ResolveChatCap` with the chat's compiled defaults as fallbacks, so the two cannot drift apart. There are no `Benchmark:*` cap keys, and `BenchmarkChatParityTests` pins the equality:
 
-**The scope difference is the part that is easy to misread.** `ToolExecutor` keys its counter on `ToolBudgetScopeId ?? SessionId`. The benchmark sets a per-question scope (`bench_{runId}_q{orderIndex}`), so `Benchmark:ToolCallBudget` is a **per-question** allowance. Chat sets none, so `AiPerformanceSettings:MaxCallsPerSession` is the allowance for an **entire chat session** across a four-hour window. Comparing the two numbers directly makes the chat look generous when it is not.
-
-Two invariants, to be re-checked whenever the benchmark caps are retuned. Since harness 13 the three resource caps are flat, so the first invariant holds by construction rather than by coincidence — it applies to **every** question, not only to the Advanced band's:
-
-| Invariant | Before harness 13 | Today |
+| Cap | Key | Default |
 |---|---|---|
-| `AiPerformanceSettings:MaxToolIterations:Default` **equals** `Benchmark:ToolIterations` | 22 = 22 (Advanced band only) | 22 = 22 (every question) |
-| `AiPerformanceSettings:MaxCallsPerSession:Default` is **at least 3x** `Benchmark:ToolCallBudget` | 150 ≥ 3 × 45 | 150 ≥ 3 × 45 |
+| Tool calls | `AiPerformanceSettings:MaxCallsPerSession:Default` | 150 |
+| Tool rounds | `AiPerformanceSettings:MaxToolIterations:Default` | 22 |
+| Model calls | `SubAgentSettings:MaxTotalModelCalls` | 48 |
+| Time | `AiPerformanceSettings:ChatRequestTimeout:Default` | 1,800 s, for every band |
 
-The cap keys are **flat values** since harness 13 (`Benchmark:ToolCallBudget`, `Benchmark:ToolIterations`, `Benchmark:TotalModelCalls`); only `Benchmark:QuestionTimeoutSeconds` is still a per-band section. A leftover banded key from an older deployment fails silently rather than loudly — `GetValue<int>` on a key that has children returns `0` — so an upgrade must delete it, and the Run Manifest is the place to confirm the flat key is being read.
+The chat values remain user-adjustable in `/settings`; these are the defaults for a user who has never changed them, and a user's override does not reach a benchmark. `MaxResultLength` agrees at 10,000 on both sides. The caps are still recorded on the run per band (`ToolIterationCapsJson`, `TotalModelCallCapsJson`, `QuestionTimeoutSecondsJson`), and the Run Manifest is the place to confirm them.
 
-The 3x factor is empirical, not arbitrary: on the 2026-09-03 run a single Advanced question executed up to **39** tool calls (Q13 and Q18, each 39 of 45), so a session budget has to cover several such questions rather than one. At the old default of 50, the second hard question in a session was refused mid-investigation with "Maximum tool calls per session exceeded."
+**The scope difference is the part that is easy to misread.** `ToolExecutor` keys its counter on `ToolBudgetScopeId ?? SessionId`. The benchmark sets a per-question scope (`bench_{runId}_q{orderIndex}`), so the 150 is a **per-question** allowance: a question is a fresh chat, and 150 is what a fresh chat has. Chat sets none, so the same figure is the allowance for an **entire chat session** across a four-hour window. A long chat can therefore run out where no question can, and when it does the user sees a notice suggesting a new chat.
 
-Both chat values remain user-adjustable in `/settings`; these are the defaults for a user who has never changed them. `MaxResultLength` already agreed at 10,000 on both sides, and chat's `ChatRequestTimeout` (1,800 s) already exceeds the Advanced band's per-question timeout (720 s).
+**Turn guidance is shared; notices are chat-only.** The limit warnings the model receives and the one recovery call for an unfinished answer are the same in both, through `AgentRunRequest.ApplyTurnGuidance`, which the chat and both candidate request sites set. Notices to the user, `ChatTurnLimitEvent` rows, the graceful end of a timed-out turn and the sanitized provider errors hang off `ReportTurnLimits`, which only the chat sets, because a benchmark has no user (`chat-response-telemetry.md` § 6). This is a difference in measurement, not in what the candidate receives. `TurnGuidance` holds the thresholds and the text; changing them changes what candidates receive, so a change needs a harness bump.
 
-**`report_feedback` is outside both budgets** (from harness 60). Its handler sets `IToolHandler.CountsTowardCallBudget` to `false`, so `ToolExecutor` skips the quota block for it: it counts against neither the 45-call question budget nor the 150-call chat session budget, its result carries no `[Tool budget: …]` notice, and the benchmark's `ToolCallCount` excludes it, so *Budget Pressure* and *Budget Saturation* do not move. Its own cap is three accepted reports per turn (`ReportFeedbackTool.MaxReportsPerTurn`). See [`ai-feedback-reports.md`](ai-feedback-reports.md).
+**Pre-injected wiki context agrees under Production** (harness 64), and is withheld under Source code only and Closed book, as those conditions withhold the wiki by definition.
+
+**Web search is off in every run, under every condition: a deliberate, recorded divergence.** The chat's default is on (`UserAiSettings.EnableWebSearch`). A run's answers must stay reproducible from the local corpora, and a retrieval finding must never depend on what the web returned that day, so `EnableWebSearch` stays false at both candidate sites and `BenchmarkChatParityTests` pins it, naming the divergence so that a later "alignment" does not undo it silently. Sub-agents are off too, which is the production default rather than a divergence.
+
+**History.** Before harness version 6 the chat allowed 15 tool iterations against the Advanced band's 22, and 50 tool calls against the Advanced band's 45. Through harness 63 the benchmark had caps of its own, flat from harness 13 (`Benchmark:ToolCallBudget` 45, `Benchmark:ToolIterations` 22, `Benchmark:TotalModelCalls` 28, and a per-band `Benchmark:QuestionTimeoutSeconds` of up to 720 s), and two invariants had to be re-checked whenever they were retuned: `AiPerformanceSettings:MaxToolIterations:Default` **equals** `Benchmark:ToolIterations` (22 = 22), and `AiPerformanceSettings:MaxCallsPerSession:Default` is **at least 3x** `Benchmark:ToolCallBudget` (150 ≥ 3 × 45). The 3x factor was empirical: on the 2026-09-03 run a single Advanced question executed up to **39** tool calls (Q13 and Q18, each 39 of 45), so a session budget had to cover several such questions rather than one. At the old default of 50, the second hard question in a session was refused mid-investigation with "Maximum tool calls per session exceeded."
+
+**`report_feedback` is outside the tool budget** (from harness 60). Its handler sets `IToolHandler.CountsTowardCallBudget` to `false`, so `ToolExecutor` skips the quota block for it: it counts against neither a question's budget nor a chat session's, its result carries no `[Tool budget: …]` notice, and the benchmark's `ToolCallCount` excludes it, so *Budget Pressure* and *Budget Saturation* do not move. Its own cap is three accepted reports per turn (`ReportFeedbackTool.MaxReportsPerTurn`). See [`ai-feedback-reports.md`](ai-feedback-reports.md).
 
 ### Comparability Across Runs: The Budget Key Widened, the Scoring-Profile Key Narrowed
 
@@ -10017,12 +10081,11 @@ See the project skill `server_benchmark_to_chat_transfer` for the detailed proto
 ### What Is Measured vs. What Is Unmeasured
 
 The benchmark today covers only a specific slice of Overseer chat capabilities:
-- **Measured**: Concise gameplay questions without game context (or with static board context in Harness 8+).
+- **Measured**: Concise gameplay questions without game context (or with static board context in Harness 8+), with the chat's pre-injected wiki context under the Production condition from harness 64.
 - **Unmeasured**:
   - Conversational multi-turn context (chat history)
-  - Pre-injected wiki context (which live chat provides automatically)
   - Spoiler-free mode
-  - Web search tool routing
+  - Web search tool routing (off on purpose, § 9)
   - Subagent delegation and parallel tasks
 
 Each unmeasured configuration represents an active chat capability operating outside benchmark verification.

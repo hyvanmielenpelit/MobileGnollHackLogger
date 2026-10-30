@@ -16,6 +16,7 @@ public class BenchmarkInformationConditionTests
         "wiki_search",
         "source_code_search",
         "wiki_view",
+        "wiki_overview",
         "get_item_stats",
         "get_knowledge_article",
         "nethack_wiki_search",

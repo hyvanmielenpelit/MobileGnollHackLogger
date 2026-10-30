@@ -48,7 +48,7 @@ Implementation:
 
 | Condition (wire name) | Launcher label | What changes |
 |---|---|---|
-| Production (`production`) | *Production — every tool, as in the live chat (default)* | Nothing: the candidate gets `Benchmark:AllowedTools` and the production prompt. |
+| Production (`production`) | *Production — every tool, as in the live chat (default)* | Nothing: the candidate gets `Benchmark:AllowedTools`, the production prompt and the chat's pre-injected wiki context. |
 | Source code only (`sourceOnly`) | *Source code only — no wikis, no knowledge base* | The tools that read a wiki or the knowledge base are withheld, and the source-only notice ends the prompt. |
 | Closed book (`closedBook`) | *Closed book — no tools, memory only* | No tools at all; the prompt is built with `EnableToolUse = false`. |
 
@@ -59,7 +59,7 @@ base or lookup tools*, *Closed book — no tools* — and the first words name t
 The candidate's tool list is `BenchmarkInformationConditions.ResolveAllowedTools(configured)`:
 
 - **Production** returns `Benchmark:AllowedTools` unchanged.
-- **Source code only** returns it without `wiki_search`, `wiki_view`, `get_knowledge_article`,
+- **Source code only** returns it without `wiki_search`, `wiki_view`, `wiki_overview`, `get_knowledge_article`,
   `nethack_wiki_search`, `nethack_wiki_view`, `monster_lookup` and `item_lookup` (the lookup tools read
   the GnollHack wiki), in the configured order. The source-code and stats tools stay.
 - **Closed book** returns an empty list.
@@ -70,8 +70,8 @@ Source code only, never under Closed book (§ 6.8).
 **The source-only notice.** Under Source code only, `BuildSystemPrompt` and
 `BuildSegmentedSystemPrompt` append `BenchmarkInformationConditions.SourceOnlyNotice` as a final
 paragraph: at the end of the flat prompt, and at the end of the volatile suffix in the segmented form
-(the benchmark's volatile suffix is otherwise empty). The notice says the wikis, the knowledge base
-and the lookup tools are not available, that *"instructions elsewhere in this prompt that tell you to
+(which is otherwise empty under this condition). The notice says the wikis, the wiki overview, the
+knowledge base and the lookup tools are not available, that *"instructions elsewhere in this prompt that tell you to
 consult them first do not apply"*, and that the GnollHack source code, read with the source-code and
 stats tools, is the source of truth. The second clause matters: the frozen prefix and `_policy.md`
 keep their instructions to call `get_knowledge_article` and `wiki_search` first, and the notice
@@ -86,6 +86,15 @@ empty allowlist matches no tool).
 …"*; it names the candidate's resolved list (*None* under Closed book), so a grader of a source-only,
 closed-book or experimental-changes answer is told what the candidate had. The graders' and the claim verifier's
 own requests keep reading `Benchmark:AllowedTools`: the verifier keeps the wiki.
+
+**Wiki context is Production-only.** From harness 64 a Production candidate gets the articles the chat would
+pre-inject for the question (`WikiService.GetRelevantContext`) in the volatile suffix, and each answer records them
+in `WikiContextArticles`. Source code only and Closed book get none, because they withhold the wiki by definition.
+`CandidatePromptOptionsFor` records `hasWikiContext` accordingly. `CandidateSystemPromptSha256` hashes the
+context-free prompt, so it does not vary per question.
+
+**Web search is off under every condition,** Production included, although the chat's default is on: a deliberate,
+recorded divergence, so that a run's answers stay reproducible from the local corpora (`ai-benchmark.md` § 9).
 
 ### 1.2 The launcher
 
@@ -110,8 +119,10 @@ always sets Production.
 
 The condition is stored in the run's prompt options record (`CandidatePromptOptionsJson`) as the
 field `informationCondition`. **Production writes no field**: the property is null for Production and
-omitted from the JSON, so every production record, old and new, serializes and hashes exactly as
-before. `BenchmarkCandidatePromptOptions.Describe()` names the condition when it is not Production.
+omitted from the JSON, so the condition adds nothing to a production record. The record's `hasWikiContext`
+is true under Production from harness 64 and false otherwise, so `ComparabilitySignatureWithoutCondition` sets it
+true along with clearing the condition, and runs that differ only in condition still pair.
+`BenchmarkCandidatePromptOptions.Describe()` names the condition when it is not Production.
 Run History reports a changed condition as a changed run option against the previous run, and the
 history card and the run detail's *Prompt* fact show a tag for each setting that differs from
 production (`runConditionTags` in `run-report-frame/run-facts.ts`): the condition (`source code only`,
