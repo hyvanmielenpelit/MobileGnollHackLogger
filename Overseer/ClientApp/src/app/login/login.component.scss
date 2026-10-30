@@ -1,12 +1,24 @@
-.login-container { 
-  max-width: 450px; 
-  margin: 10dvh auto; 
+:host {
+  display: flex;
+  min-height: 100dvh;
+  padding: 16px;
+}
+
+/* Auto margins center the card while it fits and collapse to the host's padding when it does not,
+   so a tall card scrolls from its top instead of being clipped. Fixed line heights keep the card's
+   height, and so its centered position, the same before and after the web fonts swap in. */
+.login-container {
+  width: 100%;
+  max-width: 450px;
+  margin: auto;
   padding: 40px 30px;
   background: rgba(25, 25, 25, 0.9);
+  line-height: 1.2;
 }
 
 .login-header {
   margin-bottom: 30px;
+  container-type: inline-size;
 }
 
 .avatar-container {
@@ -40,10 +52,11 @@
 
 .logo-title {
   text-align: center;
-  font-size: 2.9rem;
+  font-size: clamp(1.5rem, 10.5cqi, 2.6rem);
+  line-height: 1.35;
   margin: 0;
   color: #e0ba6d;
-  letter-spacing: 2px;
+  letter-spacing: 0.045em;
   font-family: "Cinzel", serif;
   font-weight: normal;
 }
@@ -117,6 +130,7 @@
   color: #ccc;
   border-radius: 6px;
   font-size: 1.05rem;
+  line-height: 1.2;
   transition: all 0.2s ease;
 }
 
@@ -149,6 +163,7 @@
 
 .login-btn {
   font-size: 1.5rem;
+  line-height: 1.35;
   letter-spacing: 3px;
   padding: 12px 20px;
   width: 100%;
@@ -243,16 +258,15 @@ input:required:user-valid {
 }
 
 @media (max-width: 480px) {
+  :host {
+    padding: 10px;
+  }
+
   .login-container {
     padding: 25px 15px;
-    margin: 5dvh 10px;
     box-sizing: border-box;
   }
-  
-  .logo-title {
-    font-size: clamp(1.8rem, 8vw, 2.9rem);
-  }
-  
+
   .overseer-avatar {
     width: 96px;
     height: 96px;

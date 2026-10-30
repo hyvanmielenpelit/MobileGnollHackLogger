@@ -88,7 +88,12 @@
     Gnoll Overseer <a routerLink="/terms">Terms of Service</a><span aria-hidden="true"> · </span><a routerLink="/privacy">Privacy</a>
   </p>
 
-  @if (appVersion) {
-    <p class="app-version-label">Overseer {{ appVersion }}</p>
-  }
+  <!-- Rendered before the version arrives, so that its line is already part of the centered card. -->
+  <p class="app-version-label">
+    @if (appVersion) {
+      Overseer {{ appVersion }}
+    } @else {
+      &nbsp;
+    }
+  </p>
 </div>
