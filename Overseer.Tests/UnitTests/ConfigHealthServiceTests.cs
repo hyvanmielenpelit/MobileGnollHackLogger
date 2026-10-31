@@ -430,4 +430,212 @@ public class ConfigHealthServiceTests
         Assert.Equal("/admin/security/events", alert.LinkUrl);
         Assert.DoesNotContain(alerts, a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal));
     }
+
+    // -- Shared tasks ---------------------------------------------------------------------------------
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private async Task<SystemAlert?> GuardAlert(string prefix) =>
+        (await CreateGuardService("Enforce").GetSystemAlertsAsync(Ct)).SingleOrDefault(a => a.Id.StartsWith(prefix, StringComparison.Ordinal));
+
+    private AdminAlertHandling? Handling(string key)
+    {
+        using var db = new ApplicationDbContext(_dbOptions);
+        return db.AdminAlertHandlings.SingleOrDefault(h => h.TaskKey == key);
+    }
+
+    [Fact]
+    public async Task EventReviews_AreSharedTasks_AndConditionsAndDecisionsAreNot()
+    {
+        AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-1", DateTime.UtcNow.AddHours(-1));
+        AddSecurityEvent(SecurityEventKind.AutoBlocked, "u-1", DateTime.UtcNow.AddHours(-1));
+        AddSpend("spender-1", "spender-one", (1, 30m, 1));
+
+        var guardAlerts = await CreateGuardService("Observe").GetSystemAlertsAsync(Ct);
+        Assert.True(Assert.Single(guardAlerts, a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal)).IsSharedTask);
+        Assert.True(Assert.Single(guardAlerts, a => a.Id.StartsWith("snapshot-autoblock:", StringComparison.Ordinal)).IsSharedTask);
+        Assert.False(Assert.Single(guardAlerts, a => a.Id == "snapshot-guard-observe").IsSharedTask);
+        Assert.False(Assert.Single(guardAlerts, a => a.Id == "sentry-dsn-missing").IsSharedTask);
+
+        Assert.True(Assert.Single(await SpendAlerts(20m)).IsSharedTask);
+        Assert.False(AdminSharedTask.TryParse("account-deletion-review:5", out _));
+    }
+
+    [Fact]
+    public async Task MarkingHandled_ClearsTheAlert_OnANewServiceInstance()
+    {
+        long eventId = AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-1", DateTime.UtcNow.AddHours(-1));
+
+        Assert.True(await CreateGuardService("Enforce").MarkAlertHandledAsync($"snapshot-refusals:{eventId}", "admin-1", Ct));
+
+        Assert.Null(await GuardAlert("snapshot-refusals:"));
+        var handling = Handling("snapshot-refusals")!;
+        Assert.Equal(eventId, handling.HandledThrough);
+        Assert.Equal("admin-1", handling.HandledByUserId);
+    }
+
+    [Fact]
+    public async Task ANewerRefusal_RaisesAHandledAlertAgain()
+    {
+        long eventId = AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-1", DateTime.UtcNow.AddHours(-2));
+        await CreateGuardService("Enforce").MarkAlertHandledAsync($"snapshot-refusals:{eventId}", "admin-1", Ct);
+
+        long newId = AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-2", DateTime.UtcNow.AddMinutes(-1));
+
+        Assert.Equal($"snapshot-refusals:{newId}", (await GuardAlert("snapshot-refusals:"))!.Id);
+    }
+
+    [Fact]
+    public async Task AFoldedRepeat_DoesNotRaiseAHandledAlertAgain()
+    {
+        long eventId = AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-1", DateTime.UtcNow.AddMinutes(-5));
+        await CreateGuardService("Enforce").MarkAlertHandledAsync($"snapshot-refusals:{eventId}", "admin-1", Ct);
+
+        using (var db = new ApplicationDbContext(_dbOptions))
+        {
+            var securityEvent = db.SecurityEvents.Single(e => e.Id == eventId);
+            securityEvent.Count = 3;
+            securityEvent.LastOccurredUtc = DateTime.UtcNow;
+            db.SaveChanges();
+        }
+
+        Assert.Null(await GuardAlert("snapshot-refusals:"));
+    }
+
+    [Fact]
+    public async Task HandledRefusals_DoNotHideAnAutomaticBlock()
+    {
+        long refusal = AddSecurityEvent(SecurityEventKind.SnapshotRejected, "u-1", DateTime.UtcNow.AddHours(-2));
+        AddSecurityEvent(SecurityEventKind.AutoBlocked, "u-1", DateTime.UtcNow.AddHours(-3));
+        await CreateGuardService("Enforce").MarkAlertHandledAsync($"snapshot-refusals:{refusal + 100}", "admin-1", Ct);
+
+        Assert.Null(await GuardAlert("snapshot-refusals:"));
+        Assert.NotNull(await GuardAlert("snapshot-autoblock:"));
+    }
+
+    [Fact]
+    public async Task HandledAiSpend_StaysHiddenAtALowerCount_AndReturnsAtAHigherCountOrOnANewDate()
+    {
+        AddSpend("spender-1", "spender-one", (1, 30m, 1));
+        AddSpend("spender-2", "spender-two", (1, 30m, 1));
+        var service = CreateSpendService(20m);
+        var dateKey = Assert.Single(await SpendAlerts(20m)).Id[..^2];
+
+        await service.MarkAlertHandledAsync(dateKey + ":3", "admin-1", Ct);
+        Assert.Empty(await SpendAlerts(20m));
+
+        AddSpend("spender-3", "spender-three", (1, 30m, 1));
+        Assert.Empty(await SpendAlerts(20m));
+
+        AddSpend("spender-4", "spender-four", (1, 30m, 1));
+        Assert.Equal(dateKey + ":4", Assert.Single(await SpendAlerts(20m)).Id);
+
+        await service.MarkAlertHandledAsync(dateKey + ":4", "admin-1", Ct);
+        Assert.Empty(await SpendAlerts(20m));
+
+        using (var db = new ApplicationDbContext(_dbOptions))
+        {
+            var handling = db.AdminAlertHandlings.Single();
+            db.AdminAlertHandlings.Remove(handling);
+            db.AdminAlertHandlings.Add(new AdminAlertHandling { TaskKey = "ai-spend:20000101", HandledThrough = 99, HandledAtUtc = DateTime.UtcNow });
+            db.SaveChanges();
+        }
+        Assert.Single(await SpendAlerts(20m));
+    }
+
+    [Fact]
+    public async Task MarkingALowerSequence_NeverLowersTheMark_AndKeepsTheFirstHandler()
+    {
+        var service = CreateGuardService("Enforce");
+        Assert.True(await service.MarkAlertHandledAsync("snapshot-refusals:10", "admin-1", Ct));
+        var first = Handling("snapshot-refusals")!;
+
+        Assert.True(await service.MarkAlertHandledAsync("snapshot-refusals:4", "admin-2", Ct));
+
+        var after = Handling("snapshot-refusals")!;
+        Assert.Equal(10, after.HandledThrough);
+        Assert.Equal("admin-1", after.HandledByUserId);
+        Assert.Equal(first.HandledAtUtc, after.HandledAtUtc);
+    }
+
+    [Fact]
+    public async Task MarkingAHigherSequence_RaisesTheMark_AndRecordsTheHandler()
+    {
+        var service = CreateGuardService("Enforce");
+        await service.MarkAlertHandledAsync("snapshot-refusals:10", "admin-1", Ct);
+
+        await service.MarkAlertHandledAsync("snapshot-refusals:12", "admin-2", Ct);
+
+        var after = Handling("snapshot-refusals")!;
+        Assert.Equal(12, after.HandledThrough);
+        Assert.Equal("admin-2", after.HandledByUserId);
+    }
+
+    [Fact]
+    public async Task MarkingTheSameIdTwice_Succeeds_AndLeavesOneRow()
+    {
+        var service = CreateGuardService("Enforce");
+
+        Assert.True(await service.MarkAlertHandledAsync("snapshot-autoblock:3", "admin-1", Ct));
+        Assert.True(await service.MarkAlertHandledAsync("snapshot-autoblock:3", "admin-2", Ct));
+
+        using var db = new ApplicationDbContext(_dbOptions);
+        var handling = Assert.Single(db.AdminAlertHandlings);
+        Assert.Equal("admin-1", handling.HandledByUserId);
+    }
+
+    [Theory]
+    [InlineData("sentry-dsn-missing")]
+    [InlineData("account-deletion-review:5")]
+    [InlineData(null)]
+    public async Task MarkingAnythingButASharedTask_ReturnsFalse_AndWritesNothing(string? alertId)
+    {
+        Assert.False(await CreateGuardService("Enforce").MarkAlertHandledAsync(alertId, "admin-1", Ct));
+
+        using var db = new ApplicationDbContext(_dbOptions);
+        Assert.Empty(db.AdminAlertHandlings);
+    }
+
+    [Fact]
+    public async Task AFailingHandlingLookup_KeepsTheAlertsVisible()
+    {
+        var failingOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .AddInterceptors(new FailingHandlingLookup())
+            .Options;
+        using (var db = new ApplicationDbContext(failingOptions))
+        {
+            var securityEvent = new SecurityEvent
+            {
+                Kind = SecurityEventKind.SnapshotRejected,
+                AspNetUserId = "u-1",
+                OccurredUtc = DateTime.UtcNow.AddHours(-1),
+                LastOccurredUtc = DateTime.UtcNow.AddHours(-1),
+                Count = 1,
+                Code = "injection-own"
+            };
+            db.SecurityEvents.Add(securityEvent);
+            db.AdminAlertHandlings.Add(new AdminAlertHandling { TaskKey = "snapshot-refusals", HandledThrough = long.MaxValue, HandledAtUtc = DateTime.UtcNow });
+            db.SaveChanges();
+        }
+
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(failingOptions));
+        var configuration = new ConfigurationBuilder().Build();
+        var service = new ConfigHealthService(configuration, services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>());
+
+        var alert = Assert.Single(await service.GetSystemAlertsAsync(Ct), a => a.Id.StartsWith("snapshot-refusals:", StringComparison.Ordinal));
+        Assert.True(alert.IsSharedTask);
+    }
+
+    /// <summary>Fails every query that reads the handling table; the other queries run.</summary>
+    private sealed class FailingHandlingLookup : Microsoft.EntityFrameworkCore.Diagnostics.IQueryExpressionInterceptor
+    {
+        public System.Linq.Expressions.Expression QueryCompilationStarting(
+            System.Linq.Expressions.Expression queryExpression,
+            Microsoft.EntityFrameworkCore.Diagnostics.QueryExpressionEventData eventData)
+            => typeof(IQueryable<AdminAlertHandling>).IsAssignableFrom(queryExpression.Type)
+                ? throw new InvalidOperationException("The handling table cannot be read.")
+                : queryExpression;
+    }
 }

@@ -77,6 +77,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<ChatTurnLimitEvent> ChatTurnLimitEvents { get; set; } = null!;
         public DbSet<OverseerDailyActivity> OverseerDailyActivities { get; set; } = null!;
         public DbSet<AdminUserAction> AdminUserActions { get; set; } = null!;
+        public DbSet<AdminAlertHandling> AdminAlertHandlings { get; set; } = null!;
         public DbSet<AdminBulkOperation> AdminBulkOperations { get; set; } = null!;
         public DbSet<AdminBulkOperationItem> AdminBulkOperationItems { get; set; } = null!;
         public DbSet<UserTermsAcceptance> UserTermsAcceptances { get; set; } = null!;

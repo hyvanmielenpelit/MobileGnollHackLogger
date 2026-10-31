@@ -358,6 +358,11 @@ public class DeclineAccountDeletionRequest
     public string Note { get; set; } = string.Empty;
 }
 
+public class MarkSystemAlertHandledRequest
+{
+    public string? AlertId { get; set; }
+}
+
 public class AccountDeletionDecisionResultDto
 {
     public bool EmailSent { get; set; }

@@ -485,7 +485,104 @@ public class ConfigHealthService
             }
         }
 
+        await ApplySharedTaskHandlingAsync(alerts, ct);
+
         return alerts;
+    }
+
+    /// <summary>Marks a shared task handled for all administrators; false when the id is not a shared task.</summary>
+    public async Task<bool> MarkAlertHandledAsync(string? alertId, string adminUserId, CancellationToken ct = default)
+    {
+        if (_scopeFactory == null || !AdminSharedTask.TryParse(alertId, out var task))
+        {
+            return false;
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+        var now = DateTime.UtcNow;
+
+        var handling = await dbContext.AdminAlertHandlings.FirstOrDefaultAsync(h => h.TaskKey == task.Key, ct);
+        if (handling == null)
+        {
+            handling = new MobileGnollHackLogger.Data.AdminAlertHandling
+            {
+                TaskKey = task.Key,
+                HandledThrough = task.Sequence,
+                HandledByUserId = adminUserId,
+                HandledAtUtc = now
+            };
+            dbContext.AdminAlertHandlings.Add(handling);
+            try
+            {
+                await dbContext.SaveChangesAsync(ct);
+                return true;
+            }
+            catch (DbUpdateException)
+            {
+                // Another administrator inserted the row first; that row is updated below.
+                dbContext.Entry(handling).State = EntityState.Detached;
+                handling = await dbContext.AdminAlertHandlings.FirstOrDefaultAsync(h => h.TaskKey == task.Key, ct);
+                if (handling == null)
+                {
+                    throw;
+                }
+            }
+        }
+
+        if (task.Sequence > handling.HandledThrough)
+        {
+            handling.HandledThrough = task.Sequence;
+            handling.HandledByUserId = adminUserId;
+            handling.HandledAtUtc = now;
+            await dbContext.SaveChangesAsync(ct);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Flags the shared tasks among the alerts and removes those handled through their sequence. The alerts stay
+    /// when the lookup fails, so a broken lookup never hides a security alert.
+    /// </summary>
+    private async Task ApplySharedTaskHandlingAsync(List<SystemAlert> alerts, CancellationToken ct)
+    {
+        var shared = new List<(SystemAlert Alert, AdminSharedTask Task)>();
+        foreach (var alert in alerts)
+        {
+            if (AdminSharedTask.TryParse(alert.Id, out var task))
+            {
+                alert.IsSharedTask = true;
+                shared.Add((alert, task));
+            }
+        }
+
+        if (shared.Count == 0 || _scopeFactory == null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+            var keys = shared.Select(s => s.Task.Key).ToList();
+            var handlings = await dbContext.AdminAlertHandlings.AsNoTracking()
+                .Where(h => keys.Contains(h.TaskKey))
+                .ToListAsync(ct);
+
+            foreach (var (alert, task) in shared)
+            {
+                if (handlings.Any(h => h.TaskKey == task.Key && task.Sequence <= h.HandledThrough))
+                {
+                    alerts.Remove(alert);
+                }
+            }
+        }
+        catch (Exception ex) when (!ex.IsCanceledBy(ct))
+        {
+            _logger?.LogWarning(ex, "Failed to read shared admin task handling in ConfigHealthService");
+        }
     }
 
     /// <summary>

@@ -1,8 +1,8 @@
-import { Component, ElementRef, ViewChild, OnDestroy, OnInit, inject } from '@angular/core';
+import { Component, ElementRef, ViewChild, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { NavigationEnd, Router, RouterLink, UrlTree } from '@angular/router';
 import { AdminAlertService, SystemAlert } from '../services/admin-alert.service';
-import { Subscription, filter, map } from 'rxjs';
+import { Subscription, filter, finalize, map } from 'rxjs';
 import { ensureOverlayPolyfills } from '../utils/polyfills.util';
 
 /** An alert, the in-app link it carries, if any, and its severity. */
@@ -15,6 +15,9 @@ export interface AdminAlertView {
 
 /** `dialog:modal` where the browser knows it; elsewhere any open dialog, the safe side. */
 const MODAL_DIALOG_SELECTOR = supportsSelector('dialog:modal') ? 'dialog:modal' : 'dialog[open]';
+
+/** The shortest time between the refetches made when the page becomes visible. */
+const VISIBILITY_REFRESH_MIN_MS = 60 * 1000;
 
 function supportsSelector(selector: string): boolean {
   try {
@@ -44,10 +47,25 @@ export class AdminAlertsComponent implements OnInit, OnDestroy {
     return { alert, link: this.linkFor(alert), severity, severityLabel: severity === 'error' ? 'Error' : 'Warning' };
   })));
 
+  /** The shared task whose request is in flight. */
+  handlingId = signal<string | null>(null);
+  /** The shared task whose last request failed. */
+  handleFailedId = signal<string | null>(null);
+
   private latestCount = 0;
   private previousPath: string | null = null;
   private sub = new Subscription();
   private dialogObserver: MutationObserver | null = null;
+  private lastVisibilityRefresh = Number.NEGATIVE_INFINITY;
+
+  /** Another admin may have cleared an alert while this page was hidden. */
+  private onVisibilityChange = () => {
+    const now = Date.now();
+    if (document.visibilityState === 'visible' && now - this.lastVisibilityRefresh >= VISIBILITY_REFRESH_MIN_MS) {
+      this.lastVisibilityRefresh = now;
+      this.adminAlertService.refresh();
+    }
+  };
 
   ngOnInit() {
     ensureOverlayPolyfills();
@@ -68,15 +86,41 @@ export class AdminAlertsComponent implements OnInit, OnDestroy {
     // A popover shown after a modal dialog sits above it but is inert, so alerts wait for it to close.
     this.dialogObserver = new MutationObserver(() => this.syncPopover());
     this.dialogObserver.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['open'] });
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
   }
 
   ngOnDestroy() {
     this.sub.unsubscribe();
     this.dialogObserver?.disconnect();
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
   }
 
   dismiss(id: string) {
     this.adminAlertService.dismiss(id);
+  }
+
+  /** Following a link dismisses the alert, except a shared task, whose button is needed after the review. */
+  linkFollowed(alert: SystemAlert) {
+    if (!alert.isSharedTask) {
+      this.dismiss(alert.id);
+    }
+  }
+
+  /** Clears a shared task for all admins; a failure keeps the card and shows an error on it. */
+  markHandled(id: string) {
+    if (this.handlingId() !== null) {
+      return;
+    }
+    this.handlingId.set(id);
+    this.handleFailedId.set(null);
+    this.sub.add(this.adminAlertService.markHandled(id).pipe(
+      finalize(() => this.handlingId.set(null))
+    ).subscribe({
+      error: err => {
+        console.error('Failed to mark the admin alert handled', err);
+        this.handleFailedId.set(id);
+      }
+    }));
   }
 
   /** The alert's link as a router URL; null without link text, or for anything but a site-relative path. */

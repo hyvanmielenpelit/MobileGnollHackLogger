@@ -1669,6 +1669,23 @@ public class AdminController : ControllerBase
         }
     }
 
+    /// <summary>Clears a shared admin alert for all administrators; 400 when the id is not a shared task.</summary>
+    [HttpPost("system-alerts/handled")]
+    public async Task<IActionResult> MarkSystemAlertHandled([FromBody] MarkSystemAlertHandledRequest request,
+        [FromServices] ConfigHealthService configHealthService, CancellationToken ct)
+    {
+        try
+        {
+            return await configHealthService.MarkAlertHandledAsync(request?.AlertId, AdminUserId ?? string.Empty, ct)
+                ? NoContent()
+                : BadRequest(new { message = "That alert is not a shared task." });
+        }
+        catch (Exception ex) when (ex.IsCanceledBy(ct))
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
     // --- Database Storage & Maintenance ---
 
     [HttpGet("storage-metrics")]

@@ -164,6 +164,12 @@
   }
 }
 
+.admin-alert-error {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: var(--color-error-text);
+}
+
 /* Placement only; the look is the global .action-btn. */
 .dismiss-btn {
   margin: 0;

@@ -16,13 +16,24 @@
             <span class="admin-alert-severity">{{ view.severityLabel }}</span>
           </div>
           <p class="admin-alert-message" [id]="'admin-alert-message-' + i">{{ view.alert.message }}</p>
-          @if (view.link) {
+          @if (view.link || view.alert.isSharedTask) {
             <div class="admin-alert-actions">
-              <a class="admin-alert-link" [routerLink]="view.link" (click)="dismiss(view.alert.id)">
-                {{ view.alert.linkText }}
-                <svg class="admin-alert-link-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-              </a>
+              @if (view.link) {
+                <a class="admin-alert-link" [routerLink]="view.link" (click)="linkFollowed(view.alert)">
+                  {{ view.alert.linkText }}
+                  <svg class="admin-alert-link-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                </a>
+              }
+              @if (view.alert.isSharedTask) {
+                <button type="button" class="btn-ghost admin-alert-handled"
+                        [attr.aria-describedby]="'admin-alert-message-' + i"
+                        [disabled]="handlingId() === view.alert.id"
+                        (click)="markHandled(view.alert.id)">Mark handled for all admins</button>
+              }
             </div>
+          }
+          @if (handleFailedId() === view.alert.id) {
+            <p class="admin-alert-error" role="alert">Could not mark this as handled. Try again.</p>
           }
         </div>
         <button type="button" class="action-btn dismiss-btn" aria-label="Dismiss alert"

@@ -325,8 +325,11 @@ snapshots were refused for text addressed to the AI in the last 7 days (M users)
 `snapshot-autoblock:{newest event id}` while `AutoBlocked` events do; these two with *Review* →
 `/admin/security/events`. The changing part of each id makes a
 dismissed alert reappear on new events. A repeat that `SecurityEventRecorder` folds into an existing event
-(within `RunWindow`) keeps the id, so it does not re-raise a dismissed refusal alert. Following an alert's
-*Review* or *Change* link dismisses it like ✕.
+(within `RunWindow`) keeps the id, so it does not re-raise a dismissed refusal alert. Any admin can mark
+`snapshot-refusals` or `snapshot-autoblock` handled with the card's *Mark handled for all admins* button, which
+clears it for all admins until a newer event (`AdminAlertHandlings`, one row per kind). The ✕ stays personal.
+Following an alert's *Change* link dismisses it like ✕; *Review* on these two does not, since the button is
+needed after the review.
 
 **Settings** (`SnapshotGuard`, read on each call by `SnapshotGuardOptions.Read`, which never throws):
 `Mode` (the seed), `AutoBlockEnabled` (true; an unreadable value is true), `AutoBlockDistinctDays` (3; 1–30),

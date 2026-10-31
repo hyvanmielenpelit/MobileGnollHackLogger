@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, EMPTY, Observable, Subject, catchError, exhaustMap, of, startWith, switchMap } from 'rxjs';
+import { BehaviorSubject, EMPTY, Observable, Subject, catchError, exhaustMap, of, startWith, switchMap, tap } from 'rxjs';
 import { AuthService, AuthUser } from './auth.service';
 
 export interface SystemAlert {
@@ -10,6 +10,8 @@ export interface SystemAlert {
   /** An in-app path with an optional query, such as "/admin/configs"; shown only with `linkText`. */
   linkUrl?: string | null;
   linkText?: string | null;
+  /** Any admin can mark this alert handled, which clears it for all of them. */
+  isSharedTask?: boolean;
 }
 
 /** The `localStorage` key prefix of a user's dismissed alert ids; the lowercased user name follows it. */
@@ -18,10 +20,15 @@ export const DISMISSED_ALERTS_KEY_PREFIX = 'overseer.adminAlerts.dismissed.';
 /** The per-tab `sessionStorage` key of older clients, merged into the user's record once and then removed. */
 export const LEGACY_DISMISSED_ALERTS_KEY = 'dismissed_admin_alerts';
 
+/** How long an alert must stay unreported before its dismissal is forgotten. */
+export const DISMISSAL_FORGET_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** The stored form of a user's dismissed alert ids. */
 interface DismissedAlertsRecord {
   version: 1;
   ids: string[];
+  /** When each listed id was first missing from the server's alerts (ISO 8601). */
+  missingSince?: Record<string, string>;
 }
 
 /** The `localStorage` key holding the dismissals of the named user. */
@@ -31,9 +38,10 @@ export function dismissedAlertsKey(userName: string | null | undefined): string 
 
 /**
  * The admin alerts of `/api/admin/system-alerts`, fetched on each `user$` emission and on `refresh()`.
- * Dismissals are kept per user in `localStorage`, and an id the server no longer reports is forgotten, so a
- * condition that clears and later returns shows its alert again. Where storage is blocked or unreadable, a
- * dismissal lasts only as long as the page.
+ * Dismissals are kept per user in `localStorage`. An alert that stays unreported for `DISMISSAL_FORGET_AFTER_MS`
+ * is forgotten, so a condition that has cleared and later returns shows its alert again, while a check that fails
+ * for a moment or a server restart does not. Where storage is blocked or unreadable, a dismissal lasts only as
+ * long as the page.
  */
 @Injectable({ providedIn: 'root' })
 export class AdminAlertService {
@@ -48,6 +56,8 @@ export class AdminAlertService {
   alerts$ = this.alertsSubject.asObservable();
 
   private dismissed = new Set<string>();
+  /** When each dismissed id was first missing from the server's alerts (ISO 8601). */
+  private missingSince = new Map<string, string>();
   /** The signed-in admin's storage key; null when no admin is signed in. */
   private storageKey: string | null = null;
 
@@ -74,8 +84,20 @@ export class AdminAlertService {
   dismiss(id: string) {
     this.mergeStored();
     this.dismissed.add(id);
+    this.missingSince.delete(id);
     this.persist();
     this.publish();
+  }
+
+  /** Clears a shared task for all admins, then removes it here and fetches the alerts again. */
+  markHandled(id: string): Observable<void> {
+    return this.http.post<void>('/api/admin/system-alerts/handled', { alertId: id }).pipe(
+      tap(() => {
+        this.allAlertsSubject.next(this.allAlertsSubject.value.filter(alert => alert.id !== id));
+        this.publish();
+        this.refresh();
+      })
+    );
   }
 
   /** Loads the dismissals of a newly signed-in admin, merges them for the same admin, and clears them otherwise. */
@@ -83,6 +105,7 @@ export class AdminAlertService {
     if (!user?.isAdmin) {
       this.storageKey = null;
       this.dismissed = new Set();
+      this.missingSince = new Map();
       this.allAlertsSubject.next([]);
       this.publish();
       return;
@@ -92,6 +115,7 @@ export class AdminAlertService {
     if (key !== this.storageKey) {
       this.storageKey = key;
       this.dismissed = new Set();
+      this.missingSince = new Map();
     }
     this.mergeStored();
     this.migrateLegacy();
@@ -108,14 +132,30 @@ export class AdminAlertService {
     );
   }
 
-  /** Publishes the server's alerts and forgets the dismissals of alerts it no longer reports. */
+  /**
+   * Publishes the server's alerts and forgets the dismissal of an alert only when this response still omits it
+   * `DISMISSAL_FORGET_AFTER_MS` after a response first did. An alert reported again restarts that period.
+   */
   private receive(alerts: SystemAlert[]) {
     this.allAlertsSubject.next(alerts);
     this.mergeStored();
     const reported = new Set(alerts.map(alert => alert.id));
-    const kept = [...this.dismissed].filter(id => reported.has(id));
-    if (kept.length !== this.dismissed.size) {
-      this.dismissed = new Set(kept);
+    const now = Date.now();
+    let changed = false;
+    for (const id of this.dismissed) {
+      const since = this.missingSince.get(id);
+      if (reported.has(id)) {
+        changed = this.missingSince.delete(id) || changed;
+      } else if (since === undefined) {
+        this.missingSince.set(id, new Date(now).toISOString());
+        changed = true;
+      } else if (now - Date.parse(since) >= DISMISSAL_FORGET_AFTER_MS) {
+        this.dismissed.delete(id);
+        this.missingSince.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) {
       this.persist();
     }
     this.publish();
@@ -125,27 +165,39 @@ export class AdminAlertService {
     this.alertsSubject.next(this.allAlertsSubject.value.filter(alert => !this.dismissed.has(alert.id)));
   }
 
-  /** Adds the stored ids, which another tab may have changed, to the in-memory set. */
+  /**
+   * Adds the stored ids, which another tab may have changed, to the in-memory set, and takes the stored clocks.
+   * Without a readable record the in-memory clocks stay, so blocked storage keeps working for the life of the page.
+   */
   private mergeStored() {
-    if (this.storageKey) {
-      this.readStored(this.storageKey).forEach(id => this.dismissed.add(id));
+    const stored = this.storageKey ? this.readStored(this.storageKey) : null;
+    if (stored) {
+      stored.ids.forEach(id => this.dismissed.add(id));
+      this.missingSince = stored.missingSince;
     }
   }
 
-  /** The stored ids; an unreadable record or blocked storage reads as none. */
-  private readStored(key: string): string[] {
+  /** The stored record, without clocks that are malformed; null for no record, an unreadable one, or blocked storage. */
+  private readStored(key: string): { ids: string[]; missingSince: Map<string, string> } | null {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) {
-        return [];
+        return null;
       }
       const record = JSON.parse(raw) as Partial<DismissedAlertsRecord> | null;
       if (record?.version !== 1 || !Array.isArray(record.ids)) {
-        return [];
+        return null;
       }
-      return record.ids.filter((id): id is string => typeof id === 'string');
+      const ids = record.ids.filter((id): id is string => typeof id === 'string');
+      const missingSince = new Map<string, string>();
+      Object.entries(record.missingSince ?? {}).forEach(([id, value]) => {
+        if (typeof value === 'string' && ids.includes(id) && !Number.isNaN(Date.parse(value))) {
+          missingSince.set(id, value);
+        }
+      });
+      return { ids, missingSince };
     } catch {
-      return [];
+      return null;
     }
   }
 
@@ -159,6 +211,9 @@ export class AdminAlertService {
         localStorage.removeItem(this.storageKey);
       } else {
         const record: DismissedAlertsRecord = { version: 1, ids: [...this.dismissed] };
+        if (this.missingSince.size > 0) {
+          record.missingSince = Object.fromEntries(this.missingSince);
+        }
         localStorage.setItem(this.storageKey, JSON.stringify(record));
       }
       return true;

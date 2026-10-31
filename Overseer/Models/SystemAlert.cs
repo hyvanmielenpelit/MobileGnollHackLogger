@@ -11,4 +11,7 @@ public class SystemAlert
 
     /// <summary>The link's text; set together with <see cref="LinkUrl"/>.</summary>
     public string? LinkText { get; set; }
+
+    /// <summary>Any administrator can mark this alert handled, which clears it for all of them.</summary>
+    public bool IsSharedTask { get; set; }
 }

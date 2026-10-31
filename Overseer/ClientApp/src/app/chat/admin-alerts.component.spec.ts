@@ -2,7 +2,7 @@ import type { Mock } from 'vitest';
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, Subject } from 'rxjs';
 import { AdminAlertsComponent } from './admin-alerts.component';
 import { AdminAlertService, SystemAlert } from '../services/admin-alert.service';
 
@@ -14,6 +14,8 @@ describe('AdminAlertsComponent', () => {
   let alerts: BehaviorSubject<SystemAlert[]>;
   let dismiss: Mock;
   let refresh: Mock;
+  let markHandled: Mock;
+  let handled: Subject<void>;
   let dialogs: HTMLDialogElement[];
 
   const alert = (overrides: Partial<SystemAlert> = {}): SystemAlert => ({
@@ -24,6 +26,18 @@ describe('AdminAlertsComponent', () => {
   const items = () => Array.from(el().querySelectorAll<HTMLElement>('.admin-alert'));
   const link = () => el().querySelector<HTMLAnchorElement>('a.admin-alert-link');
   const container = () => el().querySelector<HTMLElement>('#admin-alerts-popover')!;
+  const handledButton = () => el().querySelector<HTMLButtonElement>('button.admin-alert-handled');
+  const errorLine = () => el().querySelector<HTMLElement>('.admin-alert-error');
+
+  const sharedTask = (overrides: Partial<SystemAlert> = {}) => alert({
+    id: 'snapshot-refusals:7', isSharedTask: true, linkUrl: '/admin/configs', linkText: 'Review', ...overrides
+  });
+
+  /** Reports the page's visibility as `state` and fires the event. */
+  function becomes(state: DocumentVisibilityState) {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue(state);
+    document.dispatchEvent(new Event('visibilitychange'));
+  }
 
   /** A modal dialog on the page, closed and removed after the test. */
   function openModal(): HTMLDialogElement {
@@ -41,6 +55,8 @@ describe('AdminAlertsComponent', () => {
     alerts = new BehaviorSubject<SystemAlert[]>([]);
     dismiss = vi.fn((id: string) => alerts.next(alerts.value.filter(a => a.id !== id)));
     refresh = vi.fn();
+    handled = new Subject<void>();
+    markHandled = vi.fn(() => handled.asObservable());
     dialogs = [];
 
     await TestBed.configureTestingModule({
@@ -50,7 +66,7 @@ describe('AdminAlertsComponent', () => {
           { path: 'admin/:tab', component: AdminStubComponent },
           { path: 'chat', component: AdminStubComponent }
         ]),
-        { provide: AdminAlertService, useValue: { alerts$: alerts.asObservable(), dismiss, refresh } }
+        { provide: AdminAlertService, useValue: { alerts$: alerts.asObservable(), dismiss, refresh, markHandled } }
       ]
     }).compileComponents();
 
@@ -59,6 +75,7 @@ describe('AdminAlertsComponent', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     dialogs.forEach(dialog => {
       if (dialog.open) {
         dialog.close();
@@ -181,6 +198,119 @@ describe('AdminAlertsComponent', () => {
 
     await router.navigateByUrl('/chat?session=2');
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the handled button on a shared task and on no other alert', () => {
+    alerts.next([
+      alert({ id: 'plain' }),
+      alert({ id: 'linked', linkUrl: '/admin/configs', linkText: 'Review' }),
+      sharedTask()
+    ]);
+    fixture.detectChanges();
+
+    const [plain, linked, shared] = items();
+    expect(plain.querySelector('.admin-alert-handled')).toBeNull();
+    expect(linked.querySelector('.admin-alert-handled')).toBeNull();
+    const button = shared.querySelector<HTMLButtonElement>('.admin-alert-handled')!;
+    expect(button.textContent!.trim()).toBe('Mark handled for all admins');
+    expect(button.getAttribute('type')).toBe('button');
+    expect(button.classList).toContain('btn-ghost');
+    expect(el().querySelector('#' + button.getAttribute('aria-describedby'))!.matches('p.admin-alert-message')).toBe(true);
+  });
+
+  it('renders the handled button on a shared task without a link', () => {
+    alerts.next([sharedTask({ linkUrl: null, linkText: null })]);
+    fixture.detectChanges();
+
+    expect(link()).toBeNull();
+    expect(handledButton()).not.toBeNull();
+  });
+
+  it('marks a shared task handled and disables the button while the request is pending', () => {
+    alerts.next([sharedTask()]);
+    fixture.detectChanges();
+
+    handledButton()!.click();
+    fixture.detectChanges();
+
+    expect(markHandled).toHaveBeenCalledWith('snapshot-refusals:7');
+    expect(handledButton()!.disabled).toBe(true);
+
+    handled.complete();
+    fixture.detectChanges();
+
+    expect(handledButton()!.disabled).toBe(false);
+    expect(errorLine()).toBeNull();
+  });
+
+  it('shows an error and keeps the card when marking handled fails, and a retry clears the error', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    alerts.next([sharedTask()]);
+    fixture.detectChanges();
+
+    handledButton()!.click();
+    handled.error(new Error('Server error'));
+    fixture.detectChanges();
+
+    expect(items().length).toBe(1);
+    expect(errorLine()!.getAttribute('role')).toBe('alert');
+    expect(errorLine()!.textContent!.trim()).toBe('Could not mark this as handled. Try again.');
+    expect(handledButton()!.disabled).toBe(false);
+
+    handled = new Subject<void>();
+    handledButton()!.click();
+    fixture.detectChanges();
+
+    expect(markHandled).toHaveBeenCalledTimes(2);
+    expect(errorLine()).toBeNull();
+  });
+
+  it('does not dismiss a shared task when its link is followed', async () => {
+    alerts.next([sharedTask()]);
+    fixture.detectChanges();
+
+    link()!.click();
+    await fixture.whenStable();
+
+    expect(dismiss).not.toHaveBeenCalled();
+    expect(TestBed.inject(Router).url).toBe('/admin/configs');
+  });
+
+  it('dismisses a shared task for this admin only from its close button', () => {
+    alerts.next([sharedTask()]);
+    fixture.detectChanges();
+
+    items()[0].querySelector<HTMLButtonElement>('.dismiss-btn')!.click();
+
+    expect(dismiss).toHaveBeenCalledWith('snapshot-refusals:7');
+    expect(markHandled).not.toHaveBeenCalled();
+  });
+
+  it('refreshes when the page becomes visible, at most once a minute, and not when it is hidden', () => {
+    const start = Date.parse('2026-10-01T00:00:00.000Z');
+    const now = vi.spyOn(Date, 'now').mockReturnValue(start);
+
+    becomes('hidden');
+    expect(refresh).not.toHaveBeenCalled();
+
+    becomes('visible');
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    now.mockReturnValue(start + 59_999);
+    becomes('visible');
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    now.mockReturnValue(start + 60_000);
+    becomes('visible');
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops listening for visibility changes when destroyed', () => {
+    fixture.destroy();
+
+    becomes('visible');
+
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it('hides the container while a modal dialog is open and shows it again when it closes', async () => {

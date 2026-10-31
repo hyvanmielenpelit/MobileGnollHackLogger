@@ -327,6 +327,27 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("AccountHolds");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.AdminAlertHandling", b =>
+                {
+                    b.Property<string>("TaskKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("HandledAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("HandledByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<long>("HandledThrough")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("TaskKey");
+
+                    b.ToTable("AdminAlertHandlings");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.AdminBulkOperation", b =>
                 {
                     b.Property<long>("Id")
