@@ -124,6 +124,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   /**
    * The listbox's options and their order; `null` for all, in option order. Selection, chips, All,
    * None, `min` / `max` and the summary act on all `options`, so a hidden selected option stays chosen.
+   * A new list with the same keys in the same order leaves the active option and the scroll position alone.
    */
   @Input() visibleKeys: readonly MultiPickerKey[] | null = null;
   /**
@@ -296,7 +297,8 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
       this.rebuild();
     }
     if (changes['options'] || changes['visibleKeys']) {
-      const viewChanged = !!changes['visibleKeys'] && !changes['visibleKeys'].firstChange;
+      const visible = changes['visibleKeys'];
+      const viewChanged = !!visible && !visible.firstChange && !sameKeys(visible.previousValue, visible.currentValue);
       // Measured before the rows change.
       if (viewChanged) this.keepScrollPosition();
       this.rebuildRows(viewChanged);
@@ -921,6 +923,13 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
 
 function finePointer(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
+}
+
+/** Whether both lists name the same keys in the same order; null is the list of all options. */
+function sameKeys(a: readonly MultiPickerKey[] | null, b: readonly MultiPickerKey[] | null): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((key, i) => key === b[i]);
 }
 
 /** Appends a character to a text field as typing would, so its own input handling runs. */

@@ -448,7 +448,7 @@ class SixHostComponent {
     this.cdr.markForCheck();
   }
 
-  set(changes: Partial<Pick<SixHostComponent, 'selected' | 'max'>>): void {
+  set(changes: Partial<Pick<SixHostComponent, 'options' | 'selected' | 'max'>>): void {
     Object.assign(this, changes);
     this.cdr.markForCheck();
   }
@@ -672,5 +672,26 @@ describe('ModelMultiPickerComponent view toolbar', () => {
     expect(selectShown()!.getAttribute('aria-disabled')).toBe('true');
     const tip = picker().querySelector<HTMLElement>(`#${selectShown()!.getAttribute('interestfor')}`)!;
     expect(tip.textContent).toContain('At most 1 model can be selected.');
+  });
+
+  it('keeps the scroll position and the active option when a toggle gives it new options with the same keys', () => {
+    open();
+    const box = listbox()!;
+    box.style.maxBlockSize = '96px';
+    box.scrollTop = 40;
+    expect(box.scrollTop).toBeGreaterThan(0);
+    const top = box.getBoundingClientRect().top + box.clientTop;
+    const row = Array.from(box.querySelectorAll<HTMLElement>('[role="option"]'))
+      .find(r => r.getBoundingClientRect().top >= top)!;
+    row.click();
+    fixture.detectChanges();
+    const scrollTop = box.scrollTop;
+    expect(scrollTop).toBeGreaterThan(0);
+
+    host.set({ options: [...SIX] });
+    fixture.detectChanges();
+
+    expect(box.scrollTop).toBe(scrollTop);
+    expect(box.getAttribute('aria-activedescendant')).toBe(row.id);
   });
 });

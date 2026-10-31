@@ -791,6 +791,51 @@ describe('MultiPickerComponent visible keys and tools', () => {
     expect(scroller.scrollTop).toBe(0);
   });
 
+  describe('with a scrolled list', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ key: `k${i}`, label: `Item ${i}` }));
+    const keys = many.map(option => option.key);
+
+    /** Opens the list over all keys, scrolled down, and returns the first row fully in view. */
+    function openScrolled(): HTMLElement {
+      update({ options: many, visible: keys });
+      open();
+      const box = listbox()!;
+      box.scrollTop = 200;
+      expect(box.scrollTop).toBeGreaterThan(0);
+      const top = box.getBoundingClientRect().top + box.clientTop;
+      return Array.from(box.querySelectorAll<HTMLElement>('[role="option"]'))
+        .find(row => row.getBoundingClientRect().top >= top)!;
+    }
+
+    it('keeps the active option, the scroll position and the rows when a new list has the same keys', () => {
+      const row = openScrolled();
+      const box = listbox()!;
+      row.click();
+      fixture.detectChanges();
+      const scrollTop = box.scrollTop;
+      expect(scrollTop).toBeGreaterThan(0);
+
+      update({ options: [...many], visible: [...keys] });
+
+      expect(box.scrollTop).toBe(scrollTop);
+      expect(box.getAttribute('aria-activedescendant')).toBe(row.id);
+      expect(picker().querySelector(`#${row.id}`)).toBe(row);
+    });
+
+    it('moves the active option to the first row, in view, when the order changes', () => {
+      openScrolled();
+      const box = listbox()!;
+
+      update({ visible: [...keys].reverse() });
+
+      expect(activeLabel()).toBe('Item 29');
+      const first = box.querySelector<HTMLElement>('[role="option"]')!;
+      expect(box.getAttribute('aria-activedescendant')).toBe(first.id);
+      expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(box.getBoundingClientRect().top + box.clientTop - 0.5);
+      expect(box.scrollTop).toBeLessThan(first.getBoundingClientRect().height);
+    });
+  });
+
   it('adds the enabled unselected keys up to max with one change and one announcement', () => {
     update({ selected: ['a'], max: 3, visible: ['b', 'c', 'd', 'e'] });
     component().addToSelection(['e', 'c', 'b', 'd']);
