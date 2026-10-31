@@ -58,7 +58,7 @@
   </div>
 }
 @if (visibleConfigs.length > 0) {
-  <ul class="gh-model-cards" role="list" aria-labelledby="configs-heading">
+  <ul class="gh-model-cards" role="list" aria-labelledby="configs-heading" appDragAutoscroll>
     @for (config of visibleConfigs; track config.id; let i = $index) {
       @let name = configName(config);
       <li class="gh-model-card-item"

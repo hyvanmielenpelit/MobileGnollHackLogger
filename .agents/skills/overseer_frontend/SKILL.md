@@ -233,6 +233,11 @@ Harness-neutral, and the floor for any Overseer frontend work.
   then the `.gh-model-card-price-note`s). Their formatters are `model-card-format.ts`. Users: Admin
   System Configs (`app-admin-configs-tab`) and both lists of Settings → Models (`app-models`). Never
   copied into a component. Contract: [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) § 8h.
+- **Drag-reorder lists**: a new one must use `appDragAutoscroll` on the list of a native HTML5 drag
+  (`shared/drag-autoscroll/`), or `app-reorderable-list`, so that every list autoscrolls the same way
+  through `DragAutoscroller`, whose speed constants sit at the top of `drag-autoscroll.ts`. Draggable
+  rows with a gap between them also need the transparent `::after` over the gap that
+  `.gh-model-card-item[draggable='true']` has in `styles.scss`, or a drop on the gap is lost.
 - **`.badge-system-wide`**, **`.badge-disabled`**, **`.status-badge.badge-catalog`** and
   **`.status-badge.badge-custom`** are global (since 2026-10-19): the outlined green *System Wide* /
   *System Config* and red *Disabled* pills of the model cards and the Configuration Access dialog, and

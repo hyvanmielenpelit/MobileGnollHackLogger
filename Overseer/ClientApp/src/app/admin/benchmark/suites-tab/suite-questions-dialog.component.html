@@ -68,7 +68,7 @@
         }
         <p class="form-hint questions-copy-status" role="status" aria-live="polite">{{ questionsCopyStatus }}</p>
 
-        <div class="questions-list">
+        <div class="questions-list" appDragAutoscroll>
           @for (q of workspace.questions; track q.id; let i = $index) {
             <div class="question-list-item"
                  draggable="true"

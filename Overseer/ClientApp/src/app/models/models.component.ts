@@ -28,6 +28,7 @@ import { ModelAvailabilityNoticeComponent } from '../shared/model-availability/m
 import { ModelResolutionDialogComponent } from '../shared/model-resolution-dialog/model-resolution-dialog.component';
 import { ModelCardSettingsComponent } from '../shared/model-card/model-card-settings.component';
 import { ModelCardFactsComponent } from '../shared/model-card/model-card-facts.component';
+import { DragAutoscrollDirective } from '../shared/drag-autoscroll/drag-autoscroll.directive';
 
 /** The extra sentence under a system-provided model that needs attention. */
 export const SYSTEM_MODEL_ATTENTION_TEXT = 'An administrator needs to update this model. You can choose another model in chat.';
@@ -36,7 +37,8 @@ export const SYSTEM_MODEL_ATTENTION_TEXT = 'An administrator needs to update thi
     selector: 'app-models',
     imports: [
       NgTemplateOutlet, FormsModule, RouterModule, AiModelFormComponent, ProviderBadgeComponent, ModelPickerComponent,
-      ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent, ModelCardSettingsComponent, ModelCardFactsComponent
+      ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent, ModelCardSettingsComponent, ModelCardFactsComponent,
+      DragAutoscrollDirective
     ],
     templateUrl: './models.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,

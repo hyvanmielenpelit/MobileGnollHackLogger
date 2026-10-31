@@ -21,6 +21,7 @@ import { modelRoleBadges } from '../../utils/model-badge-format.util';
 import { AdminApiKeysComponent, DEFAULT_KEY_PROVIDERS } from '../admin-api-keys/admin-api-keys.component';
 import { ModelCardSettingsComponent } from '../../shared/model-card/model-card-settings.component';
 import { ModelCardFactsComponent } from '../../shared/model-card/model-card-facts.component';
+import { DragAutoscrollDirective } from '../../shared/drag-autoscroll/drag-autoscroll.directive';
 
 /** The badge beside a configuration's provider badge that says how it relates to the model catalog. */
 export interface ConfigAvailabilityBadge {
@@ -36,7 +37,7 @@ export interface ConfigAvailabilityBadge {
   imports: [
     CommonModule, AiModelFormComponent, ConfigAnalyticsComponent, ConfigFilterComponent, ProviderBadgeComponent, AdminRateLimitsDialogComponent,
     ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent, AdminApiKeysComponent,
-    ModelCardSettingsComponent, ModelCardFactsComponent
+    ModelCardSettingsComponent, ModelCardFactsComponent, DragAutoscrollDirective
   ],
   templateUrl: './admin-configs-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here

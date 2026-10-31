@@ -20,7 +20,7 @@
       You haven't added any models yet. Click "Add Model" to get started.
     </div>
   } @else {
-    <ul class="gh-model-cards" role="list" aria-label="Your models">
+    <ul class="gh-model-cards" role="list" aria-label="Your models" appDragAutoscroll>
       @for (model of userModels; track model.id; let i = $index) {
         @let name = modelName(model);
         <li class="gh-model-card-item"
@@ -104,7 +104,7 @@
       <div popover="hint" class="gh-tooltip" id="tip-reset-system-order"
            style="position-anchor: --tip-reset-system-order">Reset order</div>
     </div>
-    <ul class="gh-model-cards" role="list" aria-labelledby="system-models-heading">
+    <ul class="gh-model-cards" role="list" aria-labelledby="system-models-heading" appDragAutoscroll>
       @for (model of systemModels; track model.id; let i = $index) {
         <li class="gh-model-card-item system-model-item"
             draggable="true"

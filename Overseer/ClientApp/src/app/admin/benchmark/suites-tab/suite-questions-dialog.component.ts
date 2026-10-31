@@ -9,6 +9,7 @@ import {
   CreateBenchmarkQuestionRequest
 } from '../../../services/admin-benchmark.service';
 import { CollapsibleMarkdownComponent } from '../../../shared/collapsible-markdown/collapsible-markdown.component';
+import { DragAutoscrollDirective } from '../../../shared/drag-autoscroll/drag-autoscroll.directive';
 import { MarkdownEditorComponent } from '../../../shared/markdown-editor/markdown-editor.component';
 import { QuestionEvidenceEditorComponent } from '../question-evidence/question-evidence-editor.component';
 import { QuestionEvidenceListComponent } from '../question-evidence/question-evidence-list.component';
@@ -36,7 +37,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
   standalone: true,
   imports: [
     CommonModule, FormsModule, CollapsibleMarkdownComponent, MarkdownEditorComponent,
-    QuestionEvidenceEditorComponent, QuestionEvidenceListComponent
+    QuestionEvidenceEditorComponent, QuestionEvidenceListComponent, DragAutoscrollDirective
   ],
   templateUrl: './suite-questions-dialog.component.html',
   styleUrls: ['./suite-questions-dialog.component.scss']

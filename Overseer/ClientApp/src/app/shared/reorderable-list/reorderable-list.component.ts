@@ -18,6 +18,7 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 
+import { DragAutoscroller, findScroller } from '../drag-autoscroll/drag-autoscroll';
 import { InfoTipComponent } from '../info-tip/info-tip.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 
@@ -41,10 +42,6 @@ type MoveEnd = 'top' | 'bottom';
 
 /** How far, in CSS px, a press on the handle must move before it becomes a drag. */
 const DRAG_START_PX = 4;
-/** Distance from the scroller's top or bottom edge, in CSS px, within which a drag autoscrolls. */
-const AUTOSCROLL_EDGE_PX = 32;
-/** Autoscroll step at the very edge, in CSS px per animation frame. */
-const AUTOSCROLL_MAX_STEP_PX = 14;
 /** A little longer than the rows' transform transition; a row put back has settled by then. */
 const SETTLE_MS = 200;
 
@@ -85,6 +82,7 @@ interface DragState {
   readonly startY: number;
   readonly scroller: Element;
   readonly startScroll: number;
+  readonly autoscroller: DragAutoscroller;
   pointerY: number;
   to: number;
 }
@@ -169,7 +167,6 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
   private suppressClearTimer: ReturnType<typeof setTimeout> | null = null;
   /** The press began on the handle whose menu was open, so its click closes rather than reopens. */
   private pressClosesMenu = false;
-  private scrollFrame: number | null = null;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private hostListeners: [string, EventListener][] = [];
 
@@ -528,6 +525,13 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
       ? Math.max(0, children[1].offsetTop - (children[0].offsetTop + children[0].offsetHeight))
       : 0;
     const scroller = findScroller(list);
+    const autoscroller = new DragAutoscroller(scroller, press.startY, {
+      onScroll: () => {
+        if (this.drag) {
+          this.updateDrag(this.drag);
+        }
+      }
+    });
 
     this.pendingFocus = null;
     this.drag = {
@@ -548,6 +552,7 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
       startY: press.startY,
       scroller,
       startScroll: scroller.scrollTop,
+      autoscroller,
       pointerY: press.startY,
       to: from
     };
@@ -578,7 +583,7 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
     }
     drag.pointerY = event.clientY;
     this.updateDrag(drag);
-    this.startAutoscroll();
+    drag.autoscroller.update(event.clientY);
   };
 
   private onPointerUp = (event: PointerEvent): void => {
@@ -672,10 +677,7 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
     }
     this.drag = null;
     document.removeEventListener('keydown', this.onKeydown, true);
-    if (this.scrollFrame !== null) {
-      cancelAnimationFrame(this.scrollFrame);
-      this.scrollFrame = null;
-    }
+    drag.autoscroller.stop();
     try {
       if (drag.grip.hasPointerCapture?.(drag.pointerId)) {
         drag.grip.releasePointerCapture(drag.pointerId);
@@ -711,70 +713,8 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
     }
   }
 
-  private startAutoscroll(): void {
-    if (this.scrollFrame !== null || !this.drag || autoscrollStep(this.drag) === 0) {
-      return;
-    }
-    this.scrollFrame = requestAnimationFrame(this.onScrollFrame);
-  }
-
-  private onScrollFrame = (): void => {
-    this.scrollFrame = null;
-    const drag = this.drag;
-    if (!drag) {
-      return;
-    }
-    const step = autoscrollStep(drag);
-    if (step === 0) {
-      return;
-    }
-    const before = drag.scroller.scrollTop;
-    drag.scroller.scrollTop = before + step;
-    if (drag.scroller.scrollTop === before) {
-      // At the end of the scroll range; the next pointer move tries again.
-      return;
-    }
-    this.updateDrag(drag);
-    this.scrollFrame = requestAnimationFrame(this.onScrollFrame);
-  };
 }
 
 function setOffset(element: HTMLElement, offset: number): void {
   element.style.transform = offset === 0 ? '' : `translateY(${offset}px)`;
-}
-
-/** The nearest ancestor that scrolls vertically, or the document's scroller. */
-function findScroller(element: HTMLElement): Element {
-  for (let node = element.parentElement; node; node = node.parentElement) {
-    const { overflowY } = getComputedStyle(node);
-    if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') &&
-        node.scrollHeight > node.clientHeight) {
-      return node;
-    }
-  }
-  return document.scrollingElement ?? document.documentElement;
-}
-
-/** The scroller's visible top and bottom in viewport coordinates, clipped to the viewport. */
-function visibleEdges(scroller: Element): { top: number; bottom: number } {
-  const viewportBottom = window.innerHeight;
-  if (scroller === document.scrollingElement || scroller === document.documentElement || scroller === document.body) {
-    return { top: 0, bottom: viewportBottom };
-  }
-  const rect = scroller.getBoundingClientRect();
-  const top = rect.top + scroller.clientTop;
-  return { top: Math.max(0, top), bottom: Math.min(viewportBottom, top + scroller.clientHeight) };
-}
-
-/** Pixels to scroll this frame: negative near the top edge, positive near the bottom, faster nearer the edge. */
-function autoscrollStep(drag: DragState): number {
-  const { top, bottom } = visibleEdges(drag.scroller);
-  const y = drag.pointerY;
-  if (y < top + AUTOSCROLL_EDGE_PX) {
-    return -Math.ceil(AUTOSCROLL_MAX_STEP_PX * Math.min(1, (top + AUTOSCROLL_EDGE_PX - y) / AUTOSCROLL_EDGE_PX));
-  }
-  if (y > bottom - AUTOSCROLL_EDGE_PX) {
-    return Math.ceil(AUTOSCROLL_MAX_STEP_PX * Math.min(1, (y - (bottom - AUTOSCROLL_EDGE_PX)) / AUTOSCROLL_EDGE_PX));
-  }
-  return 0;
 }

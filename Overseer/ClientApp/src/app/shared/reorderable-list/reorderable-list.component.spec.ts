@@ -21,11 +21,13 @@ const ITEMS: readonly ReorderableListItem[] = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <button type="button" class="outside">Outside</button>
-    <app-reorderable-list idPrefix="t" listLabel="Model order" itemNoun="model"
-                          [items]="items" [checkable]="checkable" [describedBy]="describedBy"
-                          [dividerIndex]="dividerIndex" dividerText="Charts plot the entries above this line"
-                          [itemTemplate]="useTemplate ? custom : null"
-                          (orderChange)="onOrder($event)" (checkedChange)="onChecked($event)" />
+    <div class="scroll-wrapper" style="height: 300px; overflow-y: auto;">
+      <app-reorderable-list idPrefix="t" listLabel="Model order" itemNoun="model"
+                            [items]="items" [checkable]="checkable" [describedBy]="describedBy"
+                            [dividerIndex]="dividerIndex" dividerText="Charts plot the entries above this line"
+                            [itemTemplate]="useTemplate ? custom : null"
+                            (orderChange)="onOrder($event)" (checkedChange)="onChecked($event)" />
+    </div>
     <ng-template #custom let-item><span class="custom-body">Custom {{ item.label }}</span></ng-template>
   `
 })
@@ -555,6 +557,93 @@ describe('ReorderableListComponent', () => {
         pointer('pointerup', handle, center(gamma) + 1);
         fixture.detectChanges();
         expect(hostComponent.orders).toEqual([['b', 'c|x', 'a', 'd']]);
+      });
+    });
+
+    describe('autoscroll', () => {
+      let queue: Map<number, FrameRequestCallback>;
+      let wrapper: HTMLElement;
+
+      /** Runs animation frames every 10 ms, from `from` to `to` inclusive. */
+      function frames(from: number, to: number): void {
+        for (let time = from; time <= to; time += 10) {
+          const callbacks = Array.from(queue.values());
+          queue.clear();
+          callbacks.forEach(callback => callback(time));
+        }
+      }
+
+      const wrapperBottom = () => wrapper.getBoundingClientRect().top + wrapper.clientHeight;
+
+      /** Starts a drag of the first row and holds the pointer at the bottom edge of the wrapper. */
+      function dragToBottomEdge(): HTMLElement {
+        const first = rows()[0];
+        const handle = grip(first);
+        pointer('pointerdown', handle, center(first));
+        pointer('pointermove', handle, wrapperBottom() - 1);
+        return handle;
+      }
+
+      beforeEach(() => {
+        queue = new Map();
+        let nextHandle = 1;
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+          const handle = nextHandle++;
+          queue.set(handle, callback);
+          return handle;
+        });
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(handle => {
+          queue.delete(handle);
+        });
+        update({ items: Array.from({ length: 40 }, (_, i) => ({ key: `k${i}`, label: `Item ${i}` })) });
+        wrapper = el.querySelector<HTMLElement>('.scroll-wrapper')!;
+        expect(wrapper.scrollHeight).toBeGreaterThan(wrapper.clientHeight);
+      });
+
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it('scrolls the wrapper near its edge, and the dragged row and the opened gap follow the scroll', () => {
+        const handle = dragToBottomEdge();
+        const first = rows()[0];
+        const translate = () => Number(/translateY\((-?[\d.]+)px\)/.exec(first.style.transform)![1]);
+        const before = translate();
+        const othersBefore = rows().filter(row => row.style.transform !== '').length;
+
+        frames(0, 800);
+        expect(wrapper.scrollTop).toBeGreaterThan(0);
+        expect(translate()).toBeCloseTo(before + wrapper.scrollTop, 0);
+        expect(rows().filter(row => row.style.transform !== '').length).toBeGreaterThan(othersBefore);
+
+        pointer('pointercancel', handle, wrapperBottom() - 1);
+      });
+
+      it('stops scrolling when the drag ends', () => {
+        const handle = dragToBottomEdge();
+        frames(0, 200);
+        pointer('pointercancel', handle, wrapperBottom() - 1);
+        expect(queue.size).toBe(0);
+
+        const scrolled = wrapper.scrollTop;
+        frames(210, 400);
+        expect(wrapper.scrollTop).toBe(scrolled);
+      });
+
+      it('emits the expected order once on a drop after autoscrolling', () => {
+        const handle = dragToBottomEdge();
+        frames(0, 800);
+        expect(hostComponent.orders).toEqual([]);
+
+        const landed = rows().filter(row => row.style.transform.startsWith('translateY(-')).length;
+        expect(landed).toBeGreaterThan(0);
+
+        pointer('pointerup', handle, wrapperBottom() - 1);
+        fixture.detectChanges();
+        expect(hostComponent.orders.length).toBe(1);
+        const order = hostComponent.orders[0];
+        expect(order.indexOf('k0')).toBe(landed);
+        expect(order.filter(key => key !== 'k0')).toEqual(Array.from({ length: 39 }, (_, i) => `k${i + 1}`));
       });
     });
   });
