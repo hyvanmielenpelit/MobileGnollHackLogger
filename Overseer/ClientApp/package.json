@@ -1,6 +1,6 @@
 {
   "name": "overseer",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "scripts": {
     "ng": "ng",
     "start": "node serve-https.js",
