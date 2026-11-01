@@ -31,6 +31,16 @@ public static class ChatHistoryBudget
     /// <summary>The limit used when the catalog does not give the model a maximum input.</summary>
     public const int FallbackMaxInputTokens = 100000;
 
+    /// <summary>Resolves the limit with the <c>LongContextChatSettings</c> values in force, so the chat
+    /// and the model list cannot disagree.</summary>
+    public static ChatHistoryLimit Resolve(IConfiguration configuration, int? explicitMaxInputTokens, ModelMetadata meta)
+        => Resolve(
+            explicitMaxInputTokens,
+            meta,
+            configuration.GetValue<bool>("LongContextChatSettings:KeepHistoryBelowThreshold", true),
+            configuration.GetValue<int>("LongContextChatSettings:TurnHeadroomTokens", 40000),
+            configuration.GetValue<decimal>("LongContextChatSettings:TokenEstimateFactor", 1.3m));
+
     /// <param name="explicitMaxInputTokens">The Max Input Tokens set on the configuration or user
     /// model; a positive value always wins.</param>
     /// <param name="meta">Catalog metadata. Its <see cref="ModelMetadata.DefaultPricing"/> supplies the

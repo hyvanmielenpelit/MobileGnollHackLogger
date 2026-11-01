@@ -655,69 +655,12 @@
   }
 }
 
-/* 180px is a floor, not the width. The label and the value each stay on one line, so a long value
-   -- "nearly full" appends a clause -- widens the widget rather than wrapping the text row or
-   spilling into the header padding. The title shrinks first, so the header itself never overflows. */
-.context-window-indicator {
-  min-inline-size: 180px;
-  inline-size: max-content;
-
-  .cw-text { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-  .cw-label { opacity: 0.75; white-space: nowrap; }
-  .cw-value {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-family: monospace;
-    white-space: nowrap;
-    cursor: help;
-    background: none;
-    border: none;
-    padding: 0;
-    margin: 0;
-    font-size: inherit;
-    color: inherit;
-    line-height: inherit;
-
-    &:focus-visible {
-      outline: 2px solid var(--primary-color);
-      outline-offset: 2px;
-      border-radius: 2px;
-    }
-  }
-  .cw-warning {
-    inline-size: 12px;
-    block-size: 12px;
-    flex-shrink: 0;
-    color: var(--color-warning);
-  }
-
-  .cw-track {
-    margin-block-start: 3px;
-    block-size: 3px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.12);
-    overflow: hidden;
-  }
-  .cw-fill {
-    block-size: 100%;
-    background: var(--primary-color);
-    transition: inline-size 0.3s ease;
-  }
-  &.near-full .cw-fill { background: var(--color-error); }
-}
-
 @media (max-width: 480px) {
   .chat-header-telemetry { column-gap: 10px; font-size: 10px; }
-  .context-window-indicator { min-inline-size: 120px; }
   .msg-cost-footer {
     inset-inline-start: 12px;
     font-size: 10px;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .context-window-indicator .cw-fill { transition: none; }
 }
 
 .progress-bar {

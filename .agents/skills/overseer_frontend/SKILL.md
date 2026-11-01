@@ -630,6 +630,14 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#imagePreviewDialog`: Image Preview
   - `#reportConfirmDialog`: Report Confirm
   - `#logoutDialog`: Logout
+  - `app-model-switch-dialog` (`chat/model-switch-dialog/`): *Change the model in this chat?*, opened
+    from the composer's model picker only when the change costs something real: no cached copy of the
+    chat, or older messages that would stop reaching the model. Every way out but **Switch Model** keeps
+    the current model. *Don't warn me again* silences only the cache warning (`localStorage` key
+    `overseer_warn_model_switch`, undone in Settings).
+  - `#cw-breakdown` (`chat/context-usage/`): the context breakdown, a click-mode `popover="auto"` panel
+    (`frontend_ui_controls` §4b) on the header's `Context N%` button, which also keeps its
+    `interestfor` hint because its visible text is a percentage alone.
   - `#privacyDialog`: Privacy for this chat (Standard / Confidential / Incognito), opened from
     the composer's privacy button; offered only while no chat is open.
   - `#privateBadgeDialog`: Privacy details for the open chat — opened by the Private badge in

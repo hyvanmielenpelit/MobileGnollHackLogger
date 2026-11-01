@@ -1,0 +1,98 @@
+<button type="button" class="cw-button"
+        [attr.aria-label]="ariaLabel"
+        [attr.aria-expanded]="panelOpen"
+        popovertarget="cw-breakdown"
+        interestfor="cw-usage-tip"
+        [attr.style]="'anchor-name: --cw-usage-tip'">
+  <span class="cw-label">Context</span>
+  @if (percentText) {
+    <span class="cw-value">{{ percentText }}</span>
+  }
+  @if (view.severity === 'critical') {
+    <svg class="cw-warning" role="img" aria-label="nearly full" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+  }
+  <span class="cw-ring" aria-hidden="true"
+        [class.cw-ring-elevated]="view.severity === 'elevated'"
+        [class.cw-ring-critical]="view.severity === 'critical'"
+        [style.--cw-value]="view.percent ?? 0"></span>
+</button>
+
+<div #usageTip popover="hint" id="cw-usage-tip" class="gh-tooltip gh-tooltip-multiline"
+     [attr.style]="'position-anchor: --cw-usage-tip'">
+  @for (line of tooltipLines; track line; let idx = $index) {
+    <div class="gh-tooltip-line"
+         [class.cw-tip-subline]="idx === 1"
+         [class.cw-tip-para]="idx >= 2"
+         [class.cw-tip-meta]="idx >= 2 && line.startsWith('Measured')">
+      {{ line }}
+    </div>
+  }
+</div>
+
+<div popover="auto" id="cw-breakdown" class="gh-info-popup cw-panel"
+     aria-labelledby="cw-breakdown-title"
+     [attr.style]="'position-anchor: --cw-usage-tip'"
+     (toggle)="onPanelToggle($event)">
+  <div class="gh-info-popup-title cw-panel-head">
+    <span id="cw-breakdown-title">Context</span>
+    <span class="cw-panel-percent">{{ percentText }}</span>
+  </div>
+  <div class="cw-panel-tokens">{{ tokensText }}</div>
+
+  <div class="cw-bar" role="img" [attr.aria-label]="barLabel">
+    @for (row of rows; track row.key) {
+      <span class="cw-segment" [class]="'cw-segment cw-cat-' + row.key" [style.flex-grow]="row.tokens"></span>
+    }
+  </div>
+
+  <table class="cw-table" aria-label="What occupies the context">
+    <tbody>
+      @for (row of rows; track row.key) {
+        <tr>
+          <th scope="row"><span class="cw-swatch" [class]="'cw-swatch cw-cat-' + row.key" aria-hidden="true"></span>{{ row.label }}</th>
+          <td>{{ row.estimated ? '≈ ' : '' }}{{ formatTokens(row.tokens) }}</td>
+          <td>{{ row.percent }}%</td>
+        </tr>
+      }
+    </tbody>
+    @if (usage.breakdown && (usage.breakdown.cacheRead > 0 || usage.breakdown.cacheWrite > 0 || usage.breakdown.reasoning > 0)) {
+      <tbody class="cw-table-measured">
+        @if (usage.breakdown.cacheRead > 0) {
+          <tr><th scope="row">Reused from cache</th><td>{{ formatTokens(usage.breakdown.cacheRead) }}</td><td></td></tr>
+        }
+        @if (usage.breakdown.cacheWrite > 0) {
+          <tr><th scope="row">Written to cache</th><td>{{ formatTokens(usage.breakdown.cacheWrite) }}</td><td></td></tr>
+        }
+        @if (usage.breakdown.reasoning > 0) {
+          <tr><th scope="row">Reasoning in reply</th><td>{{ formatTokens(usage.breakdown.reasoning) }}</td><td></td></tr>
+        }
+      </tbody>
+    }
+  </table>
+
+  <div class="cw-panel-notes">
+    @if (view.inputLimitTokens) {
+      <p>History trimmed above {{ formatTokens(view.inputLimitTokens) }} tokens</p>
+    }
+    @switch (view.state) {
+      @case ('projected') {
+        <p>Measured on {{ measuredName }}. On {{ view.modelName }} the chat would use about {{ formatTokens(view.usedTokens) }} of {{ formatTokens(view.windowTokens!) }}.</p>
+        @if (view.willTruncate) {
+          <p>Older messages will no longer be sent.</p>
+        }
+      }
+      @case ('unknownWindow') {
+        <p>Measured on {{ measuredName }}. The context window of {{ view.modelName }} is not known, so no percentage is shown.</p>
+      }
+      @default {
+        <p>Measured on {{ measuredName }} at the last reply.</p>
+      }
+    }
+    @if (!usage.breakdown) {
+      <p>Category detail appears after the next reply.</p>
+    }
+    @if (hasEstimatedRows) {
+      <p>≈ Estimated share of the exact total.</p>
+    }
+  </div>
+</div>

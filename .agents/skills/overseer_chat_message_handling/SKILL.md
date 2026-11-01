@@ -133,4 +133,18 @@ When a limit or a provider failure ends or cuts a turn, the message carries a no
 8. **Announcements**: Only a live notice is announced, through a status or alert region that is always on the page. The card has no live role, so loading a chat's history reads nothing aloud.
 9. **Empty Content**: A turn with no answer stores empty `Content`, and `ChatService` does not replay an assistant row whose `Content` is empty or whitespace.
 
+---
+
+## 7. History Replay
+
+The stored row and the next request are two different things. `ChatMessage.Content` keeps the reasoning for display, shown or hidden by `showThoughtsAndTools`; `ChatService` strips it from a local copy while it builds the request.
+
+1. **Never Written Back**: Stripping works on the decrypted local. The database row, API responses, the setting, copy and reload do not change, and no stored row is ever rewritten.
+2. **The Setting**: `AiPerformanceSettings:IncludeThoughtsInHistory` is `false`. Setting it to `true` and restarting replays the reasoning again. Roll back if follow-up questions start ignoring what was found in the same chat, or repeat tool calls noticeably more often.
+3. **Order**: Strip, then append the tool digest, then apply DLP masking, so the digest and the masking cover the replayed text as before.
+4. **No Reply Vanishes**: A row empty before stripping is skipped (§ 6.9). A row that becomes empty through stripping replays the text of its last reasoning block without the markup, then its digest (`ThoughtMarkupWriter.LastThoughtText`).
+5. **Within a Turn Is Not Affected**: Thinking signatures and encrypted reasoning live in `AgentLoopRunner`'s own history, never in stored text.
+6. **Stored Formats Replay Must Keep Handling**: Pinned chats are immune to retention, so all of these can still exist, and `ChatHistoryReplayTests` has a fixture for each: rows with no markup, from before 2026-08-03; complete blocks; nested blocks, where a fragment and a stray `</div>` may remain, which is less than was sent before; a block left open at the end of the text; reasoning with no answer; encrypted rows in a confidential session; and tool rows with a null `ArgsText` or `BatchIndex`, whose details retention has emptied.
+7. **Sizing**: `ChatTokenEstimator` sizes the turn's messages for truncation. Images count by their pixel dimensions under one conservative rule per provider, never by their base64 length.
+
 

@@ -127,4 +127,8 @@ public class AgentRunResult
     /// or null when no provider usage was reported. Gated on <see cref="LastPromptTokens"/>, so a zero output
     /// count with a reported prompt is persisted as 0.</summary>
     public int? ReportedContextOutputTokens => LastPromptTokens > 0 ? LastOutputTokens : null;
+
+    /// <summary>What occupied the context at the final model call. Null when the request set no
+    /// <see cref="AgentRunRequest.ContextBreakdownSeed"/>, the provider reported no usage, or capture failed.</summary>
+    public ContextBreakdown? ContextBreakdown { get; set; }
 }

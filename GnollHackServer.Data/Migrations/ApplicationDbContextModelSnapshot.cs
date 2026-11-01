@@ -3788,6 +3788,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("Content")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("ContextBreakdownJson")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<int?>("ContextInputLimitTokens")
                         .HasColumnType("int");
 

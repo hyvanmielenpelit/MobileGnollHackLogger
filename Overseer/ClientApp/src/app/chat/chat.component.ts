@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef, HostListener, NgZone, AfterViewInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall, ChatContextUsage, ChatSessionStateResponse, ChatTurnNotice, ChatTurnNoticeAction, PrivateBadge, SnapshotRefusal } from '../services/chat.service';
+import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall, ChatContextUsage, ChatSessionStateResponse, ChatTurnModel, ChatTurnNotice, ChatTurnNoticeAction, PrivateBadge, SnapshotRefusal } from '../services/chat.service';
 import { AuthService, AuthUser, hasTermsStatus, needsTermsAcceptance } from '../services/auth.service';
 import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule, NavigationEnd, NavigationStart } from '@angular/router';
@@ -26,7 +26,10 @@ import { parseServerUtcDate } from '../utils/date.util';
 import { formatThinkingLevel, showReasoningBadge } from '../utils/model-badge-format.util';
 import { isImeComposing } from '../utils/ime.util';
 import * as signalR from '@microsoft/signalr';
-import { firstValueFrom, filter, Observable, Subscription, Subject, ReplaySubject, debounceTime, distinctUntilChanged, share } from 'rxjs';
+import { EMPTY, catchError, firstValueFrom, filter, Observable, Subscription, Subject, ReplaySubject, debounceTime, distinctUntilChanged, share, switchMap } from 'rxjs';
+import { ContextUsageComponent } from './context-usage/context-usage.component';
+import { describeModelChanges, modelFingerprint, modelSwitchImpact, readContextBreakdown, readWarnModelSwitch, writeWarnModelSwitch } from './context-usage/context-usage.util';
+import { ModelSwitchDecision, ModelSwitchDialogComponent } from './model-switch-dialog/model-switch-dialog.component';
 export interface ToolClientRequest {
     type: string;
     requestId: string;
@@ -62,7 +65,7 @@ export interface AttachmentExcerptNotice {
 
 @Component({
     selector: 'app-chat',
-    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent, ProviderBadgeComponent, ModelPickerComponent, ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent, TermsDialogComponent, TurnNoticeComponent],
+    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent, ProviderBadgeComponent, ModelPickerComponent, ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent, TermsDialogComponent, TurnNoticeComponent, ContextUsageComponent, ModelSwitchDialogComponent],
     styleUrl: './chat.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './chat.component.html'
@@ -297,6 +300,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   pendingRequests = new Map<string, ReturnType<typeof setTimeout>>();
 
   isOffline = !navigator.onLine;
+  private visibilityHandler = () => {
+    if (document.visibilityState === 'visible') this.refreshChatModels();
+  };
   private onlineHandler = () => { this.isOffline = false; this.cdr.detectChanges(); this.loadSessions(true); };
   private offlineHandler = () => { this.isOffline = true; this.cdr.detectChanges(); };
   private gnhPadModeHandler = (event: Event) => {
@@ -531,6 +537,21 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   readonly termsRequiredMessage = 'To use Gnoll Overseer, accept the Terms of Service.';
   /** The model key the turn in progress was sent with. */
   private turnModelKey: string | null = null;
+  /** What the server resolved for the running turn; null until its `turn_model` event arrives. */
+  private turnModelFacts: ChatTurnModel | null = null;
+  /** A `context` event arrived for the running turn. */
+  private contextEventThisTurn = false;
+  /** The dismissible line saying the selected model's settings changed. */
+  modelEditNote: string | null = null;
+  /** The last seen settings of each model, by picker key, to notice an edit. */
+  private modelSnapshots = new Map<string, { fingerprint: string; model: UserAiModel }>();
+  private modelRefresh$ = new Subject<void>();
+  private modelRefreshSub: Subscription | null = null;
+  /** The line a refresh shows in place of its own, because a turn has just said what happened. */
+  private pendingSelectionNote: string | null = null;
+  private pendingModelSwitch: UserAiModel | null = null;
+  private modelSwitchOpenTimeout: ReturnType<typeof setTimeout> | null = null;
+  @ViewChild(ModelSwitchDialogComponent) modelSwitchDialog?: ModelSwitchDialogComponent;
   /** Whether the turn in progress reported an error; a turn that finishes without one clears `modelUnavailableNotice`. */
   private currentTurnFailed = false;
   /** The live turn's notice, until the message it belongs to is pushed. */
@@ -905,6 +926,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       if (key !== this.selectedModelKey) {
         this.modelUnavailableNotice = null;
         this.announceModelNotice = true;
+        this.modelEditNote = null;
       }
       this.restoredModelNote = null;
       this.selectedModelKey = key;
@@ -913,6 +935,103 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
          longer exists and never be cleaned up. */
       if (this.currentSessionId !== null && !this.isEphemeralSession) {
         localStorage.setItem(`overseer_chat_model_session_${this.currentSessionId}`, key);
+      }
+    }
+  }
+
+  /** The picker's choice: asks first when the change costs something real, otherwise applies it. */
+  requestModelChange(model: UserAiModel | undefined): void {
+    if (!model || model.id === undefined) {
+      this.selectModel(model);
+      return;
+    }
+
+    const key = (model.isSystem ? 's_' : 'u_') + model.id;
+    const current = this.selectedModel;
+    const impact = modelSwitchImpact(this.contextUsage, current, model, {
+      confidential: this.isConfidentialSession,
+      ephemeral: this.isEphemeralSession
+    });
+    const hasReply = this.messages.some(m => m.role === 'assistant');
+    const costsSomething = impact.truncates || (impact.cache !== 'none' && readWarnModelSwitch());
+
+    if (key === this.selectedModelKey || !hasReply || !costsSomething) {
+      this.selectModel(model);
+      return;
+    }
+
+    /* The picker refocuses its trigger after it emits. The dialog opens on the next task, so that
+       focus lands first and the dialog returns to it. */
+    this.pendingModelSwitch = model;
+    const provider = (model.provider || '').toLowerCase();
+    this.modelSwitchOpenTimeout = setTimeout(() => {
+      this.modelSwitchOpenTimeout = null;
+      this.modelSwitchDialog?.open({
+        currentName: this.chatModelLabel(current),
+        targetName: this.chatModelLabel(model),
+        impact,
+        usedTokens: this.contextUsage?.usedTokens ?? null,
+        cacheMayCarryOver: provider === 'google' && (current?.provider || '').toLowerCase() === 'google',
+        isStreaming: this.isStreaming
+      });
+    }, 0);
+  }
+
+  onModelSwitchDecided(decision: ModelSwitchDecision): void {
+    const model = this.pendingModelSwitch;
+    this.pendingModelSwitch = null;
+    if (decision.dontWarnAgain) {
+      writeWarnModelSwitch(false);
+    }
+    if (decision.switchModel && model) {
+      this.selectModel(model);
+    }
+    this.cdr.detectChanges();
+  }
+
+  dismissModelEditNote(): void {
+    this.modelEditNote = null;
+  }
+
+  /** Re-reads the model list in place, without touching the messages or the loading state. */
+  refreshChatModels(): void {
+    this.modelRefresh$.next();
+  }
+
+  private applyRefreshedModels(models: UserAiModel[]): void {
+    const keptKey = this.selectedModelKey;
+    this.setChatModels(models);
+    if (!this.hasModel) {
+      this.singleModelInfo = null;
+      this.selectedModelKey = null;
+    } else if (!keptKey || !this.findModelByKey(keptKey)) {
+      this.applySavedModelPreference();
+    }
+    if (this.pendingSelectionNote) {
+      this.restoredModelNote = this.pendingSelectionNote;
+      this.pendingSelectionNote = null;
+    }
+    this.cdr.detectChanges();
+  }
+
+  /** Shows the note when the selected model's settings differ from the last list, once per change. */
+  private noteSelectedModelEdit(): void {
+    const selected = this.selectedModel;
+    const previous = this.selectedModelKey ? this.modelSnapshots.get(this.selectedModelKey) : undefined;
+    if (selected && previous && previous.fingerprint !== modelFingerprint(selected) && this.messages.length > 0) {
+      const changes = describeModelChanges(previous.model, selected).join(', ');
+      const cost = this.isConfidentialSession || this.isEphemeralSession ? '' : ', and may re-read this chat at full price';
+      const limit = selected.inputLimitTokens ?? selected.contextWindowTokens;
+      const truncation = limit && this.contextUsage && this.contextUsage.usedTokens > limit
+        ? ' Older messages will no longer reach the model.'
+        : '';
+      this.modelEditNote = `Settings of ${this.chatModelLabel(selected)} changed: ${changes}. The next reply uses them${cost}.${truncation}`;
+    }
+
+    this.modelSnapshots.clear();
+    for (const model of [...this.userModels, ...this.systemModels]) {
+      if (model.id !== undefined) {
+        this.modelSnapshots.set((model.isSystem ? 's_' : 'u_') + model.id, { fingerprint: modelFingerprint(model), model });
       }
     }
   }
@@ -1019,6 +1138,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.userModels = models.filter(m => !m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
     this.systemModels = models.filter(m => m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
     this.hasModel = this.userModels.length > 0 || this.systemModels.length > 0;
+    this.noteSelectedModelEdit();
   }
 
   get selectedModelNeedsAttention(): boolean {
@@ -1495,6 +1615,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     window.removeEventListener('online', this.onlineHandler);
     window.removeEventListener('offline', this.offlineHandler);
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+    document.removeEventListener('visibilitychange', this.visibilityHandler);
+    this.modelRefreshSub?.unsubscribe();
+    if (this.modelSwitchOpenTimeout) { clearTimeout(this.modelSwitchOpenTimeout); }
     document.removeEventListener('gnhpadmode', this.gnhPadModeHandler);
     this.navigationStartSub?.unsubscribe();
     if (this.ephemeralNoticeTimeout) {
@@ -1874,6 +1997,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     window.addEventListener('online', this.onlineHandler);
     window.addEventListener('offline', this.offlineHandler);
     window.addEventListener('beforeunload', this.beforeUnloadHandler);
+    document.addEventListener('visibilitychange', this.visibilityHandler);
+    this.modelRefreshSub = this.modelRefresh$.pipe(
+      switchMap(() => this.settingsService.getUserModels().pipe(
+        catchError(err => {
+          this.debugService.log(`[Overseer] Refreshing the models failed: ${err?.message || err}`);
+          return EMPTY;
+        })
+      ))
+    ).subscribe(models => this.applyRefreshedModels(models));
     document.addEventListener('gnhpadmode', this.gnhPadModeHandler);
 
     if (!("popover" in HTMLElement.prototype)) {
@@ -2178,8 +2310,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           usedTokens: d.promptTokens + (d.outputTokens ?? 0),
           windowTokens: d.windowTokens,
           inputLimitTokens: d.inputLimitTokens ?? undefined,
-          modelDisplayName: d.modelDisplayName ?? undefined
+          modelDisplayName: d.modelDisplayName ?? undefined,
+          provider: (this.turnModelFacts?.provider ?? this.selectedModel?.provider) ?? undefined,
+          modelId: (this.turnModelFacts?.modelId ?? this.selectedModel?.modelId) ?? undefined,
+          breakdown: readContextBreakdown(d.breakdown)
         };
+        this.contextEventThisTurn = true;
         this.flushStreamRender();
         this.cdr.detectChanges();
         refreshAnchorPositioning();
@@ -2245,6 +2381,18 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       } catch {
         this.debugService.log('[Frontend] Failed to parse confidential_gate event.');
       }
+    } else if (evt.type === 'turn_model') {
+      const facts = ChatComponent.parseEventJson(evt.data) as ChatTurnModel | null;
+      if (facts) {
+        this.turnModelFacts = facts;
+        if (facts.selectionUnavailable) {
+          const name = facts.displayName || facts.modelId || 'another model';
+          this.restoredModelNote = `The model you selected is no longer available, so this reply used ${name}.`;
+          this.pendingSelectionNote = this.restoredModelNote;
+          this.refreshChatModels();
+          this.cdr.detectChanges();
+        }
+      }
     } else if (evt.type === 'error') {
       /* The incognito chat the turn named is gone from server memory, so there is nothing left
          to display and nothing to confirm. */
@@ -2264,6 +2412,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             message: typeof evt.data === 'string' && evt.data.trim() ? evt.data.trim() : 'This model is not available.'
           };
         }
+        this.refreshChatModels();
       }
       this.flushPendingChunkBuffer();
       this.flushStreamRender();
@@ -2434,6 +2583,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       } catch(e) {}
     } else if (evt.type === 'done') {
       this.hasOngoingGeneration = false;
+      this.refreshChatModels();
       if (!this.currentTurnFailed) {
         this.modelUnavailableNotice = null;
       }
@@ -2476,21 +2626,27 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             this.sessionStateMap.delete(this.currentSessionId);
           }
           
-          this.messages.push({ 
-            role: 'assistant', 
-            content: this.streamingMessage, 
+          // A turn with no usage report inherits nothing from the previous reply's measurement.
+          const measured = this.contextEventThisTurn ? this.contextUsage : null;
+          const facts = this.turnModelFacts;
+          this.messages.push({
+            role: 'assistant',
+            content: this.streamingMessage,
             timestampUtc: new Date().toISOString(),
-            toolCalls: [...this.streamingToolCalls], 
-            modelDisplayName: this.selectedModel?.displayName || this.selectedModel?.modelId || this.singleModelInfo?.modelId,
-            thinkingLevel: this.selectedModel?.thinkingLevel || this.singleModelInfo?.thinkingLevel,
-            reasoningMode: this.selectedModel?.reasoningMode || this.singleModelInfo?.reasoningMode,
-            serviceTier: this.selectedModel?.serviceTier || this.singleModelInfo?.serviceTier,
+            toolCalls: [...this.streamingToolCalls],
+            modelDisplayName: (facts ? facts.displayName || facts.modelId : this.selectedModel?.displayName || this.selectedModel?.modelId || this.singleModelInfo?.modelId) ?? undefined,
+            thinkingLevel: (facts ? facts.thinkingLevel : this.selectedModel?.thinkingLevel || this.singleModelInfo?.thinkingLevel) ?? undefined,
+            reasoningMode: (facts ? facts.reasoningMode : this.selectedModel?.reasoningMode || this.singleModelInfo?.reasoningMode) ?? undefined,
+            serviceTier: (facts ? facts.serviceTier : this.selectedModel?.serviceTier || this.singleModelInfo?.serviceTier) ?? undefined,
+            providerUsed: facts ? facts.provider : this.selectedModel?.provider,
+            modelUsed: facts ? facts.modelId : this.selectedModel?.modelId,
             timeToFirstTokenMs: this.timeToFirstTokenMs ?? undefined,
             totalDurationMs: this.totalDurationMs ?? undefined,
-            contextPromptTokens: this.contextUsage?.promptTokens,
-            contextOutputTokens: this.contextUsage?.outputTokens,
-            contextWindowTokens: this.contextUsage?.windowTokens,
-            contextInputLimitTokens: this.contextUsage?.inputLimitTokens,
+            contextPromptTokens: measured?.promptTokens,
+            contextOutputTokens: measured?.outputTokens,
+            contextWindowTokens: measured?.windowTokens,
+            contextInputLimitTokens: measured?.inputLimitTokens,
+            contextBreakdown: measured?.breakdown,
             estimatedCost: this.liveCost,
             isOperatorCost: this.liveIsOperatorCost,
             operatorCost: this.liveOperatorCost,
@@ -2505,6 +2661,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             this.sessionTotalCost = (this.sessionTotalCost ?? 0) + this.liveCost;
           }
 
+          this.turnModelFacts = null;
+          this.contextEventThisTurn = false;
           this.isStreaming = false;
           this.hasRealContent = false;
           this.streamingMessage = '';
@@ -2576,7 +2734,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         usedTokens: m.contextPromptTokens + out,
         windowTokens: m.contextWindowTokens,
         inputLimitTokens: m.contextInputLimitTokens ?? undefined,
-        modelDisplayName: m.modelDisplayName
+        modelDisplayName: m.modelDisplayName,
+        provider: m.providerUsed ?? undefined,
+        modelId: m.modelUsed ?? undefined,
+        breakdown: readContextBreakdown(m.contextBreakdown)
       };
       refreshAnchorPositioning();
       return;
@@ -2592,39 +2753,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   private trimZeros(v: number, digits: number): string {
     return v.toFixed(digits).replace(/\.?0+$/, '');
-  }
-
-  get contextUsagePercent(): number {
-    if (!this.contextUsage || this.contextUsage.windowTokens <= 0) return 0;
-    const pct = (this.contextUsage.usedTokens / this.contextUsage.windowTokens) * 100;
-    return Math.min(100, Math.max(0, Math.round(pct)));
-  }
-
-  /** Structured tooltip content. One string per rendered line. */
-  get contextUsageTooltipLines(): string[] {
-    const u = this.contextUsage;
-    if (!u) return [];
-    const lines = [
-      `${u.promptTokens.toLocaleString()} prompt + ${u.outputTokens.toLocaleString()} output tokens`,
-      `of a ${u.windowTokens.toLocaleString()}-token context window`
-    ];
-    if (u.inputLimitTokens) {
-      lines.push(`History is truncated above ${u.inputLimitTokens.toLocaleString()} input tokens.`);
-    }
-    if (u.modelDisplayName) {
-      lines.push(`Measured on ${u.modelDisplayName} at the last reply.`);
-    }
-    return lines;
-  }
-
-  /**
-   * Short factual value for the progressbar. The tooltip carries the explanation via
-   * interestfor's implicit aria-describedby, so repeating it here would announce it twice.
-   */
-  get contextUsageValueText(): string {
-    const u = this.contextUsage;
-    if (!u) return '';
-    return `${u.usedTokens.toLocaleString()} of ${u.windowTokens.toLocaleString()} tokens, ${this.contextUsagePercent}%`;
   }
 
   formatTtft(ms: number | null | undefined): string {
@@ -2928,6 +3056,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.turnNoticeAlertAnnouncement = '';
     this.totalDurationMs = null;
     this.contextUsage = null;
+    this.turnModelFacts = null;
+    this.contextEventThisTurn = false;
+    this.modelEditNote = null;
     this.hasOngoingGeneration = false;
     this.awaitingHandoffGreeting = false;
     this.isLoadingSession = false;
@@ -4104,6 +4235,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.currentTurnFailed = false;
     this.turnModelKey = this.selectedModelKey;
+    this.turnModelFacts = null;
+    this.contextEventThisTurn = false;
 
     const attachmentsPayload = this.pendingAttachments.map(a => ({
       fileName: a.name,

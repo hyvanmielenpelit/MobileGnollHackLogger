@@ -1,0 +1,44 @@
+<dialog #dialog class="gh-dialog model-switch-dialog" closedby="any" aria-labelledby="model-switch-title"
+        (click)="onDialogClick($event)" (close)="onClose()">
+  @if (data; as d) {
+    <h3 id="model-switch-title">Change the model in this chat?</h3>
+    <p>Your conversation is kept. {{ d.targetName }} reads it from your next message on.</p>
+
+    @if (hasCacheEffect) {
+      <section class="model-switch-effect">
+        <h4>{{ cacheCertain ? 'The next reply will be slower and cost more' : 'The next reply may be slower and cost more' }}</h4>
+        <p>
+          {{ cacheCertain ? d.targetName + ' has no cached copy of this chat, so' : d.targetName + ' may have no cached copy of this chat, so' }}
+          @if (d.usedTokens !== null) {
+            about {{ formatTokens(d.usedTokens) }} tokens are read at the full input price.
+          } @else {
+            this chat is read at the full input price.
+          }
+        </p>
+      </section>
+    }
+
+    @if (d.impact.truncates) {
+      <section class="model-switch-effect">
+        <h4>Older messages will no longer reach the model</h4>
+        <p>{{ d.targetName }} has room for about {{ formatTokens(d.impact.keptTokens!) }} of this chat's {{ formatTokens(d.usedTokens!) }} tokens. They stay visible here, but the model won't see the oldest ones.</p>
+      </section>
+    }
+
+    @if (d.isStreaming) {
+      <p>The reply in progress finishes on {{ d.currentName }}.</p>
+    }
+
+    @if (cacheIsOnlyEffect) {
+      <label class="checkbox-label">
+        <input type="checkbox" class="w-auto m-0" name="dontWarnModelSwitch" [checked]="dontWarnAgain" (change)="onDontWarnChange($event)" />
+        <span>Don't warn me again about cached copies</span>
+      </label>
+    }
+  }
+
+  <div class="dialog-actions">
+    <button type="button" class="btn-gh btn-gh-cancel" autofocus (click)="choose(false)">Keep {{ data?.currentName }}</button>
+    <button type="button" class="btn-gh" (click)="choose(true)">Switch Model</button>
+  </div>
+</dialog>

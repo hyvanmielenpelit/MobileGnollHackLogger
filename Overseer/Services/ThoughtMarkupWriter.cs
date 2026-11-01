@@ -1,11 +1,38 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Overseer.Services;
 
 public class ThoughtMarkupWriter
 {
+    private static readonly Regex ThoughtDivRegex = new(@"<div\s+class=[""']ai-thought[""']>([\s\S]*?)(?:</div>|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Removes every <c>&lt;div class="ai-thought"&gt;</c> block, closed or left open at the end of
+    /// the text, and trims the remainder. Nothing else is touched.
+    /// </summary>
+    public static string StripThoughts(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+        return ThoughtDivRegex.Replace(text, string.Empty).Trim();
+    }
+
+    /// <summary>The trimmed inner text of the last thought block with any text in it, or an empty string.</summary>
+    public static string LastThoughtText(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+
+        var matches = ThoughtDivRegex.Matches(text);
+        for (int i = matches.Count - 1; i >= 0; i--)
+        {
+            string inner = matches[i].Groups[1].Value.Trim();
+            if (inner.Length > 0) return inner;
+        }
+        return string.Empty;
+    }
+
     public bool InThoughtDiv { get; set; } = false;
     public int EmittedDivCount { get; private set; } = 0;
 

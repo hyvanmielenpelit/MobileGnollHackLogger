@@ -744,6 +744,13 @@ public class SettingsController : ControllerBase
         return (keyModeMap, keyPostureMap);
     }
 
+    /// <summary>The model's context window from the catalog, or null for a model the catalog does not size.</summary>
+    private int? ContextWindowOf(string? provider, string? modelId)
+    {
+        int window = CatalogMetadata.GetMetadata(provider ?? "", modelId ?? "").ContextWindowSize;
+        return window > 0 ? window : null;
+    }
+
     /// <summary>A user's own model as GET usermodels lists it.</summary>
     private object ToUserModelItem(
         MobileGnollHackLogger.Data.UserAiModel m,
@@ -762,6 +769,8 @@ public class SettingsController : ControllerBase
             OrderIndex = m.OrderIndex,
             MaxInputTokens = (int?)m.MaxInputTokens,
             MaxOutputTokens = (int?)m.MaxOutputTokens,
+            ContextWindowTokens = ContextWindowOf(m.Provider, m.ModelId),
+            InputLimitTokens = ChatHistoryBudget.Resolve(_configuration, m.MaxInputTokens, CatalogMetadata.GetMetadata(m.Provider, m.ModelId)).Tokens,
             ReasoningMode = m.ReasoningMode,
             ReasoningSummary = m.ReasoningSummary,
             ServiceTier = m.ServiceTier,
@@ -813,6 +822,8 @@ public class SettingsController : ControllerBase
             OrderIndex = config.OrderIndex,
             MaxInputTokens = (int?)config.MaxInputTokens,
             MaxOutputTokens = (int?)config.MaxOutputTokens,
+            ContextWindowTokens = ContextWindowOf(config.Provider, config.ModelId),
+            InputLimitTokens = ChatHistoryBudget.Resolve(_configuration, config.MaxInputTokens, CatalogMetadata.GetMetadata(config.Provider, config.ModelId)).Tokens,
             ReasoningMode = config.ReasoningMode,
             ReasoningSummary = config.ReasoningSummary,
             ServiceTier = config.ServiceTier,

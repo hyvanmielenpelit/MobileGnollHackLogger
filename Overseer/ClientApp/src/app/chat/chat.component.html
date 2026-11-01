@@ -217,39 +217,7 @@
               </div>
             }
             @if (contextUsage && showContextWindowUsage) {
-              <div class="context-window-indicator" [class.near-full]="contextUsagePercent >= 90">
-                <div class="cw-text">
-                  <span class="cw-label">Context window</span>
-                  <button type="button" class="cw-value"
-                          interestfor="cw-usage-tip"
-                          style="anchor-name: --cw-usage-tip">
-                    {{ formatTokenCount(contextUsage.usedTokens) }} / {{ formatTokenCount(contextUsage.windowTokens) }} ({{ contextUsagePercent }}%)
-                    @if (contextUsagePercent >= 90) {
-                      <svg class="cw-warning" role="img" aria-label="nearly full" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                    }
-                  </button>
-                </div>
-                <div class="cw-track"
-                     role="progressbar"
-                     aria-label="Context window consumed"
-                     [attr.aria-valuenow]="contextUsagePercent"
-                     aria-valuemin="0"
-                     aria-valuemax="100"
-                     [attr.aria-valuetext]="contextUsageValueText">
-                  <div class="cw-fill" [style.inline-size.%]="contextUsagePercent"></div>
-                </div>
-              </div>
-              <div popover="hint" id="cw-usage-tip" class="gh-tooltip gh-tooltip-multiline"
-                   style="position-anchor: --cw-usage-tip">
-                @for (line of contextUsageTooltipLines; track line; let idx = $index) {
-                  <div class="gh-tooltip-line"
-                       [class.cw-tip-subline]="idx === 1"
-                       [class.cw-tip-para]="idx >= 2"
-                       [class.cw-tip-meta]="idx >= 2 && line.startsWith('Measured')">
-                    {{ line }}
-                  </div>
-                }
-              </div>
+              <app-context-usage [usage]="contextUsage" [selectedModel]="selectedModel"></app-context-usage>
             }
           </div>
         }
@@ -723,7 +691,7 @@
                                   [narrowHidesBadges]="true" label="Chat model" [triggerId]="chatModelPickerTriggerId"
                                   [options]="composerModelOptions" [selectedKey]="selectedModelKey"
                                   [showParallel]="shouldRenderParallelBadge"
-                                  (selectionChange)="selectModel($event.model ?? undefined)"></app-model-picker>
+                                  (selectionChange)="requestModelChange($event.model ?? undefined)"></app-model-picker>
               } @else {
                 <div class="custom-model-selector compact drops-up model-selector-wrapper">
                   <div class="single-model-display">
@@ -896,6 +864,20 @@
                 </button>
                 <div popover="hint" id="tip-dismiss-restored-model" class="gh-tooltip"
                      [attr.style]="'position-anchor: --tip-dismiss-restored-model'">Dismiss</div>
+              </div>
+            }
+            @if (modelEditNote) {
+              <div class="restored-model-note">
+                <span class="restored-model-note-text">{{ modelEditNote }}</span>
+                <button type="button" class="action-btn"
+                        (click)="dismissModelEditNote()"
+                        aria-label="Dismiss the settings change note"
+                        interestfor="tip-dismiss-model-edit"
+                        [attr.style]="'anchor-name: --tip-dismiss-model-edit'">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+                <div popover="hint" id="tip-dismiss-model-edit" class="gh-tooltip"
+                     [attr.style]="'position-anchor: --tip-dismiss-model-edit'">Dismiss</div>
               </div>
             }
           </div>
@@ -1109,6 +1091,8 @@
     </div>
   }
 </dialog>
+
+<app-model-switch-dialog (decided)="onModelSwitchDecided($event)"></app-model-switch-dialog>
 
 <dialog #logoutDialog class="gh-dialog logout-dialog" closedby="any">
   <h3>Confirm Logout</h3>

@@ -180,6 +180,10 @@ export interface UserAiModel {
   orderIndex?: number;
   maxInputTokens?: number | null;
   maxOutputTokens?: number | null;
+  /** The catalog's context window; null for a model the catalog does not size. */
+  contextWindowTokens?: number | null;
+  /** The limit chat history is truncated to on this model. */
+  inputLimitTokens?: number | null;
   isSystem?: boolean;
   modelRole?: number;
   parallelExecutionMode?: number;

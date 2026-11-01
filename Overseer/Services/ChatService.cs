@@ -526,6 +526,7 @@ public class ChatService
         SegmentedPrompt? segmentedPrompt = null;
 
         int estimatedInputTokens = 0;
+        ContextBreakdownSeed? contextBreakdownSeed = null;
 
         // Context window accounting for the indicator, captured inside the history-building
         // block below and used again when the assistant message is persisted.
@@ -581,6 +582,7 @@ public class ChatService
                one. Exactly one of the pair is non-null once the model is resolved. */
             SystemAiApiConfiguration? fundingSystemConfig = null;
             UserAiApiKey? fundingProviderKey = null;
+            bool selectedModelUnavailable = false;
 
             if (systemModelId.HasValue)
             {
@@ -589,7 +591,7 @@ public class ChatService
 
                 if (config == null)
                 {
-                    yield return new ChatEvent { Type = "error", Data = $"Error: {errorMessage}" };
+                    yield return new ChatEvent { Type = "error", Data = $"Error: {errorMessage}", ErrorCode = "model_unavailable" };
                     yield break;
                 }
 
@@ -630,6 +632,7 @@ public class ChatService
                 else
                 {
                     userModelId = null;
+                    selectedModelUnavailable = true;
                 }
             }
             if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(model))
@@ -899,6 +902,8 @@ public class ChatService
 
             var toolCallsLookup = pastToolCalls.ToLookup(tc => tc.ChatMessageId);
             bool includeToolDigest = _configuration.GetValue<bool>("AiPerformanceSettings:IncludeToolCallHistoryDigest", true);
+            bool includeThoughtsInHistory = _configuration.GetValue<bool>("AiPerformanceSettings:IncludeThoughtsInHistory", false);
+            var gameContextEntries = new HashSet<object>(ReferenceEqualityComparer.Instance);
             
             foreach (var pm in pastMessages)
             {
@@ -917,6 +922,13 @@ public class ChatService
                     continue;
                 }
 
+                // Reasoning stays in the stored row for display; only this request's copy loses it.
+                if (!includeThoughtsInHistory && pm.Role == "assistant")
+                {
+                    string stripped = ThoughtMarkupWriter.StripThoughts(content);
+                    content = stripped.Length > 0 ? stripped : ThoughtMarkupWriter.LastThoughtText(content);
+                }
+
                 if (includeToolDigest && pm.Role == "assistant")
                 {
                     var digest = ToolCallHistoryDigest.Build(toolCallsLookup[pm.Id]);
@@ -924,6 +936,12 @@ public class ChatService
                     {
                         content += "\n\n" + digest;
                     }
+                }
+
+                // A row of nothing but empty reasoning blocks, with no digest to carry it.
+                if (pm.Role == "assistant" && string.IsNullOrWhiteSpace(content))
+                {
+                    continue;
                 }
 
                 /* After the digest is appended, so the tool arguments it summarises are
@@ -972,7 +990,12 @@ public class ChatService
                     continue;
                 }
                 
-                messageHistory.Add(new { role = pm.Role, content });
+                var historyEntry = new { role = pm.Role, content };
+                if (pm.IsGameSnapshot || pm.IsMessageHistory)
+                {
+                    gameContextEntries.Add(historyEntry);
+                }
+                messageHistory.Add(historyEntry);
             }
 
             // Detect context types from system messages. Read from the row's flags rather than
@@ -1007,6 +1030,22 @@ public class ChatService
 
             var contextDocs = _wikiService.GetRelevantContext(message);
             isGnollHackSession = session?.IsGnollHackSession ?? false;
+
+            yield return new ChatEvent
+            {
+                Type = "turn_model",
+                Data = JsonSerializer.Serialize(new
+                {
+                    modelKey = systemModelId.HasValue ? $"s_{systemModelId}" : userModelId.HasValue ? $"u_{userModelId}" : null,
+                    provider,
+                    modelId = model,
+                    displayName = modelDisplayName,
+                    thinkingLevel = sentThinkingLevel,
+                    reasoningMode,
+                    serviceTier,
+                    selectionUnavailable = selectedModelUnavailable
+                })
+            };
 
             // isGameOn declared above
             bool developerMode = false;
@@ -1464,30 +1503,28 @@ public class ChatService
             
             // Truncation logic (prefix-stable)
             var meta = _modelMetadataService.GetMetadata(provider ?? "", model);
-            var inputLimit = ChatHistoryBudget.Resolve(
-                maxInputTokens,
-                meta,
-                _configuration.GetValue<bool>("LongContextChatSettings:KeepHistoryBelowThreshold", true),
-                _configuration.GetValue<int>("LongContextChatSettings:TurnHeadroomTokens", 40000),
-                _configuration.GetValue<decimal>("LongContextChatSettings:TokenEstimateFactor", 1.3m));
+            var inputLimit = ChatHistoryBudget.Resolve(_configuration, maxInputTokens, meta);
             int effectiveInputLimit = inputLimit.Tokens;
 
             contextWindowTokens = meta.ContextWindowSize > 0 ? meta.ContextWindowSize : null;
             contextInputLimitTokens = effectiveInputLimit;
             
+            var tokenEstimator = new ChatTokenEstimator(provider);
             int blockSize = _configuration.GetValue<int>("PromptCacheSettings:TruncationBlockSize", 8);
-            messageHistory = TruncateHistoryPrefixStable(messageHistory, systemPrompt, effectiveInputLimit, blockSize);
-            
+            messageHistory = TruncateHistoryPrefixStable(messageHistory, systemPrompt, effectiveInputLimit, blockSize, tokenEstimator);
+
+            contextBreakdownSeed = BuildContextBreakdownSeed(messageHistory, gameContextEntries, systemPrompt, textAttachmentsContent.Length, tokenEstimator);
+
             // Always Insert System Prompt
             messageHistory.Insert(0, new { role = "system", content = systemPrompt });
             
             // Prepare history for provider (e.g. Anthropic alternating / Google parts)
             messageHistory = aiProvider.PrepareMessageHistory(messageHistory);
             
-            int totalTokens = EstimateTokens(systemPrompt);
+            int totalTokens = tokenEstimator.Estimate(systemPrompt);
             foreach (var m in messageHistory)
             {
-                totalTokens += EstimateTokens(m);
+                totalTokens += tokenEstimator.Estimate(m);
             }
             estimatedInputTokens = totalTokens;
 
@@ -1619,7 +1656,8 @@ public class ChatService
             Budget = runBudget,
             ApplyTurnGuidance = true,
             TurnDeadlineUtc = _ongoingChatManager.TryGet(sessionRef)?.DeadlineUtc,
-            ReportTurnLimits = true
+            ReportTurnLimits = true,
+            ContextBreakdownSeed = contextBreakdownSeed
         };
 
         // What a viewer may see of the cost and of a notice's facts is decided from this.
@@ -1731,7 +1769,8 @@ public class ChatService
                     outputTokens = runResult.LastOutputTokens,
                     windowTokens = contextWindowTokens.Value,
                     inputLimitTokens = contextInputLimitTokens,
-                    modelDisplayName = modelDisplayName
+                    modelDisplayName = modelDisplayName,
+                    breakdown = runResult.ContextBreakdown
                 })
             };
         }
@@ -1907,6 +1946,7 @@ public class ChatService
                     ContextOutputTokens = runResult.ReportedContextOutputTokens,
                     ContextWindowTokens = contextWindowTokens,
                     ContextInputLimitTokens = contextInputLimitTokens,
+                    ContextBreakdownJson = ContextBreakdownEstimator.ToJson(runResult.ContextBreakdown),
                     InputTokens = wholeTurnInputTokens,
                     OutputTokens = wholeTurnOutputTokens,
                     CacheReadTokens = (int)Math.Min(int.MaxValue, cacheReadTokens),
@@ -2593,20 +2633,41 @@ public class ChatService
         return sb.Length == 0 ? null : sb.ToString();
     }
 
-    private static int EstimateTokens(object msg)
+    /// <summary>The sizes of the turn's starting prompt. The documents are part of the latest user message's text.</summary>
+    private static ContextBreakdownSeed BuildContextBreakdownSeed(
+        List<object> messageHistory, HashSet<object> gameContextEntries, string systemPrompt,
+        int documentChars, ChatTokenEstimator tokenEstimator)
     {
-        if (msg is string s) return s.Length / 4;
-        var content = ProviderHelper.GetProperty(msg, "content");
-        if (content is string cs) return cs.Length / 4;
-        return JsonSerializer.Serialize(msg).Length / 4;
+        int gameContext = 0;
+        int history = 0;
+        int images = 0;
+        foreach (var message in messageHistory)
+        {
+            var estimate = tokenEstimator.EstimateMessage(message);
+            images += estimate.ImageTokens;
+            if (gameContextEntries.Contains(message))
+            {
+                gameContext += estimate.TextTokens;
+            }
+            else
+            {
+                history += estimate.TextTokens;
+            }
+        }
+
+        int documents = documentChars / 4;
+        return new ContextBreakdownSeed(systemPrompt.Length / 4, gameContext, Math.Max(0, history - documents), documents, images);
     }
 
     private List<object> TruncateHistoryPrefixStable(
         List<object> messageHistory,
         string systemPrompt,
         int effectiveInputLimit,
-        int blockSize)
+        int blockSize,
+        ChatTokenEstimator tokenEstimator)
     {
+        int EstimateTokens(object message) => tokenEstimator.Estimate(message);
+
         int sysTokens = EstimateTokens(systemPrompt);
         if (messageHistory.Count <= 1)
         {

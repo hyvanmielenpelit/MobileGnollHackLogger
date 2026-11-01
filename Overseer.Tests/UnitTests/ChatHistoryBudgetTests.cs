@@ -1,5 +1,6 @@
 namespace Overseer.Tests.UnitTests;
 
+using Microsoft.Extensions.Configuration;
 using Overseer.Services;
 using Xunit;
 
@@ -12,6 +13,33 @@ public class ChatHistoryBudgetTests
 {
     private const int Headroom = 40000;
     private const decimal Factor = 1.3m;
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(123456)]
+    public void TheConfigurationOverload_MatchesTheDefaults(int? explicitMax)
+    {
+        var configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
+
+        Assert.Equal(
+            ChatHistoryBudget.Resolve(explicitMax, LongContextMetadata(), true, Headroom, Factor),
+            ChatHistoryBudget.Resolve(configuration, explicitMax, LongContextMetadata()));
+    }
+
+    [Fact]
+    public void TheConfigurationOverload_ReadsTheSettings()
+    {
+        var configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "LongContextChatSettings:KeepHistoryBelowThreshold", "false" }
+            })
+            .Build();
+
+        Assert.Equal(
+            new ChatHistoryLimit(LongContextMetadata().MaxInputTokens, ChatHistoryLimitSource.ModelMaximum),
+            ChatHistoryBudget.Resolve(configuration, null, LongContextMetadata()));
+    }
 
     private static ModelMetadata LongContextMetadata() => Metadata(872000, 100000);
 

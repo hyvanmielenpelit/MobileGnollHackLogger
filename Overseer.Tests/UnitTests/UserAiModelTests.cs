@@ -45,7 +45,7 @@ public class UserAiModelTests
     private static SettingsController CreateController(SettingsService service, ApplicationDbContext db, string userId)
     {
         var controller = new SettingsController(
-            service, null!, null!, Metadata, null!, null!,
+            service, null!, new ConfigurationBuilder().Build(), Metadata, null!, null!,
             new Overseer.Services.Privacy.EndpointPolicy(new ConfigurationBuilder().Build()),
             new Overseer.Services.Privacy.ConfidentialPolicyResolver(new ConfigurationBuilder().Build()),
             new Overseer.Services.Privacy.Dlp.DlpScannerService(new ConfigurationBuilder().Build()),
@@ -101,6 +101,34 @@ public class UserAiModelTests
             maxOutputTokens: null,
             modelId: modelId,
             provider: "Google");
+
+    [Fact]
+    public async Task GetUserModels_GivesTheContextWindowAndTheHistoryLimit()
+    {
+        var (service, db) = CreateTestSettingsService();
+        var userId = "test-user-limits";
+        var catalogModelId = Metadata.GetCatalogTargets("Google").Select(t => t.ModelId).First();
+        await AddRowAsync(db, userId, catalogModelId);
+        var unsized = await AddRowAsync(db, userId, "not-in-the-catalog");
+        unsized.MaxInputTokens = 5000;
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var controller = CreateController(service, db, userId);
+        var result = Assert.IsType<OkObjectResult>(await controller.GetUserModels());
+        var items = Assert.IsAssignableFrom<IEnumerable<object>>(result.Value).ToList();
+
+        var sized = items.Single(i => (string)Prop(i, "ModelId")! == catalogModelId);
+        var meta = Metadata.GetMetadata("Google", catalogModelId);
+        Assert.True(meta.ContextWindowSize > 0);
+        Assert.Equal(meta.ContextWindowSize, Prop(sized, "ContextWindowTokens"));
+        Assert.Equal(
+            ChatHistoryBudget.Resolve(new ConfigurationBuilder().Build(), null, meta).Tokens,
+            Prop(sized, "InputLimitTokens"));
+
+        var custom = items.Single(i => (string)Prop(i, "ModelId")! == "not-in-the-catalog");
+        Assert.Null(Prop(custom, "ContextWindowTokens"));
+        Assert.Equal(5000, Prop(custom, "InputLimitTokens"));
+    }
 
     [Fact]
     public async Task UpdateUserModelAsync_WithNullModelId_PreservesExistingModelId()

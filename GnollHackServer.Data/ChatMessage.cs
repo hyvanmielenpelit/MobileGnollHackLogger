@@ -94,8 +94,8 @@ public class ChatMessage
     public int? ContextWindowTokens { get; set; }
 
     /// <summary>
-    /// The input-token ceiling Overseer applied when truncating history for this turn
-    /// (<c>MaxInputTokens</c> override, else <c>ContextWindowTokens - MaxOutputTokens</c>).
+    /// The input-token ceiling Overseer applied when truncating history for this turn: the limit
+    /// <c>ChatHistoryBudget.Resolve</c> returned, in estimator units.
     /// This, not <see cref="ContextWindowTokens"/>, is where history truncation begins.
     /// </summary>
     public int? ContextInputLimitTokens { get; set; }
@@ -152,4 +152,10 @@ public class ChatMessage
     /// text in every mode, like token counts, and holds nothing the user typed or the model wrote.</summary>
     [MaxLength(1000)]
     public string? TurnNoticeFactsJson { get; set; }
+
+    /// <summary>What occupied the context at the final model call of this turn, as JSON. Numbers only, so it
+    /// is stored in plain text in every mode, like the token columns. Null on older rows and when the
+    /// provider reported no usage.</summary>
+    [MaxLength(1000)]
+    public string? ContextBreakdownJson { get; set; }
 }

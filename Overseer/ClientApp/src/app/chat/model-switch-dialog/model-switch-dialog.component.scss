@@ -1,0 +1,14 @@
+.model-switch-dialog {
+  max-inline-size: min(32rem, calc(100vw - 32px));
+}
+
+.model-switch-effect {
+  margin-block: 12px;
+
+  h4 {
+    margin: 0 0 4px;
+    font-size: 1rem;
+  }
+
+  p { margin: 0; }
+}

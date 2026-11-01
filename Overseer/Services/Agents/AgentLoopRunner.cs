@@ -71,6 +71,47 @@ public class AgentLoopRunner
     internal static ToolResult UndeclaredToolResult(string toolName)
         => new() { Success = false, ErrorMessage = $"Tool '{toolName}' is not available in this conversation." };
 
+    private long? TryMeasureBreakdownBaseline(ContextBreakdownSeed? seed, List<object> messageHistory)
+    {
+        if (seed == null) return null;
+        try
+        {
+            return ContextBreakdownEstimator.SerializedLength(messageHistory);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Measuring the context breakdown baseline failed.");
+            return null;
+        }
+    }
+
+    /// <summary>Any failure here leaves the breakdown null and never affects the turn.</summary>
+    private ContextBreakdown? TryBuildContextBreakdown(
+        ContextBreakdownSeed? seed, long? baselineChars, List<object> messageHistory,
+        ToolsForRequest? tools, AgentRunResult result)
+    {
+        if (seed == null || baselineChars == null || result.ModelCallUsages.Count == 0) return null;
+        try
+        {
+            var lastUsage = result.ModelCallUsages[^1];
+            int toolDefinitions = tools == null
+                ? 0
+                : JsonSerializer.Serialize(new { tools.ProviderTools, tools.FunctionDeclarations }).Length / 4;
+
+            // A superseded snapshot can shrink the history below its starting size.
+            long activityChars = Math.Max(0, ContextBreakdownEstimator.SerializedLength(messageHistory) - baselineChars.Value);
+
+            return ContextBreakdownEstimator.Scale(
+                seed, toolDefinitions, (int)Math.Min(int.MaxValue, activityChars / 4),
+                lastUsage.TotalPromptTokens, lastUsage.CacheReadTokens, lastUsage.CacheCreationTokens, lastUsage.ReasoningTokens);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Building the context breakdown failed.");
+            return null;
+        }
+    }
+
     public async IAsyncEnumerable<ChatEvent> RunAsync(
         AgentRunRequest request,
         AgentRunBudget? budget,
@@ -107,6 +148,9 @@ public class AgentLoopRunner
         // no-op, and Anthropic's alternation pass leaves an already-alternating history
         // unchanged, so pre-formatted callers are not disturbed.
         messageHistory = aiProvider.PrepareMessageHistory(messageHistory);
+
+        long? breakdownBaselineChars = TryMeasureBreakdownBaseline(request.ContextBreakdownSeed, messageHistory);
+        ToolsForRequest? lastRequestTools = null;
 
         var thoughtWriter = new ThoughtMarkupWriter();
         var sbFullResponse = new StringBuilder();
@@ -233,6 +277,7 @@ public class AgentLoopRunner
                 request.ModelId,
                 request.AllowedToolNames,
                 request.EnableFeedbackTool);
+            lastRequestTools = requestTools;
 
             var currentIterationToolCalls = new List<JsonElement>();
             var currentIterationProviderItems = new List<JsonElement>();
@@ -876,6 +921,7 @@ public class AgentLoopRunner
         result.PermitWaitMs = result.ModelCalls.Sum(c => (long)c.PermitWaitMs);
         result.BackoffWaitMs = result.ModelCalls.Sum(c => (long)c.BackoffWaitMs);
         result.RetryAttemptCount = result.ModelCalls.Sum(c => Math.Max(0, c.AttemptCount - 1));
+        result.ContextBreakdown = TryBuildContextBreakdown(request.ContextBreakdownSeed, breakdownBaselineChars, messageHistory, lastRequestTools, result);
 
         var fullResponse = ReasoningTextSanitizer.SanitizeStateless(sbFullResponse.ToString());
         if (wasTruncatedByMaxTokens && reportTurnLimits)

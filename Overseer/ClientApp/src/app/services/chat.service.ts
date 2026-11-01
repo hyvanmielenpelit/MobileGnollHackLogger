@@ -128,6 +128,11 @@ export interface ChatMessage {
   contextOutputTokens?: number;
   contextWindowTokens?: number;
   contextInputLimitTokens?: number;
+  /** What occupied the context at the final model call; missing on older replies. */
+  contextBreakdown?: ChatContextBreakdown | null;
+  /** The provider and model that produced this reply; missing on older rows. */
+  providerUsed?: string | null;
+  modelUsed?: string | null;
   inputTokens?: number;
   outputTokens?: number;
   cacheReadTokens?: number;
@@ -171,6 +176,24 @@ export interface ChatTurnNotice {
  * Context window occupancy as of the last assistant reply in a session. Sourced from the
  * provider's own token accounting for the final model call of that turn.
  */
+/**
+ * What occupied the context at a turn's final model call. The seven categories are estimates that sum to
+ * the provider's prompt total; the cache and reasoning figures are measured.
+ */
+export interface ChatContextBreakdown {
+  version: number;
+  systemPrompt: number;
+  toolDefinitions: number;
+  gameContext: number;
+  history: number;
+  documents: number;
+  images: number;
+  toolActivity: number;
+  cacheRead: number;
+  cacheWrite: number;
+  reasoning: number;
+}
+
 export interface ChatContextUsage {
   usedTokens: number;
   windowTokens: number;
@@ -178,6 +201,23 @@ export interface ChatContextUsage {
   promptTokens: number;
   outputTokens: number;
   modelDisplayName?: string;
+  /** The model that was measured; missing on older rows. */
+  provider?: string;
+  modelId?: string;
+  breakdown?: ChatContextBreakdown;
+}
+
+/** The JSON `data` of a `turn_model` event: what the server resolved for this turn, before its first chunk. */
+export interface ChatTurnModel {
+  modelKey?: string | null;
+  provider?: string | null;
+  modelId?: string | null;
+  displayName?: string | null;
+  thinkingLevel?: string | null;
+  reasoningMode?: string | null;
+  serviceTier?: string | null;
+  /** The request named a user model that no longer exists, so the default model answered. */
+  selectionUnavailable?: boolean;
 }
 
 /**
@@ -193,7 +233,7 @@ export interface SnapshotRefusal {
 
 export interface ChatStreamEvent {
   /** `snapshot_refused`: the snapshot guard withheld a client tool's result; `data` is JSON `{ code, message }`. */
-  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'context' | 'cost' | 'final' | 'confidential_gate' | 'private_badge' | 'snapshot_refused' | 'turn_notice';
+  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'context' | 'cost' | 'final' | 'confidential_gate' | 'private_badge' | 'snapshot_refused' | 'turn_notice' | 'turn_model';
   data: string;
   seqNo?: number;
   /**

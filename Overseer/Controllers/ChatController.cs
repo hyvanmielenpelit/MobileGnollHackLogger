@@ -421,7 +421,8 @@ public class ChatController : ControllerBase
                 m.SubAgentEstimatedCost,
                 m.OperatorEstimatedCost,
                 m.TurnNoticeCode,
-                m.TurnNoticeFactsJson
+                m.TurnNoticeFactsJson,
+                m.ContextBreakdownJson
             })
             .ToListAsync();
         swDb.Stop();
@@ -578,10 +579,13 @@ public class ChatController : ControllerBase
                 ReasoningMode = reasoningMode,
                 ServiceTier = serviceTier,
                 ActualServiceTier = actualServiceTier,
+                m.ProviderUsed,
+                m.ModelUsed,
                 m.ContextPromptTokens,
                 m.ContextOutputTokens,
                 m.ContextWindowTokens,
                 m.ContextInputLimitTokens,
+                ContextBreakdown = ContextBreakdownEstimator.FromJson(m.ContextBreakdownJson),
                 m.InputTokens,
                 m.OutputTokens,
                 m.CacheReadTokens,
@@ -778,10 +782,13 @@ public class ChatController : ControllerBase
                     ReasoningMode = m.ReasoningModeUsed,
                     ServiceTier = m.ServiceTierUsed,
                     ActualServiceTier = m.ActualServiceTierUsed,
+                    m.ProviderUsed,
+                    m.ModelUsed,
                     m.ContextPromptTokens,
                     m.ContextOutputTokens,
                     m.ContextWindowTokens,
                     m.ContextInputLimitTokens,
+                    ContextBreakdown = ContextBreakdownEstimator.FromJson(m.ContextBreakdownJson),
                     m.InputTokens,
                     m.OutputTokens,
                     m.CacheReadTokens,

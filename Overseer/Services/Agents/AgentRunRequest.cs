@@ -123,5 +123,8 @@ public class AgentRunRequest
     /// </summary>
     public bool ReportTurnLimits { get; set; }
 
+    /// <summary>The sizes of the turn's starting prompt, which turn on breakdown capture; null means none.</summary>
+    public ContextBreakdownSeed? ContextBreakdownSeed { get; set; }
+
     public IAiProvider? AiProvider { get; set; }
 }

@@ -91,7 +91,17 @@
           <input type="checkbox" [(ngModel)]="showContextWindowUsage" (ngModelChange)="onSettingChange()" name="showContextWindowUsage" class="w-auto m-0" aria-describedby="contextWindowUsageHint" />
           <span>
             <span>Show Context Window Usage</span>
-            <span id="contextWindowUsageHint" class="form-hint mt-5">Display how much of the model's context window the current chat occupies, above the prompt box.</span>
+            <span id="contextWindowUsageHint" class="form-hint mt-5">Display how much of the model's context window the current chat occupies, in the chat header.</span>
+          </span>
+        </label>
+      </div>
+
+      <div class="margin-y-20">
+        <label class="checkbox-label align-start">
+          <input type="checkbox" [ngModel]="warnBeforeModelSwitch" (ngModelChange)="onWarnBeforeModelSwitchChange($event)" name="warnBeforeModelSwitch" class="w-auto m-0" aria-describedby="warnBeforeModelSwitchHint" />
+          <span>
+            <span>Warn Before Changing the Model in a Chat</span>
+            <span id="warnBeforeModelSwitchHint" class="form-hint mt-5">Ask first when a new model has no cached copy of the chat. You are always told when older messages would stop reaching the model. Kept in this browser.</span>
           </span>
         </label>
       </div>

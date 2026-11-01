@@ -15,8 +15,9 @@ public class ChatEvent
     public int? SeqNo { get; set; }
     // Bounded raw provider failure payload; set only on "error" events, null otherwise.
     public string? Detail { get; set; }
-    // Machine-readable failure code; set only on "error" events: "model_unavailable", "overseer_blocked"
-    // (Detail then carries the administrator's block reason) or "terms_not_accepted".
+    // Machine-readable failure code; set only on "error" events: "model_unavailable" (the provider or a
+    // system configuration's check refused the model), "overseer_blocked" (Detail then carries the
+    // administrator's block reason) or "terms_not_accepted".
     public string? ErrorCode { get; set; }
     // The TurnLimitCodes value of an "error" event; the agent loop consumes it and never yields it onward.
     public string? LimitCode { get; set; }

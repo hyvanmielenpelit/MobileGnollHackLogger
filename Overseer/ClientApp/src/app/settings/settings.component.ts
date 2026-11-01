@@ -39,6 +39,7 @@ import { AuthService, AuthUser, hasTermsStatus, needsTermsAcceptance } from '../
 import { formatTermsVersion } from '../services/terms.service';
 import { TermsDialogComponent } from '../shared/terms-dialog/terms-dialog.component';
 import { InfoTipComponent } from '../shared/info-tip/info-tip.component';
+import { readWarnModelSwitch, writeWarnModelSwitch } from '../chat/context-usage/context-usage.util';
 
 /** The data classes outbound masking can recognise, named as `POST /api/settings/dlp` accepts them. */
 export type DlpMaskClass = keyof DlpSettings;
@@ -155,6 +156,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   showParallelBadge = true;
   parallelBadgeEnabled = true;
   showContextWindowUsage = true;
+  warnBeforeModelSwitch = readWarnModelSwitch();
   showChatCost = true;
 
   enableWebSearch = true;
@@ -866,6 +868,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
       delete this.validationErrors['confidentialRetentionDays'];
     }
     this.initializeSelects();
+  }
+
+  onWarnBeforeModelSwitchChange(warn: boolean): void {
+    this.warnBeforeModelSwitch = warn;
+    writeWarnModelSwitch(warn);
   }
 
   onSettingChange() {

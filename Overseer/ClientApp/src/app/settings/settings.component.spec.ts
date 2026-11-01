@@ -16,6 +16,7 @@ import {
 } from '../services/settings.service';
 import { ChatService } from '../services/chat.service';
 import { AuthService, AuthUser } from '../services/auth.service';
+import { WARN_MODEL_SWITCH_STORAGE_KEY } from '../chat/context-usage/context-usage.util';
 
 describe('SettingsComponent', () => {
   let component: SettingsComponent;
@@ -130,6 +131,25 @@ describe('SettingsComponent', () => {
       const checkbox = compiled.querySelector('input[name="showChatCost"]') as HTMLInputElement;
       expect(checkbox).toBeTruthy();
       expect(checkbox.checked).toBe(true);
+    });
+
+    it('should bind the model switch warning to browser storage, undoing "Don\'t warn me again"', async () => {
+      localStorage.setItem(WARN_MODEL_SWITCH_STORAGE_KEY, 'false');
+      fixture = TestBed.createComponent(SettingsComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const checkbox = (fixture.nativeElement as HTMLElement).querySelector('input[name="warnBeforeModelSwitch"]') as HTMLInputElement;
+      expect(checkbox.checked).toBe(false);
+
+      const save = vi.spyOn(settingsService, 'saveSettings');
+      checkbox.click();
+
+      expect(localStorage.getItem(WARN_MODEL_SWITCH_STORAGE_KEY)).toBe('true');
+      expect(save).not.toHaveBeenCalled();
+      localStorage.removeItem(WARN_MODEL_SWITCH_STORAGE_KEY);
     });
 
     it('makes custom select options buttons that select their value and close the popover', fakeAsync(() => {

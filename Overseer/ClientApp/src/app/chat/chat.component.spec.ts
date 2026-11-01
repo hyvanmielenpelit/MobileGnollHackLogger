@@ -1359,38 +1359,6 @@ describe('ChatComponent context window indicator', () => {
     });
   });
 
-  describe('contextUsagePercent', () => {
-    it('should be zero when there is no usage', () => {
-      component.contextUsage = null;
-      expect(component.contextUsagePercent).toBe(0);
-    });
-
-    it('should round the ratio to a whole percentage', () => {
-      component.contextUsage = {
-        promptTokens: 200000, outputTokens: 4400,
-        usedTokens: 204400, windowTokens: 1000000
-      };
-      expect(component.contextUsagePercent).toBe(20);
-    });
-
-    it('should clamp to 100 when the used count exceeds the window', () => {
-      // Possible after a mid-chat switch to a model with a smaller window.
-      component.contextUsage = {
-        promptTokens: 300000, outputTokens: 0,
-        usedTokens: 300000, windowTokens: 200000
-      };
-      expect(component.contextUsagePercent).toBe(100);
-    });
-
-    it('should be zero rather than infinite when the window is unknown', () => {
-      component.contextUsage = {
-        promptTokens: 100, outputTokens: 0,
-        usedTokens: 100, windowTokens: 0
-      };
-      expect(component.contextUsagePercent).toBe(0);
-    });
-  });
-
   describe('recomputeContextUsage', () => {
     it('should pick the newest assistant message that carries the measurement', () => {
       component.messages = [
@@ -1492,60 +1460,6 @@ describe('ChatComponent context window indicator', () => {
       fixture.detectChanges();
       expect(warning()).toBeTruthy();
       expect(warning()!.getAttribute('aria-label')).toBe('nearly full');
-    });
-  });
-
-  describe('contextUsageTooltipLines', () => {
-    it('should be empty when there is no usage', () => {
-      component.contextUsage = null;
-      expect(component.contextUsageTooltipLines).toEqual([]);
-    });
-
-    it('should give four lines naming the split, window, threshold, and model', () => {
-      component.contextUsage = {
-        promptTokens: 5000, outputTokens: 250, usedTokens: 5250,
-        windowTokens: 200000, inputLimitTokens: 190000,
-        modelDisplayName: 'Claude Opus 5'
-      };
-
-      const lines = component.contextUsageTooltipLines;
-      expect(lines.length).toBe(4);
-      expect(lines[0]).toContain('prompt');
-      expect(lines[0]).toContain('output tokens');
-      expect(lines[1]).toContain('context window');
-      expect(lines[2]).toContain('truncated above');
-      expect(lines[3]).toContain('Claude Opus 5');
-    });
-
-    it('should omit the threshold and model lines when those are unknown', () => {
-      component.contextUsage = {
-        promptTokens: 5000, outputTokens: 250, usedTokens: 5250,
-        windowTokens: 200000
-      };
-
-      expect(component.contextUsageTooltipLines.length).toBe(2);
-    });
-  });
-
-  describe('contextUsageValueText', () => {
-    it('should be empty when there is no usage', () => {
-      component.contextUsage = null;
-      expect(component.contextUsageValueText).toBe('');
-    });
-
-    it('should state the numbers and the percentage, without the tooltip prose', () => {
-      component.contextUsage = {
-        promptTokens: 200000, outputTokens: 4400,
-        usedTokens: 204400, windowTokens: 1000000,
-        inputLimitTokens: 936000, modelDisplayName: 'Claude Opus 5'
-      };
-
-      const text = component.contextUsageValueText;
-      expect(text).toContain('20%');
-      expect(text).toContain('tokens');
-      // The explanation belongs to the tooltip; announcing it here too would duplicate it.
-      expect(text).not.toContain('truncated above');
-      expect(text).not.toContain('Claude Opus 5');
     });
   });
 

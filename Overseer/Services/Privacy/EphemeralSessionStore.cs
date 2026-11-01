@@ -65,6 +65,7 @@ public sealed class EphemeralMessage
     public decimal? OperatorEstimatedCost { get; init; }
     public string? TurnNoticeCode { get; init; }
     public string? TurnNoticeFactsJson { get; init; }
+    public string? ContextBreakdownJson { get; init; }
 
     private byte[] _content = Array.Empty<byte>();
 
@@ -114,7 +115,8 @@ public sealed class EphemeralMessage
         SubAgentEstimatedCost = SubAgentEstimatedCost,
         OperatorEstimatedCost = OperatorEstimatedCost,
         TurnNoticeCode = TurnNoticeCode,
-        TurnNoticeFactsJson = TurnNoticeFactsJson
+        TurnNoticeFactsJson = TurnNoticeFactsJson,
+        ContextBreakdownJson = ContextBreakdownJson
     };
 
     /// <summary>
@@ -162,6 +164,7 @@ public sealed class EphemeralMessage
             OperatorEstimatedCost = source.OperatorEstimatedCost,
             TurnNoticeCode = source.TurnNoticeCode,
             TurnNoticeFactsJson = source.TurnNoticeFactsJson,
+            ContextBreakdownJson = source.ContextBreakdownJson,
             Content = source.Content ?? ""
         };
 
