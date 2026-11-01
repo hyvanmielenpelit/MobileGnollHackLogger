@@ -319,6 +319,75 @@ public class SystemConfigUsageGuardTests
     }
 
     [Fact]
+    public async Task AnyActiveWork_IsEmptyWithNothingRunning()
+    {
+        await AddRunAsync(BenchmarkRunStatus.Completed);
+        await AddSeriesAsync(BenchmarkRunSeriesStatus.Stopped);
+        await AddBatteryRunAsync(BenchmarkRunSeriesStatus.Completed);
+
+        Assert.Empty(await Guard().FindAnyActiveBenchmarkWorkAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AnyActiveWork_ReportsARunningRun_WhateverItsConfiguration()
+    {
+        await AddRunAsync(BenchmarkRunStatus.Running, assessorId: ConfigId + 1);
+
+        var blocker = Assert.Single(await Guard().FindAnyActiveBenchmarkWorkAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal("run", blocker.Kind);
+        Assert.Contains("Sokoban basics", blocker.Label);
+        Assert.Empty(blocker.Roles);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkRunReportDocumentsStatus.Pending, true)]
+    [InlineData(BenchmarkRunReportDocumentsStatus.Writing, true)]
+    [InlineData(BenchmarkRunReportDocumentsStatus.Completed, false)]
+    public async Task AnyActiveWork_ReportsAWritingReport(BenchmarkRunReportDocumentsStatus status, bool reported)
+    {
+        _db.BenchmarkRuns.Add(BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            SuiteName = "Sokoban basics",
+            Status = BenchmarkRunStatus.Completed,
+            TestedModelConfigurationId = 1,
+            AssessorModelConfigurationId = 2,
+            ReportDocumentsStatus = status
+        }));
+        await _db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var blockers = await Guard().FindAnyActiveBenchmarkWorkAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(reported ? new[] { "runReportWriter" } : Array.Empty<string>(), blockers.Select(b => b.Kind));
+    }
+
+    [Theory]
+    [InlineData(BenchmarkRunSeriesStatus.Pending)]
+    [InlineData(BenchmarkRunSeriesStatus.Running)]
+    [InlineData(BenchmarkRunSeriesStatus.WaitingForCap)]
+    public async Task AnyActiveWork_ReportsAnActiveSeriesAndBatteryRun(BenchmarkRunSeriesStatus status)
+    {
+        await AddSeriesAsync(status);
+        await AddBatteryRunAsync(status);
+
+        var blockers = await Guard().FindAnyActiveBenchmarkWorkAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "series", "battery" }, blockers.Select(b => b.Kind));
+    }
+
+    [Fact]
+    public async Task AnyActiveWork_ReportsARunningJob_WhateverItsConfiguration_AndNotOnceFinished()
+    {
+        var job = new BenchmarkDifficultyJob { SuiteName = "S", AssessorConfigId = ConfigId + 1 };
+        Assert.True(_difficulty.TryStart(job, out _));
+
+        Assert.Equal("difficultyJob", Assert.Single(await Guard().FindAnyActiveBenchmarkWorkAsync(TestContext.Current.CancellationToken)).Kind);
+
+        _difficulty.Complete(job.Id, BenchmarkDifficultyJobStatus.Completed);
+        Assert.Empty(await Guard().FindAnyActiveBenchmarkWorkAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task AJobForAnotherConfiguration_DoesNotBlock()
     {
         Assert.True(_difficulty.TryStart(new BenchmarkDifficultyJob { SuiteName = "S", AssessorConfigId = ConfigId + 1 }, out _));

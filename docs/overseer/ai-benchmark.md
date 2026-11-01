@@ -9366,7 +9366,8 @@ model stays as good, fast and cheap over time — reads these rows and columns; 
 
 Benchmark history never depends on a `SystemAiApiConfiguration` row. Every model a benchmark used is
 recorded as a row of **`SystemAiConfigurationSnapshot`**, an append-only, content-addressed table: one
-row per distinct combination of settings ever used, keyed by `Sha256`, never updated and never deleted.
+row per distinct combination of settings ever used, keyed by `Sha256`. Only the recorded-names sync
+(`chat-data-retention.md`, *Model Name Sync*) renames a row, recomputes its hash and merges a duplicate.
 
 - **Fields.** `Provider`, `ModelId`, `DisplayName`, `ThinkingLevel`, `ReasoningMode`,
   `ReasoningSummary`, `ServiceTier`, `MaxOutputTokens` (the configuration's own value),

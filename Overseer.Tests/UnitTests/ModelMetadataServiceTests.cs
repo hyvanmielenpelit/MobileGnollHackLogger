@@ -155,6 +155,35 @@ public class ModelMetadataServiceTests
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
+    public void AnthropicDisplayNames_PutTheVersionLast()
+    {
+        var entries = _service.GetCatalogEntries("Anthropic");
+
+        Assert.NotEmpty(entries);
+        Assert.All(entries, e => Assert.Matches(@"^Claude [A-Z][a-z]+ \d+(\.\d+)?$", e.DisplayName));
+    }
+
+    [Fact]
+    public void FormerDisplayNames_AreNeverACurrentName_AndBelongToOneEntry()
+    {
+        var renames = _service.GetDisplayNameRenames();
+
+        Assert.NotEmpty(renames);
+        Assert.Empty(renames.Select(r => r.Former).Intersect(_service.GetCatalogDisplayNames()));
+        Assert.Equal(renames.Count, renames.Select(r => r.Former).Distinct().Count());
+    }
+
+    [Fact]
+    public void GetMetadata_CarriesTheFormerNames()
+    {
+        var meta = _service.GetMetadata("Anthropic", "claude-opus-5-5");
+
+        Assert.Equal("Claude Opus 5.5", meta.DisplayName);
+        Assert.Equal(new[] { "Claude 5.5 Opus" }, meta.FormerDisplayNames);
+        Assert.Empty(_service.GetMetadata("Anthropic", "claude-unknown").FormerDisplayNames);
+    }
+
+    [Fact]
     public void RetiredList_Loads()
     {
         var entries = _service.GetRetiredEntries();

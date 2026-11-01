@@ -398,6 +398,7 @@ builder.Services.AddScoped<Overseer.Services.ChatConsistency.ChatConsistencyAnal
 builder.Services.AddSingleton<Overseer.Services.ChatConsistency.ChatConsistencyRegradeJobManager>();
 builder.Services.AddScoped<Overseer.Services.ChatConsistency.ChatConsistencyRegradeService>();
 builder.Services.AddScoped<Overseer.Services.SystemConfigUsageGuard>();
+builder.Services.AddScoped<Overseer.Services.ModelDisplayNameSyncService>();
 // Singleton: it drives a series across many requests and outlives every one of them, creating its
 // own scope per member.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkSeriesOrchestrator>();

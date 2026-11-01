@@ -682,6 +682,53 @@ describe('AdminConfigsTabComponent', () => {
       expect(bannerButtons().every(b => b.getAttribute('aria-haspopup') === 'dialog')).toBe(true);
     });
 
+    describe('former name notice', () => {
+      const current = (): ModelAvailability => ({ status: 'available', needsAttention: false, catalogDisplayName: 'Claude Opus 5.5' });
+      const notice = () => el().querySelector<HTMLElement>('.config-former-name-notice');
+
+      it('counts a model-name row whose stored name differs from the catalog, and links to the Database tab', () => {
+        store.setConfigs([
+          config(1, 'Claude 5.5 Opus', current(), { displayNameMode: 'model_name' }),
+          config(2, 'Claude 5.5 Opus', current(), { displayNameMode: 'model_name' })
+        ]);
+        fixture.detectChanges();
+
+        expect(notice()!.getAttribute('role')).toBe('status');
+        expect(notice()!.classList).not.toContain('config-attention-banner');
+        expect(notice()!.textContent!.replace(/\s+/g, ' ').trim())
+          .toBe('2 configurations show a former catalog name. Sync model names on the Database tab.');
+        const link = notice()!.querySelector('a')!;
+        expect(link.textContent!.trim()).toBe('Database tab');
+        expect(link.getAttribute('href')).toBe('/admin/database');
+      });
+
+      it('words the notice in the singular', () => {
+        store.setConfigs([config(1, 'Claude 5.5 Opus', current(), { displayNameMode: 'model_name' })]);
+        fixture.detectChanges();
+
+        expect(notice()!.textContent).toContain('1 configuration shows a former catalog name.');
+      });
+
+      it('shows nothing for a row that already has the catalog name', () => {
+        store.setConfigs([config(1, 'Claude Opus 5.5', current(), { displayNameMode: 'model_name' })]);
+        fixture.detectChanges();
+
+        expect(notice()).toBeNull();
+      });
+
+      it('shows nothing for a custom, a model-ID, a legacy or an unavailable row', () => {
+        store.setConfigs([
+          config(1, 'My Claude', current(), { displayNameMode: 'custom' }),
+          config(2, 'claude-opus-5-5', current(), { displayNameMode: 'model_id' }),
+          config(3, 'Claude 5.5 Opus', current(), { displayNameMode: null }),
+          config(4, 'Claude 5.5 Opus', retired({ catalogDisplayName: 'Claude Opus 5.5' }), { displayNameMode: 'model_name' })
+        ]);
+        fixture.detectChanges();
+
+        expect(notice()).toBeNull();
+      });
+    });
+
     it('words the banner in the singular for one configuration, and flags a disabled one', () => {
       store.setConfigs([config(1, 'Alpha', retired(), { isEnabled: false }), config(2, 'Beta', available())]);
       fixture.detectChanges();

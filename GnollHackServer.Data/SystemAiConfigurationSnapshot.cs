@@ -5,10 +5,10 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 /// <summary>
-/// One distinct combination of model settings a benchmark ever ran with. Append-only and
-/// content-addressed: <see cref="Sha256"/> is the hash of the canonical form of every other
-/// hashed field, so identical settings share one row, and no code updates or deletes a row.
-/// History references these rows by foreign key; the mutable <see cref="SystemAiApiConfiguration"/>
+/// One distinct combination of model settings a benchmark ever ran with. Content-addressed:
+/// <see cref="Sha256"/> is the hash of the canonical form of every other hashed field, so identical
+/// settings share one row. Append-only except for the recorded-names sync, which renames a row and
+/// recomputes its hash, keeping the row's identity across a catalog rename. History references these rows by foreign key; the mutable <see cref="SystemAiApiConfiguration"/>
 /// is referenced only by a plain attribution id, so editing or deleting a configuration never
 /// changes what history says it ran with.
 ///

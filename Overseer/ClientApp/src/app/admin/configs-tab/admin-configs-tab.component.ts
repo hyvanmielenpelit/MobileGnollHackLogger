@@ -1,5 +1,6 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, EventEmitter, Output, inject, ViewChild, ElementRef, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { AdminService, SystemAiConfigDto, SystemConfigDeletionCheckDto, SystemConfigBlockerDto } from '../../services/admin.service';
 import { AiModelFormComponent, AiModelFormResult } from '../../shared/ai-model-form/ai-model-form.component';
@@ -35,7 +36,7 @@ export interface ConfigAvailabilityBadge {
 @Component({
   selector: 'app-admin-configs-tab',
   imports: [
-    CommonModule, AiModelFormComponent, ConfigAnalyticsComponent, ConfigFilterComponent, ProviderBadgeComponent, AdminRateLimitsDialogComponent,
+    CommonModule, RouterLink, AiModelFormComponent, ConfigAnalyticsComponent, ConfigFilterComponent, ProviderBadgeComponent, AdminRateLimitsDialogComponent,
     ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent, AdminApiKeysComponent,
     ModelCardSettingsComponent, ModelCardFactsComponent, DragAutoscrollDirective
   ],
@@ -260,6 +261,15 @@ export class AdminConfigsTabComponent implements OnInit, OnDestroy, AfterViewIni
       ...flagged.filter(c => c.modelAvailability?.status === 'retired'),
       ...flagged.filter(c => c.modelAvailability?.status !== 'retired')
     ];
+  }
+
+  /** The available configurations that use the catalog's model name but store a different one. */
+  get formerNameConfigs(): SystemAiConfigDto[] {
+    return this.configs.filter(c => {
+      const availability = c.modelAvailability;
+      return c.displayNameMode === 'model_name' && availability?.status === 'available'
+        && !!availability.catalogDisplayName && c.displayName !== availability.catalogDisplayName;
+    });
   }
 
   /** Removed or Not in catalog for a model that needs attention, Custom model for a custom-mode row, else null. */

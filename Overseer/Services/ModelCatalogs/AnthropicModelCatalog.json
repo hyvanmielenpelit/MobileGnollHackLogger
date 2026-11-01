@@ -1,7 +1,8 @@
 [
   {
     "prefixes": ["claude-opus-4-6"],
-    "displayName": "Claude 4.6 Opus",
+    "displayName": "Claude Opus 4.6",
+    "formerDisplayNames": ["Claude 4.6 Opus"],
     "releaseDate": "2026-02-05",
     "thinkingLevels": ["low", "medium", "high", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
@@ -17,7 +18,8 @@
   },
   {
     "prefixes": ["claude-sonnet-4-6"],
-    "displayName": "Claude 4.6 Sonnet",
+    "displayName": "Claude Sonnet 4.6",
+    "formerDisplayNames": ["Claude 4.6 Sonnet"],
     "releaseDate": "2026-02-17",
     "thinkingLevels": ["low", "medium", "high", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
@@ -33,7 +35,8 @@
   },
   {
     "prefixes": ["claude-opus-4-7"],
-    "displayName": "Claude 4.7 Opus",
+    "displayName": "Claude Opus 4.7",
+    "formerDisplayNames": ["Claude 4.7 Opus"],
     "releaseDate": "2026-04-16",
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
@@ -49,7 +52,8 @@
   },
   {
     "prefixes": ["claude-opus-4-8"],
-    "displayName": "Claude 4.8 Opus",
+    "displayName": "Claude Opus 4.8",
+    "formerDisplayNames": ["Claude 4.8 Opus"],
     "releaseDate": "2026-05-28",
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
@@ -65,7 +69,8 @@
   },
   {
     "prefixes": ["claude-opus-5"],
-    "displayName": "Claude 5 Opus",
+    "displayName": "Claude Opus 5",
+    "formerDisplayNames": ["Claude 5 Opus"],
     "releaseDate": "2026-07-24",
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
@@ -81,7 +86,8 @@
   },
   {
     "prefixes": ["claude-sonnet-5"],
-    "displayName": "Claude 5 Sonnet",
+    "displayName": "Claude Sonnet 5",
+    "formerDisplayNames": ["Claude 5 Sonnet"],
     "releaseDate": "2026-06-30",
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
@@ -97,7 +103,8 @@
   },
   {
     "prefixes": ["claude-fable-5"],
-    "displayName": "Claude 5 Fable",
+    "displayName": "Claude Fable 5",
+    "formerDisplayNames": ["Claude 5 Fable"],
     "releaseDate": "2026-06-09",
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
@@ -113,7 +120,8 @@
   },
   {
     "prefixes": ["claude-fable-5-1"],
-    "displayName": "Claude 5.1 Fable",
+    "displayName": "Claude Fable 5.1",
+    "formerDisplayNames": ["Claude 5.1 Fable"],
     "releaseDate": "2026-09-01",
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
@@ -129,7 +137,8 @@
   },
   {
     "prefixes": ["claude-opus-5-5"],
-    "displayName": "Claude 5.5 Opus",
+    "displayName": "Claude Opus 5.5",
+    "formerDisplayNames": ["Claude 5.5 Opus"],
     "releaseDate": "2026-09-22",
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
@@ -145,7 +154,8 @@
   },
   {
     "prefixes": ["claude-sonnet-5-5"],
-    "displayName": "Claude 5.5 Sonnet",
+    "displayName": "Claude Sonnet 5.5",
+    "formerDisplayNames": ["Claude 5.5 Sonnet"],
     "releaseDate": "2026-09-28",
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],
@@ -161,7 +171,8 @@
   },
   {
     "prefixes": ["claude-haiku-5-5"],
-    "displayName": "Claude 5.5 Haiku",
+    "displayName": "Claude Haiku 5.5",
+    "formerDisplayNames": ["Claude 5.5 Haiku"],
     "releaseDate": "2026-10-07",
     "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
     "reasoningSummaries": ["summarized", "omitted"],

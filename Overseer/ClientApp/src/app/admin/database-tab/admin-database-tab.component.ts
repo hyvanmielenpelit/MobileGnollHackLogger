@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, AfterViewInit, inject, ViewChild, Element
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Observable } from 'rxjs';
-import { AdminService, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog } from '../../services/admin.service';
+import { AdminService, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, ModelNameSyncStatus } from '../../services/admin.service';
 import { TableState } from '../../shared/data-table/table-state';
 import { TablePagerComponent } from '../../shared/data-table/table-pager.component';
 import { AdminPageStore } from '../admin-page.store';
@@ -34,6 +34,9 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
   // Database Tab state
   storageMetrics: DatabaseStorageMetrics | null = null;
   storageLoading = false;
+  /** Null until loaded, and after a failed load, which blocks no button. */
+  modelNameSyncStatus: ModelNameSyncStatus | null = null;
+  modelNameSyncStatusLoading = false;
   /** Kept in the page store, so a re-entered tab still refuses a second request. */
   get maintenanceLoading(): boolean {
     return this.store.maintenanceInFlight;
@@ -87,6 +90,7 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
   ngOnInit() {
     this.restoreMaintenanceHistoryPageSize();
     this.loadStorageMetrics();
+    this.loadModelNameSyncStatus();
   }
 
   /**
@@ -155,14 +159,15 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
   }
 
   /** Records a request that never produced a result as a failed run, and shows it. */
-  failMaintenanceRun(message: string) {
+  failMaintenanceRun(message: string, trigger = 'Manual') {
     this.completeMaintenanceRun({
       success: false, isDryRun: this.maintenanceDryRun, softDeletedCount: 0, purgedSessionCount: 0,
       purgedMessageCount: 0, purgedToolCallCount: 0, prunedToolResultCount: 0,
       prunedBenchmarkToolResultCount: 0, deletedDiskFolderCount: 0, deletedDiskFileCount: 0,
       reclaimedDiskBytes: 0, sweptOrphanFolderCount: 0, prunedAuditLogCount: 0, prunedAiErrorLogCount: 0,
       prunedSecurityEventCount: 0, prunedChatProviderAttemptCount: 0, prunedChatTurnLimitEventCount: 0,
-      elapsedMilliseconds: this.maintenanceRunElapsedMs, trigger: 'Manual', errorMessage: message, logs: []
+      updatedRowCount: 0, mergedSnapshotCount: 0,
+      elapsedMilliseconds: this.maintenanceRunElapsedMs, trigger, errorMessage: message, logs: []
     });
   }
 
@@ -283,6 +288,101 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
     return null;
   }
 
+  /** Why Sync Model Names is unavailable, shown in its tooltip; null when it can run. An unknown status blocks nothing. */
+  get syncModelNamesBlockedReason(): string | null {
+    const s = this.modelNameSyncStatus;
+    if (this.maintenanceLoading) {
+      return 'A maintenance task is running.';
+    }
+    if (s && s.configurationCount + s.userModelCount === 0) {
+      return 'Every configuration already uses its catalog name.';
+    }
+    return this.syncRefusedReason;
+  }
+
+  /** Why Sync Recorded Names is unavailable, shown in its tooltip; null when it can run. An unknown status blocks nothing. */
+  get syncRecordedNamesBlockedReason(): string | null {
+    const s = this.modelNameSyncStatus;
+    if (this.maintenanceLoading) {
+      return 'A maintenance task is running.';
+    }
+    if (s && s.snapshotCount + s.recordedRowCount + s.textRowCount === 0) {
+      return 'Every recorded name already matches the catalog.';
+    }
+    return this.syncRefusedReason;
+  }
+
+  /** The work that would refuse a real run. A dry run is never refused. */
+  private get syncRefusedReason(): string | null {
+    const blockers = this.modelNameSyncStatus?.blockers ?? [];
+    if (this.maintenanceDryRun || blockers.length === 0) {
+      return null;
+    }
+    return 'Benchmark work is running: ' + blockers.map(b => b.label).join('; ');
+  }
+
+  /** The number on the Former Model Names card. */
+  get modelNameSyncPendingTotal(): number {
+    const s = this.modelNameSyncStatus;
+    return s ? s.configurationCount + s.userModelCount + s.snapshotCount + s.recordedRowCount + s.textRowCount : 0;
+  }
+
+  /** "N configurations · M snapshots · K records · P texts". */
+  get modelNameSyncBreakdown(): string {
+    const s = this.modelNameSyncStatus;
+    if (!s) {
+      return '';
+    }
+    return `${this.countLabel(s.configurationCount + s.userModelCount, 'configuration', 'configurations')} · ` +
+      `${this.countLabel(s.snapshotCount, 'snapshot', 'snapshots')} · ` +
+      `${this.countLabel(s.recordedRowCount, 'record', 'records')} · ` +
+      `${this.countLabel(s.textRowCount, 'text', 'texts')}`;
+  }
+
+  /** The pending line of the Sync Model Names card. */
+  get syncModelNamesPending(): string {
+    const s = this.modelNameSyncStatus;
+    if (!s) {
+      return '';
+    }
+    const verb = s.configurationCount + s.userModelCount === 1 ? 'uses' : 'use';
+    return `${this.countLabel(s.configurationCount, 'system configuration', 'system configurations')} and ` +
+      `${this.countLabel(s.userModelCount, 'user model', 'user models')} ${verb} a former catalog name.`;
+  }
+
+  /** The pending line of the Sync Recorded Names card. */
+  get syncRecordedNamesPending(): string {
+    const s = this.modelNameSyncStatus;
+    if (!s) {
+      return '';
+    }
+    const verb = s.snapshotCount + s.recordedRowCount + s.textRowCount === 1 ? 'uses' : 'use';
+    return `${this.countLabel(s.snapshotCount, 'snapshot row', 'snapshot rows')}, ` +
+      `${this.countLabel(s.recordedRowCount, 'recorded row', 'recorded rows')} and ` +
+      `${this.countLabel(s.textRowCount, 'document or analysis', 'documents or analyses')} ${verb} a former catalog name.`;
+  }
+
+  private countLabel(count: number, singular: string, plural: string): string {
+    return `${count.toLocaleString('en-US')} ${count === 1 ? singular : plural}`;
+  }
+
+  private isSyncTrigger(r: MaintenanceResult): boolean {
+    return r.trigger.startsWith('Manual:Sync');
+  }
+
+  /** The heading above a result's counts. */
+  maintenanceChangesHeading(r: MaintenanceResult): string {
+    if (this.isSyncTrigger(r)) {
+      return r.isDryRun ? 'Would change' : 'Changed';
+    }
+    return r.isDryRun ? 'Would remove' : 'Removed';
+  }
+
+  /** The text in place of a result's counts when they are all zero. */
+  maintenanceChangesEmptyText(r: MaintenanceResult): string {
+    return this.isSyncTrigger(r) ? 'Nothing to change.' : 'Nothing to remove.';
+  }
+
   /** Every non-zero count in a result, labelled for the result console. */
   maintenanceResultCounts(r: MaintenanceResult): { label: string; value: string }[] {
     const counts: [string, number][] = [
@@ -299,7 +399,9 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
       ['Chat turn limit events pruned', r.prunedChatTurnLimitEventCount],
       ['Disk folders removed', r.deletedDiskFolderCount],
       ['Disk files removed', r.deletedDiskFileCount],
-      ['Orphan folders swept', r.sweptOrphanFolderCount]
+      ['Orphan folders swept', r.sweptOrphanFolderCount],
+      ['Rows updated', r.updatedRowCount],
+      ['Snapshot rows merged', r.mergedSnapshotCount]
     ];
     const rows = counts
       .filter(([, value]) => value > 0)
@@ -441,6 +543,22 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
     });
   }
 
+  /** Loaded apart from the storage metrics, so a slow count never delays them. */
+  loadModelNameSyncStatus() {
+    this.modelNameSyncStatusLoading = true;
+    this.adminService.getModelNameSyncStatus().subscribe({
+      next: (status) => {
+        this.modelNameSyncStatus = status;
+        this.modelNameSyncStatusLoading = false;
+      },
+      error: (err) => {
+        console.error('Failed to load the model name sync status', err);
+        this.modelNameSyncStatus = null;
+        this.modelNameSyncStatusLoading = false;
+      }
+    });
+  }
+
   runFullMaintenance() {
     const execute = () => {
       this.maintenanceLoading = true;
@@ -517,7 +635,10 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
     confirmClass?: string;
     loadingMessage: string;
     errorPrefix: string;
+    /** Names the action in a failed run's result, which the server never sent. */
+    trigger?: string;
     call: (dryRun: boolean) => Observable<MaintenanceResult>;
+    onSuccess?: () => void;
   }) {
     const dryRun = this.maintenanceDryRun;
     const execute = () => {
@@ -537,13 +658,14 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
           this.store.showToast(summary, 'success', res.isDryRun ? 'Dry Run Completed' : action.title);
           if (!this.destroyed) {
             this.loadStorageMetrics(false, true);
+            action.onSuccess?.();
           }
         },
         error: (err) => {
           this.maintenanceLoading = false;
           const reason = err.error?.message || err.message;
           if (!this.destroyed) {
-            this.failMaintenanceRun(reason);
+            this.failMaintenanceRun(reason, action.trigger);
           }
           this.store.showToast(
             `${action.errorPrefix}: ` + reason,
@@ -711,6 +833,43 @@ export class AdminDatabaseTabComponent implements OnInit, AfterViewInit, OnDestr
       loadingMessage: 'Deleting report chart image files...',
       errorPrefix: 'Failed to clear report chart files',
       call: (dryRun) => this.adminService.clearReportCharts({ dryRun })
+    });
+  }
+
+  /** Refused while syncModelNamesBlockedReason is set (the button is aria-disabled). */
+  syncModelNamesNow() {
+    if (this.syncModelNamesBlockedReason) {
+      return;
+    }
+    this.runGranularMaintenance({
+      title: 'Sync Model Names With Catalog',
+      confirmMessage: 'Set saved system and user model configurations that use the model name from the catalog to its current name? ' +
+        'Custom names and model IDs are not changed.',
+      confirmButton: 'Sync Model Names',
+      confirmClass: 'btn-gh btn-secondary',
+      loadingMessage: 'Updating saved model configurations...',
+      errorPrefix: 'Failed to sync model names',
+      trigger: 'Manual:SyncModelNames',
+      call: (dryRun) => this.adminService.syncModelNames({ dryRun }),
+      onSuccess: () => this.loadModelNameSyncStatus()
+    });
+  }
+
+  /** Refused while syncRecordedNamesBlockedReason is set (the button is aria-disabled). */
+  syncRecordedModelNamesNow() {
+    if (this.syncRecordedNamesBlockedReason) {
+      return;
+    }
+    this.runGranularMaintenance({
+      title: 'Sync Recorded Model Names',
+      confirmMessage: 'This rewrites stored history and cannot be undone. Back up the database first, and use the dry run to see what will change.',
+      confirmButton: 'Sync Recorded Names',
+      confirmClass: 'btn-gh btn-gh-delete',
+      loadingMessage: 'Replacing former catalog names in past runs, chats, logs and reports...',
+      errorPrefix: 'Failed to sync recorded model names',
+      trigger: 'Manual:SyncRecordedModelNames',
+      call: (dryRun) => this.adminService.syncRecordedModelNames({ dryRun }),
+      onSuccess: () => this.loadModelNameSyncStatus()
     });
   }
 

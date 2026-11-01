@@ -237,6 +237,19 @@ The chart images of GnollBench report documents live on disk under `Benchmark:Re
 - The retirement of the *Report for AI Researchers and Developers* and the *Internal Improvement Brief* (2026-10-15) deleted those documents' chart folders with the documents, on the first Overseer start after the change (`BenchmarkReportAudienceRetirement`, `ai-benchmark-report-pack.md` § 17); a folder that could not be removed was logged and is cleared by this action like any other.
 - When `ChartsDataLocation` is empty, relative or missing, the endpoint answers 400 `{ message }` and the button is disabled with that reason.
 
+### Model Name Sync (manual only)
+
+After a model is renamed in the catalog (its old name moved to `formerDisplayNames`), two Database tab actions bring stored names into line with it, through `ModelDisplayNameSyncService` and the same granular-maintenance runner as the other actions. They are not part of the full pass. Run both together, in this order, before the next GnollBench run. While benchmark work is running (`SystemConfigUsageGuard.FindAnyActiveBenchmarkWorkAsync`), a real run answers 409 `{ message, blockers }` and records no run; a dry run reports the work in its log.
+
+- **Sync Model Names With Catalog** (`POST /api/admin/maintenance/sync-model-names`, trigger `Manual:SyncModelNames`) updates `SystemAiApiConfiguration` and `UserAiModel` rows the catalog describes: a `model_name` row whose name differs from the catalog, and a legacy row with no mode whose name is a former name. A `custom` or `model_id` row never changes; a `custom` row holding a former name is logged.
+- **Sync Recorded Model Names** (`POST /api/admin/maintenance/sync-recorded-model-names`, trigger `Manual:SyncRecordedModelNames`) changes three groups, in order:
+  - `SystemAiConfigurationSnapshot` rows holding a former name of their own model take the new name and hash, so the next capture resolves to the same row and id. A row that already holds that hash is merged, keeping the lowest id and repointing every foreign key and `ChatConsistencyAnalysis.CommonGraderSnapshotId`. A merge cannot be undone, and an analysis over the repointed runs reads as changed until it is recomputed, because `InputSha256` hashes snapshot ids.
+  - Columns holding a whole name, on an exact match: `ChatMessage.ModelDisplayNameUsed`, `ModelDisplayName` of `SystemAiUsageLog`, `UserKeyAiUsageLog`, `SystemAiErrorLog` and `ChatTurnLimitEvent`, and `BenchmarkReportDocument.WriterDisplayName`.
+  - Text containing a name, at word boundaries, rewriting AI-written report prose too: `SubjectLabel`, `Title`, `FactsJson` and `WriterOutputJson` of `BenchmarkReportDocument`, whose facts cache entry it evicts; `ResultJson` and `ComparisonJson` of `BenchmarkGroupAnalysis` and `BenchmarkBatteryAnalysis`; `Name` and `ResultJson` of `ChatConsistencyAnalysis`; `BenchmarkModelBatchMember.TestedModelSnapshotJson`; `BenchmarkRunGroup.Name`; `DefaultName` and `Name` of `BenchmarkComparison`. A snapshot or configuration name that merely contains a former name is protected and listed in the log.
+- **What stays.** Chat text, benchmark answers, `CandidateSystemPromptText`, rubrics, `BenchmarkReportDocument.ContentJson` and `ValidationNotesJson`, batch and battery `StartRequestJson`, `DefinitionJson`, `AdviceAtStartJson`, every stored hash except a snapshot's own, and chart images, whose labels change only through **Update charts** in the Comparison Wizard. Recorded names of a catalog family that match no catalog entry are left alone and listed.
+- **Counts.** `UpdatedRowCount` and `MergedSnapshotCount` are on the result DTO only; the history has them in the run's log text. `GET /api/admin/maintenance/model-name-sync-status` counts what each action would change, for the tab's *Former Model Names* card. Its counts scan the same unindexed columns, so the tab requests it apart from the storage metrics.
+- **Back up the database before the real run of the second action.** Each statement is atomic and both actions are idempotent, so a timed-out request is recovered by running it again.
+
 ### 3. Maintenance History (`MaintenanceRunLog`)
 
 Every full pass and every granular Admin action writes one `MaintenanceRunLog` row through `ChatRetentionService.RecordRunAsync`: when it started and finished, its trigger (`Scheduled`, `Startup`, `Manual`, or `Manual:<Action>`), whether it was a dry run, whether it succeeded, every count in the result, the error message, and the log lines (truncated to 4,000 characters). Dry runs are recorded and flagged, so the history shows what an admin previewed as well as what ran. A failed history write is logged and never fails the maintenance it describes.
@@ -316,6 +329,9 @@ The Admin **Database** tab exposes:
 | `POST` | `/api/admin/maintenance/prune-chat-turn-limit-events` | Phase 11; a window of zero or less is refused with 400 |
 | `POST` | `/api/admin/maintenance/sweep-orphans` | Phase 6 |
 | `POST` | `/api/admin/maintenance/clear-report-charts` | Clear Report Chart Files (not a phase of the full pass); 400 when chart storage is not configured |
+| `GET` | `/api/admin/maintenance/model-name-sync-status` | What the two model name sync actions would change now, and the work that would refuse a real run |
+| `POST` | `/api/admin/maintenance/sync-model-names` | Sync Model Names With Catalog (not a phase of the full pass); 409 on a real run while benchmark work is running |
+| `POST` | `/api/admin/maintenance/sync-recorded-model-names` | Sync Recorded Model Names (not a phase of the full pass); 409 on a real run while benchmark work is running |
 | `GET` | `/api/admin/maintenance/history` | Maintenance history, newest first |
 | `POST` | `/api/admin/maintenance/send-report-email` | On-demand storage report email |
 

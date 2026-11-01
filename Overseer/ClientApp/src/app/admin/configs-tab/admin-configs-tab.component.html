@@ -38,6 +38,13 @@
     </div>
   </div>
 }
+@let formerNames = formerNameConfigs;
+@if (formerNames.length > 0) {
+  <p class="text-muted config-former-name-notice" role="status">
+    {{ formerNames.length === 1 ? '1 configuration shows' : formerNames.length + ' configurations show' }} a former catalog name.
+    Sync model names on the <a routerLink="/admin/database">Database tab</a>.
+  </p>
+}
 @if (configs.length > 0) {
   <p class="results-count" role="status" aria-live="polite">
     @if (isConfigFilterActive) {

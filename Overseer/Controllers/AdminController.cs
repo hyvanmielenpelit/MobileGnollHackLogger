@@ -1989,6 +1989,59 @@ public class AdminController : ControllerBase
         });
     }
 
+    [HttpGet("maintenance/model-name-sync-status")]
+    public async Task<IActionResult> GetModelNameSyncStatus([FromServices] ModelDisplayNameSyncService syncService)
+    {
+        return Ok(await syncService.GetStatusAsync());
+    }
+
+    [HttpPost("maintenance/sync-model-names")]
+    public async Task<IActionResult> SyncModelNames(
+        [FromBody] MaintenanceRequestDto? request,
+        [FromServices] ChatRetentionService retentionService,
+        [FromServices] ModelDisplayNameSyncService syncService)
+    {
+        var isDryRun = request?.DryRun ?? false;
+
+        if (await RefuseModelNameSyncAsync(syncService, isDryRun) is { } refusal)
+            return refusal;
+
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.SyncModelNames, isDryRun, result =>
+            syncService.SyncConfigurationsAsync(isDryRun, result));
+    }
+
+    [HttpPost("maintenance/sync-recorded-model-names")]
+    public async Task<IActionResult> SyncRecordedModelNames(
+        [FromBody] MaintenanceRequestDto? request,
+        [FromServices] ChatRetentionService retentionService,
+        [FromServices] ModelDisplayNameSyncService syncService)
+    {
+        var isDryRun = request?.DryRun ?? false;
+
+        if (await RefuseModelNameSyncAsync(syncService, isDryRun) is { } refusal)
+            return refusal;
+
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.SyncRecordedModelNames, isDryRun, result =>
+            syncService.SyncRecordsAsync(isDryRun, result));
+    }
+
+    /// <summary>A 409 with the blockers when benchmark work refuses a real run; records no maintenance run.</summary>
+    private async Task<IActionResult?> RefuseModelNameSyncAsync(ModelDisplayNameSyncService syncService, bool isDryRun)
+    {
+        if (isDryRun)
+            return null;
+
+        var blockers = await syncService.FindBlockersAsync();
+        if (blockers.Count == 0)
+            return null;
+
+        return Conflict(new
+        {
+            message = "Model names cannot be synced while benchmark work is running: " + string.Join("; ", blockers.Select(b => b.Label)),
+            blockers
+        });
+    }
+
     [HttpPost("maintenance/send-report-email")]
     public async Task<IActionResult> SendReportEmail([FromServices] DatabaseStorageMetricsService metricsService)
     {

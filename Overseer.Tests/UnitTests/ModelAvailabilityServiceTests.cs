@@ -19,6 +19,7 @@ public class ModelAvailabilityServiceTests
 
         Assert.Equal(ModelAvailabilityStatus.Available, result.Kind);
         Assert.Equal("available", result.Status);
+        Assert.Equal("Gemini 3.8 Flash", result.CatalogDisplayName);
         Assert.False(result.NeedsAttention);
         Assert.Null(result.Replacement);
         Assert.Null(result.SuggestedCustom);

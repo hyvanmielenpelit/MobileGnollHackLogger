@@ -48,7 +48,7 @@ public class ModelAvailabilityDto
 
     public string? Note { get; set; }
 
-    /// <summary>The retired entry's display name, else null.</summary>
+    /// <summary>The catalog entry's display name for an available model, the retired entry's for a retired one, else null.</summary>
     public string? CatalogDisplayName { get; set; }
 
     /// <summary>The retired entry's replacement, only when the catalog offers it.</summary>

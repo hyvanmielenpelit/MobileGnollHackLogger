@@ -587,6 +587,21 @@ To find specific popups, look in the corresponding component's `.html` template:
     `runGranularMaintenance` like the other cards, so the tab's Dry Run switch applies and a real run
     asks *Delete N chart files (X MB) for M documents? …* first; Maintenance History shows the trigger
     `Manual:ClearReportCharts` verbatim. See `docs/overseer/chat-data-retention.md`.
+  - Not a dialog: the **Database** tab's model name sync (`database-tab/`). A stat card *Former Model Names*,
+    last in the retention grid, shows `modelNameSyncPendingTotal` (*…* while loading, *?* when the status
+    failed), `stat-card-warning` above zero, and the breakdown *N configurations · M snapshots · K records ·
+    P texts*. The status is loaded apart from the storage metrics, because it scans large unindexed columns,
+    and a failed one blocks nothing. The cards *Sync Model Names With Catalog* (**Sync Model Names**,
+    `btn-gh btn-secondary`) and *Sync Recorded Model Names* (**Sync Recorded Names**, `btn-gh btn-danger`)
+    follow *Clear Report Chart Files*, each with a pending line. Each button is `aria-disabled` with a tooltip
+    reason while a maintenance task runs, when its counts are zero, or, outside a dry run, while benchmark
+    work is running. Both run through `runGranularMaintenance`; the result dialog heads their counts *Would
+    change* / *Changed* instead of *Would remove* / *Removed*.
+  - Not a dialog: the **System Configs** tab's former-name notice (`configs-tab/`). Below the attention
+    banner, a `role="status"` line *N configurations show a former catalog name. Sync model names on the
+    Database tab.* links to `/admin/database`. It counts `model_name` rows that are `available` and whose
+    `displayName` differs from `modelAvailability.catalogDisplayName`. It is not an attention banner: the
+    configuration works, and only its label is stale.
 
 - **Admin API Keys Component (`admin/admin-api-keys/admin-api-keys.component.html`, Admin → System Configs → API Keys)**
   - Each provider card with a saved key ends its summary row in two icon-only actions: **Replace**

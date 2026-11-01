@@ -6,6 +6,10 @@ public class ModelCatalogEntry
 {
     public List<string> Prefixes { get; set; } = new();
     public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>Names this entry had before, so the name sync can tell them from an owner's own label.</summary>
+    public List<string> FormerDisplayNames { get; set; } = new();
+
     public string ReleaseDate { get; set; } = string.Empty;
     public List<string> ThinkingLevels { get; set; } = new();
     public List<string> ReasoningModes { get; set; } = new();

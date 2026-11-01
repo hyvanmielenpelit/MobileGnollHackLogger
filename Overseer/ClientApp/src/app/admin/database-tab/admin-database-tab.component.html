@@ -136,6 +136,23 @@
       <div class="stat-num">{{ storageMetrics.ephemeralSessionCount }}</div>
       <div class="stat-desc">Ephemeral Sessions (in memory)</div>
     </div>
+    <div class="stat-card model-name-sync-stat" [class.stat-card-warning]="modelNameSyncPendingTotal > 0">
+      <div class="stat-num">
+        @if (modelNameSyncStatusLoading) {
+          …
+        } @else if (modelNameSyncStatus) {
+          {{ modelNameSyncPendingTotal | number:'1.0-0' }}
+        } @else {
+          ?
+        }
+      </div>
+      <div class="stat-desc">
+        Former Model Names
+        @if (modelNameSyncStatus) {
+          <span class="model-name-sync-breakdown">{{ modelNameSyncBreakdown }}</span>
+        }
+      </div>
+    </div>
   </div>
 
   <!-- Retention Policy -->
@@ -494,6 +511,42 @@
         </div>
 
         <div class="granular-card">
+          <h5>Sync Model Names With Catalog</h5>
+          <p class="text-muted">Updates saved system and user model configurations that use the model name from the catalog. Custom names and model IDs are not changed.</p>
+          @if (modelNameSyncStatus) {
+            <p class="text-muted model-name-sync-pending">{{ syncModelNamesPending }}</p>
+          }
+          <button type="button" class="btn-gh btn-secondary mt-10" (click)="syncModelNamesNow()"
+                  [attr.aria-disabled]="syncModelNamesBlockedReason ? 'true' : null"
+                  [attr.interestfor]="syncModelNamesBlockedReason ? 'tip-sync-model-names' : null"
+                  [attr.style]="'anchor-name: --tip-sync-model-names'">
+            Sync Model Names
+          </button>
+          @if (syncModelNamesBlockedReason) {
+            <div popover="hint" class="gh-tooltip" id="tip-sync-model-names"
+                 [attr.style]="'position-anchor: --tip-sync-model-names'">{{ syncModelNamesBlockedReason }}</div>
+          }
+        </div>
+
+        <div class="granular-card">
+          <h5>Sync Recorded Model Names</h5>
+          <p class="text-muted">Replaces former catalog names in past benchmark runs, chats, logs and reports. Chat text, benchmark answers and chart images are not changed. Run this after syncing model names.</p>
+          @if (modelNameSyncStatus) {
+            <p class="text-muted model-name-sync-pending">{{ syncRecordedNamesPending }}</p>
+          }
+          <button type="button" class="btn-gh btn-danger mt-10" (click)="syncRecordedModelNamesNow()"
+                  [attr.aria-disabled]="syncRecordedNamesBlockedReason ? 'true' : null"
+                  [attr.interestfor]="syncRecordedNamesBlockedReason ? 'tip-sync-recorded-names' : null"
+                  [attr.style]="'anchor-name: --tip-sync-recorded-names'">
+            Sync Recorded Names
+          </button>
+          @if (syncRecordedNamesBlockedReason) {
+            <div popover="hint" class="gh-tooltip" id="tip-sync-recorded-names"
+                 [attr.style]="'position-anchor: --tip-sync-recorded-names'">{{ syncRecordedNamesBlockedReason }}</div>
+          }
+        </div>
+
+        <div class="granular-card">
           <h5>Send Diagnostic Report Email</h5>
           <p class="text-muted">Dispatches an on-demand HTML database storage summary to the configured report email address.</p>
           <button class="btn-gh btn-secondary mt-10" (click)="sendDiagnosticEmail()" [disabled]="maintenanceLoading">
@@ -647,7 +700,7 @@
       }
 
       <section class="run-section" aria-labelledby="maintenanceRunChanges">
-        <h4 id="maintenanceRunChanges">{{ lastMaintenanceResult.isDryRun ? 'Would remove' : 'Removed' }}</h4>
+        <h4 id="maintenanceRunChanges">{{ maintenanceChangesHeading(lastMaintenanceResult) }}</h4>
         @if (maintenanceResultCounts(lastMaintenanceResult); as counts) {
           @if (counts.length > 0) {
             <dl class="result-counts">
@@ -656,7 +709,7 @@
               }
             </dl>
           } @else {
-            <p class="run-empty">Nothing to remove.</p>
+            <p class="run-empty">{{ maintenanceChangesEmptyText(lastMaintenanceResult) }}</p>
           }
         }
       </section>

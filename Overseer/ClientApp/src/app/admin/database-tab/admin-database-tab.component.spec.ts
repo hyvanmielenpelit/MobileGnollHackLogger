@@ -2,7 +2,7 @@ import type { Mock } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, Subject, throwError } from 'rxjs';
 import { AdminDatabaseTabComponent } from './admin-database-tab.component';
-import { AdminService, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog } from '../../services/admin.service';
+import { AdminService, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, ModelNameSyncStatus, SystemConfigBlockerDto } from '../../services/admin.service';
 import { AdminPageStore } from '../admin-page.store';
 import { configureAdminTestBed } from '../admin.component.testing';
 
@@ -48,13 +48,19 @@ describe('AdminDatabaseTabComponent', () => {
       purgedToolCallCount: 0, prunedToolResultCount: 0, prunedBenchmarkToolResultCount: 0,
       deletedDiskFolderCount: 0, deletedDiskFileCount: 0, reclaimedDiskBytes: 0, sweptOrphanFolderCount: 0,
       prunedAuditLogCount: 0, prunedAiErrorLogCount: 0, prunedSecurityEventCount: 0,
-      prunedChatProviderAttemptCount: 0, prunedChatTurnLimitEventCount: 0, elapsedMilliseconds: 1,
-      trigger: 'Manual', logs: []
+      prunedChatProviderAttemptCount: 0, prunedChatTurnLimitEventCount: 0, updatedRowCount: 0, mergedSnapshotCount: 0,
+      elapsedMilliseconds: 1, trigger: 'Manual', logs: []
+    });
+
+    const syncStatus = (overrides: Partial<ModelNameSyncStatus> = {}): ModelNameSyncStatus => ({
+      configurationCount: 2, userModelCount: 1, snapshotCount: 4, recordedRowCount: 50, textRowCount: 6,
+      unmatchedNames: [], blockers: [], computedAtUtc: '2026-11-01T00:00:00Z', ...overrides
     });
 
     beforeEach(() => {
       vi.spyOn(adminService, 'getStorageMetrics').mockReturnValue(of(metrics()));
       vi.spyOn(adminService, 'getMaintenanceHistory').mockReturnValue(of({ totalCount: 0, rows: [] }));
+      vi.spyOn(adminService, 'getModelNameSyncStatus').mockReturnValue(of(syncStatus()));
       fixture = TestBed.createComponent(AdminDatabaseTabComponent);
       component = fixture.componentInstance;
     });
@@ -356,6 +362,195 @@ describe('AdminDatabaseTabComponent', () => {
       fixture.detectChanges();
       expect(host.querySelector('.history-log-row td')?.getAttribute('colspan')).toBe(String(headers.length));
       fixture.destroy();
+    });
+
+    describe('model name sync', () => {
+      const blocker = (label: string): SystemConfigBlockerDto => ({ kind: 'run', id: '7', label, roles: [], startedAtUtc: '2026-11-01T00:00:00Z' } as SystemConfigBlockerDto);
+
+      const openTab = async () => {
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+      };
+
+      const button = (text: string): HTMLButtonElement =>
+        (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[])
+          .find(b => (b.textContent ?? '').trim() === text)!;
+
+      const stat = (): HTMLElement => fixture.nativeElement.querySelector('.model-name-sync-stat');
+
+      const tooltipText = (b: HTMLButtonElement): string | null => {
+        const id = b.getAttribute('interestfor');
+        const tip: HTMLElement | null = id ? fixture.nativeElement.querySelector('#' + id) : null;
+        return tip ? (tip.textContent ?? '').trim() : null;
+      };
+
+      it('shows the pending total and its breakdown on the stat card, and a pending line on each action', async () => {
+        await openTab();
+
+        expect(adminService.getModelNameSyncStatus).toHaveBeenCalledTimes(1);
+        expect(stat().classList).toContain('stat-card-warning');
+        expect(stat().querySelector('.stat-num')!.textContent!.trim()).toBe('63');
+        expect(stat().textContent).toContain('Former Model Names');
+        expect(stat().textContent).toContain('3 configurations · 4 snapshots · 50 records · 6 texts');
+
+        const pending = Array.from(fixture.nativeElement.querySelectorAll('.model-name-sync-pending')) as HTMLElement[];
+        expect(pending.map(p => p.textContent!.trim())).toEqual([
+          '2 system configurations and 1 user model use a former catalog name.',
+          '4 snapshot rows, 50 recorded rows and 6 documents or analyses use a former catalog name.'
+        ]);
+      });
+
+      it('has no warning on the stat card when nothing is pending', async () => {
+        (adminService.getModelNameSyncStatus as Mock).mockReturnValue(of(syncStatus({
+          configurationCount: 0, userModelCount: 0, snapshotCount: 0, recordedRowCount: 0, textRowCount: 0
+        })));
+        await openTab();
+
+        expect(stat().classList).not.toContain('stat-card-warning');
+        expect(stat().querySelector('.stat-num')!.textContent!.trim()).toBe('0');
+      });
+
+      it('shows a question mark when the status fails, and blocks neither button', async () => {
+        (adminService.getModelNameSyncStatus as Mock).mockReturnValue(throwError(() => new Error('boom')));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        await openTab();
+
+        expect(stat().querySelector('.stat-num')!.textContent!.trim()).toBe('?');
+        expect(button('Sync Model Names').hasAttribute('aria-disabled')).toBe(false);
+        expect(button('Sync Recorded Names').hasAttribute('aria-disabled')).toBe(false);
+        expect(fixture.nativeElement.querySelector('.model-name-sync-pending')).toBeNull();
+        errorSpy.mockRestore();
+      });
+
+      it('shows an ellipsis while the status loads', async () => {
+        (adminService.getModelNameSyncStatus as Mock).mockReturnValue(new Subject<ModelNameSyncStatus>());
+        await openTab();
+
+        expect(stat().querySelector('.stat-num')!.textContent!.trim()).toBe('…');
+      });
+
+      it('blocks each button with its reason when its counts are zero or a task is running', async () => {
+        await openTab();
+
+        component.modelNameSyncStatus = syncStatus({ configurationCount: 0, userModelCount: 0 });
+        fixture.detectChanges();
+        expect(button('Sync Model Names').getAttribute('aria-disabled')).toBe('true');
+        expect(tooltipText(button('Sync Model Names'))).toBe('Every configuration already uses its catalog name.');
+        expect(button('Sync Recorded Names').hasAttribute('aria-disabled')).toBe(false);
+
+        component.modelNameSyncStatus = syncStatus({ snapshotCount: 0, recordedRowCount: 0, textRowCount: 0 });
+        fixture.detectChanges();
+        expect(button('Sync Model Names').hasAttribute('aria-disabled')).toBe(false);
+        expect(tooltipText(button('Sync Recorded Names'))).toBe('Every recorded name already matches the catalog.');
+
+        component.modelNameSyncStatus = syncStatus();
+        component.maintenanceLoading = true;
+        fixture.detectChanges();
+        expect(tooltipText(button('Sync Model Names'))).toBe('A maintenance task is running.');
+        expect(tooltipText(button('Sync Recorded Names'))).toBe('A maintenance task is running.');
+        component.maintenanceLoading = false;
+      });
+
+      it('names the running work in the reason, except on a dry run, which is never refused', async () => {
+        await openTab();
+
+        component.modelNameSyncStatus = syncStatus({ blockers: [blocker('Benchmark run #7'), blocker('Benchmark series #2')] });
+        fixture.detectChanges();
+        expect(tooltipText(button('Sync Recorded Names'))).toBe('Benchmark work is running: Benchmark run #7; Benchmark series #2');
+
+        component.maintenanceDryRun = true;
+        fixture.detectChanges();
+        expect(button('Sync Recorded Names').hasAttribute('aria-disabled')).toBe(false);
+      });
+
+      it('does nothing when an aria-disabled button is clicked', async () => {
+        const syncSpy = vi.spyOn(adminService, 'syncModelNames').mockReturnValue(undefined as any);
+        const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockReturnValue(undefined);
+        (adminService.getModelNameSyncStatus as Mock).mockReturnValue(of(syncStatus({ configurationCount: 0, userModelCount: 0 })));
+        await openTab();
+
+        button('Sync Model Names').click();
+
+        expect(syncSpy).not.toHaveBeenCalled();
+        expect(confirmSpy).not.toHaveBeenCalled();
+      });
+
+      it('runs a dry run of each action without confirmation and reloads the status', () => {
+        const syncSpy = vi.spyOn(adminService, 'syncModelNames').mockReturnValue(of(result(true)));
+        const recordedSpy = vi.spyOn(adminService, 'syncRecordedModelNames').mockReturnValue(of(result(true)));
+        const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockReturnValue(undefined);
+        const statusSpy = adminService.getModelNameSyncStatus as Mock;
+        component.maintenanceDryRun = true;
+
+        component.syncModelNamesNow();
+        component.syncRecordedModelNamesNow();
+
+        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(syncSpy).toHaveBeenCalledWith({ dryRun: true });
+        expect(recordedSpy).toHaveBeenCalledWith({ dryRun: true });
+        expect(statusSpy).toHaveBeenCalledTimes(2);
+        component.closeMaintenanceRunDialog();
+      });
+
+      it('confirms a live configuration sync', () => {
+        const syncSpy = vi.spyOn(adminService, 'syncModelNames').mockReturnValue(of(result(false)));
+        const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockImplementation((_title: string, _message: string, action: () => void) => action());
+
+        component.syncModelNamesNow();
+
+        const [title, , , confirmButton, buttonClass] = vi.mocked(confirmSpy).mock.lastCall!;
+        expect(title).toBe('Sync Model Names With Catalog');
+        expect(confirmButton).toBe('Sync Model Names');
+        expect(buttonClass).toBe('btn-gh btn-secondary');
+        expect(syncSpy).toHaveBeenCalledWith({ dryRun: false });
+        component.closeMaintenanceRunDialog();
+      });
+
+      it('warns about history and backups before a live recorded-names sync', () => {
+        const recordedSpy = vi.spyOn(adminService, 'syncRecordedModelNames').mockReturnValue(of(result(false)));
+        const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockImplementation((_title: string, _message: string, action: () => void) => action());
+
+        component.syncRecordedModelNamesNow();
+
+        const [title, message, , confirmButton, buttonClass] = vi.mocked(confirmSpy).mock.lastCall!;
+        expect(title).toBe('Sync Recorded Model Names');
+        expect(message).toBe('This rewrites stored history and cannot be undone. Back up the database first, and use the dry run to see what will change.');
+        expect(confirmButton).toBe('Sync Recorded Names');
+        expect(buttonClass).toBe('btn-gh btn-gh-delete');
+        expect(recordedSpy).toHaveBeenCalledWith({ dryRun: false });
+        component.closeMaintenanceRunDialog();
+      });
+
+      it('heads a sync result with Changed and a prune with Removed, and counts the updated rows', () => {
+        const sync = { ...result(false), trigger: 'Manual:SyncRecordedModelNames', updatedRowCount: 12, mergedSnapshotCount: 1 };
+
+        expect(component.maintenanceChangesHeading(sync)).toBe('Changed');
+        expect(component.maintenanceChangesHeading({ ...sync, isDryRun: true })).toBe('Would change');
+        expect(component.maintenanceChangesEmptyText(sync)).toBe('Nothing to change.');
+        expect(component.maintenanceResultCounts(sync)).toEqual([
+          { label: 'Rows updated', value: (12).toLocaleString() },
+          { label: 'Snapshot rows merged', value: (1).toLocaleString() }
+        ]);
+
+        const prune = { ...result(false), trigger: 'Manual:PruneAuditLog' };
+        expect(component.maintenanceChangesHeading(prune)).toBe('Removed');
+        expect(component.maintenanceChangesHeading({ ...prune, isDryRun: true })).toBe('Would remove');
+        expect(component.maintenanceChangesEmptyText(prune)).toBe('Nothing to remove.');
+      });
+
+      it('keeps the sync wording when a refused run fails', () => {
+        vi.spyOn(adminService, 'syncRecordedModelNames').mockReturnValue(
+          throwError(() => ({ error: { message: 'Model names cannot be synced while benchmark work is running: Benchmark run #7' } })));
+        vi.spyOn(component, 'openConfirmationModal').mockImplementation((_title: string, _message: string, action: () => void) => action());
+
+        component.syncRecordedModelNamesNow();
+
+        expect(component.lastMaintenanceResult?.success).toBe(false);
+        expect(component.lastMaintenanceResult?.trigger).toBe('Manual:SyncRecordedModelNames');
+        expect(component.maintenanceChangesHeading(component.lastMaintenanceResult!)).toBe('Changed');
+        component.closeMaintenanceRunDialog();
+      });
     });
 
     describe('report chart files', () => {

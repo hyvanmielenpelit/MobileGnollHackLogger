@@ -1391,11 +1391,29 @@ export interface MaintenanceResult {
   prunedSecurityEventCount: number;
   prunedChatProviderAttemptCount: number;
   prunedChatTurnLimitEventCount: number;
+  /** Rows a model name sync changed. Not kept in the history, whose log text has it. */
+  updatedRowCount: number;
+  /** Snapshot rows a recorded-names sync merged. Not kept in the history, whose log text has it. */
+  mergedSnapshotCount: number;
   elapsedMilliseconds: number;
   /** "Scheduled", "Startup", "Manual", or "Manual:<Action>". */
   trigger: string;
   errorMessage?: string;
   logs: string[];
+}
+
+/** What the two model name sync actions would change now, counted as a dry run counts it. */
+export interface ModelNameSyncStatus {
+  configurationCount: number;
+  userModelCount: number;
+  snapshotCount: number;
+  recordedRowCount: number;
+  textRowCount: number;
+  /** Recorded names of a catalog family that match no catalog entry. The sync leaves these alone. */
+  unmatchedNames: string[];
+  /** Benchmark work running now, which refuses a real run. */
+  blockers: SystemConfigBlockerDto[];
+  computedAtUtc: string;
 }
 
 /** One recorded maintenance run: a full pass or a granular action, dry runs included. */
@@ -1730,6 +1748,21 @@ export class AdminService {
   /** Deletes every report chart image; the documents themselves stay. */
   clearReportCharts(request?: MaintenanceRequest): Observable<MaintenanceResult> {
     return this.http.post<MaintenanceResult>('/api/admin/maintenance/clear-report-charts', request || {});
+  }
+
+  /** Scans large unindexed columns, so it is requested apart from the storage metrics. */
+  getModelNameSyncStatus(): Observable<ModelNameSyncStatus> {
+    return this.http.get<ModelNameSyncStatus>('/api/admin/maintenance/model-name-sync-status');
+  }
+
+  /** Sets saved configurations that use the catalog's model name to its current name. */
+  syncModelNames(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/sync-model-names', request || {});
+  }
+
+  /** Replaces former catalog names in past benchmark runs, chats, logs and reports. */
+  syncRecordedModelNames(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/sync-recorded-model-names', request || {});
   }
 
   /** Newest first; the server clamps page to at least 1 and pageSize to 1..1000. */

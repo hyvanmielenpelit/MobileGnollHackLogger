@@ -238,6 +238,9 @@ Administrators can inspect live database storage metrics and trigger granular or
 | `POST` | `/api/admin/maintenance/prune-chat-turn-limit-events` | Deletes chat turn limit events older than `PruneChatTurnLimitEventDays` (or the request's value); `<= 0` returns 400. |
 | `POST` | `/api/admin/maintenance/sweep-orphans` | Scans and deletes unreferenced disk folders in `ConversationsDataLocation`. |
 | `POST` | `/api/admin/maintenance/clear-report-charts` | Deletes every report chart image under `Benchmark:ReportPack:ChartsDataLocation` (numeric document folders and `.staging`; anything else is left alone and listed), trigger `Manual:ClearReportCharts`; the documents are kept. 400 when chart storage is not configured. Not part of the full pass. |
+| `GET` | `/api/admin/maintenance/model-name-sync-status` | What the two model name sync actions would change now, and the benchmark work that would refuse a real run. Scans unindexed columns, so the Database tab requests it apart from the storage metrics. |
+| `POST` | `/api/admin/maintenance/sync-model-names` | Sets saved configurations and user models that use the catalog's model name to its current name, trigger `Manual:SyncModelNames`. 409 on a real run while benchmark work is running. Not part of the full pass. |
+| `POST` | `/api/admin/maintenance/sync-recorded-model-names` | Replaces former catalog names in configuration snapshots, recorded name columns and report and analysis text, trigger `Manual:SyncRecordedModelNames`. 409 on a real run while benchmark work is running. Not part of the full pass. See `docs/overseer/chat-data-retention.md`. |
 | `GET` | `/api/admin/maintenance/history?take=20` | Recent `MaintenanceRunLog` rows, newest first; `take` clamped to 1..100. |
 | `POST` | `/api/admin/maintenance/send-report-email` | Sends an on-demand HTML diagnostic storage email to `ReportEmailAddress`. |
 

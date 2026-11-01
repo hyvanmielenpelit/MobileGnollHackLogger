@@ -291,6 +291,8 @@ public static class MaintenanceTriggers
     public const string PruneChatTurnLimitEvents = "Manual:PruneChatTurnLimitEvents";
     public const string SweepOrphans = "Manual:SweepOrphans";
     public const string ClearReportCharts = "Manual:ClearReportCharts";
+    public const string SyncModelNames = "Manual:SyncModelNames";
+    public const string SyncRecordedModelNames = "Manual:SyncRecordedModelNames";
 }
 
 public class MaintenanceResultDto
@@ -315,12 +317,45 @@ public class MaintenanceResultDto
     public int PrunedSecurityEventCount { get; set; }
     public int PrunedChatProviderAttemptCount { get; set; }
     public int PrunedChatTurnLimitEventCount { get; set; }
+
+    /// <summary>Rows a model name sync changed. Not persisted to <c>MaintenanceRunLog</c>; the history has it in the run's log text.</summary>
+    public int UpdatedRowCount { get; set; }
+
+    /// <summary>Snapshot rows a recorded-names sync merged into an older row. Not persisted to <c>MaintenanceRunLog</c>; the history has it in the run's log text.</summary>
+    public int MergedSnapshotCount { get; set; }
     public long ElapsedMilliseconds { get; set; }
 
     /// <summary>One of <see cref="MaintenanceTriggers"/>.</summary>
     public string Trigger { get; set; } = MaintenanceTriggers.Manual;
     public string? ErrorMessage { get; set; }
     public List<string> Logs { get; set; } = new();
+}
+
+/// <summary>What the two model name sync actions would change now, counted as a dry run counts it.</summary>
+public class ModelNameSyncStatusDto
+{
+    /// <summary>System configurations the configuration sync would change.</summary>
+    public int ConfigurationCount { get; set; }
+
+    /// <summary>User models the configuration sync would change.</summary>
+    public int UserModelCount { get; set; }
+
+    /// <summary>Configuration snapshot rows holding a former catalog name.</summary>
+    public int SnapshotCount { get; set; }
+
+    /// <summary>Rows of the columns that hold a whole name, over all of those columns.</summary>
+    public int RecordedRowCount { get; set; }
+
+    /// <summary>Documents, analyses, groups and comparisons whose text holds a former catalog name.</summary>
+    public int TextRowCount { get; set; }
+
+    /// <summary>Recorded names of a catalog family that match no catalog entry. The sync leaves these alone.</summary>
+    public List<string> UnmatchedNames { get; set; } = new();
+
+    /// <summary>Benchmark work running now, which refuses a real run.</summary>
+    public List<SystemConfigBlockerDto> Blockers { get; set; } = new();
+
+    public DateTime ComputedAtUtc { get; set; }
 }
 
 /// <summary>A flat mirror of <c>MaintenanceRunLog</c> without its log text.</summary>

@@ -31,7 +31,13 @@ public class ModelAvailabilityService
             return new ModelAvailabilityDto { Kind = ModelAvailabilityStatus.Custom };
 
         if (_metadata.IsDescribedByCatalog(provider, modelId))
-            return new ModelAvailabilityDto { Kind = ModelAvailabilityStatus.Available };
+        {
+            return new ModelAvailabilityDto
+            {
+                Kind = ModelAvailabilityStatus.Available,
+                CatalogDisplayName = _metadata.GetMetadata(provider, modelId).DisplayName
+            };
+        }
 
         var retired = _metadata.GetRetiredEntry(provider, modelId);
         if (retired != null)

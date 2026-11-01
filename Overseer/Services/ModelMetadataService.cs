@@ -171,6 +171,24 @@ public class ModelMetadataService
 
     public IReadOnlyList<RetiredModelEntry> GetRetiredEntries() => _retiredEntries;
 
+    /// <summary>Every former display name in the catalogs of all providers, with its entry's current name.</summary>
+    public IReadOnlyList<(string Former, string Current)> GetDisplayNameRenames()
+    {
+        return _providerCatalogs.Values
+            .SelectMany(entries => entries)
+            .SelectMany(e => (e.FormerDisplayNames ?? new List<string>()).Select(former => (Former: former, Current: e.DisplayName)))
+            .ToList();
+    }
+
+    /// <summary>The current display name of every entry in the catalogs of all providers.</summary>
+    public IReadOnlyList<string> GetCatalogDisplayNames()
+    {
+        return _providerCatalogs.Values
+            .SelectMany(entries => entries)
+            .Select(e => e.DisplayName)
+            .ToList();
+    }
+
     /// <summary>
     /// The catalog entries of one provider as switch targets, newest release first, each priced at the
     /// input and output rates in force on <paramref name="today"/>, as <see cref="ModelPricingService.ResolveDefault"/> costs them.
@@ -303,6 +321,7 @@ public class ModelMetadataService
         if (bestEntry != null && kind is MatchKind.Exact or MatchKind.Snapshot or MatchKind.Variant)
         {
             metadata.DisplayName = bestEntry.DisplayName;
+            metadata.FormerDisplayNames = new List<string>(bestEntry.FormerDisplayNames ?? new List<string>());
             metadata.Description = bestEntry.DisplayName;
             metadata.ReleaseDate = bestEntry.ReleaseDate;
             metadata.SupportedThinkingLevels = new List<string>(bestEntry.ThinkingLevels ?? new List<string>());
@@ -340,6 +359,7 @@ public class ModelMetadata
 {
     public string Id { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+    public List<string> FormerDisplayNames { get; set; } = new List<string>();
     public string Description { get; set; } = string.Empty;
     public string ReleaseDate { get; set; } = string.Empty;
     public List<string> SupportedThinkingLevels { get; set; } = new List<string>();

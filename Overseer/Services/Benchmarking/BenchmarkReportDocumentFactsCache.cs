@@ -13,9 +13,9 @@ using MobileGnollHackLogger.Data;
 /// What the document lists read from a stored document's fact sheet
 /// (<see cref="BenchmarkReportRenderService.StoredFacts"/>: the peers and their letters, the covered
 /// models' labels, covers-all-entries), kept per document id so a list parses each sheet once. A stored
-/// document's <c>FactsJson</c> is written once, with the row, and never updated in place, so an entry
-/// stays right for as long as the document exists. A singleton over the global
-/// <see cref="IMemoryCache"/>, one size unit per entry, with a 30-minute sliding expiry.
+/// document's <c>FactsJson</c> is written once, with the row, and rewritten only by the recorded-names
+/// sync, which evicts the entry, so an entry stays right for as long as the document exists. A singleton
+/// over the global <see cref="IMemoryCache"/>, one size unit per entry, with a 30-minute sliding expiry.
 /// </summary>
 public sealed class BenchmarkReportDocumentFactsCache
 {

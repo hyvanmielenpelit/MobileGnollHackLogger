@@ -146,7 +146,7 @@ adaptive thinking, so the reasoning-summary values are the same for every entry:
 ```json
 {
   "prefixes": ["claude-fable-5-1"],
-  "displayName": "Claude 5.1 Fable",
+  "displayName": "Claude Fable 5.1",
   "releaseDate": "2026-09-01",
   "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
   "reasoningSummaries": ["summarized", "omitted"],
@@ -161,8 +161,8 @@ adaptive thinking, so the reasoning-summary values are the same for every entry:
 > [platform.claude.com/docs/en/build-with-claude/effort](https://platform.claude.com/docs/en/build-with-claude/effort)
 > for each new model.
 
-Display names follow `Claude <version> <tier>` — version before tier, reversing Anthropic's own word
-order (`Claude 5 Opus`, `Claude 5.1 Fable`).
+A display name follows the provider's own usage. For Anthropic that is `Claude <tier> <version>`, with
+the version last (`Claude Opus 5`, `Claude Fable 5.1`).
 
 ### 3. Rebuild and Verify
 
@@ -173,6 +173,21 @@ dotnet build Overseer/Overseer.csproj
 Open the **Models** page, choose **Anthropic**, and confirm the new model appears under the intended
 name, sorted by its release date — and that the previous version still appears separately under its own
 name.
+
+### Renaming a Model
+
+Display names are also stored: in saved configurations, and in what past runs, chats, logs and reports
+recorded. To rename a model:
+
+1. In the catalog entry, move the old name to `formerDisplayNames` and change `displayName`. Keep the
+   former name there for good, so a restored backup or an old import can be synced again.
+2. Rebuild and restart Overseer.
+3. Back up the database. On **Admin → Database**, read the *Former Model Names* count, then run **Sync
+   Model Names With Catalog** and **Sync Recorded Model Names** in that order, each as a dry run first.
+
+Run both together, before the next GnollBench run: a renamed configuration captures a new snapshot row
+on its next run, and only the recorded-names sync keeps that run on the same row as the older ones.
+`chat-data-retention.md` describes what each action changes and leaves alone.
 
 ---
 

@@ -126,42 +126,121 @@ public class SystemConfigUsageGuard
             });
         }
 
+        AddRunningJobs(blockers, configId);
+
+        return blockers;
+    }
+
+    /// <summary>
+    /// All benchmark work running now, whichever configuration it uses: running runs, runs whose reports
+    /// are queued or being written, active series and battery runs, and running jobs. Roles are left empty,
+    /// because they say what one configuration does.
+    /// </summary>
+    public async Task<List<SystemConfigBlockerDto>> FindAnyActiveBenchmarkWorkAsync(CancellationToken ct = default)
+    {
+        var blockers = new List<SystemConfigBlockerDto>();
+
+        var runs = await _db.BenchmarkRuns
+            .IgnoreAutoIncludes()
+            .Where(r => r.Status == BenchmarkRunStatus.Running)
+            .Select(r => new { r.Id, r.SuiteName, r.StartedAtUtc })
+            .ToListAsync(ct);
+
+        foreach (var r in runs)
+        {
+            blockers.Add(new SystemConfigBlockerDto
+            {
+                Kind = "run",
+                Id = r.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                RunId = r.Id,
+                Label = $"Benchmark run #{r.Id} on suite '{r.SuiteName}'",
+                StartedAtUtc = r.StartedAtUtc
+            });
+        }
+
+        var writingReports = await _db.BenchmarkRuns
+            .IgnoreAutoIncludes()
+            .Where(r => r.ReportDocumentsStatus == BenchmarkRunReportDocumentsStatus.Pending
+                || r.ReportDocumentsStatus == BenchmarkRunReportDocumentsStatus.Writing)
+            .Select(r => new { r.Id, r.SuiteName, r.StartedAtUtc, r.CompletedAtUtc })
+            .ToListAsync(ct);
+
+        foreach (var r in writingReports)
+        {
+            blockers.Add(new SystemConfigBlockerDto
+            {
+                Kind = "runReportWriter",
+                Id = r.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                RunId = r.Id,
+                Label = $"AI-written reports of benchmark run #{r.Id} on suite '{r.SuiteName}'",
+                StartedAtUtc = r.CompletedAtUtc ?? r.StartedAtUtc
+            });
+        }
+
+        foreach (var series in await LoadSeriesAsync(ActiveSeriesStatuses, ct))
+        {
+            blockers.Add(new SystemConfigBlockerDto
+            {
+                Kind = "series",
+                Id = series.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Label = $"Benchmark series #{series.Id} on suite '{series.SuiteName}'",
+                StartedAtUtc = series.StartedAtUtc
+            });
+        }
+
+        foreach (var batteryRun in await LoadBatteryRunsAsync(ActiveSeriesStatuses, ct))
+        {
+            blockers.Add(new SystemConfigBlockerDto
+            {
+                Kind = "battery",
+                Id = batteryRun.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Label = $"Battery run #{batteryRun.Id} of '{batteryRun.BatteryName}'",
+                StartedAtUtc = batteryRun.StartedAtUtc
+            });
+        }
+
+        AddRunningJobs(blockers, configId: null);
+
+        return blockers;
+    }
+
+    /// <summary>Adds the running jobs: those calling <paramref name="configId"/>, or all of them when it is null.</summary>
+    private void AddRunningJobs(List<SystemConfigBlockerDto> blockers, long? configId)
+    {
         var difficulty = _difficultyJobs.Current;
-        if (difficulty != null && difficulty.Status == BenchmarkDifficultyJobStatus.Running && difficulty.AssessorConfigId == configId)
+        if (difficulty != null && difficulty.Status == BenchmarkDifficultyJobStatus.Running && (configId == null || difficulty.AssessorConfigId == configId))
         {
             blockers.Add(Job("difficultyJob", difficulty.Id, $"Difficulty assessment on suite '{difficulty.SuiteName}'",
                 "difficulty assessor", difficulty.StartedAtUtc));
         }
 
         var generation = _generationJobs.Current;
-        if (generation != null && generation.Status == BenchmarkGenerationJobStatus.Running && generation.GeneratorConfigId == configId)
+        if (generation != null && generation.Status == BenchmarkGenerationJobStatus.Running && (configId == null || generation.GeneratorConfigId == configId))
         {
             blockers.Add(Job("generationJob", generation.Id, $"Question generation on suite '{generation.SuiteName}'",
                 "question generator", generation.StartedAtUtc));
         }
 
         var rubricCheck = _rubricCheckJobs.Current;
-        if (rubricCheck != null && rubricCheck.Status == BenchmarkRubricCheckJobStatus.Running && rubricCheck.CheckerConfigId == configId)
+        if (rubricCheck != null && rubricCheck.Status == BenchmarkRubricCheckJobStatus.Running && (configId == null || rubricCheck.CheckerConfigId == configId))
         {
             blockers.Add(Job("rubricCheckJob", rubricCheck.Id, $"Rubric check on suite '{rubricCheck.SuiteName}'",
                 "rubric checker", rubricCheck.StartedAtUtc));
         }
 
         var gapAuthor = _rubricGapAuthorJobs.Current;
-        if (gapAuthor != null && gapAuthor.Status == BenchmarkRubricGapAuthorJobStatus.Running && gapAuthor.AuthorConfigId == configId)
+        if (gapAuthor != null && gapAuthor.Status == BenchmarkRubricGapAuthorJobStatus.Running && (configId == null || gapAuthor.AuthorConfigId == configId))
         {
             blockers.Add(Job("rubricGapAuthorJob", gapAuthor.Id, $"Rubric gap drafting on suite '{gapAuthor.SuiteName}'",
                 "rubric author", gapAuthor.StartedAtUtc));
         }
 
         var reportPack = _reportPackJobs.Current;
-        if (reportPack != null && reportPack.Status == BenchmarkReportPackJobStatus.Running && reportPack.WriterConfigId == configId)
+        if (reportPack != null && reportPack.Status == BenchmarkReportPackJobStatus.Running && (configId == null || reportPack.WriterConfigId == configId))
         {
             blockers.Add(Job("reportPackJob", reportPack.Id, $"Report pack for {reportPack.SubjectLabel} on suite '{reportPack.SuiteName}'",
                 "report writer", reportPack.StartedAtUtc));
         }
-
-        return blockers;
     }
 
     /// <summary>The blockers, and what a delete would remove and keep.</summary>
@@ -197,14 +276,23 @@ public class SystemConfigUsageGuard
         };
     }
 
+    private Task<List<BenchmarkRunSeries>> LoadSeriesAsync(BenchmarkRunSeriesStatus[] statuses, CancellationToken ct)
+        => _db.BenchmarkRunSeries
+            .AsNoTracking()
+            .Where(s => statuses.Contains(s.Status))
+            .ToListAsync(ct);
+
+    private Task<List<BenchmarkBatteryRun>> LoadBatteryRunsAsync(BenchmarkRunSeriesStatus[] statuses, CancellationToken ct)
+        => _db.BenchmarkBatteryRuns
+            .AsNoTracking()
+            .Where(b => statuses.Contains(b.Status))
+            .ToListAsync(ct);
+
     /// <summary>Series in one of <paramref name="statuses"/> whose stored start request names the configuration.</summary>
     private async Task<List<(BenchmarkRunSeries Series, StartBenchmarkRunRequest Request)>> LoadSeriesNamingAsync(
         long configId, BenchmarkRunSeriesStatus[] statuses, CancellationToken ct)
     {
-        var series = await _db.BenchmarkRunSeries
-            .AsNoTracking()
-            .Where(s => statuses.Contains(s.Status))
-            .ToListAsync(ct);
+        var series = await LoadSeriesAsync(statuses, ct);
 
         var naming = new List<(BenchmarkRunSeries, StartBenchmarkRunRequest)>();
         foreach (var s in series)
@@ -233,10 +321,7 @@ public class SystemConfigUsageGuard
     private async Task<List<(BenchmarkBatteryRun BatteryRun, StartBenchmarkRunRequest Request)>> LoadBatteryRunsNamingAsync(
         long configId, BenchmarkRunSeriesStatus[] statuses, CancellationToken ct)
     {
-        var batteryRuns = await _db.BenchmarkBatteryRuns
-            .AsNoTracking()
-            .Where(b => statuses.Contains(b.Status))
-            .ToListAsync(ct);
+        var batteryRuns = await LoadBatteryRunsAsync(statuses, ct);
 
         var naming = new List<(BenchmarkBatteryRun, StartBenchmarkRunRequest)>();
         foreach (var b in batteryRuns)

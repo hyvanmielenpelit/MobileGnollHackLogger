@@ -43,6 +43,7 @@ Each file is a **flat JSON array** of catalog entries, and each entry is deseria
 |-------|------|----------|---------|-------|
 | `prefixes` | string array | **yes** | — | The provider's exact model IDs. Almost always a single-element array. |
 | `displayName` | string | **yes** | `""` | Shown in the model picker. Also used as `Description`. |
+| `formerDisplayNames` | string array | no | `[]` | Names the entry had before. Only these let the name sync tell a former catalog name from an owner's own label. Stays for good. See *Renaming a Model*. |
 | `releaseDate` | string `YYYY-MM-DD` | **yes** | `""` | Drives the `createdAt` sort key sent to the Angular client (`SettingsController`), so the picker sorts newest-first by this value. |
 | `thinkingLevels` | string array | yes, if the model reasons | `[]` | Passed through verbatim as the provider's effort/thinking parameter. Provider-specific — see below. Listed **lowest to highest**; a level not yet in `Overseer/Services/ModelCatalogs/ThinkingLevelOrder.json` goes into that file at the rank the provider intends, or `ThinkingLevelOrderTests` fails. |
 | `reasoningModes` | string array | no | `[]` | OpenAI only, and only for models with a "pro" mode. |
@@ -84,7 +85,7 @@ provider's API actually accepts.
 
 | Provider | `thinkingLevels` | `reasoningSummaries` | `reasoningModes` |
 |----------|------------------|----------------------|------------------|
-| Anthropic | `["low", "medium", "high", "xhigh", "max"]` — but **drop `xhigh`** for Claude 4.6 Opus and 4.6 Sonnet, which support `max` without it | `["summarized", "omitted"]` | *(omit)* |
+| Anthropic | `["low", "medium", "high", "xhigh", "max"]` — but **drop `xhigh`** for Claude Opus 4.6 and Sonnet 4.6, which support `max` without it | `["summarized", "omitted"]` | *(omit)* |
 | Google | Per model — see below; commonly `["low", "medium", "high"]` | *(omit)* | *(omit)* |
 | OpenAI | `["none", "low", "medium", "high", "xhigh", "max"]` | `["auto", "concise", "detailed"]` | `[]`, or `["standard", "pro"]` for pro-capable models |
 
@@ -116,11 +117,12 @@ legacy fixed-budget path to consider.
 
 ### Display name conventions
 
-Read the convention off the catalog, not off the vendor's marketing page:
+A display name follows **the provider's own usage**: take the word order from the provider's model
+page, and never carry one provider's order over to another.
 
 | Provider | Form | Examples |
 |----------|------|----------|
-| Anthropic | `Claude <version> <tier>` — **version before tier**, reversing Anthropic's own word order | `Claude 5 Opus`, `Claude 5.1 Fable` |
+| Anthropic | `Claude <tier> <version>` — **version last** | `Claude Opus 5`, `Claude Fable 5.1` |
 | Google | `Gemini <version> <tier>` | `Gemini 3.5 Flash`, `Gemini 3.5 Flash-Lite` |
 | OpenAI | `GPT-<version> <tier>` | `GPT-5.5 Pro`, `GPT-5.6 Luna` |
 
@@ -241,6 +243,22 @@ Pricing is part of the catalog entry, in its `pricing` object (see § The `prici
 There is no pricing configuration section. The conditional rate cards (`longContext`,
 `serviceTierMultipliers`, `scheduledChange`) are documented in
 `docs/overseer/adding-ai-models.md` § *Optional: Configure Token Pricing*.
+
+## Renaming a Model
+
+A display name is also stored, in saved configurations and in what past runs, chats, logs and reports
+recorded, so changing `displayName` alone leaves the old name everywhere. To rename a model:
+
+1. Move the old name to the entry's `formerDisplayNames` and change `displayName`. The old name stays there
+   for good, so a restored backup or an old import can be synced again.
+2. Rebuild and restart Overseer.
+3. Back up the database. On **Admin → Database**, read the *Former Model Names* count, then run **Sync Model
+   Names With Catalog** and **Sync Recorded Model Names** in that order, each as a dry run first.
+
+Run both together, before the next GnollBench run. `SystemAiConfigurationSnapshotStore.Canonicalize` hashes
+`DisplayName`, so a renamed configuration captures a new snapshot row with a new id, which chat consistency
+reads as a changed assessor. Only the recorded-names sync keeps that run on the older row. What each action
+changes and leaves alone is in `docs/overseer/chat-data-retention.md`, *Model Name Sync*.
 
 ## Retiring a Model
 
