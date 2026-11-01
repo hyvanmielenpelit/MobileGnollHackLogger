@@ -70,6 +70,10 @@ Three rules hold throughout:
   "as described in the analysis", no "see the handoff". A step that needs the content of another
   document repeats it.
 
+**The general method** for developer runbooks is the global `agent-developer-runbook` skill. This
+skill is its benchmark overlay and wins wherever they differ: its `Step <n>` numbering, its kinds
+and its free-form *Runbook status* section stay as they are.
+
 ## 2. The Deliverable
 
 `developer_runbook_v<N>.md`, in the round's task directory, a member of its document set and

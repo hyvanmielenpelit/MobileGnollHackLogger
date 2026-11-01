@@ -219,6 +219,10 @@ explicitly and must state that the user's permission is required before running 
 List the steps that prove the change works in the running application: which page, which
 action, and what the user should see. Automated coverage does not substitute for this on
 UI or report-output changes.
+Outside a benchmark round this is the whole of it, with or without a plan: such work does not need a
+Developer Runbook, whatever the global `agent-developer-runbook` skill says as a baseline. This
+repository does not use `Get-OpenRunbookSteps.ps1`: its walkthroughs' free-form status sections would
+read as errors, so do not run it on this scope.
 
 ## Subagent Use
 
@@ -335,4 +339,5 @@ If the plan addresses only harness or suite infrastructure, it must explicitly s
 - `server_tool_parameter_reference` (the per-tool parameter and result contract)
 - `server_wiki_handoff` (the rung-2 three-step handoff document — proposed changes, source validation, execution — and the confirmation gate)
 - `server_benchmark_runbook` (the Developer Runbook: one numbered step list, runs included)
+- `agent-developer-runbook` (the general method that `server_benchmark_runbook` specializes)
 - `testing_guidelines` (test classification and execution)
