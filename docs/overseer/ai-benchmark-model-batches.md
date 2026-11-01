@@ -608,8 +608,9 @@ as one. The overview holds:
 
 The models section is **Models in run order**, with a *k of M finished* count: one card per member with
 its position, name and badges and its status chip. A running member shows its step (*Run k of R*, or
-*Suite s of K · round r: \<suite\>*), its run and stage, the questions answered and its elapsed time; a
-pending one *Waiting*, with **Skip model**; a skipped, failed, stopped or canceled one its reason. A
+*Suite s of K · round r: \<suite\>*), its run and stage, the questions answered and its elapsed time. Its
+progress bar spans the whole card, under the action button. A pending one shows *Waiting*, with **Skip
+model**; a skipped, failed, stopped or canceled one its reason. A
 **finished** one (`Completed` or `CompletedWithErrors`) has a 3 px start edge in its status color and
 shows its index badge with its label (*Intelligence Index* or *Overall Index*) — or, with no index, why:
 *No index — n answers failed. Open the battery progress to re-run failed questions.* (*the run progress*
@@ -617,8 +618,9 @@ for a suite member), else *No index for this result.* — and beside it the figu
 is missing: *Speed Index*, *Duration*, *Median model time*, *TTFT P50*, *Cost / question*, *Total cost*,
 *Refuted claims*, and *Flagged answers* and *Failed answers* when above zero, the failed count marked as
 needing attention; on a narrow models section the figures go under the index. Its reference line reads
-*Run #N*, *Series #N* or *Battery run #N*, then *· finished HH:mm* (with the date when not today). Each
-card links to the member's **run progress** per run, or its **battery progress**, and to its report.
+*Run #N*, *Series #N* or *Battery run #N*, then *· started at HH:mm · finished at HH:mm*, local clock
+times, each with the date instead of *at* when not today. Each card links to the member's **run
+progress** per run, or its **battery progress**, and to its report.
 
 **A repair in place** (§ 6) shows on the member's card while the batch is not live: the card is marked
 current, its chip reads *Re-run in progress* for a re-run of failed questions and *Repair in progress*

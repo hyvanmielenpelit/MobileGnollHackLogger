@@ -123,7 +123,7 @@ export interface ModelBatchMemberView {
   /** What a finished member's index stands on when some of its runs withhold their own; null otherwise. */
   readonly withheldRunsNote: string | null;
   readonly figures: ModelBatchMemberFigure[];
-  /** *Run #55*, *Series #8* or *Battery run #12*, then *· finished 22:41* once finished; null before the member launched anything. */
+  /** *Run #55*, *Series #8* or *Battery run #12*, then *· started at 22:04 · finished at 22:41* once finished; null before the member launched anything. */
   readonly refText: string | null;
   /** Why a skipped, failed, stopped or canceled member ended; null otherwise. */
   readonly reason: string | null;
@@ -692,7 +692,9 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
     const ref = battery
       ? (member.batteryRunId != null ? `Battery run #${member.batteryRunId}` : null)
       : member.seriesId != null ? `Series #${member.seriesId}` : member.runId != null ? `Run #${member.runId}` : null;
-    const finishedAt = finished ? this.finishedAtText(member.completedAtUtc) : null;
+    const startedAt = finished ? this.clockTimeText(member.startedAtUtc) : null;
+    const finishedAt = finished ? this.clockTimeText(member.completedAtUtc) : null;
+    const times = [startedAt && `started ${startedAt}`, finishedAt && `finished ${finishedAt}`].filter(Boolean);
     let stageCaption: string | null = null;
     if (repairing) {
       stageCaption = `Run #${member.repairingRunId}` + this.stageSuffix(member);
@@ -718,7 +720,7 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
       indexWithheldText: finished && indexValue == null ? modelBatchIndexWithheldText(member, batch.targetKind) : null,
       withheldRunsNote: finished && indexValue != null ? modelBatchWithheldRunsNote(member) : null,
       figures: finished ? modelBatchMemberFigures(member) : [],
-      refText: ref && finishedAt ? `${ref} · finished ${finishedAt}` : ref,
+      refText: ref && times.length ? [ref, ...times].join(' · ') : ref,
       reason: ended ? (member.errorMessage?.trim() || this.endedReason(member.status)) : null,
       canSkip: member.status === 'Pending' && (this.isLive || batch.status === 'Stopped'),
       report
@@ -753,14 +755,14 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
     }
   }
 
-  /** *22:41* local time, with the date before it when that is not today; null without a valid time. */
-  private finishedAtText(completedAtUtc: string | null | undefined): string | null {
-    if (!completedAtUtc) return null;
-    const date = parseServerUtcDate(completedAtUtc);
+  /** *at 22:41* local time, or the date and time when that is not today; null without a valid time. */
+  private clockTimeText(utc: string | null | undefined): string | null {
+    if (!utc) return null;
+    const date = parseServerUtcDate(utc);
     if (Number.isNaN(date.getTime())) return null;
     const now = new Date();
     const today = date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
-    return ModelBatchProgressDialogComponent.datePipe.transform(date, today ? 'HH:mm' : 'MMM d, y, HH:mm');
+    return ModelBatchProgressDialogComponent.datePipe.transform(date, today ? "'at' HH:mm" : 'MMM d, y, HH:mm');
   }
 
   /** A running member's elapsed time from its own start; null without one. */

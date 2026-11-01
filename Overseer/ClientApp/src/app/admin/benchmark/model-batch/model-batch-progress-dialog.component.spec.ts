@@ -329,9 +329,10 @@ describe('ModelBatchProgressDialogComponent', () => {
     expect(closed).not.toHaveBeenCalled();
   });
 
-  it('marks the failed answers as needing attention, and puts the finish time on the reference line', () => {
-    const finishedAt = new Date();
-    const startedAt = new Date(finishedAt.getTime() - (13 * 60 + 40) * 1000);
+  it('marks the failed answers as needing attention, and puts the start and finish times on the reference line', () => {
+    const startedAt = new Date();
+    startedAt.setHours(12, 0, 0, 0);
+    const finishedAt = new Date(startedAt.getTime() + (13 * 60 + 40) * 1000);
     open(batch({
       status: 'CompletedWithErrors', isDriving: false, currentMemberIndex: null, completedMemberCount: 1,
       members: [completed(0, 61, {
@@ -348,8 +349,38 @@ describe('ModelBatchProgressDialogComponent', () => {
     const failed = done.querySelector('[data-figure="failed-answers"] dd') as HTMLElement;
     expect(failed.classList).toContain('mb-figure-warning');
     expect(text('.visually-hidden', failed)).toBe('(needs attention)');
-    const time = new DatePipe('en-US').transform(finishedAt, 'HH:mm');
-    expect(text('.mb-member-ref', done)).toBe(`Run #61 · finished ${time}`);
+    const pipe = new DatePipe('en-US');
+    const start = pipe.transform(startedAt, 'HH:mm');
+    const end = pipe.transform(finishedAt, 'HH:mm');
+    expect(text('.mb-member-ref', done)).toBe(`Run #61 · started at ${start} · finished at ${end}`);
+  });
+
+  it('shows the date instead of *at* on the reference line of a member that finished on an earlier day', () => {
+    const startedAtUtc = '2026-10-10T12:00:00Z';
+    const completedAtUtc = '2026-10-10T12:13:40Z';
+    open(finished({ members: [completed(0, 61, { startedAtUtc, completedAtUtc }), completed(1, 62)] }));
+    const pipe = new DatePipe('en-US');
+    const format = 'MMM d, y, HH:mm';
+    expect(text('.mb-member-ref', card(100)))
+      .toBe(`Run #61 · started ${pipe.transform(startedAtUtc, format)} · finished ${pipe.transform(completedAtUtc, format)}`);
+  });
+
+  it('leaves the start out of the reference line of a finished member with no start time', () => {
+    const finishedAt = new Date();
+    open(finished({ members: [completed(0, 61, { completedAtUtc: finishedAt.toISOString() }), completed(1, 62)] }));
+    expect(text('.mb-member-ref', card(100))).toBe(`Run #61 · finished at ${new DatePipe('en-US').transform(finishedAt, 'HH:mm')}`);
+  });
+
+  it('spans a running member\'s progress bar across the whole card', () => {
+    open(batch());
+    const running = card(100);
+    const style = getComputedStyle(running);
+    const expected = running.getBoundingClientRect().width
+      - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd)
+      - parseFloat(style.borderInlineStartWidth) - parseFloat(style.borderInlineEndWidth);
+    const bar = (running.querySelector('.mb-member-progress') as HTMLElement).getBoundingClientRect().width;
+    expect(bar).toBeCloseTo(expected, 0);
+    expect(bar).toBeGreaterThan(448);
   });
 
   it('says why a finished member has no index', () => {
