@@ -37,7 +37,8 @@ describe('ContextUsageComponent', () => {
     expect(button().getAttribute('aria-label')).toBe(`Context usage: 3%, ${(29900).toLocaleString()} of ${(1050000).toLocaleString()} tokens. Show breakdown`);
     expect(button().getAttribute('aria-describedby')).toBeNull();
     expect(button().getAttribute('popovertarget')).toBe('cw-breakdown');
-    expect(button().getAttribute('interestfor')).toBe('cw-usage-tip');
+    expect(button().getAttribute('interestfor')).toBeNull();
+    expect(el().querySelector('[popover="hint"]')).toBeNull();
     expect(button().getAttribute('aria-expanded')).toBe('false');
   });
 
@@ -100,7 +101,7 @@ describe('ContextUsageComponent', () => {
     expect(el().querySelector('.cw-bar')!.getAttribute('aria-label')).toContain('System prompt');
   });
 
-  it('should open the panel from the button, close the hint, and report it in aria-expanded', async () => {
+  it('should open the panel from the button, and report it in aria-expanded', async () => {
     set(usage);
     const panel = el().querySelector('#cw-breakdown') as HTMLElement;
     const toggled = new Promise(resolve => panel.addEventListener('toggle', resolve, { once: true }));
@@ -109,7 +110,6 @@ describe('ContextUsageComponent', () => {
     fixture.detectChanges();
     expect(panel.matches(':popover-open')).toBe(true);
     expect(button().getAttribute('aria-expanded')).toBe('true');
-    expect(el().querySelector('#cw-usage-tip')!.matches(':popover-open')).toBe(false);
     panel.hidePopover();
   });
 });

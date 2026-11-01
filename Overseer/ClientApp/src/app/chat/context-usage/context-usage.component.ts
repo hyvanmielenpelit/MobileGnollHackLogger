@@ -1,14 +1,14 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, Input, OnInit, ViewChild, inject } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Input, OnInit, inject } from '@angular/core';
 
 import { ChatContextUsage } from '../../services/chat.service';
 import { UserAiModel } from '../../services/settings.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
-import { ContextBreakdownRow, ContextView, contextBreakdownRows, contextUsageTooltipLines, contextView } from './context-usage.util';
+import { ContextBreakdownRow, ContextView, contextBreakdownRows, contextView } from './context-usage.util';
 
 /**
- * The chat header's context read-out: a percentage and a ring on one button, with details in a hint on
- * hover or focus and in a breakdown panel on click. `usage` is what the last reply measured; `selectedModel`
- * decides whether that still applies or has to be projected.
+ * The chat header's context read-out: a percentage and a ring on one button, with details in a breakdown
+ * panel on click. `usage` is what the last reply measured; `selectedModel` decides whether that still
+ * applies or has to be projected.
  */
 @Component({
   selector: 'app-context-usage',
@@ -23,8 +23,6 @@ export class ContextUsageComponent implements OnInit {
 
   @Input({ required: true }) usage!: ChatContextUsage;
   @Input() selectedModel: UserAiModel | null | undefined;
-
-  @ViewChild('usageTip') usageTip?: ElementRef<HTMLElement>;
 
   /** The popover polyfill does not set `aria-expanded`. */
   panelOpen = false;
@@ -60,17 +58,6 @@ export class ContextUsageComponent implements OnInit {
     return `Context usage: ${about}${view.percent}%, ${nearlyFull}${used} of ${view.windowTokens.toLocaleString()} tokens. Show breakdown`;
   }
 
-  get tooltipLines(): string[] {
-    const lines = contextUsageTooltipLines(this.usage);
-    const view = this.view;
-    if (view.state === 'projected') {
-      lines.push(`On ${view.modelName} it would use about ${view.usedTokens.toLocaleString()} of ${view.windowTokens!.toLocaleString()} tokens.`);
-    } else if (view.state === 'unknownWindow') {
-      lines.push(`The context window of ${view.modelName} is not known.`);
-    }
-    return lines;
-  }
-
   get rows(): ContextBreakdownRow[] {
     return contextBreakdownRows(this.usage);
   }
@@ -94,17 +81,8 @@ export class ContextUsageComponent implements OnInit {
   onPanelToggle(event: Event): void {
     this.panelOpen = (event as ToggleEvent).newState === 'open';
     if (this.panelOpen) {
-      this.hideHint();
       refreshAnchorPositioning();
     }
     this.cdr.markForCheck();
-  }
-
-  private hideHint(): void {
-    try {
-      this.usageTip?.nativeElement.hidePopover();
-    } catch {
-      /* Already closed. */
-    }
   }
 }

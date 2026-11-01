@@ -1442,36 +1442,6 @@ button.status-badge.badge-availability {
   }
 }
 
-/* Context window usage indicator tooltip */
-#cw-usage-tip {
-  bottom: calc(anchor(top) + 8px);
-  right: anchor(right);
-  top: auto;
-  left: auto;
-  transform: none;
-  justify-self: auto;
-  max-inline-size: min(360px, calc(100vw - 40px));
-  padding: 10px 14px;
-  line-height: 1.45;
-  border-radius: 8px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
-  #{'position-try-fallbacks'}: flip-block;
-
-  .cw-tip-subline {
-    margin-block-start: 2px;
-    color: #bbb;
-  }
-
-  .cw-tip-para {
-    margin-block-start: 8px;
-  }
-
-  .cw-tip-meta {
-    color: #888;
-    font-size: 0.9em;
-  }
-}
-
 @media (max-width: 600px) {
   .gh-tooltip {
     max-width: calc(100vw - 40px);

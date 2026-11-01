@@ -2,8 +2,7 @@
         [attr.aria-label]="ariaLabel"
         [attr.aria-expanded]="panelOpen"
         popovertarget="cw-breakdown"
-        interestfor="cw-usage-tip"
-        [attr.style]="'anchor-name: --cw-usage-tip'">
+        [attr.style]="'anchor-name: --cw-breakdown'">
   <span class="cw-label">Context</span>
   @if (percentText) {
     <span class="cw-value">{{ percentText }}</span>
@@ -17,21 +16,9 @@
         [style.--cw-value]="view.percent ?? 0"></span>
 </button>
 
-<div #usageTip popover="hint" id="cw-usage-tip" class="gh-tooltip gh-tooltip-multiline"
-     [attr.style]="'position-anchor: --cw-usage-tip'">
-  @for (line of tooltipLines; track line; let idx = $index) {
-    <div class="gh-tooltip-line"
-         [class.cw-tip-subline]="idx === 1"
-         [class.cw-tip-para]="idx >= 2"
-         [class.cw-tip-meta]="idx >= 2 && line.startsWith('Measured')">
-      {{ line }}
-    </div>
-  }
-</div>
-
 <div popover="auto" id="cw-breakdown" class="gh-info-popup cw-panel"
      aria-labelledby="cw-breakdown-title"
-     [attr.style]="'position-anchor: --cw-usage-tip'"
+     [attr.style]="'position-anchor: --cw-breakdown'"
      (toggle)="onPanelToggle($event)">
   <div class="gh-info-popup-title cw-panel-head">
     <span id="cw-breakdown-title">Context</span>

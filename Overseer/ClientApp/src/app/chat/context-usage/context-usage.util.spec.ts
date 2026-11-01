@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ChatContextUsage } from '../../services/chat.service';
 import { UserAiModel } from '../../services/settings.service';
 import {
-  WARN_MODEL_SWITCH_STORAGE_KEY, contextBreakdownRows, contextUsagePercent, contextUsageTooltipLines, contextUsageValueText,
+  WARN_MODEL_SWITCH_STORAGE_KEY, contextBreakdownRows, contextUsagePercent,
   contextView, describeModelChanges, modelFingerprint, modelSwitchImpact, readContextBreakdown, readWarnModelSwitch, writeWarnModelSwitch
 } from './context-usage.util';
 
@@ -41,48 +41,6 @@ describe('contextUsagePercent', () => {
 
   it('should be zero rather than infinite when the window is unknown', () => {
     expect(contextUsagePercent({ promptTokens: 100, outputTokens: 0, usedTokens: 100, windowTokens: 0 })).toBe(0);
-  });
-});
-
-describe('contextUsageTooltipLines', () => {
-  it('should be empty when there is no usage', () => {
-    expect(contextUsageTooltipLines(null)).toEqual([]);
-  });
-
-  it('should give four lines naming the split, window, threshold, and model', () => {
-    const lines = contextUsageTooltipLines({
-      promptTokens: 5000, outputTokens: 250, usedTokens: 5250,
-      windowTokens: 200000, inputLimitTokens: 190000,
-      modelDisplayName: 'Claude Opus 5'
-    });
-    expect(lines.length).toBe(4);
-    expect(lines[0]).toContain('prompt');
-    expect(lines[0]).toContain('output tokens');
-    expect(lines[1]).toContain('context window');
-    expect(lines[2]).toContain('truncated above');
-    expect(lines[3]).toContain('Claude Opus 5');
-  });
-
-  it('should omit the threshold and model lines when those are unknown', () => {
-    expect(contextUsageTooltipLines({ promptTokens: 5000, outputTokens: 250, usedTokens: 5250, windowTokens: 200000 }).length).toBe(2);
-  });
-});
-
-describe('contextUsageValueText', () => {
-  it('should be empty when there is no usage', () => {
-    expect(contextUsageValueText(null)).toBe('');
-  });
-
-  it('should state the numbers and the percentage, without the tooltip prose', () => {
-    const text = contextUsageValueText({
-      promptTokens: 200000, outputTokens: 4400,
-      usedTokens: 204400, windowTokens: 1000000,
-      inputLimitTokens: 936000, modelDisplayName: 'Claude Opus 5'
-    });
-    expect(text).toContain('20%');
-    expect(text).toContain('tokens');
-    expect(text).not.toContain('truncated above');
-    expect(text).not.toContain('Claude Opus 5');
   });
 });
 

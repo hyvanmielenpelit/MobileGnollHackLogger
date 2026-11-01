@@ -46,28 +46,6 @@ export function contextUsagePercent(usage: ChatContextUsage | null | undefined):
   return percentOf(usage.usedTokens, usage.windowTokens);
 }
 
-/** Structured tooltip content. One string per rendered line. */
-export function contextUsageTooltipLines(usage: ChatContextUsage | null | undefined): string[] {
-  if (!usage) return [];
-  const lines = [
-    `${usage.promptTokens.toLocaleString()} prompt + ${usage.outputTokens.toLocaleString()} output tokens`,
-    `of a ${usage.windowTokens.toLocaleString()}-token context window`
-  ];
-  if (usage.inputLimitTokens) {
-    lines.push(`History is truncated above ${usage.inputLimitTokens.toLocaleString()} input tokens.`);
-  }
-  if (usage.modelDisplayName) {
-    lines.push(`Measured on ${usage.modelDisplayName} at the last reply.`);
-  }
-  return lines;
-}
-
-/** The numbers and the percentage. The tooltip carries the explanation. */
-export function contextUsageValueText(usage: ChatContextUsage | null | undefined): string {
-  if (!usage) return '';
-  return `${usage.usedTokens.toLocaleString()} of ${usage.windowTokens.toLocaleString()} tokens, ${contextUsagePercent(usage)}%`;
-}
-
 /** The breakdown a message or event carries, or undefined when it is missing, malformed or of an unknown version. */
 export function readContextBreakdown(raw: unknown): ChatContextBreakdown | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
