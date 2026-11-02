@@ -162,11 +162,13 @@ The table count measures schema breadth, not data volume: row counts and sizes a
 
 AI models used in developing this software:
 
-- **Gemini 3.1 Pro**: Overseer coding and styling. GnollHack Account styling.
-- **Gemini 3.7 & 3.8 Flash**: Overseer coding and styling.
-- **Claude Opus 4.6**: Overseer planning.
-- **Claude Opus 5.5**: Overseer and GnollBench coding.
-- **Claude Fable 5.1**: Overseer and GnollBench coding.
+| Model | Used for |
+|---|---|
+| **Gemini 3.1 Pro** | Overseer coding and styling. GnollHack Account styling. |
+| **Gemini 3.7 & 3.8 Flash** | Overseer coding and styling. |
+| **Claude Opus 4.6** | Overseer planning. |
+| **Claude Opus 5.5** | Overseer and GnollBench coding. |
+| **Claude Fable 5.1** | Overseer and GnollBench coding. |
 
 ## 📚 Documentation
 
