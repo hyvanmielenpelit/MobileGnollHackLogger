@@ -58,11 +58,12 @@
       <app-feedback-selection-bar source="overseer"
                                   [selectedIds]="selectedIds"
                                   [matchingCount]="totalCount()"
-                                  [notShownCount]="notShownCount()"
+                                  [notShownIds]="notShownIds()"
                                   [showSelectedOnly]="showSelectedOnly()"
                                   [exportOptions]="exportOptions"
                                   (showSelectedOnlyChange)="onShowSelectedOnlyChange($event)"
                                   (clear)="onClearSelection()"
+                                  (deselectNotShown)="onDeselectNotShown()"
                                   (selectAllMatching)="onSelectAllMatching()"
                                   (exported)="onExported($event)"
                                   (imported)="onImported()"></app-feedback-selection-bar>

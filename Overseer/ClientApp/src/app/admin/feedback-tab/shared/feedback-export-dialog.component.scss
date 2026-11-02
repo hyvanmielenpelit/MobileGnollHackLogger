@@ -38,8 +38,9 @@
   color: var(--primary-color);
 }
 
-/* The formats as two cards side by side, one above the other where they do not fit. The legend is the
-   fieldset's rendered legend, above the grid rather than in it. */
+/* Which issues and the formats as two cards side by side, one above the other where they do not fit. The legend
+   is the fieldset's rendered legend, above the grid rather than in it. */
+.gh-choice.fx-scope,
 .gh-choice.fx-format {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));

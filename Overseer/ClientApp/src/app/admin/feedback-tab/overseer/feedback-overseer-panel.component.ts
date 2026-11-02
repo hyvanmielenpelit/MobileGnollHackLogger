@@ -76,10 +76,9 @@ import {
   FeedbackRange,
   FeedbackViewRecord,
   defaultFeedbackRange,
+  forgetFeedbackSelection,
   loadFeedbackView,
-  loadOverseerSelection,
-  saveFeedbackView,
-  saveOverseerSelection
+  saveFeedbackView
 } from '../shared/feedback-view-storage';
 
 /** The issues the list fetches at first, and how many more Show more fetches. */
@@ -266,8 +265,8 @@ interface TriageResult {
  * with the sort and the range, in the remembered view. Each issue has its models with their badges, its
  * figures, its latest facts and triage facts, occurrences on demand, a selection checkbox, Export issue…,
  * which opens the export dialog for that one issue, and Edit triage and Delete, which open the triage dialog
- * and a confirmation; the selection bar exports and imports the selection. Report text is model output and
- * is rendered as plain text only.
+ * and a confirmation; the selection bar exports and imports the selection, which starts empty and lasts as long
+ * as the panel. Report text is model output and is rendered as plain text only.
  */
 @Component({
   selector: 'app-feedback-overseer-panel',
@@ -352,12 +351,18 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
 
   // --- Selection ---
 
-  /** The selected issue ids, held across paging, filtering and reloads, at most 500. */
+  /** The selected issue ids, held across paging and filtering while the panel lives, at most 500. */
   readonly selected = signal<ReadonlySet<number>>(new Set<number>());
+  /** Selected issues known to match the current filters. */
+  readonly matchedSelection = signal<ReadonlySet<number>>(new Set<number>());
   /** While on, the list shows the selected issues only. */
   readonly showSelectedOnly = signal(false);
-  /** Selected issues the current filters leave out; 0 while unknown. */
-  readonly notShownCount = signal(0);
+  /** Selected issues the current filters leave out; one not yet known to match counts as left out. */
+  readonly notShownIds = computed<readonly number[]>(() => {
+    if (this.showSelectedOnly()) return [];
+    const matched = this.matchedSelection();
+    return [...this.selected()].filter(id => !matched.has(id));
+  });
   /** The export dialog's options, as the bar last reported them. */
   exportOptions: FeedbackExportOptions | undefined;
 
@@ -428,7 +433,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     const view = loadFeedbackView('overseer');
     this.exportOptions = view?.exportOptions;
     this.applySort(view?.sort ?? DEFAULT_SORT);
-    this.selected.set(new Set(loadOverseerSelection()));
+    forgetFeedbackSelection('overseer');
     this.table.setRemoteTotal(0);
     // Emits the current address at once; a tab switch's navigation that keeps the query arrives as NavigationEnd.
     this.querySub = this.route.queryParamMap.subscribe(query => this.onAddress(query));
@@ -843,7 +848,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     return Math.min(this.list.batch, this.remainingCount);
   }
 
-  /** `Showing 25 of 40 issues`, `One issue`, or empty with none; a notice is announced before it. */
+  /** `Showing 25 of 40 issues`, `One issue`, or empty with none; a notice is announced before it, the selected issues not shown after. */
   get listStatus(): string {
     if (this.loading() && !this.loaded()) return 'Loading feedback issues…';
     if (this.error()) return '';
@@ -851,8 +856,11 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     const base = total === 0 ? '' : total === 1 && this.rows().length === 1
       ? 'One issue'
       : `Showing ${formatInteger(this.rows().length)} of ${formatInteger(total)} issues`;
-    const notice = this.notice();
-    return notice ? `${notice} ${base}`.trim() : base;
+    const hidden = this.notShownIds().length;
+    const notShown = hidden === 0 ? '' : hidden === 1
+      ? 'One selected issue is not shown.'
+      : `${formatInteger(hidden)} selected issues are not shown.`;
+    return [this.notice(), base, notShown].filter(part => part !== '').join(' ');
   }
 
   /** Which empty state applies once the first page is empty; null while the range total is still being counted. */
@@ -958,7 +966,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
         this.list.invalidate();
         if (!append) {
           if (page.rows.length === 0 && this.hasFilters && !this.showSelectedOnly()) this.countRange();
-          this.countNotShown();
+          this.refreshMatchedSelection();
         }
         const focusId = firstNew >= 0 ? this.rows()[firstNew]?.id : undefined;
         if (focusId !== undefined) {
@@ -1049,10 +1057,11 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
         return;
       }
       next.add(issue.id);
+      this.matchedSelection.set(new Set([...this.matchedSelection(), issue.id]));
     } else {
       next.delete(issue.id);
     }
-    // A card on the list matches the filters, so the count of selected issues not shown stays.
+    // A card on the list matches the filters, so no request is needed.
     this.setSelection(next, false);
   }
 
@@ -1089,6 +1098,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
           next.add(id);
         }
         const cut = result.truncated || result.ids.some(id => !next.has(id));
+        this.matchedSelection.set(new Set([...this.matchedSelection(), ...result.ids.filter(id => next.has(id))]));
         this.setSelection(next, false);
         this.notice.set(cut
           ? `Selected the first ${formatInteger(FEEDBACK_SELECTION_CAP)} of ${formatInteger(result.totalCount)}.`
@@ -1113,20 +1123,35 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     this.cdr.markForCheck();
   }
 
-  /** An import changed issues: the list and its facets are refetched, and the tab's counts. */
+  /** An import changed issues: the selection is cleared, and the list, its facets and the tab's counts are refetched. */
   onImported(): void {
+    const hadSelection = this.selected().size > 0;
+    this.showSelectedOnly.set(false);
+    this.matchedSelection.set(new Set<number>());
+    this.selected.set(new Set<number>());
     this.reload();
     this.store.loadFeedbackCounts();
+    if (hadSelection) this.notice.set('The import changed issues, so the selection was cleared.');
   }
 
-  /** Replaces and remembers the selection; `recount` asks the server again how many selected issues the filters leave out. */
+  /** Removes the selected issues the filters leave out, and says how many. */
+  onDeselectNotShown(): void {
+    const hidden = new Set(this.notShownIds());
+    if (hidden.size === 0) return;
+    this.setSelection(new Set([...this.selected()].filter(id => !hidden.has(id))), false);
+    this.notice.set(hidden.size === 1
+      ? 'Deselected 1 issue that was not shown.'
+      : `Deselected ${formatInteger(hidden.size)} issues that were not shown.`);
+    this.cdr.markForCheck();
+  }
+
+  /** Replaces the selection; `recount` asks the server again which selected issues the filters match. */
   private setSelection(next: ReadonlySet<number>, recount = true): void {
     this.selected.set(next);
-    saveOverseerSelection([...next]);
     if (this.showSelectedOnly()) {
       this.reloadIssues();
     } else if (recount || next.size === 0) {
-      this.countNotShown();
+      this.refreshMatchedSelection();
     }
   }
 
@@ -1140,8 +1165,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
         const present = new Set(result.ids);
         if (ids.some(id => !present.has(id))) {
           this.selected.set(new Set(ids.filter(id => present.has(id))));
-          saveOverseerSelection([...this.selected()]);
-          this.countNotShown();
+          this.refreshMatchedSelection();
           this.cdr.markForCheck();
         }
       },
@@ -1149,27 +1173,30 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     });
   }
 
-  /** Counts the selected issues the current filters leave out. */
-  private countNotShown(): void {
+  /**
+   * Finds which selected issues the current filters match: those on the list, and those the server names. While the
+   * answer is unknown, or when it fails, only those on the list count as matching.
+   */
+  private refreshMatchedSelection(): void {
     this.notShownSub?.unsubscribe();
-    const ids = [...this.selected()];
+    const selected = this.selected();
+    const ids = [...selected];
     if (ids.length === 0 || this.showSelectedOnly()) {
-      this.notShownCount.set(0);
+      this.matchedSelection.set(new Set<number>());
       return;
     }
+    const shown = this.rows().map(i => i.id).filter(id => selected.has(id));
+    this.matchedSelection.set(new Set(shown));
     // An `ids` filter from the address leaves out every selected issue it does not name.
     const filters = this.currentFilters();
     const named = filters.ids ? ids.filter(id => filters.ids!.includes(id)) : ids;
-    if (named.length === 0) {
-      this.notShownCount.set(ids.length);
-      return;
-    }
+    if (named.length === 0) return;
     this.notShownSub = this.feedback.getIssueIds({ ...filters, ids: named }).subscribe({
       next: result => {
-        this.notShownCount.set(Math.max(0, ids.length - result.totalCount));
+        this.matchedSelection.set(new Set([...shown, ...result.ids]));
         this.cdr.markForCheck();
       },
-      error: () => this.notShownCount.set(0)
+      error: () => this.cdr.markForCheck()
     });
   }
 
@@ -1466,8 +1493,9 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
   /**
    * Saves the status, every text field that differs from the stored one and Resolved via when the dialog
    * changed it: a field left as it was is kept, an emptied one is cleared. The card takes the server's copy,
-   * the result is announced and the counts refetched. A failure reaches the dialog as an error with the
-   * message to show.
+   * the result is announced and the counts refetched. A changed status takes a selected issue out of the selection,
+   * and under Show selected only off the list too, once the dialog has closed and given focus back. A failure reaches
+   * the dialog as an error with the message to show.
    */
   saveTriage(issue: AdminFeedbackIssue, values: FeedbackTriageSubmission): Observable<AdminFeedbackIssue> {
     return defer(() => {
@@ -1479,6 +1507,7 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
       if (values.resolvedVia !== undefined) changes.resolvedVia = [...values.resolvedVia];
       this.savingId.set(issue.id);
       this.setTriageResult(issue.id, { message: '', error: null });
+      let leavesList: AdminFeedbackIssue | null = null;
       return this.feedback.updateStatus(issue.id, status, changes).pipe(
         map((updated): AdminFeedbackIssue => updated && updated.id === issue.id
           ? updated
@@ -1492,13 +1521,32 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
         tap(saved => {
           this.rows.set(this.rows().map(i => i.id === issue.id ? saved : i));
           this.list.invalidate();
-          this.setTriageResult(issue.id, { message: `Saved. The issue is ${feedbackStatusLabel(saved.status)}.`, error: null });
+          const leftSelection = saved.status !== issue.status && this.selected().has(issue.id);
+          if (leftSelection) {
+            this.selected.set(new Set([...this.selected()].filter(id => id !== issue.id)));
+            this.matchedSelection.set(new Set([...this.matchedSelection()].filter(id => id !== issue.id)));
+          }
+          const label = feedbackStatusLabel(saved.status);
+          this.setTriageResult(issue.id, {
+            message: leftSelection ? `Saved. The issue is ${label} and left the selection.` : `Saved. The issue is ${label}.`,
+            error: null
+          });
           this.store.loadFeedbackCounts();
           this.loadFacets();
-          this.checkStillMatches(saved);
+          if (leftSelection && this.showSelectedOnly()) {
+            leavesList = saved;
+          } else {
+            this.checkStillMatches(saved);
+          }
         }),
         catchError(err => throwError(() => new Error('The issue could not be saved: ' + adminApiError(err).message))),
-        finalize(() => this.savingId.set(null))
+        finalize(() => {
+          this.savingId.set(null);
+          // After the dialog's complete handler, so that the focus move lands once the dialog has given focus back.
+          if (leavesList) {
+            this.dropIssue(leavesList, `“${leavesList.subject}” is now ${feedbackStatusLabel(leavesList.status)} and left the selection.`, false);
+          }
+        })
       );
     });
   }
@@ -1554,7 +1602,8 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
 
   /**
    * Removes an issue's card, counts it out of the total, announces `notice` and focuses the next card.
-   * `deselect` drops a deleted issue from the selection; an issue that only left the filters stays selected and counts as not shown.
+   * `deselect` drops a deleted issue from the selection; otherwise a selected issue that only left the filters stays
+   * selected and counts as not shown.
    */
   private dropIssue(issue: AdminFeedbackIssue, notice: string, deselect: boolean): void {
     const before = this.rows();
@@ -1564,12 +1613,10 @@ export class FeedbackOverseerPanelComponent implements OnInit, OnChanges, OnDest
     this.totalCount.set(Math.max(0, this.totalCount() - 1));
     this.table.setRemoteTotal(this.totalCount());
     this.list.invalidate();
-    if (this.selected().has(issue.id)) {
-      if (deselect) {
-        this.setSelection(new Set([...this.selected()].filter(id => id !== issue.id)), false);
-      } else {
-        this.notShownCount.set(this.notShownCount() + 1);
-      }
+    if (deselect) {
+      if (this.selected().has(issue.id)) this.setSelection(new Set([...this.selected()].filter(id => id !== issue.id)), false);
+    } else if (this.matchedSelection().has(issue.id)) {
+      this.matchedSelection.set(new Set([...this.matchedSelection()].filter(id => id !== issue.id)));
     }
     if (after.length === 0 && this.hasFilters && !this.showSelectedOnly()) this.countRange();
     this.notice.set(notice);

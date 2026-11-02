@@ -18,6 +18,9 @@
         Clear selection<span class="visually-hidden"> ({{ formatCount(count) }})</span>
       </button>
     }
+    @if (notShownCount > 0) {
+      <button type="button" class="btn-link fsb-deselect-not-shown" (click)="onDeselectNotShown()">Deselect not shown<span class="visually-hidden"> ({{ formatCount(notShownCount) }})</span></button>
+    }
     @if (canSelectAllMatching) {
       <button type="button" class="gh-filter-clear fsb-select-all" (click)="onSelectAllMatching()">{{ selectAllLabel }}</button>
     }
@@ -45,5 +48,5 @@
 <p class="fsb-status" role="status">{{ statusMessage }}</p>
 
 <app-feedback-export-dialog #exportDialog [source]="source" [idPrefix]="source + '-selection'" [ids]="selectedIds"
-                            [exportOptions]="exportOptions" (exported)="onExported($event)" />
-<app-feedback-import-dialog #importDialog [source]="source" (imported)="onImported()" />
+                            [notShownIds]="notShownIds" [exportOptions]="exportOptions" (exported)="onExported($event)" />
+<app-feedback-import-dialog #importDialog [source]="source" [selectionCount]="count" (imported)="onImported()" />

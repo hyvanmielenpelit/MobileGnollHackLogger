@@ -112,6 +112,8 @@ export class FeedbackImportDialogComponent implements OnDestroy {
   @ViewChild('stepHeading') stepHeading?: ElementRef<HTMLElement>;
 
   @Input({ required: true }) source!: FeedbackSource;
+  /** How many issues the host has selected; a successful apply clears them. */
+  @Input() selectionCount = 0;
 
   /** After a successful apply. */
   @Output() imported = new EventEmitter<FeedbackResolutionApplyResult>();
@@ -148,6 +150,8 @@ export class FeedbackImportDialogComponent implements OnDestroy {
   conflicts: FeedbackResolutionConflictItem[] | null = null;
   conflictMessage = '';
   result: FeedbackResolutionApplyResult | null = null;
+  /** Whether the apply cleared a selection, for the Done step: the status line behind a modal may not be announced. */
+  selectionCleared = false;
 
   private previewSub: Subscription | undefined;
   private applySub: Subscription | undefined;
@@ -383,6 +387,7 @@ export class FeedbackImportDialogComponent implements OnDestroy {
       next: result => {
         this.applying = false;
         this.result = result;
+        this.selectionCleared = this.selectionCount > 0;
         this.imported.emit(result);
         this.goToStep(3);
       },
@@ -502,6 +507,7 @@ export class FeedbackImportDialogComponent implements OnDestroy {
     this.clearReview();
     this.applying = false;
     this.result = null;
+    this.selectionCleared = false;
   }
 
   private clearValidation(): void {

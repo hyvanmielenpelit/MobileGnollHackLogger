@@ -28,7 +28,7 @@ import type { FeedbackModelIdentity } from '../../../services/admin-feedback.ser
 import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
 import { FeedbackExportDialogComponent, FeedbackExportDone } from '../shared/feedback-export-dialog.component';
 import { FeedbackSelectionBarComponent } from '../shared/feedback-selection-bar.component';
-import { FeedbackExportOptions, FeedbackRange, loadFeedbackView, loadGnollBenchSelection } from '../shared/feedback-view-storage';
+import { FeedbackExportOptions, FeedbackRange, loadFeedbackView } from '../shared/feedback-view-storage';
 import {
   FeedbackGnollBenchPanelComponent,
   GNOLLBENCH_FEEDBACK_VIEW_STORAGE_KEY,
@@ -164,14 +164,19 @@ class SelectionBarStubComponent {
   @Input() source = '';
   @Input() selectedIds: readonly (string | number)[] = [];
   @Input() matchingCount = 0;
-  @Input() notShownCount = 0;
+  @Input() notShownIds: readonly (string | number)[] = [];
   @Input() showSelectedOnly = false;
   @Input() exportOptions: FeedbackExportOptions | undefined;
   @Output() showSelectedOnlyChange = new EventEmitter<boolean>();
   @Output() clear = new EventEmitter<void>();
+  @Output() deselectNotShown = new EventEmitter<void>();
   @Output() selectAllMatching = new EventEmitter<void>();
   @Output() exported = new EventEmitter<{ missing: (string | number)[]; exportOptions: FeedbackExportOptions }>();
   @Output() imported = new EventEmitter<void>();
+
+  get notShownCount(): number {
+    return this.notShownIds.length;
+  }
 }
 
 /** Stands in for the export dialog, which has its own spec; open and close record the inputs they saw. */
@@ -322,6 +327,13 @@ describe('FeedbackGnollBenchPanelComponent', () => {
       component = fixture.componentInstance;
       el = fixture.nativeElement as HTMLElement;
       fixture.componentRef.setInput('range', range);
+      fixture.detectChanges();
+    }
+
+    /** Holds a selection in the created panel and reloads, as a selection made earlier in this visit stands at a reload. */
+    function seedSelection(fingerprints: readonly string[]): void {
+      component.selection.set(new Set(fingerprints));
+      component.reload();
       fixture.detectChanges();
     }
 
@@ -1260,29 +1272,35 @@ describe('FeedbackGnollBenchPanelComponent', () => {
           expect(status()).not.toContain('no longer matches');
         });
 
-        it('drops a selected issue the filters exclude under Show selected only, and counts it as not shown', async () => {
-          localStorage.setItem(SELECTION_KEY, JSON.stringify({ version: 1, fingerprints: [fp(1), fp(2)] }));
+        it('deselects only the saved issue when its status changes, and says so on the card', async () => {
           nextPage = page([issue(1), issue(2)]);
           await create();
-          bar().showSelectedOnlyChange.emit(true);
-          fixture.detectChanges();
-          expect(bar().notShownCount).toBe(0);
+          seedSelection([fp(1), fp(2)]);
 
           resolveFirst();
-          expect(idsSpy).toHaveBeenLastCalledWith(expect.objectContaining({
-            startDate: '2026-09-21', endDate: '2026-10-21', statuses: ['new', 'regressed'], fingerprints: [fp(1)]
-          }));
-          answerWith([]);
+          answerWith([fp(1)]);
 
-          expect(shown()).toEqual([fp(2)]);
-          expect(loadGnollBenchSelection()).toEqual([fp(1), fp(2)]);
-          expect(bar().notShownCount).toBe(1);
+          expect(bar().selectedIds).toEqual([fp(2)]);
+          expect(shown()).toEqual([fp(1), fp(2)]);
+          expect(textOf(cards()[0].querySelector(`#${cid(1)}-result`))).toBe('Saved. The issue is Resolved and left the selection.');
         });
 
-        it('keeps a selected issue selected and counts it as not shown, with no further request', async () => {
-          localStorage.setItem(SELECTION_KEY, JSON.stringify({ version: 1, fingerprints: [fp(1)] }));
-          nextPage = page([issue(1), issue(2)]);
+        it('keeps the issue selected when the save changes no status', async () => {
+          nextPage = page([issue(1, { status: 'resolved' }), issue(2)]);
           await create();
+          seedSelection([fp(1)]);
+
+          resolveFirst();
+          answerWith([fp(1)]);
+
+          expect(bar().selectedIds).toEqual([fp(1)]);
+          expect(textOf(cards()[0].querySelector(`#${cid(1)}-result`))).toBe('Saved. The issue is Resolved.');
+        });
+
+        it('keeps a selected issue selected and counts it as not shown when a save that changes no status leaves the filters, with no further request', async () => {
+          nextPage = page([issue(1, { status: 'resolved' }), issue(2)]);
+          await create();
+          seedSelection([fp(1)]);
           expect(bar().notShownCount).toBe(0);
           idsSpy.mockClear();
 
@@ -1290,10 +1308,71 @@ describe('FeedbackGnollBenchPanelComponent', () => {
           answerWith([]);
 
           expect(shown()).toEqual([fp(2)]);
-          expect(loadGnollBenchSelection()).toEqual([fp(1)]);
           expect(bar().selectedIds).toEqual([fp(1)]);
-          expect(bar().notShownCount).toBe(1);
+          expect(bar().notShownIds).toEqual([fp(1)]);
           expect(idsSpy).toHaveBeenCalledTimes(1);
+        });
+
+        describe('under Show selected only', () => {
+          /** Saves issue 1 as Resolved; its card leaves as the dialog closes. */
+          function resolveFirstSelected(): void {
+            editTriage(cards()[0]);
+            selectValue(field<HTMLSelectElement>('status'), 'resolved');
+            saveTriage();
+            expect(triageDialog().open).toBe(false);
+          }
+
+          it('removes the card of an issue whose status changes and focuses the next one, with no refetch', async () => {
+            nextPage = page([issue(1), issue(2)]);
+            await create();
+            seedSelection([fp(1), fp(2)]);
+            bar().showSelectedOnlyChange.emit(true);
+            fixture.detectChanges();
+            const before = listQueries().length;
+
+            resolveFirstSelected();
+            fixture.detectChanges();
+
+            expect(shown()).toEqual([fp(2)]);
+            expect(bar().selectedIds).toEqual([fp(2)]);
+            expect(bar().showSelectedOnly).toBe(true);
+            expect(status()).toBe('“Dilithium crystal” is now Resolved and left the selection. One issue');
+            expect(document.activeElement?.id).toBe(`${cid(2)}-title`);
+            expect(listQueries().length).toBe(before);
+          });
+
+          it('ends with the last card, refetches and focuses the heading', async () => {
+            await create();
+            seedSelection([fp(1)]);
+            bar().showSelectedOnlyChange.emit(true);
+            fixture.detectChanges();
+            const before = listQueries().length;
+
+            resolveFirstSelected();
+            fixture.detectChanges();
+
+            expect(bar().selectedIds).toEqual([]);
+            expect(bar().showSelectedOnly).toBe(false);
+            expect(listQueries().length).toBe(before + 1);
+            expect(lastQuery().fingerprints).toBeUndefined();
+            expect(status()).toContain('“Dilithium crystal” is now Resolved and left the selection.');
+            expect(document.activeElement?.id).toBe('tl-gbfb-issues-title');
+          });
+
+          it('keeps the card when the save changes no status, whatever the filters say', async () => {
+            nextPage = page([issue(1, { status: 'resolved' })]);
+            await create();
+            seedSelection([fp(1)]);
+            bar().showSelectedOnlyChange.emit(true);
+            fixture.detectChanges();
+
+            resolveFirstSelected();
+            fixture.detectChanges();
+
+            expect(idsSpy).toHaveBeenLastCalledWith({ accepted: 'all', sort: 'lastSeen', fingerprints: [fp(1)] });
+            expect(shown()).toEqual([fp(1)]);
+            expect(bar().selectedIds).toEqual([fp(1)]);
+          });
         });
 
         it('shows the filters\' empty state when the last card leaves', async () => {
@@ -1473,8 +1552,8 @@ describe('FeedbackGnollBenchPanelComponent', () => {
       });
 
       it('says an issue the server no longer has is gone, closes the dialog, fetches the list again and drops it from the selection', async () => {
-        localStorage.setItem(SELECTION_KEY, JSON.stringify({ version: 1, fingerprints: [fp(1), fp(2)] }));
         await create();
+        seedSelection([fp(1), fp(2)]);
         clickExport();
         const before = listQueries().length;
 
@@ -1485,12 +1564,32 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         expect(listQueries().length).toBe(before + 1);
         expect(textOf(cards()[0].querySelector(`#${cid(1)}-result`))).toBe('This issue no longer exists.');
         expect(status()).toContain('The issue “Dilithium crystal” no longer exists.');
-        expect(loadGnollBenchSelection()).toEqual([fp(2)]);
+        expect(bar().selectedIds).toEqual([fp(2)]);
       });
     });
 
     describe('selection', () => {
-      it('keeps a checked card by fingerprint, remembers it and hands it to the selection bar', async () => {
+      it('starts with nothing selected, asks nothing about an old record and removes it', async () => {
+        localStorage.setItem(SELECTION_KEY, JSON.stringify({ version: 1, fingerprints: [fp(1), fp(2)] }));
+        await create();
+
+        expect(bar().selectedIds).toEqual([]);
+        expect(cards()[0].querySelector<HTMLInputElement>('input.tl-gbfb-check')!.checked).toBe(false);
+        expect(idsSpy).not.toHaveBeenCalled();
+        expect(localStorage.getItem(SELECTION_KEY)).toBeNull();
+      });
+
+      it('never writes a selection to the browser\'s storage', async () => {
+        await create();
+
+        cards()[0].querySelector<HTMLInputElement>('input.tl-gbfb-check')!.click();
+        fixture.detectChanges();
+
+        expect(bar().selectedIds).toEqual([fp(1)]);
+        expect(localStorage.getItem(SELECTION_KEY)).toBeNull();
+      });
+
+      it('keeps a checked card by fingerprint and hands it to the selection bar', async () => {
         nextPage = page([issue(1), issue(2)]);
         await create();
         expect(bar().source).toBe('gnollbench');
@@ -1501,37 +1600,91 @@ describe('FeedbackGnollBenchPanelComponent', () => {
         box.click();
         fixture.detectChanges();
 
-        expect(loadGnollBenchSelection()).toEqual([fp(1)]);
         expect(bar().selectedIds).toEqual([fp(1)]);
         expect(bar().notShownCount).toBe(0);
         expect(box.checked).toBe(true);
       });
 
-      it('counts the remembered selected issues the filters do not list', async () => {
-        localStorage.setItem(SELECTION_KEY, JSON.stringify({ version: 1, fingerprints: [fp(1), fp(9)] }));
-        existing = new Set([fp(1), fp(2), fp(9)]);
+      /** Only issue 1 matches the filters. */
+      function onlyFirstMatches(): void {
+        existing = new Set([fp(1), fp(2), fp(8), fp(9)]);
         idsAnswer = filters => {
           const named = (filters.fingerprints ?? []).filter(f => f === fp(1));
           return { fingerprints: named, totalCount: named.length, truncated: false };
         };
+      }
+
+      it('counts the selected issues the filters do not list', async () => {
+        onlyFirstMatches();
         await create();
+        seedSelection([fp(1), fp(9)]);
 
         expect(idsSpy).toHaveBeenCalledWith(expect.objectContaining({ fingerprints: [fp(1), fp(9)], statuses: ['new', 'regressed'] }));
         expect(bar().selectedIds).toEqual([fp(1), fp(9)]);
-        expect(bar().notShownCount).toBe(1);
+        expect(bar().notShownIds).toEqual([fp(9)]);
+        expect(status()).toBe('One issue One selected issue is not shown.');
         expect(cards()[0].querySelector<HTMLInputElement>('input.tl-gbfb-check')!.checked).toBe(true);
       });
 
-      it('shows the selected issues only by fingerprint, and prunes those the server no longer has', async () => {
-        localStorage.setItem(SELECTION_KEY, JSON.stringify({ version: 1, fingerprints: [fp(1), fp(9)] }));
+      it('names the hidden count in the status line', async () => {
+        onlyFirstMatches();
         await create();
+        seedSelection([fp(1), fp(8), fp(9)]);
+
+        expect(status()).toBe('One issue 2 selected issues are not shown.');
+      });
+
+      it('deselects only the issues the filters hide, and says how many', async () => {
+        onlyFirstMatches();
+        await create();
+        seedSelection([fp(1), fp(8), fp(9)]);
+
+        bar().deselectNotShown.emit();
+        fixture.detectChanges();
+
+        expect(bar().selectedIds).toEqual([fp(1)]);
+        expect(bar().notShownIds).toEqual([]);
+        expect(status()).toBe('Deselected 2 issues that were not shown. One issue');
+      });
+
+      it('sends the selected fingerprints alone under Show selected only, and takes the filters back when it ends', async () => {
+        await create('/admin/feedback/gnollbench?category=tool_problem&accepted=refused&q=crystal');
+        seedSelection([fp(1), fp(2)]);
+
+        bar().showSelectedOnlyChange.emit(true);
+        fixture.detectChanges();
+
+        expect(lastQuery()).toEqual({ accepted: 'all', sort: 'lastSeen', fingerprints: [fp(1), fp(2)], skip: 0, take: 25 });
+        expect(bar().notShownIds).toEqual([]);
+
+        bar().showSelectedOnlyChange.emit(false);
+        fixture.detectChanges();
+        expect(lastQuery()).toEqual(expect.objectContaining({ categories: ['tool_problem'], accepted: 'refused', search: 'crystal' }));
+        expect(lastQuery().fingerprints).toBeUndefined();
+      });
+
+      it('shows every self-report under Show selected only, without the scope toggle', async () => {
+        await create('/admin/feedback/gnollbench?category=tool_problem');
+        seedSelection([fp(1)]);
+        bar().showSelectedOnlyChange.emit(true);
+        fixture.detectChanges();
+
+        openOccurrences(cards()[0]);
+
+        expect(occurrencesSpy).toHaveBeenLastCalledWith(fp(1), expect.objectContaining({ all: true }));
+        expect(q('.tl-gbfb-occ-all')).toBeNull();
+      });
+
+      it('shows the selected issues only by fingerprint, and prunes those the server no longer has', async () => {
+        await create();
+        seedSelection([fp(1), fp(9)]);
 
         bar().showSelectedOnlyChange.emit(true);
         fixture.detectChanges();
 
         expect(lastQuery()).toEqual(expect.objectContaining({ fingerprints: [fp(1), fp(9)], skip: 0 }));
         expect(idsSpy).toHaveBeenCalledWith({ accepted: 'all', fingerprints: [fp(1), fp(9)] });
-        expect(loadGnollBenchSelection()).toEqual([fp(1)]);
+        expect(bar().selectedIds).toEqual([fp(1)]);
         expect(bar().showSelectedOnly).toBe(true);
         expect(status()).toContain('One selected issue no longer exists and left the selection.');
 
@@ -1550,34 +1703,68 @@ describe('FeedbackGnollBenchPanelComponent', () => {
 
         expect(idsSpy).toHaveBeenLastCalledWith(expect.objectContaining({ runs: ['12'] }));
         expect((idsSpy.mock.calls[idsSpy.mock.calls.length - 1][0] as GnollBenchFeedbackFilters).fingerprints).toBeUndefined();
-        expect(loadGnollBenchSelection().length).toBe(500);
         expect(bar().selectedIds.length).toBe(500);
         expect(status()).toContain('Selected the first 500 of 1,200.');
       });
 
-      it('clears the selection and its memory', async () => {
-        localStorage.setItem(SELECTION_KEY, JSON.stringify({ version: 1, fingerprints: [fp(1)] }));
+      it('clears the selection', async () => {
         await create();
+        seedSelection([fp(1)]);
 
         bar().clear.emit();
         fixture.detectChanges();
 
-        expect(loadGnollBenchSelection()).toEqual([]);
         expect(bar().selectedIds).toEqual([]);
         expect(cards()[0].querySelector<HTMLInputElement>('input.tl-gbfb-check')!.checked).toBe(false);
       });
 
       it('drops exported issues that no longer exist and remembers the export options in the view', async () => {
-        localStorage.setItem(SELECTION_KEY, JSON.stringify({ version: 1, fingerprints: [fp(1), fp(9)] }));
         await create();
+        seedSelection([fp(1), fp(9)]);
         const options: FeedbackExportOptions = { occurrencesPerIssue: 25, includeQuestionText: false };
 
         bar().exported.emit({ missing: [fp(9)], exportOptions: options });
         fixture.detectChanges();
 
-        expect(loadGnollBenchSelection()).toEqual([fp(1)]);
+        expect(bar().selectedIds).toEqual([fp(1)]);
         expect(loadFeedbackView('gnollbench')!.exportOptions).toEqual(options);
         expect(bar().exportOptions).toEqual(options);
+      });
+
+      it('keeps the selection after an export that found every issue', async () => {
+        await create();
+        seedSelection([fp(1), fp(2)]);
+
+        bar().exported.emit({ missing: [], exportOptions: { occurrencesPerIssue: 25, includeQuestionText: false } });
+        fixture.detectChanges();
+
+        expect(bar().selectedIds).toEqual([fp(1), fp(2)]);
+      });
+
+      it('clears the selection and Show selected only after an import, refetches the list once and says so', async () => {
+        await create();
+        seedSelection([fp(1), fp(2)]);
+        bar().showSelectedOnlyChange.emit(true);
+        fixture.detectChanges();
+        issuesSpy.mockClear();
+
+        bar().imported.emit();
+        fixture.detectChanges();
+
+        expect(bar().selectedIds).toEqual([]);
+        expect(bar().showSelectedOnly).toBe(false);
+        expect(listQueries().length).toBe(1);
+        expect(lastQuery().fingerprints).toBeUndefined();
+        expect(status()).toBe('The import changed issues, so the selection was cleared. One issue');
+      });
+
+      it('says nothing about a selection after an import with none', async () => {
+        await create();
+
+        bar().imported.emit();
+        fixture.detectChanges();
+
+        expect(status()).toBe('One issue');
       });
 
       it('fetches the list, the facets and the counts again after an import', async () => {

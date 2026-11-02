@@ -22,7 +22,7 @@ describe('FeedbackSelectionBarComponent', () => {
     source: 'overseer' | 'gnollbench';
     selectedIds: readonly FeedbackSelectionId[];
     matchingCount: number;
-    notShownCount: number;
+    notShownIds: readonly FeedbackSelectionId[];
     showSelectedOnly: boolean;
     exportOptions: FeedbackExportOptions | undefined;
   }>): void {
@@ -66,12 +66,55 @@ describe('FeedbackSelectionBarComponent', () => {
   });
 
   it('counts the selection and the selected issues the filters hide', () => {
-    set({ selectedIds: [1, 2, 3], notShownCount: 2 });
+    set({ selectedIds: [1, 2, 3], notShownIds: [2, 3] });
     expect(text(q('.fsb-count'))).toBe('3 selected — 2 not shown');
     expect(q('.fsb-show-selected')!.getAttribute('aria-pressed')).toBe('false');
     expect(text(q('.fsb-clear'))).toBe('Clear selection (3)');
     expect(q('.fsb-export')!.getAttribute('aria-disabled')).toBeNull();
     expect(q('.fsb-export-reason')).toBeNull();
+  });
+
+  it('offers Deselect not shown after Clear selection, only while issues are hidden, and reports it', () => {
+    let deselected = 0;
+    component.deselectNotShown.subscribe(() => deselected++);
+
+    set({ selectedIds: [1, 2, 3] });
+    expect(q('.fsb-deselect-not-shown')).toBeNull();
+
+    set({ notShownIds: [2, 3] });
+    const button = q<HTMLButtonElement>('.fsb-deselect-not-shown')!;
+    expect(text(button)).toBe('Deselect not shown (2)');
+    expect(button.previousElementSibling).toBe(q('.fsb-clear'));
+    button.click();
+    expect(deselected).toBe(1);
+  });
+
+  it('refuses Export… when every selected issue is hidden and says what to do', () => {
+    set({ selectedIds: [1, 2], notShownIds: [1, 2] });
+    const button = q<HTMLButtonElement>('.fsb-export')!;
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(text(q('.fsb-export-reason'))).toBe('Every selected issue is hidden by the filters. Turn on Show selected only to review them.');
+    button.click();
+    expect(q<HTMLDialogElement>('dialog.feedback-export-dialog')!.open).toBe(false);
+  });
+
+  it('counts only the shown issues against the export cap', () => {
+    const ids = Array.from({ length: 205 }, (_, i) => i + 1);
+    set({ selectedIds: ids, notShownIds: ids.slice(0, 5) });
+    expect(q('.fsb-export-reason')).toBeNull();
+    set({ notShownIds: ids.slice(0, 4) });
+    expect(text(q('.fsb-export-reason'))).toBe('An export holds at most 200 issues; 201 are selected.');
+  });
+
+  it('opens the export dialog on the shown issues, and tells the import dialog the selection', () => {
+    set({ selectedIds: [1, 2, 3], notShownIds: [3] });
+    q<HTMLButtonElement>('.fsb-export')!.click();
+    fixture.detectChanges();
+
+    const dialog = q<HTMLDialogElement>('dialog.feedback-export-dialog')!;
+    expect(text(dialog.querySelector('h3'))).toBe('Export 2 issues');
+    expect(dialog.querySelector('fieldset.fx-scope')).not.toBeNull();
+    expect(component.importDialog!.selectionCount).toBe(3);
   });
 
   it('puts the export reason on the buttons\' line, just before Export…', () => {

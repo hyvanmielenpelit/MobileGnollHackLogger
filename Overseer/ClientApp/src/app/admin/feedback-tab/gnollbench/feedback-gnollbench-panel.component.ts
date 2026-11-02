@@ -67,10 +67,9 @@ import {
   FeedbackRange,
   FeedbackViewRecord,
   defaultFeedbackRange,
+  forgetFeedbackSelection,
   loadFeedbackView,
-  loadGnollBenchSelection,
-  saveFeedbackView,
-  saveGnollBenchSelection
+  saveFeedbackView
 } from '../shared/feedback-view-storage';
 
 /** Where the view is remembered; Sort by reads its order from the same record. */
@@ -377,7 +376,7 @@ interface TriageResult {
  * the base set (accepted, all or refused calls), a facet for every run fact (status, resolved via, category, model,
  * provider, run, series, analysis group, battery run, model batch, suite, question, information condition,
  * corpus, Experimental Changes and harness) and chips; its selection bar holds a selection by fingerprint for
- * the export and the resolution import. Each card has the issue's models with their badges, its figures, its
+ * the export and the resolution import, which starts empty and lasts as long as the panel. Each card has the issue's models with their badges, its figures, its
  * latest facts and triage facts, its self-reports on demand, Export issue…, which opens the export dialog for
  * that one issue, and Edit triage, which opens the triage dialog. The shell supplies the date range and a Refresh token. The view
  * is remembered per browser and the filters are kept in the address. Report text is model output and is
@@ -474,7 +473,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
 
   // --- Selection ---
 
-  /** The selected fingerprints, at most 500; remembered per browser. */
+  /** The selected fingerprints, held across paging and filtering while the panel lives, at most 500. */
   readonly selection = signal<ReadonlySet<string>>(new Set<string>());
   /** Selected fingerprints known to match the current filters. */
   readonly matchedSelection = signal<ReadonlySet<string>>(new Set<string>());
@@ -485,12 +484,11 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
 
   readonly selectedIds = computed<readonly string[]>(() => [...this.selection()]);
 
-  /** Selected issues the current filters do not list. */
-  readonly notShownCount = computed(() => {
+  /** Selected issues the current filters do not list; one not yet known to match counts as not listed. */
+  readonly notShownIds = computed<readonly string[]>(() => {
+    if (this.showSelectedOnly()) return [];
     const matched = this.matchedSelection();
-    let count = 0;
-    for (const fingerprint of this.selection()) if (!matched.has(fingerprint)) count++;
-    return count;
+    return [...this.selection()].filter(fingerprint => !matched.has(fingerprint));
   });
 
   /** The facets the filter bar lists: Status always, any other with two options or more or a selection. */
@@ -575,6 +573,8 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   private readonly matchSubs = new Map<string, Subscription>();
   private changesSub: Subscription | null = null;
   private initialized = false;
+  /** The next first page moves focus to the list's heading: the card that had it left under Show selected only. */
+  private focusHeadingAfterFetch = false;
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
@@ -585,7 +585,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     });
     this.sortId.set(this.list.sortId);
     this.exportOptions.set(loadFeedbackView('gnollbench')?.exportOptions);
-    this.selection.set(new Set(loadGnollBenchSelection()));
+    forgetFeedbackSelection('gnollbench');
     this.table.setRemoteTotal(0);
     // Emits the current address at once, so the first fetch already carries its filters.
     this.querySub = this.route.queryParamMap.subscribe(query => this.applyAddress(query));
@@ -843,7 +843,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     return Math.min(this.list.batch, this.remainingCount);
   }
 
-  /** `Showing 25 of 40 issues`, `One issue`, or empty with none; a notice is announced before it. */
+  /** `Showing 25 of 40 issues`, `One issue`, or empty with none; a notice is announced before it, the selected issues not shown after. */
   get listStatus(): string {
     if (this.loading() && !this.loaded()) return 'Loading GnollBench feedback issues…';
     const notice = this.notice();
@@ -852,7 +852,11 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     const base = total === 0 ? '' : total === 1 && this.rows().length === 1
       ? 'One issue'
       : `Showing ${formatInteger(this.rows().length)} of ${formatInteger(total)} issues`;
-    return notice ? `${notice} ${base}`.trim() : base;
+    const hidden = this.notShownIds().length;
+    const notShown = hidden === 0 ? '' : hidden === 1
+      ? 'One selected issue is not shown.'
+      : `${formatInteger(hidden)} selected issues are not shown.`;
+    return [notice, base, notShown].filter(part => part !== '').join(' ');
   }
 
   /** Which empty state applies once the first page is empty; null while the range total is still being counted. */
@@ -863,8 +867,11 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     return total === 0 ? 'range' : 'filters';
   }
 
-  /** The filters as the server takes them; with `withSelection`, Show selected only's fingerprints too. */
+  /** The filters as the server takes them; with `withSelection`, Show selected only sends the selected fingerprints alone. */
   private currentFilters(withSelection = true): GnollBenchFeedbackFilters {
+    if (withSelection && this.showSelectedOnly()) {
+      return { accepted: 'all', sort: this.list.sortId as GnollBenchFeedbackSort, fingerprints: [...this.selection()] };
+    }
     const filters: GnollBenchFeedbackFilters = {
       startDate: this.range?.start || undefined,
       endDate: this.range?.end || undefined,
@@ -877,7 +884,6 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
       const values = current[spec.key];
       if (values.length > 0) (filters as Record<string, unknown>)[spec.field] = [...values];
     }
-    if (withSelection && this.showSelectedOnly()) filters.fingerprints = [...this.selection()];
     return filters;
   }
 
@@ -930,6 +936,9 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
         const focusId = firstNew >= 0 ? this.rows()[firstNew]?.fingerprint : undefined;
         if (focusId !== undefined) {
           this.focusAfterRender(`#tl-gbfb-${idPart(focusId)}-title`);
+        } else if (this.focusHeadingAfterFetch) {
+          this.focusHeadingAfterFetch = false;
+          this.focusAfterRender('#tl-gbfb-issues-title');
         } else {
           this.cdr.markForCheck();
         }
@@ -937,6 +946,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
       error: err => {
         this.loading.set(false);
         this.loaded.set(true);
+        this.focusHeadingAfterFetch = false;
         this.error.set('The GnollBench feedback issues could not be loaded: ' + adminApiError(err).message);
       }
     });
@@ -1006,6 +1016,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     if (value === this.showSelectedOnly() || (value && this.selection().size === 0)) return;
     this.showSelectedOnly.set(value);
     this.list.resetBatch();
+    this.resetOccurrences();
     this.reloadIssues();
     if (value) this.pruneSelection();
   }
@@ -1046,18 +1057,34 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
     this.persist();
   }
 
-  /** Resolutions were imported: the list, the facets and the counts are fetched again. */
+  /** Resolutions were imported: the selection is cleared, and the list, the facets and the counts are fetched again. */
   onImported(): void {
+    const hadSelection = this.selection().size > 0;
+    this.showSelectedOnly.set(false);
+    this.matchedSelection.set(new Set<string>());
+    this.selection.set(new Set<string>());
+    this.list.resetBatch();
     this.reload();
+    if (hadSelection) this.notice.set('The import changed issues, so the selection was cleared.');
   }
 
-  /** Holds and remembers a selection; an empty one ends Show selected only and refetches the list. */
+  /** Removes the selected issues the filters leave out, and says how many. */
+  onDeselectNotShown(): void {
+    const hidden = new Set(this.notShownIds());
+    if (hidden.size === 0) return;
+    this.setSelection(new Set([...this.selection()].filter(f => !hidden.has(f))));
+    this.notice.set(hidden.size === 1
+      ? 'Deselected 1 issue that was not shown.'
+      : `Deselected ${formatInteger(hidden.size)} issues that were not shown.`);
+  }
+
+  /** Holds a selection; an empty one ends Show selected only and refetches the list. */
   private setSelection(next: ReadonlySet<string>): void {
     this.selection.set(next);
-    saveGnollBenchSelection([...next]);
     if (next.size === 0 && this.showSelectedOnly()) {
       this.showSelectedOnly.set(false);
       this.list.resetBatch();
+      this.resetOccurrences();
       this.reloadIssues();
     }
     this.cdr.markForCheck();
@@ -1195,6 +1222,8 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   private fetchOccurrences(fingerprint: string, append: boolean, all: boolean): void {
     const previous = this.occurrenceState(fingerprint);
     const rows = append && previous ? previous.rows : [];
+    // Show selected only sends no filters for the list, so none narrows its self-reports either.
+    all = all || this.showSelectedOnly();
     this.setOccurrenceState(fingerprint, {
       rows, total: previous?.total ?? 0, loading: true, loaded: previous?.loaded ?? false, error: null, all
     });
@@ -1363,8 +1392,9 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
   /**
    * Saves the status, each text that differs from the stored one, and Resolved via when the dialog changed it:
    * an unchanged text is left out, which keeps it, and an emptied one is sent empty, which clears it. The card
-   * takes the server's copy, the result is announced and the Status counts are fetched again. A failure reaches
-   * the dialog as an error with the message to show.
+   * takes the server's copy, the result is announced and the Status counts are fetched again. A changed status takes
+   * a selected issue out of the selection, and under Show selected only off the list too, once the dialog has closed
+   * and given focus back. A failure reaches the dialog as an error with the message to show.
    */
   saveTriage(issue: GnollBenchFeedbackIssue, values: FeedbackTriageSubmission): Observable<GnollBenchFeedbackIssue> {
     return defer(() => {
@@ -1377,6 +1407,7 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
 
       this.savingFingerprint.set(fingerprint);
       this.setTriageResult(fingerprint, { message: '', error: null });
+      let leavesList: GnollBenchFeedbackIssue | null = null;
       return this.feedback.updateStatus(fingerprint, update).pipe(
         map((updated): GnollBenchFeedbackIssue => updated && updated.fingerprint === fingerprint
           ? updated
@@ -1391,22 +1422,54 @@ export class FeedbackGnollBenchPanelComponent implements OnInit, OnChanges, OnDe
         tap(saved => {
           this.rows.set(this.rows().map(i => i.fingerprint === fingerprint ? saved : i));
           this.list.invalidate();
-          this.setTriageResult(fingerprint, { message: `Saved. The issue is ${feedbackStatusLabel(saved.status)}.`, error: null });
+          const leftSelection = saved.status !== issue.status && this.selection().has(fingerprint);
+          if (leftSelection) {
+            this.selection.set(new Set([...this.selection()].filter(f => f !== fingerprint)));
+            this.matchedSelection.set(new Set([...this.matchedSelection()].filter(f => f !== fingerprint)));
+          }
+          const label = feedbackStatusLabel(saved.status);
+          this.setTriageResult(fingerprint, {
+            message: leftSelection ? `Saved. The issue is ${label} and left the selection.` : `Saved. The issue is ${label}.`,
+            error: null
+          });
           this.loadCounts();
           this.loadFacets();
-          this.checkStillMatches(saved);
+          if (leftSelection && this.showSelectedOnly()) {
+            leavesList = saved;
+          } else {
+            this.checkStillMatches(saved);
+          }
         }),
         catchError(err => throwError(() => new Error('The issue could not be saved: ' + adminApiError(err).message))),
-        finalize(() => this.savingFingerprint.set(null))
+        finalize(() => {
+          this.savingFingerprint.set(null);
+          // After the dialog's complete handler, so that the focus move lands once the dialog has given focus back.
+          if (leavesList) this.leaveShowSelectedOnlyList(leavesList);
+        })
       );
     });
+  }
+
+  /**
+   * A status change took an issue out of the selection under Show selected only: its card leaves, focusing the next
+   * one. The last card ends Show selected only, whose refetch focuses the list's heading.
+   */
+  private leaveShowSelectedOnlyList(issue: GnollBenchFeedbackIssue): void {
+    const notice = `“${issue.subject}” is now ${feedbackStatusLabel(issue.status)} and left the selection.`;
+    if (this.selection().size > 0) {
+      this.dropIssue(issue, notice);
+      return;
+    }
+    this.focusHeadingAfterFetch = true;
+    this.setSelection(this.selection());
+    this.notice.set(notice);
   }
 
   /** Asks the server whether a saved issue still matches the filters, and drops its card when it does not. */
   private checkStillMatches(issue: GnollBenchFeedbackIssue): void {
     const fingerprint = issue.fingerprint;
     this.matchSubs.get(fingerprint)?.unsubscribe();
-    // Under Show selected only the other filters still apply, so a selected issue can leave too.
+    // Under Show selected only the filters are the selected fingerprints, so the issue always still matches.
     const sub = this.feedback.getIssueIds({ ...this.currentFilters(), fingerprints: [fingerprint] }).subscribe({
       next: ids => {
         this.matchSubs.delete(fingerprint);

@@ -4,12 +4,9 @@ import {
   defaultFeedbackRange,
   feedbackExportFormat,
   isFeedbackOccurrenceCount,
+  forgetFeedbackSelection,
   loadFeedbackView,
-  loadGnollBenchSelection,
-  loadOverseerSelection,
-  saveFeedbackView,
-  saveGnollBenchSelection,
-  saveOverseerSelection
+  saveFeedbackView
 } from './feedback-view-storage';
 
 const KEYS = [
@@ -137,49 +134,38 @@ describe('feedback-view-storage', () => {
     expect(localStorage.getItem('overseer.admin.telemetry.feedback.view')).not.toBeNull();
   });
 
-  it('keeps the Overseer selection as issue ids, at most 500, without duplicates', () => {
-    expect(loadOverseerSelection()).toEqual([]);
-    saveOverseerSelection([3, 1, 3]);
-    expect(JSON.parse(localStorage.getItem('overseer.admin.feedback.overseer.selection')!)).toEqual({ version: 1, ids: [3, 1] });
-    expect(loadOverseerSelection()).toEqual([3, 1]);
-
-    saveOverseerSelection(Array.from({ length: 600 }, (_, i) => i + 1));
-    expect(loadOverseerSelection().length).toBe(FEEDBACK_SELECTION_CAP);
+  it('caps a selection at 500 issues', () => {
     expect(FEEDBACK_SELECTION_CAP).toBe(500);
   });
 
-  it('keeps the GnollBench selection as fingerprints, at most 500', () => {
-    expect(loadGnollBenchSelection()).toEqual([]);
-    saveGnollBenchSelection(['a'.repeat(64), 'b'.repeat(64)]);
-    expect(JSON.parse(localStorage.getItem('overseer.admin.feedback.gnollbench.selection')!)).toEqual(
-      { version: 1, fingerprints: ['a'.repeat(64), 'b'.repeat(64)] });
-    expect(loadGnollBenchSelection()).toEqual(['a'.repeat(64), 'b'.repeat(64)]);
+  it('forgets only its own sub-tab\'s selection record, and leaves the views', () => {
+    const overseer = 'overseer.admin.feedback.overseer.selection';
+    const gnollbench = 'overseer.admin.feedback.gnollbench.selection';
+    localStorage.setItem(overseer, JSON.stringify({ version: 1, ids: [1] }));
+    localStorage.setItem(gnollbench, JSON.stringify({ version: 1, fingerprints: ['a'] }));
+    saveFeedbackView('overseer', record());
 
-    saveGnollBenchSelection(Array.from({ length: 501 }, (_, i) => `f${i}`));
-    expect(loadGnollBenchSelection().length).toBe(500);
-  });
+    forgetFeedbackSelection('overseer');
+    expect(localStorage.getItem(overseer)).toBeNull();
+    expect(localStorage.getItem(gnollbench)).not.toBeNull();
+    expect(loadFeedbackView('overseer')).not.toBeNull();
 
-  it('reads a malformed or wrong-version selection as empty', () => {
-    localStorage.setItem('overseer.admin.feedback.overseer.selection', JSON.stringify({ version: 2, ids: [1] }));
-    expect(loadOverseerSelection()).toEqual([]);
-    localStorage.setItem('overseer.admin.feedback.overseer.selection', JSON.stringify({ version: 1, ids: [1, 'x', -2, 1.5] }));
-    expect(loadOverseerSelection()).toEqual([1]);
-    localStorage.setItem('overseer.admin.feedback.gnollbench.selection', 'nope');
-    expect(loadGnollBenchSelection()).toEqual([]);
+    forgetFeedbackSelection('gnollbench');
+    expect(localStorage.getItem(gnollbench)).toBeNull();
   });
 
   it('survives storage that throws', () => {
     const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied'); });
     const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied'); });
+    const remove = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('denied'); });
 
     expect(loadFeedbackView('overseer')).toBeNull();
-    expect(loadOverseerSelection()).toEqual([]);
-    expect(loadGnollBenchSelection()).toEqual([]);
     expect(() => saveFeedbackView('overseer', record())).not.toThrow();
-    expect(() => saveOverseerSelection([1])).not.toThrow();
-    expect(() => saveGnollBenchSelection(['a'])).not.toThrow();
+    expect(() => forgetFeedbackSelection('overseer')).not.toThrow();
+    expect(() => forgetFeedbackSelection('gnollbench')).not.toThrow();
 
     get.mockRestore();
     set.mockRestore();
+    remove.mockRestore();
   });
 });

@@ -1,7 +1,7 @@
 /**
  * What the Feedback tab remembers per browser, per sub-tab: the view (Sort by, the facets, the search,
- * the date range and the export options) and the selection. Every access is behind `try/catch`, and
- * an unreadable or wrong-version record reads as none.
+ * the date range and the export options). The selection lives only in the panel. Every access is behind
+ * `try/catch`, and an unreadable or wrong-version record reads as none.
  */
 
 import type { FeedbackTimeSpan } from '../../admin-page.store';
@@ -150,28 +150,11 @@ export function saveFeedbackView(source: FeedbackSource, record: FeedbackViewRec
   writeJson(VIEW_KEYS[source], record);
 }
 
-/** The remembered Overseer selection: issue ids, at most 500. */
-export function loadOverseerSelection(): number[] {
-  const parsed = readJson(OVERSEER_SELECTION_KEY);
-  if (!isObject(parsed) || parsed['version'] !== 1 || !Array.isArray(parsed['ids'])) return [];
-  const ids = parsed['ids'].filter((id): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0);
-  return [...new Set(ids)].slice(0, FEEDBACK_SELECTION_CAP);
-}
-
-/** Keeps at most 500. */
-export function saveOverseerSelection(ids: readonly number[]): void {
-  writeJson(OVERSEER_SELECTION_KEY, { version: 1, ids: [...new Set(ids)].slice(0, FEEDBACK_SELECTION_CAP) });
-}
-
-/** The remembered GnollBench selection: fingerprints, at most 500. */
-export function loadGnollBenchSelection(): string[] {
-  const parsed = readJson(GNOLLBENCH_SELECTION_KEY);
-  if (!isObject(parsed) || parsed['version'] !== 1 || !Array.isArray(parsed['fingerprints'])) return [];
-  const fingerprints = parsed['fingerprints'].filter((f): f is string => typeof f === 'string' && f !== '');
-  return [...new Set(fingerprints)].slice(0, FEEDBACK_SELECTION_CAP);
-}
-
-/** Keeps at most 500. */
-export function saveGnollBenchSelection(fingerprints: readonly string[]): void {
-  writeJson(GNOLLBENCH_SELECTION_KEY, { version: 1, fingerprints: [...new Set(fingerprints)].slice(0, FEEDBACK_SELECTION_CAP) });
+/** Removes the selection a browser may still hold under the sub-tab's key. */
+export function forgetFeedbackSelection(source: FeedbackSource): void {
+  try {
+    localStorage.removeItem(source === 'overseer' ? OVERSEER_SELECTION_KEY : GNOLLBENCH_SELECTION_KEY);
+  } catch {
+    // Storage unavailable: nothing reads the key.
+  }
 }

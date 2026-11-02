@@ -62,7 +62,8 @@ const integer = new Intl.NumberFormat('en-US');
 
 /**
  * Export feedback issues as YAML, for an AI coding assistant to work on, or as Markdown to read: the selected issues,
- * or one issue when `issueSubject` is set. The file format, the occurrences per issue (a preset, all, or a custom
+ * or one issue when `issueSubject` is set. Selected issues the filters hide join only by a choice made afresh on each
+ * open, whose default leaves them out. The file format, the occurrences per issue (a preset, all, or a custom
  * count from 1 to 1,000) and, for GnollBench, whether each occurrence carries its question text. The file is saved
  * through the browser with the media type the server names.
  */
@@ -85,6 +86,8 @@ export class FeedbackExportDialogComponent implements OnDestroy {
   @Input() idPrefix: string | null | undefined;
   /** The issues to export, in selection order. */
   @Input() ids: readonly ExportId[] = [];
+  /** Those of `ids` the current filters hide. */
+  @Input() notShownIds: readonly ExportId[] = [];
   /** The subject of the one issue being exported; null when exporting a selection. */
   @Input() issueSubject: string | null = null;
   /** The stored occurrence count of that one issue; null when unknown or exporting a selection. */
@@ -100,6 +103,8 @@ export class FeedbackExportDialogComponent implements OnDestroy {
   readonly maxOccurrences = FEEDBACK_EXPORT_MAX_OCCURRENCES_PER_ISSUE;
 
   format: FeedbackExportFormat = 'yaml';
+  /** Which of `ids` the file holds; never remembered. */
+  scope: 'shown' | 'all' = 'shown';
   /** The occurrences dropdown's value: a preset as text, `all` or `custom`. */
   occurrenceChoice = String(DEFAULT_FEEDBACK_EXPORT_OPTIONS.occurrencesPerIssue);
   /** The custom number field's text. */
@@ -123,8 +128,24 @@ export class FeedbackExportDialogComponent implements OnDestroy {
     return this.issueSubject !== null && this.issueSubject !== undefined;
   }
 
+  /** The ids the chosen scope covers. */
+  private get exportIds(): readonly ExportId[] {
+    if (this.scope === 'all') return this.ids;
+    const hidden = new Set(this.notShownIds);
+    return this.ids.filter(id => !hidden.has(id));
+  }
+
   get count(): number {
-    return this.ids.length;
+    return this.exportIds.length;
+  }
+
+  /** Whether the dialog asks which issues to export. */
+  get offersScope(): boolean {
+    return !this.isSingleIssue && this.notShownIds.length > 0;
+  }
+
+  get shownCount(): number {
+    return this.ids.length - this.notShownIds.length;
   }
 
   get title(): string {
@@ -174,8 +195,9 @@ export class FeedbackExportDialogComponent implements OnDestroy {
     return integer.format(value);
   }
 
-  /** Shows the dialog with the remembered options; focus goes to the checked file format. */
+  /** Shows the dialog with the remembered options; focus goes to the first checked choice, Which issues or the file format. */
   open(): void {
+    this.scope = 'shown';
     const options = this.exportOptions ?? DEFAULT_FEEDBACK_EXPORT_OPTIONS;
     const occurrences = options.occurrencesPerIssue;
     if (occurrences === 'all') {
@@ -197,7 +219,7 @@ export class FeedbackExportDialogComponent implements OnDestroy {
     if (el && !el.open) el.showModal();
     this.cdr.markForCheck();
     this.cdr.detectChanges();
-    el?.querySelector<HTMLInputElement>('.fx-format input[type="radio"]:checked')?.focus();
+    el?.querySelector<HTMLInputElement>('.fx-scope input[type="radio"]:checked, .fx-format input[type="radio"]:checked')?.focus();
   }
 
   close(): void {
@@ -208,6 +230,11 @@ export class FeedbackExportDialogComponent implements OnDestroy {
   /** Escape: an export in flight is not abandoned half way. */
   onCancel(event: Event): void {
     if (this.exporting) event.preventDefault();
+  }
+
+  setScope(value: 'shown' | 'all'): void {
+    this.scope = value;
+    this.cdr.markForCheck();
   }
 
   setFormat(value: FeedbackExportFormat): void {
@@ -277,8 +304,8 @@ export class FeedbackExportDialogComponent implements OnDestroy {
     const count: Pick<FeedbackExportRequest, 'occurrencesPerIssue' | 'allOccurrences'> =
       occurrences === 'all' ? { allOccurrences: true } : { occurrencesPerIssue: occurrences };
     const request: FeedbackExportRequest = this.isGnollBench
-      ? { source: 'gnollbench', format: this.format, fingerprints: this.ids.map(String), ...count, includeQuestionText: options.includeQuestionText }
-      : { source: 'overseer', format: this.format, issueIds: this.ids.map(Number), ...count };
+      ? { source: 'gnollbench', format: this.format, fingerprints: this.exportIds.map(String), ...count, includeQuestionText: options.includeQuestionText }
+      : { source: 'overseer', format: this.format, issueIds: this.exportIds.map(Number), ...count };
 
     this.exporting = true;
     this.error = null;

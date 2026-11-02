@@ -2278,6 +2278,9 @@ A paged, filtered table can hide the operator's own selection. The rules that ke
   Selection*.
   Without it an operator filters the list, sees one tick, and builds a three-row set they never
   inspected.
+- **A bulk action acts on what it can show.** A selection is not restored across visits; a
+  successful change clears it; an issue the filters hide takes part only by an explicit choice at
+  the point of action, whose default leaves it out.
 - **No header "select all" checkbox.** Over a filtered, paged list it means one of three
   different things — this page, these filtered rows, or everything — and a set built by
   accident is exactly what a comparability preview exists to prevent.
@@ -2410,10 +2413,10 @@ is mounted. The list above moved whole into the **Overseer** panel (`app-feedbac
   access in `try/catch`), with the address winning when it carries a filter parameter and the remembered
   view written to the address otherwise (`replaceUrl`). A sub-tab switch clears every Feedback filter
   parameter (`FEEDBACK_FILTER_QUERY_PARAMS`), because the two panels share names such as `status`;
-- **selection by id** (§8f), at most 500, remembered across paging, filtering and reloads
-  (`overseer.admin.feedback.<source>.selection`): a checkbox top left on each card whose label is the
+- **selection by id** (§8f), at most 500, held by the panel across paging and filtering and never stored,
+  so a reload or a sub-tab switch starts empty: a checkbox top left on each card whose label is the
   card's title, and a selection row under the chips, `app-feedback-selection-bar` (`feedback-tab/shared/`),
-  with the count, *Show selected only*, *Clear selection*, *Select all N matching* (which says *Selected the
+  with the count, *Show selected only*, *Clear selection*, *Deselect not shown*, *Select all N matching* (which says *Selected the
   first 500 of N* when a cap cuts it), **Export** and **Import resolutions**. *Show selected only* has its
   own empty state, *No selected issue*;
 - in the triage form, *Fixed in version* (with an (i)) and *Resolution*; on the card, the providers, model

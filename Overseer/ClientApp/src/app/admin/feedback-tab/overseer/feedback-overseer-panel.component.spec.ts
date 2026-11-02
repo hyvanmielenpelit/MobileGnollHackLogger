@@ -29,9 +29,7 @@ import {
   FeedbackExportOptions,
   FeedbackRange,
   loadFeedbackView,
-  loadOverseerSelection,
-  saveFeedbackView,
-  saveOverseerSelection
+  saveFeedbackView
 } from '../shared/feedback-view-storage';
 import {
   FeedbackOverseerPanelComponent,
@@ -52,7 +50,8 @@ const identityTextOf = (el: Element | null | undefined): string => {
 };
 
 const VIEW_KEY = 'overseer.admin.feedback.overseer.view';
-const STORAGE_KEYS = [VIEW_KEY, 'overseer.admin.feedback.overseer.selection', 'overseer.admin.telemetry.feedback.view'];
+const SELECTION_KEY = 'overseer.admin.feedback.overseer.selection';
+const STORAGE_KEYS = [VIEW_KEY, SELECTION_KEY, 'overseer.admin.telemetry.feedback.view'];
 
 function clearStorage(): void {
   for (const key of STORAGE_KEYS) {
@@ -131,14 +130,19 @@ class SelectionBarStub {
   @Input() source: unknown;
   @Input() selectedIds: readonly FeedbackSelectionId[] = [];
   @Input() matchingCount = 0;
-  @Input() notShownCount = 0;
+  @Input() notShownIds: readonly FeedbackSelectionId[] = [];
   @Input() showSelectedOnly = false;
   @Input() exportOptions: FeedbackExportOptions | undefined;
   @Output() readonly showSelectedOnlyChange = new EventEmitter<boolean>();
   @Output() readonly clear = new EventEmitter<void>();
+  @Output() readonly deselectNotShown = new EventEmitter<void>();
   @Output() readonly selectAllMatching = new EventEmitter<void>();
   @Output() readonly exported = new EventEmitter<{ missing: FeedbackSelectionId[]; exportOptions: FeedbackExportOptions }>();
   @Output() readonly imported = new EventEmitter<void>();
+
+  get notShownCount(): number {
+    return this.notShownIds.length;
+  }
 }
 
 /** The export dialog, as a panel sees it: its inputs, its output, and open and close, which record the inputs they saw. */
@@ -227,6 +231,13 @@ describe('FeedbackOverseerPanelComponent', () => {
     fixture.componentRef.setInput('range', { ...range });
     component = fixture.componentInstance;
     el = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+  }
+
+  /** Holds a selection in the created panel and reloads, as a selection made earlier in this visit stands at a reload. */
+  function seedSelection(ids: readonly number[]): void {
+    component.selected.set(new Set(ids));
+    component.reload();
     fixture.detectChanges();
   }
 
@@ -1211,7 +1222,27 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(box.checked).toBe(false);
     });
 
-    it('selects by id, remembers the selection and hands it to the selection bar', async () => {
+    it('starts with nothing selected, asks nothing about an old record and removes it', async () => {
+      localStorage.setItem(SELECTION_KEY, JSON.stringify({ version: 1, ids: [1, 2] }));
+      await create();
+
+      expect(bar().selectedIds).toEqual([]);
+      expect(checkbox(cards()[0]).checked).toBe(false);
+      expect(idsSpy).not.toHaveBeenCalled();
+      expect(localStorage.getItem(SELECTION_KEY)).toBeNull();
+    });
+
+    it('never writes a selection to the browser\'s storage', async () => {
+      await create();
+
+      checkbox(cards()[0]).click();
+      fixture.detectChanges();
+
+      expect(bar().selectedIds).toEqual([1]);
+      expect(localStorage.getItem(SELECTION_KEY)).toBeNull();
+    });
+
+    it('selects by id and hands the selection to the selection bar', async () => {
       nextPage = page([issue(1), issue(2)], 40);
       await create();
       expect(bar().source).toBe('overseer');
@@ -1222,7 +1253,6 @@ describe('FeedbackOverseerPanelComponent', () => {
       fixture.detectChanges();
 
       expect(bar().selectedIds).toEqual([2]);
-      expect(loadOverseerSelection()).toEqual([2]);
       expect(checkbox(cards()[1]).checked).toBe(true);
 
       (cards()[0].querySelector('h4 label') as HTMLLabelElement).click();
@@ -1231,38 +1261,75 @@ describe('FeedbackOverseerPanelComponent', () => {
 
       checkbox(cards()[1]).click();
       fixture.detectChanges();
-      expect(loadOverseerSelection()).toEqual([1]);
+      expect(bar().selectedIds).toEqual([1]);
     });
 
     it('keeps the selection across a reload and drops ids the server no longer has', async () => {
-      saveOverseerSelection([1, 7]);
       idsSpy.mockImplementation((filters?: AdminFeedbackIssueFilters) => {
         const ids = (filters?.ids ?? []).filter(id => id !== 7);
         return of<AdminFeedbackIssueIds>({ ids, totalCount: ids.length, truncated: false });
       });
       await create();
+      seedSelection([1, 7]);
 
       expect(idsSpy).toHaveBeenCalledWith({ ids: [1, 7] });
-      expect(loadOverseerSelection()).toEqual([1]);
       expect(bar().selectedIds).toEqual([1]);
       expect(checkbox(cards()[0]).checked).toBe(true);
     });
 
     it('counts the selected issues the filters leave out', async () => {
-      saveOverseerSelection([1, 9]);
       idsSpy.mockImplementation((filters?: AdminFeedbackIssueFilters) => {
         const ids = filters?.statuses ? [1] : [...(filters?.ids ?? [])];
         return of<AdminFeedbackIssueIds>({ ids, totalCount: ids.length, truncated: false });
       });
       await create();
+      seedSelection([1, 9]);
 
       expect(idsSpy).toHaveBeenCalledWith(expect.objectContaining({ ids: [1, 9], statuses: ['new', 'regressed'] }));
-      expect(bar().notShownCount).toBe(1);
+      expect(bar().notShownIds).toEqual([9]);
+      expect(status()).toBe('One issue One selected issue is not shown.');
+    });
+
+    it('names the hidden count in the status line', async () => {
+      idsSpy.mockImplementation((filters?: AdminFeedbackIssueFilters) => {
+        const ids = filters?.statuses ? [1] : [...(filters?.ids ?? [])];
+        return of<AdminFeedbackIssueIds>({ ids, totalCount: ids.length, truncated: false });
+      });
+      await create();
+      seedSelection([1, 8, 9]);
+
+      expect(status()).toBe('One issue 2 selected issues are not shown.');
+    });
+
+    it('counts an issue as not shown when the check of the filters fails', async () => {
+      idsSpy.mockImplementation((filters?: AdminFeedbackIssueFilters) => filters?.statuses
+        ? throwError(() => ({ status: 500, error: { message: 'Down.' } }))
+        : of<AdminFeedbackIssueIds>({ ids: [...(filters?.ids ?? [])], totalCount: filters?.ids?.length ?? 0, truncated: false }));
+      await create();
+      seedSelection([1, 9]);
+
+      expect(bar().notShownIds).toEqual([9]);
+    });
+
+    it('deselects only the issues the filters hide, and says how many', async () => {
+      idsSpy.mockImplementation((filters?: AdminFeedbackIssueFilters) => {
+        const ids = filters?.statuses ? [1] : [...(filters?.ids ?? [])];
+        return of<AdminFeedbackIssueIds>({ ids, totalCount: ids.length, truncated: false });
+      });
+      await create();
+      seedSelection([1, 8, 9]);
+
+      bar().deselectNotShown.emit();
+      fixture.detectChanges();
+
+      expect(bar().selectedIds).toEqual([1]);
+      expect(bar().notShownIds).toEqual([]);
+      expect(status()).toBe('Deselected 2 issues that were not shown. One issue');
     });
 
     it('shows the selected issues alone with Show selected only, sending their ids without the filters', async () => {
-      saveOverseerSelection([1, 4]);
       await create('/admin/feedback?category=tool_problem');
+      seedSelection([1, 4]);
 
       bar().showSelectedOnlyChange.emit(true);
       fixture.detectChanges();
@@ -1298,7 +1365,6 @@ describe('FeedbackOverseerPanelComponent', () => {
 
       expect(idsSpy).toHaveBeenCalledWith(expect.objectContaining({ statuses: ['new', 'regressed'] }), 'lastSeen');
       expect(bar().selectedIds.length).toBe(500);
-      expect(loadOverseerSelection().length).toBe(500);
       expect(status()).toContain('Selected the first 500 of 1,200.');
     });
 
@@ -1314,21 +1380,21 @@ describe('FeedbackOverseerPanelComponent', () => {
     });
 
     it('refuses a 501st issue and says so', async () => {
-      saveOverseerSelection(Array.from({ length: 500 }, (_, i) => i + 100));
       await create();
+      seedSelection(Array.from({ length: 500 }, (_, i) => i + 100));
 
       const box = checkbox(cards()[0]);
       box.click();
       fixture.detectChanges();
 
       expect(box.checked).toBe(false);
-      expect(loadOverseerSelection().length).toBe(500);
+      expect(bar().selectedIds.length).toBe(500);
       expect(status()).toContain('The selection holds at most 500 issues.');
     });
 
     it('clears the selection, and Show selected only with it', async () => {
-      saveOverseerSelection([1]);
       await create();
+      seedSelection([1]);
       bar().showSelectedOnlyChange.emit(true);
       fixture.detectChanges();
 
@@ -1336,21 +1402,56 @@ describe('FeedbackOverseerPanelComponent', () => {
       fixture.detectChanges();
 
       expect(bar().selectedIds).toEqual([]);
-      expect(loadOverseerSelection()).toEqual([]);
       expect(bar().showSelectedOnly).toBe(false);
       expect(lastQuery().ids).toBeUndefined();
     });
 
     it('drops the issues an export could not find, and remembers its options', async () => {
-      saveOverseerSelection([1, 5]);
       await create();
+      seedSelection([1, 5]);
 
       bar().exported.emit({ missing: [5], exportOptions: { occurrencesPerIssue: 25, includeQuestionText: true } });
       fixture.detectChanges();
 
-      expect(loadOverseerSelection()).toEqual([1]);
+      expect(bar().selectedIds).toEqual([1]);
       expect(loadFeedbackView('overseer')!.exportOptions).toEqual({ occurrencesPerIssue: 25, includeQuestionText: true });
       expect(bar().exportOptions).toEqual({ occurrencesPerIssue: 25, includeQuestionText: true });
+    });
+
+    it('keeps the selection after an export that found every issue', async () => {
+      await create();
+      seedSelection([1, 5]);
+
+      bar().exported.emit({ missing: [], exportOptions: { occurrencesPerIssue: 25, includeQuestionText: true } });
+      fixture.detectChanges();
+
+      expect(bar().selectedIds).toEqual([1, 5]);
+    });
+
+    it('clears the selection and Show selected only after an import, refetches the list once and says so', async () => {
+      await create();
+      seedSelection([1, 5]);
+      bar().showSelectedOnlyChange.emit(true);
+      fixture.detectChanges();
+      issuesSpy.mockClear();
+
+      bar().imported.emit();
+      fixture.detectChanges();
+
+      expect(bar().selectedIds).toEqual([]);
+      expect(bar().showSelectedOnly).toBe(false);
+      expect(listQueries().length).toBe(1);
+      expect(lastQuery().ids).toBeUndefined();
+      expect(status()).toBe('The import changed issues, so the selection was cleared. One issue');
+    });
+
+    it('says nothing about a selection after an import with none', async () => {
+      await create();
+
+      bar().imported.emit();
+      fixture.detectChanges();
+
+      expect(status()).toBe('One issue');
     });
 
     it('refetches the list, the facets and the counts after an import', async () => {
@@ -1559,11 +1660,11 @@ describe('FeedbackOverseerPanelComponent', () => {
 
     it('deletes an issue after a confirmation that names it and its occurrences, then refetches the counts', async () => {
       nextPage = page([issue(1, { retainedCount: 9 }), issue(2)], 2);
-      saveOverseerSelection([1, 2]);
       // The response arrives after the dialog has closed and given focus back, as a real request does.
       const response = new Subject<void>();
       const deleteSpy = vi.spyOn(service, 'deleteIssue').mockReturnValue(response.asObservable());
       await create();
+      seedSelection([1, 2]);
       const loadCounts = vi.spyOn(store, 'loadFeedbackCounts');
 
       const button = cards()[0].querySelector<HTMLButtonElement>('.tl-fb-delete')!;
@@ -1589,7 +1690,7 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(cards().map(c => c.getAttribute('data-issue-id'))).toEqual(['2']);
       expect(status()).toBe('Deleted the issue “Dilithium crystal”. One issue');
       expect(loadCounts).toHaveBeenCalledTimes(1);
-      expect(loadOverseerSelection()).toEqual([2]);
+      expect(bar().selectedIds).toEqual([2]);
       expect(document.activeElement?.id).toBe('tl-fb-2-title');
     });
 
@@ -1698,25 +1799,35 @@ describe('FeedbackOverseerPanelComponent', () => {
         expect(status()).not.toContain('no longer matches');
       });
 
-      it('keeps the card under Show selected only, asking about the issue alone', async () => {
-        saveOverseerSelection([1]);
+      it('deselects only the saved issue when its status changes, and says so on the card', async () => {
+        nextPage = page([issue(1), issue(2)]);
         await create();
-        bar().showSelectedOnlyChange.emit(true);
-        fixture.detectChanges();
+        seedSelection([1, 2]);
 
-        editTriage(cards()[0]);
-        selectValue(field<HTMLSelectElement>('status'), 'resolved');
-        saveTriage();
+        resolveFirst();
+        answerWith([1]);
 
-        expect(idsSpy).toHaveBeenLastCalledWith({ ids: [1] });
-        expect(cards().length).toBe(1);
+        expect(bar().selectedIds).toEqual([2]);
+        expect(cards().length).toBe(2);
+        expect(textOf(cards()[0].querySelector('#tl-fb-1-result'))).toBe('Saved. The issue is Resolved and left the selection.');
+      });
+
+      it('keeps the issue selected when the save changes no status', async () => {
+        nextPage = page([issue(1, { status: 'resolved' }), issue(2)]);
+        await create();
+        seedSelection([1]);
+
+        resolveFirst();
+        answerWith([1]);
+
+        expect(bar().selectedIds).toEqual([1]);
         expect(textOf(cards()[0].querySelector('#tl-fb-1-result'))).toBe('Saved. The issue is Resolved.');
       });
 
-      it('keeps a selected issue selected and counts it as not shown, with no further request', async () => {
-        nextPage = page([issue(1), issue(2)]);
-        saveOverseerSelection([1]);
+      it('keeps a selected issue selected and counts it as not shown when a save that changes no status leaves the filters, with no further request', async () => {
+        nextPage = page([issue(1, { status: 'resolved' }), issue(2)]);
         await create();
+        seedSelection([1]);
         expect(bar().notShownCount).toBe(0);
         idsSpy.mockClear();
 
@@ -1724,10 +1835,67 @@ describe('FeedbackOverseerPanelComponent', () => {
         answerWith([]);
 
         expect(cards().length).toBe(1);
-        expect(loadOverseerSelection()).toEqual([1]);
         expect(bar().selectedIds).toEqual([1]);
-        expect(bar().notShownCount).toBe(1);
+        expect(bar().notShownIds).toEqual([1]);
         expect(idsSpy).toHaveBeenCalledTimes(1);
+      });
+
+      describe('under Show selected only', () => {
+        /** Saves issue 1 as Resolved; its card leaves as the dialog closes. */
+        function resolveFirstSelected(): void {
+          editTriage(cards()[0]);
+          selectValue(field<HTMLSelectElement>('status'), 'resolved');
+          saveTriage();
+          expect(triageDialog().open).toBe(false);
+        }
+
+        it('removes the card of an issue whose status changes and focuses the next one, with no refetch', async () => {
+          nextPage = page([issue(1), issue(2)]);
+          await create();
+          seedSelection([1, 2]);
+          bar().showSelectedOnlyChange.emit(true);
+          fixture.detectChanges();
+          const before = listQueries().length;
+
+          resolveFirstSelected();
+          fixture.detectChanges();
+
+          expect(cards().map(c => c.getAttribute('data-issue-id'))).toEqual(['2']);
+          expect(bar().selectedIds).toEqual([2]);
+          expect(status()).toBe('“Dilithium crystal” is now Resolved and left the selection. One issue');
+          expect(document.activeElement?.id).toBe('tl-fb-2-title');
+          expect(listQueries().length).toBe(before);
+        });
+
+        it('shows its empty state and focuses the heading after the last card', async () => {
+          await create();
+          seedSelection([1]);
+          bar().showSelectedOnlyChange.emit(true);
+          fixture.detectChanges();
+
+          resolveFirstSelected();
+          fixture.detectChanges();
+
+          expect(cards().length).toBe(0);
+          expect(bar().selectedIds).toEqual([]);
+          expect(textOf(q('.tl-fb-empty-selection .tl-fb-empty-title'))).toBe('No selected issue');
+          expect(document.activeElement?.id).toBe('tl-fb-issues-title');
+        });
+
+        it('keeps the card when the save changes no status', async () => {
+          nextPage = page([issue(1, { status: 'resolved' })]);
+          await create();
+          seedSelection([1]);
+          bar().showSelectedOnlyChange.emit(true);
+          fixture.detectChanges();
+
+          resolveFirstSelected();
+          fixture.detectChanges();
+
+          expect(idsSpy).toHaveBeenLastCalledWith({ ids: [1] });
+          expect(cards().length).toBe(1);
+          expect(bar().selectedIds).toEqual([1]);
+        });
       });
 
       it('shows the filters\' empty state when the last card leaves', async () => {
@@ -1993,8 +2161,8 @@ describe('FeedbackOverseerPanelComponent', () => {
     });
 
     it('says an issue the server no longer has is gone, closes the dialog, fetches the list again and drops it from the selection', async () => {
-      saveOverseerSelection([1, 2]);
       await create();
+      seedSelection([1, 2]);
       clickExport();
       const before = listQueries().length;
       idsSpy.mockImplementation((filters?: AdminFeedbackIssueFilters) => {
@@ -2009,7 +2177,7 @@ describe('FeedbackOverseerPanelComponent', () => {
       expect(listQueries().length).toBe(before + 1);
       expect(textOf(cards()[0].querySelector('#tl-fb-1-result'))).toBe('This issue no longer exists.');
       expect(status()).toContain('The issue “Dilithium crystal” no longer exists.');
-      expect(loadOverseerSelection()).toEqual([2]);
+      expect(bar().selectedIds).toEqual([2]);
     });
 
     it('clears the card\'s last result when the dialog opens again', async () => {

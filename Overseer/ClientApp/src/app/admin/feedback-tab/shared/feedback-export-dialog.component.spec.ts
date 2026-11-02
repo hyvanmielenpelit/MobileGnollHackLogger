@@ -36,7 +36,7 @@ describe('FeedbackExportDialogComponent', () => {
   function create(
     source: 'overseer' | 'gnollbench',
     ids: readonly (number | string)[],
-    inputs: Partial<{ idPrefix: string; issueSubject: string | null; occurrenceTotal: number | null; exportOptions: FeedbackExportOptions }> = {}
+    inputs: Partial<{ idPrefix: string; notShownIds: readonly (number | string)[]; issueSubject: string | null; occurrenceTotal: number | null; exportOptions: FeedbackExportOptions }> = {}
   ): void {
     fixture = TestBed.createComponent(FeedbackExportDialogComponent);
     fixtures.push(fixture);
@@ -477,6 +477,93 @@ describe('FeedbackExportDialogComponent', () => {
 
     button.click();
     expect(exportIssues).not.toHaveBeenCalled();
+  });
+
+  describe('with selected issues the filters hide', () => {
+    const scopeRadio = (value: string): HTMLInputElement => q<HTMLInputElement>(`.fx-scope input[value="${value}"]`)!;
+
+    it('asks nothing while none is hidden, or for one issue', () => {
+      create('overseer', [1, 2]);
+      component.open();
+      expect(q('.fx-scope')).toBeNull();
+
+      create('overseer', [1], { notShownIds: [1], issueSubject: 'One issue' });
+      component.open();
+      expect(q('.fx-scope')).toBeNull();
+    });
+
+    it('offers the shown issues by default, right after the privacy line, and focuses that choice', () => {
+      create('overseer', [1, 2, 3], { notShownIds: [2, 3] });
+      component.open();
+
+      const scope = q('fieldset.fx-scope')!;
+      expect(scope.previousElementSibling).toBe(q('.fx-privacy'));
+      expect(text(scope.querySelector('legend'))).toBe('Which issues');
+      expect(Array.from(scope.querySelectorAll('.fx-format-card')).map(card =>
+        Array.from(card.querySelectorAll('.fx-format-name, .fx-format-hint')).map(text).join(' '))).toEqual([
+        'Only the 1 shown The issues that match the current filters.',
+        'All 3 selected Includes 2 the filters hide.'
+      ]);
+      expect(scopeRadio('shown').checked).toBe(true);
+      expect(scopeRadio('all').checked).toBe(false);
+      expect(scopeRadio('shown').name).toBe(scopeRadio('all').name);
+      expect(document.activeElement).toBe(scopeRadio('shown'));
+      expect(text(q('h3'))).toBe('Export 1 issue');
+    });
+
+    it('sends the shown issues by default', () => {
+      captureSaves();
+      exportIssues.mockReturnValue(of(result()));
+      create('overseer', [1, 2, 3], { notShownIds: [2] });
+      component.open();
+
+      clickExport();
+
+      expect(exportIssues).toHaveBeenCalledWith({ source: 'overseer', format: 'yaml', issueIds: [1, 3], occurrencesPerIssue: 10 });
+    });
+
+    it('sends every selected issue once All is chosen, and retitles itself', () => {
+      captureSaves();
+      exportIssues.mockReturnValue(of(result({ fileName: 'overseer-feedback-gnollbench-20261023-1234.yaml' })));
+      create('gnollbench', [FP, 'b'.repeat(64)], { notShownIds: ['b'.repeat(64)] });
+      component.open();
+
+      scopeRadio('all').click();
+      fixture.detectChanges();
+      expect(text(q('h3'))).toBe('Export 2 issues');
+      clickExport();
+
+      expect(exportIssues).toHaveBeenCalledWith(expect.objectContaining({ fingerprints: [FP, 'b'.repeat(64)] }));
+    });
+
+    it('goes back to the shown issues when opened again, and keeps the choice out of the exported options', () => {
+      captureSaves();
+      exportIssues.mockReturnValue(of(result()));
+      create('overseer', [1, 2], { notShownIds: [2] });
+      component.open();
+      scopeRadio('all').click();
+      fixture.detectChanges();
+      clickExport();
+
+      expect(done[0].exportOptions).toEqual({ occurrencesPerIssue: 10, includeQuestionText: true, format: 'yaml' });
+
+      component.open();
+      expect(scopeRadio('shown').checked).toBe(true);
+      expect(text(q('h3'))).toBe('Export 1 issue');
+    });
+
+    it('applies the cap to the chosen issues', () => {
+      const ids = Array.from({ length: 205 }, (_, i) => i + 1);
+      create('overseer', ids, { notShownIds: ids.slice(0, 5) });
+      component.open();
+      expect(exportButton().getAttribute('aria-disabled')).toBeNull();
+
+      scopeRadio('all').click();
+      fixture.detectChanges();
+
+      expect(exportButton().getAttribute('aria-disabled')).toBe('true');
+      expect(text(q(`#${exportButton().getAttribute('aria-describedby')}`))).toBe('An export holds at most 200 issues; 205 are selected.');
+    });
   });
 
   it('closes on Cancel', () => {

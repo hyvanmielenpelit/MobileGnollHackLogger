@@ -204,7 +204,7 @@
 
       @if (step === 3) {
         <h4 class="fi-step-heading" #stepHeading tabindex="-1">Done</h4>
-        <p class="fi-done" role="status">{{ doneSummary }}</p>
+        <p class="fi-done" role="status">{{ doneSummary }}@if (selectionCleared) {<span> The selection was cleared.</span>}</p>
       }
     </div>
 

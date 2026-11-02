@@ -69,11 +69,12 @@
     <app-feedback-selection-bar source="gnollbench"
                                 [selectedIds]="selectedIds()"
                                 [matchingCount]="matchingCount()"
-                                [notShownCount]="notShownCount()"
+                                [notShownIds]="notShownIds()"
                                 [showSelectedOnly]="showSelectedOnly()"
                                 [exportOptions]="exportOptions()"
                                 (showSelectedOnlyChange)="onShowSelectedOnlyChange($event)"
                                 (clear)="onClearSelection()"
+                                (deselectNotShown)="onDeselectNotShown()"
                                 (selectAllMatching)="onSelectAllMatching()"
                                 (exported)="onExported($event)"
                                 (imported)="onImported()"></app-feedback-selection-bar>
@@ -231,7 +232,7 @@
             <details class="gh-disclosure tl-gbfb-occurrences" [attr.data-fingerprint]="issue.fingerprint" (toggle)="onOccurrencesToggle(issue, $event)">
               <summary>Self-reports <span class="tl-gbfb-count">{{ formatInteger(issue.selfReportCount) }}</span></summary>
               <div class="gh-disclosure-body">
-                @if (hasOccurrenceFilters() && occ?.loaded) {
+                @if (hasOccurrenceFilters() && occ?.loaded && !showSelectedOnly()) {
                   <div class="tl-gbfb-occ-toolbar">
                     <button type="button" class="gh-filter-toggle tl-gbfb-occ-all"
                             [attr.aria-pressed]="occ?.all ? 'true' : 'false'"

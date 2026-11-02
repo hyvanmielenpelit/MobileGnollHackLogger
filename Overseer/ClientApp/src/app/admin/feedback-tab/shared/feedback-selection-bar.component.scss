@@ -29,6 +29,10 @@
   color: #ccc;
 }
 
+.fsb-not-shown {
+  color: var(--color-warning);
+}
+
 .fsb-actions {
   display: flex;
   flex-wrap: wrap;

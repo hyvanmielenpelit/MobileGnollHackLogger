@@ -37,6 +37,29 @@
         <span><strong>Anonymized:</strong> no user names and no links to chats.</span>
       </p>
 
+      <!-- Selected issues the filters hide stay out unless this says otherwise. -->
+      @if (offersScope) {
+        <fieldset class="gh-choice fx-scope">
+          <legend>Which issues</legend>
+          <label class="fx-format-card">
+            <input type="radio" [name]="prefix + '-feedback-export-scope'" value="shown"
+                   [checked]="scope === 'shown'" (change)="setScope('shown')">
+            <span class="fx-format-text">
+              <span class="fx-format-name">Only the {{ formatCount(shownCount) }} shown</span>
+              <span class="fx-format-hint">The issues that match the current filters.</span>
+            </span>
+          </label>
+          <label class="fx-format-card">
+            <input type="radio" [name]="prefix + '-feedback-export-scope'" value="all"
+                   [checked]="scope === 'all'" (change)="setScope('all')">
+            <span class="fx-format-text">
+              <span class="fx-format-name">All {{ formatCount(ids.length) }} selected</span>
+              <span class="fx-format-hint">Includes {{ formatCount(notShownIds.length) }} the filters hide.</span>
+            </span>
+          </label>
+        </fieldset>
+      }
+
       <!-- The formats as radio cards: the whole card is the radio's label, and the radio stays visible. -->
       <fieldset class="gh-choice fx-format">
         <legend>File format</legend>

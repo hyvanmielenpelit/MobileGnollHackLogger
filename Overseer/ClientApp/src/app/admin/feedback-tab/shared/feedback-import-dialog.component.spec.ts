@@ -281,6 +281,51 @@ describe('FeedbackImportDialogComponent', () => {
       expect(footerButton('Close')).toBeTruthy();
     });
 
+    it('says on the Done step that a selection was cleared, and starts afresh when opened again', async () => {
+      fixture.componentRef.setInput('selectionCount', 3);
+      fixture.detectChanges();
+      // The host clears the selection as the apply reports, before the Done step renders.
+      imported.mockImplementation(() => fixture.componentRef.setInput('selectionCount', 0));
+      previewResolutions.mockReturnValue(of(preview([previewItem(), unchangedSeven()])));
+      applyResolutions.mockReturnValue(of({ changed: 1, unchanged: 1 }));
+      await toReview();
+
+      footerButton('Apply 1 change').click();
+      fixture.detectChanges();
+
+      expect(text(q('.fi-done'))).toBe('Changed 1 issue; 1 unchanged. The selection was cleared.');
+
+      component.close();
+      component.open();
+      expect(component.selectionCleared).toBe(false);
+    });
+
+    it('says nothing about a selection on the Done step when there was none', async () => {
+      previewResolutions.mockReturnValue(of(preview([previewItem(), unchangedSeven()])));
+      applyResolutions.mockReturnValue(of({ changed: 1, unchanged: 1 }));
+      await toReview();
+
+      footerButton('Apply 1 change').click();
+      fixture.detectChanges();
+
+      expect(text(q('.fi-done'))).toBe('Changed 1 issue; 1 unchanged.');
+    });
+
+    it('reports nothing when the apply fails, so the host keeps its selection', async () => {
+      fixture.componentRef.setInput('selectionCount', 3);
+      fixture.detectChanges();
+      previewResolutions.mockReturnValue(of(preview([previewItem()])));
+      applyResolutions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { message: 'Down.' } })));
+      await toReview();
+
+      footerButton('Apply 1 change').click();
+      fixture.detectChanges();
+
+      expect(imported).not.toHaveBeenCalled();
+      expect(component.selectionCleared).toBe(false);
+      expect(component.step).toBe(2);
+    });
+
     it('keeps Apply unavailable until the issues triaged since the export are acknowledged', async () => {
       previewResolutions.mockReturnValue(of(preview([previewItem({ triagedSinceExport: true }), unchangedSeven()])));
       applyResolutions.mockReturnValue(of({ changed: 1, unchanged: 1 }));

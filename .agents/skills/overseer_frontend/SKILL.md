@@ -549,7 +549,9 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `app-feedback-export-dialog` (`feedback-tab/shared/`): *Export N issues*, opened by the selection bar's
     **Export…**, or *Export issue* with that issue in the shared gold-ruled panel, opened by a card's
     **Export issue…** (each panel embeds its own instance). Every id in it is prefixed by the `idPrefix`
-    input, so the selection bar's and a panel's instances never share ids. The file format is two radio
+    input, so the selection bar's and a panel's instances never share ids. While the filters hide selected
+    issues, a *Which issues* fieldset (`fieldset.fx-scope`) offers *Only the N shown*, the default on every
+    open and never remembered, or *All M selected*. The file format is two radio
     cards (`label.fx-format-card` wrapping a visible radio; YAML *Recommended*, Markdown), *Occurrences per
     issue* a `select.gh-input` (5, 10, 25, 50, 100, *All occurrences*, *Custom…* revealing a 1–1,000 number
     field checked on Download), and the numbered next steps show while YAML is chosen. A missing issue

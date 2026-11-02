@@ -457,12 +457,21 @@ to an empty string. The helpers:
   sub-tabs, `overseer.admin.telemetry.feedback.view`, is read once as the Overseer sort when the new record
   is absent, and is left in place.
 - **The selection.** Each card has a checkbox in a gutter at its start, whose label is the card's title.
-  The selection is held by id (§ 8f of the `frontend_ui_controls` skill), at most 500, and is remembered
-  across paging, filtering and reloads in `overseer.admin.feedback.overseer.selection`
-  (`{ version: 1, ids }`; the GnollBench sub-tab keeps `fingerprints` in `…gnollbench.selection`). The
-  selection bar
+  The selection is held by id (§ 8f of the `frontend_ui_controls` skill), at most 500, across paging and
+  filtering. It lives only in the panel, so **a reload, a new visit, leaving the tab and a sub-tab switch
+  all start with nothing selected**, and it is never stored; a record an earlier version left under
+  `overseer.admin.feedback.overseer.selection` or `…gnollbench.selection` is removed when that sub-tab opens.
+  A successful **Import resolutions** clears the selection and ends *Show selected only*, and says so on
+  its Done step and in the list status; a failed or conflicting import keeps it for a retry. A status
+  change in a card's **Edit triage** takes that issue alone out of the selection, and under *Show selected
+  only* off the list. A save that changes no status keeps it selected, and an export keeps the selection.
+  A selected issue the filters hide stays selected and counts as *not shown*, in the bar (*3 selected — 2
+  not shown*) and in the list status; an issue whose match cannot be checked counts as not shown. **Deselect
+  not shown** removes those issues, and an export leaves them out unless its dialog is told otherwise
+  (§ 12). The selection bar
   (`app-feedback-selection-bar`, `shared/`) under the filters shows the count, *Show selected only* (which
-  sends the ids to the server and prunes those it no longer returns), *Clear selection*, *Select all N
+  sends the ids to the server alone, without the filters, and prunes those it no longer returns), *Clear
+  selection*, *Deselect not shown*, *Select all N
   matching* (`GET issues/ids`; it keeps at most 500 and says *Selected the first 500 of N* when a cap cuts
   the list), **Export** and **Import resolutions** (§ 12). An export drops the ids the server reports
   missing.
@@ -692,7 +701,11 @@ lists name the requested issues that no longer exist; 404 with those lists when 
 format existed), and `mediaType` is `application/yaml;charset=utf-8` or `text/markdown;charset=utf-8`.
 The export dialog (`app-feedback-export-dialog`), titled *Export N issues* from the selection bar or
 *Export issue* from a card (the issue's subject and stored occurrence count in the triage dialog's
-gold-ruled panel), says first that the file is anonymized (no user names, no links to conversations). It
+gold-ruled panel), says first that the file is anonymized (no user names, no links to conversations). While
+the filters hide selected issues it asks **Which issues**, as two radio cards: *Only the N shown*, the
+default, and *All M selected* (*Includes K the filters hide.*); the title and the request follow the choice,
+which resets on every open and is never remembered. Export… is refused with a reason when every selected
+issue is hidden, and the 200-issue limit counts the issues the export would hold. It
 chooses the **File format** as two radio cards (**YAML**, *Recommended*, for an AI coding assistant, ending
 in a resolution template, the default; **Markdown**, for reading); the **Occurrences per issue** in a
 select (5, 10, 25, 50 or 100 newest, *All occurrences*, or *Custom…*, which shows a *Number of occurrences*
@@ -706,8 +719,7 @@ primary button reads **Download YAML** or **Download Markdown**. The choices are
 sub-tab's view (`exportOptions`, read tolerantly: a record without `format`, or with anything else, reads
 `yaml`; `occurrencesPerIssue` is a whole number from 1 to 1,000 or `all`, and anything else reads as no
 remembered options). Every id in the dialog takes the `idPrefix` input, so the selection bar's and a card's
-instances never collide. The client saves the file and drops the missing ids from the remembered
-selection.
+instances never collide. The client saves the file and drops the missing ids from the selection.
 
 `FeedbackExportService` loads the issues once through the two query services, maps them to one
 `FeedbackExportDocument` that holds no user identity, and renders that document with `FeedbackYamlExport`

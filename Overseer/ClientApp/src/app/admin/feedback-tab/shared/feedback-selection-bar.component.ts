@@ -21,9 +21,10 @@ const integer = new Intl.NumberFormat('en-US');
 
 /**
  * The selection line of a feedback list: how many issues are selected and how many of them the filters hide,
- * Show selected only, Clear selection and Select all N matching, and the two transfer actions, Export… and
- * Import resolutions…, whose dialogs it opens, followed by the (i) of the feedback file formats. The host holds the
- * selection; the bar only reports requests.
+ * Show selected only, Clear selection, Deselect not shown and Select all N matching, and the two transfer actions,
+ * Export…, which covers the shown issues unless its dialog is told otherwise, and Import resolutions…, whose dialogs
+ * it opens, followed by the (i) of the feedback file formats. The host holds the selection; the bar only reports
+ * requests.
  */
 @Component({
   selector: 'app-feedback-selection-bar',
@@ -44,12 +45,14 @@ export class FeedbackSelectionBarComponent {
   /** Issues matching the current filters. */
   @Input() matchingCount = 0;
   /** Selected issues the current filters leave off the list. */
-  @Input() notShownCount = 0;
+  @Input() notShownIds: readonly FeedbackSelectionId[] = [];
   @Input() showSelectedOnly = false;
   @Input() exportOptions: FeedbackExportOptions | undefined;
 
   @Output() showSelectedOnlyChange = new EventEmitter<boolean>();
   @Output() clear = new EventEmitter<void>();
+  /** The host removes the not-shown issues from the selection. */
+  @Output() deselectNotShown = new EventEmitter<void>();
   /** The host fetches the matching ids and keeps at most 500. */
   @Output() selectAllMatching = new EventEmitter<void>();
   @Output() exported = new EventEmitter<{ missing: FeedbackSelectionId[]; exportOptions: FeedbackExportOptions }>();
@@ -63,6 +66,14 @@ export class FeedbackSelectionBarComponent {
 
   get count(): number {
     return this.selectedIds.length;
+  }
+
+  get notShownCount(): number {
+    return this.notShownIds.length;
+  }
+
+  get shownCount(): number {
+    return this.count - this.notShownCount;
   }
 
   get idPrefix(): string {
@@ -84,8 +95,9 @@ export class FeedbackSelectionBarComponent {
   /** Why Export… is unavailable; null when it is not. */
   get exportBlockedReason(): string | null {
     if (this.count === 0) return 'Select issues to export.';
-    if (this.count > this.maxExport) {
-      return `An export holds at most ${integer.format(this.maxExport)} issues; ${integer.format(this.count)} are selected.`;
+    if (this.shownCount === 0) return 'Every selected issue is hidden by the filters. Turn on Show selected only to review them.';
+    if (this.shownCount > this.maxExport) {
+      return `An export holds at most ${integer.format(this.maxExport)} issues; ${integer.format(this.shownCount)} are selected.`;
     }
     return null;
   }
@@ -101,6 +113,11 @@ export class FeedbackSelectionBarComponent {
   onClear(): void {
     this.statusMessage = '';
     this.clear.emit();
+  }
+
+  onDeselectNotShown(): void {
+    this.statusMessage = '';
+    this.deselectNotShown.emit();
   }
 
   onSelectAllMatching(): void {
