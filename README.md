@@ -72,7 +72,7 @@ Features:
 
 The tab's sub-tabs are *Run Benchmark, Run History, Multi-Run Analysis, Batteries, Manage Suites, Scoring Profiles, Model Comparison* and *Chat Consistency*.
 
-Code: `Overseer/Services/Benchmarking/`, `Overseer/Controllers/AdminBenchmark*.cs`, `Overseer/ClientApp/src/app/admin/benchmark/`, `GnollHackServer.Data/Benchmark*.cs`, and the default suites in `Overseer/Data/DefaultSuites/`. Its four documents are listed under [GnollBench](#gnollbench) in the Documentation section.
+Code: `Overseer/Services/Benchmarking/`, `Overseer/Controllers/AdminBenchmark*.cs`, `Overseer/ClientApp/src/app/admin/benchmark/`, `GnollHackServer.Data/Benchmark*.cs`, and the default suites in `Overseer/Data/DefaultSuites/`. Its eight documents are listed under [GnollBench](#gnollbench) in the Documentation section.
 
 ### 📦 GnollHack Server Data (`GnollHackServer.Data/`)
 
@@ -93,50 +93,50 @@ The automated tests of the GnollHack Account website: every game Web API endpoin
 
 ## 📏 Codebase Size
 
-> **These figures are an estimate, and they change quickly with new commits.** Measured **2026-10-06** at commit **`7f48dec`**.
+> **These figures are an estimate, and they change quickly with new commits.** Measured **2026-11-02** at commit **`6ec883d`**.
 
 ### Lines of code
 
 | Component | Production code | Tests | Total |
 |---|---:|---:|---:|
-| GnollHack Account (`MobileGnollHackLogger/` and its game-data entities) | ~11,000 | — | ~11,000 |
-| Gnoll Overseer — AI chat and platform | ~84,000 | ~48,000 | ~132,000 |
-| GnollBench — AI benchmark | ~188,000 | ~126,000 | ~313,000 |
+| GnollHack Account (`MobileGnollHackLogger/` and its game-data entities) | ~13,000 | ~5,000 | ~17,000 |
+| Gnoll Overseer — AI chat and platform | ~182,000 | ~132,000 | ~315,000 |
+| GnollBench — AI benchmark | ~287,000 | ~180,000 | ~468,000 |
 | Shared data plumbing (database context, user, email, loggers) | ~1,000 | — | ~1,000 |
-| **Total** | **~284,000** | **~174,000** | **~458,000** |
+| **Total** | **~484,000** | **~318,000** | **~801,000** |
 
-Share of production code: GnollBench ~66%, Gnoll Overseer ~30%, GnollHack Account ~4%.
+Share of production code: GnollBench ~59%, Gnoll Overseer ~38%, GnollHack Account ~3%.
 
 Production code by language:
 
 | Component | C# | TypeScript | HTML templates | SCSS | Razor (`.cshtml`) |
 |---|---:|---:|---:|---:|---:|
-| GnollHack Account | ~6,900 | — | — | ~1,100 | ~3,200 |
-| Gnoll Overseer | ~42,400 | ~20,400 | ~7,700 | ~13,500 | — |
-| GnollBench | ~89,500 | ~64,800 | ~19,600 | ~13,900 | — |
+| GnollHack Account | ~8,100 | — | — | ~1,200 | ~3,200 |
+| Gnoll Overseer | ~86,700 | ~53,700 | ~17,300 | ~24,500 | — |
+| GnollBench | ~136,800 | ~101,700 | ~27,700 | ~21,200 | — |
 
-Documentation is not counted above: `docs/` holds ~18,600 lines, of which ~13,900 are the four GnollBench documents.
+Documentation is not counted above: `docs/` holds ~32,300 lines, of which ~22,700 are the eight GnollBench documents (`docs/overseer/ai-benchmark*.md`).
 
 ### Database tables
 
-The shared SQL Server database has **54 tables**. Each is assigned to the component whose code reads and writes it.
+The shared SQL Server database has **83 tables**. Each is assigned to the component whose code reads and writes it.
 
 | Component | Tables | Share | What they hold |
 |---|---:|---:|---|
-| GnollBench | 23 | ~43% | suites and questions, runs and answers, tool calls, series, groups and batteries, comparisons, report documents, scoring profiles, game snapshots, and the model-configuration snapshots runs are recorded against |
-| Gnoll Overseer | 19 | ~35% | chat sessions, messages, attachments and tool calls, AI configurations and API keys, user AI settings and models, usage and error logs, groups, audit and maintenance logs |
-| GnollHack Account | 5 | ~9% | game logs, bones and bones transactions, save file tracking, request logs |
-| Shared (ASP.NET Identity) | 7 | ~13% | users, roles, claims, logins and tokens |
+| GnollBench | 32 | ~39% | suites and questions, runs and answers, tool calls, series, groups and batteries, model batches, comparisons, report documents, scoring profiles, game snapshots, experimental changes, chat consistency analyses, and the model-configuration snapshots runs are recorded against |
+| Gnoll Overseer | 38 | ~46% | chat sessions, messages, attachments and tool calls, AI configurations and API keys, user AI settings and models, usage and error logs, model call telemetry, groups, feedback reports, security events, account holds and deletion requests, terms acceptances, audit and maintenance logs |
+| GnollHack Account | 6 | ~7% | game logs, bones and bones transactions, save file tracking, game sign-in blocks, request logs |
+| Shared (ASP.NET Identity) | 7 | ~8% | users, roles, claims, logins and tokens |
 
 The table count measures schema breadth, not data volume: row counts and sizes are not measured, and they vary by installation.
 
 ### How it was counted
 
 - **Unit**: non-blank lines, comments included, of tracked source files (`.cs`, `.cshtml`, `.ts`, `.html`, `.scss`, `.css`, `.js`). Tables are the `ToTable` entries of the EF Core model snapshot, `GnollHackServer.Data/Migrations/ApplicationDbContextModelSnapshot.cs`.
-- **GnollBench** is every source file whose path contains `benchmark`, case-insensitive. Tables are assigned by which code uses them: the 22 `Benchmark*` tables plus `SystemAiConfigurationSnapshots`.
-- **Tests** are `Overseer.Tests/`, `*.spec.ts` and `*.testing.ts`. `MobileGnollHackLogger.Tests/` was added after this measurement and is not counted.
+- **GnollBench** is every source file whose path contains `benchmark`, case-insensitive. Tables are assigned by which code uses them: the 29 `Benchmark*` tables, `SystemAiConfigurationSnapshots` and the 2 `ChatConsistency*` tables.
+- **Tests** are `Overseer.Tests/`, `MobileGnollHackLogger.Tests/`, `*.spec.ts` and `*.testing.ts`. `MobileGnollHackLogger.Tests/` counts as GnollHack Account.
 - **Excluded**: the generated EF Core migrations, vendored libraries in `MobileGnollHackLogger/wwwroot/lib/`, the CSS compiled from SCSS, minified files, and all non-code files (JSON data and model catalogs, tool guides, documentation, AI agent skills).
-- **Known biases**: GnollBench code is slightly under-counted, because shared Angular components it relies on heavily (the model picker, data table, PDF viewer and snapshot viewer) and benchmark hooks inside chat files count as Gnoll Overseer; `SystemAiConfigurationSnapshot.cs` counts as Gnoll Overseer code although its table counts as GnollBench. GnollHack Account includes ~74 scaffolded ASP.NET Identity UI files.
+- **Known biases**: GnollBench code is under-counted, because ~16,700 lines of Chat Consistency code outside `benchmark` paths, shared Angular components it relies on heavily (the model picker, data table, PDF viewer and snapshot viewer) and benchmark hooks inside chat files count as Gnoll Overseer; `SystemAiConfigurationSnapshot.cs` counts as Gnoll Overseer code although its table counts as GnollBench. The account security, legal and privacy code in `GnollHackServer.Data/` (~1,600 lines) counts as Gnoll Overseer, although GnollHack Account uses it too. GnollHack Account includes ~76 scaffolded ASP.NET Identity UI files.
 
 ## Technology Stack
 
@@ -157,6 +157,16 @@ The table count measures schema breadth, not data volume: row counts and sizes a
 | **Styling** | SCSS (compiled to CSS) with Bootstrap |
 | **Testing** | xUnit v3 (Microsoft.Testing.Platform); Vitest with Playwright for the Angular client |
 | **Error Monitoring** | Sentry (ASP.NET Core and Angular) |
+
+## Automation and AI Assistance
+
+AI models used in developing this software:
+
+- **Gemini 3.1 Pro**: Overseer coding and styling. GnollHack Account styling.
+- **Gemini 3.7 & 3.8 Flash**: Overseer coding and styling.
+- **Claude Opus 4.6**: Overseer planning.
+- **Claude Opus 5.5**: Overseer and GnollBench coding.
+- **Claude Fable 5.1**: Overseer and GnollBench coding.
 
 ## 📚 Documentation
 
@@ -187,6 +197,11 @@ Developer guides, command references, release checklists, and architectural docu
 | [**GnollHack Source Indexing**](docs/overseer/gnollhack-source-indexing.md) | The background makedefs build and source index behind the source tools, its configuration, the GnollHack Source dashboard, and troubleshooting. |
 | [**Corpus Dashboards**](docs/overseer/corpus-dashboards.md) | The Services tab's GnollHack Wiki, NetHack Wiki and Knowledge Base dashboards: index status, Re-index, search probes, chat tool usage, and the job runner behind them. |
 | [**Admin Page URLs**](docs/overseer/admin-page-urls.md) | The path of every Admin tab and sub-tab, one-shot query parameters, old and retired links, and the history rules. |
+| [**Admin User Management**](docs/overseer/admin-user-management.md) | Finding, inspecting and changing GnollHack accounts: the Users tab, per-user actions, the Bulk Actions wizard, the admin log, and the sign-in rules behind them. |
+| [**AI Telemetry**](docs/overseer/ai-telemetry.md) | The AI Telemetry tab: what the chat, title generation and GnollBench cost and consume, provider availability to the chat, and usage per user and group. |
+| [**AI Feedback Reports**](docs/overseer/ai-feedback-reports.md) | The `report_feedback` tool, triage on the Feedback tab, and exporting issues to an AI coding assistant and importing its resolutions. |
+| [**Security Monitoring**](docs/overseer/security-monitoring.md) | Per-user AI limits, the AI-chat block, security events, sign-in hardening on the website and game APIs, and account-deletion holds. |
+| [**Terms of Service**](docs/overseer/terms-of-service.md) | How Overseer and the account site serve the Terms of Service, decide which version a user must accept, and record and enforce the acceptance. |
 
 ### Gnoll Overseer — AI models
 
@@ -204,6 +219,10 @@ Developer guides, command references, release checklists, and architectural docu
 | [**Multi-Run Analysis**](docs/overseer/ai-benchmark-multi-run.md) | The statistical method behind series and groups of runs, and what it cannot tell you. |
 | [**Multi-Suite Batteries**](docs/overseer/ai-benchmark-multi-suite.md) | Batteries of weighted suites, their execution, and the Overall Intelligence Index. |
 | [**Report Packs**](docs/overseer/ai-benchmark-report-pack.md) | AI-written documents about the models of a comparison or a run, rendered to PDF and Word. |
+| [**Model Batches**](docs/overseer/ai-benchmark-model-batches.md) | Running several models one after another under one settings set, and the guardrails that keep the comparison sound. |
+| [**Information Conditions and Experimental Changes**](docs/overseer/ai-benchmark-conditions-and-variants.md) | What a candidate can reach and what it is told: information conditions, scrubbed corpora, gold evidence, Evidence Reach, and experimental changes. |
+| [**Chat Consistency**](docs/overseer/ai-benchmark-chat-consistency.md) | Whether the Overseer chat with one model has stayed as good, fast, cheap and available over time, and which side a change fits. |
+| [**Provider Availability**](docs/overseer/ai-benchmark-provider-availability.md) | The method behind provider error counts, error rates and re-runs needed, and what those figures do not state. |
 
 ### GnollHack Account
 
@@ -211,6 +230,7 @@ Developer guides, command references, release checklists, and architectural docu
 |---|---|
 | [**Database Migrations**](docs/overseer/commands.md#5-database-migrations-entity-framework-core) | Entity Framework Core migrations, in the Commands Reference. |
 | [**Styles & SCSS**](docs/overseer/commands.md#6-scss-compilation-host-styles) | SCSS compilation of the host styles, in the Commands Reference. |
+| [**Sentry Error Reporting**](docs/website-sentry-logging.md) | Backend error reporting of the website's Razor Pages and game API controllers to Sentry. |
 
 AI agent rules are in [`.agents/AGENTS.md`](.agents/AGENTS.md), and project skills in [`.agents/skills/`](.agents/skills/).
 
