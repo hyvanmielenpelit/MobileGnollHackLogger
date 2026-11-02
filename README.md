@@ -18,12 +18,12 @@ This solution contains two web applications — **GnollHack Account** and **Gnol
 
 The original and primary project in this repository, **GnollHack Account** (historically called *MobileGnollHackLogger*) is an ASP.NET Core web application built with Razor Pages. It is the backend that the GnollHack game clients connect to directly. Its responsibilities include:
 
-- **Top Score Recording** — Receives and stores game results from players, maintaining global leaderboards.
-- **Recent Games** — Displays a feed of the latest completed games across all players.
-- **Bones Sharing** — Manages the exchange of "bones files" between players. In roguelike tradition, when a player dies, their ghost and equipment can appear in another player's dungeon.
+- **Top score recording** — Receives and stores game results from players, maintaining global leaderboards.
+- **Recent games** — Displays a feed of the latest completed games across all players.
+- **Bones sharing** — Manages the exchange of "bones files" between players. In roguelike tradition, when a player dies, their ghost and equipment can appear in another player's dungeon.
 - **Statistics** — Provides detailed win-rate statistics broken down by role, difficulty, and game mode.
-- **User Accounts** — Handles player registration, authentication, and profile management via ASP.NET Identity.
-- **xlogfile API** — Exposes game log data in the standard `xlogfile` format used by [NetHack Scoreboard](https://nethackscoreboard.org/) and [Junethack](https://junethack.net/) tournament tracking.
+- **User accounts** — Handles player registration, authentication, and profile management via ASP.NET Identity.
+- **Game log API (`xlogfile`)** — Exposes game log data in the standard `xlogfile` format used by [NetHack Scoreboard](https://nethackscoreboard.org/) and [Junethack](https://junethack.net/) tournament tracking.
 
 ### 🤖 Gnoll Overseer (`Overseer/`)
 
@@ -31,22 +31,22 @@ The original and primary project in this repository, **GnollHack Account** (hist
 
 Key capabilities:
 
-- **Multi-Provider AI Chat** — Supports multiple LLM backends (OpenAI, Anthropic/Claude, Google Gemini) so administrators can configure the best model for their needs.
-- **Tool-Augmented Responses** — The AI is equipped with a rich set of tools that let it look up real data instead of hallucinating:
-  - **Source Code Search & View** — Searches and reads the GnollHack C source code directly for precise, authoritative answers.
-  - **Monster, Item & Artifact Lookup** — Retrieves exact stats from the game's data structures.
-  - **Wiki & Knowledge Base Search** — Queries the [GnollHack Wiki](https://github.com/hyvanmielenpelit/GnollHackWiki) and a curated knowledge base.
-  - **NetHack Wiki Search** — Searches the community NetHack Wiki for broader context.
-  - **GitHub Integration** — Fetches repository info, searches issues, and browses code on GitHub.
-  - **Player Data Tools** — Looks up player game logs, dump logs, and save file info.
-- **Sub-agents** — The main agent can delegate scoped, multi-step tasks to specialist sub-agents that run with their own instructions, tools and budget (`Overseer/Services/Agents/`).
-- **Document Attachments and RAG** — Users can attach PDF and Office documents; Overseer parses them and retrieves the relevant passages with local ONNX embeddings.
-- **Data Privacy Framework** — Confidential and ephemeral (incognito) sessions, envelope encryption with crypto-shredding, outbound DLP masking of secrets, and malware scanning of attachments.
-- **Real-Time Streaming** — Uses SignalR for real-time, token-by-token response streaming to the browser.
-- **Spoiler Policy** — Enforces a configurable spoiler policy so the AI can respect players who want to discover things on their own.
-- **Telemetry, Cost and Retention** — Response timing, whole-turn cost accounting, and automated chat data retention and database maintenance.
-- **API Key Alerts** — E-mails the developers when a system API key runs out of credit, fails, or is about to expire.
-- **Admin Dashboard** — Administrative tools on the tabs *Users, System Configs, Database, AI Telemetry, Security, GnollBench* and *Services*, each with its own address ([Admin Page URLs](docs/overseer/admin-page-urls.md)). Groups are a sub-tab of Users, the default API keys a dialog of System Configs, and Services shows the [GnollHack source index](docs/overseer/gnollhack-source-indexing.md), the [GnollHack wiki, NetHack wiki and knowledge base indexes](docs/overseer/corpus-dashboards.md), the configuration health and the Sentry test errors.
+- **Multi-provider AI chat** — Supports multiple LLM backends (OpenAI, Anthropic/Claude, Google Gemini) so administrators can configure the best model for their needs.
+- **Tool-augmented responses** — The AI is equipped with a rich set of tools that let it look up real data instead of hallucinating:
+  - **Source code search & view** — Searches and reads the GnollHack C source code directly for precise, authoritative answers.
+  - **Monster, item & artifact lookup** — Retrieves exact stats from the game's data structures.
+  - **Wiki & knowledge base search** — Queries the [GnollHack Wiki](https://github.com/hyvanmielenpelit/GnollHackWiki) and a curated knowledge base.
+  - **NetHack Wiki search** — Searches the community NetHack Wiki for broader context.
+  - **GitHub integration** — Fetches repository info, searches issues, and browses code on GitHub.
+  - **Player data tools** — Looks up player game logs, dump logs, and save file info.
+- **Subagents** — The main agent can delegate scoped, multi-step tasks to specialist subagents that run with their own instructions, tools and budget (`Overseer/Services/Agents/`).
+- **Document attachments and RAG** — Users can attach PDF and Office documents; Overseer parses them and retrieves the relevant passages with local ONNX embeddings.
+- **Data privacy framework** — Confidential and ephemeral (incognito) sessions, envelope encryption with crypto-shredding, outbound DLP masking of secrets, and malware scanning of attachments.
+- **Real-time streaming** — Uses SignalR for real-time, token-by-token response streaming to the browser.
+- **Spoiler policy** — Enforces a configurable spoiler policy so the AI can respect players who want to discover things on their own.
+- **Telemetry, cost and retention** — Response timing, whole-turn cost accounting, and automated chat data retention and database maintenance.
+- **API key alerts** — Emails the developers when a system API key runs out of credit, fails, or is about to expire.
+- **Admin dashboard** — Administrative tools on the tabs *Users, System Configs, Database, AI Telemetry, Security, GnollBench* and *Services*, each with its own address ([Admin Page URLs](docs/overseer/admin-page-urls.md)). Groups are a sub-tab of Users, the default API keys a dialog of System Configs, and Services shows the [GnollHack source index](docs/overseer/gnollhack-source-indexing.md), the [GnollHack Wiki, NetHack Wiki and knowledge base indexes](docs/overseer/corpus-dashboards.md), the configuration health and the Sentry test errors.
 
 ### 📊 GnollBench (inside `Overseer/`)
 
@@ -95,7 +95,7 @@ The automated tests of the GnollHack Account website: every game Web API endpoin
 
 > **These figures are an estimate, and they change quickly with new commits.** Measured **2026-11-02** at commit **`6ec883d`**.
 
-### Lines of code
+### Lines of Code
 
 | Component | Production code | Tests | Total |
 |---|---:|---:|---:|
@@ -117,20 +117,20 @@ Production code by language:
 
 Documentation is not counted above: `docs/` holds ~32,300 lines, of which ~22,700 are the eight GnollBench documents (`docs/overseer/ai-benchmark*.md`).
 
-### Database tables
+### Database Tables
 
 The shared SQL Server database has **83 tables**. Each is assigned to the component whose code reads and writes it.
 
 | Component | Tables | Share | What they hold |
 |---|---:|---:|---|
-| GnollBench | 32 | ~39% | suites and questions, runs and answers, tool calls, series, groups and batteries, model batches, comparisons, report documents, scoring profiles, game snapshots, experimental changes, chat consistency analyses, and the model-configuration snapshots runs are recorded against |
-| Gnoll Overseer | 38 | ~46% | chat sessions, messages, attachments and tool calls, AI configurations and API keys, user AI settings and models, usage and error logs, model call telemetry, groups, feedback reports, security events, account holds and deletion requests, terms acceptances, audit and maintenance logs |
-| GnollHack Account | 6 | ~7% | game logs, bones and bones transactions, save file tracking, game sign-in blocks, request logs |
-| Shared (ASP.NET Identity) | 7 | ~8% | users, roles, claims, logins and tokens |
+| GnollBench | 32 | ~39% | Suites and questions, runs and answers, tool calls, series, groups and batteries, model batches, comparisons, report documents, scoring profiles, game snapshots, experimental changes, chat consistency analyses, and the model-configuration snapshots runs are recorded against |
+| Gnoll Overseer | 38 | ~46% | Chat sessions, messages, attachments and tool calls, AI configurations and API keys, user AI settings and models, usage and error logs, model call telemetry, groups, feedback reports, security events, account holds and deletion requests, terms acceptances, audit and maintenance logs |
+| GnollHack Account | 6 | ~7% | Game logs, bones and bones transactions, save file tracking, game sign-in blocks, request logs |
+| Shared (ASP.NET Identity) | 7 | ~8% | Users, roles, claims, logins and tokens |
 
 The table count measures schema breadth, not data volume: row counts and sizes are not measured, and they vary by installation.
 
-### How it was counted
+### How It Was Counted
 
 - **Unit**: non-blank lines, comments included, of tracked source files (`.cs`, `.cshtml`, `.ts`, `.html`, `.scss`, `.css`, `.js`). Tables are the `ToTable` entries of the EF Core model snapshot, `GnollHackServer.Data/Migrations/ApplicationDbContextModelSnapshot.cs`.
 - **GnollBench** is every source file whose path contains `benchmark`, case-insensitive. Tables are assigned by which code uses them: the 29 `Benchmark*` tables, `SystemAiConfigurationSnapshots` and the 2 `ChatConsistency*` tables.
@@ -143,20 +143,20 @@ The table count measures schema breadth, not data volume: row counts and sizes a
 | Layer | Technology |
 |---|---|
 | **Runtime** | .NET 10.0 |
-| **Web Framework** | ASP.NET Core (Razor Pages + Web API) |
+| **Web framework** | ASP.NET Core (Razor Pages + Web API) |
 | **Frontend SPA** | Angular 22 with TypeScript |
 | **Database** | SQL Server via Entity Framework Core |
 | **Authentication** | ASP.NET Identity |
-| **Real-Time** | SignalR |
-| **AI Providers** | OpenAI, Anthropic (Claude), Google (Gemini) |
-| **Search Index** | Lucene.NET (for source code indexing in Overseer) |
+| **Real-time** | SignalR |
+| **AI providers** | OpenAI, Anthropic (Claude), Google (Gemini) |
+| **Search index** | Lucene.NET (for source code indexing in Overseer) |
 | **Embeddings** | ONNX Runtime (local embeddings for document RAG) |
 | **Documents** | QuestPDF (PDF), Open XML SDK (Word), PdfPig (PDF parsing), Markdig |
 | **Charts** | Chart.js with ng2-charts |
 | **Email** | Azure Communication Services |
 | **Styling** | SCSS (compiled to CSS) with Bootstrap |
 | **Testing** | xUnit v3 (Microsoft.Testing.Platform); Vitest with Playwright for the Angular client |
-| **Error Monitoring** | Sentry (ASP.NET Core and Angular) |
+| **Error monitoring** | Sentry (ASP.NET Core and Angular) |
 
 ## Automation and AI Assistance
 
@@ -172,7 +172,7 @@ AI models used in developing this software:
 
 Developer guides, command references, release checklists, and architectural documentation are centralized in the [`docs/`](docs/) directory. This section is the complete index.
 
-### Gnoll Overseer — operations
+### Gnoll Overseer — Operations
 
 | Document | Description |
 |---|---|
@@ -184,16 +184,16 @@ Developer guides, command references, release checklists, and architectural docu
 | [**Sentry Logging Architecture**](docs/overseer/sentry-logging-architecture.md) | Sentry crash logging, server event processing, proxy tunneling, and frontend network error suppression. |
 | [**Test Configuration & Secrets**](docs/overseer/test-configuration.md) | User Secrets schema, AI credentials for live API tests, and setup troubleshooting. |
 
-### Gnoll Overseer — architecture
+### Gnoll Overseer — Architecture
 
 | Document | Description |
 |---|---|
 | [**Tool Batching & Execution**](docs/overseer/tool-batching-and-execution.md) | Multi-turn tool execution, concurrency throttles, output budgets, and real-time streaming. |
-| [**Subagents**](docs/overseer/subagents.md) | The coordinator-specialist multi-agent architecture: delegation, specialist sub-agents, and cancellation. |
+| [**Subagents**](docs/overseer/subagents.md) | The coordinator-specialist multi-agent architecture: delegation, specialist subagents, and cancellation. |
 | [**Chat & Data Retention**](docs/overseer/chat-data-retention.md) | Session quotas, the soft-delete lifecycle, tool call payload pruning, attachment cleanup, and automated database maintenance. |
 | [**Chat Response Telemetry & Cost**](docs/overseer/chat-response-telemetry.md) | Response timing (TTFT, duration), context window usage, whole-turn token costing, and operator cost attribution. |
 | [**Data Privacy Framework**](docs/overseer/data-privacy-framework.md) | How Overseer protects user content — confidential and ephemeral sessions, encryption, provider trust, secret masking, document ingestion — and what it does not claim. |
-| [**API Key Alerts**](docs/overseer/api-key-alerts.md) | E-mail alerts when a system API key runs out of credit or fails, and their throttling. |
+| [**API Key Alerts**](docs/overseer/api-key-alerts.md) | Email alerts when a system API key runs out of credit or fails, and their throttling. |
 | [**GnollHack Source Indexing**](docs/overseer/gnollhack-source-indexing.md) | The background makedefs build and source index behind the source tools, its configuration, the GnollHack Source dashboard, and troubleshooting. |
 | [**Corpus Dashboards**](docs/overseer/corpus-dashboards.md) | The Services tab's GnollHack Wiki, NetHack Wiki and Knowledge Base dashboards: index status, Re-index, search probes, chat tool usage, and the job runner behind them. |
 | [**Admin Page URLs**](docs/overseer/admin-page-urls.md) | The path of every Admin tab and sub-tab, one-shot query parameters, old and retired links, and the history rules. |
@@ -203,7 +203,7 @@ Developer guides, command references, release checklists, and architectural docu
 | [**Security Monitoring**](docs/overseer/security-monitoring.md) | Per-user AI limits, the AI-chat block, security events, sign-in hardening on the website and game APIs, and account-deletion holds. |
 | [**Terms of Service**](docs/overseer/terms-of-service.md) | How Overseer and the account site serve the Terms of Service, decide which version a user must accept, and record and enforce the acceptance. |
 
-### Gnoll Overseer — AI models
+### Gnoll Overseer — AI Models
 
 | Document | Description |
 |---|---|
@@ -230,7 +230,7 @@ Developer guides, command references, release checklists, and architectural docu
 |---|---|
 | [**Database Migrations**](docs/overseer/commands.md#5-database-migrations-entity-framework-core) | Entity Framework Core migrations, in the Commands Reference. |
 | [**Styles & SCSS**](docs/overseer/commands.md#6-scss-compilation-host-styles) | SCSS compilation of the host styles, in the Commands Reference. |
-| [**Sentry Error Reporting**](docs/website-sentry-logging.md) | Backend error reporting of the website's Razor Pages and game API controllers to Sentry. |
+| [**Sentry Error Reporting**](docs/website-sentry-logging.md) | Backend error reporting of the website's Razor pages and game API controllers to Sentry. |
 
 AI agent rules are in [`.agents/AGENTS.md`](.agents/AGENTS.md), and project skills in [`.agents/skills/`](.agents/skills/).
 
@@ -256,7 +256,7 @@ MobileGnollHackLogger/          # Solution root
 │   ├── Middleware/             #   HTTP middleware (security headers)
 │   ├── Security/               #   Authorization requirements and rate-limit policies
 │   ├── Services/               #   AI chat service, source code indexing, providers
-│   │   ├── Agents/             #     Sub-agents
+│   │   ├── Agents/             #     Subagents
 │   │   ├── ApiKeyAlerts/       #     API key failure and expiration alerts
 │   │   ├── Benchmarking/       #     GnollBench, the AI benchmark
 │   │   ├── Documents/          #     Attachment document parsing
@@ -438,7 +438,7 @@ Contributions are welcome! To get started:
 2. Fork the repository and create a feature branch.
 3. Make your changes, ensuring they follow the existing code style.
 4. Run the test suites: `dotnet test Overseer.Tests --filter-not-trait "Category=UsesExternalApi"` and `dotnet test MobileGnollHackLogger.Tests --filter-not-trait "Category=UsesExternalApi"` from the repository root, and `npm run test:headless` in `Overseer/ClientApp/`. Without the filter, the .NET run calls live OpenAI, Anthropic and Google APIs and spends money.
-5. Submit a Pull Request with a clear description of what you changed and why.
+5. Submit a pull request with a clear description of what you changed and why.
 
 ## License
 
