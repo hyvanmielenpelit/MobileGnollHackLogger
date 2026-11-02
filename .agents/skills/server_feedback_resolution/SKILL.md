@@ -184,7 +184,7 @@ The export's `Overseer version` names the build that wrote it, with its commit a
 several releases behind. Before planning:
 
 - **Read the code as production ran it**, `git show <sha>:<path>`, and then at HEAD: a defect may already
-  be fixed, and a resolution then says so instead of planning work.
+  be fixed, and a resolution then says so instead of planning work (§ 5a).
 - **Read the corpora at HEAD**: the wiki and the knowledge base are not tied to the release.
 - **Write the resolution format that production's import accepts** (§ 6).
 
@@ -240,6 +240,13 @@ Live: about ten minutes after the wiki clone on the server is pulled.
   session*) and the body says what it waits on or why it was dismissed, leaving out the lines that do not
   apply. Such a message goes in the triage **Note** (`note`, at most 1,000 characters), because
   *Resolution* records a fix.
+- **A fix that was already in place** (§ 3b) has no status or field of its own: it is `resolved`, with
+  `resolvedVia` and, for an Overseer release, `fixedInVersion`, as usual. The message has to say so, or it
+  reads as work done now. The subject starts `Already fixed,` and states what is now true, and `Changed:`
+  starts `nothing now, the fix was already in place.` and then names what the files or pages hold.
+  `Verified:` says what you checked in this session, and also what you did not repeat, such as the earlier
+  source validation. It is not `dismissed`: only a resolved issue becomes Regressed when it is reported
+  again, which shows that the fix did not hold.
 - **Never write a commit SHA.** You never commit, so you cannot know one; the developer's commit is
   made after you finish.
 - **Your own words**, never report text, and no hidden character.
@@ -325,9 +332,9 @@ The file is `agent-feedback-resolutions-<slug>_v<N>.yaml`, where `<slug>` names 
 example `overseer-20261023-1234`, from its file name) and `_v<N>` starts at `_v1`; a revision is a new
 version, never an overwrite.
 
-- **With an implementation plan**: in that plan's task directory in the plans repository, beside the
-  plan, versioned with the round's other documents.
-- **Without a plan**: beside the export file.
+- **When the work has a task directory in the plans repository**: in that directory, beside its
+  implementation plan or its wiki or knowledge-base handoff, versioned with the round's other documents.
+- **When it has none** (no plan and no handoff): beside the export file.
 - **Never in this repository.** UTF-8 without a BOM, **LF** line endings, like the other agent YAML
   files (`.agents/AGENTS.md` § *Environment & Shell Conventions*); the repository's CRLF convention does
   not apply to it.
@@ -350,7 +357,8 @@ End with the resolution messages and these steps. The developer, not you, commit
 **First, commit.** In each repository the fixes touched — Overseer, the GnollHack wiki clone, the
 knowledge-base clone, GnollHack — the developer reviews the change and commits it, using the issue's
 resolution message as the commit message (one commit per repository, or per issue). Name each repository
-and its changed files. Closing an issue before its fix is committed records a fix that may never land.
+and its changed files. Closing an issue before its fix is committed records a fix that may never land. An
+issue whose fix was already in place (§ 5a) has nothing to commit, once that fix is itself committed.
 
 **Then, for one issue: paste into Edit triage.** Nothing is uploaded.
 
