@@ -318,6 +318,10 @@ public class WikiService : IDisposable
                     }
 
                     content = File.ReadAllText(file);
+
+                    // A Markdown page may open with front matter that the wiki itself hides.
+                    if (file.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+                        content = WikiFrontMatter.Strip(content);
                 }
                 catch (Exception ex)
                 {
