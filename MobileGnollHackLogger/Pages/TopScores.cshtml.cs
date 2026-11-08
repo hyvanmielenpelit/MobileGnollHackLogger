@@ -33,7 +33,7 @@ namespace MobileGnollHackLogger.Pages
                 Mode = mode;
             }
 
-            IQueryable<GameLog> gameLogs = _dbContext.GameLog
+            IQueryable<GameLog> gameLogs = _dbContext.GameLog.AsNoTracking()
                 .Where(gl => gl.AspNetUserId != null)
                 .OrderByDescending(gl => gl.Points)
                 .Where(gl => gl.Scoring == "yes");

@@ -62,7 +62,7 @@ public static class WebsiteTestData
     /// <paramref name="startTime"/> (local) defaults to <paramref name="startTimeUtc"/> + 3600, so the two differ.
     /// </summary>
     public static string XLogEntry(string name, long points, long startTimeUtc, string? mode = "normal", string scoring = "yes",
-        int turns = 1234, string death = "killed by a jackal", long? startTime = null)
+        int turns = 1234, string death = "killed by a jackal", long? startTime = null, string role = "Val", int difficulty = 0)
     {
         long localStart = startTime ?? startTimeUtc + 3600;
         var fields = new List<(string Key, string Value)>
@@ -84,7 +84,7 @@ public static class WebsiteTestData
             ("deathdate", "20261025"),
             ("birthdate", "20261024"),
             ("uid", "0"),
-            ("role", "Val"),
+            ("role", role),
             ("race", "Hum"),
             ("gender", "Fem"),
             ("align", "Neu"),
@@ -102,7 +102,7 @@ public static class WebsiteTestData
             ("gender0", "Fem"),
             ("align0", "Neu"),
             ("flags", "0x0"),
-            ("difficulty", "0"),
+            ("difficulty", difficulty.ToString(CultureInfo.InvariantCulture)),
         };
         if (mode != null)
         {

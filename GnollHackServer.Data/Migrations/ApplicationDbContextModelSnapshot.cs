@@ -4497,6 +4497,24 @@ namespace GnollHackServer.Data.Migrations
 
                     b.HasIndex("AspNetUserId");
 
+                    b.HasIndex("CreatedDate");
+
+                    SqlServerIndexBuilderExtensions.UseDataCompression(b.HasIndex("CreatedDate"), DataCompressionType.Page);
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("CreatedDate"), new[] { "AspNetUserId", "Mode", "Scoring", "Turns", "Role", "Difficulty", "DeathText" });
+                    SqlServerIndexBuilderExtensions.SortInTempDb(b.HasIndex("CreatedDate"), true);
+
+                    b.HasIndex("EndTimeUTC");
+
+                    SqlServerIndexBuilderExtensions.UseDataCompression(b.HasIndex("EndTimeUTC"), DataCompressionType.Page);
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("EndTimeUTC"), new[] { "AspNetUserId", "Mode", "DeathText" });
+                    SqlServerIndexBuilderExtensions.SortInTempDb(b.HasIndex("EndTimeUTC"), true);
+
+                    b.HasIndex("Points");
+
+                    SqlServerIndexBuilderExtensions.UseDataCompression(b.HasIndex("Points"), DataCompressionType.Page);
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Points"), new[] { "AspNetUserId", "Scoring", "Mode", "DeathText" });
+                    SqlServerIndexBuilderExtensions.SortInTempDb(b.HasIndex("Points"), true);
+
                     b.ToTable("GameLog");
                 });
 

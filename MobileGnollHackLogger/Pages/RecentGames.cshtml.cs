@@ -35,7 +35,7 @@ namespace MobileGnollHackLogger.Pages
                 Mode = mode;
             }
 
-            IQueryable<GameLog> gameLogs = _dbContext.GameLog
+            IQueryable<GameLog> gameLogs = _dbContext.GameLog.AsNoTracking()
                 .Where(gl => gl.AspNetUserId != null)
                 .OrderByDescending(gl => gl.EndTimeUTC);
 
@@ -65,7 +65,7 @@ namespace MobileGnollHackLogger.Pages
                     break;
             }
 
-            int totalCount = gameLogs.Count();
+            int totalCount = await gameLogs.CountAsync();
 
             gameLogs = gameLogs.Take(1000);
 

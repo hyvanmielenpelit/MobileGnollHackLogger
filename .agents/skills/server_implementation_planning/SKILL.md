@@ -116,6 +116,12 @@ A plan that changes a database model must list the generated migration files, na
 
 The AI agent can and should run both `dotnet ef migrations add` and `dotnet ef database update` directly during the execution phase once the plan is approved. No human assignment is needed for running database updates.
 
+**Production gets migrations through an EF Core migration bundle (an `.exe`), which the developer builds and runs separately.** `dotnet ef database update` only ever targets the local development database. Never point it at production.
+
+- **No plan step creates a bundle or an SQL script.** That means no `dotnet ef migrations bundle` and no `dotnet ef migrations script`, idempotent or not. A plan does not hand the developer a rollout script.
+- **A plan that adds a migration says one thing about production:** the migration reaches it in the developer's next migration bundle. Add any precondition the developer must know, such as a quiet hour, a backup, or disk space.
+- **Long-running statements.** The startup projects configure no `CommandTimeout`, so each migration command runs with SqlClient's 30-second default, in a bundle as anywhere else. A migration statement that can outlast that, such as an index build on a large table or a data backfill, is named in the plan's Risks with its expected run time on production data.
+
 ### Angular Client
 
 The `Overseer` SPA is built separately from the ASP.NET Core host. Changes to TypeScript, component templates, or component styles require a client rebuild before they are visible, and shipping a release build also involves uploading source maps to Sentry as its own step.
@@ -156,7 +162,7 @@ one, and no two agents may touch both ends of a chain concurrently.
 | Chain | Constraint |
 |-------|-----------|
 | `site2.scss` -> `npx sass` -> `site2.css` **and** `site2.min.css` | Both outputs are regenerated together. **No agent may edit the generated CSS**, and none may touch it in parallel with the SCSS edit. |
-| Model change in `GnollHackServer.Data` -> `dotnet ef migrations add` -> `dotnet ef database update` -> dependent code | Do not parallelize across the migration step. The agent runs **both** commands itself; no human assignment is needed. |
+| Model change in `GnollHackServer.Data` -> `dotnet ef migrations add` -> `dotnet ef database update` -> dependent code | Do not parallelize across the migration step. The agent runs **both** commands itself, against the local database; no human assignment is needed. Production is the developer's migration bundle, never a plan step. |
 | Overseer TypeScript / templates -> Angular client rebuild -> (release only) Sentry source-map upload | Changes are not visible until the client is rebuilt. The source-map upload is its own step and only on release. |
 | New/moved files under `docs/` -> add to `MobileGnollHackLogger.slnx` | Solution Explorer accessibility. Visual Studio does not show documentation files unless they are declared in `.slnx`. |
 

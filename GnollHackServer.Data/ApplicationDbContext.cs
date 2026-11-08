@@ -99,7 +99,28 @@ namespace MobileGnollHackLogger.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            
+
+            // Recent Games: newest first, optionally by mode or ascensions only.
+            modelBuilder.Entity<GameLog>()
+                .HasIndex(gl => gl.EndTimeUTC)
+                .IncludeProperties(gl => new { gl.AspNetUserId, gl.Mode, gl.DeathText })
+                .SortInTempDb()
+                .UseDataCompression(DataCompressionType.Page);
+
+            // Statistics: games of the last two years.
+            modelBuilder.Entity<GameLog>()
+                .HasIndex(gl => gl.CreatedDate)
+                .IncludeProperties(gl => new { gl.AspNetUserId, gl.Mode, gl.Scoring, gl.Turns, gl.Role, gl.Difficulty, gl.DeathText })
+                .SortInTempDb()
+                .UseDataCompression(DataCompressionType.Page);
+
+            // Top Scores: highest first.
+            modelBuilder.Entity<GameLog>()
+                .HasIndex(gl => gl.Points)
+                .IncludeProperties(gl => new { gl.AspNetUserId, gl.Scoring, gl.Mode, gl.DeathText })
+                .SortInTempDb()
+                .UseDataCompression(DataCompressionType.Page);
+
             modelBuilder.Entity<UserAiApiKey>()
                 .HasIndex(k => new { k.AspNetUserId, k.Provider })
                 .IsUnique();

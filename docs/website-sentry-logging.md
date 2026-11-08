@@ -21,7 +21,12 @@ Overseer has its own, larger setup; see [overseer/sentry-logging-architecture.md
   | `ReplayController.Post` | user verification; the outermost catch |
   | `SaveFileTrackingController` | `Create` database insertion; `Use`; `LogInAsync` user verification and its outermost catch |
 
-**One failure, one event.** For a database failure EF Core logs the failed command at Error ("Failed executing DbCommand …", category `Microsoft.EntityFrameworkCore.Database.Command`) before the controller catches the wrapping `DbUpdateException`. The SDK's duplicate detection keeps the first report and drops the controller's capture of the same exception. So for a database failure, look for EF Core's command error event; its message carries the SQL text, with parameter values masked as long as `EnableSensitiveDataLogging` stays off. The controller captures are the only report for everything else: file I/O under the dumplog and bones directories, xlog parsing, Identity lookups.
+**One failure, one event.** For a database failure EF Core logs the failed command at Error ("Failed executing DbCommand …", category `Microsoft.EntityFrameworkCore.Database.Command`) before the exception reaches the exception handler or a controller's catch block. The SDK captures that log entry as a message event **without the exception**, so its duplicate detection, which matches by exception, cannot connect it to the exception's own event. Sentry issues ACCOUNT-2 alongside ACCOUNT-4 and ACCOUNT-5 showed this: each failed request produced both, with the same `RequestId`.
+
+- **Inside a request**, `WebsiteSentryEventProcessor` drops the message event (§ 2, rule 3). The report is the exception's own event, from `UseExceptionHandler` or a controller's `SentrySdk.CaptureException`, and the failed command stays in its breadcrumbs. Look there for the SQL text, with parameter values masked as long as `EnableSensitiveDataLogging` stays off.
+- **Outside a request** (startup, background work), the message event is kept, and it is the only report.
+
+The controller captures are the only report for everything else as well: file I/O under the dumplog and bones directories, xlog parsing, Identity lookups.
 
 ## 2. What Is Not Reported
 
@@ -36,6 +41,7 @@ Overseer has its own, larger setup; see [overseer/sentry-logging-architecture.md
 - **Client protocol errors and aborted requests**, dropped by `WebsiteSentryEventProcessor` (`MobileGnollHackLogger/Monitoring/`):
   1. An exception chain containing `BadHttpRequestException` — Kestrel's malformed or truncated request, typically a mobile client dropping mid-upload. Answered with 400.
   2. When the request was aborted (`HttpContext.RequestAborted` is cancelled) **and** the chain contains an `OperationCanceledException`, an `IOException`, or a `SqlException` whose message contains "Operation cancelled by user". Both conditions are required, so a genuine I/O or SQL failure on a live request is still reported.
+  3. A message event from the logger `Microsoft.EntityFrameworkCore.Database.Command` with **no exception attached**, while a request is in flight (`HttpContext` is set) — EF Core's "Failed executing DbCommand" log, whose exception is reported by its own event (§ 1). All three conditions are required. `Exception == null` matters because, if a later SDK attaches the exception to the log event, duplicate detection would drop the exception's other report, and this event would then be the only one. The logger name keeps an application's own `LogError` entries out of the rule. The request condition keeps the event at startup and in background work, where it is the only report.
 
   The chain walk follows `InnerException` and every member of an `AggregateException`: `LogController.Post` copies its upload streams with `Task.WaitAll`, so an upload failure arrives wrapped in one.
 

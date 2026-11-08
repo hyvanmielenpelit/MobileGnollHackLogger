@@ -28,6 +28,8 @@ namespace MobileGnollHackLogger.Monitoring
 
         private const string Scrubbed = "[scrubbed]";
 
+        private const string EfCoreCommandCategory = "Microsoft.EntityFrameworkCore.Database.Command";
+
         /* A scrubbed query parameter inside free text, such as a URL in a log message. The name
            must follow '?' or '&', so "postcode=" does not match "code". */
         private static readonly Regex ScrubbedQueryParameterInText = new Regex(
@@ -53,6 +55,17 @@ namespace MobileGnollHackLogger.Monitoring
                SqlException, not as an OperationCanceledException. */
             if (_httpContextAccessor.HttpContext?.RequestAborted.IsCancellationRequested == true
                 && ContainsException(@event.Exception, IsAbortException))
+            {
+                return null;
+            }
+
+            /* Inside a request the exception itself is reported; EF Core's command-error log stays a
+               breadcrumb. The log event carries no exception, so duplicate detection cannot match it to
+               the exception's own event. An event that does carry one is kept, because duplicate
+               detection may then have dropped the exception's other report. */
+            if (@event.Exception == null
+                && string.Equals(@event.Logger, EfCoreCommandCategory, StringComparison.Ordinal)
+                && _httpContextAccessor.HttpContext != null)
             {
                 return null;
             }

@@ -11,8 +11,8 @@
     ViewData["ContainerClass"] = "xxlMaxWidth";
     ViewData["MainClass"] = "xxlMaxWidth";
 
-    var allGamesCount = Model.GameLogs != null ? Model.GameLogs.Count() : 0;
-    var allAscensionCount = Model.GameLogs != null ? Model.GameLogs.Where(gl => gl.DeathText == "ascended").Count() : 0;
+    var allGamesCount = Model.TotalGames;
+    var allAscensionCount = Model.TotalAscensions;
 }
 
 <div class="rpg-header mt-3">
@@ -73,31 +73,14 @@
             {
                 <tr>
                     @{
-                        long allDiffGames = Model.GameLogs != null ? Model.GameLogs.Where(gl => gl.Difficulty == difficulty.Key).Count() : 0; ;
-                        long allDiffAscensions = Model.GameLogs != null ? Model.GameLogs.Where(gl => gl.Difficulty == difficulty.Key && gl.DeathText == "ascended").Count() : 0;
+                        long allDiffGames = Model.DifficultyGames(difficulty.Key);
+                        long allDiffAscensions = Model.DifficultyAscensions(difficulty.Key);
                     }
                     <td class="w-diff border-bottom-0"><h6>@difficulty.Value</h6></td>
                     @foreach (var role in GnollHackHelper.Roles)
                     {                        
-                        long games = 0;
-                        long ascensions = 0;
-
-                        if (Model.GroupByRole != null)
-                        {
-                            var grouping = Model.GroupByRole.FirstOrDefault(gr => gr.Key == role);
-                            if (grouping != null)
-                            {
-                                games = grouping.Where(g => g.Difficulty == difficulty.Key).LongCount();
-                            }
-                        }
-                        if (Model.GroupByRoleAscended != null)
-                        {
-                            var grouping = Model.GroupByRoleAscended.FirstOrDefault(gr => gr.Key == role);
-                            if (grouping != null)
-                            {
-                                ascensions = grouping.Where(g => g.Difficulty == difficulty.Key).LongCount();
-                            }
-                        }
+                        long games = Model.Games(role, difficulty.Key);
+                        long ascensions = Model.Ascensions(role, difficulty.Key);
                         string? darkeningClass = games > 0 ? null : "text-muted";
 
                         <td class="w-role text-center border-bottom-0 @darkeningClass">
@@ -181,25 +164,8 @@
                 <td class="w-diff matrix-border-top"><h6>All Difficulties</h6></td>
                 @foreach (var role in GnollHackHelper.Roles)
                 {
-                    long games = 0;
-                    long ascensions = 0;
-
-                    if (Model.GroupByRole != null)
-                    {
-                        var grouping = Model.GroupByRole.FirstOrDefault(gr => gr.Key == role);
-                        if (grouping != null)
-                        {
-                            games = grouping.LongCount();
-                        }
-                    }
-                    if (Model.GroupByRoleAscended != null)
-                    {
-                        var grouping = Model.GroupByRoleAscended.FirstOrDefault(gr => gr.Key == role);
-                        if (grouping != null)
-                        {
-                            ascensions = grouping.LongCount();
-                        }
-                    }
+                    long games = Model.RoleGames(role);
+                    long ascensions = Model.RoleAscensions(role);
 
                     string? darkeningClass = games > 0 ? null : "text-muted";
 

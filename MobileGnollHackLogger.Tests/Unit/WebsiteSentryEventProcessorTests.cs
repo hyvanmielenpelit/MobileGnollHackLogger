@@ -162,6 +162,46 @@ public class WebsiteSentryEventProcessorTests
         Assert.Same(@event, processor.Process(@event));
     }
 
+    private const string EfCoreCommandLogger = "Microsoft.EntityFrameworkCore.Database.Command";
+
+    [Fact]
+    public void Process_EfCommandErrorLog_WithoutException_DuringRequest_DropsEvent()
+    {
+        var processor = new WebsiteSentryEventProcessor(Accessor(aborted: false));
+
+        Assert.Null(processor.Process(CommandErrorLogEvent(EfCoreCommandLogger)));
+    }
+
+    [Fact]
+    public void Process_EfCommandErrorLog_WithoutException_WithoutHttpContext_KeepsEvent()
+    {
+        var processor = new WebsiteSentryEventProcessor(new HttpContextAccessor());
+        var @event = CommandErrorLogEvent(EfCoreCommandLogger);
+
+        Assert.Same(@event, processor.Process(@event));
+    }
+
+    [Fact]
+    public void Process_EfCommandErrorLog_WithException_DuringRequest_KeepsEvent()
+    {
+        var processor = new WebsiteSentryEventProcessor(Accessor(aborted: false));
+        var @event = new SentryEvent(new InvalidOperationException("Execution Timeout Expired."))
+        {
+            Logger = EfCoreCommandLogger
+        };
+
+        Assert.Same(@event, processor.Process(@event));
+    }
+
+    [Fact]
+    public void Process_OtherLoggerErrorLog_WithoutException_DuringRequest_KeepsEvent()
+    {
+        var processor = new WebsiteSentryEventProcessor(Accessor(aborted: false));
+        var @event = CommandErrorLogEvent("MobileGnollHackLogger.Pages.X");
+
+        Assert.Same(@event, processor.Process(@event));
+    }
+
     [Fact]
     public void Process_KeptEvent_ScrubsHeadersCookiesQueryUserAndTags()
     {
@@ -231,6 +271,13 @@ public class WebsiteSentryEventProcessorTests
         };
         return new HttpContextAccessor { HttpContext = context };
     }
+
+    private static SentryEvent CommandErrorLogEvent(string logger) => new SentryEvent
+    {
+        Message = "Failed executing DbCommand (30,172ms)",
+        Logger = logger,
+        Level = SentryLevel.Error
+    };
 
     private static Exception AbortException(string kind) => kind switch
     {

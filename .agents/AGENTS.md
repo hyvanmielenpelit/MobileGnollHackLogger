@@ -78,6 +78,7 @@ When making changes to database models that require EF Core migrations, you MUST
 - **Correct Project**: Migrations MUST be targeted to the `GnollHackServer.Data` project. Use the `-p GnollHackServer.Data -s MobileGnollHackLogger` flags.
 - **Add Migration**: `dotnet ef migrations add <MigrationName> -p GnollHackServer.Data -s MobileGnollHackLogger -o Migrations`
 - **Update Database**: After generating a migration, you MUST run a separate command to apply it to the database: `dotnet ef database update -p GnollHackServer.Data -s MobileGnollHackLogger`
+- **Production**: The developer applies migrations to production with an EF Core migration bundle (`.exe`), which they build and run separately. Never create a migration bundle or an SQL migration script, and never point `dotnet ef database update` at production. See `server_implementation_planning` § *EF Core Migrations*.
 
 ## Testing and Verification Commands
 

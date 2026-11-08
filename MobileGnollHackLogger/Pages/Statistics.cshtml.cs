@@ -29,10 +29,23 @@ namespace MobileGnollHackLogger.Pages
             Title = "Statistics for All Gameplay Modes";
         }
 
-        public IQueryable<GameLog>? GameLogs { get; set; }
+        public sealed record StatisticsCell(string? Role, int Difficulty, int Games, int Ascensions);
 
-        public IList<IGrouping<string?, GameLog>>? GroupByRole { get; set; }
-        public IList<IGrouping<string?, GameLog>>? GroupByRoleAscended { get; set; }
+        // One row per role and difficulty that has qualifying games, including roles outside GnollHackHelper.Roles.
+        public IReadOnlyList<StatisticsCell> Cells { get; private set; } = [];
+
+        public long Games(string role, int difficulty) => Cells.Where(c => c.Role == role && c.Difficulty == difficulty).Sum(c => (long)c.Games);
+        public long Ascensions(string role, int difficulty) => Cells.Where(c => c.Role == role && c.Difficulty == difficulty).Sum(c => (long)c.Ascensions);
+
+        public long RoleGames(string role) => Cells.Where(c => c.Role == role).Sum(c => (long)c.Games);
+        public long RoleAscensions(string role) => Cells.Where(c => c.Role == role).Sum(c => (long)c.Ascensions);
+
+        // Every role counts here, the ones without a column of their own included.
+        public long DifficultyGames(int difficulty) => Cells.Where(c => c.Difficulty == difficulty).Sum(c => (long)c.Games);
+        public long DifficultyAscensions(int difficulty) => Cells.Where(c => c.Difficulty == difficulty).Sum(c => (long)c.Ascensions);
+
+        public long TotalGames => Cells.Sum(c => (long)c.Games);
+        public long TotalAscensions => Cells.Sum(c => (long)c.Ascensions);
 
         public async Task OnGetAsync(string? mode)
         {
@@ -53,9 +66,11 @@ namespace MobileGnollHackLogger.Pages
                     break;
             }
 
-            GameLogs = _dbContext.GameLog.Where(gl => gl.AspNetUserId != null && (Mode == null || gl.Mode == Mode) && gl.Mode != "debug" && gl.Mode != "explore" && gl.Scoring == "yes" && gl.Turns >= MinTurns && gl.CreatedDate != null && gl.CreatedDate >= CutOffDate);
-            GroupByRole = await GameLogs.GroupBy(gl => gl.Role).ToListAsync();
-            GroupByRoleAscended = await GameLogs.Where(gl=>gl.DeathText == "ascended").GroupBy(gl => gl.Role).ToListAsync();
+            Cells = await _dbContext.GameLog.AsNoTracking()
+                .Where(gl => gl.AspNetUserId != null && (Mode == null || gl.Mode == Mode) && gl.Mode != "debug" && gl.Mode != "explore" && gl.Scoring == "yes" && gl.Turns >= MinTurns && gl.CreatedDate != null && gl.CreatedDate >= CutOffDate)
+                .GroupBy(gl => new { gl.Role, gl.Difficulty })
+                .Select(g => new StatisticsCell(g.Key.Role, g.Key.Difficulty, g.Count(), g.Count(gl => gl.DeathText == "ascended")))
+                .ToListAsync();
         }
     }
 }
