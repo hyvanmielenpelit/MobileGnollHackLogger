@@ -103,7 +103,7 @@ public class UserAiModelTests
             provider: "Google");
 
     [Fact]
-    public async Task GetUserModels_GivesTheContextWindowAndTheHistoryLimit()
+    public async Task GetUserModels_GivesTheContextWindowAndTheInputAndOutputLimits()
     {
         var (service, db) = CreateTestSettingsService();
         var userId = "test-user-limits";
@@ -124,10 +124,13 @@ public class UserAiModelTests
         Assert.Equal(
             ChatHistoryBudget.Resolve(new ConfigurationBuilder().Build(), null, meta).Tokens,
             Prop(sized, "InputLimitTokens"));
+        Assert.True(meta.MaxOutputTokens > 0);
+        Assert.Equal(ChatOutputBudget.Resolve(null, meta), Prop(sized, "OutputLimitTokens"));
 
         var custom = items.Single(i => (string)Prop(i, "ModelId")! == "not-in-the-catalog");
         Assert.Null(Prop(custom, "ContextWindowTokens"));
         Assert.Equal(5000, Prop(custom, "InputLimitTokens"));
+        Assert.Null(Prop(custom, "OutputLimitTokens"));
     }
 
     [Fact]

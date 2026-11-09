@@ -36,7 +36,7 @@
 .cw-button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-block-size: 24px;
   min-inline-size: 24px;
   padding: 0 2px;
@@ -55,8 +55,6 @@
     outline-offset: 2px;
   }
 }
-
-.cw-label { opacity: 0.75; }
 
 .cw-value {
   font-family: monospace;
@@ -141,6 +139,33 @@
   }
 }
 
+.cw-reply {
+  border-block-start: 1px solid var(--info-popup-rule);
+  padding-block-start: 8px;
+  margin-block-start: 8px;
+}
+
+.cw-reply-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* The context bar's Latest reply color; reasoning is a tint of it, being part of the reply. */
+.cw-reply-answer { background: var(--cw-cat-8); }
+.cw-reply-reasoning { background: color-mix(in srgb, var(--cw-cat-8) 50%, transparent); }
+
+.cw-reply-elevated .cw-panel-percent { color: var(--color-warning); }
+.cw-reply-critical .cw-panel-percent { color: var(--color-error); }
+
+.cw-reply-note {
+  margin: 2px 0 0;
+  color: var(--info-popup-muted);
+  font-size: 0.8125rem;
+
+  .cw-reply-critical & { color: inherit; }
+}
+
 .cw-swatch {
   display: inline-block;
   inline-size: 10px;
@@ -158,5 +183,6 @@
 }
 
 @media (forced-colors: active) {
-  .cw-ring { forced-color-adjust: none; }
+  .cw-ring,
+  .cw-reply-bar { forced-color-adjust: none; }
 }

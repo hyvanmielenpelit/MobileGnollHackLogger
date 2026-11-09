@@ -653,8 +653,12 @@ To find specific popups, look in the corresponding component's `.html` template:
     the current model. *Don't warn me again* silences only the cache warning (`localStorage` key
     `overseer_warn_model_switch`, undone in Settings).
   - `#cw-breakdown` (`chat/context-usage/`): the context breakdown, a click-mode `popover="auto"` panel
-    (`frontend_ui_controls` §4b) on the header's `Context N%` button. The button has no `interestfor`
-    hint, because a hint would cover the panel it opens.
+    (`frontend_ui_controls` §4b) on the header's context button: a ring followed by its percentage (a
+    compact token count when the window is unknown), with no visible word; its `aria-label` names it.
+    The button has no `interestfor` hint, because a hint would cover the panel it opens. The panel ends
+    in a *Latest reply* section: the last call's output against the selected model's per-call output
+    cap (`outputLimitTokens`, from `ChatOutputBudget`), drawn as a bar only when the measurement is on
+    the selected model.
   - `#privacyDialog`: Privacy for this chat (Standard / Confidential / Incognito), opened from
     the composer's privacy button; offered only while no chat is open.
   - `#privateBadgeDialog`: Privacy details for the open chat — opened by the Private badge in

@@ -3,17 +3,14 @@
         [attr.aria-expanded]="panelOpen"
         popovertarget="cw-breakdown"
         [attr.style]="'anchor-name: --cw-breakdown'">
-  <span class="cw-label">Context</span>
-  @if (percentText) {
-    <span class="cw-value">{{ percentText }}</span>
-  }
-  @if (view.severity === 'critical') {
-    <svg class="cw-warning" role="img" aria-label="nearly full" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-  }
   <span class="cw-ring" aria-hidden="true"
         [class.cw-ring-elevated]="view.severity === 'elevated'"
         [class.cw-ring-critical]="view.severity === 'critical'"
         [style.--cw-value]="view.percent ?? 0"></span>
+  <span class="cw-value">{{ buttonText }}</span>
+  @if (warningText) {
+    <svg class="cw-warning" role="img" [attr.aria-label]="warningText" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+  }
 </button>
 
 <div popover="auto" id="cw-breakdown" class="gh-info-popup cw-panel"
@@ -42,7 +39,7 @@
         </tr>
       }
     </tbody>
-    @if (usage.breakdown && (usage.breakdown.cacheRead > 0 || usage.breakdown.cacheWrite > 0 || usage.breakdown.reasoning > 0)) {
+    @if (usage.breakdown && (usage.breakdown.cacheRead > 0 || usage.breakdown.cacheWrite > 0)) {
       <tbody class="cw-table-measured">
         @if (usage.breakdown.cacheRead > 0) {
           <tr><th scope="row">Reused from cache</th><td>{{ formatTokens(usage.breakdown.cacheRead) }}</td><td></td></tr>
@@ -50,12 +47,39 @@
         @if (usage.breakdown.cacheWrite > 0) {
           <tr><th scope="row">Written to cache</th><td>{{ formatTokens(usage.breakdown.cacheWrite) }}</td><td></td></tr>
         }
-        @if (usage.breakdown.reasoning > 0) {
-          <tr><th scope="row">Reasoning in reply</th><td>{{ formatTokens(usage.breakdown.reasoning) }}</td><td></td></tr>
-        }
       </tbody>
     }
   </table>
+
+  <section class="cw-reply" aria-labelledby="cw-reply-title"
+           [class.cw-reply-elevated]="reply.severity === 'elevated'"
+           [class.cw-reply-critical]="reply.severity === 'critical'">
+    <div class="cw-reply-head">
+      <span id="cw-reply-title">Latest reply</span>
+      @if (reply.percent !== null) {
+        <span class="cw-panel-percent">{{ reply.percent }}%</span>
+      }
+    </div>
+    <div class="cw-panel-tokens">{{ replyTokensText }}</div>
+    @if (reply.limitTokens !== null) {
+      <div class="cw-bar cw-reply-bar" role="img" [attr.aria-label]="replyBarLabel">
+        @if (reply.reasoningTokens > 0) {
+          <span class="cw-segment cw-reply-reasoning" [style.flex-grow]="reply.reasoningTokens"></span>
+        }
+        @if (reply.outputTokens - reply.reasoningTokens > 0) {
+          <span class="cw-segment cw-reply-answer" [style.flex-grow]="reply.outputTokens - reply.reasoningTokens"></span>
+        }
+        @if (reply.limitTokens - reply.outputTokens > 0) {
+          <span class="cw-segment cw-cat-free" [style.flex-grow]="reply.limitTokens - reply.outputTokens"></span>
+        }
+      </div>
+    }
+    @if (reply.reachedLimit) {
+      <p class="cw-reply-note">The reply reached its output limit and may be cut short.</p>
+    } @else if (reply.limitTokens === null && view.state !== 'measured') {
+      <p class="cw-reply-note">Measured on {{ measuredName }}; its output limit is not shown.</p>
+    }
+  </section>
 
   <div class="cw-panel-notes">
     @if (view.inputLimitTokens) {

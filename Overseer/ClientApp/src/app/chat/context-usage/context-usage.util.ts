@@ -26,6 +26,18 @@ export interface ContextBreakdownRow {
   estimated: boolean;
 }
 
+/** The last model call's output against the per-call output cap of the selected model. */
+export interface LatestReplyView {
+  outputTokens: number;
+  /** Of `outputTokens`; 0 when the breakdown is missing. */
+  reasoningTokens: number;
+  /** Null when no bar is drawn: another model is selected, or the cap is the provider's default. */
+  limitTokens: number | null;
+  percent: number | null;
+  severity: ContextSeverity;
+  reachedLimit: boolean;
+}
+
 export type ModelSwitchCacheEffect = 'none' | 'partial' | 'cold';
 
 export interface ModelSwitchImpact {
@@ -120,6 +132,41 @@ function severityOf(percent: number, usedTokens: number, inputLimit: number | nu
   if (percent >= SEVERITY_CRITICAL_WINDOW_PERCENT) return 'critical';
   const nearLimit = !!inputLimit && usedTokens / inputLimit * 100 >= SEVERITY_ELEVATED_LIMIT_PERCENT;
   return percent >= SEVERITY_ELEVATED_WINDOW_PERCENT || nearLimit ? 'elevated' : 'normal';
+}
+
+/**
+ * The latest reply against the output cap the selected model is sent. The cap applies only while the
+ * measurement is on the selected model; otherwise, or when the provider's default applies, no limit is shown.
+ */
+export function latestReplyView(usage: ChatContextUsage, selected: UserAiModel | null | undefined): LatestReplyView {
+  const outputTokens = Math.max(0, usage.outputTokens);
+  const reasoningTokens = Math.min(usage.breakdown?.reasoning ?? 0, outputTokens);
+  const cap = selected?.outputLimitTokens ?? null;
+  const limitTokens = selected && cap !== null && cap > 0 && contextView(usage, selected).state === 'measured'
+    ? cap
+    : null;
+
+  if (limitTokens === null) {
+    return { outputTokens, reasoningTokens, limitTokens, percent: null, severity: 'normal', reachedLimit: false };
+  }
+
+  const percent = percentOf(outputTokens, limitTokens);
+  const reachedLimit = outputTokens >= limitTokens;
+  const severity: ContextSeverity = reachedLimit
+    ? 'critical'
+    : percent >= SEVERITY_ELEVATED_LIMIT_PERCENT ? 'elevated' : 'normal';
+  return { outputTokens, reasoningTokens, limitTokens, percent, severity, reachedLimit };
+}
+
+/** A compact token count, by the chat's k / M rule: `999`, `29.9k`, `1.05M`. */
+export function formatCompactTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1000000) return trimZeros(n / 1000, 1) + 'k';
+  return trimZeros(n / 1000000, 2) + 'M';
+}
+
+function trimZeros(v: number, digits: number): string {
+  return v.toFixed(digits).replace(/\.?0+$/, '');
 }
 
 /** What the panel lists, in a fixed order, measured against the measured model's window. Zero rows are left out. */

@@ -490,14 +490,19 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(value?.textContent?.trim()).toBe('1.85¢');
     });
 
-    it('should label the chat total as Total', () => {
+    it('should name the chat total with a coins glyph and an accessible name', () => {
       component.messages = [{ role: 'assistant', content: 'test', estimatedCost: 0.01 } as any];
       component.sessionTotalCost = 0.0185;
       component.showChatCost = true;
       fixture.detectChanges();
-      const label = (fixture.nativeElement as HTMLElement)
-        .querySelector('.chat-cost-indicator .cost-label');
-      expect(label?.textContent?.trim()).toBe('Total');
+      const indicator = (fixture.nativeElement as HTMLElement).querySelector('.chat-cost-indicator')!;
+      expect(indicator.querySelector('.cost-label')).toBeNull();
+      const readout = indicator.querySelector('button.cost-readout')!;
+      expect(readout.querySelector('svg.cost-icon[aria-hidden="true"]')).toBeTruthy();
+      expect(readout.getAttribute('aria-label')).toBe('Total cost of this chat: 1.85¢');
+      expect(readout.getAttribute('interestfor')).toBe('tip-chat-cost');
+      expect(indicator.querySelector('#tip-chat-cost')?.textContent?.trim()).toBe('Total estimated cost of this chat.');
+      expect(indicator.querySelectorAll('[title]').length).toBe(0);
     });
 
     it('should render the chat total in the header, not above the prompt box', () => {

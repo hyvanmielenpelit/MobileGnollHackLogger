@@ -175,15 +175,7 @@ public class AgentLoopRunner
         bool enableGameActions = request.EnableGameActions;
 
         var runMetadata = _modelMetadataService.GetMetadata(request.ProviderName, request.ModelId);
-        int? effectiveMaxOutputTokens = request.MaxOutputTokens;
-        if (!effectiveMaxOutputTokens.HasValue && runMetadata.MaxOutputTokens > 0)
-        {
-            effectiveMaxOutputTokens = runMetadata.MaxOutputTokens;
-        }
-        else if (effectiveMaxOutputTokens.HasValue && runMetadata.MaxOutputTokens > 0)
-        {
-            effectiveMaxOutputTokens = Math.Min(effectiveMaxOutputTokens.Value, runMetadata.MaxOutputTokens);
-        }
+        int? effectiveMaxOutputTokens = ChatOutputBudget.Resolve(request.MaxOutputTokens, runMetadata);
 
         var httpClient = _httpClientFactory.CreateClient("AiProvider");
         long? apiCallStartTime = null;

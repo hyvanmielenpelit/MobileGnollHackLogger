@@ -640,6 +640,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return this.formatCost(this.totalChatCost);
   }
 
+  /** The read-out's name: the glyph says "cost", this also says whose. */
+  get chatCostAriaLabel(): string {
+    return `Total cost of this chat: ${this.formattedChatCost}`;
+  }
+
   get chatCostTooltip(): string {
     let tip = 'Total estimated cost of this chat.';
     if (this.isChatCostPartial) {

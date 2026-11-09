@@ -618,18 +618,43 @@
 .chat-cost-indicator {
   display: flex;
   gap: 6px;
-  align-items: baseline;
+  align-items: center;
   white-space: nowrap;
 
-  .cost-label { opacity: 0.75; }
+  /* The coins glyph and the figure; the aria-label and the hint say it is the whole chat's total. */
+  .cost-readout {
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: 0 2px;
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-block-size: 24px;
+    cursor: help;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+  }
+  .cost-icon {
+    inline-size: 14px;
+    block-size: 14px;
+    flex-shrink: 0;
+    opacity: 0.75;
+  }
   .cost-value {
     font-family: monospace;
     white-space: nowrap;
     color: inherit;
-    cursor: help;
   }
   /* Glyph only, sized as .cw-warning; the aria-label and the hint carry the words. The row
-     aligns on baseline, so the button centres itself against the value beside it. */
+     centers its items, so the button sits level with the read-out beside it. */
   .cost-partial-badge {
     appearance: none;
     background: none;

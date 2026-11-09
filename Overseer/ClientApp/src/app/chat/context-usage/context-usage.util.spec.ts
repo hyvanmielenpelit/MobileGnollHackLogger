@@ -4,7 +4,8 @@ import { ChatContextUsage } from '../../services/chat.service';
 import { UserAiModel } from '../../services/settings.service';
 import {
   WARN_MODEL_SWITCH_STORAGE_KEY, contextBreakdownRows, contextUsagePercent,
-  contextView, describeModelChanges, modelFingerprint, modelSwitchImpact, readContextBreakdown, readWarnModelSwitch, writeWarnModelSwitch
+  contextView, describeModelChanges, formatCompactTokens, latestReplyView, modelFingerprint, modelSwitchImpact,
+  readContextBreakdown, readWarnModelSwitch, writeWarnModelSwitch
 } from './context-usage.util';
 
 const usage = (over: Partial<ChatContextUsage> = {}): ChatContextUsage => ({
@@ -125,6 +126,56 @@ describe('contextBreakdownRows', () => {
     expect(rows.filter(r => r.estimated).map(r => r.key)).toEqual(['systemPrompt', 'toolDefinitions', 'history', 'documents', 'images', 'toolActivity']);
     expect(rows.find(r => r.key === 'latestReply')?.estimated).toBe(false);
     expect(rows.reduce((sum, r) => sum + r.tokens, 0)).toBe(200000);
+  });
+});
+
+describe('latestReplyView', () => {
+  it('should measure the reply against the cap, with reasoning clamped to the output', () => {
+    const reply = latestReplyView(usage({ outputTokens: 250, breakdown: { ...breakdown, reasoning: 900 } }), model({ outputLimitTokens: 1000 }));
+    expect(reply).toEqual({
+      outputTokens: 250, reasoningTokens: 250, limitTokens: 1000, percent: 25, severity: 'normal', reachedLimit: false
+    });
+  });
+
+  it('should take reasoning from the breakdown, and 0 without one', () => {
+    expect(latestReplyView(usage({ breakdown }), model({ outputLimitTokens: 1000 })).reasoningTokens).toBe(10);
+    expect(latestReplyView(usage(), model({ outputLimitTokens: 1000 })).reasoningTokens).toBe(0);
+  });
+
+  it('should be critical when the reply reached the cap', () => {
+    const reply = latestReplyView(usage({ outputTokens: 1000 }), model({ outputLimitTokens: 1000 }));
+    expect(reply.reachedLimit).toBe(true);
+    expect(reply.severity).toBe('critical');
+    expect(reply.percent).toBe(100);
+  });
+
+  it('should be elevated from 85 % of the cap', () => {
+    const reply = latestReplyView(usage({ outputTokens: 850 }), model({ outputLimitTokens: 1000 }));
+    expect(reply.reachedLimit).toBe(false);
+    expect(reply.severity).toBe('elevated');
+    expect(latestReplyView(usage({ outputTokens: 840 }), model({ outputLimitTokens: 1000 })).severity).toBe('normal');
+  });
+
+  it('should claim no cap for a reply measured on another model', () => {
+    const reply = latestReplyView(usage(), model({ modelId: 'claude-z', outputLimitTokens: 1000 }));
+    expect(reply.limitTokens).toBeNull();
+    expect(reply.percent).toBeNull();
+    expect(reply.severity).toBe('normal');
+  });
+
+  it('should claim no cap with no selected model', () => {
+    expect(latestReplyView(usage(), undefined).limitTokens).toBeNull();
+  });
+
+  it('should claim no cap when the provider default applies', () => {
+    expect(latestReplyView(usage(), model({ outputLimitTokens: null })).limitTokens).toBeNull();
+    expect(latestReplyView(usage(), model()).limitTokens).toBeNull();
+  });
+});
+
+describe('formatCompactTokens', () => {
+  it.each([[999, '999'], [1000, '1k'], [29900, '29.9k'], [1050000, '1.05M'], [2000000, '2M']])('should write %d as %s', (n, text) => {
+    expect(formatCompactTokens(n)).toBe(text);
   });
 });
 

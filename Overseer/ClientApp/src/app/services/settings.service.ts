@@ -184,6 +184,8 @@ export interface UserAiModel {
   contextWindowTokens?: number | null;
   /** The limit chat history is truncated to on this model. */
   inputLimitTokens?: number | null;
+  /** The output cap the chat sends this model per call; null when the provider's default applies. */
+  outputLimitTokens?: number | null;
   isSystem?: boolean;
   modelRole?: number;
   parallelExecutionMode?: number;

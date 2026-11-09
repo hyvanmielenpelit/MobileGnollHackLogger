@@ -30,10 +30,11 @@ describe('ContextUsageComponent', () => {
     fixture = TestBed.createComponent(ContextUsageComponent);
   });
 
-  it('should show the percentage in one button that names its value', () => {
+  it('should show the ring and the percentage in one button that names its value', () => {
     set(usage);
-    expect(button().textContent).toContain('Context');
-    expect(button().textContent).toContain('3%');
+    expect(button().textContent!.trim()).toBe('3%');
+    expect(button().textContent).not.toContain('Context');
+    expect(button().firstElementChild!.classList.contains('cw-ring')).toBe(true);
     expect(button().getAttribute('aria-label')).toBe(`Context usage: 3%, ${(29900).toLocaleString()} of ${(1050000).toLocaleString()} tokens. Show breakdown`);
     expect(button().getAttribute('aria-describedby')).toBeNull();
     expect(button().getAttribute('popovertarget')).toBe('cw-breakdown');
@@ -75,6 +76,7 @@ describe('ContextUsageComponent', () => {
   it('should claim no percentage when the selected window is unknown', () => {
     set(usage, { provider: 'OpenAI', modelId: 'custom', displayName: 'Custom', contextWindowTokens: null });
     expect(button().textContent).not.toContain('%');
+    expect(button().textContent!.trim()).toBe('29.9k');
     expect(el().querySelector('.cw-panel-notes')!.textContent).toContain('is not known');
   });
 
@@ -95,10 +97,52 @@ describe('ContextUsageComponent', () => {
     expect(table).not.toContain(`≈ ${(1500).toLocaleString()}`);
     expect(table).toContain('Reused from cache');
     expect(table).toContain('Written to cache');
-    expect(table).toContain('Reasoning in reply');
+    expect(table).not.toContain('Reasoning in reply');
     expect(el().querySelector('.cw-panel-notes')!.textContent).toContain('≈ Estimated share of the exact total.');
     expect(el().querySelector('.cw-bar')!.getAttribute('role')).toBe('img');
     expect(el().querySelector('.cw-bar')!.getAttribute('aria-label')).toContain('System prompt');
+  });
+
+  describe('Latest reply', () => {
+    const measuredModel = { provider: 'OpenAI', modelId: 'gpt-x', displayName: 'GPT-x', contextWindowTokens: 1050000 };
+    const reply = () => el().querySelector('.cw-reply') as HTMLElement;
+    const replyBar = () => el().querySelector('.cw-reply-bar') as HTMLElement | null;
+
+    it('should draw the reply against the output cap of the selected model', () => {
+      set({ ...usage, breakdown }, { ...measuredModel, outputLimitTokens: 128000 });
+      expect(reply().querySelector('#cw-reply-title')!.textContent).toBe('Latest reply');
+      expect(reply().querySelector('.cw-panel-percent')!.textContent).toBe('1%');
+      expect(reply().textContent).toContain(`${(1500).toLocaleString()} of ${(128000).toLocaleString()} tokens, 400 of them reasoning`);
+      expect(replyBar()!.getAttribute('role')).toBe('img');
+      expect(replyBar()!.getAttribute('aria-label')).toBe(
+        `Reasoning 400 tokens, answer ${(1100).toLocaleString()} tokens, unused ${(126500).toLocaleString()} tokens`);
+      expect(replyBar()!.querySelectorAll('.cw-segment').length).toBe(3);
+      expect(reply().querySelector('.cw-reply-note')).toBeNull();
+      expect(button().getAttribute('aria-label')).not.toContain('output limit');
+    });
+
+    it('should show the figure without a bar when no cap is known', () => {
+      set(usage, { ...measuredModel, outputLimitTokens: null });
+      expect(reply().textContent).toContain(`${(1500).toLocaleString()} tokens`);
+      expect(reply().querySelector('.cw-panel-percent')).toBeNull();
+      expect(replyBar()).toBeNull();
+    });
+
+    it('should not claim the selected cap for a reply measured on another model', () => {
+      set(usage, { provider: 'Anthropic', modelId: 'claude-y', displayName: 'Claude Y', contextWindowTokens: 50000, outputLimitTokens: 1000 });
+      expect(replyBar()).toBeNull();
+      expect(reply().querySelector('.cw-reply-note')!.textContent).toContain('Measured on GPT-x; its output limit is not shown.');
+    });
+
+    it('should warn when the reply reached its output limit', () => {
+      set(usage, { ...measuredModel, outputLimitTokens: 1500 });
+      expect(reply().classList.contains('cw-reply-critical')).toBe(true);
+      expect(reply().querySelector('.cw-reply-note')!.textContent).toContain('The reply reached its output limit and may be cut short.');
+      expect(replyBar()!.querySelector('.cw-cat-free')).toBeNull();
+      expect(button().getAttribute('aria-label')).toBe(
+        `Context usage: 3%, ${(29900).toLocaleString()} of ${(1050000).toLocaleString()} tokens, latest reply reached its output limit. Show breakdown`);
+      expect(button().querySelector('.cw-warning')!.getAttribute('aria-label')).toBe('reply reached its output limit');
+    });
   });
 
   it('should open the panel from the button, and report it in aria-expanded', async () => {

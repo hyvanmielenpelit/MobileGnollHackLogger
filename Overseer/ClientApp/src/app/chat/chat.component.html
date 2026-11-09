@@ -202,8 +202,15 @@
           <div class="chat-header-telemetry">
             @if (showChatCost && totalChatCost != null) {
               <div class="chat-cost-indicator">
-                <span class="cost-label">Total</span>
-                <span class="cost-value" [title]="chatCostTooltip">{{ formattedChatCost }}</span>
+                <button type="button" class="cost-readout"
+                        [attr.aria-label]="chatCostAriaLabel"
+                        interestfor="tip-chat-cost"
+                        [attr.style]="'anchor-name: --tip-chat-cost'">
+                  <svg class="cost-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.744 17.736a6 6 0 1 1-7.48-7.48"></path><path d="M15 6h1v4"></path><path d="m6.134 14.768.866-.5 2 3.464"></path><circle cx="16" cy="8" r="6"></circle></svg>
+                  <span class="cost-value">{{ formattedChatCost }}</span>
+                </button>
+                <div popover="hint" id="tip-chat-cost" class="gh-tooltip gh-tooltip-multiline"
+                     [attr.style]="'position-anchor: --tip-chat-cost'">{{ chatCostTooltip }}</div>
                 @if (isChatCostPartial) {
                   <button type="button" class="cost-partial-badge"
                           [attr.aria-label]="partialCostTooltip"
