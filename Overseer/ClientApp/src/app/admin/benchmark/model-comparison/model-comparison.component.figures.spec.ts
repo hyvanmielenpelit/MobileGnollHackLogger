@@ -307,7 +307,7 @@ describe('ModelComparisonComponent', () => {
     const enabled = fixture.debugElement
       .queryAll(By.css('.mc-all-download-all, .mc-all-tile .mc-all-copy, .mc-all-tile .mc-all-download'))
       .map(button => button.nativeElement as HTMLButtonElement);
-    expect(enabled.length).toBe(1 + 9 * 2);
+    expect(enabled.length).toBe(1 + 8 * 2);
     expect(enabled.every(button => button.getAttribute('aria-disabled') === null)).toBe(true);
   });
 
@@ -786,18 +786,18 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
-  it('shows the provider availability panel in P1 from the bar style, and takes it out when unchecked', () => {
+  it('draws the Provider errors figure in the bar family\'s caption sizes', () => {
     render(buildDto(comparableSet(3)), 2);
-    expect(component.panelCards.map(card => card.id)).toContain('p1d-availability');
-    // The dot plot is drawn in the bar family's caption sizes.
-    const panel = component.panelCards[3];
-    expect(drawnChrome(panel).textSizes).toEqual({ titlePx: 18, badgePx: 11, footerPx: 12 });
-    expect(panel.type).toBe('line');
-
-    openStyleTab(component.panelCards[0]);
-    withStyleDebounce(() => setChecked(styleControl('mc-style-bar-availabilityPanel'), false));
     expect(component.panelCards.map(card => card.id)).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost']);
-    expect(component.exportableCards.map(card => card.id)).toContain('a1-availability');
+    const availability = component.availabilityCard!;
+    expect(drawnChrome(availability).textSizes).toEqual({ titlePx: 18, badgePx: 11, footerPx: 12 });
+    expect(availability.type).toBe('line');
+
+    // Its measure and scale sit in the bar family's style section.
+    openStyleTab(availability);
+    expect((fixture.nativeElement as HTMLElement).querySelector('#mc-style-bar-availabilityPanel')).toBeNull();
+    withStyleDebounce(() => setChecked(styleControl('mc-style-bar-availabilityMeasure-inclusive'), true));
+    expect(component.figureStyle.availability.measure).toBe('inclusive');
   });
 
   it('carries each entry\'s provider availability into the chart entries, and none where the payload has none', () => {

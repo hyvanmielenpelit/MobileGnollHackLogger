@@ -74,7 +74,7 @@ import {
   ReorderableListItem
 } from '../../../shared/reorderable-list/reorderable-list.component';
 import {
-  AVAILABILITY_FIGURE_IDS,
+  A1_AVAILABILITY_ID,
   BarOrientation,
   ComparisonFigureSet,
   CostMeasure,
@@ -3164,10 +3164,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // in a control, because a reorder would change which figure a skimming reader trusts.
   // ---------------------------------------------------------------------------------------------
 
-  /**
-   * P1 — three linked panels sharing one model order, each with its own axis title and unit, and the
-   * provider-availability dot plot as a fourth while the style's `availability.panel` is on.
-   */
+  /** P1 — three linked panels sharing one model order, each with its own axis title and unit. */
   get panelCards(): ComparisonFigureCard[] {
     const panels = this.figures?.smallMultiples;
     if (!panels || !this.showFigures) {
@@ -3176,12 +3173,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return [
       this.toCard(panels.quality),
       this.toCard(panels.speed),
-      this.toCard(panels.cost),
-      ...(this.figureStyle.availability.panel === 'on' ? [this.toCard(panels.availability)] : [])
+      this.toCard(panels.cost)
     ];
   }
 
-  /** A1 — the provider-error dot plot on its own, after the scatters whatever the panel setting. */
+  /** A1 — the provider-error dot plot, after the scatters. */
   get availabilityCard(): ComparisonFigureCard | null {
     return this.figures && this.showFigures ? this.toCard(this.figures.availability) : null;
   }
@@ -3789,10 +3785,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /**
    * Which style family a card draws from: the bar panels, the trade-off scatters or the profile. The
-   * provider-error dot plot, P1's fourth panel and A1, draws from the bar family.
+   * provider-error dot plot, A1, draws from the bar family.
    */
   private familyOf(card: ComparisonFigureCard | null | undefined): ChartStyleFamily {
-    if (card && AVAILABILITY_FIGURE_IDS.includes(card.id)) {
+    if (card?.id === A1_AVAILABILITY_ID) {
       return 'bar';
     }
     const type = card?.type;

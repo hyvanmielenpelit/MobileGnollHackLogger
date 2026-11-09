@@ -380,14 +380,14 @@ describe('FigureStylePanelComponent', () => {
       numbers: DEFAULT_FIGURE_STYLE.numbers,
       appearance: DEFAULT_FIGURE_STYLE.appearance,
       table: DEFAULT_FIGURE_STYLE.table,
-      availability: { panel: 'off', measure: 'inclusive', scale: 'linear', markers: 'on' }
+      availability: { measure: 'inclusive', scale: 'linear', markers: 'on' }
     };
     render('bar', changed);
     (host().querySelector('#mc-style-bar-reset') as HTMLButtonElement).click();
     expect(emitted[0].bar).toEqual(DEFAULT_FIGURE_STYLE.bar);
     expect(emitted[0].scatter).toEqual(changed.scatter);
     // The bar family's provider-availability options reset with it; the scatter markers stay.
-    expect(emitted[0].availability).toEqual({ panel: 'on', measure: 'strict', scale: 'sqrt', markers: 'on' });
+    expect(emitted[0].availability).toEqual({ measure: 'strict', scale: 'sqrt', markers: 'on' });
 
     render('scatter', changed);
     const reset = host().querySelector('#mc-style-scatter-reset') as HTMLButtonElement;
@@ -395,7 +395,7 @@ describe('FigureStylePanelComponent', () => {
     reset.click();
     expect(emitted[1].scatter).toEqual(DEFAULT_FIGURE_STYLE.scatter);
     expect(emitted[1].bar).toEqual(changed.bar);
-    expect(emitted[1].availability).toEqual({ panel: 'off', measure: 'inclusive', scale: 'linear', markers: 'off' });
+    expect(emitted[1].availability).toEqual({ measure: 'inclusive', scale: 'linear', markers: 'off' });
   });
 
   it('emits the two trade-off toggles through their own outputs and disables the legend under direct labels', () => {
@@ -685,7 +685,7 @@ describe('FigureStylePanelComponent', () => {
     }
   });
 
-  it('claims every provider-availability field in exactly one family section, the panel options in bar and the markers in scatter', () => {
+  it('claims every provider-availability field in exactly one family section, the measure and scale in bar and the markers in scatter', () => {
     const grouped = (['bar', 'scatter', 'profile', 'timeline', 'appearance'] as const)
       .flatMap(kind => FIGURE_STYLE_SECTIONS[kind].filter(section => section.group === 'availability')
         .map(section => ({ kind, keys: [...section.keys] })));
@@ -693,39 +693,33 @@ describe('FigureStylePanelComponent', () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect([...keys].sort()).toEqual(Object.keys(DEFAULT_FIGURE_STYLE.availability).sort());
     expect(grouped).toEqual([
-      { kind: 'bar', keys: ['panel', 'measure', 'scale'] },
+      { kind: 'bar', keys: ['measure', 'scale'] },
       { kind: 'scatter', keys: ['markers'] }
     ]);
   });
 
-  it('switches the provider-availability panel, measure and scale in the bar family, and reads them out', () => {
+  it('switches the provider-availability measure and scale in the bar family, and reads them out', () => {
     const readout = (): string =>
       host().querySelector('#mc-style-bar-section-availability > summary .gh-disclosure-summary-value')!.textContent!.trim();
     render('bar');
-    expect(readout()).toBe('panel shown · provider errors only · square-root scale');
-    const panel = control('mc-style-bar-availabilityPanel');
-    expect(panel.checked).toBe(true);
-    expect(hintOf(panel)).toContain('fourth panel');
+    expect(readout()).toBe('provider errors only · square-root scale');
+    expect(host().querySelector('#mc-style-bar-availabilityPanel')).toBeNull();
     expect(resetButton('mc-style-bar-section-availability-reset').getAttribute('aria-disabled')).toBe('true');
 
-    setChecked(panel, false);
-    expect(emitted[0].availability).toEqual({ ...DEFAULT_FIGURE_STYLE.availability, panel: 'off' });
+    setChecked(control('mc-style-bar-availabilityMeasure-inclusive'), true);
+    expect(emitted[0].availability).toEqual({ ...DEFAULT_FIGURE_STYLE.availability, measure: 'inclusive' });
     expect(emitted[0].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
     acceptLast();
-
-    setChecked(control('mc-style-bar-availabilityMeasure-inclusive'), true);
-    expect(emitted[1].availability.measure).toBe('inclusive');
-    acceptLast();
     setChecked(control('mc-style-bar-availabilityScale-linear'), true);
-    expect(emitted[2].availability).toEqual({ panel: 'off', measure: 'inclusive', scale: 'linear', markers: 'off' });
+    expect(emitted[1].availability).toEqual({ measure: 'inclusive', scale: 'linear', markers: 'off' });
     acceptLast();
-    expect(readout()).toBe('panel hidden · with unattributed · linear scale');
+    expect(readout()).toBe('with unattributed · linear scale');
 
     const reset = resetButton('mc-style-bar-section-availability-reset');
     expect(reset.getAttribute('aria-disabled')).toBeNull();
     reset.click();
     fixture.detectChanges();
-    expect(emitted[3].availability).toEqual(DEFAULT_FIGURE_STYLE.availability);
+    expect(emitted[2].availability).toEqual(DEFAULT_FIGURE_STYLE.availability);
     expect(statusText()).toBe('Provider availability reset to defaults.');
   });
 
@@ -743,7 +737,6 @@ describe('FigureStylePanelComponent', () => {
     expect(emitted[0].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
     acceptLast();
     expect(readout()).toBe('markers above 2%');
-    expect(host().querySelector('#mc-style-scatter-availabilityPanel')).toBeNull();
 
     resetButton('mc-style-scatter-section-availability-reset').click();
     expect(emitted[1].availability.markers).toBe('off');

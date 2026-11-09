@@ -2,7 +2,7 @@
  * Chart core for the cross-model benchmark comparison view: the palette and its provider colors, the
  * per-model identity glyphs, the measure definitions, the Pareto-frontier computation, the error-bar,
  * direct-label, profile-tile and provider-error marker plugins and the configurations for the figures
- * (S1-S3 scatters, P1's linked panels with the optional provider-availability dot plot, P2's
+ * (S1-S3 scatters, P1's linked panels, P2's
  * small-multiples model profiles, and A1, the provider-error dot plot on its own).
  *
  * The module is pure TypeScript: it constructs no components, touches no DOM node and imports
@@ -2707,8 +2707,6 @@ export interface SmallMultiplesFigure {
   readonly quality: ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel>;
   readonly speed: ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel>;
   readonly cost: ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel>;
-  /** The provider-error dot plot; the page shows it as a fourth panel while `style.availability.panel` is on. */
-  readonly availability: DotPlotSpec;
   /** The single model order every panel shares, as entry keys, in drawing order. */
   readonly order: readonly string[];
   readonly notices: readonly string[];
@@ -2984,8 +2982,7 @@ function barSpeedUnit(plotted: readonly ModelComparisonEntry[], speedMeasure: Sp
  * P1 — three aligned bar panels sharing one model order, so a row is one model and a column is one
  * measure. Each panel keeps its own real units and its own axis title; there is no shared y-axis and
  * no second y-axis, because three incommensurable measures on one scale is the worst chart mistake
- * there is. The provider-error dot plot is built beside them in the same order, as the optional
- * fourth panel.
+ * there is.
  */
 export function buildSmallMultiples(
   plotted: readonly ModelComparisonEntry[],
@@ -3134,7 +3131,6 @@ export function buildSmallMultiples(
       true,
       costMeasure === 'candidateSuite',
     ),
-    availability: buildAvailabilityDotPlot(P1_AVAILABILITY_ID, P1_AVAILABILITY_TITLE, plotted, categoryLabels, options),
     order: plotted.map((e) => e.key),
     notices: [],
   };
@@ -3156,19 +3152,15 @@ function panelCategoryLabels(plotted: readonly ModelComparisonEntry[], barStyle:
 }
 
 // ---------------------------------------------------------------------------------------------
-// The provider-error dot plot: P1's fourth panel and A1
+// A1, the provider-error dot plot
 // ---------------------------------------------------------------------------------------------
 
 /** A dot per model on a value axis, with its interval whisker and its count: a line chart drawn without lines. */
 export type DotPlotSpec = ChartSpec<'line', ErrorBarPoint[], PanelCategoryLabel>;
 
-export const P1_AVAILABILITY_ID = 'p1d-availability';
-export const P1_AVAILABILITY_TITLE = 'Provider availability';
+/** A1's id and title; the figure takes the bar family's style. */
 export const A1_AVAILABILITY_ID = 'a1-availability';
 export const A1_AVAILABILITY_TITLE = 'Provider errors';
-
-/** The figure ids that draw the provider-error dot plot, which takes the bar family's style. */
-export const AVAILABILITY_FIGURE_IDS: readonly string[] = [P1_AVAILABILITY_ID, A1_AVAILABILITY_ID];
 
 /** The definition under the dot plot's badges: the numerator and the denominator, where the number appears. */
 export const AVAILABILITY_DETAIL_STRICT =
@@ -3222,23 +3214,23 @@ function availabilityAxisTitle(measure: AvailabilityMeasure, scale: Availability
 }
 
 /**
- * The provider-error dot plot: one dot per model at its error rate, the server's cluster-adjusted
- * Wilson 95% interval as its whisker, `k/n` beside it, a hollow dot below 100 valid attempts, and
- * `not recorded` without a dot for a model whose runs predate the ledger. Strict or inclusive and
- * square-root or linear, as `style.availability` says; descriptive only, with no ranking or test.
- * The model order and the category labels are P1's, so the panel lines up with the other three.
+ * A1 — the provider-error dot plot: one dot per model at its error rate, the server's
+ * cluster-adjusted Wilson 95% interval as its whisker, `k/n` beside it, a hollow dot below 100 valid
+ * attempts, and `not recorded` without a dot for a model whose runs predate the ledger. Strict or
+ * inclusive and square-root or linear, as `style.availability` says; descriptive only, with no
+ * ranking or test. The model order, orientation and category labels are P1's.
  */
-function buildAvailabilityDotPlot(
-  id: string,
-  title: string,
+export function buildAvailabilityFigure(
   plotted: readonly ModelComparisonEntry[],
-  categoryLabels: readonly PanelCategoryLabel[],
   options: SmallMultiplesOptions,
 ): DotPlotSpec {
+  const id = A1_AVAILABILITY_ID;
+  const title = A1_AVAILABILITY_TITLE;
   const { context, reducedMotion, highlightedKey, selectedKeys, orientation } = options;
   const figureStyle = options.style ?? DEFAULT_FIGURE_STYLE;
   const style = figureStyle.bar;
   const { measure, scale } = figureStyle.availability;
+  const categoryLabels = panelCategoryLabels(plotted, style);
   const theme = themeOf(options);
   const vertical = orientation === 'vertical';
   const emphasised = new Set<string>(selectedKeys ?? []);
@@ -3438,18 +3430,6 @@ function buildAvailabilityDotPlot(
     // The text alternative: every model's rate with its count and interval, or why it has none.
     summary: plotted.map((entry) => `${entry.label}: ${availabilityText(entry, measure)}`),
   };
-}
-
-/**
- * A1 — the provider-error dot plot as a figure of its own, in P1's model order and orientation, so a
- * document can carry it whatever the browser's panel setting says.
- */
-export function buildAvailabilityFigure(
-  plotted: readonly ModelComparisonEntry[],
-  options: SmallMultiplesOptions,
-): DotPlotSpec {
-  const barStyle = (options.style ?? DEFAULT_FIGURE_STYLE).bar;
-  return buildAvailabilityDotPlot(A1_AVAILABILITY_ID, A1_AVAILABILITY_TITLE, plotted, panelCategoryLabels(plotted, barStyle), options);
 }
 
 // ---------------------------------------------------------------------------------------------

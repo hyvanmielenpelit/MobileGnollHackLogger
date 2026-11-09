@@ -224,17 +224,18 @@ describe('figure-style', () => {
     expect('colour' in style.bar).toBe(false);
   });
 
-  it('defaults provider availability to the panel shown, provider errors only, a square-root scale and no markers', () => {
-    expect(DEFAULT_FIGURE_STYLE.availability).toEqual({ panel: 'on', measure: 'strict', scale: 'sqrt', markers: 'off' });
+  it('defaults provider availability to provider errors only, a square-root scale and no markers', () => {
+    expect(DEFAULT_FIGURE_STYLE.availability).toEqual({ measure: 'strict', scale: 'sqrt', markers: 'off' });
     expect(DEFAULT_AVAILABILITY_STYLE).toBe(DEFAULT_FIGURE_STYLE.availability);
   });
 
   it('reads a style stored before provider availability existed with its defaults, and repairs each option on its own', () => {
     expect(normalizeFigureStyle({ version: 1, bar: { gapPercent: 10 } }).availability).toEqual(DEFAULT_FIGURE_STYLE.availability);
-    expect(normalizeFigureStyle({ availability: { panel: 'off', measure: 'inclusive', scale: 'linear', markers: 'on' } }).availability)
-      .toEqual({ panel: 'off', measure: 'inclusive', scale: 'linear', markers: 'on' });
-    const repaired = normalizeFigureStyle({ availability: { panel: false, measure: 'loose', scale: 'linear', markers: 'yes', extra: 1 } });
-    expect(repaired.availability).toEqual({ panel: 'on', measure: 'strict', scale: 'linear', markers: 'off' });
+    const stored = normalizeFigureStyle({ availability: { panel: 'off', measure: 'inclusive', scale: 'linear', markers: 'on' } }).availability;
+    expect(stored).toEqual({ measure: 'inclusive', scale: 'linear', markers: 'on' });
+    expect('panel' in stored).toBe(false);
+    const repaired = normalizeFigureStyle({ availability: { measure: 'loose', scale: 'linear', markers: 'yes', extra: 1 } });
+    expect(repaired.availability).toEqual({ measure: 'strict', scale: 'linear', markers: 'off' });
     expect('extra' in repaired.availability).toBe(false);
     expect(normalizeFigureStyle({ availability: 'on' }).availability).toEqual(DEFAULT_FIGURE_STYLE.availability);
   });

@@ -413,22 +413,12 @@
           <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'bar', name: 'layout' }"></ng-container>
         </div>
 
-        <!-- Provider availability: the fourth panel, and the measure and scale it and the standalone
-             Provider errors figure draw with. -->
+        <!-- Provider availability: the measure and scale of the Provider errors figure. -->
         <div class="fsp-section">
           <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('bar', 'availability')"
                    [open]="isOpen('bar', 'availability')" (toggle)="onSectionToggle('bar', 'availability', $event)">
             <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'bar', section: section('bar', 'availability') }"></ng-container>
             <div class="gh-disclosure-body fsp-section-body">
-              <div class="fsp-check">
-                <label class="checkbox-label">
-                  <input type="checkbox" [id]="controlId('bar', 'availabilityPanel')" [checked]="availability.panel === 'on'"
-                         [attr.aria-describedby]="tipId('bar', 'availabilityPanel')"
-                         (change)="setAvailability('panel', checkedOf($event) ? 'on' : 'off')">
-                  Show the provider availability panel
-                </label>
-                <app-info-tip [tipId]="tipId('bar', 'availabilityPanel')" subject="the provider availability panel">A fourth panel beside Intelligence, Speed and Cost: each model's share of attempts that failed at the provider, with its 95% interval and its count. A model whose runs did not record it is named as not recorded. The Provider errors figure shows the same plot whether or not the panel is shown.</app-info-tip>
-              </div>
               <fieldset class="gh-choice" [attr.aria-labelledby]="controlId('bar', 'availabilityMeasure-label')"
                         [attr.aria-describedby]="tipId('bar', 'availabilityMeasure')">
                 <legend>

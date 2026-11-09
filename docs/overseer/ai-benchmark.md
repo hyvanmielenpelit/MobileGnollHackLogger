@@ -7809,8 +7809,8 @@ resume replaces nothing.
 
 The run and battery run dialogs (a *Provider errors* key figure and a *Provider availability* section on
 the Integrity tab), Run History and Model Comparison source cards (a badge, only when non-zero), the
-model batch, multi-run and battery leaderboard tables, Model Comparison (a fourth P1 panel, figure A1,
-optional scatter markers, a *Provider errors* table column), the documents (`ReportFormatVersion` 12,
+model batch, multi-run and battery leaderboard tables, Model Comparison (figure A1, optional scatter
+markers, a *Provider errors* table column), the documents (`ReportFormatVersion` 12,
 comparison format 13, chat consistency format 3), and Chat Consistency, where the provider error rate is
 primary endpoint **P6** of the new **Protocol V2** and the analysis code version moves to 8
 ([`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md)). The run report's *Run Integrity*

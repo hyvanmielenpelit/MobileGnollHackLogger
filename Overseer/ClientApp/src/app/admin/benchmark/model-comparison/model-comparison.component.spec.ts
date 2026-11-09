@@ -208,8 +208,8 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.shape).toBe('pair');
     expect(component.profileCard).toBeNull();
-    // Intelligence, Speed, Cost and, by default, Provider availability.
-    expect(component.panelCards.length).toBe(4);
+    // Intelligence, Speed and Cost.
+    expect(component.panelCards.length).toBe(3);
     expect(component.scatterCards.length).toBe(3);
     expect(component.availabilityCard).not.toBeNull();
     expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(component.exportableCards.length);
@@ -1073,26 +1073,8 @@ describe('ModelComparisonComponent', () => {
       ...component.scatterCards.map(card => card.id),
       component.availabilityCard!.id
     ]);
-    expect(component.panelCards.map(card => card.id)).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost', 'p1d-availability']);
-    expect(component.availabilityCard!.id).toBe('a1-availability');
-  });
-
-  it('takes the provider availability panel out of P1 while the style hides it, and keeps A1', () => {
-    render(buildDto(comparableSet(3)));
-    const before = component.exportableCards.length;
-    vi.useFakeTimers();
-    try {
-      component.onFigureStyleChange({ ...DEFAULT_FIGURE_STYLE, availability: { ...DEFAULT_FIGURE_STYLE.availability, panel: 'off' } });
-      vi.advanceTimersByTime(150);
-      fixture.detectChanges();
-    }
-    finally {
-      vi.useRealTimers();
-    }
-
     expect(component.panelCards.map(card => card.id)).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost']);
-    expect(component.exportableCards.map(card => card.id)).toContain('a1-availability');
-    expect(component.exportableCards.length).toBe(before - 1);
+    expect(component.availabilityCard!.id).toBe('a1-availability');
   });
 
   it('describes the provider-error figures in their accessible names, model by model, with the count beside each rate', () => {
@@ -1103,10 +1085,8 @@ describe('ModelComparisonComponent', () => {
     const label = (id: string): string =>
       (fixture.debugElement.query(By.css(`canvas[data-figure-id="${id}"]`)).nativeElement as HTMLCanvasElement)
         .getAttribute('aria-label') ?? '';
-    for (const id of ['p1d-availability', 'a1-availability']) {
-      expect(label(id), id).toContain('Gemini 2.5 Flash (medium): 0.81% (12 of 1,480 attempts; 95% CI 0.44–1.5%)');
-      expect(label(id), id).toContain('Legacy Model (medium): not recorded');
-    }
+    expect(label('a1-availability')).toContain('Gemini 2.5 Flash (medium): 0.81% (12 of 1,480 attempts; 95% CI 0.44–1.5%)');
+    expect(label('a1-availability')).toContain('Legacy Model (medium): not recorded');
     expect(component.availabilityCard!.chrome.notes.map(note => note.text)).toContain(
       'Not recorded for Legacy Model (medium): its runs predate the provider attempt ledger.');
   });
@@ -1116,7 +1096,7 @@ describe('ModelComparisonComponent', () => {
     const style = component.chartSettingsInput().figureStyle as Record<string, Record<string, unknown>>;
     expect(style['availability']).toEqual(DEFAULT_FIGURE_STYLE.availability);
     // Inside bar or scatter they would move every stored hash; as a group only their own change does.
-    expect('panel' in style['bar']).toBe(false);
+    expect('measure' in style['bar']).toBe(false);
     expect('markers' in style['scatter']).toBe(false);
   });
 

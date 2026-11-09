@@ -191,14 +191,12 @@ export const AVAILABILITY_MEASURES: readonly AvailabilityMeasure[] = ['strict', 
 export const AVAILABILITY_SCALES: readonly AvailabilityScale[] = ['sqrt', 'linear'];
 
 /**
- * Provider availability in the comparison figures: the error-rate panel of the bar charts, its
- * measure and scale, and the markers on the trade-off scatters. Its own group, so each option is
- * claimed by one family section of the style panel and the document-chart settings hash moves only
- * when one of them changes.
+ * Provider availability in the comparison figures: the measure and scale of the Provider errors
+ * figure, and the markers on the trade-off scatters. Its own group, so each option is claimed by
+ * one family section of the style panel and the document-chart settings hash moves only when one
+ * of them changes.
  */
 export interface AvailabilityFigureStyle {
-  /** The fourth bar panel, a dot plot of each model's provider error rate. Bar family. */
-  readonly panel: AvailabilitySwitch;
   /** Bar family. */
   readonly measure: AvailabilityMeasure;
   /** Rates cluster near 0; a square-root scale spreads them and keeps 0. Bar family. */
@@ -254,9 +252,8 @@ export const DEFAULT_TABLE_IMAGE_STYLE: TableImageStyle = {
   rowRules: false,
 };
 
-/** The provider-availability panel shown, provider errors alone, on a square-root scale; no scatter markers. */
+/** Provider errors alone, on a square-root scale; no scatter markers. */
 export const DEFAULT_AVAILABILITY_STYLE: AvailabilityFigureStyle = {
-  panel: 'on',
   measure: 'strict',
   scale: 'sqrt',
   markers: 'off',
@@ -682,7 +679,6 @@ function normalizeAvailability(value: unknown): AvailabilityFigureStyle {
   const d = DEFAULT_AVAILABILITY_STYLE;
   const v = isRecord(value) ? value : {};
   return {
-    panel: oneOf(v['panel'], AVAILABILITY_SWITCHES, d.panel),
     measure: oneOf(v['measure'], AVAILABILITY_MEASURES, d.measure),
     scale: oneOf(v['scale'], AVAILABILITY_SCALES, d.scale),
     markers: oneOf(v['markers'], AVAILABILITY_SWITCHES, d.markers),

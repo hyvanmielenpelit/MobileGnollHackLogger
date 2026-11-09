@@ -115,7 +115,7 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<PanelFamily, readonly Figure
     { name: 'uncertainty', title: 'Uncertainty', keys: ['intervals', 'hiddenIntervalsNote', 'meanTimeNoIntervalNote'] },
     { name: 'footer', title: 'Footer', keys: FOOTER_KEYS },
     { name: 'layout', title: 'Layout', keys: ['orientation', 'gridlines', 'plotFrame'] },
-    { name: 'availability', title: AVAILABILITY_SECTION_TITLE, keys: ['panel', 'measure', 'scale'], group: 'availability' }
+    { name: 'availability', title: AVAILABILITY_SECTION_TITLE, keys: ['measure', 'scale'], group: 'availability' }
   ],
   scatter: [
     { name: 'heading', title: 'Heading and badges', keys: DIRECTED_HEADING_KEYS },
@@ -981,14 +981,13 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
     }
   }
 
-  /** The bar family's panel, measure and scale; the scatter family's markers. */
+  /** The bar family's measure and scale; the scatter family's markers. */
   private availabilityReadout(family: PanelFamily): string {
     const a = this.availability;
     if (family === 'scatter') {
       return a.markers === 'on' ? 'markers above 2%' : 'no markers';
     }
     return [
-      a.panel === 'on' ? 'panel shown' : 'panel hidden',
       a.measure === 'strict' ? 'provider errors only' : 'with unattributed',
       a.scale === 'sqrt' ? 'square-root scale' : 'linear scale'
     ].join(' · ');

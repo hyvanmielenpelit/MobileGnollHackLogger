@@ -9,12 +9,9 @@ import {
   AVAILABILITY_DETAIL_INCLUSIVE,
   AVAILABILITY_DETAIL_STRICT,
   AVAILABILITY_DETAIL_WHISKERS,
-  AVAILABILITY_FIGURE_IDS,
   AVAILABILITY_MARKER_NOTE,
   AVAILABILITY_MARKER_THRESHOLD,
   AXIS_TITLE_RESERVE_PX,
-  P1_AVAILABILITY_ID,
-  P1_AVAILABILITY_TITLE,
   availabilityGapText,
   availabilityMarked,
   availabilityMarkerPlugin,
@@ -42,6 +39,7 @@ import {
   PROFILE_AXIS_ORDER,
   P1_STACK_BREAKPOINT_PX,
   ReducedMotionWatcher,
+  buildAvailabilityFigure,
   buildComparisonFigures,
   buildIdentityGlyphs,
   buildProfilePlot,
@@ -2887,7 +2885,6 @@ describe('chart.js registration', () => {
     figures.smallMultiples.quality,
     figures.smallMultiples.speed,
     figures.smallMultiples.cost,
-    figures.smallMultiples.availability,
     figures.availability,
     // Every profile tile is the same chart type; the first stands for them all.
     { id: figures.profile.id, config: figures.profile.tiles[0] },
@@ -4071,7 +4068,7 @@ describe('provider availability', () => {
   }
 
   function dotPlot(style: FigureStyle = DEFAULT_FIGURE_STYLE, orientation: BarOrientation = 'vertical') {
-    return buildSmallMultiples(ENTRIES, smallMultiplesOptions({ style, orientation })).availability;
+    return buildAvailabilityFigure(ENTRIES, smallMultiplesOptions({ style, orientation }));
   }
 
   /** The label beside each dot, as the datalabels plugin writes it. */
@@ -4107,12 +4104,12 @@ describe('provider availability', () => {
     expect(availabilitySqrtTicks(0).top).toBe(0.1);
   });
 
-  it('draws P1\'s fourth panel as a dot per model in P1\'s order, on a square-root scale by default, with whiskers and k/n', () => {
+  it('draws the Provider errors figure as a dot per model in P1\'s order, on a square-root scale by default, with whiskers and k/n', () => {
     const multiples = buildSmallMultiples(ENTRIES, smallMultiplesOptions());
-    const spec = multiples.availability;
+    const spec = buildAvailabilityFigure(ENTRIES, smallMultiplesOptions());
     const probe = spec as unknown as DotProbe;
-    expect(spec.id).toBe(P1_AVAILABILITY_ID);
-    expect(spec.title).toBe(P1_AVAILABILITY_TITLE);
+    expect(spec.id).toBe(A1_AVAILABILITY_ID);
+    expect(spec.title).toBe(A1_AVAILABILITY_TITLE);
     expect(probe.config.type).toBe('line');
     expect(probe.config.data.labels).toEqual(multiples.quality.config.data.labels);
     expect(probe.config.data.datasets[0]['showLine']).toBe(false);
@@ -4165,7 +4162,7 @@ describe('provider availability', () => {
     expect(dotPlot(hidden).chrome.detail).not.toContain('Whiskers');
 
     // Only models without a dot: intervals on, yet nothing to draw.
-    const undrawn = buildSmallMultiples([ENTRIES[3]], smallMultiplesOptions()).availability;
+    const undrawn = buildAvailabilityFigure([ENTRIES[3]], smallMultiplesOptions());
     expect(undrawn.chrome.detail).toBe(AVAILABILITY_DETAIL_STRICT);
     expect(undrawn.chrome.key.map((item) => item.glyph)).not.toContain('interval');
   });
@@ -4179,7 +4176,7 @@ describe('provider availability', () => {
     const upper = wilson95(0, 128)!.high;
     expect(upper).toBeGreaterThan(0);
 
-    const spec = buildSmallMultiples([clean], smallMultiplesOptions({ style: styleWith({ scale: 'linear' }) })).availability;
+    const spec = buildAvailabilityFigure([clean], smallMultiplesOptions({ style: styleWith({ scale: 'linear' }) }));
     const data = (spec as unknown as DotProbe).config.data.datasets[0]['data'] as { y: number; yErrLow?: number; yErrHigh?: number }[];
     expect(data[0].y).toBe(0);
     expect(data[0].yErrLow).toBe(0);
@@ -4211,14 +4208,12 @@ describe('provider availability', () => {
     expect(spec.chrome.highlight).toBe('');
   });
 
-  it('builds A1 as the same plot on its own, whatever the panel setting', () => {
+  it('builds A1 with the category labels of the P1 panels', () => {
     const figures = buildComparisonFigures(ENTRIES, { context: CONTEXT });
     expect(figures.availability.id).toBe(A1_AVAILABILITY_ID);
     expect(figures.availability.title).toBe(A1_AVAILABILITY_TITLE);
-    expect(labelsOf(figures.availability)).toEqual(labelsOf(figures.smallMultiples.availability));
-    expect(AVAILABILITY_FIGURE_IDS).toEqual(['p1d-availability', 'a1-availability']);
-    const off = buildComparisonFigures(ENTRIES, { context: CONTEXT, style: styleWith({ panel: 'off' }) });
-    expect(off.availability.id).toBe(A1_AVAILABILITY_ID);
+    expect((figures.availability as unknown as DotProbe).config.data.labels)
+      .toEqual(figures.smallMultiples.quality.config.data.labels);
   });
 
   it('rings and labels the clearly high model on every scatter once the markers are on, and states the rule', () => {
