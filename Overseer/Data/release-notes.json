@@ -1,5 +1,44 @@
 [
   {
+    "version": "1.4.5",
+    "date": "2026-11-09T10:34:21Z",
+    "summary": "A release that shows what fills a chat's context, makes changing the model in the middle of a chat safe and predictable, and sends long chats to the AI more efficiently.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "The chat header now shows how full the chat's context is as a compact ring. Click it to see what takes up the space, such as the conversation, documents, images and tool activity, and how much was reused from the cache."
+      },
+      {
+        "type": "feature",
+        "text": "Before you change the model in a chat, the Overseer now tells you when the change has a cost: the next reply may be slower and more expensive, or the new model may not have room for the oldest messages. You can turn off the cost warning in Settings with Warn Before Changing the Model in a Chat; the warning about older messages always appears."
+      },
+      {
+        "type": "improvement",
+        "text": "Changing the model or its settings during a chat now works reliably: each reply shows the model that actually wrote it, the model list refreshes when you return to the chat, the chat tells you which settings changed if a model was edited meanwhile, and you get a clear notice if the chosen model is no longer available."
+      },
+      {
+        "type": "improvement",
+        "text": "The AI's reasoning from earlier replies is no longer sent back with each new message. It is still saved and shown in the chat, and long conversations now leave more room for your messages and cost less."
+      },
+      {
+        "type": "fix",
+        "text": "Images in a chat are now measured by their size in pixels, so the Overseer judges more accurately how much of a long chat with pictures fits in the model's context."
+      },
+      {
+        "type": "improvement",
+        "text": "Claude models now have their version at the end of the name, such as Claude Opus 4.6, matching Anthropic's own naming."
+      },
+      {
+        "type": "fix",
+        "text": "GnollHack wiki pages no longer show the AI the hidden page settings at their top, so answers based on those pages start from the actual article text."
+      },
+      {
+        "type": "improvement",
+        "text": "When you drag to reorder your models, the list now scrolls smoothly as you near its top or bottom edge, so you can move a model a long way in one go."
+      }
+    ]
+  },
+  {
     "version": "1.4.4",
     "date": "2026-10-30T19:55:49Z",
     "summary": "A release that makes the chat honest about answers that stop early and better at finishing them, adds wiki article counts and lists, and continues the Steam Deck controller work.",
