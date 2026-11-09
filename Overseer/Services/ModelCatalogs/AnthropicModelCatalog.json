@@ -192,6 +192,22 @@
         "cacheWritePerMillion": 0.625
       }
     }
+  },
+  {
+    "prefixes": ["claude-fable-5-2"],
+    "displayName": "Claude Fable 5.2",
+    "releaseDate": "2026-11-09",
+    "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
+    "reasoningSummaries": ["summarized", "omitted"],
+    "contextWindowSize": 1000000,
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 8.00,
+      "outputPerMillion": 40.00,
+      "cachedInputPerMillion": 0.20,
+      "cacheWritePerMillion": 10.00,
+      "asOf": "2026-11-09"
+    }
   }
 ]
 
