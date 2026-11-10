@@ -134,6 +134,28 @@
         "note": "Launch pricing through 2026-11-30"
       }
     }
+  },
+  {
+    "prefixes": ["gemini-4-carbon"],
+    "displayName": "Gemini 4 Carbon",
+    "releaseDate": "2026-11-10",
+    "thinkingLevels": ["low", "medium", "high"],
+    "contextWindowSize": 1048576,
+    "maxOutputTokens": 65536,
+    "pricing": {
+      "inputPerMillion": 2.00,
+      "outputPerMillion": 10.00,
+      "cachedInputPerMillion": 0.10,
+      "asOf": "2026-11-10",
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 1.8 },
+      "scheduledChange": {
+        "effectiveFrom": "2026-12-01",
+        "inputPerMillion": 4.00,
+        "outputPerMillion": 20.00,
+        "cachedInputPerMillion": 0.20,
+        "note": "Introductory pricing through 2026-11-30"
+      }
+    }
   }
 ]
 
