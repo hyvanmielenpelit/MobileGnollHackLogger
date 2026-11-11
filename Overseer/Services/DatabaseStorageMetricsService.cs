@@ -322,8 +322,8 @@ public class DatabaseStorageMetricsService
             using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
             {
-                dto.LogAllocatedMb = Math.Round(ReadDouble(reader["AllocatedMb"]), 2);
-                dto.LogUsedMb = Math.Round(ReadDouble(reader["UsedMb"]), 2);
+                dto.LogAllocatedMb = DecimalIntentRounding.Round(ReadDouble(reader["AllocatedMb"]), 2);
+                dto.LogUsedMb = DecimalIntentRounding.Round(ReadDouble(reader["UsedMb"]), 2);
             }
         }
         catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
@@ -346,7 +346,7 @@ public class DatabaseStorageMetricsService
             ? Math.Max(0, capacity.MaxLimitMb - dto.AllocatedDataSizeMb)
             : 0;
         dto.UsedPercentage = capacity.MaxLimitMb > 0
-            ? Math.Round((dto.AllocatedDataSizeMb / capacity.MaxLimitMb) * 100.0, 1)
+            ? DecimalIntentRounding.Round((dto.AllocatedDataSizeMb / capacity.MaxLimitMb) * 100.0, 1)
             : 0;
 
         dto.StatusLevel = SqlServerCapacity.ResolveStatusLevel(dto.AllocatedDataSizeMb, capacity, _settings);
@@ -385,9 +385,9 @@ public class DatabaseStorageMetricsService
                     {
                         TableName = reader["TableName"].ToString() ?? "",
                         RowCount = reader["RowCount"] == DBNull.Value ? 0 : Convert.ToInt64(reader["RowCount"]),
-                        TotalSpaceMb = Math.Round(ReadDouble(reader["TotalSpaceMB"]), 2),
-                        UsedSpaceMb = Math.Round(ReadDouble(reader["UsedSpaceMB"]), 2),
-                        IndexSpaceMb = Math.Round(ReadDouble(reader["IndexSpaceMB"]), 2)
+                        TotalSpaceMb = DecimalIntentRounding.Round(ReadDouble(reader["TotalSpaceMB"]), 2),
+                        UsedSpaceMb = DecimalIntentRounding.Round(ReadDouble(reader["UsedSpaceMB"]), 2),
+                        IndexSpaceMb = DecimalIntentRounding.Round(ReadDouble(reader["IndexSpaceMB"]), 2)
                     });
                 }
             }
@@ -395,8 +395,8 @@ public class DatabaseStorageMetricsService
             dto.TableMetrics = allTables.Take(TopTableCount).ToList();
             var others = allTables.Skip(TopTableCount).ToList();
             dto.OtherTablesCount = others.Count;
-            dto.OtherTablesTotalSpaceMb = Math.Round(others.Sum(t => t.TotalSpaceMb), 2);
-            dto.AllTablesTotalSpaceMb = Math.Round(allTables.Sum(t => t.TotalSpaceMb), 2);
+            dto.OtherTablesTotalSpaceMb = DecimalIntentRounding.Round(others.Sum(t => t.TotalSpaceMb), 2);
+            dto.AllTablesTotalSpaceMb = DecimalIntentRounding.Round(allTables.Sum(t => t.TotalSpaceMb), 2);
         }
         catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
         {
@@ -420,7 +420,7 @@ public class DatabaseStorageMetricsService
             if (dto.ActiveSessionCount + dto.SoftDeletedSessionCount > 0)
             {
                 var avgSessionMb = totalChatSize / (dto.ActiveSessionCount + dto.SoftDeletedSessionCount);
-                dto.EstimatedReclaimableMb = Math.Round(avgSessionMb * dto.SoftDeletedSessionCount, 2);
+                dto.EstimatedReclaimableMb = DecimalIntentRounding.Round(avgSessionMb * dto.SoftDeletedSessionCount, 2);
             }
         }
         catch (Exception ex) when (!ex.IsCanceledBy(cancellationToken))
@@ -665,7 +665,7 @@ public class DatabaseStorageMetricsService
             if (disk != null)
             {
                 dto.DiskAttachmentsSizeBytes = disk.TotalBytes;
-                dto.DiskAttachmentsSizeMb = Math.Round(disk.TotalBytes / (1024.0 * 1024.0), 2);
+                dto.DiskAttachmentsSizeMb = DecimalIntentRounding.Round(disk.TotalBytes / (1024.0 * 1024.0), 2);
                 dto.DiskAttachmentsFolderCount = disk.FolderCount;
                 dto.DiskAttachmentsFileCount = disk.FileCount;
             }
@@ -702,7 +702,7 @@ public class DatabaseStorageMetricsService
                 dto.ReportChartFolderCount = charts.FolderCount;
                 dto.ReportChartFileCount = charts.FileCount;
                 dto.ReportChartSizeBytes = charts.TotalBytes;
-                dto.ReportChartSizeMb = Math.Round(charts.TotalBytes / (1024.0 * 1024.0), 2);
+                dto.ReportChartSizeMb = DecimalIntentRounding.Round(charts.TotalBytes / (1024.0 * 1024.0), 2);
             }
         }
 

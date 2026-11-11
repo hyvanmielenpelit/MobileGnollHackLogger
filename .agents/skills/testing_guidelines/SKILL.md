@@ -35,7 +35,7 @@ Tests that call external APIs (like OpenAI, Anthropic, or Google) consume quota 
 ```json
 {
   "sdk": {
-    "version": "10.0.403",
+    "version": "11.0.100",
     "rollForward": "latestPatch",
     "allowPrerelease": false
   },
@@ -363,7 +363,7 @@ When unit testing internal components, helper methods, or prompt builders in the
 *   **The cause**: with W^X on (the .NET default since 7), the runtime maps a short-lived read-write view of the executable code memory for every JIT write. On a machine where Bitdefender's user-mode hook sits on `ntdll!NtMapViewOfSection`, that mapping fails now and then, and the runtime has no recovery path. Since 2026-10-28 `Overseer.Tests.csproj` therefore sets `System.Runtime.EnableWriteXorExecute` to `false` with a `RuntimeHostConfigurationOption`, which reaches the generated `Overseer.Tests.runtimeconfig.json`. Production (`Overseer`, `MobileGnollHackLogger`) keeps W^X on.
 *   **Do not remove the line.** `TestHostConfigurationTests` fails when it is gone or does not reach the host: `TestHost_RunsWithWriteXorExecuteOff` checks the property, which the host hands to `AppContext` as the string `"false"`, and `TestHost_JitCodeLivesInPrivateMemory` checks with `VirtualQuery` (Windows only; it skips elsewhere) that JIT code lives in `MEM_PRIVATE` memory, not in the `MEM_MAPPED` section W^X uses.
 *   **The environment variable wins.** The runtime reads `DOTNET_EnableWriteXorExecute` before the `runtimeconfig.json` property, so `DOTNET_EnableWriteXorExecute=1` in the shell turns W^X back on despite the project setting, and `TestHost_JitCodeLivesInPrivateMemory` then fails by design. `=0` is redundant but harmless.
-*   **If the message appears despite the setting**, check that the generated `Overseer.Tests/bin/Debug/net10.0/Overseer.Tests.runtimeconfig.json` has `"System.Runtime.EnableWriteXorExecute": false` under `configProperties`; that the shell has no `DOTNET_EnableWriteXorExecute` (`Get-ChildItem Env:DOTNET_*`); and that the host that crashed is `Overseer.Tests.exe` (Microsoft.Testing.Platform runs the project's own executable; VSTest's `testhost` is started with the project's `runtimeconfig.json`, so the setting reaches it too). If all three hold, the mapping is not the trigger: capture a dump with `DOTNET_DbgEnableMiniDump=1` and `DOTNET_DbgMiniDumpType=2` and investigate afresh.
+*   **If the message appears despite the setting**, check that the generated `Overseer.Tests/bin/Debug/net11.0/Overseer.Tests.runtimeconfig.json` has `"System.Runtime.EnableWriteXorExecute": false` under `configProperties`; that the shell has no `DOTNET_EnableWriteXorExecute` (`Get-ChildItem Env:DOTNET_*`); and that the host that crashed is `Overseer.Tests.exe` (Microsoft.Testing.Platform runs the project's own executable; VSTest's `testhost` is started with the project's `runtimeconfig.json`, so the setting reaches it too). If all three hold, the mapping is not the trigger: capture a dump with `DOTNET_DbgEnableMiniDump=1` and `DOTNET_DbgMiniDumpType=2` and investigate afresh.
 *   The full investigation is in the plans repository under `hyvanmielenpelit/MobileGnollHackLogger/2026-10-28/dotnet_test_rx_mapping_crash/`.
 
 

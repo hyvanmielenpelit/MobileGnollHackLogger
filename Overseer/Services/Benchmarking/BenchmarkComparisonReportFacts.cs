@@ -1934,11 +1934,11 @@ public static class BenchmarkComparisonReportFacts
 
     /// <summary>A p-value with three decimals, <c>&lt; 0.001</c> below that.</summary>
     public static string PValue(double p)
-        => p < 0.001 ? "< 0.001" : Math.Round(p, 3, MidpointRounding.AwayFromZero).ToString("0.000", CultureInfo.InvariantCulture);
+        => p < 0.001 ? "< 0.001" : DecimalIntentRounding.Round(p, 3, MidpointRounding.AwayFromZero).ToString("0.000", CultureInfo.InvariantCulture);
 
     /// <summary>A ratio with two decimals.</summary>
     private static string Ratio(double value)
-        => Math.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
+        => DecimalIntentRounding.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
 
     private static double? NumberOf(BenchmarkReportFactSheet sheet, string key)
     {

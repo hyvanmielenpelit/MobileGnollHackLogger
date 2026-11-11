@@ -67,14 +67,14 @@ Read the target version number:
 
 The maps are uploaded from `Overseer/wwwroot`, and they are only correct if `wwwroot` still holds exactly the build in the publish output that was, or will be, deployed. The publish output contains no maps of its own.
 
-- The publish output is `Overseer/bin/Release/net10.0/publish/` (the `PublishUrl` of `Overseer/Properties/PublishProfiles/FolderProfile.pubxml`, and also the output of `dotnet publish Overseer -c Release`). If the user published elsewhere, use their path.
+- The publish output is `Overseer/bin/Release/net11.0/publish/` (the `PublishUrl` of `Overseer/Properties/PublishProfiles/FolderProfile.pubxml`, and also the output of `dotnet publish Overseer -c Release`). If the user published elsewhere, use their path.
 - **Never run `ng build`, `npm run build` or `sentry-cli sourcemaps inject` in this skill.** A rebuild makes `wwwroot` describe a build that was not published. If the publish output is missing, **STOP** and tell the user to publish first (`docs/overseer/release-checklist.md` § 4).
 - Run this check from the repository root (PowerShell 5.1):
 
   ```powershell
   $repo = (git rev-parse --show-toplevel) -replace '/', '\'
   $src  = Join-Path $repo 'Overseer\wwwroot'
-  $pub  = Join-Path $repo 'Overseer\bin\Release\net10.0\publish\wwwroot'
+  $pub  = Join-Path $repo 'Overseer\bin\Release\net11.0\publish\wwwroot'
   if (-not (Test-Path -LiteralPath $pub)) { throw "publish output not found: $pub" }
   $stop = @(); $warn = @()
   $maps = @(Get-ChildItem $pub -Recurse -File | Where-Object { $_.Name -match '\.map(\.br|\.gz)?$' })

@@ -1397,7 +1397,7 @@ public class AdminController : ControllerBase
             {
                 CredentialKey = s.CredentialKey,
                 IsRateLimited = s.IsRateLimited,
-                RemainingCooldownSeconds = Math.Round(s.RemainingCooldownSeconds, 1),
+                RemainingCooldownSeconds = DecimalIntentRounding.Round(s.RemainingCooldownSeconds, 1),
                 InFlightCalls = s.InFlightCalls
             }).ToList()
         };

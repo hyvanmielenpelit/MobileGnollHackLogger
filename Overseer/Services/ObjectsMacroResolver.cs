@@ -1922,7 +1922,7 @@ namespace Overseer.Services
             return Fixed(pounds, 1) + (pounds == 1 ? " lb" : " lbs");
 
             static string Fixed(double value, int decimals) =>
-                Math.Round(value, decimals, MidpointRounding.ToEven)
+                DecimalIntentRounding.Round(value, decimals, MidpointRounding.ToEven)
                     .ToString(decimals == 0 ? "F0" : "F1", CultureInfo.InvariantCulture);
         }
 

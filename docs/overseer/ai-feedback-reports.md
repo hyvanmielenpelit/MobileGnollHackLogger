@@ -284,7 +284,7 @@ ids in a fixed order, comma-separated (`wiki,knowledge_base`), null when none. T
 
 | Id | Label (UI only) | Means | Live when |
 |---|---|---|---|
-| `wiki` | GnollHack wiki | A GnollHack wiki page changed (the `server_wiki_handoff` sessions) | The wiki clone on the server is pulled; `WikiService` re-indexes within about ten minutes |
+| `wiki` | GnollHack wiki | A GnollHack wiki page changed (the `server_wiki_handoff` session) | The wiki clone on the server is pulled; `WikiService` re-indexes within about ten minutes |
 | `knowledge_base` | Knowledge base | A knowledge-base article was added or changed (human-reviewed) | The knowledge-base clone is pulled; `KnowledgeBaseService` reloads within about ten minutes |
 | `overseer_release` | Overseer release | Overseer code, a tool guide or a prompt changed | The next Overseer deploy; *Fixed in version* names it |
 | `gnollhack_release` | GnollHack release | GnollHack source or its AI snapshot changed | The game release; the source corpus re-indexes on pull |
@@ -915,7 +915,7 @@ Feedback #42: Add the dilithium crystal's base price to the GnollHack wiki
 
 Resolved via: GnollHack wiki
 Changed: Items/Dilithium crystal.md, the base price, validated against src/objects.c.
-Verified: the wiki validation session passed; wiki_search finds the price.
+Verified: the change passed validation against the GnollHack source and was applied; wiki_search finds the price.
 Live: about ten minutes after the wiki clone on the server is pulled.
 ```
 

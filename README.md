@@ -142,7 +142,7 @@ The table count measures schema breadth, not data volume: row counts and sizes a
 
 | Layer | Technology |
 |---|---|
-| **Runtime** | .NET 10.0 |
+| **Runtime** | .NET 11.0 |
 | **Web framework** | ASP.NET Core (Razor Pages + Web API) |
 | **Frontend SPA** | Angular 22 with TypeScript |
 | **Database** | SQL Server via Entity Framework Core |
@@ -285,7 +285,7 @@ MobileGnollHackLogger/          # Solution root
 
 ### Prerequisites
 
-- [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0): a 10.0.4xx SDK at 10.0.403 or later, as pinned in `global.json`
+- [.NET 11.0 SDK](https://dotnet.microsoft.com/download/dotnet/11.0): an 11.0.1xx SDK at 11.0.100 or later, as pinned in `global.json`
 - [Node.js](https://nodejs.org/) (LTS) and npm — required for the Overseer Angular frontend
 - [SQL Server Express](https://www.microsoft.com/en-us/sql-server/sql-server-downloads) — free edition of SQL Server for local development
 - [SQL Server Management Studio (SSMS)](https://learn.microsoft.com/en-us/ssms/download-sql-server-management-studio-ssms) — for creating and managing the database

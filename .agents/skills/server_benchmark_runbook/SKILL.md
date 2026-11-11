@@ -105,7 +105,7 @@ Every step title names its kind, in capitals, from this fixed vocabulary:
 |---|---|---|
 | `EXPORT` | Take something out of Overseer for the agent | **Download All as YAML**; a database query result |
 | `AGENT` | The agent works; you wait for its *finished* or *paused* message | Approve the plan and wait; continue after a pause; the analysis of a run |
-| `CHANGE` | You change the system or its data | Restart Overseer; import a rubric repair; **Assess question difficulty**; the wiki validation and execution sessions; knowledge-base push; roster or profile change; a `gnollhack_` plan and a new board |
+| `CHANGE` | You change the system or its data | Restart Overseer; import a rubric repair; **Assess question difficulty**; the wiki handoff session; knowledge-base push; roster or profile change; a `gnollhack_` plan and a new board |
 | `CHECK` | A checklist that must pass before the next step | The pre-launch check before every `RUN` step (§ 3) |
 | `RUN` | Launch one benchmark run or battery | R1, R2 … (§ 5) |
 | `SAVE` | Download a run's files, read its criteria, go on or hand back | After every `RUN` step (§ 6) |
@@ -119,7 +119,7 @@ Every step title names its kind, in capitals, from this fixed vocabulary:
 - **A `RUN` step keeps its run name** `R1, R2, …`: reports, analyses, § 11 of
   `server_benchmark_to_chat_transfer` and the next analysis prompt refer to runs by it.
 - **Another document's own steps are named by what they are**, with that document's number in
-  parentheses once: *"the validation prompt (Step 2 of the handoff document)"*. A runbook step
+  parentheses once: *"the handoff session's prompt (Step 2 of the handoff document)"*. A runbook step
   title never reads *"Step 5 — CHANGE: Step 2"*.
 - Step numbers and run names are identical in the plan, the runbook, `task.md`, the walkthrough
   and every chat message. **Two names for one step is a defect.**
@@ -209,8 +209,8 @@ last* owns the rules; what the runbook and the pause message owe the developer i
   do not launch a run."*
 
 The wiki confirmation gate of `server_wiki_handoff` § 4a is a pause only when an agent step waits
-behind it. When what waits is the developer's own restart or run, the wiki sessions are ordinary
-`CHANGE` steps.
+behind it. When what waits is the developer's own restart or run, the wiki session and its commit are
+ordinary `CHANGE` steps.
 
 ### The order of the developer's jobs
 
@@ -226,7 +226,7 @@ way.
 | Order | Job | Why it sits here |
 |---|---|---|
 | 1 | A `gnollhack_` plan, in a session on the GnollHack clone; then export the new snapshot and attach it to the suite if the round says so | A new board is a **Fundamental** key (`GameSnapshot`): it must land before any run that is meant to use it, and never between the halves of a pair |
-| 2 | Wiki handoff: the validation session (Step 2 of the handoff document, a chat on the GnollHack clone), then the execution session (its Step 3, a chat on the GnollHackWiki clone) only on `VALIDATION: PASS`; commit and push the wiki | `server_wiki_handoff` § 4a owns the wording. Before the start of Overseer, so one start covers it |
+| 2 | Wiki handoff: the handoff session (Step 2 of the handoff document, a chat on the GnollHackWiki clone that also reads the GnollHack clone), which validates and applies each change; review the changes its report marks as revised or reworded, then commit and push what it applied | `server_wiki_handoff` § 4a owns the wording. Before the start of Overseer, so one start covers it |
 | 3 | Knowledge-base article push | Reloads on a 10-minute HEAD poll; it changes the frozen prompt segment, so it moves `KnowledgeBaseHeadSha` and `CandidateSystemPromptSha256` |
 | 4 | **In Visual Studio: stop Overseer if it is running, then start it** | Starting builds the finished tree. `Overseer/ToolGuides` and the NetHack wiki are read **only at startup**; the GnollHack wiki, the source index and the knowledge base re-check their git HEAD every 10 minutes, and a fresh start settles all of them at once. The host serves the Angular client from `Overseer/wwwroot` as last built by `npm run build`, which Visual Studio does not run, so a round that changed the client has the agent build it first. Any migration was already applied by the agent |
 | 5 | Rubric repair: **Import Questions from YAML**, validate, review, confirm, **Assess question difficulty**, re-mark reviewed | An import, so it is an end job; after the start, so the import and the difficulty assessment run on the round's code. The launcher refuses the suite until every question has an assessed difficulty. When the import is the isolated variable of a pair, it is placed after the first run's `SAVE` step, by the rule above |

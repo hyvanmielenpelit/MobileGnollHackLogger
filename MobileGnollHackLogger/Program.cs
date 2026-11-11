@@ -11,8 +11,6 @@ using Azure.Communication.Email;
 using Azure.Core.Extensions;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.VisualStudio.Web.CodeGenerators.Mvc.Controller;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.AspNetCore.Http.Extensions;
 using System.Text;
 using Sentry;

@@ -762,7 +762,7 @@ public static class BenchmarkNotableFindings
 
     /// <summary>A ratio with two decimals.</summary>
     private static string Ratio(double value)
-        => Math.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
+        => DecimalIntentRounding.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
 
     private static string Inv(int value) => value.ToString(CultureInfo.InvariantCulture);
 }

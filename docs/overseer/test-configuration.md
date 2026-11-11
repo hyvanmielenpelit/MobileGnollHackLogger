@@ -164,7 +164,7 @@ dotnet test MobileGnollHackLogger.slnx --filter-not-trait "Category=UsesExternal
 Two prerequisites for that command, both easy to break:
 
 1. **The repository-root `global.json`** selects the Microsoft.Testing.Platform runner. Without it
-   `dotnet test` fails outright on the .NET 10 SDK, before running anything. Details and the
+   `dotnet test` fails outright on the .NET 10 and later SDKs, before running anything. Details and the
    reason `dotnet.config` is not a substitute on this toolchain are in the `testing-guidelines`
    skill § 1a.
 2. **The filter has to be exactly right, because it fails open.** A typo in the trait name or its

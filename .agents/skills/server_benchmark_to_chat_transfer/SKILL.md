@@ -460,7 +460,7 @@ When an empirical chat-transferable finding clears the evidence bar, resolve it 
      invalidates the frozen segment's cache for every session. It is a *smaller* instrument change,
      not *no* instrument change — record it between runs like any other (§ 11).
    - *Requirement*: Human authorship only; model outputs must never be ingested automatically as authoritative knowledge.
-   - **A knowledge-base edit leaves this repository as a three-step handoff document**, `knowledge_base_handoff_v<V>.md`, in the shape [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) § 3a defines: the proposed changes in plain text and as a diff, a validation prompt for a read-only session on `C:\hmp\GnollHack` (its § 4.2 template), and, only after `VALIDATION: PASS`, an execution prompt for a session on the developer's clone of `hyvanmielenpelit/OverseerKnowledgeBase` that follows that repository's `.agents/skills/kb_article_generation/SKILL.md` and leaves the edit uncommitted. The developer's review and commit is the human authorship this rung requires; a model's answer is still never the source of a fact. Neither prompt names the clone's path, which is the value of `KbPath` (`server_tool_data_sources` § 3).
+   - **A knowledge-base edit leaves this repository as a two-step handoff document**, `knowledge_base_handoff_v<V>.md`, in the shape [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) § 3a defines: the proposed changes, one change at a time, in plain text and as diffs, and one orchestration prompt for a session on the developer's clone of `hyvanmielenpelit/OverseerKnowledgeBase` that follows that repository's `.agents/skills/kb_article_generation/SKILL.md`, validates each change against `C:\hmp\GnollHack` with a fresh validator subagent, applies those that pass, revises those that fail up to five rounds (its § 3b), and leaves everything uncommitted for the developer's review and commit. The developer's review and commit is the human authorship this rung requires; a model's answer is still never the source of a fact. The prompt does not name the clone's path, which is the value of `KbPath` (`server_tool_data_sources` § 3).
    - ⚠️ **Game mechanics do not belong on this rung.** The same *Information Routing* section
      tells the model: *"For game mechanics, monsters, items, spells, or other topics NOT listed
      above: skip the knowledge base entirely and go directly to wiki_search, monster_lookup, or
@@ -497,21 +497,20 @@ When an empirical chat-transferable finding clears the evidence bar, resolve it 
      [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) § 2 for separating the fact from its
      evidence, § 3 for what a prompt must not prescribe, § 6 for the run-42 case where a prompt
      prescribed inline source citations and the wiki session had to override it.
-   - **A wiki edit leaves this repository as a three-step handoff document — the proposed changes,
-     a prompt that validates them against the GnollHack source, and a prompt that executes them in
-     the GnollHackWiki clone. Before writing one, complete the pre-flight checklist in
-     [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) and use its templates.** The
+   - **A wiki edit leaves this repository as a two-step handoff document — the proposed changes,
+     one change at a time, and one prompt for a session on the GnollHackWiki clone that validates
+     each change against the GnollHack source, applies it or revises it, and reports. Before
+     writing one, complete the pre-flight checklist in [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) and use its templates.** The
      run-34 handoff (2026-09-10) presumed a page generator that does not exist and named
      `Resistances and Saving Throws.md` as the formula's home when the formula is in
      `Saving Throws.md`; its prescribed verification grep would have returned zero. Both were
      checkable read-only on disk. The same rule that binds content gaps (§ 2 category 4: check
      on disk before filing) binds handoff documents.
-   - **The handoff document carries the proposed changes in plain text and as diffs, a validation
-     prompt for a read-only session on the GnollHack source clone, and an execution prompt the human
-     runs only after validation passes** ([`server_wiki_handoff`](../server_wiki_handoff/SKILL.md)
-     § 3a); anything else that has to be done is done by the analyst, or stated inside one of the two
-     prompts. When another
-     step of the round depends on the wiki change having landed, the round stops at the
+   - **The handoff document carries the proposed changes in plain text and as diffs, and an
+     orchestration prompt that validates, applies or revises each change on its own and reports
+     which were not applied** ([`server_wiki_handoff`](../server_wiki_handoff/SKILL.md)
+     § 3a); anything else that has to be done is done by the analyst, or stated inside the prompt.
+     When another step of the round depends on the wiki change having landed, the round stops at the
      confirmation gate in § 4a there instead of proceeding on the assumption that it did.
 3. **Tool Descriptions and Tool Policy Text**:
    - For tool routing inefficiencies. Changing tool descriptions guides the model without altering core persona prompt sections.
@@ -571,7 +570,7 @@ A protocol that authorises production prompt edits but specifies no way to detec
 
 4. **Rollback trigger.** A change that fails to meet its pre-declared criterion, or that degrades another dimension by more than the run's CI, is **reverted**. Record the attempt and its outcome in § 11 so the same change is not re-proposed a year later by someone reading only the finding that motivated it.
 
-Rungs 1 and 2 — knowledge base and wiki content — are exempt from the re-run requirement, because they add facts rather than change instructions. They are still recorded in § 11, since rung 1 alters the frozen prompt segment (§ 7). **Exemption from re-running is not exemption from sequencing**: whenever another step of the round reads the edited pages, see [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) § 4a for the gate that holds it until the user confirms that the change passed validation against the GnollHack source and the wiki session has finished.
+Rungs 1 and 2 — knowledge base and wiki content — are exempt from the re-run requirement, because they add facts rather than change instructions. They are still recorded in § 11, since rung 1 alters the frozen prompt segment (§ 7). **Exemption from re-running is not exemption from sequencing**: whenever another step of the round reads the edited pages, see [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) § 4a for the gate that holds it until the handoff session has finished and its report says which changes passed validation against the GnollHack source and were applied.
 
 **The re-run is specified, not just required.** Obligation 1 above is discharged by a `RUN` step in the round's Developer Runbook ([`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) § 5): the exact launcher values, what must stay unchanged from the motivating run, the comparability tier the pair will land in, and each pre-declared criterion with the place in the report where it is read. "Re-run under the same configuration" without that step has been followed wrongly before.
 
@@ -599,7 +598,7 @@ The columns of that table are defined in the diagnostics skill, so this item **c
 
 It **MUST** end in a **Developer Runbook** — `developer_runbook_v<N>.md`, a member of the round's document set, in the format [`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) defines — and the chat message that delivers the round repeats its step list in short form. The runbook carries:
 
-- **every action the round leaves to a human, in one dependency-ordered numbered list** — plan approval, the rubric repair import, the wiki handoff's validation and execution sessions, a `gnollhack_` plan, a knowledge-base push, the Overseer restart, roster or profile changes — each as a step of one numbered list in the order of doing;
+- **every action the round leaves to a human, in one dependency-ordered numbered list** — plan approval, the rubric repair import, the wiki handoff's session and the commit of what it applied, a `gnollhack_` plan, a knowledge-base push, the Overseer restart, roster or profile changes — each as a step of one numbered list in the order of doing;
 - **one or more `RUN` steps in that same list**, each preceded by its pre-launch `CHECK` step and followed by its `SAVE` step — one run can be enough — each tagged with the purposes it serves, which are ranked (§ *What the Benchmark Is For*) and proposed, ordered and marked Required in that rank: **C** improve the main chat, **B** improve the benchmarking system, **M** decide which models perform best as the Overseer AI on intelligence, speed and cost — and **V**, validate this round's fixes, which takes the rank of the fixes it validates; and
 - **a `SAVE` step after each run**: what to download, whether to go on, and a ready-to-paste prompt for the next analysis.
 
@@ -788,7 +787,7 @@ the plans repository.
 - [`server_benchmark_tool_diagnostics`](../server_benchmark_tool_diagnostics/SKILL.md) — the tool-layer diagnostic method
 - [`server_tool_data_sources`](../server_tool_data_sources/SKILL.md) — the corpora, their paths and what each index excludes
 - [`server_tool_parameter_reference`](../server_tool_parameter_reference/SKILL.md) — the per-tool parameter and result contract
-- [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) — pre-flight checklist, the three-step handoff document (proposed changes, source validation, execution) and its templates
+- [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) — pre-flight checklist, the two-step handoff document (proposed changes, and one session that validates, applies or revises each change) and its templates
 - [`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) — the Developer Runbook every analysis ends in: one numbered step list, the following runs included as steps
 - [`references/chat_change_ledger.md`](references/chat_change_ledger.md) — every change that reached the chat and every decision not to make one, with rung, criterion, outcome and task directory (§ 9 rule 4, § 11)
 - [`references/verifier_caution_ledger.md`](references/verifier_caution_ledger.md) — every recorded claim-verifier failure instance and shape, with the guard each has today (§ 11, Standing Cautions)

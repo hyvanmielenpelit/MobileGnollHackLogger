@@ -155,7 +155,7 @@ public static class BenchmarkRunFinalizer
     /// zero, so -0.25 is -0.3 on every surface.
     /// </summary>
     public static double RoundAgreementDelta(double value)
-        => Math.Round(value, 1, MidpointRounding.AwayFromZero);
+        => DecimalIntentRounding.Round(value, 1, MidpointRounding.AwayFromZero);
 
     /// <summary>
     /// The answer never completed: the provider failed the request, the harness caught a throw, or
@@ -860,7 +860,7 @@ public static class BenchmarkRunFinalizer
         double? icc = BenchmarkScoring.IntraclassCorrelationAbsolute(
             graded.Select(a => ((double)a.QualityScore!.Value, (double)a.CoAssessmentQualityScore!.Value)).ToList());
         run.PanelIntraclassCorrelation = icc.HasValue
-            ? Math.Round(icc.Value, 2, MidpointRounding.AwayFromZero)
+            ? DecimalIntentRounding.Round(icc.Value, 2, MidpointRounding.AwayFromZero)
             : null;
 
         (run.AssessorOnlyQualityIndex, run.CoAssessorOnlyQualityIndex) = MemberAloneIndicesOf(graded);

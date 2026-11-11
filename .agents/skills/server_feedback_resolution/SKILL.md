@@ -112,8 +112,8 @@ issue to the method that already exists for its kind:
 
 | What it turns out to be | Where it goes | Resolved via, once fixed |
 |---|---|---|
-| A fact missing from or wrong on the GnollHack wiki | A wiki handoff, `server_wiki_handoff` (validated against the GnollHack source, executed in a wiki session) | `wiki` |
-| A gap in the knowledge base (an Overseer topic or an app control, not a game mechanic) | A knowledge-base handoff, `knowledge_base_handoff_v<N>.md`, the same three-step document as a wiki handoff (`server_wiki_handoff` § 1): rung 1 of the ladder in `server_benchmark_to_chat_transfer` § 7, which keeps game mechanics out of the knowledge base | `knowledge_base` |
+| A fact missing from or wrong on the GnollHack wiki | A wiki handoff, `server_wiki_handoff` (each change validated against the GnollHack source and applied by one wiki session) | `wiki` |
+| A gap in the knowledge base (an Overseer topic or an app control, not a game mechanic) | A knowledge-base handoff, `knowledge_base_handoff_v<N>.md`, the same two-step document as a wiki handoff (`server_wiki_handoff` § 1): rung 1 of the ladder in `server_benchmark_to_chat_transfer` § 7, which keeps game mechanics out of the knowledge base | `knowledge_base` |
 | A tool defect | A code fix with a test. Judge the call against `server_tool_parameter_reference` (the parameter and result contract) and the corpus against `server_tool_data_sources` | `overseer_release` |
 | A tool-guide or prompt change | The evidence bar and the ladder of `server_benchmark_to_chat_transfer` (§ 6, § 7). **Never a prompt or guide edit from one report.** A candidate change can first be tried as an experimental change (`server_benchmark_conditions_and_variants` § 6) | `overseer_release` |
 | A defect in the game or its AI snapshot | A plan in the GnollHack repository | `gnollhack_release` |
@@ -125,7 +125,7 @@ The file and the API take the **ids**; the admin tab and the resolution message 
 
 | Id | Label | Means | Live when |
 |---|---|---|---|
-| `wiki` | GnollHack wiki | A GnollHack wiki page changed (the `server_wiki_handoff` sessions) | The wiki clone on the server is pulled; `WikiService` re-indexes within about ten minutes |
+| `wiki` | GnollHack wiki | A GnollHack wiki page changed (the `server_wiki_handoff` session) | The wiki clone on the server is pulled; `WikiService` re-indexes within about ten minutes |
 | `knowledge_base` | Knowledge base | A knowledge-base article was added or changed (human-reviewed) | The knowledge-base clone is pulled; `KnowledgeBaseService` reloads within about ten minutes |
 | `overseer_release` | Overseer release | Overseer code, a tool guide or a prompt changed | The next Overseer deploy; `fixedInVersion` names it |
 | `gnollhack_release` | GnollHack release | GnollHack source or its AI snapshot changed | The game release; the source corpus re-indexes on pull |
@@ -204,7 +204,10 @@ or push in this repository.
   passed), and `resolvedVia` names the channels (§ 3). A fix that is proposed, waits for approval or sits
   in a handoff another session must run is not resolved.
 - **`acknowledged`** for an issue whose fix is planned, waiting on approval, or waiting on someone else
-  (a wiki session, a knowledge-base author, a model provider). Say what it waits on in `note`.
+  (a wiki session, a knowledge-base author, a model provider). Say what it waits on in `note`. An
+  issue whose handoff change was not applied stays `acknowledged` while a corrected handoff is being
+  written, and is `dismissed` when the change is dropped because the fact did not hold; the session
+  report's reason goes in `note`.
 - **`dismissed`** with the reason in `note`: the model's own mistake, a claim that did not hold, a
   report expected under its GnollBench condition, a duplicate of another issue (name it).
 - **`new`** puts an issue back in the untriaged list; rarely right for an agent.
@@ -225,7 +228,7 @@ Feedback #42: Add the dilithium crystal's base price to the GnollHack wiki
 
 Resolved via: GnollHack wiki
 Changed: Items/Dilithium crystal.md, the base price, validated against src/objects.c.
-Verified: the wiki validation session passed; wiki_search finds the price.
+Verified: the change passed validation against the GnollHack source and was applied; wiki_search finds the price.
 Live: about ten minutes after the wiki clone on the server is pulled.
 ```
 
@@ -276,7 +279,7 @@ issues:
 
       Resolved via: GnollHack wiki
       Changed: Items/Dilithium crystal.md, the base price, validated against src/objects.c.
-      Verified: the wiki validation session passed; wiki_search finds the price.
+      Verified: the change passed validation against the GnollHack source and was applied; wiki_search finds the price.
       Live: about ten minutes after the wiki clone on the server is pulled.
     fixedInVersion: "1.4.1"   # absent keeps; empty clears; ^[0-9A-Za-z.+\-]{1,64}$
     note: |                   # the triage note; absent keeps; empty clears; at most 1000 characters

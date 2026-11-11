@@ -198,7 +198,7 @@ the development certificate, run `dotnet dev-certs https --trust` once.
 # Publish for production release (triggers Angular build and excludes .map files from package)
 dotnet publish -c Release
 ```
-*(Published output will be in `bin/Release/net10.0/publish/`).*
+*(Published output will be in `bin/Release/net11.0/publish/`).*
 
 ---
 
@@ -215,7 +215,7 @@ All test commands must be run from the `Overseer.Tests/` (or repository root) di
 > ```json
 > {
 >   "sdk": {
->     "version": "10.0.403",
+>     "version": "11.0.100",
 >     "rollForward": "latestPatch",
 >     "allowPrerelease": false
 >   },

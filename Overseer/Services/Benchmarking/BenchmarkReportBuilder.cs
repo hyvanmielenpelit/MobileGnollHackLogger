@@ -1978,7 +1978,7 @@ public static class BenchmarkReportBuilder
         => IsSameFamily(candidateProvider, graderProvider) ? "same-family" : "cross-family";
 
     /// <summary>A score that may be a panel mean, without a trailing ".0" on a whole number.</summary>
-    private static string ScoreText(double value) => Inv(Math.Round(value, 1, MidpointRounding.AwayFromZero));
+    private static string ScoreText(double value) => Inv(DecimalIntentRounding.Round(value, 1, MidpointRounding.AwayFromZero));
 
     /// <summary>A signed one-decimal delta, with "+" on a positive one.</summary>
     private static string SignedDelta(double value) => $"{(value > 0 ? "+" : string.Empty)}{Inv(value, "F1")}";

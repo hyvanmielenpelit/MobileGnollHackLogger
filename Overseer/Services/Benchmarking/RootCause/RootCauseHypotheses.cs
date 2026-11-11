@@ -2328,7 +2328,7 @@ public static class RootCauseHypotheses
     internal static string Pct(double value) => BenchmarkReportFormat.Percent(value * 100);
 
     /// <summary>A fraction in whole percentage points, rounded as <see cref="Pct"/> prints it.</summary>
-    private static double WholePercent(double value) => Math.Round(value * 100, 0, MidpointRounding.AwayFromZero);
+    private static double WholePercent(double value) => DecimalIntentRounding.Round(value * 100, 0, MidpointRounding.AwayFromZero);
 
     internal static string SharePct(RootCauseComponent component)
         => component.Share is double s ? Pct(s) + (component.ShareLower is double lo && component.ShareUpper is double hi ? " (" + Interval(lo, hi) + ")" : string.Empty) : "an unknown share";
@@ -2343,7 +2343,7 @@ public static class RootCauseHypotheses
 
     private static string OneDecimal(double value) => BenchmarkReportFormat.OneDecimal(value);
 
-    private static string Two(double value) => Math.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
+    private static string Two(double value) => DecimalIntentRounding.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
 
     private static string P(double p) => BenchmarkComparisonReportFacts.PValue(p);
 

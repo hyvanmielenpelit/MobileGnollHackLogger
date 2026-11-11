@@ -493,10 +493,10 @@ public static partial class BenchmarkReportPackRenderer
     private static string RatioCell(BenchmarkReportPairedTest? pair)
     {
         if (pair?.Effect is not double effect) return NoValue;
-        string ratio = Math.Round(effect, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
+        string ratio = DecimalIntentRounding.Round(effect, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
         return pair.Lower is double l && pair.Upper is double u
-            ? ratio + " (" + Math.Round(l, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture)
-              + " to " + Math.Round(u, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture) + ")"
+            ? ratio + " (" + DecimalIntentRounding.Round(l, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture)
+              + " to " + DecimalIntentRounding.Round(u, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture) + ")"
             : ratio;
     }
 
@@ -1353,7 +1353,7 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>The model's figure divided by the reference's, <c>0.45×</c>; <see cref="NoValue"/> when either is missing.</summary>
     private static string RatioToReference(double? own, double? reference)
         => own is double o && reference is double r && r > 0
-            ? Math.Round(o / r, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture) + "×"
+            ? DecimalIntentRounding.Round(o / r, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture) + "×"
             : NoValue;
 
     private static double? Speed(BenchmarkReportEntryFigures entry) => entry.SpeedDegraded ? null : entry.ModelTimeP50Ms;

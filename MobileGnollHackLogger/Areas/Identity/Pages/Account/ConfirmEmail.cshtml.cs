@@ -12,7 +12,6 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using static Microsoft.CodeAnalysis.CSharp.SyntaxTokenParser;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 {

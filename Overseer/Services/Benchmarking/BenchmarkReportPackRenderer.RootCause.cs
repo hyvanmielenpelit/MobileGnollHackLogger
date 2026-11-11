@@ -470,7 +470,7 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>A ratio as What we found prints it: one decimal below 10 (<c>2.3</c>), whole from 10 (<c>67</c>).</summary>
     private static string RcaTimes(double ratio)
-        => Math.Round(ratio, 1, MidpointRounding.AwayFromZero) < 10 ? BenchmarkReportFormat.OneDecimal(ratio) : BenchmarkReportFormat.Whole(ratio);
+        => DecimalIntentRounding.Round(ratio, 1, MidpointRounding.AwayFromZero) < 10 ? BenchmarkReportFormat.OneDecimal(ratio) : BenchmarkReportFormat.Whole(ratio);
 
     /// <summary>The median of <paramref name="values"/>; zero when there is none.</summary>
     private static double RcaMedian(IEnumerable<double> values)
@@ -1494,7 +1494,7 @@ public static partial class BenchmarkReportPackRenderer
         var pair = pairs.FirstOrDefault(p => (p.First == first && p.Second == second) || (p.First == second && p.Second == first));
         if (pair?.VolumeRatio is not double ratio || ratio <= 0) return NoValue;
         double oriented = pair.First == first ? ratio : 1.0 / ratio;
-        return Math.Round(oriented, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
+        return DecimalIntentRounding.Round(oriented, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
     }
 
     /// <summary>A per-model sheet's paired difference against each peer, with its interval; not a test.</summary>

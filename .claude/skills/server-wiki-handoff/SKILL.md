@@ -2,14 +2,16 @@
 name: server-wiki-handoff
 description: >-
   Mandatory method for turning a rung-2 wiki finding from an Overseer AI benchmark (GnollBench)
-  analysis into a three-step handoff document: proposed changes in plain text and as diffs, an AI validation prompt
-  for a read-only session on the GnollHack source clone at C:\hmp\GnollHack, and an execution prompt
-  for a session on the GnollHackWiki clone at C:\hmp\GnollHackWiki run only after validation passes.
-  Covers pre-flight checks against the wiki clone (target page exists, which page carries the fact,
-  match count, existing links, clean tree, line endings, no presumed generator), what prompts must
-  not prescribe, templates, the confirmation gate pausing a round until validation passes and the
-  wiki session finishes, and post-session records. Read with the other four benchmark skills before
-  the first finding is written; act on it whenever a finding lands on ladder rung 2.
+  analysis, a rung-1 knowledge-base finding, or a wiki or knowledge-base fact from a feedback issue,
+  into a two-step handoff document: proposed changes, one at a time, as text and diffs, and one
+  orchestration prompt for a session on the GnollHackWiki clone at C:\hmp\GnollHackWiki (or the
+  knowledge-base clone) that validates each change against the GnollHack source at C:\hmp\GnollHack
+  with a fresh read-only validator subagent, applies it on a pass, revises and re-validates it on a
+  fail, up to five rounds, and reports what was not applied. Covers pre-flight checks on the wiki
+  clone (target page, match count, links, clean tree, line endings, no presumed generator), what
+  prompts must not prescribe, the validation loop, the confirmation gate that waits for
+  the session's report, and post-session records. Read with the other four benchmark skills before
+  the first finding; act on it when a finding lands on rung 1 or 2.
 ---
 
 The full skill lives in this repository's tool-neutral agent directory (`.agents/`),

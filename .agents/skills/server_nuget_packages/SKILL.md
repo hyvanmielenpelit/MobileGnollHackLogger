@@ -6,7 +6,7 @@ description: Guidelines for managing NuGet package references in the .NET projec
 # NuGet Packages in the .NET Projects
 
 The solution `MobileGnollHackLogger.slnx` holds five .NET projects, all targeting the same
-`net10.0` framework: `GnollHackServer.Data` (the EF Core data layer), `MobileGnollHackLogger`
+`net11.0` framework: `GnollHackServer.Data` (the EF Core data layer), `MobileGnollHackLogger`
 (the Razor Pages site), `Overseer` (the ASP.NET Core API with the Angular client),
 `Overseer.Tests` and `MobileGnollHackLogger.Tests`. There is no `Directory.Packages.props` and no
 central package management: each `.csproj` lists its own `PackageReference`s with explicit
@@ -18,11 +18,19 @@ project, so a package it references, directly or transitively, reaches all five.
 - **Versions live in the `.csproj` files**, nothing else. Never hardcode a package version in a
   skill, a plan or a document; name the project file instead. The versions quoted in this skill
   are the ones at the time of writing and are given only so the reasoning can be checked.
-- **The EF Core and ASP.NET Core packages move together** to the same `10.0.x` patch version in
+- **The EF Core and ASP.NET Core packages move together** to the same `11.0.x` patch version in
   every project. Upgrade them as a set.
 - **Keep the build at zero warnings.** NuGet audit warnings (`NU1901`–`NU1904`) are build
   warnings this repository does not tolerate, so a vulnerable package is fixed, not suppressed.
   Do not add `NoWarn` or `NuGetAuditLevel` to hide one.
+- **`Microsoft.VisualStudio.Web.CodeGeneration.Design` is not referenced.** It is a design-time
+  package for Visual Studio's *Add → New Scaffolded Item*, and Visual Studio adds it when someone
+  scaffolds. Its 10.0.x releases require exact `Humanizer` 2.14.1 and Roslyn 5.0.0 versions, which
+  conflict with EF Core Design 11 (`NU1608`, and `MSB3277` in `MobileGnollHackLogger.Tests`), and it
+  leaks Roslyn and MSBuild into the website so that stray IDE auto-imports
+  (`using Microsoft.CodeAnalysis…`, `using Microsoft.Build…`) compile. Remove a reference that
+  scaffolding added, together with any such `using`, unless the package then resolves without
+  warnings.
 
 ## The .NET SDK Pin
 
@@ -30,13 +38,13 @@ The repository-root `global.json` pins the .NET SDK with `rollForward: latestPat
 `allowPrerelease: false`.
 
 - **Why it exists.** Without a pin, `dotnet` selects the newest SDK installed on the machine, so a
-  `net10.0` solution could be built by a newer major version or a prerelease.
+  `net11.0` solution could be built by a newer major version or a prerelease.
 - **Moving to a new feature band** is a deliberate edit of `version`. Security patches within the
   band need no repository edit, because `latestPatch` selects them once they are installed.
 - **The `test` entry must stay.** Every `dotnet test` command depends on it; see the
   `testing-guidelines` skill § 1a.
 - **Runtime security fixes reach production through the server's Hosting Bundle.** The publish
-  profiles are framework-dependent, so upgrading the `10.0.x` package set does not deliver a fix in
+  profiles are framework-dependent, so upgrading the `11.0.x` package set does not deliver a fix in
   the runtime itself. Install the matching Hosting Bundle on each server as well.
 
 ## Lucene.NET
@@ -85,7 +93,7 @@ check that with step 1 above before removing.
 ### `System.Security.Cryptography.Pkcs` in `GnollHackServer.Data`
 
 - **Why it exists.** `Microsoft.EntityFrameworkCore.SqlServer` depends on
-  `Microsoft.Data.SqlClient`, whose `net9.0` dependency group (the one a `net10.0` project
+  `Microsoft.Data.SqlClient`, whose `net9.0` dependency group (the one a `net10.0` or `net11.0` project
   resolves) pins `System.Security.Cryptography.Pkcs` to a `9.0.x` version that two .NET
   denial-of-service advisories cover, `GHSA-2fmv-rv2c-59x7` (moderate, CVE-2026-70162) and
   `GHSA-846f-f764-76mx` (high, CVE-2026-84008). Every project in the solution then reported
@@ -98,8 +106,13 @@ check that with step 1 above before removing.
   above it. `Overseer`, `MobileGnollHackLogger` and `Overseer.Tests` inherit it through their
   project reference and needed no change. The build went to zero warnings and
   `dotnet nuget why` shows the `10.0.x` version resolving in every project.
-- **When to remove it.** When a `Microsoft.Data.SqlClient` release whose `net9.0` (or a newer
-  `net10.0`) dependency group names a patched Pkcs version is in use. Remove the reference, then
-  rebuild the solution and confirm the warning does not return. Until then, keep the pinned
-  version at or above the advisory's first patched version of its major line, and move it along
-  with the framework patch version when the `10.0.x` set is upgraded.
+- **Status on .NET 11** (as of 2026-11-11). `Microsoft.EntityFrameworkCore.SqlServer` 11.0.0
+  depends on `System.Security.Cryptography.Pkcs` 10.0.13 directly, the first patched `10.0.x`
+  version of both advisories, while `Microsoft.Data.SqlClient` 7.1.1 still names 9.0.18 for
+  `net9.0`. The direct reference therefore no longer decides whether the build is clean. It was
+  kept and moved to `11.0.0` with the framework upgrade, so the package tracks the framework line
+  like the rest of the set.
+- **When to remove it.** It can be removed now. Remove the reference, rebuild the solution, and
+  confirm with `dotnet nuget why` that the resolved Pkcs version is at or above the first patched
+  version of its major line and that no `NU1902` or `NU1903` warning returns. While it stays, move
+  it along with the framework patch version when the `11.0.x` set is upgraded.

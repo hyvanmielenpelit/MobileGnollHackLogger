@@ -7,8 +7,8 @@ This checklist provides a concise, step-by-step procedure for cutting a new rele
 ## 1. Pre-Release Testing
 
 Run automated tests to ensure everything is working before preparing a release. `dotnet test`
-requires the repository-root `global.json` (the Microsoft.Testing.Platform opt-in the .NET 10 SDK
-needs) and the `--filter-not-trait` argument exactly as written — it fails open on a typo. See
+requires the repository-root `global.json` (the Microsoft.Testing.Platform opt-in the .NET 10 and later SDKs
+need) and the `--filter-not-trait` argument exactly as written — it fails open on a typo. See
 [commands.md](commands.md) § 4.
 
 ```bash
@@ -57,12 +57,12 @@ This command automatically:
 - Compiles the ASP.NET Core backend.
 - Builds the Angular SPA with production optimization (`ng build --configuration production`).
 - Injects Sentry Debug IDs into the generated `.js` and `.map` files in `Overseer/wwwroot/`.
-- Copies the deployment payload into `Overseer/bin/Release/net10.0/publish/`. The publish output contains no `.map` files (nor `.map.br` / `.map.gz` copies); the maps stay in `Overseer/wwwroot/` for § 6.
+- Copies the deployment payload into `Overseer/bin/Release/net11.0/publish/`. The publish output contains no `.map` files (nor `.map.br` / `.map.gz` copies); the maps stay in `Overseer/wwwroot/` for § 6.
 
 Check that no source map was published. The count must be `0`; otherwise do not deploy (see [sentry-sourcemaps.md](sentry-sourcemaps.md) § 4):
 
 ```powershell
-@(Get-ChildItem Overseer\bin\Release\net10.0\publish\wwwroot -Recurse -File -Filter *.map*).Count
+@(Get-ChildItem Overseer\bin\Release\net11.0\publish\wwwroot -Recurse -File -Filter *.map*).Count
 ```
 
 ---
@@ -79,7 +79,7 @@ Check that no source map was published. The count must be `0`; otherwise do not 
      `COPY_ONLY` leaves any scheduled backup chain untouched.
    - Run the bundle from the MobileGnollHackLogger test site folder with `--connection` ([commands.md](commands.md) § 5.1). It must end with `Done.`; if it fails, stop and restore or repair the database before uploading anything.
    - Do **not** use an idempotent SQL script ([commands.md](commands.md) § 5.2).
-2. **Deploy to Test Server**: Upload the published files from `Overseer/bin/Release/net10.0/publish/` to the test server, then start the site.
+2. **Deploy to Test Server**: Upload the published files from `Overseer/bin/Release/net11.0/publish/` to the test server, then start the site.
 3. **Perform Testing**: Test the deployed version thoroughly on the test server.
 4. **Iterate if Changes Needed**:
    - If bugs or adjustments are found, implement the fixes in code.

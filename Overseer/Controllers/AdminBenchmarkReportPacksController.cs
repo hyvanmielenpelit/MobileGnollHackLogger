@@ -1726,7 +1726,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         var over = estimates.FirstOrDefault(e => e.ContextWindowShare is double share && share > ContextWindowRefusalShare);
         if (over == null) return null;
 
-        string share = Math.Round(over.ContextWindowShare!.Value * 100, 0, MidpointRounding.AwayFromZero).ToString("0", CultureInfo.InvariantCulture);
+        string share = DecimalIntentRounding.Round(over.ContextWindowShare!.Value * 100, 0, MidpointRounding.AwayFromZero).ToString("0", CultureInfo.InvariantCulture);
         return $"The {BenchmarkReportRenderService.AudienceName(over.Audience)} prompt is about "
             + over.EstimatedInputTokens.ToString("#,0", CultureInfo.InvariantCulture) + " tokens, " + share
             + $" % of the context window of {writer?.DisplayName ?? "the writer"}; above "

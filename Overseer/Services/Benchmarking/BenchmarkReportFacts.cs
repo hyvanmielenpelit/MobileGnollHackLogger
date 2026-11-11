@@ -1678,8 +1678,8 @@ public static class BenchmarkReportFacts
     /// </summary>
     public static bool PairedIntervalExcludesZero(double lower, double upper)
     {
-        double printedLower = Math.Round(lower, 1, MidpointRounding.AwayFromZero);
-        double printedUpper = Math.Round(upper, 1, MidpointRounding.AwayFromZero);
+        double printedLower = DecimalIntentRounding.Round(lower, 1, MidpointRounding.AwayFromZero);
+        double printedUpper = DecimalIntentRounding.Round(upper, 1, MidpointRounding.AwayFromZero);
         return printedLower > 0 || printedUpper < 0;
     }
 
@@ -2727,7 +2727,7 @@ public static class BenchmarkReportFormat
     /// <summary>Rounded half away from zero to a whole number; never "-0".</summary>
     public static string Whole(double value)
     {
-        double rounded = Math.Round(value, 0, MidpointRounding.AwayFromZero);
+        double rounded = DecimalIntentRounding.Round(value, 0, MidpointRounding.AwayFromZero);
         if (rounded == 0) rounded = 0;
         return rounded.ToString("0", CultureInfo.InvariantCulture);
     }
@@ -2736,7 +2736,7 @@ public static class BenchmarkReportFormat
     public static string Signed(double value)
     {
         string whole = Whole(value);
-        return Math.Round(value, 0, MidpointRounding.AwayFromZero) > 0 ? "+" + whole : whole;
+        return DecimalIntentRounding.Round(value, 0, MidpointRounding.AwayFromZero) > 0 ? "+" + whole : whole;
     }
 
     /// <summary>
@@ -2744,11 +2744,11 @@ public static class BenchmarkReportFormat
     /// whole numbers, never a separately rounded difference.
     /// </summary>
     public static string WholeDifference(double value, double reference)
-        => Signed(Math.Round(value, 0, MidpointRounding.AwayFromZero) - Math.Round(reference, 0, MidpointRounding.AwayFromZero));
+        => Signed(DecimalIntentRounding.Round(value, 0, MidpointRounding.AwayFromZero) - DecimalIntentRounding.Round(reference, 0, MidpointRounding.AwayFromZero));
 
     public static string OneDecimal(double value)
     {
-        double rounded = Math.Round(value, 1, MidpointRounding.AwayFromZero);
+        double rounded = DecimalIntentRounding.Round(value, 1, MidpointRounding.AwayFromZero);
         if (rounded == 0) rounded = 0;
         return rounded.ToString("0.0", CultureInfo.InvariantCulture);
     }
@@ -2757,13 +2757,13 @@ public static class BenchmarkReportFormat
     public static string SignedOneDecimal(double value)
     {
         string text = OneDecimal(value);
-        return Math.Round(value, 1, MidpointRounding.AwayFromZero) > 0 ? "+" + text : text;
+        return DecimalIntentRounding.Round(value, 1, MidpointRounding.AwayFromZero) > 0 ? "+" + text : text;
     }
 
     /// <summary>At most one decimal, and none when it is zero: "3", "2.5".</summary>
     public static string CompactDecimal(double value)
     {
-        double rounded = Math.Round(value, 1, MidpointRounding.AwayFromZero);
+        double rounded = DecimalIntentRounding.Round(value, 1, MidpointRounding.AwayFromZero);
         if (rounded == 0) rounded = 0;
         return rounded.ToString("0.#", CultureInfo.InvariantCulture);
     }
@@ -2771,7 +2771,7 @@ public static class BenchmarkReportFormat
     /// <summary>A whole count with thousands separators: "12,345".</summary>
     public static string Count(double value)
     {
-        double rounded = Math.Round(value, 0, MidpointRounding.AwayFromZero);
+        double rounded = DecimalIntentRounding.Round(value, 0, MidpointRounding.AwayFromZero);
         if (rounded == 0) rounded = 0;
         return rounded.ToString("#,0", CultureInfo.InvariantCulture);
     }
@@ -2781,7 +2781,7 @@ public static class BenchmarkReportFormat
     /// <summary>Three decimals, four below one cent.</summary>
     public static string Usd(double value)
     {
-        double rounded = Math.Round(value, value >= 0.01 ? 3 : 4, MidpointRounding.AwayFromZero);
+        double rounded = DecimalIntentRounding.Round(value, value >= 0.01 ? 3 : 4, MidpointRounding.AwayFromZero);
         return "$" + rounded.ToString(value >= 0.01 ? "0.000" : "0.0000", CultureInfo.InvariantCulture);
     }
 

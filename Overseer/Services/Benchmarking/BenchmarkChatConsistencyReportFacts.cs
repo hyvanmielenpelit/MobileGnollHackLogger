@@ -1668,7 +1668,7 @@ public static class BenchmarkChatConsistencyReportFacts
 
     private static string Signed(double value, int decimals, string format)
     {
-        double rounded = Math.Round(value, decimals, MidpointRounding.AwayFromZero);
+        double rounded = DecimalIntentRounding.Round(value, decimals, MidpointRounding.AwayFromZero);
         if (rounded == 0) rounded = 0;
         string text = WithMinus(rounded.ToString(format, CultureInfo.InvariantCulture));
         return rounded > 0 ? "+" + text : text;
@@ -1680,7 +1680,7 @@ public static class BenchmarkChatConsistencyReportFacts
         double abs = Math.Abs(value);
         if (abs >= 100) return WithMinus(BenchmarkReportFormat.Count(value));
         if (abs >= 1) return WithMinus(BenchmarkReportFormat.OneDecimal(value));
-        double rounded = Math.Round(value, 3, MidpointRounding.AwayFromZero);
+        double rounded = DecimalIntentRounding.Round(value, 3, MidpointRounding.AwayFromZero);
         if (rounded == 0) rounded = 0;
         return WithMinus(rounded.ToString("0.000", CultureInfo.InvariantCulture));
     }

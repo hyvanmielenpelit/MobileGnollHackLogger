@@ -200,7 +200,7 @@ public static class RootCauseKnownFacts
     internal static string Verb(string? label, string singular, string plural)
         => label != null && PluralComponentLabels.Contains(label.Trim()) ? plural : singular;
 
-    private static string Ratio(double value) => Math.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
+    private static string Ratio(double value) => DecimalIntentRounding.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
 
     private static string Inv(int value) => value.ToString(CultureInfo.InvariantCulture);
 }

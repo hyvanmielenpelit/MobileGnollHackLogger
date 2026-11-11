@@ -1583,7 +1583,7 @@ public static class RootCauseFacts
 
     /// <summary>A cost pair's <c>.volumeRatio</c> display: one decimal below 10, else a whole number, then <c>times</c>.</summary>
     public static string RatioDisplay(double ratio)
-        => (Math.Round(ratio, 1, MidpointRounding.AwayFromZero) < 10 ? BenchmarkReportFormat.OneDecimal(ratio) : BenchmarkReportFormat.Whole(ratio)) + " times";
+        => (DecimalIntentRounding.Round(ratio, 1, MidpointRounding.AwayFromZero) < 10 ? BenchmarkReportFormat.OneDecimal(ratio) : BenchmarkReportFormat.Whole(ratio)) + " times";
 
     /// <summary>The display of question 4's status when its best comparative hypothesis is a price effect.</summary>
     public const string PriceCardStatusDisplay = RootCauseGrades.PriceCardWord;
