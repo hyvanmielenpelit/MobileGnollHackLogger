@@ -76,10 +76,12 @@ The maps are uploaded from `Overseer/wwwroot`, and they are only correct if `www
   $src  = Join-Path $repo 'Overseer\wwwroot'
   $pub  = Join-Path $repo 'Overseer\bin\Release\net11.0\publish\wwwroot'
   if (-not (Test-Path -LiteralPath $pub)) { throw "publish output not found: $pub" }
+  $pkg  = @("$pub\Identity\")   # Microsoft.AspNetCore.Identity.UI package static web assets
+  $own  = @(Get-ChildItem $pub -Recurse -File | Where-Object { $p = $_.FullName; -not ($pkg | Where-Object { $p.StartsWith($_) }) })
   $stop = @(); $warn = @()
-  $maps = @(Get-ChildItem $pub -Recurse -File | Where-Object { $_.Name -match '\.map(\.br|\.gz)?$' })
+  $maps = @($own | Where-Object { $_.Name -match '\.map(\.br|\.gz)?$' })
   if ($maps.Count -gt 0) { $warn += "publish output contains $($maps.Count) source map file(s)" }
-  foreach ($f in Get-ChildItem $pub -Recurse -File | Where-Object { $_.Extension -notin '.br', '.gz', '.map' }) {
+  foreach ($f in $own | Where-Object { $_.Extension -notin '.br', '.gz', '.map' }) {
     $rel = $f.FullName.Substring($pub.Length); $s = $src + $rel
     if (-not (Test-Path -LiteralPath $s)) { $stop += "missing from wwwroot: $rel"; continue }
     if ((Get-FileHash -LiteralPath $f.FullName).Hash -ne (Get-FileHash -LiteralPath $s).Hash) { $stop += "differs: $rel" }
@@ -93,6 +95,7 @@ The maps are uploaded from `Overseer/wwwroot`, and they are only correct if `www
   ```
 
   If the user published elsewhere, set `$pub` to that folder's `wwwroot` as a full long path (not an 8.3 short path such as `TOMMIG~1`, which breaks the relative-path arithmetic).
+- `$pkg` lists publish folders that NuGet packages supply as static web assets and that therefore never exist in `Overseer/wwwroot`. `wwwroot\Identity\` is the `Microsoft.AspNetCore.Identity.UI` package's favicon, Bootstrap and jQuery, including their public `.map` files. If the check reports `missing from wwwroot` for a whole folder, look up that folder's `BasePath` and `SourceType` in `Overseer/obj/Release/net11.0/staticwebassets.build.json`; a folder whose assets are `"SourceType":"Package"` belongs in `$pkg`, anything else is a real `STOP`.
 - **Any `STOP` line:** do not upload. `differs`, `missing` or `not published` mean `wwwroot` was rebuilt after the publish. Tell the user to republish and deploy that publish, then run the skill again. `no Debug ID` means the publish's `sentry-cli sourcemaps inject` step failed (it runs with `IgnoreExitCode="true"`), so the deployed bundles cannot be matched by Sentry. Tell the user to fix `sentry-cli` (usually `Overseer/.sentryclirc`) and republish.
 - **A `WARN` line** (maps in the publish output) does not block the upload, but tell the user that this publish exposes the client source and must not be deployed. Point them at Step 1.3.
 
