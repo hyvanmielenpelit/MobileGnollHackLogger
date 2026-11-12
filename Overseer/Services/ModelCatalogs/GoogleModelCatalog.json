@@ -156,6 +156,21 @@
         "note": "Introductory pricing through 2026-11-30"
       }
     }
+  },
+  {
+    "prefixes": ["gemini-4-hydrogen"],
+    "displayName": "Gemini 4 Hydrogen",
+    "releaseDate": "2026-11-12",
+    "thinkingLevels": ["low", "medium", "high", "xhigh"],
+    "contextWindowSize": 1048576,
+    "maxOutputTokens": 65536,
+    "pricing": {
+      "inputPerMillion": 1.50,
+      "outputPerMillion": 7.50,
+      "cachedInputPerMillion": 0.075,
+      "asOf": "2026-11-12",
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 1.8 }
+    }
   }
 ]
 
