@@ -67,6 +67,23 @@ To compile SCSS files:
 - **Downloadable documents: PNG.** Images embedded in files a user downloads and opens in another application — Word (`.docx`) and similar office formats (`.xlsx`, `.pptx`, `.odt`) — are PNG, or JPEG for a photograph, because WebP pictures do not open in Word 2019, Word 2021 or LibreOffice. Such images are server-side resources that never reach the browser, so WebP's loading-performance purpose does not apply. A renderer that decodes WebP itself before embedding (QuestPDF for the benchmark PDFs) may keep using the WebP originals.
 - **Conversion quality**: When converting images to WebP, always use a compression quality of **85** (e.g., `quality=85` in Pillow or `-q 85` in cwebp).
 
+## Cookie Consent
+
+These rules apply to the `MobileGnollHackLogger` website (account.gnollhack.com).
+
+- **Google Tag Manager loads only after an explicit Accept.** `wwwroot/js/site.js` injects it from the consent notice's `data-gtm-id`. Never add a tag snippet or a `<noscript>` frame to `_Layout.cshtml`.
+- **Accept and Decline stay equally prominent**, and the footer's Cookie Settings button keeps reopening the notice.
+- **Never load a font or script from a third-party host before a consent choice.**
+- **No page that loads the layout is rendered under a URL that carries an account ID, a code or an email address.** A page whose emailed link carries one stores what it needs in TempData and redirects to its own path, and is marked `[AllowWithoutAccountTerms]`, because the Terms filter would otherwise put its query into the AcceptTerms URL. `site.js` also skips Tag Manager on any URL whose query has `userId`, `code`, `email` or `token`.
+- **If the notice's tag list or the site's cookies change, update the "GnollHack Account Cookie Policy" wiki page too.**
+
+## Fonts
+
+- **Fonts are self-hosted** in `MobileGnollHackLogger/wwwroot/fonts/` and declared at the top of `site2.scss`: Cinzel (one variable file, 400 to 900) and Lato 2.0 (Light 300, Regular 400, Medium 500 and Heavy 800, each upright and italic).
+- **Bold Lato text is Heavy**: write `$font-weight-bold` (800), never `bold` or 700, in a rule for Lato text. There is deliberately no 600, 700 or 900 face, so Bootstrap's and the browser's own bold also render in Heavy.
+- **Every Lato weight the site requests needs a face.** Before using a new weight, add its upright and italic files, subset as the others were (`GnollHackWiki`'s `wiki_theme` skill, § 1), and their `@font-face` rules.
+- **The files hold the Latin subset only**; other characters render in the fallback font.
+
 ## Temporary and Guidance Files
 
 - **NEVER** store temporary files, scratch scripts, or guidance files in the repository root, in a scratch directory under the repository root, or anywhere else within the repository.

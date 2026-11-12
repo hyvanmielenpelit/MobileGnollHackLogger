@@ -1,15 +1,19 @@
 using System.Net;
+using System.Reflection;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Encodings.Web;
 using GnollHackServer.Data.Legal;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MobileGnollHackLogger.Data;
+using MobileGnollHackLogger.Filters;
 using MobileGnollHackLogger.Tests.Helpers;
 
 namespace MobileGnollHackLogger.Tests.Pages;
@@ -125,6 +129,44 @@ public class AccountTermsFilterTests : IClassFixture<AccountTermsFilterTests.Tes
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         string body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("| Dashboard", body);
+    }
+
+    /// <summary>
+    /// The Identity pages an emailed link opens pass the Terms filter, so their query never reaches the AcceptTerms URL:
+    /// each redirects to its own path without the query.
+    /// </summary>
+    [Theory]
+    [InlineData("ResetPassword")]
+    [InlineData("RegisterConfirmation")]
+    [InlineData("ConfirmEmailChange")]
+    public async Task SignedInNotAccepted_EmailedLinkPage_RedirectsToItsOwnPathWithoutQuery(string page)
+    {
+        var user = await CreateUserAsync("terms_link");
+        string path = "/Identity/Account/" + page;
+        string wrongCode = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes("not-a-token"));
+        string url = page switch
+        {
+            "ResetPassword" => path + "?code=YQ",
+            "RegisterConfirmation" => path + "?email=a%40example.invalid",
+            _ => path + "?userId=" + Uri.EscapeDataString(user.Id) + "&email=a%40example.invalid&code=" + wrongCode
+        };
+        using var client = _factory.CreateGameClient();
+
+        var response = await GetAsUserAsync(client, url, user);
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal(path, response.Headers.Location?.OriginalString);
+    }
+
+    /// <summary>ConfirmEmail needs the <c>LogFile</c> setting this factory does not set, so its exemption is checked here.</summary>
+    [Theory]
+    [InlineData(typeof(MobileGnollHackLogger.Areas.Identity.Pages.Account.ConfirmEmailModel))]
+    [InlineData(typeof(MobileGnollHackLogger.Areas.Identity.Pages.Account.ConfirmEmailChangeModel))]
+    [InlineData(typeof(MobileGnollHackLogger.Areas.Identity.Pages.Account.ResetPasswordModel))]
+    [InlineData(typeof(MobileGnollHackLogger.Areas.Identity.Pages.Account.RegisterConfirmationModel))]
+    public void EmailedLinkPageModels_AreExemptFromTheTermsFilter(Type pageModel)
+    {
+        Assert.NotNull(pageModel.GetCustomAttribute<AllowWithoutAccountTermsAttribute>(inherit: true));
     }
 
     private Task<ApplicationUser> CreateUserAsync(string prefix)

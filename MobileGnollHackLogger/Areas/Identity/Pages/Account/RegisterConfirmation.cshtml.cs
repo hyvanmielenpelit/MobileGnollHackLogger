@@ -16,23 +16,9 @@ using MobileGnollHackLogger.Data;
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 {
     [AllowAnonymous]
+    [MobileGnollHackLogger.Filters.AllowWithoutAccountTerms]
     public class RegisterConfirmationModel : PageModel
     {
-        private readonly UserManager<ApplicationUser> _userManager;
-        private readonly IEmailSender _sender;
-
-        public RegisterConfirmationModel(UserManager<ApplicationUser> userManager, IEmailSender sender)
-        {
-            _userManager = userManager;
-            _sender = sender;
-        }
-
-        /// <summary>
-        ///     This API supports the ASP.NET Core Identity default UI infrastructure and is not intended to be used
-        ///     directly from your code. This API may change or be removed in future releases.
-        /// </summary>
-        public string Email { get; set; }
-
         /// <summary>
         ///     This API supports the ASP.NET Core Identity default UI infrastructure and is not intended to be used
         ///     directly from your code. This API may change or be removed in future releases.
@@ -45,21 +31,22 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
         /// </summary>
         public string EmailConfirmationUrl { get; set; }
 
-        public async Task<IActionResult> OnGetAsync(string email, string returnUrl = null)
+        /// <summary>
+        ///     Renders the card after a registration sent its confirmation email. A request with a query, such as a
+        ///     redirect that carried the address, is redirected to this page's own path.
+        /// </summary>
+        public IActionResult OnGet()
         {
-            if (email == null)
+            if (Request.QueryString.HasValue)
+            {
+                TempData[IdentityTempDataKeys.RegistrationEmailSent] = true;
+                return RedirectToPage();
+            }
+
+            if (TempData.Peek(IdentityTempDataKeys.RegistrationEmailSent) is not true)
             {
                 return RedirectToPage("/Index");
             }
-            returnUrl = returnUrl ?? Url.Content("~/");
-
-            var user = await _userManager.FindByEmailAsync(email);
-            if (user == null)
-            {
-                return NotFound($"Unable to load user with email '{email}'.");
-            }
-
-            Email = email;
 
             // Once you add a real email sender, you should remove this code that lets you confirm the account
             //DisplayConfirmAccountLink = true;

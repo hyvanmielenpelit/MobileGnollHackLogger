@@ -1,5 +1,34 @@
 @use "sass:color";
 
+// Self-hosted fonts, Latin subset; other characters render in the fallback font.
+// Cinzel is one variable file holding weights 400 to 900.
+@font-face {
+    font-family: "Cinzel";
+    font-style: normal;
+    font-weight: 400 900;
+    font-display: swap;
+    src: url("../fonts/cinzel-latin-wght-normal.woff2") format("woff2");
+}
+
+// Lato 2.0: Light (300), Regular (400), Medium (500) and Heavy (800), each upright and italic.
+// There is no 600, 700 or 900 face, so every bold request renders in Heavy.
+$lato-unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC,
+    U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+2044, U+20AC,
+    U+2122, U+2212;
+
+@each $lato-weight in (300, 400, 500, 800) {
+    @each $lato-style in (normal, italic) {
+        @font-face {
+            font-family: "Lato";
+            font-style: $lato-style;
+            font-weight: $lato-weight;
+            font-display: swap;
+            src: url("../fonts/lato2-latin-#{$lato-weight}-#{$lato-style}.woff2") format("woff2");
+            unicode-range: $lato-unicode-range;
+        }
+    }
+}
+
 $font-color: white;
 $link-color: #e0ba6d;
 $font-em-color: $link-color;
@@ -10,6 +39,7 @@ $bg-glass: rgba(17, 17, 17, 0.65);
 $bg-input: rgba(30, 30, 30, 0.95);
 $border-glass: rgba(212, 160, 23, 0.25);
 $gold-glow: rgba(212, 160, 23, 0.25);
+$font-weight-bold: 800; // Lato Heavy: the bold of Lato text
 
 // Precomputed lighter/darker shades
 $nav-color-light: color.adjust($nav-color, $lightness: 15%);
@@ -246,7 +276,7 @@ a {
             em {
                 color: #ddd;
                 font-style: normal;
-                font-weight: bold;
+                font-weight: $font-weight-bold;
             }
         }
     }
@@ -534,7 +564,7 @@ div.container.xxlMaxWidth {
             border-color: rgba(0, 240, 255, 0.4);
             border-bottom-color: rgba(15, 20, 30, 0.85) !important; // Hide bottom border to merge with content
             box-shadow: inset 0 2px 5px rgba(0, 240, 255, 0.15);
-            font-weight: bold;
+            font-weight: $font-weight-bold;
         }
     }
 }
@@ -551,7 +581,7 @@ div.container.xxlMaxWidth {
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    font-weight: bold;
+    font-weight: $font-weight-bold;
     font-size: 0.9em;
 
     &.rank-1 {
@@ -724,7 +754,7 @@ div.container.xxlMaxWidth {
 
 .score-text {
     color: #f6e27a;
-    font-weight: bold;
+    font-weight: $font-weight-bold;
     font-size: 1.1rem;
     text-shadow: 0 0 5px rgba(212, 160, 23, 0.5);
 }
@@ -905,7 +935,7 @@ div.container.xxlMaxWidth {
             left: 10px !important;
             width: 80px !important;
             text-align: left !important;
-            font-weight: bold !important;
+            font-weight: $font-weight-bold !important;
             color: #81e6d9 !important;
             font-family: "Lato", sans-serif !important;
             text-transform: uppercase !important;
@@ -1244,7 +1274,7 @@ div.container.xxlMaxWidth {
 
         a {
             color: $link-color;
-            font-weight: bold;
+            font-weight: $font-weight-bold;
             text-decoration: underline;
             text-underline-offset: 2px;
 
@@ -1270,7 +1300,7 @@ div.container.xxlMaxWidth {
         color: #a0aec0;
         .signup-link {
             color: $link-color;
-            font-weight: bold;
+            font-weight: $font-weight-bold;
             &:hover {
                 color: $link-color-light;
                 text-decoration: underline !important;
@@ -1300,7 +1330,7 @@ div.container.xxlMaxWidth {
         .success-text {
             color: #85e085;
             font-size: 1.1rem;
-            font-weight: bold;
+            font-weight: $font-weight-bold;
         }
     }
 }
@@ -1338,7 +1368,7 @@ div.container.xxlMaxWidth {
 .ascended-row .rpg-death-text {
     color: #ffd700;
     text-shadow: 0 0 5px rgba(255, 215, 0, 0.4);
-    font-weight: bold;
+    font-weight: $font-weight-bold;
 }
 
 .rpg-loading-indicator {
@@ -1348,5 +1378,151 @@ div.container.xxlMaxWidth {
     
     h5 {
         font-family: 'Cinzel', serif;
+    }
+}
+
+// Cookie consent notice, styled as gnollhack.com's: hidden until site.js shows it, fixed at the bottom left
+// above the navigation bar. The gradients are interpolated in Oklab where the browser supports it.
+$consent-gold: #f3ce72;
+$consent-ivory: #fbf5e8;
+$consent-card-stops: rgba(22, 20, 18, 0.86) 0%, rgba(11, 11, 13, 0.93) 100%;
+$consent-cta-stops: #ffe27a 0%, #d89b28 100%;
+$consent-cta-hover-stops: #ffeb99 0%, #e6aa38 100%;
+$consent-breakpoint-md: 768px;
+
+.consent {
+    display: none;
+    z-index: 1040;
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    border: 1px solid rgba(242, 202, 112, 0.64);
+    border-radius: 12px;
+    box-shadow: inset 0 1px 0 rgba(255, 240, 200, 0.12), 0 14px 36px rgba(0, 0, 0, 0.78);
+    color: #ede7db;
+    font-family: "Lato", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    text-align: left;
+    padding: 14px 16px;
+    background-color: rgba(14, 12, 10, 0.96);
+    background-image: linear-gradient(165deg, $consent-card-stops);
+    backdrop-filter: blur(10px);
+    font-size: min(1rem, max(0.875rem, calc(0.698rem + 0.189vw)));
+
+    @media (min-width: $consent-breakpoint-md) {
+        width: min(max(calc(min(2560px, 100vw) * 0.26), 250px), 340px);
+    }
+
+    @media (max-width: #{$consent-breakpoint-md - 0.02px}) {
+        width: min(calc(100vw - 32px), 340px);
+    }
+
+    .text-container {
+        margin: 0;
+        padding: 0 0 10px 0;
+        line-height: 1.45;
+
+        a {
+            color: $consent-gold;
+            font-weight: $font-weight-bold;
+            text-decoration: none;
+
+            &:visited,
+            &:active {
+                color: $consent-gold;
+            }
+
+            &:hover {
+                color: $consent-ivory;
+            }
+
+            &:focus-visible {
+                outline: 2px solid $consent-gold;
+                outline-offset: 2px;
+                border-radius: 2px;
+            }
+        }
+    }
+
+    // Accept and Decline share one style, so neither is more prominent
+    .button-container {
+        display: flex;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+
+        button {
+            flex: 1 1 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 40px;
+            min-width: 72px;
+            padding: 8px 18px;
+            cursor: pointer;
+            border-radius: 999px;
+            border: 1px solid #c58a22;
+            background-color: #dfb046;
+            background-image: linear-gradient(180deg, $consent-cta-stops);
+            color: #1f1204;
+            font-family: "Lato", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            font-weight: $font-weight-bold;
+            font-size: min(1rem, max(0.875rem, calc(0.698rem + 0.189vw)));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+
+            &:hover {
+                background-image: linear-gradient(180deg, $consent-cta-hover-stops);
+            }
+
+            &:focus-visible {
+                outline: 2px solid $consent-ivory;
+                outline-offset: 2px;
+            }
+        }
+    }
+}
+
+@supports (background: linear-gradient(in oklab, white, black)) {
+    .consent {
+        background-image: linear-gradient(165deg in oklab, $consent-card-stops);
+
+        .button-container button {
+            background-image: linear-gradient(180deg in oklab, $consent-cta-stops);
+
+            &:hover {
+                background-image: linear-gradient(180deg in oklab, $consent-cta-hover-stops);
+            }
+        }
+    }
+}
+
+// The footer's Cookie Settings button, styled as a footer link
+.footer-link-button {
+    display: inline;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: $link-color;
+    font: inherit;
+    cursor: pointer;
+    text-decoration: none;
+
+    &:hover {
+        color: $link-color-light;
+    }
+
+    &:focus-visible {
+        outline: 2px solid $link-color;
+        outline-offset: 3px;
+        border-radius: 3px;
+    }
+}
+
+@media (forced-colors: active) {
+    .consent .button-container button {
+        border: 2px solid ButtonText;
+    }
+
+    .consent {
+        border: 1px solid CanvasText;
     }
 }

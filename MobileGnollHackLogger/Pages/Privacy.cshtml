@@ -1,5 +1,6 @@
 ﻿@page
 @model PrivacyModel
+@inject GnollHackServer.Data.Legal.LegalDocumentReader LegalDocumentReader
 @{
     ViewData["Title"] = "Privacy Policy";
 }
@@ -7,4 +8,5 @@
 <hr class="separator" />
 
 <h2 class="text-center">GnollHack Wiki</h2>
-<p class="text-center"><a href="https://github.com/hyvanmielenpelit/GnollHack/wiki/GnollHack-Account-Privacy-Policy">GnollHack Account Privacy Policy</a></p>
+<p class="text-center"><a href="@LegalDocumentReader.PageUrl("GnollHack Account Privacy Policy")">GnollHack Account Privacy Policy</a></p>
+<p class="text-center"><a href="@LegalDocumentReader.PageUrl("GnollHack Account Cookie Policy")">GnollHack Account Cookie Policy</a></p>

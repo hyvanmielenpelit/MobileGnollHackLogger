@@ -180,7 +180,8 @@ public class ExternalLoginModel : PageModel
                     // If account confirmation is required, we need to show the link if we don't have a real email sender
                     if (_userManager.Options.SignIn.RequireConfirmedAccount)
                     {
-                        return RedirectToPage("./RegisterConfirmation", new { Email = Input.Email });
+                        TempData[IdentityTempDataKeys.RegistrationEmailSent] = true;
+                        return RedirectToPage("./RegisterConfirmation");
                     }
 
                     await _signInManager.SignInAsync(user, isPersistent: false, info.LoginProvider);

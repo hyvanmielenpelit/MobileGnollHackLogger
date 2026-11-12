@@ -15,6 +15,7 @@ using System.Threading.Tasks;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 {
+    [MobileGnollHackLogger.Filters.AllowWithoutAccountTerms]
     public class ConfirmEmailModel : PageModel
     {
         private readonly UserManager<ApplicationUser> _userManager;
@@ -36,10 +37,19 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
         public string StatusMessage { get; set; }
 
         public bool IsSuccess { get; set; }
+        /// <summary>
+        ///     Confirms the address from the emailed link, then redirects to this page's own path, which renders the
+        ///     outcome kept in TempData once.
+        /// </summary>
         public async Task<IActionResult> OnGetAsync(string userId, string code)
         {
             if (userId == null || code == null)
             {
+                if (userId == null && code == null && TempData[IdentityTempDataKeys.ConfirmEmailSucceeded] is bool succeeded)
+                {
+                    IsSuccess = succeeded;
+                    return Page();
+                }
                 return RedirectToPage("/Index");
             }
 
@@ -49,15 +59,33 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
                 return NotFound($"Unable to load user with ID '{userId}'.");
             }
 
-            string decoded_code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(code));
-            var result = await _userManager.ConfirmEmailAsync(user, decoded_code);
-            IsSuccess = result.Succeeded;
-            StatusMessage = IsSuccess ? "Thank you for confirming your email." : "Error confirming your email.";
-            foreach (var error in result.Errors)
+            string decoded_code = null;
+            try
             {
-                StatusMessage += " " + error.Description;
+                decoded_code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(code));
             }
-            return Page();
+            catch (FormatException)
+            {
+            }
+
+            if (decoded_code == null)
+            {
+                IsSuccess = false;
+                StatusMessage = "Error confirming your email.";
+            }
+            else
+            {
+                var result = await _userManager.ConfirmEmailAsync(user, decoded_code);
+                IsSuccess = result.Succeeded;
+                StatusMessage = IsSuccess ? "Thank you for confirming your email." : "Error confirming your email.";
+                foreach (var error in result.Errors)
+                {
+                    StatusMessage += " " + error.Description;
+                }
+            }
+
+            TempData[IdentityTempDataKeys.ConfirmEmailSucceeded] = IsSuccess;
+            return RedirectToPage();
         }
     }
 }

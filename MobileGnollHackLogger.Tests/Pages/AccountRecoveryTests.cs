@@ -19,6 +19,7 @@ public partial class AccountRecoveryTests : IClassFixture<AccountRecoveryTests.R
     private const string ResetPasswordPath = "/Identity/Account/ResetPassword";
     private const string ResendConfirmationPath = "/Identity/Account/ResendEmailConfirmation";
     private const string ConfirmEmailChangePath = "/Identity/Account/ConfirmEmailChange";
+    private const string ConfirmEmailPath = "/Identity/Account/ConfirmEmail";
     private const string NewPassword = "New-Passw0rd-1";
     private const byte IpBlock = 0x22;
 
@@ -83,13 +84,15 @@ public partial class AccountRecoveryTests : IClassFixture<AccountRecoveryTests.R
 
         string link = BrowserSession.LinkIn(sent.HtmlMessage, ResetPasswordPath);
         string urlCode = QueryHelpers.ParseQuery(new Uri(link).Query)["code"].ToString();
-        string resetPage = ResetPasswordPath + "?code=" + Uri.EscapeDataString(urlCode);
-        var page = await session.GetAsync(resetPage);
+        var redirect = await session.GetAsync(ResetPasswordPath + "?code=" + Uri.EscapeDataString(urlCode));
+        Assert.Equal(HttpStatusCode.Redirect, redirect.StatusCode);
+        Assert.Equal(ResetPasswordPath, redirect.Headers.Location?.OriginalString);
+        var page = await session.GetAsync(ResetPasswordPath);
         Assert.Equal(HttpStatusCode.OK, page.StatusCode);
         string code = InputValue(await page.Content.ReadAsStringAsync(TestContext.Current.CancellationToken), "Input.Code");
         Assert.Equal(Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(urlCode)), code);
 
-        var crossUser = await PostResetPasswordAsync(session, resetPage, userB.Email!, code);
+        var crossUser = await PostResetPasswordAsync(session, ResetPasswordPath, userB.Email!, code);
 
         Assert.Equal(HttpStatusCode.OK, crossUser.StatusCode);
         Assert.NotEmpty(SummaryMessages(await crossUser.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)));
@@ -98,13 +101,15 @@ public partial class AccountRecoveryTests : IClassFixture<AccountRecoveryTests.R
             await userBSession.SignInAsync(userB.UserName!, WebsiteTestData.Password);
         }
 
-        var firstUse = await PostResetPasswordAsync(session, resetPage, userA.Email!, code);
+        var firstUse = await PostResetPasswordAsync(session, ResetPasswordPath, userA.Email!, code);
 
         Assert.Equal(HttpStatusCode.Redirect, firstUse.StatusCode);
         Assert.Equal("/Identity/Account/ResetPasswordConfirmation", firstUse.Headers.Location?.OriginalString);
+        Assert.Equal(HttpStatusCode.BadRequest, (await session.GetAsync(ResetPasswordPath)).StatusCode);
 
-        // The reset changed the security stamp the code was issued against.
-        var secondUse = await PostResetPasswordAsync(session, resetPage, userA.Email!, code);
+        // The reset changed the security stamp the code was issued against. The reset removed the code from TempData,
+        // so the clean path no longer renders the form and the token comes from ForgotPassword.
+        var secondUse = await PostResetPasswordAsync(session, ForgotPasswordPath, userA.Email!, code);
 
         Assert.Equal(HttpStatusCode.OK, secondUse.StatusCode);
         Assert.NotEmpty(SummaryMessages(await secondUse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)));
@@ -118,9 +123,12 @@ public partial class AccountRecoveryTests : IClassFixture<AccountRecoveryTests.R
         // Valid Base64Url, so the page decodes it and Identity rejects the token.
         string wrongCode = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes("not-a-confirmation-token"));
 
-        var response = await session.GetAsync("/Identity/Account/ConfirmEmail?userId=" + Uri.EscapeDataString(user.Id)
+        var redirect = await session.GetAsync(ConfirmEmailPath + "?userId=" + Uri.EscapeDataString(user.Id)
             + "&code=" + Uri.EscapeDataString(wrongCode));
 
+        Assert.Equal(HttpStatusCode.Redirect, redirect.StatusCode);
+        Assert.Equal(ConfirmEmailPath, redirect.Headers.Location?.OriginalString);
+        var response = await session.GetAsync(ConfirmEmailPath);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("Error confirming your email.", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.False((await FindUserByIdAsync(user.Id)).EmailConfirmed);
@@ -173,9 +181,12 @@ public partial class AccountRecoveryTests : IClassFixture<AccountRecoveryTests.R
         Assert.Equal(userA.Id, query["userId"].ToString());
         string code = query["code"].ToString();
 
-        var crossUser = await session.GetAsync(ConfirmEmailChangePath + "?userId=" + Uri.EscapeDataString(userB.Id)
+        var crossUserRedirect = await session.GetAsync(ConfirmEmailChangePath + "?userId=" + Uri.EscapeDataString(userB.Id)
             + "&email=" + Uri.EscapeDataString(newEmail) + "&code=" + Uri.EscapeDataString(code));
 
+        Assert.Equal(HttpStatusCode.Redirect, crossUserRedirect.StatusCode);
+        Assert.Equal(ConfirmEmailChangePath, crossUserRedirect.Headers.Location?.OriginalString);
+        var crossUser = await session.GetAsync(ConfirmEmailChangePath);
         Assert.Equal(HttpStatusCode.OK, crossUser.StatusCode);
         Assert.Contains("Error changing email.", await crossUser.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var storedA = await FindUserByIdAsync(userA.Id);
@@ -185,10 +196,15 @@ public partial class AccountRecoveryTests : IClassFixture<AccountRecoveryTests.R
         Assert.Equal(userB.Email, storedB.Email);
         Assert.Equal(userB.UserName, storedB.UserName);
 
-        var confirm = await session.GetAsync(ConfirmEmailChangePath + "?userId=" + Uri.EscapeDataString(userA.Id)
+        var confirmRedirect = await session.GetAsync(ConfirmEmailChangePath + "?userId=" + Uri.EscapeDataString(userA.Id)
             + "&email=" + Uri.EscapeDataString(newEmail) + "&code=" + Uri.EscapeDataString(code));
 
+        Assert.Equal(HttpStatusCode.Redirect, confirmRedirect.StatusCode);
+        Assert.Equal(ConfirmEmailChangePath, confirmRedirect.Headers.Location?.OriginalString);
+        var confirm = await session.GetAsync(ConfirmEmailChangePath);
         Assert.Equal(HttpStatusCode.OK, confirm.StatusCode);
+        Assert.Contains("Thank you for confirming your email change.",
+            await confirm.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal(newEmail, (await FindUserByIdAsync(userA.Id)).Email);
     }
 
@@ -218,15 +234,18 @@ public partial class AccountRecoveryTests : IClassFixture<AccountRecoveryTests.R
     private static Task<HttpResponseMessage> PostForgotPasswordAsync(BrowserSession session, string email) =>
         session.PostFormAsync(ForgotPasswordPath, new Dictionary<string, string> { ["Input.Email"] = email });
 
-    /// <summary>Posts the ResetPassword form; the antiforgery token comes from <paramref name="resetPage"/>, which carries the code.</summary>
-    private static Task<HttpResponseMessage> PostResetPasswordAsync(BrowserSession session, string resetPage, string email, string code) =>
+    /// <summary>
+    /// Posts the ResetPassword form to its clean path; the antiforgery token comes from a GET of <paramref name="tokenPage"/>,
+    /// which must render a form in this session.
+    /// </summary>
+    private static Task<HttpResponseMessage> PostResetPasswordAsync(BrowserSession session, string tokenPage, string email, string code) =>
         session.PostFormAsync(ResetPasswordPath, new Dictionary<string, string>
         {
             ["Input.Email"] = email,
             ["Input.Password"] = NewPassword,
             ["Input.ConfirmPassword"] = NewPassword,
             ["Input.Code"] = code
-        }, tokenFromPath: resetPage);
+        }, tokenFromPath: tokenPage);
 
     /// <summary>The user as stored, read through a fresh context.</summary>
     private async Task<ApplicationUser> FindUserByIdAsync(string userId)

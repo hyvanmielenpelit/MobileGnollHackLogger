@@ -15,34 +15,25 @@
     {
         accountTermsUrl = null;
     }
+
+    // Tag Manager is loaded by site.js from the consent notice, only after Accept.
+    string? googleTagManagerId = Configuration["GoogleTagManagerID"];
+    string cookiePolicyUrl = LegalDocumentReader.PageUrl("GnollHack Account Cookie Policy");
 }
 
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
 <head>
-    @if (!string.IsNullOrEmpty(Configuration["GoogleTagManagerID"]))
-    {
-        <!-- Google Tag Manager -->
-        <script>
-            (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-            new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-            j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-            'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-            })(window,document,'script','dataLayer','@(Configuration["GoogleTagManagerID"])');</script>
-        <!-- End Google Tag Manager -->
-    }
-
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@(!string.IsNullOrEmpty(ViewData["Title"] as string) ? (ViewData["Title"] as string) + " - " : "")GnollHack Account</title>
+    <link rel="preload" href="~/fonts/cinzel-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="~/fonts/lato2-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="~/lib/bootstrap/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/site2.min.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/MobileGnollHackLogger.styles.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/lib/bootstrap-icons/font/bootstrap-icons.min.css" asp-append-version="true" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400..900&family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap" rel="stylesheet">
 
     @await RenderSectionAsync("Styles", required: false)
 
@@ -68,16 +59,6 @@
     <meta name="msapplication-square310x310logo" content="~/mstile-310x310.png" />
 </head>
 <body>
-    @if (!string.IsNullOrEmpty(Configuration["GoogleTagManagerID"]))
-    {
-        <!-- Google Tag Manager (noscript) -->
-        <noscript>
-            <iframe src="@("https://www.googletagmanager.com/ns.html?id=" + Configuration["GoogleTagManagerID"])"
-            height="0" width="0" style="display:none;visibility:hidden"></iframe>
-        </noscript>
-        <!-- End Google Tag Manager (noscript) -->
-    }
-
         <nav class="navbar navbar-expand-lg navbar-toggleable-lg bg-white border-bottom box-shadow mb-3 sticky-top" style="z-index: 1030;" data-bs-theme="dark">
             <div class="container">
                 <a class="navbar-brand" asp-area="" asp-page="/Index">GnollHack Account</a>
@@ -171,9 +152,29 @@
         </main>
     </div>
 
+    @if (!string.IsNullOrEmpty(googleTagManagerId))
+    {
+        <div id="consentDiv" class="consent" role="region" aria-label="Cookie consent" data-gtm-id="@googleTagManagerId">
+            <div class="text-container">
+                We&rsquo;d like to use optional Google cookies and tags (Tag Manager and Analytics) to measure visits.
+                They load only if you accept. You can change your choice at any time under Cookie Settings in the footer.
+                See our <a target="_blank" rel="noopener" href="@cookiePolicyUrl">Cookie Policy</a>.
+            </div>
+            <div class="button-container">
+                <button type="button" id="consentAcceptButton" data-consent-choice="accepted">Accept</button>
+                <button type="button" id="consentDeclineButton" data-consent-choice="declined">Decline</button>
+            </div>
+        </div>
+    }
+
     <footer class="footer text-muted border-top">
         <div class="container">
-                &copy; @DateTime.Now.Year <i class="bi bi-dash"></i> GnollHack Account <i class="bi bi-dash"></i> @WebHostEnvironment.EnvironmentName <i class="bi bi-dash"></i> <a target="_blank" href="https://wiki.gnollhack.com/GnollHack%20Account%20Privacy%20Policy.md">Privacy</a>
+                &copy; @DateTime.Now.Year <i class="bi bi-dash"></i> GnollHack Account <i class="bi bi-dash"></i> @WebHostEnvironment.EnvironmentName <i class="bi bi-dash"></i> <a target="_blank" href="@LegalDocumentReader.PageUrl("GnollHack Account Privacy Policy")">Privacy</a>
+                <i class="bi bi-dash"></i> <a target="_blank" rel="noopener" href="@cookiePolicyUrl">Cookie Policy</a>
+                @if (!string.IsNullOrEmpty(googleTagManagerId))
+                {
+                    <i class="bi bi-dash"></i> <button type="button" id="cookieSettingsButton" class="footer-link-button">Cookie Settings</button>
+                }
                 @if (accountTermsUrl != null)
                 {
                     <i class="bi bi-dash"></i> <a target="_blank" href="@accountTermsUrl">GnollHack Account Terms of Service</a>

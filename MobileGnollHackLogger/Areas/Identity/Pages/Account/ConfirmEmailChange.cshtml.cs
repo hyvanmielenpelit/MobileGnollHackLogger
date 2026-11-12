@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using MobileGnollHackLogger.Data;
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account;
 
+[MobileGnollHackLogger.Filters.AllowWithoutAccountTerms]
 public class ConfirmEmailChangeModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
@@ -32,10 +33,20 @@ public class ConfirmEmailChangeModel : PageModel
 
     public bool IsSuccess { get; set; }
 
-    public async Task<IActionResult> OnGetAsync(string userId, string email, string code)
+    /// <summary>
+    ///     Changes the address from the emailed link, then redirects to this page's own path, which renders the outcome
+    ///     kept in TempData once.
+    /// </summary>
+    public async Task<IActionResult> OnGetAsync(string? userId, string? email, string? code)
     {
         if (userId == null || email == null || code == null)
         {
+            if (userId == null && email == null && code == null
+                && TempData[IdentityTempDataKeys.ConfirmEmailChangeSucceeded] is bool succeeded)
+            {
+                IsSuccess = succeeded;
+                return Page();
+            }
             return RedirectToPage("/Index");
         }
 
@@ -45,18 +56,25 @@ public class ConfirmEmailChangeModel : PageModel
             return NotFound($"Unable to load user with ID '{userId}'.");
         }
 
-        code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(code));
-        var result = await _userManager.ChangeEmailAsync(user, email, code);
-        if (!result.Succeeded)
+        string? decodedCode = null;
+        try
         {
-            IsSuccess = false;
+            decodedCode = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(code));
+        }
+        catch (FormatException)
+        {
+        }
+
+        if (decodedCode == null || !(await _userManager.ChangeEmailAsync(user, email, decodedCode)).Succeeded)
+        {
             StatusMessage = "Error changing email.";
-            return Page();
+            TempData[IdentityTempDataKeys.ConfirmEmailChangeSucceeded] = false;
+            return RedirectToPage();
         }
 
         await _signInManager.RefreshSignInAsync(user);
-        IsSuccess = true;
         StatusMessage = "Thank you for confirming your email change.";
-        return Page();
+        TempData[IdentityTempDataKeys.ConfirmEmailChangeSucceeded] = true;
+        return RedirectToPage();
     }
 }

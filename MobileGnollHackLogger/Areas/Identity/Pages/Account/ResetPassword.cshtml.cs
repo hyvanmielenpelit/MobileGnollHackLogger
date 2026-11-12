@@ -15,6 +15,7 @@ using MobileGnollHackLogger.Data;
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account;
 
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(MobileGnollHackLogger.Areas.API.GameApiRateLimits.AccountPages)]
+[MobileGnollHackLogger.Filters.AllowWithoutAccountTerms]
 public class ResetPasswordModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
@@ -72,20 +73,37 @@ public class ResetPasswordModel : PageModel
 
     }
 
+    /// <summary>
+    ///     With the emailed code, keeps it decoded in TempData and redirects to this page's own path; without one,
+    ///     renders the form for the code kept in TempData.
+    /// </summary>
     public IActionResult OnGet(string? code = null)
     {
-        if (code == null)
+        if (code != null)
+        {
+            string decodedCode;
+            try
+            {
+                decodedCode = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(code));
+            }
+            catch (FormatException)
+            {
+                return BadRequest("A code must be supplied for password reset.");
+            }
+            TempData[IdentityTempDataKeys.ResetPasswordCode] = decodedCode;
+            return RedirectToPage();
+        }
+
+        if (TempData.Peek(IdentityTempDataKeys.ResetPasswordCode) is not string storedCode)
         {
             return BadRequest("A code must be supplied for password reset.");
         }
-        else
+
+        Input = new InputModel
         {
-            Input = new InputModel
-            {
-                Code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(code))
-            };
-            return Page();
-        }
+            Code = storedCode
+        };
+        return Page();
     }
 
     public async Task<IActionResult> OnPostAsync()
@@ -99,12 +117,14 @@ public class ResetPasswordModel : PageModel
         if (user == null)
         {
             // Don't reveal that the user does not exist
+            TempData.Remove(IdentityTempDataKeys.ResetPasswordCode);
             return RedirectToPage("./ResetPasswordConfirmation");
         }
 
         var result = await _userManager.ResetPasswordAsync(user, Input.Code, Input.Password);
         if (result.Succeeded)
         {
+            TempData.Remove(IdentityTempDataKeys.ResetPasswordCode);
             return RedirectToPage("./ResetPasswordConfirmation");
         }
 

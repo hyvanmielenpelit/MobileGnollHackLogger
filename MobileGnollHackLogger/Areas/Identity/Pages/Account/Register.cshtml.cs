@@ -253,7 +253,8 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 
                             if (_userManager.Options.SignIn.RequireConfirmedAccount)
                             {
-                                return RedirectToPage("RegisterConfirmation", new { email = Input.Email, returnUrl = returnUrl });
+                                TempData[IdentityTempDataKeys.RegistrationEmailSent] = true;
+                                return RedirectToPage("RegisterConfirmation");
                             }
                             else
                             {
