@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.4.7",
+    "date": "2026-11-12T21:52:08Z",
+    "summary": "A small release that brings another new AI model to the chat.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added support for a new model: Gemini 4 Hydrogen."
+      }
+    ]
+  },
+  {
     "version": "1.4.6",
     "date": "2026-11-12T17:43:19Z",
     "summary": "A small release that brings two new AI models to the chat.",
