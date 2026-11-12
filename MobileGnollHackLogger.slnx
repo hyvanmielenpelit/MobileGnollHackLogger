@@ -7,6 +7,7 @@
     <File Path="README.md" />
   </Folder>
   <Folder Name="/docs/">
+    <File Path="docs/website-data-protection.md" />
     <File Path="docs/website-sentry-logging.md" />
   </Folder>
   <Folder Name="/docs/overseer/">

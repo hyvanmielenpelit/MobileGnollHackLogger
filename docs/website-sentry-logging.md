@@ -9,9 +9,10 @@ Overseer has its own, larger setup; see [overseer/sentry-logging-architecture.md
 ## 1. What Is Reported
 
 - **Unhandled exceptions.** `UseExceptionHandler("/Error")` in production and the developer exception page in Development both log the exception at Error, and the SDK reports it.
-- **`ILogger` entries at Error level.** Two exist today:
+- **`ILogger` entries at Error level.** Three exist today:
   - `Areas/Identity/Pages/Account/Register.cshtml.cs`: recording the Terms acceptance failed.
   - `Areas/Identity/Pages/Account/Manage/DeletePersonalData.cshtml.cs`: the account deletion review email could not be sent. This email goes to the operator's `AccountHold:ReviewNotificationEmail` address and is the operator's only signal that a deletion is waiting for review, so it is the one email failure that is reported.
+  - `Program.cs`, at startup in Staging and Production: `PrivacySettings:DataProtectionKeysPath` is not set, so the Data Protection key ring falls back to the framework default location. See [website-data-protection.md](website-data-protection.md).
 - **The game API's caught server failures.** Each catch block that answers 500 for a server-side failure calls `SentrySdk.CaptureException(ex);` before its database request log entry:
 
   | Controller | Catch blocks captured |

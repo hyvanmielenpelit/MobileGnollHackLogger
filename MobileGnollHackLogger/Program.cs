@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
@@ -150,6 +151,18 @@ builder.Services.AddScoped<TermsAcceptanceStore>();
 // The site-wide X-Frame-Options: DENY (UseWebsiteSecurityHeaders) replaces antiforgery's SAMEORIGIN.
 builder.Services.AddAntiforgery(o => o.SuppressXFrameOptionsHeader = true);
 
+/* Data Protection keys protect the sign-in, antiforgery and TempData cookies and the email confirmation
+   and password reset tokens. Left at the default they live in the application pool's profile, or only
+   in memory, and a deploy or a recycle that loses them signs every user out. */
+string? dataProtectionKeysPath = builder.Configuration["PrivacySettings:DataProtectionKeysPath"];
+if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+{
+    Directory.CreateDirectory(dataProtectionKeysPath);
+    builder.Services.AddDataProtection()
+        .SetApplicationName("GnollHackAccount")
+        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+}
+
 builder.Services.AddRazorPages()
     // Signed-in users who have not accepted the current account Terms are sent to the acceptance page.
     .AddMvcOptions(o => o.Filters.Add<RequireAccountTermsPageFilter>())
@@ -211,6 +224,11 @@ builder.WebHost.UseSentry(options =>
 });
 
 var app = builder.Build();
+
+if ((app.Environment.IsProduction() || app.Environment.IsStaging()) && string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+{
+    app.Logger.LogError("PrivacySettings:DataProtectionKeysPath is not set. Data Protection keys fall back to the framework default location and can be lost on a restart, which signs every user out.");
+}
 
 // A restart has cleared every in-memory game sign-in block, so the website's rows of them end now.
 try
