@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.4.6",
+    "date": "2026-11-12T17:43:19Z",
+    "summary": "A small release that brings two new AI models to the chat.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added support for two new models: Claude Fable 5.2 and Gemini 4 Carbon."
+      }
+    ]
+  },
+  {
     "version": "1.4.5",
     "date": "2026-11-09T10:34:21Z",
     "summary": "A release that shows what fills a chat's context, makes changing the model in the middle of a chat safe and predictable, and sends long chats to the AI more efficiently.",
