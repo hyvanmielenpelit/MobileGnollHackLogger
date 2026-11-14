@@ -55,6 +55,7 @@
   --leading-body: 1.5;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --font-body: "Lato", sans-serif;
+  --chat-bold-family: var(--font-body);
 }
 
 *, *::before, *::after {
@@ -5496,6 +5497,11 @@ app-table-pager {
   th, td { border: 1px solid rgba(255, 255, 255, 0.15); padding: 6px 12px; text-align: left; }
   th { background: rgba(212, 160, 23, 0.15); color: var(--title-color); font-family: "Cinzel", serif; }
   tr:nth-child(even) { background: rgba(255, 255, 255, 0.03); }
+}
+
+/* Bold in the assistant's chat replies takes its family from Settings > General (chat-bold-weight.util.ts). */
+.message-box.assistant .markdown-body :is(strong, b):not(:is(h1, h2, h3, h4, h5, h6, th, pre, code) *) {
+  font-family: var(--chat-bold-family), var(--font-body);
 }
 
 /* Long-form help text rendered from Markdown into [innerHTML] (the YAML help dialogs). Global

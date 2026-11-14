@@ -1,7 +1,12 @@
 // The body font as the global stylesheets declare it: fonts.scss and styles.scss reach this page
 // through the test target's build.
 
+import { CHAT_BOLD_FAMILY_PROPERTY, CHAT_BOLD_WEIGHT_OPTIONS } from './chat/chat-bold-weight.util';
+
 const BODY_FAMILY = 'Lato';
+
+/** The families the chat bold setting chooses between, other than the body family itself. */
+const CHAT_FAMILIES = CHAT_BOLD_WEIGHT_OPTIONS.flatMap(option => option.family ? [option.family] : []);
 
 /** The descriptor weights of each style's faces; 700 is served by Heavy and 800 900 by Black. */
 const DESCRIPTOR_WEIGHTS = ['300', '400', '500', '600', '700', '800 900'];
@@ -179,5 +184,146 @@ describe('the body font', () => {
     await document.fonts.load(`15px "${BODY_FAMILY}"`);
 
     expect(Math.abs(spanWidth('1111') - spanWidth('0000'))).toBeLessThan(0.5);
+  });
+});
+
+/** Mounts `html` in a `.markdown-body`, inside a `.message-box` of `boxClasses` unless it is null. */
+function mountMarkdown(html: string, boxClasses: string | null = 'message-box assistant'): HTMLElement {
+  const body = document.createElement('div');
+  body.className = 'markdown-body';
+  body.innerHTML = html;
+  let root = body;
+  if (boxClasses !== null) {
+    root = document.createElement('div');
+    root.className = boxClasses;
+    root.appendChild(body);
+  }
+  document.body.appendChild(root);
+  return root;
+}
+
+/** The width of `text` as markdown bold at 100 px, in an assistant reply unless `boxClasses` says otherwise. */
+function strongWidth(text: string, boxClasses: string | null = 'message-box assistant'): number {
+  const root = mountMarkdown(`<p><strong style="font-size: 100px; white-space: pre">${text}</strong></p>`, boxClasses);
+  try {
+    return root.querySelector('strong')!.getBoundingClientRect().width;
+  } finally {
+    root.remove();
+  }
+}
+
+function setChatFamily(family: string): void {
+  document.documentElement.style.setProperty(CHAT_BOLD_FAMILY_PROPERTY, `"${family}"`);
+}
+
+async function loadChatFamilies(): Promise<void> {
+  for (const family of [BODY_FAMILY, ...CHAT_FAMILIES]) {
+    for (const style of ['', 'italic ']) {
+      const font = `${style}700 100px "${family}"`;
+      const loaded = await document.fonts.load(font);
+      expect(loaded.some(face => face.status === 'loaded'), font).toBe(true);
+    }
+  }
+}
+
+describe('the chat bold families', () => {
+  afterEach(() => document.documentElement.style.removeProperty(CHAT_BOLD_FAMILY_PROPERTY));
+
+  it('are declared as 8 faces each at 700, four subsets per style, with no metric overrides', () => {
+    expect(CHAT_FAMILIES).toEqual(['Lato Chat Semibold', 'Lato Chat Bold', 'Lato Chat Black']);
+    for (const family of CHAT_FAMILIES) {
+      const ofFamily = faces().filter(face => unquote(face.family) === family);
+      expect(ofFamily.length, family).toBe(8);
+      for (const style of ['normal', 'italic']) {
+        const ofStyle = ofFamily.filter(face => face.style === style);
+        const label = `${family} ${style}`;
+        expect(ofStyle.length, label).toBe(4);
+        expect(ofStyle.every(face => face.weight === '700'), `${label} weight`).toBe(true);
+        expect(ofStyle.filter(face => covers(face, 0x41)).length, `${label} U+0041`).toBe(1);
+        expect(ofStyle.filter(face => covers(face, 0x386)).length, `${label} U+0386`).toBe(1);
+        expect(ofStyle.some(face => covers(face, 0x3a3)), `${label} U+03A3`).toBe(true);
+        expect(ofStyle.filter(face => covers(face, 0x2264)).length, `${label} U+2264`).toBe(1);
+      }
+      for (const face of ofFamily) {
+        expect(face.ascentOverride).toBe('normal');
+        expect(face.descentOverride).toBe('normal');
+        expect(face.lineGapOverride).toBe('normal');
+      }
+    }
+  });
+
+  it('render each setting with its own Lato file', async () => {
+    const sample = 'Hamburgefonstiv';
+    const probes = [
+      { weight: 600, family: 'Lato Probe Chat Semibold', file: 'lato2-normal-600-latin.woff2' },
+      { weight: 700, family: 'Lato Probe Chat Bold', file: 'lato2-normal-700-latin.woff2' },
+      { weight: 800, family: 'Lato Probe Chat Heavy', file: 'lato2-normal-800-latin.woff2' },
+      { weight: 900, family: 'Lato Probe Chat Black', file: 'lato2-normal-900-latin.woff2' }
+    ].map(probe => ({ ...probe, face: new FontFace(probe.family, `url("/fonts/${probe.file}")`) }));
+    try {
+      for (const probe of probes) {
+        await probe.face.load();
+        document.fonts.add(probe.face);
+      }
+      await loadChatFamilies();
+      const widths = probes.map(probe => spanWidth(sample, 100, probe.family));
+
+      for (let i = 1; i < widths.length; i++) {
+        expect(Math.abs(widths[i] - widths[i - 1]), `${probes[i].weight} against ${probes[i - 1].weight}`).toBeGreaterThan(4);
+      }
+      for (const option of CHAT_BOLD_WEIGHT_OPTIONS) {
+        const expected = widths[probes.findIndex(probe => probe.weight === option.value)];
+        const family = option.family ?? BODY_FAMILY;
+        expect(Math.abs(spanWidth(sample, 100, family, '700') - expected), `${option.value}: ${family}`).toBeLessThan(0.5);
+      }
+    } finally {
+      for (const probe of probes) {
+        document.fonts.delete(probe.face);
+      }
+    }
+  });
+
+  it('reach bold in assistant replies only, and not bold in headings, table headers or code', () => {
+    const html = '<p><strong>s</strong></p><h2><strong>h</strong></h2><table><tr><th><b>t</b></th></tr></table><pre><code><b>c</b></code></pre>';
+    const assistant = mountMarkdown(html);
+    const bare = mountMarkdown(html, null);
+    const user = mountMarkdown(html, 'message-box user');
+    const family = (root: HTMLElement, selector: string) => firstFamily(getComputedStyle(root.querySelector(selector)!).fontFamily);
+    try {
+      const strong = getComputedStyle(assistant.querySelector('p strong')!);
+      expect(strong.fontWeight).toBe('700');
+      expect(firstFamily(strong.fontFamily)).toBe(BODY_FAMILY);
+
+      setChatFamily('Lato Chat Bold');
+
+      expect(family(assistant, 'p strong')).toBe('Lato Chat Bold');
+      expect(getComputedStyle(assistant.querySelector('p strong')!).fontWeight).toBe('700');
+      expect(family(bare, 'p strong')).toBe(BODY_FAMILY);
+      expect(family(user, 'p strong')).toBe(BODY_FAMILY);
+      expect(family(assistant, 'h2 strong')).toBe('Cinzel');
+      expect(family(assistant, 'th b')).toBe('Cinzel');
+      expect(family(assistant, 'pre b')).toBe('ui-monospace');
+    } finally {
+      assistant.remove();
+      bare.remove();
+      user.remove();
+    }
+  });
+
+  it('leave the default look unchanged', async () => {
+    await loadChatFamilies();
+
+    expect(Math.abs(strongWidth('Hamburgefonstiv') - strongWidth('Hamburgefonstiv', null))).toBeLessThan(0.5);
+  });
+
+  it('leave text outside the Lato subsets as it is at every setting', async () => {
+    await loadChatFamilies();
+    const sample = 'Привет';
+    const unset = strongWidth(sample);
+
+    for (const family of CHAT_FAMILIES) {
+      setChatFamily(family);
+      expect(Math.abs(strongWidth(sample) - unset), family).toBeLessThan(0.5);
+    }
   });
 });

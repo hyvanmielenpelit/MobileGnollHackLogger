@@ -40,6 +40,7 @@ import { formatTermsVersion } from '../services/terms.service';
 import { TermsDialogComponent } from '../shared/terms-dialog/terms-dialog.component';
 import { InfoTipComponent } from '../shared/info-tip/info-tip.component';
 import { readWarnModelSwitch, writeWarnModelSwitch } from '../chat/context-usage/context-usage.util';
+import { CHAT_BOLD_WEIGHT_OPTIONS, ChatBoldWeight, readChatBoldWeight, writeChatBoldWeight } from '../chat/chat-bold-weight.util';
 
 /** The data classes outbound masking can recognise, named as `POST /api/settings/dlp` accepts them. */
 export type DlpMaskClass = keyof DlpSettings;
@@ -157,6 +158,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   parallelBadgeEnabled = true;
   showContextWindowUsage = true;
   warnBeforeModelSwitch = readWarnModelSwitch();
+  chatBoldWeight = readChatBoldWeight();
+  readonly chatBoldWeightOptions = CHAT_BOLD_WEIGHT_OPTIONS;
   showChatCost = true;
 
   enableWebSearch = true;
@@ -873,6 +876,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
   onWarnBeforeModelSwitchChange(warn: boolean): void {
     this.warnBeforeModelSwitch = warn;
     writeWarnModelSwitch(warn);
+  }
+
+  onChatBoldWeightChange(weight: ChatBoldWeight): void {
+    this.chatBoldWeight = weight;
+    writeChatBoldWeight(weight);
   }
 
   onSettingChange() {

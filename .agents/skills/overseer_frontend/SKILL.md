@@ -338,7 +338,13 @@ Harness-neutral, and the floor for any Overseer frontend work.
 - **Bold renders one step heavier:** 700 (and `bold`) is Lato Heavy and 800 is Black; 300–600
   render as written (Light, Regular, Medium, Semibold). Write the weight the design calls for (700
   for bold, 600 for a label), never a compensating value. Markdown bold in the chat is 700. No rule
-  may ask for a weight outside 300–800. There is no Lato Bold face.
+  may ask for a weight outside 300–800. The `Lato` family has no Bold face.
+- **Bold in the assistant's chat replies takes its family from `--chat-bold-family`** (Settings →
+  General → *Bold Text in Chat Responses*, browser-local, key `overseer_chat_bold_weight`;
+  `app/chat/chat-bold-weight.util.ts`). 800, the default, is `Lato` itself; 600, 700 and 900 are the
+  `Lato Chat Semibold`, `Lato Chat Bold` and `Lato Chat Black` families, each one named Lato face
+  declared at weight 700. The authored weight never changes, so text outside the Lato subsets is
+  unaffected. No other rule may use these families.
 - **The faces carry no metric overrides, and none may be added** (`ascent-override`,
   `descent-override`, `line-gap-override`): a normal line is Lato's own 1.2 em in every browser.
 - **No clipped text.** An element that clips body-font text at its line's edge (`overflow` hidden

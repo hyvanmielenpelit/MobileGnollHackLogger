@@ -130,13 +130,15 @@ Overseer's fonts, Cinzel and Lato 2.0, are therefore vendored under
 `Overseer/ClientApp/public/fonts/`, with their `@font-face` blocks in
 `Overseer/ClientApp/src/fonts.scss`, which `angular.json` lists in `styles` so the build
 compiles them into the application stylesheet. Cinzel is in the `latin` and `latin-ext`
-subsets Google Fonts serves. Lato, the body font, is 48 files, named
+subsets Google Fonts serves. Lato, the body font, is 56 files, named
 `lato2-<style>-<file weight>-<subset>.woff2`, subset from the official Lato 2.0 TTFs
 (`Lato2OFL.zip`, latofonts.com) to Google's `greek`, `math`, `latin-ext` and `latin` ranges, in
-the Light, Regular, Medium, Semibold, Heavy and Black weights, upright and italic. Each face
-declares the weight Overseer authors, with 700 served by Heavy and 800–900 by Black, so bold text
-renders one step heavier. The faces carry no override descriptors, so a normal line is 1.2 em in
-every browser.
+the Light, Regular, Medium, Semibold, Bold, Heavy and Black weights, upright and italic. Each face
+of the `Lato` family declares the weight Overseer authors, with 700 served by Heavy and 800–900 by
+Black, so bold text renders one step heavier; the Bold files are not part of it. The three
+`Lato Chat` families (Semibold, Bold and Black, each declared at 700) are used only by bold text
+in chat replies, chosen in Settings → General. The faces carry no override descriptors, so a
+normal line is 1.2 em in every browser.
 `Overseer/wwwroot/` is the Angular build output
 and is gitignored, so `public/` is where the font files live in source control — a file placed
 directly in `wwwroot/` would be erased by the next build.
@@ -164,7 +166,7 @@ non-ASCII text — and add no override descriptors.
   `public/fonts/`, and regenerate the `@font-face` blocks with their `unicode-range` values intact.
 - **Lato** goes to `fonts.scss` too, but Google does not serve Lato 2.0, so it is subset here.
   Download `https://www.latofonts.com/files/Lato2OFL.zip`, and run, for each of its Light,
-  Regular, Medium, Semibold, Heavy and Black TTFs, upright and italic, and each subset:
+  Regular, Medium, Semibold, Bold, Heavy and Black TTFs, upright and italic, and each subset:
 
   ```powershell
   python -P -m fontTools.subset <ttf> --unicodes="<range>" --layout-features+=tnum --name-IDs="*" --name-languages="*" --notdef-outline --flavor=woff2 --output-file=<out>

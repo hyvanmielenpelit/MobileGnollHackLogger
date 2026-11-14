@@ -139,6 +139,17 @@
         </select>
       </div>
 
+      <div class="margin-y-20 form-group-stacked">
+        <label for="chatBoldWeight">Bold Text in Chat Responses</label>
+        <span id="chatBoldWeightHint" class="form-hint mt-5 mb-10">How heavy bold text is in the Overseer's replies. Kept in this browser.</span>
+        <select id="chatBoldWeight" class="form-input form-select" [ngModel]="chatBoldWeight" (ngModelChange)="onChatBoldWeightChange($event)" name="chatBoldWeight" aria-describedby="chatBoldWeightHint">
+          @for (o of chatBoldWeightOptions; track o.value) {
+            <option [ngValue]="o.value">{{ o.label }}</option>
+          }
+        </select>
+        <p class="chat-bold-preview" aria-hidden="true">Sample: <strong>bold text</strong> and <em><strong>bold italic</strong></em></p>
+      </div>
+
       }
       @case ('api-keys') {
       <app-api-keys></app-api-keys>

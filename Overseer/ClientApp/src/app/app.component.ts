@@ -3,6 +3,7 @@ import { RouterModule, Router, NavigationEnd, NavigationCancel, NavigationError 
 import { filter, take } from 'rxjs';
 import { ClientBridgeService } from './services/client-bridge.service';
 import { AuthService } from './services/auth.service';
+import { applyChatBoldWeight } from './chat/chat-bold-weight.util';
 
 @Component({
     selector: 'app-root',
@@ -17,6 +18,8 @@ export class AppComponent implements OnInit {
   protected auth = inject(AuthService);
 
   ngOnInit() {
+    applyChatBoldWeight();
+
     this.router.events.pipe(
       filter(event => event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError),
       take(1)

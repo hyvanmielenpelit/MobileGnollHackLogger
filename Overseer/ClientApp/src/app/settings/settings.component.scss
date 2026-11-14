@@ -805,3 +805,15 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
   gap: 16px;
   flex-wrap: wrap;
 }
+
+/* Drawn with the chat's bold family, so it follows the Bold Text in Chat Responses select. */
+.chat-bold-preview {
+  font-size: var(--text-body);
+  color: #aaa;
+  margin: 0.5rem 0 0;
+}
+
+.chat-bold-preview strong {
+  font-family: var(--chat-bold-family), var(--font-body);
+  font-weight: 700;
+}

@@ -17,6 +17,7 @@ import {
 import { ChatService } from '../services/chat.service';
 import { AuthService, AuthUser } from '../services/auth.service';
 import { WARN_MODEL_SWITCH_STORAGE_KEY } from '../chat/context-usage/context-usage.util';
+import { CHAT_BOLD_FAMILY_PROPERTY, CHAT_BOLD_WEIGHT_STORAGE_KEY } from '../chat/chat-bold-weight.util';
 
 describe('SettingsComponent', () => {
   let component: SettingsComponent;
@@ -150,6 +151,48 @@ describe('SettingsComponent', () => {
       expect(localStorage.getItem(WARN_MODEL_SWITCH_STORAGE_KEY)).toBe('true');
       expect(save).not.toHaveBeenCalled();
       localStorage.removeItem(WARN_MODEL_SWITCH_STORAGE_KEY);
+    });
+
+    describe('bold text in chat responses', () => {
+      afterEach(() => {
+        localStorage.removeItem(CHAT_BOLD_WEIGHT_STORAGE_KEY);
+        document.documentElement.style.removeProperty(CHAT_BOLD_FAMILY_PROPERTY);
+      });
+
+      async function boldWeightSelect(): Promise<HTMLSelectElement> {
+        await fixture.whenStable();
+        fixture.detectChanges();
+        return (fixture.nativeElement as HTMLElement).querySelector('select[name="chatBoldWeight"]') as HTMLSelectElement;
+      }
+
+      it('offers four weights and selects 800 by default', async () => {
+        const select = await boldWeightSelect();
+
+        expect(select.options.length).toBe(4);
+        expect(select.selectedOptions[0].textContent!.trim()).toBe('800 · Heavy (default)');
+      });
+
+      it('selects the weight stored in this browser', async () => {
+        localStorage.setItem(CHAT_BOLD_WEIGHT_STORAGE_KEY, '900');
+        fixture = TestBed.createComponent(SettingsComponent);
+        component = fixture.componentInstance;
+        fixture.detectChanges();
+        const select = await boldWeightSelect();
+
+        expect(select.selectedOptions[0].textContent!.trim()).toBe('900 · Black');
+      });
+
+      it('stores and applies a new weight without saving to the server', async () => {
+        const select = await boldWeightSelect();
+        const save = vi.spyOn(settingsService, 'saveSettings');
+
+        select.selectedIndex = 0;
+        select.dispatchEvent(new Event('change'));
+
+        expect(localStorage.getItem(CHAT_BOLD_WEIGHT_STORAGE_KEY)).toBe('600');
+        expect(document.documentElement.style.getPropertyValue(CHAT_BOLD_FAMILY_PROPERTY)).toBe('"Lato Chat Semibold"');
+        expect(save).not.toHaveBeenCalled();
+      });
     });
 
     it('makes custom select options buttons that select their value and close the popover', fakeAsync(() => {
