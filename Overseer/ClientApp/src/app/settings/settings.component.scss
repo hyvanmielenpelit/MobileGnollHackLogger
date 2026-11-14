@@ -296,6 +296,28 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
   box-shadow: 0 0 5px rgba(212, 175, 55, 0.3);
 }
 
+/* Native select popups follow the control's color scheme; dark keeps the open list on-theme
+   where customizable select is unavailable. */
+select.form-select {
+  color-scheme: dark;
+
+  /* Options are painted on the popup's own surface, so they need an opaque background:
+     the control's translucent one composites to gray there. */
+  option {
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  &:disabled:hover {
+    border-color: var(--border-glass);
+  }
+}
+
 .custom-input-wrapper {
   overflow: hidden;
   animation: slideDown 0.3s ease-out forwards;
@@ -417,6 +439,68 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
 
 .popover-option.selected .opt-val {
   color: #d4af37;
+}
+
+/* Customizable select as a progressive enhancement; other browsers keep the native picker,
+   themed by the color-scheme above. Mirrors .custom-select-popover / .popover-option. */
+@supports (appearance: base-select) {
+  select.form-select,
+  select.form-select::picker(select) {
+    appearance: base-select;
+  }
+
+  /* The control keeps its own gold arrow (background-image), shared with the popover triggers. */
+  select.form-select::picker-icon {
+    display: none;
+  }
+
+  select.form-select:open {
+    border-color: var(--primary-color);
+  }
+
+  select.form-select::picker(select) {
+    margin-block: 4px;
+    padding: 6px 0;
+    background-color: #1a1a1a;
+    border: 1px solid var(--border-glass);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    color: #e0e0e0;
+    min-inline-size: anchor-size(width);
+  }
+
+  select.form-select option {
+    padding: 10px 12px;
+    gap: 10px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+
+    &:hover {
+      background-color: rgba(212, 175, 55, 0.15);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: -2px;
+      background-color: rgba(212, 175, 55, 0.15);
+    }
+
+    &:checked {
+      background-color: rgba(212, 175, 55, 0.25);
+      color: var(--primary-color);
+      font-weight: 700;
+    }
+
+    &::checkmark {
+      color: var(--primary-color);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    select.form-select option {
+      transition: none;
+    }
+  }
 }
 
 /* Make standard inputs match the select styling */

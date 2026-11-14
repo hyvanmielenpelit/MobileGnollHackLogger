@@ -195,6 +195,33 @@ describe('SettingsComponent', () => {
       });
     });
 
+    it('themes the native select pickers dark and leaves the popover triggers alone', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      const customizable = CSS.supports('appearance', 'base-select');
+
+      const selects = Array.from(compiled.querySelectorAll<HTMLSelectElement>('select.form-select'));
+      expect(selects.length).toBe(2);
+      for (const select of selects) {
+        const style = getComputedStyle(select);
+        expect(style.colorScheme, select.name).toContain('dark');
+        const unselected = Array.from(select.options).find(o => !o.selected)!;
+        expect(getComputedStyle(unselected).backgroundColor, select.name).toBe('rgb(26, 26, 26)');
+        if (customizable) {
+          expect(style.appearance, select.name).toBe('base-select');
+          expect(getComputedStyle(select.selectedOptions[0]).backgroundColor, select.name).toBe('rgba(212, 175, 55, 0.25)');
+        }
+      }
+
+      showSection('performance');
+      const triggers = Array.from(compiled.querySelectorAll<HTMLButtonElement>('button.popover-trigger-btn'));
+      expect(triggers.length).toBe(4);
+      for (const trigger of triggers) {
+        expect(getComputedStyle(trigger).appearance).not.toBe('base-select');
+      }
+    });
+
     it('makes custom select options buttons that select their value and close the popover', fakeAsync(() => {
       vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
       showSection('performance');
