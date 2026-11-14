@@ -332,20 +332,23 @@ Harness-neutral, and the floor for any Overseer frontend work.
 - **Type tokens** on `:root` in `styles.scss`: `--text-body` (0.875rem: running text and
   values), `--text-secondary` (0.8125rem: labels, metadata, hints), `--text-xs` (0.75rem: notes
   under a stage-rail item), `--leading-body` (1.5, unitless) and `--font-mono` (the monospace stack).
-- **Body text is `--font-body`**: Open Sans, variable faces covering weights 300–800, upright and
-  italic, in the `latin`, `latin-ext`, `greek` and `math` subsets, self-hosted in `fonts.scss`. New
-  rules use the token, never a family name. Headings stay Cinzel.
-- **Every weight renders as written**, so `600` is Semibold, not Bold. Markdown bold in the chat is
-  700. No rule may ask for a weight outside 300–800.
+- **Body text is `--font-body`**: Lato 2.0, upright and italic, in the `greek`, `math`,
+  `latin-ext` and `latin` subsets, self-hosted in `fonts.scss`. New rules use the token, never a
+  family name. Headings stay Cinzel.
+- **Bold renders one step heavier:** 700 (and `bold`) is Lato Heavy and 800 is Black; 300–600
+  render as written (Light, Regular, Medium, Semibold). Write the weight the design calls for (700
+  for bold, 600 for a label), never a compensating value. Markdown bold in the chat is 700. No rule
+  may ask for a weight outside 300–800. There is no Lato Bold face.
 - **The faces carry no metric overrides, and none may be added** (`ascent-override`,
-  `descent-override`, `line-gap-override`): a normal line is Open Sans's own 1.362 em in every
-  browser, which holds every glyph's ink.
+  `descent-override`, `line-gap-override`): a normal line is Lato's own 1.2 em in every browser.
 - **No clipped text.** An element that clips body-font text at its line's edge (`overflow` hidden
   or clip, an ellipsis, a line clamp, or a fixed height with hidden overflow) uses
-  `line-height: normal` or 1.45 or more. Shorter explicit line heights cut descenders or accented
-  capitals.
-- **Open Sans's digits are tabular by default** (0.572 em upright, 0.551 em italic, at every
-  weight), so number columns align without a rule.
+  `line-height: normal` or 1.25 or more. Shorter explicit line heights cut accented capitals and
+  descenders; rare Latin Extended letters reach past even the normal line.
+- **Lato's upright digits are tabular by default** (0.58 em), so number columns align without a
+  rule. Its italic `6` is narrower at every weight, with or without `tabular-nums`.
+- **The chat reads in a column**: `.messages` centers a 56 rem column and the message boxes take
+  80 % of it, about 88 characters per line. Chat text is 16 px at `line-height: 1.5`.
 - **New text rules use `rem` or the tokens, never `px`.**
 - **A container sets the body size once, and its children inherit it.** Do not restate the size
   on each child.

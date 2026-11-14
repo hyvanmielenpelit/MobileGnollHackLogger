@@ -126,14 +126,17 @@ before any consent** — precisely the silent egress this framework exists to re
 framework that allowlisted it in the same breath as it locked down telemetry would not be
 coherent.
 
-Overseer's fonts, Cinzel and Open Sans, are therefore vendored, in subsets Google Fonts serves,
-under `Overseer/ClientApp/public/fonts/`, with their `@font-face` blocks in
+Overseer's fonts, Cinzel and Lato 2.0, are therefore vendored under
+`Overseer/ClientApp/public/fonts/`, with their `@font-face` blocks in
 `Overseer/ClientApp/src/fonts.scss`, which `angular.json` lists in `styles` so the build
 compiles them into the application stylesheet. Cinzel is in the `latin` and `latin-ext`
-subsets. Open Sans, the body font, is eight variable files, upright and italic, covering weights
-300–800, in the `latin`, `latin-ext`, `greek` and `math` subsets, named
-`open-sans-<style>-300-800-<subset>.woff2`. The faces carry no override descriptors, so a normal
-line is Open Sans's own 1.362 em in every browser.
+subsets Google Fonts serves. Lato, the body font, is 48 files, named
+`lato2-<style>-<file weight>-<subset>.woff2`, subset from the official Lato 2.0 TTFs
+(`Lato2OFL.zip`, latofonts.com) to Google's `greek`, `math`, `latin-ext` and `latin` ranges, in
+the Light, Regular, Medium, Semibold, Heavy and Black weights, upright and italic. Each face
+declares the weight Overseer authors, with 700 served by Heavy and 800–900 by Black, so bold text
+renders one step heavier. The faces carry no override descriptors, so a normal line is 1.2 em in
+every browser.
 `Overseer/wwwroot/` is the Angular build output
 and is gitignored, so `public/` is where the font files live in source control — a file placed
 directly in `wwwroot/` would be erased by the next build.
@@ -144,25 +147,36 @@ directly in `wwwroot/` would be erased by the next build.
 > *"Unable to locate stylesheet: C:onts.css"*. Listing the file in `styles` is what makes it
 > a build input instead of a runtime fetch.
 
-The model comparison's figures and table image can also be drawn in one of six families, chosen
-in the wizard's Theme tab. Five of them — **Inter, Roboto, Geist, IBM Plex Sans and Source Sans
-3** — are vendored the same way: one variable `woff2` file per family and subset (weights
-400–700), named `<family>-normal-400-700-<subset>.woff2`, with their `@font-face` blocks in a
-second compiled stylesheet, `Overseer/ClientApp/src/figure-fonts.scss`, listed in `angular.json`
-after `fonts.scss`. `@font-face` is lazy, so a visitor downloads one of these files only when a
-chart is drawn in that family, and then from `'self'`: the CSP is unchanged. The sixth,
-**Open Sans**, is the body font from `fonts.scss`, so it is already loaded on every page.
+The model comparison's figures and table image can also be drawn in one of six families —
+**Inter, Roboto, Geist, IBM Plex Sans, Source Sans 3 and Open Sans** — chosen in the wizard's
+Theme tab. They are vendored the same way: one variable `woff2` file per family and subset
+(weights 400–700), named `<family>-normal-400-700-<subset>.woff2`, with their `@font-face` blocks
+in a second compiled stylesheet, `Overseer/ClientApp/src/figure-fonts.scss`, listed in
+`angular.json` after `fonts.scss`. `@font-face` is lazy, so a visitor downloads one of these files
+only when a chart is drawn in that family, and then from `'self'`: the CSP is unchanged.
 
-**To refresh them**: fetch the `css2` stylesheet for the families with a current browser user
-agent, download each `woff2` URL it names into `public/fonts/`, and regenerate the `@font-face`
-blocks with their `unicode-range` values intact. Keep the subset split — dropping `latin-ext`
-would silently degrade non-ASCII text. Cinzel and Open Sans go to `fonts.scss`, from
-`https://fonts.googleapis.com/css2?family=Cinzel:wght@400..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap`,
-keeping Cinzel's `latin` and `latin-ext` faces and Open Sans's `greek`, `math`, `latin-ext` and
-`latin` faces, and adding no override descriptors. The five figure families go to
-`figure-fonts.scss`, from one request naming all five:
-`https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Roboto:wght@400..700&family=Geist:wght@400..700&family=IBM+Plex+Sans:wght@400..700&family=Source+Sans+3:wght@400..700&display=swap`,
-keeping only its `latin` and `latin-ext` faces.
+**To refresh them**: keep the subset split — dropping `latin-ext` would silently degrade
+non-ASCII text — and add no override descriptors.
+
+- **Cinzel** goes to `fonts.scss`: fetch
+  `https://fonts.googleapis.com/css2?family=Cinzel:wght@400..900&display=swap` with a current
+  browser user agent, download the `woff2` URLs of its `latin` and `latin-ext` faces into
+  `public/fonts/`, and regenerate the `@font-face` blocks with their `unicode-range` values intact.
+- **Lato** goes to `fonts.scss` too, but Google does not serve Lato 2.0, so it is subset here.
+  Download `https://www.latofonts.com/files/Lato2OFL.zip`, and run, for each of its Light,
+  Regular, Medium, Semibold, Heavy and Black TTFs, upright and italic, and each subset:
+
+  ```powershell
+  python -P -m fontTools.subset <ttf> --unicodes="<range>" --layout-features+=tnum --name-IDs="*" --name-languages="*" --notdef-outline --flavor=woff2 --output-file=<out>
+  ```
+
+  naming the output `lato2-<style>-<file weight>-<subset>.woff2`. The four ranges are the
+  `greek`, `math`, `latin-ext` and `latin` `unicode-range` values of Google's stylesheet for
+  `https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap`,
+  and each face keeps the range of its subset.
+- **The six figure families** go to `figure-fonts.scss`, from one request naming all six:
+  `https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Roboto:wght@400..700&family=Geist:wght@400..700&family=IBM+Plex+Sans:wght@400..700&family=Source+Sans+3:wght@400..700&family=Open+Sans:wght@400..700&display=swap`,
+  keeping only its `latin` and `latin-ext` faces.
 
 If self-hosting is ever reversed, the CSP must become
 `style-src … https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:`

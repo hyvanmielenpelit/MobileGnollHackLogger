@@ -828,7 +828,7 @@ does not grow or shrink as cards are checked and disclosures opened. Escape canc
 dismiss. Under the title *Experimental Changes* the subtitle reads *"Select the test-only changes this run
 should try. The live chat never uses them."* From a dialog body width of 52 rem the list and **This run**
 sit side by side as two panes that scroll independently; below it they form one column, **This run** after
-the list, with one scroll. Headings inside the dialog use the header font (Cinzel); body text stays in the body font (Open Sans).
+the list, with one scroll. Headings inside the dialog use the header font (Cinzel); body text stays in the body font (Lato).
 
 - **Used before** (only when there are any): up to six buttons, one per distinct change set of recent
   runs whose changes are all selectable (`recentSelections`), labeled by the titles joined by ` + `

@@ -509,7 +509,11 @@
 .bottom-links a { display: block; margin-block-start: 10px; text-decoration: none; color: var(--link-color); padding: 5px; }
 .bottom-links a:hover { background: rgba(255,255,255,0.05); border-radius: 4px; }
 .chat-area { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
-.messages { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; }
+// Replies read in a centered column, about 88 characters per line at most; the scrollbar stays at
+// the edge because .messages is still the scroll container.
+$chat-column-max: 56rem;
+
+.messages { flex-grow: 1; padding: 20px; padding-inline: max(20px, calc(50% - #{$chat-column-max * 0.5})); overflow-y: auto; display: flex; flex-direction: column; }
 .conversation-loader {
   flex-grow: 1;
   display: flex;
