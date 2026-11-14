@@ -1720,7 +1720,7 @@ validates nothing: the host checks the emitted text (`isUtcDateInput`) and shows
   scrolling. Without backdrop-filter support it falls back to the opaque `rgba(20, 20, 20, 0.97)` the
   other popovers use, since an unblurred translucent panel would show the page through it.
 - `.gh-calendar-head`, `.gh-calendar-title` (gold Cinzel), `.gh-calendar-grid`, `.gh-calendar-foot`.
-- `.gh-calendar-day`: 2.25 rem square, Lato, tabular figures; hover a faint gold tint; the chosen day
+- `.gh-calendar-day`: 2.25 rem square, the body font, tabular figures; hover a faint gold tint; the chosen day
   (`td[aria-selected="true"] > .gh-calendar-day`) `var(--primary-color)` with dark ink and bold weight;
   today a gold inset ring (dark inside the gold when also chosen); outside-month days in `--nav-color`;
   `[aria-disabled="true"]` muted and struck through. **The states key off ARIA**, never a parallel
@@ -3048,7 +3048,7 @@ commits on a footer button**, with a sibling editor dialog:
   independently, with `min-block-size: 0` at every level of the flex chain; below 52 rem one column whose
   wrapper is the single scroller, the aside after the list. The list's heading row is `position: sticky`
   at the top of its pane, on the dialog's opaque background. Every heading in the dialog is Cinzel; body
-  text stays Lato.
+  text stays in the body font.
 - **The checklist** is a `<section>` headed by an `h4.gh-section-title` (*Changes to test*) in a heading
   row with an `aria-hidden` count pill, **New change** (`.btn-ghost`, *plus*, `aria-haspopup="dialog"`) and
   **Clear all** (`.btn-link`, while anything is selected); a `<search>` filter only above eight selectable

@@ -42,7 +42,7 @@ export interface ResolvedChartColors {
 export interface ResolvedFigureFonts {
   /** The composed chrome and the table image. */
   readonly chromeStack: string;
-  /** Null keeps each chart site's own family (Lato ticks, the Chart.js default elsewhere). */
+  /** Null keeps each chart site's own family (body-font ticks, the Chart.js default elsewhere). */
   readonly chartStack: string | null;
   readonly headingWeight: FigureFontWeight;
   readonly labelWeight: FigureFontWeight;

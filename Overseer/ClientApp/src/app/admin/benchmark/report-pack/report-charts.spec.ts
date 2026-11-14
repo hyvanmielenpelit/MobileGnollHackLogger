@@ -12,6 +12,7 @@ import {
 } from '../../../services/admin-benchmark.service';
 import { FIGURE_EXPORT_MIN_CONTENT_WIDTH, layoutBoxFor, resolveFigureLayout } from '../model-comparison/figure-export';
 import { P1_STACK_BREAKPOINT_PX } from '../model-comparison/model-comparison-charts';
+import { OVERSEER_BODY_FONT_STACK } from '../model-comparison/figure-fonts';
 import { DEFAULT_FIGURE_STYLE, FigureStyle } from '../model-comparison/figure-style';
 import {
   BASE_LABEL_PX,
@@ -487,7 +488,7 @@ describe('report-charts', () => {
 
   describe('the settings hash', () => {
     const settings = (overrides: Partial<ReportChartSettingsInput> = {}): ReportChartSettingsInput => ({
-      figureStyle: { theme: 'dark', font: 'Lato' },
+      figureStyle: { theme: 'dark', font: 'Source Sans 3' },
       layout: documentChartHashLayout(DEFAULT_CHART_LAYOUT_SETTINGS),
       show: ['run:1', 'run:2'],
       highlight: [],
@@ -508,8 +509,8 @@ describe('report-charts', () => {
 
     it('hashes to 64 lowercase hex characters, pinned, whatever the key order', async () => {
       const hash = await chartSettingsHash(settings());
-      expect(hash).toBe('d063fd97cfc86bec6c8d31061ff224a77dc5a61544a70b6f07d202c02784c619');
-      const reordered = await chartSettingsHash(settings({ figureStyle: { font: 'Lato', theme: 'dark' } }));
+      expect(hash).toBe('3859165f1d4ac21634e4a64f4985de625b14cc0a97e31c0b10e6d546f940f11b');
+      const reordered = await chartSettingsHash(settings({ figureStyle: { font: 'Source Sans 3', theme: 'dark' } }));
       expect(reordered).toBe(hash);
     });
 
@@ -523,7 +524,8 @@ describe('report-charts', () => {
 
     it('hashes the composition constants and every document type\'s layout', async () => {
       expect(documentChartHashLayout(DEFAULT_CHART_LAYOUT_SETTINGS)).toEqual({
-        columnPt: 481.9, dpi: 300, baseLabelPx: 11, textNormalization: 1, format: 'png', documents: DEFAULT_CHART_LAYOUT_SETTINGS
+        columnPt: 481.9, dpi: 300, baseLabelPx: 11, textNormalization: 1, defaultChartFont: OVERSEER_BODY_FONT_STACK,
+        format: 'png', documents: DEFAULT_CHART_LAYOUT_SETTINGS
       });
       const base = await chartSettingsHash(settings());
       const changed = (patch: Partial<ReportChartDocumentLayout>): ReportChartSettingsInput => settings({
@@ -544,6 +546,12 @@ describe('report-charts', () => {
     it('moves with the document text normalization, so charts drawn before it read as differing from step 2', async () => {
       const { textNormalization, ...before } = documentChartHashLayout(DEFAULT_CHART_LAYOUT_SETTINGS) as Record<string, unknown>;
       expect(textNormalization).toBe(1);
+      expect(await chartSettingsHash(settings({ layout: before }))).not.toBe(await chartSettingsHash(settings()));
+    });
+
+    it('moves with the default chart font, so charts drawn with an earlier one read as differing from step 2', async () => {
+      const { defaultChartFont, ...before } = documentChartHashLayout(DEFAULT_CHART_LAYOUT_SETTINGS) as Record<string, unknown>;
+      expect(defaultChartFont).toBe(OVERSEER_BODY_FONT_STACK);
       expect(await chartSettingsHash(settings({ layout: before }))).not.toBe(await chartSettingsHash(settings()));
     });
   });

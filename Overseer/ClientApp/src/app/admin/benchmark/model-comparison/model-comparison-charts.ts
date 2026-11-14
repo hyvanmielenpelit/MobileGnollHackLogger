@@ -19,6 +19,7 @@ import { chooseScaleType, formatTick, linearDomain, logDomain, timeUnitFor } fro
 import type { AxisBounds, AxisTickKind, ScaleType, TimeUnit } from './axis-domain';
 import { pricingBadge, pricingNote, questionsBadge, runsBadge, visibleBadges } from './figure-chrome';
 import type { FigureBadge, FigureChrome, FigureDirection, FigureKeyItem, FigureNote } from './figure-chrome';
+import { OVERSEER_BODY_FONT_STACK } from './figure-fonts';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
 import type {
   AvailabilityMeasure,
@@ -281,9 +282,6 @@ const DEFAULT_THEME: ResolvedFigureTheme = resolveFigureTheme();
 function themeOf(options: { readonly theme?: ResolvedFigureTheme }): ResolvedFigureTheme {
   return options.theme ?? DEFAULT_THEME;
 }
-
-/** The ticks' and direct labels' family under the Overseer default font; the other sites keep Chart.js's. */
-const LATO_STACK = '"Lato", system-ui, sans-serif';
 
 /** A Chart.js weight, or nothing at 400, which is the `normal` a site without a weight already draws. */
 function weightKey(weight: FigureFontWeight): { weight?: number } {
@@ -963,7 +961,7 @@ function gridOptions(display = true, theme: ResolvedFigureTheme = DEFAULT_THEME)
 
 /** Tick labels, always at weight 400. */
 function tickOptions(size = 11, theme: ResolvedFigureTheme = DEFAULT_THEME) {
-  return { color: theme.chart.inkMuted, font: { family: theme.fonts.chartStack ?? LATO_STACK, size } };
+  return { color: theme.chart.inkMuted, font: { family: theme.fonts.chartStack ?? OVERSEER_BODY_FONT_STACK, size } };
 }
 
 /** The family and weight an axis title draws in beyond its size; empty keeps the Chart.js default. */
@@ -1146,7 +1144,7 @@ function degradedNotices(plotted: readonly ModelComparisonEntry[], axes: readonl
 /** The default label size, matching the axis ticks so a direct label reads as chart chrome. */
 const DIRECT_LABEL_DEFAULT_SIZE = 11;
 
-/** The family and name weight a plate draws in. Absent: Lato, and the name at 400. */
+/** The family and name weight a plate draws in. Absent: the body font, and the name at 400. */
 export interface DirectLabelFont {
   readonly family?: string;
   readonly nameWeight?: FigureFontWeight;
@@ -1163,7 +1161,7 @@ function directLabelMetrics(size: number, font: DirectLabelFont = {}): {
   nameLineHeight: number;
   valueLineHeight: number;
 } {
-  const family = font.family ?? LATO_STACK;
+  const family = font.family ?? OVERSEER_BODY_FONT_STACK;
   const nameWeight = font.nameWeight ?? 400;
   return {
     nameFont: `${nameWeight === 400 ? '' : `${nameWeight} `}${size}px ${family}`,
@@ -1567,7 +1565,7 @@ export interface DirectLabelPluginOptions {
   readonly markRadiusPx?: number;
   /** Whether plates avoid the drawn whiskers. False when the figure hides them. Defaults to true. */
   readonly avoidWhiskers?: boolean;
-  /** The plates' font family. Defaults to Lato. */
+  /** The plates' font family. Defaults to the body font. */
   readonly fontFamily?: string;
   /** The name's weight; value lines stay at 400. Defaults to 400. */
   readonly nameFontWeight?: FigureFontWeight;
@@ -3891,7 +3889,7 @@ export function buildProfilePlot(
     const split = splitAxisTitle(axis.title);
     return split ? [...split] : axis.title;
   });
-  const fontFamily = theme.fonts.chartStack ?? LATO_STACK;
+  const fontFamily = theme.fonts.chartStack ?? OVERSEER_BODY_FONT_STACK;
   const tickSize = 10;
 
   const tiles: ProfileTileConfig[] = plotted.map((entry, tileIndex) => {

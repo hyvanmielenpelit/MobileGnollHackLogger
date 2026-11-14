@@ -43,7 +43,7 @@
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
   color: #e4e4e7;
-  font-family: "Lato", sans-serif;
+  font-family: var(--font-body);
   font-size: var(--text-body);
   line-height: var(--leading-body);
   transition: opacity 220ms ease-out, translate 220ms ease-out;

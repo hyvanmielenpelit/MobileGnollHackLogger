@@ -168,7 +168,7 @@ export const CC_SCREEN_THEME: CcChartTheme = Object.freeze({
   baselineBand: 'rgba(57, 135, 229, 0.10)',
   comparisonBand: 'rgba(201, 133, 0, 0.12)',
   tooltip: { background: 'rgba(20, 20, 20, 0.96)', border: 'rgba(255, 255, 255, 0.12)' },
-  fontFamily: '"Lato", "Segoe UI", Arial, sans-serif'
+  fontFamily: '"Inter", "Segoe UI", Arial, sans-serif'
 });
 
 /** A light page, for the charts printed in PDF and Word; its palette is validated against white. */

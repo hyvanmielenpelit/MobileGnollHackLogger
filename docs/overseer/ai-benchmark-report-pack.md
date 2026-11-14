@@ -2993,11 +2993,13 @@ mean model time per question; the document's tables give the median."*, or the s
 time or the time to first token, and none under the Speed Index; and on the Cost panel: *"Costs are per
 battery pass (per suite run for a suite); the document's tables give the cost per question."*
 `chartSettingsHash` is the SHA-256 of the canonical JSON of the figure style, the layout (the
-column width, 300 dpi, `BASE_LABEL_PX`, `textNormalization: 1`, PNG, and every document type's layout
-settings), Show, Highlight, the order, the measures, the pricing basis and the comparison's
-`computedAtUtc`; it is stored with the charts, so step 4 can tell charts drawn with the settings on
-screen from older ones. `textNormalization` makes charts drawn before the text normalization read as
-differing from step 2, which offers **Update charts**.
+column width, 300 dpi, `BASE_LABEL_PX`, `textNormalization: 1`, `defaultChartFont`, PNG, and every
+document type's layout settings), Show, Highlight, the order, the measures, the pricing basis and the
+comparison's `computedAtUtc`; it is stored with the charts, so step 4 can tell charts drawn with the
+settings on screen from older ones. `textNormalization` makes charts drawn before the text
+normalization read as differing from step 2, which offers **Update charts**; `defaultChartFont`, the
+body-font stack the *Overseer default* font draws ticks and direct labels in, does the same for charts
+drawn with an earlier default chart font.
 
 **The chart layout.** Width, rows and height are applied by the server at render time, from the layout
 the publisher sends with the charts (`reportDocumentChartLayout`): each figure's `widthShare` (1, 2/3 or

@@ -10,6 +10,7 @@ import {
   ReportDocumentChartLayoutFigure,
   ReportDocumentChartUpload
 } from '../../../services/admin-benchmark.service';
+import { OVERSEER_BODY_FONT_STACK } from '../model-comparison/figure-fonts';
 import type { FigureAppearanceStyle, FigureStyle } from '../model-comparison/figure-style';
 import { CC_REPORT_FIGURE_KEYS, CcReportFigureKey } from '../chat-consistency-tab/chat-consistency.models';
 
@@ -652,6 +653,7 @@ export function documentChartHashLayout(layout: ReportChartLayoutSettings): unkn
     dpi: DOCUMENT_CHART_DPI,
     baseLabelPx: BASE_LABEL_PX,
     textNormalization: 1,
+    defaultChartFont: OVERSEER_BODY_FONT_STACK,
     format: 'png',
     documents: normalizeChartLayoutSettings(layout)
   };

@@ -79,6 +79,8 @@ These rules apply to the `MobileGnollHackLogger` website (account.gnollhack.com)
 
 ## Fonts
 
+These rules cover the website; Overseer's fonts are in the `overseer_frontend` skill § Typography.
+
 - **Fonts are self-hosted** in `MobileGnollHackLogger/wwwroot/fonts/` and declared at the top of `site2.scss`: Cinzel (one variable file, 400 to 900) and Lato 2.0 (Light 300, Regular 400, Medium 500 and Heavy 800, each upright and italic).
 - **Bold Lato text is Heavy**: write `$font-weight-bold` (800), never `bold` or 700, in a rule for Lato text. There is deliberately no 600, 700 or 900 face, so Bootstrap's and the browser's own bold also render in Heavy.
 - **Every Lato weight the site requests needs a face.** Before using a new weight, add its upright and italic files, subset as the others were (`GnollHackWiki`'s `wiki_theme` skill, § 1), and their `@font-face` rules.

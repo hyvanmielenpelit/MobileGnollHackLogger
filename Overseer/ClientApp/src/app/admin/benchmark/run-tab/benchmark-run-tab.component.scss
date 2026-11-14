@@ -736,7 +736,7 @@ $setup-two-columns: 72rem;
 
     .mbc-figure-note {
       display: block;
-      font-family: "Lato", sans-serif;
+      font-family: var(--font-body);
       font-size: var(--text-xs);
       color: #aaa;
     }

@@ -126,10 +126,17 @@ before any consent** — precisely the silent egress this framework exists to re
 framework that allowlisted it in the same breath as it locked down telemetry would not be
 coherent.
 
-The same faces and the same subsets are therefore vendored under
-`Overseer/ClientApp/public/fonts/`, with their `@font-face` blocks in
-`Overseer/ClientApp/src/fonts.scss`, which `angular.json` lists in `styles` so the build
-compiles them into the application stylesheet. `Overseer/wwwroot/` is the Angular build output
+Overseer's fonts, Cinzel and Inter, are therefore vendored, in the `latin` and `latin-ext`
+subsets Google Fonts serves, under `Overseer/ClientApp/public/fonts/`, with their
+`@font-face` blocks in `Overseer/ClientApp/src/fonts.scss`, which `angular.json` lists in
+`styles` so the build compiles them into the application stylesheet. Inter, the body font, is
+four variable files, upright and italic, covering weights 100–900, named
+`inter-<style>-100-900-<subset>.woff2`, as Google serves them when the request names no
+optical-size axis. Its faces carry three override descriptors that are not in Google's
+stylesheet — `ascent-override: 98.7%`, `descent-override: 21.3%` and `line-gap-override: 0%` —
+which keep a normal line at 1.2 em; they are ignored by WebKit, where Inter's own 1.211 em line
+applies.
+`Overseer/wwwroot/` is the Angular build output
 and is gitignored, so `public/` is where the font files live in source control — a file placed
 directly in `wwwroot/` would be erased by the next build.
 
@@ -139,20 +146,24 @@ directly in `wwwroot/` would be erased by the next build.
 > *"Unable to locate stylesheet: C:onts.css"*. Listing the file in `styles` is what makes it
 > a build input instead of a runtime fetch.
 
-The model comparison's figures and table image can also be drawn in one of six further families
-— **Inter, Roboto, Geist, IBM Plex Sans, Source Sans 3 and Open Sans** — chosen in the wizard's
-Theme tab. They are vendored the same way: one variable `woff2` file per family and subset
-(weights 400–700), named `<family>-normal-400-700-<subset>.woff2`, with their `@font-face` blocks
-in a second compiled stylesheet, `Overseer/ClientApp/src/figure-fonts.scss`, listed in
-`angular.json` after `fonts.scss`. `@font-face` is lazy, so a visitor downloads one of these files
-only when a chart is drawn in that family, and then from `'self'`: the CSP is unchanged.
+The model comparison's figures and table image can also be drawn in one of six families, chosen
+in the wizard's Theme tab. Five of them — **Roboto, Geist, IBM Plex Sans, Source Sans 3 and Open
+Sans** — are vendored the same way: one variable `woff2` file per family and subset (weights
+400–700), named `<family>-normal-400-700-<subset>.woff2`, with their `@font-face` blocks in a
+second compiled stylesheet, `Overseer/ClientApp/src/figure-fonts.scss`, listed in `angular.json`
+after `fonts.scss`. `@font-face` is lazy, so a visitor downloads one of these files only when a
+chart is drawn in that family, and then from `'self'`: the CSP is unchanged. The sixth,
+**Inter**, is the body font from `fonts.scss`, so it is already loaded on every page.
 
 **To refresh them**: fetch the `css2` stylesheet for the families with a current browser user
 agent, download each `woff2` URL it names into `public/fonts/`, and regenerate the `@font-face`
 blocks with their `unicode-range` values intact. Keep the subset split — dropping `latin-ext`
-would silently degrade non-ASCII text. Cinzel and Lato go to `fonts.scss`; the six figure
-families go to `figure-fonts.scss`, from one request naming all six:
-`https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Roboto:wght@400..700&family=Geist:wght@400..700&family=IBM+Plex+Sans:wght@400..700&family=Source+Sans+3:wght@400..700&family=Open+Sans:wght@400..700&display=swap`,
+would silently degrade non-ASCII text. Cinzel and Inter go to `fonts.scss`, from
+`https://fonts.googleapis.com/css2?family=Cinzel:wght@400..900&family=Inter:ital,wght@0,100..900;1,100..900&display=swap`,
+kept to its `latin` and `latin-ext` faces; do not add `opsz` to the request, and put the three
+override descriptors back on the Inter faces after a refresh. The five figure families go to
+`figure-fonts.scss`, from one request naming all five:
+`https://fonts.googleapis.com/css2?family=Roboto:wght@400..700&family=Geist:wght@400..700&family=IBM+Plex+Sans:wght@400..700&family=Source+Sans+3:wght@400..700&family=Open+Sans:wght@400..700&display=swap`,
 keeping only its `latin` and `latin-ext` faces.
 
 If self-hosting is ever reversed, the CSP must become

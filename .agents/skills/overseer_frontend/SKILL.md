@@ -332,6 +332,24 @@ Harness-neutral, and the floor for any Overseer frontend work.
 - **Type tokens** on `:root` in `styles.scss`: `--text-body` (0.875rem: running text and
   values), `--text-secondary` (0.8125rem: labels, metadata, hints), `--text-xs` (0.75rem: notes
   under a stage-rail item), `--leading-body` (1.5, unitless) and `--font-mono` (the monospace stack).
+- **Body text is `--font-body`**: Inter, variable faces covering weights 100–900, upright and
+  italic, self-hosted in `fonts.scss`. New rules use the token, never a family name. Headings stay
+  Cinzel.
+- **Every weight renders as written**, so `600` is Semibold, not Bold. Markdown bold in the chat is
+  700.
+- **The faces carry line-box overrides** (`ascent-override`, `descent-override`,
+  `line-gap-override`: Lato's vertical metrics, which give a 1.2 em normal line). Do not remove or
+  change them; a refresh from Google Fonts must put them back.
+- **WebKit ignores those overrides**, so Safari lines follow Inter's own 1.211 em and differ from
+  Chrome's by at most 1 px.
+- **Contextual alternates are off on `body`** (`font-variant-ligatures: no-contextual`) and must
+  stay off, so `->` and `3x4` in chat content render as typed. A rule that needs a font feature
+  uses a `font-variant-*` property, never `font-feature-settings`, which would replace the whole
+  feature list and switch them back on.
+- **Inter's default digits are proportional.** Table cells get tabular digits globally
+  (`:where(td, th)` in `styles.scss`); any other number column that must align sets
+  `font-variant-numeric: tabular-nums`. Inter's tabular digits are 0.648 em wide, so they are not
+  applied to running text.
 - **New text rules use `rem` or the tokens, never `px`.**
 - **A container sets the body size once, and its children inherit it.** Do not restate the size
   on each child.
@@ -1516,7 +1534,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     *Starting benchmark run…*. The header's bottom margin is 0 and the body's top padding 16px, scoped
     to this dialog. The questions heading is `h4.gh-section-title` (the shared benchmark section
     heading in `styles.scss`: gold Cinzel capitals over a fine rule, also the Download Center's) with
-    the count in a small neutral Lato pill (`.run-progress-questions-count`); its accessible name stays
+    the count in a small neutral pill (`.run-progress-questions-count`); its accessible name stays
     *Questions N*. Narrow is the default — one column, the body scrolls. From `60rem` of content width
     the body is a grid, `minmax(0, 3fr) minmax(22rem, 2fr)`, and each section scrolls on its own
     (`overscroll-behavior: contain`, `scrollbar-gutter: stable`). **Keep the overview a block
@@ -2515,7 +2533,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     260 (step 2's exports use 360), so *Half column* is refused from 9 pt (`documentChartRefusal`);
     `reportDocumentChartLayout` (the manifest `layout`: `widthShare`, `rowGroup` for consecutive half-width
     figures in one section, `maxHeightShare`); `chartSettingsHash` (SHA-256 over canonical JSON of the
-    figure style, `documentChartHashLayout` — the column, dpi, base label size, `textNormalization`, format and every document
+    figure style, `documentChartHashLayout` — the column, dpi, base label size, `textNormalization`, `defaultChartFont`, format and every document
     type's layout — Show, Highlight, order, measures, pricing basis and the comparison's `computedAtUtc`);
     and **`ReportChartPublisher`**, which composes and uploads one document at a time, named and (with
     peer letters) anonymized variants, `PUT …/report-documents/{id}/charts` for the whole set with its

@@ -98,7 +98,7 @@ import type {
   ProfileFigureStyle,
   ScatterFigureStyle,
 } from './figure-style';
-import { figureFont } from './figure-fonts';
+import { OVERSEER_BODY_FONT_STACK, figureFont } from './figure-fonts';
 import { resolveFigureTheme } from './figure-theme';
 import type { NumberFormatStyle } from './measure-format';
 import { wilson95 } from '../shared/provider-availability/provider-availability';
@@ -3614,7 +3614,6 @@ describe('the automatic title break on a real chart', () => {
 // ---------------------------------------------------------------------------------------------
 
 describe('the figure theme in the charts', () => {
-  const LATO = '"Lato", system-ui, sans-serif';
 
   interface FontProbe {
     family?: string;
@@ -3692,7 +3691,7 @@ describe('the figure theme in the charts', () => {
       const labelled = figuresWith({ directLabels: true });
 
       const scatterX = themedScale(figures.qualitySpeed.config, 'x');
-      expect(scatterX.ticks?.font).toEqual({ family: LATO, size: 11 });
+      expect(scatterX.ticks?.font).toEqual({ family: OVERSEER_BODY_FONT_STACK, size: 11 });
       expect(scatterX.title?.font).toEqual({ size: 12 });
       expect('font' in legendLabels(figures.qualitySpeed.config)).toBe(false);
       expect(Object.keys(pluginsOf(figures.qualitySpeed.config))).toEqual(['legend', 'tooltip', 'datalabels']);
@@ -3700,16 +3699,16 @@ describe('the figure theme in the charts', () => {
         .toEqual(['blocks', 'highlightedIndex', 'fontSizePx', 'markRadiusPx', 'avoidWhiskers']);
 
       const panel = figures.smallMultiples.quality.config;
-      expect(themedScale(panel, 'x').ticks?.font).toEqual({ family: LATO, size: 11 });
+      expect(themedScale(panel, 'x').ticks?.font).toEqual({ family: OVERSEER_BODY_FONT_STACK, size: 11 });
       expect(themedScale(panel, 'x').title?.font).toEqual({ size: 12 });
       expect(themedScale(panel, 'y').title?.font).toEqual({ size: 12 });
       expect(datalabelsFont(panel)).toEqual({ size: 11 });
       expect(Object.keys(pluginsOf(panel))).toEqual(['legend', 'tooltip', 'datalabels']);
 
       const tile = figures.profile.tiles[0];
-      expect(themedScale(tile, 'x').ticks?.font).toEqual({ family: LATO, size: 10 });
+      expect(themedScale(tile, 'x').ticks?.font).toEqual({ family: OVERSEER_BODY_FONT_STACK, size: 10 });
       expect(pluginsOf(tile)['legend']).toEqual({ display: false });
-      expect(tileOptionsOf(tile).fontFamily).toBe(LATO);
+      expect(tileOptionsOf(tile).fontFamily).toBe(OVERSEER_BODY_FONT_STACK);
     });
   });
 
@@ -3922,7 +3921,7 @@ describe('the figure theme in the charts', () => {
       expect('fontFamily' in directOptions(labelled.qualitySpeed.config)).toBe(false);
 
       const scatterX = themedScale(figures.qualitySpeed.config, 'x');
-      expect(scatterX.ticks?.font).toEqual({ family: LATO, size: 11 });
+      expect(scatterX.ticks?.font).toEqual({ family: OVERSEER_BODY_FONT_STACK, size: 11 });
       expect(scatterX.title?.font).toEqual({ size: 12 });
     });
 
@@ -3954,7 +3953,7 @@ describe('the figure theme in the charts', () => {
       const block: DirectLabelBlock = { name: 'Model A', values: [{ label: 'Intelligence', text: '82.4' }], hue: '#3987e5' };
 
       measureDirectLabelBlock(ctx as unknown as CanvasRenderingContext2D, block, 11);
-      expect(fonts).toEqual([`11px ${LATO}`, `10px ${LATO}`]);
+      expect(fonts).toEqual([`11px ${OVERSEER_BODY_FONT_STACK}`, `10px ${OVERSEER_BODY_FONT_STACK}`]);
 
       fonts.length = 0;
       measureDirectLabelBlock(ctx as unknown as CanvasRenderingContext2D, block, 11, { family: inter, nameWeight: 600 });
