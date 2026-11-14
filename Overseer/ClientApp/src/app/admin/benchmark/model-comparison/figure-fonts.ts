@@ -1,7 +1,7 @@
 /**
  * The font families a comparison chart and the table image can be drawn in.
  *
- * The six bundled families are self-hosted, five by `src/figure-fonts.scss` and Inter by
+ * The six bundled families are self-hosted, five by `src/figure-fonts.scss` and Open Sans by
  * `src/fonts.scss`, where it is the body font; *Overseer default* keeps the stacks the figures
  * were always drawn with. Pure TypeScript with no Angular or DOM dependency.
  */
@@ -12,7 +12,7 @@ import type { FigureFontId } from './figure-style';
 export const OVERSEER_DEFAULT_FONT_STACK = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
 
 /** The body font, which the charts' ticks and direct labels use under *Overseer default*. */
-export const OVERSEER_BODY_FONT_STACK = '"Inter", system-ui, sans-serif';
+export const OVERSEER_BODY_FONT_STACK = '"Open Sans", system-ui, sans-serif';
 
 /** What a bundled family falls back to while its face loads, or where it never does. */
 const BUNDLED_FALLBACK = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';

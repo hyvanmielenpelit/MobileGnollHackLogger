@@ -254,7 +254,7 @@ public class AuthController : ControllerBase
             height: 100%;
             background-color: #121212;
             color: #ffffff;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         }}
         .initial-loading-container {{
             display: flex;

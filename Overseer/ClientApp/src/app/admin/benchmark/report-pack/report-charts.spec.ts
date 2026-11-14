@@ -509,7 +509,7 @@ describe('report-charts', () => {
 
     it('hashes to 64 lowercase hex characters, pinned, whatever the key order', async () => {
       const hash = await chartSettingsHash(settings());
-      expect(hash).toBe('3859165f1d4ac21634e4a64f4985de625b14cc0a97e31c0b10e6d546f940f11b');
+      expect(hash).toBe('e6c838517720c30cb1f0f9d4a74509bb9293465e4c02af57eb17b1cccdb45eb3');
       const reordered = await chartSettingsHash(settings({ figureStyle: { font: 'Source Sans 3', theme: 'dark' } }));
       expect(reordered).toBe(hash);
     });

@@ -1,7 +1,7 @@
 // The body font as the global stylesheets declare it: fonts.scss and styles.scss reach this page
 // through the test target's build.
 
-const BODY_FAMILY = 'Inter';
+const BODY_FAMILY = 'Open Sans';
 
 function faces(): FontFace[] {
   const all: FontFace[] = [];
@@ -34,21 +34,42 @@ function covers(face: FontFace, codePoint: number): boolean {
   return codePointRanges(face.unicodeRange).some(([from, to]) => codePoint >= from && codePoint <= to);
 }
 
+/** A span of `text` in the body font at 15 px, measured inside a block host so it does not stretch. */
+function spanWidth(text: string): number {
+  const host = document.createElement('div');
+  const span = document.createElement('span');
+  span.style.fontSize = '15px';
+  span.style.whiteSpace = 'pre';
+  span.textContent = text;
+  host.appendChild(span);
+  document.body.appendChild(host);
+  try {
+    return span.getBoundingClientRect().width;
+  } finally {
+    host.remove();
+  }
+}
+
 describe('the body font', () => {
-  it('is declared as four variable faces, upright and italic, with the line-box overrides', () => {
+  it('is declared as eight variable faces, upright and italic, with no metric overrides', () => {
     const body = faces().filter(face => unquote(face.family) === BODY_FAMILY);
 
-    expect(body.length).toBe(4);
+    expect(body.length).toBe(8);
     for (const style of ['normal', 'italic']) {
       const ofStyle = body.filter(face => face.style === style);
-      expect(ofStyle.length, style).toBe(2);
-      expect(ofStyle.filter(face => covers(face, 0x41)).length, style).toBe(1);
+      expect(ofStyle.length, style).toBe(4);
+      expect(ofStyle.filter(face => covers(face, 0x41)).length, `${style} U+0041`).toBe(1);
+      // Google's math range repeats the Greek letters, so U+03A3 is in the greek and math faces;
+      // U+0386 is in the greek face alone and U+2264 in the math face alone.
+      expect(ofStyle.filter(face => covers(face, 0x386)).length, `${style} U+0386`).toBe(1);
+      expect(ofStyle.some(face => covers(face, 0x3a3)), `${style} U+03A3`).toBe(true);
+      expect(ofStyle.filter(face => covers(face, 0x2264)).length, `${style} U+2264`).toBe(1);
     }
     for (const face of body) {
-      expect(face.weight).toBe('100 900');
-      expect(face.ascentOverride).toBe('98.7%');
-      expect(face.descentOverride).toBe('21.3%');
-      expect(face.lineGapOverride).toBe('0%');
+      expect(face.weight).toBe('300 800');
+      expect(face.ascentOverride).toBe('normal');
+      expect(face.descentOverride).toBe('normal');
+      expect(face.lineGapOverride).toBe('normal');
     }
   });
 
@@ -89,39 +110,29 @@ describe('the body font', () => {
     expect(getComputedStyle(document.body).lineHeight).toBe('normal');
   });
 
-  it('turns contextual alternates off on the body', () => {
-    expect(getComputedStyle(document.body).fontVariantLigatures).toBe('no-contextual');
-  });
-
-  it('sets table cells in tabular digits', () => {
-    const table = document.createElement('table');
-    table.innerHTML = '<tbody><tr><td>1</td></tr></tbody>';
-    document.body.appendChild(table);
+  it('gives a normal line its own metrics: 20 px at 15 px', async () => {
+    await document.fonts.load(`15px "${BODY_FAMILY}"`);
+    const line = document.createElement('div');
+    line.style.fontSize = '15px';
+    line.style.lineHeight = 'normal';
+    line.textContent = 'Ågy';
+    document.body.appendChild(line);
     try {
-      expect(getComputedStyle(table.querySelector('td')!).fontVariantNumeric).toBe('tabular-nums');
+      expect(line.getBoundingClientRect().height).toBe(20);
     } finally {
-      table.remove();
+      line.remove();
     }
   });
 
   it('renders -> as typed, not as an arrow', async () => {
     await document.fonts.load(`15px "${BODY_FAMILY}"`);
-    // The span sits in a block host: as a direct child of the flex body it would stretch.
-    const width = (text: string): number => {
-      const host = document.createElement('div');
-      const span = document.createElement('span');
-      span.style.fontSize = '15px';
-      span.style.whiteSpace = 'pre';
-      span.textContent = text;
-      host.appendChild(span);
-      document.body.appendChild(host);
-      try {
-        return span.getBoundingClientRect().width;
-      } finally {
-        host.remove();
-      }
-    };
 
-    expect(Math.abs(width('->') - (width('-') + width('>')))).toBeLessThan(0.5);
+    expect(Math.abs(spanWidth('->') - (spanWidth('-') + spanWidth('>')))).toBeLessThan(0.5);
+  });
+
+  it('sets digits tabular by default', async () => {
+    await document.fonts.load(`15px "${BODY_FAMILY}"`);
+
+    expect(Math.abs(spanWidth('1111') - spanWidth('0000'))).toBeLessThan(0.5);
   });
 });
