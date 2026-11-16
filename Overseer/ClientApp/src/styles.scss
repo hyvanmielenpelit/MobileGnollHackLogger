@@ -5478,11 +5478,17 @@ app-table-pager {
 
   /* Blockquotes */
   blockquote {
-    margin: 10px 0;
-    padding: 5px 15px;
-    border-left: 3px solid var(--primary-color);
-    background: rgba(212, 160, 23, 0.05);
+    margin: 12px 0;
+    padding: 10px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-left: 3px solid rgba(212, 160, 23, 0.7);
+    border-radius: 0 6px 6px 0;
+    background: rgba(0, 0, 0, 0.38);
+    box-shadow: inset 0 1px 6px rgba(0, 0, 0, 0.25);
     color: #ddd;
+
+    > :first-child { margin-block-start: 0; }
+    > :last-child { margin-block-end: 0; }
   }
 
   /* Tables */
