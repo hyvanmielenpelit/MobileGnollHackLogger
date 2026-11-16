@@ -498,6 +498,118 @@ The largest mechanical advantage is that priests can pray sooner.`;
     });
   });
 
+  /* A fence or display math that starts a line inside a quote or list item stays in it. */
+  describe('blocks nested in quotes and list items', () => {
+    const render = (input: string): HTMLDivElement => {
+      const container = document.createElement('div');
+      container.innerHTML = pipe.transform(input) as string;
+      return container;
+    };
+
+    const childTags = (element: Element) => Array.from(element.children).map(c => c.tagName);
+
+    it('keeps a fence that fills a quote inside it', () => {
+      const root = render('> ```\n> code\n> ```');
+
+      expect(root.querySelectorAll('blockquote').length).toBe(1);
+      expect(root.querySelector('blockquote > pre')).toBeTruthy();
+      expect(root.querySelector('code')!.textContent).toBe('code\n');
+    });
+
+    it('keeps a fence between quoted text lines inside the quote', () => {
+      const root = render('> Intro:\n> ```py\n> x = 1\n> ```\n> After.');
+      const quotes = root.querySelectorAll('blockquote');
+
+      expect(quotes.length).toBe(1);
+      expect(childTags(quotes[0])).toEqual(['P', 'PRE', 'P']);
+      expect(root.querySelector('code')!.textContent).toBe('x = 1\n');
+    });
+
+    it('keeps a fence inside a loose list item', () => {
+      const root = render('- item\n\n  ```py\n  x = 1\n  ```\n- next');
+      const lists = root.querySelectorAll('ul');
+
+      expect(lists.length).toBe(1);
+      const items = lists[0].querySelectorAll(':scope > li');
+      expect(items.length).toBe(2);
+      expect(items[0].querySelector('pre')).toBeTruthy();
+      expect(root.querySelector('code')!.textContent).toBe('x = 1\n');
+    });
+
+    it('keeps a fence inside a tight ordered list item', () => {
+      const root = render('1. Run:\n   ```bash\n   cmd\n   ```\n2. Done');
+      const lists = root.querySelectorAll('ol');
+
+      expect(lists.length).toBe(1);
+      expect(lists[0].hasAttribute('start')).toBe(false);
+      const items = lists[0].querySelectorAll(':scope > li');
+      expect(items.length).toBe(2);
+      expect(items[0].querySelector('pre')).toBeTruthy();
+      expect(root.querySelector('code')!.textContent).toBe('cmd\n');
+    });
+
+    it('keeps a fence right after a list marker inside the item', () => {
+      const root = render('1. ```bash\n   cmd\n   ```\n2. Done');
+      const lists = root.querySelectorAll('ol');
+
+      expect(lists.length).toBe(1);
+      expect(lists[0].hasAttribute('start')).toBe(false);
+      const items = lists[0].querySelectorAll(':scope > li');
+      expect(items.length).toBe(2);
+      expect(items[0].querySelector('pre')).toBeTruthy();
+      expect(root.querySelector('code')!.textContent).toBe('cmd\n');
+    });
+
+    it('keeps display math after a quoted text line inside the quote', () => {
+      const root = render('> Formula:\n> \\[\n> x^2\n> \\]\n> End');
+      const quotes = root.querySelectorAll('blockquote');
+
+      expect(quotes.length).toBe(1);
+      expect(childTags(quotes[0])).toEqual(['P', 'SPAN', 'P']);
+      expect(quotes[0].children[1].classList.contains('katex-display')).toBe(true);
+      expect(root.querySelectorAll('.katex-display').length).toBe(1);
+    });
+
+    it('keeps a quoted formula line that looks like a list item in the formula', () => {
+      const root = render('> Formula:\n> \\[\n> a = b\n> - c\n> \\]\n> End');
+
+      expect(root.querySelectorAll('blockquote').length).toBe(1);
+      expect(root.querySelector('ul')).toBeNull();
+      expect(root.querySelectorAll('.katex-display').length).toBe(1);
+      expect(root.querySelector('annotation')!.textContent).toBe('a = b\n- c');
+    });
+
+    it('keeps display math inside a tight ordered list item', () => {
+      const root = render('1. Compute:\n   \\[\n   d = a\n   + 3\n   \\]\n2. Done');
+      const lists = root.querySelectorAll('ol');
+
+      expect(lists.length).toBe(1);
+      const items = lists[0].querySelectorAll(':scope > li');
+      expect(items.length).toBe(2);
+      expect(items[0].querySelector('.katex-display')).toBeTruthy();
+      expect(root.querySelector('annotation')!.textContent).toBe('d = a\n+ 3');
+    });
+
+    it('still pads a fence glued to text after inline code', () => {
+      const root = render('Use `foo` ```sh\nls\n```\nDone');
+      const blocks = root.querySelectorAll('pre');
+
+      expect(blocks.length).toBe(1);
+      expect(blocks[0].querySelector('code')!.textContent).toBe('ls\n');
+      expect(root.textContent).not.toContain('```');
+    });
+
+    it('still pads display math that follows display math on one line', () => {
+      const root = render('\\[ a \\] \\[ b \\]');
+      const formulas = Array.from(root.querySelectorAll('.katex-display'));
+
+      expect(formulas.length).toBe(2);
+      for (const formula of formulas) {
+        expect(formula.parentElement).toBe(root);
+      }
+    });
+  });
+
   describe('quote copy', () => {
     function renderQuotes(markdown: string, feature: 'copy-buttons' | null = 'copy-buttons'): HTMLElement {
       const container = document.createElement('div');
@@ -692,8 +804,6 @@ The largest mechanical advantage is that priests can pray sooner.`;
       expect(all[0].getAttribute('data-md-code-text')).toBe('indented line\n  more');
     });
 
-    /* render()'s pre-processing moves a fence that follows "> " or list indentation out to column 0,
-       so the nesting specs use indented code blocks, which reach marked nested. */
     it('gives a code block inside a quote no button; the quote copies it', () => {
       const root = renderCode('> Quoted:\n>\n>     code line');
 
@@ -705,6 +815,22 @@ The largest mechanical advantage is that priests can pray sooner.`;
 
     it('gives a code block inside a list item a button', () => {
       const all = buttons(renderCode('- item\n\n      x = 1'));
+
+      expect(all.length).toBe(1);
+      expect(all[0].closest('li')).toBeTruthy();
+      expect(all[0].getAttribute('data-md-code-text')).toBe('x = 1');
+    });
+
+    it('gives a fenced block inside a quote no button; the quote copies it with its fence', () => {
+      const root = renderCode('> ```\n> code\n> ```');
+
+      expect(buttons(root).length).toBe(0);
+      expect(root.querySelector('.md-code-copyable')).toBeNull();
+      expect(root.querySelector('.md-quote-copy-btn')!.getAttribute('data-md-quote-text')).toBe('```\ncode\n```');
+    });
+
+    it('gives a fenced block inside a list item a button', () => {
+      const all = buttons(renderCode('- item\n\n  ```py\n  x = 1\n  ```'));
 
       expect(all.length).toBe(1);
       expect(all[0].closest('li')).toBeTruthy();

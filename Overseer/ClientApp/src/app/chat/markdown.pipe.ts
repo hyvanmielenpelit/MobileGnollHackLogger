@@ -224,6 +224,20 @@ marked.use(createKatexExtension());
  */
 const SQUISHED_SENTENCE_REGEX = /([^\s*_`(\[{<A-Z\/\\'"][.!?])(?!NET(?![A-Za-z]))([A-Z])/g;
 
+/** A line prefix made only of quote markers, indentation and list markers. */
+const CONTAINER_PREFIX_REGEX = /^(?:[ \t>]|(?:[-*+]|\d{1,9}[.)])[ \t])+$/;
+
+/**
+ * Where the last line of `before` starts when that line is a container prefix, so that the
+ * protected block after it starts a line inside a quote or list item; otherwise -1. A part
+ * with no newline continues the line of the part before it, unless it is the first part.
+ */
+function containerPrefixStart(before: string, isFirstPart: boolean): number {
+  const start = before.lastIndexOf('\n') + 1;
+  if (start === 0 && !isFirstPart) return -1;
+  return CONTAINER_PREFIX_REGEX.test(before.slice(start)) ? start : -1;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    External-image defang.
 
@@ -658,24 +672,32 @@ export class MarkdownPipe implements PipeTransform, OnDestroy {
 
         parts[i] = lines.join('\n');
 
-        // Fix missing newlines before code blocks and display math blocks (e.g. LLM outputs "text.\\[")
+        // Fix missing newlines before code blocks and display math blocks (e.g. LLM outputs "text.\\["), unless the block starts a line inside a quote or list item. Display math there gets a blank container line before it, so the block tokenizer takes it.
         if (i + 1 < parts.length && parts[i].length > 0) {
-          const nextIsBlock = parts[i + 1].startsWith('```') || 
-                              parts[i + 1].startsWith('\\[') || 
-                              parts[i + 1].startsWith('$$') || 
+          const nextIsBlock = parts[i + 1].startsWith('```') ||
+                              parts[i + 1].startsWith('\\[') ||
+                              parts[i + 1].startsWith('$$') ||
                               parts[i + 1].startsWith('\\begin{');
           if (nextIsBlock) {
-            parts[i] = parts[i].replace(/\n*$/, '\n\n');
+            const prefixStart = containerPrefixStart(parts[i], i === 0);
+            if (prefixStart < 0) {
+              parts[i] = parts[i].replace(/\n*$/, '\n\n');
+            } else if (prefixStart > 0 && !parts[i + 1].startsWith('```')) {
+              const prefix = parts[i].slice(prefixStart);
+              if (/^[ \t>]+$/.test(prefix)) {
+                parts[i] = parts[i].slice(0, prefixStart) + prefix.trimEnd() + '\n' + prefix;
+              }
+            }
           }
         }
 
-        // Fix missing newlines after code blocks and display math blocks (e.g. LLM outputs "\\]text")
+        // Fix missing newlines after code blocks and display math blocks (e.g. LLM outputs "\\]text"), unless the block starts a line inside a quote or list item.
         if (i > 0 && parts[i].length > 0) {
-          const prevIsBlock = parts[i - 1].startsWith('```') || 
-                              parts[i - 1].startsWith('\\[') || 
-                              parts[i - 1].startsWith('$$') || 
+          const prevIsBlock = parts[i - 1].startsWith('```') ||
+                              parts[i - 1].startsWith('\\[') ||
+                              parts[i - 1].startsWith('$$') ||
                               parts[i - 1].startsWith('\\begin{');
-          if (prevIsBlock) {
+          if (prevIsBlock && containerPrefixStart(parts[i - 2], i === 2) < 0) {
             parts[i] = parts[i].replace(/^\n*/, '\n\n');
           }
         }
