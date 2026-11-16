@@ -8,7 +8,7 @@ import { ChatComponent } from './chat.component';
 import { SettingsService, UserAiSettings } from '../services/settings.service';
 
 // The host is sized rather than the viewport, which stays at 800 x 600, above the 768 px phone rule.
-describe('ChatComponent message column', () => {
+describe('ChatComponent message area', () => {
   let fixture: ComponentFixture<ChatComponent>;
 
   const messages = () => (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('.messages')!;
@@ -47,17 +47,15 @@ describe('ChatComponent message column', () => {
     }).compileComponents();
   });
 
-  it('centers a 56 rem column in a wide chat area', () => {
+  it('keeps 20 px padding on both sides in a wide chat area', () => {
     create(1600);
-    const { start, end, content } = paddings();
+    const { start, end } = paddings();
 
-    expect(Math.abs(start - end)).toBeLessThanOrEqual(1);
-    expect(start).toBeGreaterThan(20);
-    expect(end).toBeGreaterThan(20);
-    expect(Math.abs(content - 896)).toBeLessThanOrEqual(1);
+    expect(start).toBe(20);
+    expect(end).toBe(20);
   });
 
-  it('keeps the 20 px padding in a narrower chat area', () => {
+  it('keeps 20 px padding on both sides in a narrower chat area', () => {
     create(1000);
     const { start, end } = paddings();
 

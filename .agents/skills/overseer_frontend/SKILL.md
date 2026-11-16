@@ -353,8 +353,10 @@ Harness-neutral, and the floor for any Overseer frontend work.
   descenders; rare Latin Extended letters reach past even the normal line.
 - **Lato's upright digits are tabular by default** (0.58 em), so number columns align without a
   rule. Its italic `6` is narrower at every weight, with or without `tabular-nums`.
-- **The chat reads in a column**: `.messages` centers a 56 rem column and the message boxes take
-  80 % of it, about 88 characters per line. Chat text is 16 px at `line-height: 1.5`.
+- **The chat fills the chat area**: `.messages` has 20 px padding on every side (10 px under the
+  768 px rule), and the message boxes take up to 80 % of its width (95 % under it), the user's at
+  the end edge and the Overseer's at the start edge. Do not center the messages in a narrower
+  column. Chat text is 16 px at `line-height: 1.5`.
 - **New text rules use `rem` or the tokens, never `px`.**
 - **A container sets the body size once, and its children inherit it.** Do not restate the size
   on each child.
