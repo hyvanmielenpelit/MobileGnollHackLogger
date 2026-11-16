@@ -8,11 +8,55 @@ import { KatexLoaderService, type Katex } from '../services/katex-loader.service
 // Set by MarkdownPipe.transform around marked.parse, inside which the renderers run synchronously.
 let activeKatex: Katex | null = null;
 let mathPending = false;
-let activeQuoteCopy: { nonce: string; sources: string[] } | null = null;
+interface CodeSource { text: string; language: string | null; }
+let activeCopy: { nonce: string; quotes: string[]; codes: CodeSource[] } | null = null;
 let quoteDepth = 0;
 
 /** The optional rendering feature `MarkdownPipe` takes as its argument. */
-export type MarkdownFeature = 'quote-copy' | null;
+export type MarkdownFeature = 'copy-buttons' | null;
+
+/** Display names of the code languages a copy button's label names, keyed by fence info word. */
+const CODE_LANGUAGE_NAMES: ReadonlyMap<string, string> = new Map(([
+  [['js', 'javascript', 'mjs'], 'JavaScript'],
+  [['ts', 'typescript'], 'TypeScript'],
+  [['jsx'], 'JSX'],
+  [['tsx'], 'TSX'],
+  [['cs', 'csharp', 'c#'], 'C#'],
+  [['c'], 'C'],
+  [['cpp', 'c++', 'cc', 'hpp'], 'C++'],
+  [['h'], 'C header'],
+  [['py', 'python'], 'Python'],
+  [['sh', 'bash', 'zsh', 'shell'], 'shell'],
+  [['ps', 'ps1', 'powershell', 'pwsh'], 'PowerShell'],
+  [['bat', 'cmd'], 'batch'],
+  [['json'], 'JSON'],
+  [['yaml', 'yml'], 'YAML'],
+  [['xml'], 'XML'],
+  [['html'], 'HTML'],
+  [['css'], 'CSS'],
+  [['scss'], 'SCSS'],
+  [['sql'], 'SQL'],
+  [['md', 'markdown'], 'Markdown'],
+  [['diff', 'patch'], 'diff'],
+  [['lua'], 'Lua'],
+  [['java'], 'Java'],
+  [['go'], 'Go'],
+  [['rs', 'rust'], 'Rust'],
+  [['kt', 'kotlin'], 'Kotlin'],
+  [['swift'], 'Swift'],
+  [['razor', 'cshtml'], 'Razor']
+] as [string[], string][]).flatMap(([keys, name]) => keys.map(key => [key, name] as [string, string])));
+
+/** The display name of a code fence's language: its first word looked up in a fixed map, else null. */
+function codeLanguageName(lang: string | undefined | null): string | null {
+  const word = (lang ?? '').trim().split(/\s+/)[0].toLowerCase();
+  return (word && CODE_LANGUAGE_NAMES.get(word)) || null;
+}
+
+/** The label of a code block's copy button. The model's own language string never reaches it. */
+function codeCopyLabel(language: string | null): string {
+  return language ? `Copy ${language} code` : 'Copy code';
+}
 
 /** A blockquote's Markdown source with its own `>` markers removed; nested markers are kept. */
 function quoteMarkdown(raw: string): string {
@@ -304,7 +348,7 @@ function installDefangHooks(): boolean {
         return '<img src="' + escapeHtmlAttribute(href) + '" alt="' + escapeHtmlAttribute(alt) + '"' + titleAttr + '>';
       },
 
-      /* The markup matches marked's own blockquote renderer. With the quote-copy feature on, a
+      /* The markup matches marked's own blockquote renderer. With the copy-buttons feature on, a
          top-level quote also carries a nonce-tagged index into the recorded Markdown sources. */
       blockquote(this: any, token: any): string {
         const outer = quoteDepth === 0;
@@ -315,9 +359,21 @@ function installDefangHooks(): boolean {
         } finally {
           quoteDepth--;
         }
-        if (!activeQuoteCopy || !outer) return `<blockquote>\n${body}</blockquote>\n`;
-        const n = activeQuoteCopy.sources.push(quoteMarkdown(token.raw ?? '')) - 1;
-        return `<blockquote data-md-quote="${activeQuoteCopy.nonce}-${n}">\n${body}</blockquote>\n`;
+        if (!activeCopy || !outer) return `<blockquote>\n${body}</blockquote>\n`;
+        const n = activeCopy.quotes.push(quoteMarkdown(token.raw ?? '')) - 1;
+        return `<blockquote data-md-quote="${activeCopy.nonce}-${n}">\n${body}</blockquote>\n`;
+      },
+
+      /* The markup is marked's own code renderer's. With the copy-buttons feature on, a code block
+         outside any quote also carries a nonce-tagged index into the recorded code texts. */
+      code(this: any, token: any): string {
+        const html: string = marked.Renderer.prototype.code.call(this, token);
+        if (!activeCopy || quoteDepth > 0 || !html.startsWith('<pre>')) return html;
+        const n = activeCopy.codes.push({
+          text: (token.text ?? '').replace(/\r\n/g, '\n'),
+          language: codeLanguageName(token.lang)
+        }) - 1;
+        return `<pre data-md-code="${activeCopy.nonce}-${n}">` + html.slice('<pre>'.length);
       }
     }
   });
@@ -392,69 +448,110 @@ function svgIcon(doc: Document, className: string, shapes: [string, Record<strin
   return svg;
 }
 
+type CopyKind = 'quote' | 'code';
+
 /**
- * Inserts a copy button into every nonce-tagged top-level blockquote of sanitized HTML.
+ * A copy control of one kind: the group (the icon button and its role="status" bubble) and the
+ * button's tooltip. `id` is the tooltip's id; `text` is what the button copies.
+ */
+function buildCopyControl(doc: Document, kind: CopyKind, id: string, ariaLabel: string, tooltip: string,
+  text: string): { group: HTMLElement; tip: HTMLElement } {
+  const group = doc.createElement('span');
+  group.className = `md-${kind}-copy`;
+
+  const button = doc.createElement('button');
+  button.setAttribute('type', 'button');
+  button.className = `action-btn md-${kind}-copy-btn`;
+  button.setAttribute('aria-label', ariaLabel);
+  button.setAttribute(`data-md-${kind}-text`, text);
+  button.setAttribute('interestfor', id);
+  button.setAttribute('style', `anchor-name: --${id}`);
+  button.appendChild(svgIcon(doc, `md-${kind}-icon-copy`, [
+    ['rect', { x: '9', y: '9', width: '13', height: '13', rx: '2', ry: '2' }],
+    ['path', { d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' }]
+  ]));
+  button.appendChild(svgIcon(doc, `md-${kind}-icon-copied`, [
+    ['polyline', { points: '20 6 9 17 4 12' }]
+  ]));
+
+  const status = doc.createElement('span');
+  status.className = `md-${kind}-copy-status`;
+  status.setAttribute('role', 'status');
+
+  group.append(button, status);
+
+  const tip = doc.createElement('div');
+  tip.setAttribute('popover', 'hint');
+  tip.className = `gh-tooltip md-${kind}-copy-tip`;
+  tip.id = id;
+  tip.setAttribute('style', `position-anchor: --${id}`);
+  tip.textContent = tooltip;
+
+  return { group, tip };
+}
+
+/** The index a nonce-tagged attribute carries, or null when its nonce or index is not this render's. */
+function taggedIndex(tag: string, nonce: string, count: number): number | null {
+  const prefix = `${nonce}-`;
+  if (!tag.startsWith(prefix)) return null;
+  const index = tag.slice(prefix.length);
+  if (!/^\d+$/.test(index)) return null;
+  const n = Number(index);
+  return n < count ? n : null;
+}
+
+/**
+ * Inserts a copy button into every nonce-tagged top-level blockquote and code block of sanitized
+ * HTML.
  *
  * Anti-forgery invariant: the controls exist only after sanitization and are built here with DOM
- * APIs. Anything resembling one that sanitization let through (a model-written control, a
- * data-md-quote-text attribute, a data-md-quote without this render's nonce) is removed first, so
- * a button always copies the Markdown of the quote it sits in.
+ * APIs. Anything resembling one that sanitization let through (a model-written control or
+ * md-code-copyable wrapper, a data-md-quote-text or data-md-code-text attribute, a data-md-quote
+ * or data-md-code without this render's nonce) is removed first, so a button always copies the
+ * Markdown of the quote, or the text of the code block, it sits in.
  */
-function addQuoteCopyButtons(html: string, nonce: string, sources: string[]): string {
+function addCopyButtons(html: string, copy: { nonce: string; quotes: string[]; codes: CodeSource[] }): string {
   const template = document.createElement('template');
   template.innerHTML = html;
   const root = template.content;
   const doc = template.ownerDocument;
+  const { nonce, quotes, codes } = copy;
 
-  root.querySelectorAll('[class*="md-quote-copy"]').forEach(el => el.remove());
+  root.querySelectorAll('[class*="md-quote-copy"], [class*="md-code-copy"]').forEach(el => el.remove());
   root.querySelectorAll('[data-md-quote-text]').forEach(el => el.removeAttribute('data-md-quote-text'));
+  root.querySelectorAll('[data-md-code-text]').forEach(el => el.removeAttribute('data-md-code-text'));
 
-  const prefix = `${nonce}-`;
   root.querySelectorAll('blockquote[data-md-quote]').forEach(quote => {
     const tag = quote.getAttribute('data-md-quote') ?? '';
     quote.removeAttribute('data-md-quote');
-    if (!tag.startsWith(prefix)) return;
-    const index = tag.slice(prefix.length);
-    if (!/^\d+$/.test(index)) return;
-    const n = Number(index);
-    if (n >= sources.length) return;
+    const n = taggedIndex(tag, nonce, quotes.length);
+    if (n === null) return;
 
-    const id = `tip-md-quote-${nonce}-${n}`;
-    const label = sources.length === 1 ? 'Copy quote as Markdown' : `Copy quote ${n + 1} as Markdown`;
-
-    const group = doc.createElement('span');
-    group.className = 'md-quote-copy';
-
-    const button = doc.createElement('button');
-    button.setAttribute('type', 'button');
-    button.className = 'action-btn md-quote-copy-btn';
-    button.setAttribute('aria-label', label);
-    button.setAttribute('data-md-quote-text', sources[n]);
-    button.setAttribute('interestfor', id);
-    button.setAttribute('style', `anchor-name: --${id}`);
-    button.appendChild(svgIcon(doc, 'md-quote-icon-copy', [
-      ['rect', { x: '9', y: '9', width: '13', height: '13', rx: '2', ry: '2' }],
-      ['path', { d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' }]
-    ]));
-    button.appendChild(svgIcon(doc, 'md-quote-icon-copied', [
-      ['polyline', { points: '20 6 9 17 4 12' }]
-    ]));
-
-    const status = doc.createElement('span');
-    status.className = 'md-quote-copy-status';
-    status.setAttribute('role', 'status');
-
-    group.append(button, status);
-
-    const tip = doc.createElement('div');
-    tip.setAttribute('popover', 'hint');
-    tip.className = 'gh-tooltip md-quote-copy-tip';
-    tip.id = id;
-    tip.setAttribute('style', `position-anchor: --${id}`);
-    tip.textContent = label;
+    const tooltip = 'Copy quote as Markdown';
+    const ariaLabel = n === 0 ? tooltip : `Copy quote ${n + 1} as Markdown`;
+    const { group, tip } = buildCopyControl(doc, 'quote', `tip-md-quote-${nonce}-${n}`, ariaLabel, tooltip, quotes[n]);
 
     quote.classList.add('md-quote-copyable');
     quote.prepend(group, tip);
+  });
+
+  const labelCounts = new Map<string, number>();
+  root.querySelectorAll('pre[data-md-code]').forEach(pre => {
+    const tag = pre.getAttribute('data-md-code') ?? '';
+    pre.removeAttribute('data-md-code');
+    const n = taggedIndex(tag, nonce, codes.length);
+    if (n === null) return;
+
+    const tooltip = codeCopyLabel(codes[n].language);
+    const k = (labelCounts.get(tooltip) ?? 0) + 1;
+    labelCounts.set(tooltip, k);
+    const ariaLabel = k === 1 ? tooltip : `${tooltip} ${k}`;
+    const { group, tip } = buildCopyControl(doc, 'code', `tip-md-code-${nonce}-${n}`, ariaLabel, tooltip, codes[n].text);
+
+    const wrapper = doc.createElement('div');
+    wrapper.className = 'md-code-copyable';
+    pre.replaceWith(wrapper);
+    wrapper.append(group, tip, pre);
   });
 
   return template.innerHTML;
@@ -588,15 +685,17 @@ export class MarkdownPipe implements PipeTransform, OnDestroy {
     let processed = parts.join('');
 
     activeKatex = this.katexLoader.get();
-    const quoteCopy = feature === 'quote-copy' ? { nonce: crypto.randomUUID(), sources: [] as string[] } : null;
-    activeQuoteCopy = quoteCopy;
+    const copy = feature === 'copy-buttons'
+      ? { nonce: crypto.randomUUID(), quotes: [] as string[], codes: [] as CodeSource[] }
+      : null;
+    activeCopy = copy;
     quoteDepth = 0;
     let parsed: string | Promise<string>;
     try {
       parsed = marked.parse(processed);
     } finally {
       activeKatex = null;
-      activeQuoteCopy = null;
+      activeCopy = null;
       quoteDepth = 0;
     }
     // marked.parse can return a Promise if async options are used, but by default it returns a string
@@ -608,9 +707,9 @@ export class MarkdownPipe implements PipeTransform, OnDestroy {
       ADD_ATTR: ['encoding', 'class', 'style', 'aria-hidden', 'tabindex']
     });
 
-    const output = quoteCopy &&
-      (quoteCopy.sources.length > 0 || purified.includes('md-quote-copy') || purified.includes('data-md-quote'))
-      ? addQuoteCopyButtons(purified, quoteCopy.nonce, quoteCopy.sources)
+    const output = copy &&
+      (copy.quotes.length > 0 || copy.codes.length > 0 || /md-(quote|code)-copy|data-md-(quote|code)/.test(purified))
+      ? addCopyButtons(purified, copy)
       : purified;
 
     return this.sanitizer.bypassSecurityTrustHtml(output);

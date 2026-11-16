@@ -4769,20 +4769,24 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
-  private readonly quoteCopyTimers = new WeakMap<HTMLButtonElement, ReturnType<typeof setTimeout>>();
-  private lastQuoteCopyMessage = '';
+  private readonly inlineCopyTimers = new WeakMap<HTMLButtonElement, ReturnType<typeof setTimeout>>();
+  private lastInlineCopyMessage = '';
 
-  /** Delegated click on a rendered reply: copies a blockquote's Markdown from its copy button. */
+  /**
+   * Delegated click on a rendered reply: copies a blockquote's Markdown or a code block's text from
+   * its copy button.
+   */
   async onMarkdownBodyClick(event: MouseEvent): Promise<void> {
-    const button = (event.target as Element | null)?.closest?.('.md-quote-copy-btn');
+    const button = (event.target as Element | null)?.closest?.('.md-quote-copy-btn, .md-code-copy-btn');
     if (!(button instanceof HTMLButtonElement) || !(event.currentTarget as Element).contains(button)) return;
-    const ok = await copyTextToClipboard(button.getAttribute('data-md-quote-text') ?? '');
-    this.reportQuoteCopy(button, ok);
+    const attribute = button.classList.contains('md-code-copy-btn') ? 'data-md-code-text' : 'data-md-quote-text';
+    const ok = await copyTextToClipboard(button.getAttribute(attribute) ?? '');
+    this.reportInlineCopy(button, ok);
   }
 
-  private reportQuoteCopy(button: HTMLButtonElement, ok: boolean): void {
+  private reportInlineCopy(button: HTMLButtonElement, ok: boolean): void {
     const status = button.nextElementSibling as HTMLElement | null;   // the role="status" bubble
-    clearTimeout(this.quoteCopyTimers.get(button));
+    clearTimeout(this.inlineCopyTimers.get(button));
     button.removeAttribute('data-copied');
     button.removeAttribute('data-failed');
     if (status) status.textContent = '';
@@ -4790,19 +4794,19 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     button.setAttribute(ok ? 'data-copied' : 'data-failed', '');
     // VoiceOver skips a message identical to the previous one; a no-break space makes it differ.
     let message = ok ? 'Copied' : 'Copy failed';
-    if (message === this.lastQuoteCopyMessage) message += '\u00A0';
-    this.lastQuoteCopyMessage = message;
+    if (message === this.lastInlineCopyMessage) message += '\u00A0';
+    this.lastInlineCopyMessage = message;
     requestAnimationFrame(() => { if (status) status.textContent = message; });
-    this.quoteCopyTimers.set(button, setTimeout(() => {
+    this.inlineCopyTimers.set(button, setTimeout(() => {
       button.removeAttribute('data-copied');
       button.removeAttribute('data-failed');
       if (status) status.textContent = '';
     }, 2000));
   }
 
-  /** The first hover or focus of a quote copy button lets the anchor polyfill position its tooltip. */
+  /** The first hover or focus of a quote or code copy button lets the anchor polyfill position its tooltip. */
   onMarkdownBodyInterest(event: Event): void {
-    const button = (event.target as Element | null)?.closest?.('.md-quote-copy-btn');
+    const button = (event.target as Element | null)?.closest?.('.md-quote-copy-btn, .md-code-copy-btn');
     if (button && !button.hasAttribute('data-anchor-ready')) {
       button.setAttribute('data-anchor-ready', '');
       refreshAnchorPositioning();

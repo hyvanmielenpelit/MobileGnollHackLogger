@@ -5393,6 +5393,50 @@ app-table-pager {
   margin-bottom: 4px;
 }
 
+/* The icon button of a quote or code copy control (MarkdownPipe 'copy-buttons'). */
+@mixin md-copy-button($icon-copy, $icon-copied) {
+  margin: 0;
+  min-inline-size: 32px;
+  min-block-size: 32px;
+  color: #aaa;
+  background: rgba(20, 20, 20, 0.9);
+  border-color: var(--border-glass);
+
+  &:hover {
+    background: rgba(40, 34, 18, 0.95);
+    border-color: var(--gh-gold);
+    color: var(--gh-gold);
+  }
+
+  .#{$icon-copied} { display: none; }
+  &[data-copied] {
+    color: #2ecc71;
+    .#{$icon-copy} { display: none; }
+    .#{$icon-copied} { display: block; }
+  }
+  &[data-failed] { color: #ff6b6b; }
+}
+
+/* The role="status" bubble beside a copy button, shown while it has text. */
+@mixin md-copy-status {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: calc(100% + 6px);
+  translate: 0 -50%;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(20, 20, 20, 0.95);
+  border: 1px solid var(--border-glass);
+  color: #ddd;
+  font-size: 0.8em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+
+  &:not(:empty) { opacity: 1; }
+}
+
 /* Global Markdown Formatting (AI Chat Replies & Docs) */
 .markdown-body {
   min-width: 0;
@@ -5465,6 +5509,50 @@ app-table-pager {
     }
   }
 
+  /* Code copy button (MarkdownPipe 'copy-buttons'). The wrapper does not scroll, so the button
+     stays in the corner while the code scrolls sideways. Touch devices: always visible, in a strip
+     reserved above the first line. Hover devices: overlays the corner, revealed by hover or focus.
+     Hidden with opacity only, so it stays in the tab order and the accessibility tree. */
+  .md-code-copyable {
+    position: relative;
+    margin-block: 10px 14px;
+
+    > pre {
+      margin-block: 0;
+      padding-block-start: 44px;
+    }
+
+    > .md-code-copy {
+      position: absolute;
+      inset-block-start: 6px;
+      inset-inline-end: 6px;
+      z-index: 1;
+    }
+
+    .md-code-copy-btn { @include md-copy-button(md-code-icon-copy, md-code-icon-copied); }
+
+    .md-code-copy-status { @include md-copy-status; }
+
+    @media (hover: hover) {
+      > pre { padding-block-start: 12px; }
+
+      .md-code-copy-btn {
+        opacity: 0;
+        transition: opacity 0.15s, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      }
+
+      &:hover, &:focus-within {
+        .md-code-copy-btn { opacity: 1; }
+      }
+
+      .md-code-copy-btn:is(:focus-visible, [data-copied], [data-failed]) { opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .md-code-copy-btn, .md-code-copy-status { transition: none; }
+    }
+  }
+
   /* Inline Code */
   :not(pre) > code {
     background: rgba(255, 255, 255, 0.1);
@@ -5490,7 +5578,7 @@ app-table-pager {
     > :first-child, > .md-quote-copy-tip + * { margin-block-start: 0; }
     > :last-child { margin-block-end: 0; }
 
-    /* Quote copy button (MarkdownPipe 'quote-copy'). Touch devices: always visible, floated in
+    /* Quote copy button (MarkdownPipe 'copy-buttons'). Touch devices: always visible, floated in
        flow so the text wraps beside it. Hover devices: overlays the corner, revealed by hover or
        focus. Hidden with opacity only, so it stays in the tab order and the accessibility tree. */
     &.md-quote-copyable { display: flow-root; }
@@ -5501,47 +5589,9 @@ app-table-pager {
       margin: -4px -8px 6px 10px;
     }
 
-    .md-quote-copy-btn {
-      margin: 0;
-      min-inline-size: 32px;
-      min-block-size: 32px;
-      color: #aaa;
-      background: rgba(20, 20, 20, 0.9);
-      border-color: var(--border-glass);
+    .md-quote-copy-btn { @include md-copy-button(md-quote-icon-copy, md-quote-icon-copied); }
 
-      &:hover {
-        background: rgba(40, 34, 18, 0.95);
-        border-color: var(--gh-gold);
-        color: var(--gh-gold);
-      }
-
-      .md-quote-icon-copied { display: none; }
-      &[data-copied] {
-        color: #2ecc71;
-        .md-quote-icon-copy { display: none; }
-        .md-quote-icon-copied { display: block; }
-      }
-      &[data-failed] { color: #ff6b6b; }
-    }
-
-    .md-quote-copy-status {
-      position: absolute;
-      inset-block-start: 50%;
-      inset-inline-end: calc(100% + 6px);
-      translate: 0 -50%;
-      padding: 2px 8px;
-      border-radius: 4px;
-      background: rgba(20, 20, 20, 0.95);
-      border: 1px solid var(--border-glass);
-      color: #ddd;
-      font-size: 0.8em;
-      white-space: nowrap;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.15s;
-
-      &:not(:empty) { opacity: 1; }
-    }
+    .md-quote-copy-status { @include md-copy-status; }
 
     @media (hover: hover) {
       &.md-quote-copyable { position: relative; }

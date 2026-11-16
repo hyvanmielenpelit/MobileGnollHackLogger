@@ -401,7 +401,7 @@
                 </div>
               }
               @if (!isNoticeOnlyMessage(msg)) {
-                <div [innerHTML]="msg.content | markdown: (msg.role === 'assistant' ? 'quote-copy' : null)" class="markdown-body" (click)="onMarkdownBodyClick($event)" (focusin)="onMarkdownBodyInterest($event)" (pointerover)="onMarkdownBodyInterest($event)"></div>
+                <div [innerHTML]="msg.content | markdown: (msg.role === 'assistant' ? 'copy-buttons' : null)" class="markdown-body" (click)="onMarkdownBodyClick($event)" (focusin)="onMarkdownBodyInterest($event)" (pointerover)="onMarkdownBodyInterest($event)"></div>
               }
               @if (msg.turnNotice; as notice) {
                 <app-turn-notice [notice]="notice" [actionAvailable]="turnNoticeActionAvailable(i)" (actionTriggered)="runTurnNoticeAction(i)"></app-turn-notice>
@@ -546,7 +546,7 @@
                   <em>{{ getMinimalStatusLabel() }}</em>
                 </div>
               }
-              <div [innerHTML]="streamingMessage | markdown: 'quote-copy'" class="markdown-body" (click)="onMarkdownBodyClick($event)" (focusin)="onMarkdownBodyInterest($event)" (pointerover)="onMarkdownBodyInterest($event)" [style.display]="(isStreaming && (showThoughtsAndTools === 0 || showThoughtsAndTools === 1) && !hasRealContent) ? 'none' : 'block'"></div>
+              <div [innerHTML]="streamingMessage | markdown: 'copy-buttons'" class="markdown-body" (click)="onMarkdownBodyClick($event)" (focusin)="onMarkdownBodyInterest($event)" (pointerover)="onMarkdownBodyInterest($event)" [style.display]="(isStreaming && (showThoughtsAndTools === 0 || showThoughtsAndTools === 1) && !hasRealContent) ? 'none' : 'block'"></div>
               @if (currentTurnNotice; as notice) {
                 <app-turn-notice [notice]="notice"></app-turn-notice>
               }

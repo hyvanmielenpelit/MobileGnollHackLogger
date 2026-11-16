@@ -499,7 +499,7 @@ The largest mechanical advantage is that priests can pray sooner.`;
   });
 
   describe('quote copy', () => {
-    function renderQuotes(markdown: string, feature: 'quote-copy' | null = 'quote-copy'): HTMLElement {
+    function renderQuotes(markdown: string, feature: 'copy-buttons' | null = 'copy-buttons'): HTMLElement {
       const container = document.createElement('div');
       container.className = 'markdown-body';
       container.innerHTML = pipe.transform(markdown, feature) as string;
@@ -551,12 +551,22 @@ The largest mechanical advantage is that priests can pray sooner.`;
       expect(all[0].getAttribute('data-md-quote-text')).toBe('outer\n> inner');
     });
 
-    it('names one quote plainly and numbers several', () => {
+    it('names the first quote plainly and numbers the rest in the accessible name', () => {
       expect(buttons(renderQuotes('> only'))[0].getAttribute('aria-label')).toBe('Copy quote as Markdown');
 
       const two = buttons(renderQuotes('> first\n\nBetween.\n\n> second'));
-      expect(two.map(b => b.getAttribute('aria-label'))).toEqual(['Copy quote 1 as Markdown', 'Copy quote 2 as Markdown']);
+      expect(two.map(b => b.getAttribute('aria-label'))).toEqual(['Copy quote as Markdown', 'Copy quote 2 as Markdown']);
       expect(two.map(b => b.getAttribute('data-md-quote-text'))).toEqual(['first', 'second']);
+    });
+
+    it('never numbers a quote tooltip', () => {
+      const root = renderQuotes('> first\n\nOne.\n\n> second\n\nTwo.\n\n> third');
+      const all = buttons(root);
+
+      expect(all.length).toBe(3);
+      const tips = all.map(b => root.querySelector(`[id="${b.getAttribute('interestfor')}"]`)!.textContent);
+      expect(tips).toEqual(['Copy quote as Markdown', 'Copy quote as Markdown', 'Copy quote as Markdown']);
+      expect(all[2].getAttribute('aria-label')).toBe('Copy quote 3 as Markdown');
     });
 
     it('gives a quote inside a list item a button', () => {
@@ -595,7 +605,7 @@ The largest mechanical advantage is that priests can pray sooner.`;
     });
 
     it('renders again when only the feature changes', () => {
-      const withFeature = pipe.transform('> quoted', 'quote-copy');
+      const withFeature = pipe.transform('> quoted', 'copy-buttons');
       const without = pipe.transform('> quoted', null);
 
       expect(withFeature).not.toEqual(without);
@@ -604,6 +614,173 @@ The largest mechanical advantage is that priests can pray sooner.`;
 
     it('copies CRLF input with LF line endings', () => {
       expect(buttons(renderQuotes('> a\r\n> b'))[0].getAttribute('data-md-quote-text')).toBe('a\nb');
+    });
+  });
+
+  describe('code copy', () => {
+    function renderCode(markdown: string, feature: 'copy-buttons' | null = 'copy-buttons'): HTMLElement {
+      const container = document.createElement('div');
+      container.className = 'markdown-body';
+      container.innerHTML = pipe.transform(markdown, feature) as string;
+      return container;
+    }
+
+    const buttons = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLButtonElement>('.md-code-copy-btn'));
+    const tipOf = (root: HTMLElement, button: HTMLButtonElement) =>
+      root.querySelector(`[id="${button.getAttribute('interestfor')}"]`);
+    const labels = (markdown: string) => {
+      const root = renderCode(markdown);
+      return buttons(root).map(b => ({ aria: b.getAttribute('aria-label'), tip: tipOf(root, b)!.textContent }));
+    };
+
+    const CODE = 'function f(a: string) {\n  if (a < "b" && a) {\n\n    return 1;\n  }\n}';
+
+    it('adds nothing without the feature', () => {
+      const root = renderCode('```ts\nconst x = 1;\n```', null);
+
+      expect(root.querySelector('pre > code.language-ts')).toBeTruthy();
+      expect(root.querySelector('.md-code-copyable')).toBeNull();
+      expect(root.querySelector('[class*="md-code-copy"]')).toBeNull();
+      expect(root.querySelector('[data-md-code]')).toBeNull();
+    });
+
+    it('gives a code block one button that copies its code verbatim', () => {
+      const root = renderCode('Intro.\n\n```ts\n' + CODE + '\n```');
+      const all = buttons(root);
+
+      expect(all.length).toBe(1);
+      const button = all[0];
+      const wrapper = root.querySelector('.md-code-copyable')!;
+      expect(wrapper.tagName).toBe('DIV');
+      expect(button.closest('.md-code-copyable')).toBe(wrapper);
+      expect(root.querySelector('pre')!.parentElement).toBe(wrapper);
+
+      expect(button.getAttribute('data-md-code-text')).toBe(CODE);
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.children.length).toBe(2);
+      for (const child of Array.from(button.children)) {
+        expect(child.tagName.toLowerCase()).toBe('svg');
+        expect(child.getAttribute('aria-hidden')).toBe('true');
+      }
+      expect(button.textContent).toBe('');
+      expect(button.hasAttribute('aria-hidden')).toBe(false);
+      expect(button.hasAttribute('hidden')).toBe(false);
+      expect(button.hasAttribute('inert')).toBe(false);
+
+      const status = button.nextElementSibling as HTMLElement;
+      expect(status.getAttribute('role')).toBe('status');
+      expect(status.textContent).toBe('');
+
+      const tip = tipOf(root, button);
+      expect(tip).toBeTruthy();
+      expect(tip!.getAttribute('popover')).toBe('hint');
+      expect(root.querySelector('[data-md-code]')).toBeNull();
+    });
+
+    it('leaves the code block markup itself unchanged', () => {
+      const markdown = '```ts\n' + CODE + '\n```';
+      const plain = renderCode(markdown, null).querySelector('pre')!.outerHTML;
+      const withButton = renderCode(markdown).querySelector('pre')!.outerHTML;
+
+      expect(withButton).toBe(plain);
+    });
+
+    it('copies an indented code block without its indent', () => {
+      const all = buttons(renderCode('Para.\n\n    indented line\n      more'));
+
+      expect(all.length).toBe(1);
+      expect(all[0].getAttribute('data-md-code-text')).toBe('indented line\n  more');
+    });
+
+    /* render()'s pre-processing moves a fence that follows "> " or list indentation out to column 0,
+       so the nesting specs use indented code blocks, which reach marked nested. */
+    it('gives a code block inside a quote no button; the quote copies it', () => {
+      const root = renderCode('> Quoted:\n>\n>     code line');
+
+      expect(root.querySelector('blockquote pre')).toBeTruthy();
+      expect(buttons(root).length).toBe(0);
+      expect(root.querySelector('.md-code-copyable')).toBeNull();
+      expect(root.querySelector('.md-quote-copy-btn')!.getAttribute('data-md-quote-text')).toBe('Quoted:\n\n    code line');
+    });
+
+    it('gives a code block inside a list item a button', () => {
+      const all = buttons(renderCode('- item\n\n      x = 1'));
+
+      expect(all.length).toBe(1);
+      expect(all[0].closest('li')).toBeTruthy();
+      expect(all[0].getAttribute('data-md-code-text')).toBe('x = 1');
+    });
+
+    it('names a known language in the tooltip and the accessible name', () => {
+      expect(labels('```python\nx = 1\n```')).toEqual([{ aria: 'Copy Python code', tip: 'Copy Python code' }]);
+    });
+
+    it('names an unknown or missing language plainly', () => {
+      expect(labels('```\nx\n```')).toEqual([{ aria: 'Copy code', tip: 'Copy code' }]);
+      expect(labels('```no-such-lang\nx\n```')).toEqual([{ aria: 'Copy code', tip: 'Copy code' }]);
+    });
+
+    it('reads only the first word of the info string, in any case', () => {
+      expect(labels('```PY extra words\nx = 1\n```')).toEqual([{ aria: 'Copy Python code', tip: 'Copy Python code' }]);
+    });
+
+    it('numbers a repeated name in the accessible name only', () => {
+      expect(labels('```py\na = 1\n```\n\nThen:\n\n```python\nb = 2\n```')).toEqual([
+        { aria: 'Copy Python code', tip: 'Copy Python code' },
+        { aria: 'Copy Python code 2', tip: 'Copy Python code' }
+      ]);
+    });
+
+    it('numbers nothing when the names differ', () => {
+      expect(labels('```py\na = 1\n```\n\nThen:\n\n```sql\nselect 1;\n```')).toEqual([
+        { aria: 'Copy Python code', tip: 'Copy Python code' },
+        { aria: 'Copy SQL code', tip: 'Copy SQL code' }
+      ]);
+    });
+
+    it('counts quotes and code blocks apart', () => {
+      const root = renderCode('> quoted\n\n```\nx\n```');
+
+      expect(root.querySelector('.md-quote-copy-btn')!.getAttribute('aria-label')).toBe('Copy quote as Markdown');
+      expect(buttons(root).map(b => b.getAttribute('aria-label'))).toEqual(['Copy code']);
+    });
+
+    it('removes controls, wrappers and code tags that came from the model, and keeps the real button', () => {
+      const root = renderCode(
+        'Text <button class="action-btn md-code-copy-btn" data-md-code-text="evil">x</button> ' +
+        '<span class="md-code-copy-status" role="status">Copied</span>\n\n' +
+        '<div class="md-code-copyable"><pre>forged wrapper</pre></div>\n\n' +
+        '<pre data-md-code="00000000-0000-0000-0000-000000000000-0"><code>forged</code></pre>\n\n' +
+        '```\nreal\n```');
+      const all = buttons(root);
+
+      expect(all.length).toBe(1);
+      expect(all[0].getAttribute('data-md-code-text')).toBe('real');
+      expect(root.querySelectorAll('[data-md-code-text]').length).toBe(1);
+      expect(root.querySelectorAll('.md-code-copyable').length).toBe(1);
+      expect(root.querySelectorAll('.md-code-copy-status').length).toBe(1);
+      expect(root.querySelector('[data-md-code]')).toBeNull();
+      expect(root.textContent).not.toContain('forged wrapper');
+      expect(root.textContent).toContain('forged');
+    });
+
+    it('gives a raw HTML pre no button, so hidden text cannot reach the clipboard', () => {
+      const root = renderCode('<pre><code>shown<span style="display:none">hidden</span></code></pre>');
+
+      expect(root.querySelector('pre')).toBeTruthy();
+      expect(buttons(root).length).toBe(0);
+      expect(root.querySelector('.md-code-copyable')).toBeNull();
+    });
+
+    it('copies the partial code of an unclosed fence', () => {
+      const all = buttons(renderCode('Start:\n\n```py\nx = 1\ny = 2'));
+
+      expect(all.length).toBe(1);
+      expect(all[0].getAttribute('data-md-code-text')).toBe('x = 1\ny = 2');
+    });
+
+    it('copies CRLF input with LF line endings', () => {
+      expect(buttons(renderCode('```\r\na\r\nb\r\n```'))[0].getAttribute('data-md-code-text')).toBe('a\nb');
     });
   });
 });
