@@ -25,6 +25,7 @@ import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyf
 import { parseServerUtcDate } from '../utils/date.util';
 import { formatThinkingLevel, showReasoningBadge } from '../utils/model-badge-format.util';
 import { isImeComposing } from '../utils/ime.util';
+import { copyToClipboard as copyTextToClipboard } from '../utils/clipboard.util';
 import * as signalR from '@microsoft/signalr';
 import { EMPTY, catchError, firstValueFrom, filter, Observable, Subscription, Subject, ReplaySubject, debounceTime, distinctUntilChanged, share, switchMap } from 'rxjs';
 import { ContextUsageComponent } from './context-usage/context-usage.component';
@@ -4765,6 +4766,46 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       }
     } catch (err) {
       console.error('Failed to copy text: ', err);
+    }
+  }
+
+  private readonly quoteCopyTimers = new WeakMap<HTMLButtonElement, ReturnType<typeof setTimeout>>();
+  private lastQuoteCopyMessage = '';
+
+  /** Delegated click on a rendered reply: copies a blockquote's Markdown from its copy button. */
+  async onMarkdownBodyClick(event: MouseEvent): Promise<void> {
+    const button = (event.target as Element | null)?.closest?.('.md-quote-copy-btn');
+    if (!(button instanceof HTMLButtonElement) || !(event.currentTarget as Element).contains(button)) return;
+    const ok = await copyTextToClipboard(button.getAttribute('data-md-quote-text') ?? '');
+    this.reportQuoteCopy(button, ok);
+  }
+
+  private reportQuoteCopy(button: HTMLButtonElement, ok: boolean): void {
+    const status = button.nextElementSibling as HTMLElement | null;   // the role="status" bubble
+    clearTimeout(this.quoteCopyTimers.get(button));
+    button.removeAttribute('data-copied');
+    button.removeAttribute('data-failed');
+    if (status) status.textContent = '';
+    void button.offsetWidth;
+    button.setAttribute(ok ? 'data-copied' : 'data-failed', '');
+    // VoiceOver skips a message identical to the previous one; a no-break space makes it differ.
+    let message = ok ? 'Copied' : 'Copy failed';
+    if (message === this.lastQuoteCopyMessage) message += '\u00A0';
+    this.lastQuoteCopyMessage = message;
+    requestAnimationFrame(() => { if (status) status.textContent = message; });
+    this.quoteCopyTimers.set(button, setTimeout(() => {
+      button.removeAttribute('data-copied');
+      button.removeAttribute('data-failed');
+      if (status) status.textContent = '';
+    }, 2000));
+  }
+
+  /** The first hover or focus of a quote copy button lets the anchor polyfill position its tooltip. */
+  onMarkdownBodyInterest(event: Event): void {
+    const button = (event.target as Element | null)?.closest?.('.md-quote-copy-btn');
+    if (button && !button.hasAttribute('data-anchor-ready')) {
+      button.setAttribute('data-anchor-ready', '');
+      refreshAnchorPositioning();
     }
   }
 

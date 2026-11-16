@@ -8,6 +8,16 @@ import { KatexLoaderService, type Katex } from '../services/katex-loader.service
 // Set by MarkdownPipe.transform around marked.parse, inside which the renderers run synchronously.
 let activeKatex: Katex | null = null;
 let mathPending = false;
+let activeQuoteCopy: { nonce: string; sources: string[] } | null = null;
+let quoteDepth = 0;
+
+/** The optional rendering feature `MarkdownPipe` takes as its argument. */
+export type MarkdownFeature = 'quote-copy' | null;
+
+/** A blockquote's Markdown source with its own `>` markers removed; nested markers are kept. */
+function quoteMarkdown(raw: string): string {
+  return raw.replace(/\r\n/g, '\n').replace(/^ {0,3}>[ \t]?/gm, '').trim();
+}
 
 /** The TeX source, shown until KaTeX has loaded. */
 function mathPlaceholder(raw: string, display: boolean): string {
@@ -292,6 +302,22 @@ function installDefangHooks(): boolean {
 
         const titleAttr = title ? ' title="' + escapeHtmlAttribute(title) + '"' : '';
         return '<img src="' + escapeHtmlAttribute(href) + '" alt="' + escapeHtmlAttribute(alt) + '"' + titleAttr + '>';
+      },
+
+      /* The markup matches marked's own blockquote renderer. With the quote-copy feature on, a
+         top-level quote also carries a nonce-tagged index into the recorded Markdown sources. */
+      blockquote(this: any, token: any): string {
+        const outer = quoteDepth === 0;
+        quoteDepth++;
+        let body: string;
+        try {
+          body = this.parser.parse(token.tokens);
+        } finally {
+          quoteDepth--;
+        }
+        if (!activeQuoteCopy || !outer) return `<blockquote>\n${body}</blockquote>\n`;
+        const n = activeQuoteCopy.sources.push(quoteMarkdown(token.raw ?? '')) - 1;
+        return `<blockquote data-md-quote="${activeQuoteCopy.nonce}-${n}">\n${body}</blockquote>\n`;
       }
     }
   });
@@ -349,6 +375,91 @@ function installDefangHooks(): boolean {
   return true;
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svgIcon(doc: Document, className: string, shapes: [string, Record<string, string>][]): SVGSVGElement {
+  const svg = doc.createElementNS(SVG_NS, 'svg');
+  const attrs: Record<string, string> = {
+    class: className, 'aria-hidden': 'true', width: '16', height: '16', viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+  };
+  for (const [name, value] of Object.entries(attrs)) svg.setAttribute(name, value);
+  for (const [tag, shapeAttrs] of shapes) {
+    const shape = doc.createElementNS(SVG_NS, tag);
+    for (const [name, value] of Object.entries(shapeAttrs)) shape.setAttribute(name, value);
+    svg.appendChild(shape);
+  }
+  return svg;
+}
+
+/**
+ * Inserts a copy button into every nonce-tagged top-level blockquote of sanitized HTML.
+ *
+ * Anti-forgery invariant: the controls exist only after sanitization and are built here with DOM
+ * APIs. Anything resembling one that sanitization let through (a model-written control, a
+ * data-md-quote-text attribute, a data-md-quote without this render's nonce) is removed first, so
+ * a button always copies the Markdown of the quote it sits in.
+ */
+function addQuoteCopyButtons(html: string, nonce: string, sources: string[]): string {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  const root = template.content;
+  const doc = template.ownerDocument;
+
+  root.querySelectorAll('[class*="md-quote-copy"]').forEach(el => el.remove());
+  root.querySelectorAll('[data-md-quote-text]').forEach(el => el.removeAttribute('data-md-quote-text'));
+
+  const prefix = `${nonce}-`;
+  root.querySelectorAll('blockquote[data-md-quote]').forEach(quote => {
+    const tag = quote.getAttribute('data-md-quote') ?? '';
+    quote.removeAttribute('data-md-quote');
+    if (!tag.startsWith(prefix)) return;
+    const index = tag.slice(prefix.length);
+    if (!/^\d+$/.test(index)) return;
+    const n = Number(index);
+    if (n >= sources.length) return;
+
+    const id = `tip-md-quote-${nonce}-${n}`;
+    const label = sources.length === 1 ? 'Copy quote as Markdown' : `Copy quote ${n + 1} as Markdown`;
+
+    const group = doc.createElement('span');
+    group.className = 'md-quote-copy';
+
+    const button = doc.createElement('button');
+    button.setAttribute('type', 'button');
+    button.className = 'action-btn md-quote-copy-btn';
+    button.setAttribute('aria-label', label);
+    button.setAttribute('data-md-quote-text', sources[n]);
+    button.setAttribute('interestfor', id);
+    button.setAttribute('style', `anchor-name: --${id}`);
+    button.appendChild(svgIcon(doc, 'md-quote-icon-copy', [
+      ['rect', { x: '9', y: '9', width: '13', height: '13', rx: '2', ry: '2' }],
+      ['path', { d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' }]
+    ]));
+    button.appendChild(svgIcon(doc, 'md-quote-icon-copied', [
+      ['polyline', { points: '20 6 9 17 4 12' }]
+    ]));
+
+    const status = doc.createElement('span');
+    status.className = 'md-quote-copy-status';
+    status.setAttribute('role', 'status');
+
+    group.append(button, status);
+
+    const tip = doc.createElement('div');
+    tip.setAttribute('popover', 'hint');
+    tip.className = 'gh-tooltip md-quote-copy-tip';
+    tip.id = id;
+    tip.setAttribute('style', `position-anchor: --${id}`);
+    tip.textContent = label;
+
+    quote.classList.add('md-quote-copyable');
+    quote.prepend(group, tip);
+  });
+
+  return template.innerHTML;
+}
+
 @Pipe({
   name: 'markdown',
   standalone: true,
@@ -357,6 +468,7 @@ function installDefangHooks(): boolean {
 export class MarkdownPipe implements PipeTransform, OnDestroy {
   private lastValue: string | undefined;
   private lastKatexReady = false;
+  private lastFeature: MarkdownFeature = null;
   private lastResult: SafeHtml | string = '';
   private awaitingKatex = false;
   private destroyed = false;
@@ -364,14 +476,14 @@ export class MarkdownPipe implements PipeTransform, OnDestroy {
   // ChangeDetectorRef is optional so a spec can construct the pipe outside a template.
   constructor(private sanitizer: DomSanitizer, private katexLoader: KatexLoaderService, private cdr?: ChangeDetectorRef) {}
 
-  transform(value: string): SafeHtml | string {
-    // Impure: an unchanged input with unchanged KaTeX readiness returns the previous result.
+  transform(value: string, feature: MarkdownFeature = null): SafeHtml | string {
+    // Impure: an unchanged input with unchanged KaTeX readiness and feature returns the previous result.
     const ready = this.katexLoader.get() !== null;
-    if (value === this.lastValue && ready === this.lastKatexReady) {
+    if (value === this.lastValue && ready === this.lastKatexReady && feature === this.lastFeature) {
       return this.lastResult;
     }
 
-    const result = this.render(value);
+    const result = this.render(value, feature);
 
     if (mathPending && !this.awaitingKatex) {
       this.awaitingKatex = true;
@@ -382,6 +494,7 @@ export class MarkdownPipe implements PipeTransform, OnDestroy {
 
     this.lastValue = value;
     this.lastKatexReady = ready;
+    this.lastFeature = feature;
     this.lastResult = result;
     return result;
   }
@@ -390,7 +503,7 @@ export class MarkdownPipe implements PipeTransform, OnDestroy {
     this.destroyed = true;
   }
 
-  private render(value: string): SafeHtml | string {
+  private render(value: string, feature: MarkdownFeature): SafeHtml | string {
     mathPending = false;
     if (!value) return '';
     // Split the string into code blocks/inline code/math blocks and normal text
@@ -475,11 +588,16 @@ export class MarkdownPipe implements PipeTransform, OnDestroy {
     let processed = parts.join('');
 
     activeKatex = this.katexLoader.get();
+    const quoteCopy = feature === 'quote-copy' ? { nonce: crypto.randomUUID(), sources: [] as string[] } : null;
+    activeQuoteCopy = quoteCopy;
+    quoteDepth = 0;
     let parsed: string | Promise<string>;
     try {
       parsed = marked.parse(processed);
     } finally {
       activeKatex = null;
+      activeQuoteCopy = null;
+      quoteDepth = 0;
     }
     // marked.parse can return a Promise if async options are used, but by default it returns a string
     const html = typeof parsed === 'string' ? parsed : '';
@@ -490,6 +608,11 @@ export class MarkdownPipe implements PipeTransform, OnDestroy {
       ADD_ATTR: ['encoding', 'class', 'style', 'aria-hidden', 'tabindex']
     });
 
-    return this.sanitizer.bypassSecurityTrustHtml(purified);
+    const output = quoteCopy &&
+      (quoteCopy.sources.length > 0 || purified.includes('md-quote-copy') || purified.includes('data-md-quote'))
+      ? addQuoteCopyButtons(purified, quoteCopy.nonce, quoteCopy.sources)
+      : purified;
+
+    return this.sanitizer.bypassSecurityTrustHtml(output);
   }
 }

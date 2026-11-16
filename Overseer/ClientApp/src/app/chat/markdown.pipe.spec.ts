@@ -497,4 +497,113 @@ The largest mechanical advantage is that priests can pray sooner.`;
       expect(link!.getAttribute('rel')).toBeNull();
     });
   });
+
+  describe('quote copy', () => {
+    function renderQuotes(markdown: string, feature: 'quote-copy' | null = 'quote-copy'): HTMLElement {
+      const container = document.createElement('div');
+      container.className = 'markdown-body';
+      container.innerHTML = pipe.transform(markdown, feature) as string;
+      return container;
+    }
+
+    const buttons = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLButtonElement>('.md-quote-copy-btn'));
+
+    it('adds nothing without the feature', () => {
+      const root = renderQuotes('> quoted', null);
+
+      expect(root.querySelector('blockquote')).toBeTruthy();
+      expect(root.querySelector('[class*="md-quote-copy"]')).toBeNull();
+      expect(root.querySelector('[data-md-quote]')).toBeNull();
+      expect(root.querySelector('.md-quote-copyable')).toBeNull();
+    });
+
+    it('gives a quote one button that copies its Markdown without the quote markers', () => {
+      const root = renderQuotes('> **Bold** line\n> - item\n>\n> para');
+      const all = buttons(root);
+
+      expect(all.length).toBe(1);
+      const button = all[0];
+      expect(button.getAttribute('data-md-quote-text')).toBe('**Bold** line\n- item\n\npara');
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.hasAttribute('aria-hidden')).toBe(false);
+      expect(button.hasAttribute('hidden')).toBe(false);
+      expect(button.hasAttribute('inert')).toBe(false);
+
+      const status = button.nextElementSibling as HTMLElement;
+      expect(status.getAttribute('role')).toBe('status');
+      expect(status.textContent).toBe('');
+
+      const quote = root.querySelector('blockquote')!;
+      expect(quote.classList.contains('md-quote-copyable')).toBe(true);
+      const tip = quote.querySelector(`[id="${button.getAttribute('interestfor')}"]`);
+      expect(tip).toBeTruthy();
+      expect(tip!.getAttribute('popover')).toBe('hint');
+      expect(root.querySelector('[data-md-quote]')).toBeNull();
+    });
+
+    it('gives a nested quote no button of its own; the outer one copies both', () => {
+      const root = renderQuotes('> outer\n> > inner');
+      const all = buttons(root);
+
+      expect(root.querySelectorAll('blockquote').length).toBe(2);
+      expect(all.length).toBe(1);
+      expect(all[0].closest('blockquote')!.parentElement).toBe(root);
+      expect(all[0].getAttribute('data-md-quote-text')).toBe('outer\n> inner');
+    });
+
+    it('names one quote plainly and numbers several', () => {
+      expect(buttons(renderQuotes('> only'))[0].getAttribute('aria-label')).toBe('Copy quote as Markdown');
+
+      const two = buttons(renderQuotes('> first\n\nBetween.\n\n> second'));
+      expect(two.map(b => b.getAttribute('aria-label'))).toEqual(['Copy quote 1 as Markdown', 'Copy quote 2 as Markdown']);
+      expect(two.map(b => b.getAttribute('data-md-quote-text'))).toEqual(['first', 'second']);
+    });
+
+    it('gives a quote inside a list item a button', () => {
+      const all = buttons(renderQuotes('- item\n\n  > quoted in a list'));
+
+      expect(all.length).toBe(1);
+      expect(all[0].closest('li')).toBeTruthy();
+      expect(all[0].getAttribute('data-md-quote-text')).toBe('quoted in a list');
+    });
+
+    it('removes controls and quote tags that came from the model', () => {
+      const root = renderQuotes(
+        'Text <button class="md-quote-copy-btn" data-md-quote-text="evil">x</button> ' +
+        '<span class="md-quote-copy-status" role="status">Copied</span>\n\n' +
+        '<blockquote data-md-quote="00000000-0000-0000-0000-000000000000-0">forged</blockquote>');
+
+      expect(root.querySelector('[class*="md-quote-copy"]')).toBeNull();
+      expect(root.querySelector('[data-md-quote-text]')).toBeNull();
+      expect(root.querySelector('[data-md-quote]')).toBeNull();
+      expect(root.textContent).toContain('forged');
+    });
+
+    it('keeps the real button beside a forged one', () => {
+      const root = renderQuotes(
+        '<button class="action-btn md-quote-copy-btn" data-md-quote-text="evil">x</button>\n\n> real');
+      const all = buttons(root);
+
+      expect(all.length).toBe(1);
+      expect(all[0].getAttribute('data-md-quote-text')).toBe('real');
+    });
+
+    it('carries quotes, ampersands and markup in the copied text unchanged', () => {
+      const button = buttons(renderQuotes('> a "quote" & <b>x</b>'))[0];
+
+      expect(button.getAttribute('data-md-quote-text')).toBe('a "quote" & <b>x</b>');
+    });
+
+    it('renders again when only the feature changes', () => {
+      const withFeature = pipe.transform('> quoted', 'quote-copy');
+      const without = pipe.transform('> quoted', null);
+
+      expect(withFeature).not.toEqual(without);
+      expect(without as string).not.toContain('md-quote-copy');
+    });
+
+    it('copies CRLF input with LF line endings', () => {
+      expect(buttons(renderQuotes('> a\r\n> b'))[0].getAttribute('data-md-quote-text')).toBe('a\nb');
+    });
+  });
 });

@@ -61,6 +61,7 @@ Because thinking blocks are part of `msg.content` (rendered via `MarkdownPipe`),
 5. **Whitespace Normalization**: Gaps left by multiple consecutive or interleaved thinking blocks in normal markdown text must be collapsed to standard paragraph breaks (`\n\n`), and leading/trailing whitespace must be trimmed.
 6. **Cross-Platform Line Endings**: Sanitization must handle both Windows CRLF (`\r\n`) and Unix LF (`\n`) line endings.
 7. **Tool Result Separation**: Individual tool call outputs are copied separately via their dedicated copy button (`.tool-copy-btn` invoking `copyToolResult(tc.result, ...)`), which copies only `tc.result`.
+8. **Quote Copy**: Each top-level blockquote in an assistant reply (history and streaming) carries an icon button (`.md-quote-copy-btn`) in its top-right corner that copies that quote's content as Markdown, its own `>` markers removed; a nested quote keeps its marker and gets no button of its own. On hover devices the button is hidden with `opacity` only until the quote is hovered or focused, and on touch devices it is always visible and in flow. Results are announced by a `role="status"` bubble beside it, and a failure is shown, not only logged. It is opt-in through `markdown: 'quote-copy'`; other `MarkdownPipe` consumers render quotes unchanged. The pipe inserts the controls only after DOMPurify and removes anything resembling them that sanitization let through (top-level quotes are tagged with a per-render nonce), so the copied text is always the source of the quote the button sits in.
 
 ---
 
