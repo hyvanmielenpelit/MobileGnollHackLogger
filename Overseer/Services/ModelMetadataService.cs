@@ -214,8 +214,8 @@ public class ModelMetadataService
                     ThinkingLevels = new List<string>(e.ThinkingLevels ?? new List<string>()),
                     ContextWindowSize = e.ContextWindowSize,
                     MaxOutputTokens = e.MaxOutputTokens,
-                    InputPerMillion = elapsed ? scheduled!.InputPerMillion : e.Pricing?.InputPerMillion,
-                    OutputPerMillion = elapsed ? scheduled!.OutputPerMillion : e.Pricing?.OutputPerMillion
+                    InputPerMillion = elapsed && scheduled!.InputPerMillion.HasValue ? scheduled.InputPerMillion : e.Pricing?.InputPerMillion,
+                    OutputPerMillion = elapsed && scheduled!.OutputPerMillion.HasValue ? scheduled.OutputPerMillion : e.Pricing?.OutputPerMillion
                 };
             })
             .ToList();
@@ -327,6 +327,7 @@ public class ModelMetadataService
             metadata.SupportedThinkingLevels = new List<string>(bestEntry.ThinkingLevels ?? new List<string>());
             metadata.SupportedReasoningModes = new List<string>(bestEntry.ReasoningModes ?? new List<string>());
             metadata.SupportedReasoningSummaries = new List<string>(bestEntry.ReasoningSummaries ?? new List<string>());
+            metadata.ServiceTiers = new List<string>(bestEntry.ServiceTiers ?? new List<string>());
             metadata.ContextWindowSize = bestEntry.ContextWindowSize;
             metadata.MaxOutputTokens = bestEntry.MaxOutputTokens;
             metadata.MaxInputTokens = metadata.ContextWindowSize - metadata.MaxOutputTokens;
@@ -337,6 +338,15 @@ public class ModelMetadataService
         }
 
         return metadata;
+    }
+
+    /// <summary>The model's own tier list when the catalog gives one, else the provider's.</summary>
+    public static List<string> ResolveServiceTiers(IReadOnlyList<string>? providerTiers, ModelMetadata? metadata)
+    {
+        if (metadata?.ServiceTiers is { Count: > 0 } own)
+            return new List<string>(own);
+
+        return providerTiers != null ? new List<string>(providerTiers) : new List<string>();
     }
 
     /// <summary>
@@ -365,7 +375,11 @@ public class ModelMetadata
     public List<string> SupportedThinkingLevels { get; set; } = new List<string>();
     public List<string> SupportedReasoningModes { get; set; } = new List<string>();
     public List<string> SupportedReasoningSummaries { get; set; } = new List<string>();
-    
+
+    /// <summary>The model's own service tier list from the catalog; empty means the provider's list.
+    /// Read it through <see cref="ModelMetadataService.ResolveServiceTiers"/>.</summary>
+    public List<string> ServiceTiers { get; set; } = new List<string>();
+
     public int ContextWindowSize { get; set; }
     public int MaxInputTokens { get; set; }
     public int MaxOutputTokens { get; set; }

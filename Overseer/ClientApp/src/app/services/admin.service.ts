@@ -410,6 +410,7 @@ export interface SystemAiConfigDto {
   pricingScheduledChangeFrom?: string | null;
   pricingScheduledChangeInputPricePerMillion?: number | null;
   pricingScheduledChangeOutputPricePerMillion?: number | null;
+  pricingScheduledChangeServiceTierMultipliers?: { [tier: string]: number } | null;
   pricingScheduledChangeNote?: string | null;
   pricingScheduleElapsed?: boolean;
   /**

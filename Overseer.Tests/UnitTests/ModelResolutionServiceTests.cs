@@ -174,6 +174,41 @@ public class ModelResolutionServiceTests
         Assert.Null(ChangeOf(outcome, "Service tier"));
     }
 
+    [Fact]
+    public void Switch_ServiceTierTheTargetsOwnListLacks_IsDropped()
+    {
+        var current = new ModelSettings { Provider = "OpenAI", ModelId = "gpt-6.1-sol", ServiceTier = "flex" };
+
+        var outcome = _service.Switch(current, "gpt-6.2-sol");
+
+        Assert.Null(outcome.Updated!.ServiceTier);
+        var change = ChangeOf(outcome, "Service tier");
+        Assert.NotNull(change);
+        Assert.Equal("flex", change.From);
+        Assert.Null(change.To);
+    }
+
+    [Fact]
+    public void Switch_FastToAModelWithoutFast_IsDropped()
+    {
+        var current = new ModelSettings { Provider = "OpenAI", ModelId = "gpt-5.5", ServiceTier = "fast" };
+
+        var outcome = _service.Switch(current, "gpt-5.5-pro");
+
+        Assert.Null(outcome.Updated!.ServiceTier);
+    }
+
+    [Fact]
+    public void Switch_ServiceTierTheTargetsOwnListHas_IsKept()
+    {
+        var current = new ModelSettings { Provider = "OpenAI", ModelId = "gpt-6.2-sol", ServiceTier = "ultrafast" };
+
+        var outcome = _service.Switch(current, "gpt-6.2-astra");
+
+        Assert.Equal("ultrafast", outcome.Updated!.ServiceTier);
+        Assert.Null(ChangeOf(outcome, "Service tier"));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Switch: limits.
     // ---------------------------------------------------------------------------------------------

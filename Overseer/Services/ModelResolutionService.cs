@@ -184,6 +184,7 @@ public class ModelResolutionService
             ThinkingLevel = Retain(current.ThinkingLevel, targetMeta.SupportedThinkingLevels),
             ReasoningMode = Retain(current.ReasoningMode, targetMeta.SupportedReasoningModes),
             ReasoningSummary = Retain(current.ReasoningSummary, targetMeta.SupportedReasoningSummaries),
+            ServiceTier = RetainServiceTier(current.ServiceTier, targetMeta.ServiceTiers),
             MaxInputTokens = maxInput,
             MaxOutputTokens = maxOutput,
             ModelCatalogMode = ModelCatalogModes.Catalog
@@ -249,6 +250,15 @@ public class ModelResolutionService
             return DefaultLevel;
 
         return supported.Count > 0 ? supported[0] : null;
+    }
+
+    /// <summary>The current tier, or null when the target states its own tier list and the tier is not in it.</summary>
+    private static string? RetainServiceTier(string? value, IReadOnlyList<string> targetTiers)
+    {
+        if (string.IsNullOrEmpty(value) || targetTiers == null || targetTiers.Count == 0)
+            return value;
+
+        return targetTiers.Contains(value, StringComparer.OrdinalIgnoreCase) ? value : null;
     }
 
     private string? SwitchedDisplayName(ModelSettings current, string target, ModelMetadata targetMeta)

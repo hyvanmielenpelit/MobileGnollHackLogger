@@ -4,8 +4,10 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Overseer.Services;
+using Overseer.Services.Providers;
 using Xunit;
 
 /// <summary>
@@ -302,6 +304,172 @@ public class ModelMetadataServiceTests
     public void GetCatalogTargets_UnknownProvider_IsEmpty()
     {
         Assert.Empty(_service.GetCatalogTargets("Nope"));
+    }
+
+    [Fact]
+    public void GetCatalogTargets_TierOnlySchedule_KeepsTheBaseRatesOnBothSides()
+    {
+        foreach (var day in new[] { new DateOnly(2027, 2, 28), new DateOnly(2027, 3, 1) })
+        {
+            var sol = Assert.Single(_service.GetCatalogTargets("OpenAI", day), t => t.ModelId == "gpt-6.2-sol");
+            Assert.Equal(2.00m, sol.InputPerMillion);
+            Assert.Equal(10.00m, sol.OutputPerMillion);
+        }
+    }
+
+    [Fact]
+    public void GetCatalogTargets_Gpt56Sol_MovesToTheScheduledRatesOnItsDate()
+    {
+        var before = Assert.Single(_service.GetCatalogTargets("OpenAI", new DateOnly(2026, 11, 30)), t => t.ModelId == "gpt-5.6-sol");
+        Assert.Equal(4.00m, before.InputPerMillion);
+        Assert.Equal(20.00m, before.OutputPerMillion);
+
+        var after = Assert.Single(_service.GetCatalogTargets("OpenAI", new DateOnly(2026, 12, 1)), t => t.ModelId == "gpt-5.6-sol");
+        Assert.Equal(5.00m, after.InputPerMillion);
+        Assert.Equal(30.00m, after.OutputPerMillion);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Per-model service tiers.
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void GetMetadata_ServiceTiers_AreTheEntrysOwnList_OrEmpty()
+    {
+        Assert.Equal(
+            new[] { "auto", "default", "priority", "fast", "ultrafast" },
+            _service.GetMetadata("OpenAI", "gpt-6.2-astra").ServiceTiers);
+        Assert.Empty(_service.GetMetadata("OpenAI", "gpt-6.1-terra").ServiceTiers);
+    }
+
+    [Fact]
+    public void ResolveServiceTiers_ModelListWins_ElseTheProviderList()
+    {
+        var providerTiers = new[] { "auto", "default", "flex" };
+        var own = new ModelMetadata { ServiceTiers = new List<string> { "default", "ultrafast" } };
+
+        var resolved = ModelMetadataService.ResolveServiceTiers(providerTiers, own);
+        Assert.Equal(new[] { "default", "ultrafast" }, resolved);
+        Assert.NotSame(own.ServiceTiers, resolved);
+
+        Assert.Equal(providerTiers, ModelMetadataService.ResolveServiceTiers(providerTiers, new ModelMetadata()));
+        Assert.Equal(providerTiers, ModelMetadataService.ResolveServiceTiers(providerTiers, null));
+        Assert.Empty(ModelMetadataService.ResolveServiceTiers(null, new ModelMetadata()));
+        Assert.Empty(ModelMetadataService.ResolveServiceTiers(Array.Empty<string>(), null));
+    }
+
+    [Fact]
+    public void ShippedCatalogs_ServiceTiers_AreRequestablePricedAndConsistent()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { { "DefaultMaxOutputTokens:Anthropic", "8192" } })
+            .Build();
+
+        var anthropic = new AnthropicProvider(configuration).SupportedServiceTiers;
+        var google = new GoogleProvider(configuration).SupportedServiceTiers;
+        var providers = new (string Name, IReadOnlyList<string> Supported, IReadOnlyList<string> Vocabulary)[]
+        {
+            ("OpenAI", new OpenAiResponsesProvider(configuration).SupportedServiceTiers, OpenAiResponsesProvider.RequestableServiceTiers),
+            ("Anthropic", anthropic, anthropic),
+            ("Google", google, google)
+        };
+
+        int checkedEntries = 0;
+        foreach (var (name, supported, vocabulary) in providers)
+        {
+            bool openAi = name == "OpenAI";
+
+            foreach (var entry in _service.GetCatalogEntries(name))
+            {
+                string where = $"{name} {entry.Prefixes[0]}";
+                var own = entry.ServiceTiers ?? new List<string>();
+
+                // 1. Every listed tier is normalized, requestable and listed once.
+                foreach (var tier in own)
+                {
+                    Assert.True(tier == ProviderHelper.NormalizeServiceTier(tier),
+                        $"{where}: service tier '{tier}' is not in normalized form.");
+                    Assert.True(vocabulary.Contains(tier), $"{where}: service tier '{tier}' is not requestable.");
+                    Assert.True(own.Count(t => t == tier) == 1, $"{where}: service tier '{tier}' is listed twice.");
+                }
+
+                var effective = ModelMetadataService.ResolveServiceTiers(supported, _service.GetMetadata(name, entry.Prefixes[0]));
+                var multipliers = entry.Pricing?.ServiceTierMultipliers ?? new Dictionary<string, decimal>();
+
+                bool Covered(string key) =>
+                    effective.Contains(key)
+                    || (openAi && key == "priority" && effective.Contains("fast"))
+                    || (openAi && key == "fast" && effective.Contains("priority"));
+
+                // 2. A tier outside the provider's default list is priced.
+                if (entry.Pricing != null)
+                {
+                    foreach (var tier in effective.Where(t => !supported.Contains(t)))
+                    {
+                        Assert.True(multipliers.ContainsKey(tier), $"{where}: service tier '{tier}' has no multiplier.");
+                    }
+                }
+
+                // 3. Every priced tier is requestable on this model.
+                foreach (var key in multipliers.Keys.Where(k => k != "batch"))
+                {
+                    Assert.True(Covered(key), $"{where}: multiplier '{key}' prices a tier the model does not list.");
+                }
+                foreach (var key in entry.Pricing?.ScheduledChange?.ServiceTierMultipliers?.Keys ?? Enumerable.Empty<string>())
+                {
+                    Assert.True(Covered(key), $"{where}: scheduled multiplier '{key}' prices a tier the model does not list.");
+                }
+
+                // 4. OpenAI prices priority and fast together, at the same value.
+                if (openAi && (multipliers.ContainsKey("priority") || multipliers.ContainsKey("fast")))
+                {
+                    Assert.True(
+                        multipliers.TryGetValue("priority", out var p) && multipliers.TryGetValue("fast", out var f) && p == f,
+                        $"{where}: service tier 'priority' and 'fast' must be priced together, at the same value.");
+                }
+
+                checkedEntries++;
+            }
+        }
+
+        Assert.True(checkedEntries > 0, "No catalog entries were found.");
+    }
+
+    [Fact]
+    public void ShippedCatalogs_ScheduledLongContextCard_KeepsTheBaseThreshold()
+    {
+        foreach (var provider in new[] { "OpenAI", "Anthropic", "Google" })
+        {
+            foreach (var entry in _service.GetCatalogEntries(provider))
+            {
+                var scheduled = entry.Pricing?.ScheduledChange?.LongContext;
+                if (scheduled == null) continue;
+
+                var baseCard = entry.Pricing!.LongContext;
+                Assert.True(baseCard != null, $"{provider} {entry.Prefixes[0]}: a scheduled long-context card needs a base one.");
+                Assert.True(baseCard!.ThresholdInputTokens == scheduled.ThresholdInputTokens,
+                    $"{provider} {entry.Prefixes[0]}: the scheduled long-context card moves the threshold.");
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("gpt-5.4-mini")]
+    [InlineData("gpt-5.4-nano")]
+    public void GetMetadata_Gpt54SmallModels_HaveTheir400KWindow(string modelId)
+    {
+        var metadata = _service.GetMetadata("OpenAI", modelId);
+
+        Assert.Equal(400_000, metadata.ContextWindowSize);
+        Assert.Equal(272_000, metadata.MaxInputTokens);
+    }
+
+    [Fact]
+    public void GetMetadata_OpenAiEffortLists_FollowTheModelPages()
+    {
+        Assert.Equal(new[] { "none", "low", "medium", "high", "xhigh" }, _service.GetMetadata("OpenAI", "gpt-5.5").SupportedThinkingLevels);
+        Assert.Equal(new[] { "medium", "high", "xhigh" }, _service.GetMetadata("OpenAI", "gpt-5.5-pro").SupportedThinkingLevels);
+        Assert.Equal("max", _service.GetMetadata("OpenAI", "gpt-5.6-luna").SupportedThinkingLevels.Last());
     }
 
     private sealed class RecordingLogger : ILogger<ModelMetadataService>

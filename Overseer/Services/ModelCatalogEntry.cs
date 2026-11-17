@@ -14,6 +14,12 @@ public class ModelCatalogEntry
     public List<string> ThinkingLevels { get; set; } = new();
     public List<string> ReasoningModes { get; set; } = new();
     public List<string> ReasoningSummaries { get; set; } = new();
+
+    /// <summary>The model's complete list of request service tiers, in display order. Empty means the
+    /// provider's SupportedServiceTiers. Each value must be in the provider's requestable vocabulary
+    /// (OpenAiResponsesProvider.RequestableServiceTiers for OpenAI).</summary>
+    public List<string> ServiceTiers { get; set; } = new();
+
     public int ContextWindowSize { get; set; }
     public int MaxOutputTokens { get; set; }
     public bool SupportsSubAgentCoordination { get; set; } = true;
@@ -60,9 +66,9 @@ public class ModelCatalogLongContextPricing
 /// this, a campaign's end date passes and every turn is costed at the promotional rate until somebody
 /// happens to re-read a pricing page — silently, because nothing is wrong enough to fail.
 ///
-/// One change per entry, not a queue: no provider publishes two. It replaces the four base rates
-/// only, not the long-context card or the tier multipliers; if a provider ever schedules a change to
-/// those, the entry is edited by hand on the day.
+/// One change per entry, not a queue: no provider publishes two. It names only what changes on its
+/// date — the base rates (input and output together), tier multipliers, the long-context card, or any
+/// mix of them — and leaves the rest as the base card has it.
 /// </summary>
 public class ModelCatalogScheduledPricing
 {
@@ -71,10 +77,20 @@ public class ModelCatalogScheduledPricing
     /// boundary is not worth modelling.</summary>
     public string EffectiveFrom { get; set; } = string.Empty;
 
-    public decimal InputPerMillion { get; set; }
-    public decimal OutputPerMillion { get; set; }
+    /// <summary>Null, with <see cref="OutputPerMillion"/>, when the change leaves the base rates alone.
+    /// Both or neither: a change naming only one is malformed and ignored.</summary>
+    public decimal? InputPerMillion { get; set; }
+    public decimal? OutputPerMillion { get; set; }
     public decimal? CachedInputPerMillion { get; set; }
     public decimal? CacheWritePerMillion { get; set; }
+
+    /// <summary>A partial map merged key by key over the base ServiceTierMultipliers once the date
+    /// passes; keys normalized as in the base map. Null leaves the base multipliers in force.</summary>
+    public Dictionary<string, decimal>? ServiceTierMultipliers { get; set; }
+
+    /// <summary>The complete long-context card that replaces the base one once the date passes, with the
+    /// base card's threshold. Null leaves the base card in force.</summary>
+    public ModelCatalogLongContextPricing? LongContext { get; set; }
 
     /// <summary>Free text for the operator, e.g. "Promotional pricing through 2026-12-31". Shown in
     /// the admin views beside the price; never parsed.</summary>
@@ -117,7 +133,7 @@ public class ModelCatalogPricing
     /// <summary>
     /// Scalar price multipliers keyed by the provider's <b>served</b> service tier, normalized the way
     /// ProviderHelper.NormalizeServiceTier normalizes it (lower-case, no SERVICE_TIER_ prefix): "flex",
-    /// "priority", "fast", "batch". A tier not listed — including "default" and "standard" — costs 1.0.
+    /// "priority", "fast", "ultrafast", "batch". A tier not listed — including "default" and "standard" — costs 1.0.
     ///
     /// A scalar, unlike LongContext, because every published tier scales all four rates equally: OpenAI
     /// flex/batch 0.5x and fast 2.0x, Google flex/batch 0.5x and priority 1.8x.

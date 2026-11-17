@@ -544,6 +544,54 @@ public class BenchmarkModelComparisonServiceTests
         Assert.Null(Entry(dto, "a").Cost!.ScheduledChangeEffectiveFrom);
     }
 
+    private static ModelPricing CardWithSchedule(ScheduledPricingChange change) => new(
+        2m, 10m, 0.20m, null, ModelPricingSource.Catalog, "2026-09-01",
+        ServiceTierMultipliers: new Dictionary<string, decimal> { ["ultrafast"] = 3.0m },
+        ScheduledChange: change);
+
+    private static readonly ScheduledPricingChange UltrafastOnly = new(
+        new DateOnly(2027, 3, 1), null, null,
+        ServiceTierMultipliers: new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase) { ["ultrafast"] = 6.0m });
+
+    [Fact]
+    public void ATierOnlySchedule_IsSurfacedOnlyForEntriesCostedAtThatTier()
+    {
+        var card = CardWithSchedule(UltrafastOnly);
+
+        Assert.Same(UltrafastOnly, BenchmarkModelComparison.UpcomingScheduledChange(card, Today, new string?[] { "ultrafast" }));
+        Assert.Same(UltrafastOnly, BenchmarkModelComparison.UpcomingScheduledChange(card, Today, new string?[] { "default", "ultrafast" }));
+
+        Assert.Null(BenchmarkModelComparison.UpcomingScheduledChange(card, Today, new string?[] { "default" }));
+        Assert.Null(BenchmarkModelComparison.UpcomingScheduledChange(card, Today, new string?[] { null }));
+        Assert.Null(BenchmarkModelComparison.UpcomingScheduledChange(card, Today, Array.Empty<string?>()));
+        Assert.Null(BenchmarkModelComparison.UpcomingScheduledChange(card, Today));
+    }
+
+    [Fact]
+    public void ALongContextOnlySchedule_IsSurfacedForEveryEntry()
+    {
+        var change = new ScheduledPricingChange(
+            new DateOnly(2027, 3, 1), null, null, LongContext: new LongContextPricing(272_000, 10m, 45m));
+
+        Assert.Same(change, BenchmarkModelComparison.UpcomingScheduledChange(CardWithSchedule(change), Today));
+    }
+
+    [Fact]
+    public void CostTiers_AreTheServedTier_ElseTheRequestedOne()
+    {
+        var servedUltrafast = Run(1);
+        var requestedUltrafast = Run(2);
+        requestedUltrafast.TestedModelSnapshot.ServiceTier = "ultrafast";
+        var downgraded = Run(3);
+        downgraded.TestedModelSnapshot.ServiceTier = "ultrafast";
+
+        var servedTiers = new Dictionary<long, string?> { [1] = "ultrafast", [3] = "default" };
+
+        Assert.Equal(
+            new string?[] { "ultrafast", "ultrafast", "default" },
+            BenchmarkModelComparison.CostTiers(new[] { servedUltrafast, requestedUltrafast, downgraded }, servedTiers));
+    }
+
     // --- Total run cost, grading roles included ---------------------------------------------------------
 
     /// <summary>$1 / M input, $5 / M output. Every grading role in these fixtures is priced on it.</summary>

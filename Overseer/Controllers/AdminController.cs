@@ -379,6 +379,7 @@ public class AdminController : ControllerBase
                 dto.PricingScheduledChangeFrom = resolved.ScheduledChange?.EffectiveFrom.ToString("yyyy-MM-dd");
                 dto.PricingScheduledChangeInputPricePerMillion = resolved.ScheduledChange?.InputPerMillion;
                 dto.PricingScheduledChangeOutputPricePerMillion = resolved.ScheduledChange?.OutputPerMillion;
+                dto.PricingScheduledChangeServiceTierMultipliers = resolved.ScheduledChange?.ServiceTierMultipliers;
                 dto.PricingScheduledChangeNote = resolved.ScheduledChange?.Note;
                 dto.PricingScheduleElapsed = resolved.ScheduleElapsed;
             }

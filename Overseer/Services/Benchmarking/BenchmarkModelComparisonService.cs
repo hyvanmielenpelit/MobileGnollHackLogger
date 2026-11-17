@@ -354,7 +354,7 @@ public static class BenchmarkModelComparison
 
         entry.Quality = BuildQuality(source, statistics);
         entry.Speed = BuildSpeed(statistics);
-        entry.Cost = BuildCost(statistics, basis, card, pricingResolved, total, today);
+        entry.Cost = BuildCost(statistics, basis, card, pricingResolved, total, today, CostTiers(source.Runs));
         entry.Table = BuildTable(source, statistics);
 
         return entry;
@@ -517,6 +517,11 @@ public static class BenchmarkModelComparison
             ? BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers)
             : servedTiers.GetValueOrDefault(run.Id);
 
+    /// <summary>The tier each run's candidate cost was scaled by: the served tier, else the requested one.</summary>
+    internal static List<string?> CostTiers(
+        IEnumerable<BenchmarkRun> runs, IReadOnlyDictionary<long, string?>? servedTiers = null)
+        => runs.Select(r => ServedTier(r, servedTiers) ?? r.TestedModelSnapshot.ServiceTier).ToList();
+
     /// <summary>
     /// The degraded flags a point's own statistics are computed under: its internal comparability
     /// tier, widened by whatever the cross-model set degrades. A point whose own runs are Tier A can
@@ -615,10 +620,11 @@ public static class BenchmarkModelComparison
         ModelPricing? card,
         bool pricingResolved,
         (double? Mean, double? Sd, string? Reason) total,
-        DateOnly today)
+        DateOnly today,
+        IReadOnlyList<string?> costTiers)
     {
         var cost = statistics.Cost;
-        var scheduled = UpcomingScheduledChange(card, today);
+        var scheduled = UpcomingScheduledChange(card, today, costTiers);
 
         return new BenchmarkModelComparisonCostDto
         {
@@ -668,8 +674,13 @@ public static class BenchmarkModelComparison
     /// The model's announced price change, when it falls inside the warning horizon. An elapsed
     /// schedule is not returned: the base card has already absorbed it, so it is history rather than
     /// a warning about a conclusion that is about to expire.
+    ///
+    /// <para>A change that moves rates or the long-context card is always returned. One that changes
+    /// tier multipliers alone is returned only when <paramref name="costTiers"/> holds a tier it
+    /// changes, so an entry costed at another tier is not warned about a price it never pays.</para>
     /// </summary>
-    internal static ScheduledPricingChange? UpcomingScheduledChange(ModelPricing? card, DateOnly today)
+    internal static ScheduledPricingChange? UpcomingScheduledChange(
+        ModelPricing? card, DateOnly today, IReadOnlyList<string?>? costTiers = null)
     {
         var scheduled = card?.ScheduledChange;
         if (scheduled == null) return null;
@@ -677,7 +688,11 @@ public static class BenchmarkModelComparison
         if (scheduled.EffectiveFrom <= today) return null;
         if (scheduled.EffectiveFrom > today.AddMonths(ScheduledPriceChangeHorizonMonths)) return null;
 
-        return scheduled;
+        if (ModelPricingService.ScheduleAffects(scheduled, null)) return scheduled;
+
+        return costTiers != null && costTiers.Any(t => ModelPricingService.ScheduleAffects(scheduled, t))
+            ? scheduled
+            : null;
     }
 
     internal static string DescribeBasis(BenchmarkModelComparisonPricingBasis basis, DateOnly today)

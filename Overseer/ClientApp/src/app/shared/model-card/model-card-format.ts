@@ -1,4 +1,4 @@
-import { showReasoningBadge } from '../../utils/model-badge-format.util';
+import { formatServiceTier, showReasoningBadge } from '../../utils/model-badge-format.util';
 
 /** The fields a model card reads; `SystemAiConfigDto` and `UserAiModel` both satisfy it. */
 export interface ModelCardModel {
@@ -22,6 +22,7 @@ export interface ModelCardModel {
   pricingScheduledChangeFrom?: string | null;
   pricingScheduledChangeInputPricePerMillion?: number | null;
   pricingScheduledChangeOutputPricePerMillion?: number | null;
+  pricingScheduledChangeServiceTierMultipliers?: { [tier: string]: number } | null;
   pricingScheduledChangeNote?: string | null;
   pricingScheduleElapsed?: boolean | null;
 }
@@ -82,24 +83,56 @@ export function formatLongContextPrice(model: ModelCardModel): string {
   return `Prompts over ${tokens} tokens: ${formatRate(input)} in / ${formatRate(output)} out per 1M`;
 }
 
+function formatMultiplier(value: number): string {
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(value)}×`;
+}
+
+/** The scheduled multiplier of the card's own service tier, or null when the schedule leaves it alone. */
+function scheduledTierMultiplier(model: ModelCardModel): number | null {
+  const tier = model.serviceTier?.toLowerCase();
+  const map = model.pricingScheduledChangeServiceTierMultipliers;
+  if (!tier || !map) return null;
+  const key = Object.keys(map).find(k => k.toLowerCase() === tier);
+  return key != null ? map[key] : null;
+}
+
 /**
  * A quiet note about an announced future price change, or — once its date has passed — the advisory
  * that the base rates already carry it. The cost is correct either way; the advisory exists so the
  * catalog does not silently turn into a changelog of elapsed schedules.
+ *
+ * Before the date the note names the new rates when the schedule changes them, and the new multiplier
+ * of the card's own service tier when the schedule changes that. A schedule that touches neither — a
+ * tier the card does not use, or the long-context card alone — gives no note.
  */
 export function formatPricingSchedule(model: ModelCardModel): string {
   if (model.pricingScheduleElapsed) {
     return 'A scheduled price change is in effect — fold it into the base rates and re-verify.';
   }
-  if (!model.pricingScheduledChangeFrom) {
+  const date = model.pricingScheduledChangeFrom;
+  if (!date) {
     return '';
   }
+
+  const parts: string[] = [];
   const input = model.pricingScheduledChangeInputPricePerMillion;
   const output = model.pricingScheduledChangeOutputPricePerMillion;
-  const change = (input != null && output != null)
-    ? `Price changes to ${formatRate(input)} in / ${formatRate(output)} out per 1M on ${model.pricingScheduledChangeFrom}.`
-    : `Price changes on ${model.pricingScheduledChangeFrom}.`;
-  return model.pricingScheduledChangeNote ? `${change} ${model.pricingScheduledChangeNote}` : change;
+  if (input != null && output != null) {
+    parts.push(`Price changes to ${formatRate(input)} in / ${formatRate(output)} out per 1M on ${date}.`);
+  }
+
+  const multiplier = scheduledTierMultiplier(model);
+  if (multiplier != null) {
+    parts.push(`${formatServiceTier(model.serviceTier)} pricing changes to ${formatMultiplier(multiplier)} Standard on ${date}.`);
+  }
+
+  if (parts.length === 0) {
+    return '';
+  }
+  if (model.pricingScheduledChangeNote) {
+    parts.push(model.pricingScheduledChangeNote);
+  }
+  return parts.join(' ');
 }
 
 /** Where the price comes from: the model's own custom price, or the model catalog. */

@@ -955,7 +955,8 @@ public static class BenchmarkBatteryModelComparison
         }
 
         double? asked = resolved && askedKnown && askedPass > 0.0 ? askedPass : null;
-        var scheduled = BenchmarkModelComparison.UpcomingScheduledChange(card, today);
+        var scheduled = BenchmarkModelComparison.UpcomingScheduledChange(
+            card, today, BenchmarkModelComparison.CostTiers(source.Suites.SelectMany(s => s.Runs), servedTiers));
 
         var dto = new BenchmarkModelComparisonCostDto
         {

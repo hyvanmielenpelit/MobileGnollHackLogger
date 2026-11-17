@@ -260,9 +260,10 @@ public class DelegateToSubAgentTool : IToolHandler
                 resolvedReasoningSummary = null;
             }
 
+            var allowedTiers = ModelMetadataService.ResolveServiceTiers(aiProvider.SupportedServiceTiers, metadata);
             if (!string.IsNullOrEmpty(resolvedServiceTier) &&
-                aiProvider.SupportedServiceTiers.Count > 0 &&
-                !aiProvider.SupportedServiceTiers.Contains(resolvedServiceTier, StringComparer.OrdinalIgnoreCase))
+                allowedTiers.Count > 0 &&
+                !allowedTiers.Contains(resolvedServiceTier, StringComparer.OrdinalIgnoreCase))
             {
                 resolvedServiceTier = null;
             }

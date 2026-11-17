@@ -224,6 +224,19 @@ For a small model that should not orchestrate or run as a sub-agent (the Nano ti
 `"supportsSubAgentCoordination": false` and `"supportsSubAgentExecution": false` — both default to
 `true` when omitted.
 
+Leave `serviceTiers` out when the model offers exactly the provider's default tiers (`auto`,
+`default`, `flex`, `priority`, `fast` for OpenAI). Otherwise write the model's whole list, in display
+order, read from the pricing page's Flex, Fast and Ultrafast tables: a model without a Flex row has no
+`flex`, one without a Fast row has neither `priority` nor `fast`, and one with an Ultrafast row adds
+`ultrafast`. Every value must be in `OpenAiResponsesProvider.RequestableServiceTiers`, and a tier
+outside the provider's default list needs a key in `serviceTierMultipliers`; a catalog test enforces
+both. GPT-6.2 Sol, which has no Flex price and has Ultrafast, is
+`"serviceTiers": ["auto", "default", "priority", "fast", "ultrafast"]`.
+
+Read `thinkingLevels` and `contextWindowSize` from the model's own page, never from a sibling's entry.
+The page's *"Reasoning.effort supports"* sentence is the list. Two cases the catalog holds: the GPT-5.4
+and GPT-5.5 models have no `max`, and GPT-5.4 Pro and GPT-5.5 Pro start at `medium`.
+
 ### 3. Rebuild and Verify
 
 ```bash
@@ -275,7 +288,7 @@ Three optional blocks inside `pricing` describe rates that are not flat. Each is
     "cacheWritePerMillion": 25.00
   },
 
-  "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 },
+  "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0, "ultrafast": 3.0 },
 
   "scheduledChange": {
     "effectiveFrom": "2027-01-01",
@@ -284,6 +297,37 @@ Three optional blocks inside `pricing` describe rates that are not flat. Each is
     "cachedInputPerMillion": 0.15,
     "note": "Promotional pricing through 2026-12-31"
   }
+}
+```
+
+A schedule that changes a tier multiplier alone, as GPT-6.2's Ultrafast promotion does:
+
+```json
+"scheduledChange": {
+  "effectiveFrom": "2027-03-01",
+  "serviceTierMultipliers": { "ultrafast": 6.0 },
+  "note": "Ultrafast promotional pricing (3x Standard) through 2027-02-28."
+}
+```
+
+A schedule that changes the base rates and the long-context card together, as the end of GPT-5.6 Sol's
+promotional pricing does:
+
+```json
+"scheduledChange": {
+  "effectiveFrom": "2026-12-01",
+  "inputPerMillion": 5.00,
+  "outputPerMillion": 30.00,
+  "cachedInputPerMillion": 0.50,
+  "cacheWritePerMillion": 6.25,
+  "longContext": {
+    "thresholdInputTokens": 272000,
+    "inputPerMillion": 10.00,
+    "outputPerMillion": 45.00,
+    "cachedInputPerMillion": 1.00,
+    "cacheWritePerMillion": 12.50
+  },
+  "note": "Promotional pricing through 2026-11-30."
 }
 ```
 
@@ -296,24 +340,29 @@ Three optional blocks inside `pricing` describe rates that are not flat. Each is
 
 **`serviceTierMultipliers`** — a scalar per served service tier, applied to all four rates.
 
-- Keys are the **normalized served** tier strings, as `ProviderHelper.NormalizeServiceTier` produces them (lower-case, no `SERVICE_TIER_` prefix): `batch`, `flex`, `priority`, `fast`. `default` and `standard` are never listed; an unlisted tier costs 1.0×, never zero.
+- Keys are the **normalized served** tier strings, as `ProviderHelper.NormalizeServiceTier` produces them (lower-case, no `SERVICE_TIER_` prefix): `batch`, `flex`, `priority`, `fast`, `ultrafast`. `default` and `standard` are never listed; an unlisted tier costs 1.0×, never zero.
+- Every key except `batch`, which Overseer never requests, must be a tier the model lists — its own `serviceTiers`, or the provider's default list when it has none. An OpenAI entry prices `priority` and `fast` together, at the same value: they are equivalent request values, and which name a GPT-6 response reports is unpublished.
+- A multiplier is read from the model's own row of the tier table, never assumed: Fast is 2× on most OpenAI models and 2.5× on `gpt-5.5`.
 - Costing reads `ActualServiceTierUsed` — the tier the provider **served** — and falls back to the requested tier only when the provider reported none. A tier the provider reported but the catalog does not list is 1.0×: OpenAI requests `auto`/`fast` and serves `default`/`priority`, so a priority request served as `default` must bill as `default`.
 - A mistyped key produces no error at all, just quiet 1.0× mispricing, so a unit test asserts that every key the shipped catalogs declare round-trips through `NormalizeServiceTier`.
 
 **`scheduledChange`** — a price change the provider has already announced for a future date.
 
-- **The base card is always the rate in force today.** `scheduledChange` is the card that takes over on `effectiveFrom`, compared against UTC today. It exists because `asOf` records when a price was *verified*, not when it *expires*: without it, a campaign's end date passes and every turn is costed at the promotional rate until somebody happens to re-read a pricing page.
-- One change per entry, not a queue. It replaces the four base rates only — not the `longContext` card and not the tier multipliers.
-- An unparseable `effectiveFrom` resolves to **no** schedule, leaving the base card unchanged: a malformed date must never silently move a price.
+- **The base card is always the rate in force today.** `scheduledChange` names what changes on `effectiveFrom`, compared against UTC today. It exists because `asOf` records when a price was *verified*, not when it *expires*: without it, a campaign's end date passes and every turn is costed at the promotional rate until somebody happens to re-read a pricing page.
+- One change per entry, not a queue. It names **only what changes**, in up to three optional parts, and everything it leaves out stays as the base card has it:
+  - **Base rates**: `inputPerMillion` and `outputPerMillion`, both or neither, with `cachedInputPerMillion` and `cacheWritePerMillion` optional beside them. They replace the base rates; a cache rate left out keeps the base value.
+  - **Tier multipliers**: `serviceTierMultipliers`, a partial map merged key by key over the base map.
+  - **Long-context card**: `longContext`, a complete card that replaces the base one. It keeps the base card's `thresholdInputTokens` — chat history budgeting reads the threshold from the base card — and a catalog test enforces it.
+- A schedule with none of the three parts, or with only one of input and output, resolves to **no** schedule and leaves the base card unchanged. So does an unparseable `effectiveFrom`: a malformed schedule must never silently move a price.
 - Once the date has passed, the Models page and the Admin system-config list show an advisory to fold the change into the base rates and re-verify. The cost is correct either way; the advisory keeps the catalog from becoming a changelog of elapsed schedules.
 
-Composition order is: **base card → scheduled card if its date has passed → long-context card if this request crossed the threshold → × the served tier's multiplier.**
+Composition order is: **base card → what the scheduled change names, if its date has passed (base rates, long-context card, tier multipliers) → long-context card if this request crossed the threshold → × the served tier's multiplier.**
 
-**Per-provider findings, verified 2026-09-06 (Anthropic re-verified 2026-10-12):**
+**Per-provider findings, verified 2026-09-06 (Anthropic re-verified 2026-10-12; OpenAI re-verified 2026-11-17):**
 
 | Provider | Long context | Service tiers | Scheduled changes |
 |---|---|---|---|
-| **OpenAI** | >272 K at 2× input and 1.5× output for the full request, on `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.5`, the three GPT-5.6 models and `gpt-6-astra`. **Not** on `gpt-5.4-mini` or `gpt-5.4-nano`, whose 400 K windows cap input at 272 K so the threshold is unreachable, and **not** on `gpt-5.5-pro`, whose page states none. `gpt-6-astra` alone surcharges cache rates too ("2x input **and cache rates**"); everywhere else the long-context card omits the cache rates and they fall back to the base card. | Batch and Flex 0.5×, Fast mode (formerly Priority) 2.0× | none |
+| **OpenAI** | >272 K at 2× input and 1.5× output for the full request, on `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.5`, `gpt-5.5-pro`, the three GPT-5.6 models and every GPT-6 entry. **Not** on `gpt-5.4-mini` or `gpt-5.4-nano`, whose 400 K windows cap input at 272 K so the threshold is unreachable. The long-context card carries a cached-input rate on `gpt-5.4` and `gpt-5.5`, and both cache rates on the three GPT-5.6 models and on every GPT-6 entry. The two Pro models publish no cache rates. | Batch 0.5× on every model. Flex 0.5× on every model except `gpt-6.2-astra` and `gpt-6.2-sol`, which have none. Fast (formerly Priority) on every model except `gpt-5.4-pro`, `gpt-5.4-nano` and `gpt-5.5-pro`: 2.0×, and 2.5× on `gpt-5.5`. Ultrafast (`service_tier: "ultrafast"`, served as `ultrafast`) on `gpt-6.2-astra` and `gpt-6.2-sol` (3× through 2027-02-28, 6× from 2027-03-01) and on `gpt-6-astra` and `gpt-6.1-sol` (6×), with US data residency only on the 6.2 models. | GPT-5.6 Sol's promotional pricing ($4.00 / $20.00) ends on 2026-11-30; from 2026-12-01 the catalog schedules the pre-promotion list price ($5.00 / $30.00, long context $10.00 / $45.00), which OpenAI had not published by 2026-11-17. GPT-6.2 Ultrafast rises from 3× to 6× on 2027-03-01. |
 | **Google** | Pro models only, >200 K at $4.00 / $18.00 / $0.40. Of the Flash models the page says "No threshold pricing tiers." | Batch and Flex 0.5×, Priority 1.8× | Gemini 3.6 / 3.7 / 3.8 Flash run at half price through 2026-12-31, returning to $1.50 / $7.50 on 2027-01-01 |
 | **Anthropic** | `claude-haiku-5-5` only: >100 K at 5× on every rate ($0.50 / $2.50 / $0.05 / $0.625) for the full request, prompt length counting cache reads and writes; every other Claude 4.6+ model is flat across the full 1M window | **none declared, deliberately.** Overseer sends neither `speed: "fast"` nor Batch API requests, and Anthropic's served `service_tier: priority` is the Priority Tier *capacity* product, not Fast mode and not a price change; declaring `"priority": 2.0` there would double every Claude cost | none |
 

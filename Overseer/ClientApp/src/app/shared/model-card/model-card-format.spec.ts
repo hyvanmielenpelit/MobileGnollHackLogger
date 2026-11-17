@@ -54,6 +54,52 @@ describe('model card formatters', () => {
     })).toBe('Price changes to $3.00 in / $15.00 out per 1M on 2026-11-01.');
   });
 
+  describe('a scheduled change', () => {
+    const tierOnly = {
+      pricingScheduledChangeFrom: '2027-03-01',
+      pricingScheduledChangeServiceTierMultipliers: { ultrafast: 6 },
+      pricingScheduledChangeNote: 'Ultrafast promotional pricing (3x Standard) through 2027-02-28.'
+    };
+
+    it('names the new multiplier of the card\'s own tier, then the note', () => {
+      expect(formatPricingSchedule({ ...tierOnly, serviceTier: 'ultrafast' })).toBe(
+        'Ultrafast pricing changes to 6× Standard on 2027-03-01. '
+        + 'Ultrafast promotional pricing (3x Standard) through 2027-02-28.');
+    });
+
+    it('is silent for a card on another tier or on none', () => {
+      expect(formatPricingSchedule({ ...tierOnly, serviceTier: 'default' })).toBe('');
+      expect(formatPricingSchedule({ ...tierOnly })).toBe('');
+      expect(hasCardFacts({ ...tierOnly, serviceTier: 'default' })).toBe(false);
+      expect(hasCardFacts({ ...tierOnly })).toBe(false);
+    });
+
+    it('names both the rates and the tier when both change', () => {
+      expect(formatPricingSchedule({
+        pricingScheduledChangeFrom: '2027-03-01',
+        pricingScheduledChangeInputPricePerMillion: 3,
+        pricingScheduledChangeOutputPricePerMillion: 15,
+        pricingScheduledChangeServiceTierMultipliers: { ultrafast: 1.5 },
+        serviceTier: 'Ultrafast'
+      })).toBe('Price changes to $3.00 in / $15.00 out per 1M on 2027-03-01. '
+        + 'Ultrafast pricing changes to 1.5× Standard on 2027-03-01.');
+    });
+
+    it('appends the note to a rate change', () => {
+      expect(formatPricingSchedule({
+        pricingScheduledChangeFrom: '2026-12-01',
+        pricingScheduledChangeInputPricePerMillion: 5,
+        pricingScheduledChangeOutputPricePerMillion: 30,
+        pricingScheduledChangeNote: 'Promotional pricing through 2026-11-30.'
+      })).toBe('Price changes to $5.00 in / $30.00 out per 1M on 2026-12-01. Promotional pricing through 2026-11-30.');
+    });
+
+    it('keeps the elapsed advisory for a tier schedule', () => {
+      expect(formatPricingSchedule({ ...tierOnly, serviceTier: 'default', pricingScheduleElapsed: true }))
+        .toBe('A scheduled price change is in effect — fold it into the base rates and re-verify.');
+    });
+  });
+
   it('has no facts for an empty model, and has them for a max input alone', () => {
     expect(hasCardFacts({})).toBe(false);
     expect(hasCardFacts({ maxInputTokens: 1000 })).toBe(true);

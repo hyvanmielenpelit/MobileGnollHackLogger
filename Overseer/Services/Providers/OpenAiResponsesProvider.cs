@@ -32,6 +32,11 @@ public class OpenAiResponsesProvider : IAiProvider
 
     public IReadOnlyList<string> SupportedServiceTiers => new[] { "auto", "default", "flex", "priority", "fast" };
 
+    /// <summary>Every service tier this provider can send. A catalog entry's serviceTiers may use any of
+    /// these; SupportedServiceTiers is the default list for an entry that names none.</summary>
+    public static IReadOnlyList<string> RequestableServiceTiers { get; } =
+        new[] { "auto", "default", "flex", "priority", "fast", "ultrafast" };
+
     /// <summary>The path the Responses API lives at, on the public endpoint and on a gateway alike.</summary>
     private const string ResponsesPath = "/v1/responses";
 

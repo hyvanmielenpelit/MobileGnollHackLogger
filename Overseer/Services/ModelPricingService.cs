@@ -25,15 +25,19 @@ public record LongContextPricing(
 
 /// <summary>
 /// A price change the provider has already announced for a future date. The base card is always the
-/// rate in force today; this is the card that takes over on <see cref="EffectiveFrom"/>.
+/// rate in force today; this names what changes on <see cref="EffectiveFrom"/>. Null rates leave the base
+/// rates in force, <see cref="ServiceTierMultipliers"/> is merged key by key over the base map, and
+/// <see cref="LongContext"/> replaces the base long-context card.
 /// </summary>
 public record ScheduledPricingChange(
     DateOnly EffectiveFrom,
-    decimal InputPerMillion,
-    decimal OutputPerMillion,
+    decimal? InputPerMillion,
+    decimal? OutputPerMillion,
     decimal? CachedInputPerMillion = null,
     decimal? CacheWritePerMillion = null,
-    string? Note = null);
+    string? Note = null,
+    IReadOnlyDictionary<string, decimal>? ServiceTierMultipliers = null,
+    LongContextPricing? LongContext = null);
 
 public record ModelPricing(
     decimal InputPerMillion,
@@ -213,21 +217,56 @@ public class ModelPricingService
         var now = today ?? DateOnly.FromDateTime(DateTime.UtcNow);
         bool elapsed = scheduled != null && now >= scheduled.EffectiveFrom;
 
-        // The base card is always the rate in force today, so an elapsed schedule replaces it outright.
+        // The base card is always the rate in force today. An elapsed schedule overrides what it names —
+        // rates, tier multipliers, the long-context card — and leaves the rest as the base card has it.
         // ScheduleElapsed is not an error: the price is correct, but the catalog entry now carries a
-        // change that has already happened and should be folded into the base rates and re-verified. The
+        // change that has already happened and should be folded into the base card and re-verified. The
         // admin views surface it for exactly that reason.
         return new ModelPricing(
-            elapsed ? scheduled!.InputPerMillion  : dp.InputPerMillion,
-            elapsed ? scheduled!.OutputPerMillion : dp.OutputPerMillion,
+            elapsed ? (scheduled!.InputPerMillion  ?? dp.InputPerMillion)  : dp.InputPerMillion,
+            elapsed ? (scheduled!.OutputPerMillion ?? dp.OutputPerMillion) : dp.OutputPerMillion,
             elapsed ? (scheduled!.CachedInputPerMillion ?? dp.CachedInputPerMillion) : dp.CachedInputPerMillion,
             elapsed ? (scheduled!.CacheWritePerMillion  ?? dp.CacheWritePerMillion)  : dp.CacheWritePerMillion,
             ModelPricingSource.Catalog,
             dp.AsOf,
-            LongContext: ToLongContext(dp.LongContext),
-            ServiceTierMultipliers: dp.ServiceTierMultipliers,
+            LongContext: elapsed && scheduled!.LongContext != null ? scheduled.LongContext : ToLongContext(dp.LongContext),
+            ServiceTierMultipliers: elapsed
+                ? MergeTierMultipliers(dp.ServiceTierMultipliers, scheduled!.ServiceTierMultipliers)
+                : dp.ServiceTierMultipliers,
             ScheduledChange: scheduled,
             ScheduleElapsed: elapsed);
+    }
+
+    /// <summary>The base map overlaid key by key with the scheduled one, as a new dictionary; the catalog's
+    /// own map is never mutated.</summary>
+    private static IReadOnlyDictionary<string, decimal>? MergeTierMultipliers(
+        IReadOnlyDictionary<string, decimal>? baseMap, IReadOnlyDictionary<string, decimal>? scheduledMap)
+    {
+        if (scheduledMap == null || scheduledMap.Count == 0) return baseMap;
+
+        var merged = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        if (baseMap != null)
+        {
+            foreach (var (key, value) in baseMap) merged[key] = value;
+        }
+        foreach (var (key, value) in scheduledMap) merged[key] = value;
+        return merged;
+    }
+
+    /// <summary>Whether the change moves a rate every call pays, or the multiplier of <paramref name="costTier"/>.</summary>
+    public static bool ScheduleAffects(ScheduledPricingChange change, string? costTier)
+    {
+        if (change == null) return false;
+
+        if (change.InputPerMillion.HasValue || change.OutputPerMillion.HasValue
+            || change.CachedInputPerMillion.HasValue || change.CacheWritePerMillion.HasValue
+            || change.LongContext != null)
+        {
+            return true;
+        }
+
+        var key = ProviderHelper.NormalizeServiceTier(costTier);
+        return key != null && change.ServiceTierMultipliers != null && change.ServiceTierMultipliers.ContainsKey(key);
     }
 
     /// <summary>
@@ -248,9 +287,10 @@ public class ModelPricingService
     }
 
     /// <summary>
-    /// Converts a catalog scheduled-change block to its runtime record. An unparseable or missing
-    /// <c>effectiveFrom</c> yields null — the base card, unchanged. A malformed date must never silently
-    /// change a price.
+    /// Converts a catalog scheduled-change block to its runtime record. It yields null — the base card,
+    /// unchanged — when <c>effectiveFrom</c> is missing or unparseable, when only one of input and
+    /// output is set, or when the block names no rates, no tier multipliers and no long-context card.
+    /// A malformed schedule must never silently change a price.
     /// </summary>
     internal static ScheduledPricingChange? ParseScheduled(ModelCatalogScheduledPricing? source)
     {
@@ -263,13 +303,27 @@ public class ModelPricingService
             return null;
         }
 
+        if (source.InputPerMillion.HasValue != source.OutputPerMillion.HasValue) return null;
+
+        Dictionary<string, decimal>? tiers = null;
+        if (source.ServiceTierMultipliers is { Count: > 0 })
+        {
+            tiers = new Dictionary<string, decimal>(source.ServiceTierMultipliers, StringComparer.OrdinalIgnoreCase);
+        }
+
+        var longContext = ToLongContext(source.LongContext);
+
+        if (!source.InputPerMillion.HasValue && tiers == null && longContext == null) return null;
+
         return new ScheduledPricingChange(
             effectiveFrom,
             source.InputPerMillion,
             source.OutputPerMillion,
             source.CachedInputPerMillion,
             source.CacheWritePerMillion,
-            source.Note);
+            source.Note,
+            tiers,
+            longContext);
     }
 
     /// <summary>

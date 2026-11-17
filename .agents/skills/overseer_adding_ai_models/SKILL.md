@@ -48,6 +48,7 @@ Each file is a **flat JSON array** of catalog entries, and each entry is deseria
 | `thinkingLevels` | string array | yes, if the model reasons | `[]` | Passed through verbatim as the provider's effort/thinking parameter. Provider-specific — see below. Listed **lowest to highest**; a level not yet in `Overseer/Services/ModelCatalogs/ThinkingLevelOrder.json` goes into that file at the rank the provider intends, or `ThinkingLevelOrderTests` fails. |
 | `reasoningModes` | string array | no | `[]` | OpenAI only, and only for models with a "pro" mode. |
 | `reasoningSummaries` | string array | no | `[]` | Anthropic and OpenAI. Provider-specific — see below. |
+| `serviceTiers` | string array | no | `[]` (the provider's list) | The model's **complete** request service tier list, in display order. Write it only when it differs from the provider's default `SupportedServiceTiers`. Every value comes from the provider's requestable list (`OpenAiResponsesProvider.RequestableServiceTiers` for OpenAI), and a tier outside the default list needs a key in `pricing.serviceTierMultipliers`; a catalog test enforces both. |
 | `contextWindowSize` | int | **yes** | `0` | Total context window in tokens. |
 | `maxOutputTokens` | int | **yes** | `0` | Max output tokens. `MaxInputTokens` is **derived** as `contextWindowSize - maxOutputTokens`; never store it. |
 | `supportsSubAgentCoordination` | bool | no | **`true`** | Set `false` only for small/cheap models that must not orchestrate sub-agents. |
@@ -78,6 +79,10 @@ Published list rates are declared per 1,000,000 tokens. **All catalog prices are
 - `cacheWritePerMillion` (decimal, optional): Price per 1M cache creation/write tokens (e.g. Anthropic). If omitted or null, cache write cost is omitted.
 - `asOf` (string, required if pricing is present): ISO date (`YYYY-MM-DD`) when published list pricing was verified. Ensures operators know how fresh the pricing metadata is.
 
+A `scheduledChange` names only what changes on its date — base rates, tier multipliers, the
+long-context card, or any mix — and leaves the rest as the base card has it. See
+`docs/overseer/adding-ai-models.md` § *Conditional Rate Cards*.
+
 ## Per-Provider Conventions
 
 Copy these verbatim from a sibling entry rather than inventing values. They reflect what each
@@ -87,7 +92,11 @@ provider's API actually accepts.
 |----------|------------------|----------------------|------------------|
 | Anthropic | `["low", "medium", "high", "xhigh", "max"]` — but **drop `xhigh`** for Claude Opus 4.6 and Sonnet 4.6, which support `max` without it | `["summarized", "omitted"]` | *(omit)* |
 | Google | Per model — see below; commonly `["low", "medium", "high"]` | *(omit)* | *(omit)* |
-| OpenAI | `["none", "low", "medium", "high", "xhigh", "max"]` | `["auto", "concise", "detailed"]` | `[]`, or `["standard", "pro"]` for pro-capable models |
+| OpenAI | Per model — see below; `["none", "low", "medium", "high", "xhigh", "max"]` on the GPT-5.6 models and most GPT-6 models | `["auto", "concise", "detailed"]` | `[]`, or `["standard", "pro"]` for pro-capable models |
+
+OpenAI `serviceTiers` and tier multipliers are per model: check the pricing page's Flex, Fast and
+Ultrafast tables for every new model rather than copying a sibling's, and omit `serviceTiers` when
+the model has exactly the default tiers.
 
 Every `thinkingLevels` array lists the model's levels **lowest to highest**, as an in-order
 subsequence of the standardized order in `Overseer/Services/ModelCatalogs/ThinkingLevelOrder.json`
@@ -114,6 +123,10 @@ legacy fixed-budget path to consider.
 > `https://ai.google.dev/gemini-api/docs/models/<model-id>` or the per-model table at
 > `https://ai.google.dev/gemini-api/docs/thinking` for every new Gemini model. The
 > `/v1beta/models` dump does not carry them — its `thinking` flag is a boolean.
+>
+> **OpenAI is per model as well.** The GPT-5.4 and GPT-5.5 models have no `max`; GPT-5.4 Pro and
+> GPT-5.5 Pro support `medium`, `high` and `xhigh` only; GPT-6 Astra, GPT-6.1 Sol and the GPT-6.2
+> models reject `none`. The list is the *"Reasoning.effort supports"* sentence on the model's page.
 
 ### Display name conventions
 
@@ -201,7 +214,7 @@ stops.
 |----------|--------|---------|
 | Anthropic | The model's overview page, `https://platform.claude.com/docs/en/models/<model>/overview` — the "Specifications" tables | Model ID, context window, max output, released date |
 | Google | `GET https://generativelanguage.googleapis.com/v1beta/models?key=<API_KEY>` for the ID and the token limits, **plus the model's own page**, `https://ai.google.dev/gemini-api/docs/models/<model-id>`, for the thinking levels and the launch date | `name` minus `models/` → `prefixes`; `displayName`; `inputTokenLimit` → `contextWindowSize`; `outputTokenLimit` → `maxOutputTokens`; the levels listed on the model page → `thinkingLevels`; a stated launch date → `releaseDate` |
-| OpenAI | The model's page in the OpenAI docs, plus `GET https://api.openai.com/v1/models` for the exact ID | Model ID, context window, max output |
+| OpenAI | The model's page in the OpenAI docs, plus `GET https://api.openai.com/v1/models` for the exact ID; the pricing page's Flex, Fast and Ultrafast tables | Model ID, context window, max output; the model page's *"Reasoning.effort supports"* sentence → `thinkingLevels`; the tier tables → `serviceTiers` and each tier's multiplier |
 
 Google's API does not report a release date. Prefer a launch date stated on the model's own page
 or model card; fall back to the current UTC date only when none is published. Anthropic and OpenAI

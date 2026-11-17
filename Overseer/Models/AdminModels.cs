@@ -115,10 +115,13 @@ public class SystemAiApiConfigurationDto
 
     /// <summary>An already-announced future price change, or null. <see cref="PricingScheduleElapsed"/>
     /// says the date has passed and the rates above are already the scheduled ones — not an error, but a
-    /// sign the catalog entry should be folded down and re-verified.</summary>
+    /// sign the catalog entry should be folded down and re-verified. The two rate properties are null
+    /// when the schedule leaves the rates unchanged, and the multiplier map holds the tier multipliers it
+    /// changes.</summary>
     public string? PricingScheduledChangeFrom { get; set; }
     public decimal? PricingScheduledChangeInputPricePerMillion { get; set; }
     public decimal? PricingScheduledChangeOutputPricePerMillion { get; set; }
+    public IReadOnlyDictionary<string, decimal>? PricingScheduledChangeServiceTierMultipliers { get; set; }
     public string? PricingScheduledChangeNote { get; set; }
     public bool PricingScheduleElapsed { get; set; }
 

@@ -453,6 +453,33 @@ public class DelegateToSubAgentToolTests
         Assert.Equal("custom-user-api-key", provider.LastApiKey);
     }
 
+    [Theory]
+    [InlineData(901, "gpt-6.2-sol", "ultrafast", "ultrafast")]   // the model's own list has it
+    [InlineData(902, "gpt-6.1-terra", "ultrafast", null)]        // no own list; the provider's lacks it
+    [InlineData(903, "gpt-6.2-sol", "flex", null)]               // the model's own list leaves it out
+    public async Task ExecuteAsync_ServiceTier_IsCheckedAgainstTheModelsOwnTierList(
+        int id, string modelId, string savedTier, string? expectedTier)
+    {
+        var (tool, db, provider, _) = CreateTestSetup();
+        string userId = $"user{id}";
+        db.UserAiModels.Add(new UserAiModel
+        {
+            Id = id, AspNetUserId = userId, Provider = "OpenAI", ModelId = modelId, ServiceTier = savedTier, OrderIndex = 0
+        });
+        AddUserKey(db, userId);
+        db.ChatSession.Add(new ChatSession { Id = id, AspNetUserId = userId, Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(id), ActiveUserModelId = id, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(modelId, provider.LastModelId);
+        Assert.Equal(expectedTier, provider.LastServiceTier);
+    }
+
     [Fact]
     public async Task ExecuteAsync_ActiveSystemModelId_InheritsExactSelectedSystemModel()
     {

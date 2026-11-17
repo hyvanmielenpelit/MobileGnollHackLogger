@@ -50,6 +50,16 @@ public class ServiceTierProviderTests
         var titleBody = provider.BuildTitleRequestBody("gpt-5", "system", "user", 100, "flex");
         Assert.True(titleBody.ContainsKey("service_tier"));
         Assert.Equal("flex", titleBody["service_tier"]);
+
+        // Ultrafast is per model, not in the default list, but the request builders send it verbatim.
+        var bodyUltrafast = provider.BuildChatRequestBody(
+            "gpt-6.2-sol", history, 1000, "high", requestTools, "medium", "auto", "ultrafast");
+        Assert.Equal("ultrafast", bodyUltrafast["service_tier"]);
+        var titleUltrafast = provider.BuildTitleRequestBody("gpt-6.2-sol", "system", "user", 100, "ultrafast");
+        Assert.Equal("ultrafast", titleUltrafast["service_tier"]);
+
+        // The default list is a part of what the provider can send.
+        Assert.All(provider.SupportedServiceTiers, t => Assert.Contains(t, OpenAiResponsesProvider.RequestableServiceTiers));
     }
 
     [Fact]

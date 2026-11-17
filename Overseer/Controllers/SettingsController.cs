@@ -799,6 +799,7 @@ public class SettingsController : ControllerBase
             PricingScheduledChangeFrom = resolvedPricing?.ScheduledChange?.EffectiveFrom.ToString("yyyy-MM-dd"),
             PricingScheduledChangeInputPricePerMillion = resolvedPricing?.ScheduledChange?.InputPerMillion,
             PricingScheduledChangeOutputPricePerMillion = resolvedPricing?.ScheduledChange?.OutputPerMillion,
+            PricingScheduledChangeServiceTierMultipliers = resolvedPricing?.ScheduledChange?.ServiceTierMultipliers,
             PricingScheduledChangeNote = resolvedPricing?.ScheduledChange?.Note,
             PricingScheduleElapsed = resolvedPricing?.ScheduleElapsed ?? false,
             ModelCatalogMode = ModelCatalogModes.Normalize(m.ModelCatalogMode),
@@ -853,6 +854,7 @@ public class SettingsController : ControllerBase
             PricingScheduledChangeFrom = resolvedPricing?.ScheduledChange?.EffectiveFrom.ToString("yyyy-MM-dd"),
             PricingScheduledChangeInputPricePerMillion = resolvedPricing?.ScheduledChange?.InputPerMillion,
             PricingScheduledChangeOutputPricePerMillion = resolvedPricing?.ScheduledChange?.OutputPerMillion,
+            PricingScheduledChangeServiceTierMultipliers = resolvedPricing?.ScheduledChange?.ServiceTierMultipliers,
             PricingScheduledChangeNote = resolvedPricing?.ScheduledChange?.Note,
             PricingScheduleElapsed = resolvedPricing?.ScheduleElapsed ?? false,
             ModelCatalogMode = ModelCatalogModes.Normalize(config.ModelCatalogMode),
@@ -1374,12 +1376,12 @@ public class SettingsController : ControllerBase
                 return BadRequest(new { message = $"Unsupported provider: {provider}" });
             }
 
-            // Apply recommendation flags and supported service tiers
+            // Apply recommendation flags, and each model's service tiers: its catalog list, else the provider's
             var aiProvider = _aiProviders.FirstOrDefault(p => p.ProviderName.Equals(provider, StringComparison.OrdinalIgnoreCase));
-            var supportedServiceTiers = aiProvider?.SupportedServiceTiers?.ToList() ?? new List<string>();
             foreach (var m in models)
             {
-                m.SupportedServiceTiers = supportedServiceTiers;
+                m.SupportedServiceTiers = ModelMetadataService.ResolveServiceTiers(
+                    aiProvider?.SupportedServiceTiers, _modelMetadataService.GetMetadata(provider, m.Id));
             }
 
             var recommended = _recommendedModelService.GetRecommendedModels(provider);

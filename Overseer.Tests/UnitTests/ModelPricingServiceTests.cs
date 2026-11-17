@@ -39,7 +39,7 @@ public class ModelPricingServiceTests
         Assert.Equal(0.40m, result.CachedInputPerMillion);
         Assert.Equal(5.00m, result.CacheWritePerMillion);
         Assert.Equal(ModelPricingSource.Catalog, result.Source);
-        Assert.Equal("2026-09-06", result.AsOf);
+        Assert.Equal("2026-11-17", result.AsOf);
     }
 
     [Fact]
@@ -458,11 +458,387 @@ public class ModelPricingServiceTests
 
                 var onDate = service.ResolveDefault(provider, entry.Prefixes[0], scheduled.EffectiveFrom);
                 Assert.NotNull(onDate);
-                Assert.Equal(scheduled.InputPerMillion, onDate.InputPerMillion);
-                Assert.Equal(scheduled.OutputPerMillion, onDate.OutputPerMillion);
+                // A schedule that names no rates leaves the base rates in force.
+                Assert.Equal(scheduled.InputPerMillion ?? entry.Pricing.InputPerMillion, onDate.InputPerMillion);
+                Assert.Equal(scheduled.OutputPerMillion ?? entry.Pricing.OutputPerMillion, onDate.OutputPerMillion);
                 Assert.True(onDate.ScheduleElapsed);
+
+                foreach (var (key, value) in scheduled.ServiceTierMultipliers ?? new Dictionary<string, decimal>())
+                {
+                    Assert.Equal(value, ModelPricingService.ResolveServiceTierMultiplier(onDate, key, null));
+
+                    decimal baseValue = entry.Pricing.ServiceTierMultipliers != null
+                        && entry.Pricing.ServiceTierMultipliers.TryGetValue(key, out var b) ? b : 1.0m;
+                    Assert.Equal(baseValue, ModelPricingService.ResolveServiceTierMultiplier(before, key, null));
+                }
+
+                var baseLongContext = ModelPricingService.ToLongContext(entry.Pricing.LongContext);
+                Assert.Equal(baseLongContext, before.LongContext);
+                Assert.Equal(scheduled.LongContext ?? baseLongContext, onDate.LongContext);
             }
         }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // What a scheduled change may name: base rates, tier multipliers, a long-context card.
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void ParseScheduled_TierOnly_ParsesWithNoRates()
+    {
+        var parsed = ModelPricingService.ParseScheduled(new ModelCatalogScheduledPricing
+        {
+            EffectiveFrom = "2027-03-01",
+            ServiceTierMultipliers = new Dictionary<string, decimal> { ["ultrafast"] = 6.0m }
+        });
+
+        Assert.NotNull(parsed);
+        Assert.Null(parsed.InputPerMillion);
+        Assert.Null(parsed.OutputPerMillion);
+        Assert.NotNull(parsed.ServiceTierMultipliers);
+        Assert.Equal(6.0m, parsed.ServiceTierMultipliers["ULTRAFAST"]);
+        Assert.Null(parsed.LongContext);
+    }
+
+    [Fact]
+    public void ParseScheduled_LongContextOnly_ParsesWithNoRates()
+    {
+        var parsed = ModelPricingService.ParseScheduled(new ModelCatalogScheduledPricing
+        {
+            EffectiveFrom = "2027-03-01",
+            LongContext = new ModelCatalogLongContextPricing
+            {
+                ThresholdInputTokens = 272_000, InputPerMillion = 10.00m, OutputPerMillion = 45.00m
+            }
+        });
+
+        Assert.NotNull(parsed);
+        Assert.Null(parsed.InputPerMillion);
+        Assert.Null(parsed.OutputPerMillion);
+        Assert.Null(parsed.ServiceTierMultipliers);
+        Assert.Equal(new LongContextPricing(272_000, 10.00m, 45.00m), parsed.LongContext);
+    }
+
+    [Fact]
+    public void ParseScheduled_InputWithoutOutput_YieldsNoSchedule()
+    {
+        Assert.Null(ModelPricingService.ParseScheduled(new ModelCatalogScheduledPricing
+        {
+            EffectiveFrom = "2027-03-01",
+            InputPerMillion = 5.00m
+        }));
+        Assert.Null(ModelPricingService.ParseScheduled(new ModelCatalogScheduledPricing
+        {
+            EffectiveFrom = "2027-03-01",
+            OutputPerMillion = 30.00m,
+            ServiceTierMultipliers = new Dictionary<string, decimal> { ["ultrafast"] = 6.0m }
+        }));
+    }
+
+    [Fact]
+    public void ParseScheduled_NothingNamed_YieldsNoSchedule()
+    {
+        Assert.Null(ModelPricingService.ParseScheduled(new ModelCatalogScheduledPricing
+        {
+            EffectiveFrom = "2027-03-01",
+            ServiceTierMultipliers = new Dictionary<string, decimal>(),
+            Note = "Nothing changes."
+        }));
+    }
+
+    [Fact]
+    public void ParseScheduled_UnparseableDateOnATierSchedule_YieldsNoSchedule()
+    {
+        Assert.Null(ModelPricingService.ParseScheduled(new ModelCatalogScheduledPricing
+        {
+            EffectiveFrom = "March 2027",
+            ServiceTierMultipliers = new Dictionary<string, decimal> { ["ultrafast"] = 6.0m }
+        }));
+    }
+
+    private static ModelCatalogPricing TierScheduleCatalogCard(Dictionary<string, decimal>? baseTiers) => new()
+    {
+        InputPerMillion = 2.00m,
+        OutputPerMillion = 10.00m,
+        CachedInputPerMillion = 0.10m,
+        ServiceTierMultipliers = baseTiers,
+        ScheduledChange = new ModelCatalogScheduledPricing
+        {
+            EffectiveFrom = "2027-03-01",
+            ServiceTierMultipliers = new Dictionary<string, decimal> { ["ultrafast"] = 6.0m }
+        }
+    };
+
+    [Fact]
+    public void ResolveDefault_TierOnlySchedule_MergesTheTierAndKeepsTheBaseCard()
+    {
+        var baseTiers = new Dictionary<string, decimal> { ["batch"] = 0.5m, ["fast"] = 2.0m, ["ultrafast"] = 3.0m };
+        var catalogCard = TierScheduleCatalogCard(baseTiers);
+
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(new FixedPricingMetadataService(catalogCard), db);
+
+        var before = service.ResolveDefault("OpenAI", "tier-probe", new DateOnly(2027, 2, 28));
+        Assert.NotNull(before);
+        Assert.False(before.ScheduleElapsed);
+        Assert.Equal(2.00m, before.InputPerMillion);
+        Assert.Equal(3.0m, ModelPricingService.ResolveServiceTierMultiplier(before, "ultrafast", null));
+
+        var onDate = service.ResolveDefault("OpenAI", "tier-probe", new DateOnly(2027, 3, 1));
+        Assert.NotNull(onDate);
+        Assert.True(onDate.ScheduleElapsed);
+        Assert.Equal(2.00m, onDate.InputPerMillion);
+        Assert.Equal(10.00m, onDate.OutputPerMillion);
+        Assert.Equal(0.10m, onDate.CachedInputPerMillion);
+        Assert.Equal(6.0m, ModelPricingService.ResolveServiceTierMultiplier(onDate, "ultrafast", null));
+        Assert.Equal(2.0m, ModelPricingService.ResolveServiceTierMultiplier(onDate, "fast", null));
+        Assert.Equal(0.5m, ModelPricingService.ResolveServiceTierMultiplier(onDate, "batch", null));
+
+        // The catalog's own map is never mutated.
+        Assert.Equal(3.0m, baseTiers["ultrafast"]);
+        Assert.Equal(3, baseTiers.Count);
+    }
+
+    [Fact]
+    public void ResolveDefault_TierOnlySchedule_WithNoBaseMap_BecomesTheWholeMap()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(new FixedPricingMetadataService(TierScheduleCatalogCard(null)), db);
+
+        var before = service.ResolveDefault("OpenAI", "tier-probe", new DateOnly(2027, 2, 28));
+        Assert.NotNull(before);
+        Assert.Null(before.ServiceTierMultipliers);
+
+        var onDate = service.ResolveDefault("OpenAI", "tier-probe", new DateOnly(2027, 3, 1));
+        Assert.NotNull(onDate);
+        Assert.NotNull(onDate.ServiceTierMultipliers);
+        Assert.Single(onDate.ServiceTierMultipliers);
+        Assert.Equal(6.0m, ModelPricingService.ResolveServiceTierMultiplier(onDate, "ultrafast", null));
+    }
+
+    [Fact]
+    public void ResolveDefault_LongContextOnlySchedule_ReplacesTheLongContextCardAlone()
+    {
+        var catalogCard = new ModelCatalogPricing
+        {
+            InputPerMillion = 4.00m,
+            OutputPerMillion = 20.00m,
+            LongContext = new ModelCatalogLongContextPricing
+            {
+                ThresholdInputTokens = 272_000, InputPerMillion = 8.00m, OutputPerMillion = 30.00m
+            },
+            ScheduledChange = new ModelCatalogScheduledPricing
+            {
+                EffectiveFrom = "2027-03-01",
+                LongContext = new ModelCatalogLongContextPricing
+                {
+                    ThresholdInputTokens = 272_000, InputPerMillion = 10.00m, OutputPerMillion = 45.00m,
+                    CachedInputPerMillion = 1.00m
+                }
+            }
+        };
+
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(new FixedPricingMetadataService(catalogCard), db);
+
+        var before = service.ResolveDefault("OpenAI", "lc-probe", new DateOnly(2027, 2, 28));
+        Assert.NotNull(before);
+        Assert.Equal(new LongContextPricing(272_000, 8.00m, 30.00m), before.LongContext);
+
+        var onDate = service.ResolveDefault("OpenAI", "lc-probe", new DateOnly(2027, 3, 1));
+        Assert.NotNull(onDate);
+        Assert.True(onDate.ScheduleElapsed);
+        Assert.Equal(4.00m, onDate.InputPerMillion);
+        Assert.Equal(20.00m, onDate.OutputPerMillion);
+        Assert.Equal(new LongContextPricing(272_000, 10.00m, 45.00m, 1.00m), onDate.LongContext);
+    }
+
+    [Theory]
+    [InlineData(2027, 2, 28, 3.0)]
+    [InlineData(2027, 3, 1, 6.0)]
+    public void ResolveDefault_Gpt62Sol_UltrafastFollowsItsSchedule(int year, int month, int day, double expected)
+    {
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(_metadataService, db);
+
+        var card = service.ResolveDefault("OpenAI", "gpt-6.2-sol", new DateOnly(year, month, day));
+
+        Assert.NotNull(card);
+        Assert.Equal((decimal)expected, ModelPricingService.ResolveServiceTierMultiplier(card, "ultrafast", null));
+        Assert.Equal(2.0m, ModelPricingService.ResolveServiceTierMultiplier(card, "fast", null));
+        Assert.Equal(2.00m, card.InputPerMillion);
+    }
+
+    [Fact]
+    public void ResolveDefault_Gpt56Sol_OnTheLastPromotionalDay_ResolvesThePromotionalCard()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(_metadataService, db);
+
+        var card = service.ResolveDefault("OpenAI", "gpt-5.6-sol", new DateOnly(2026, 11, 30));
+
+        Assert.NotNull(card);
+        Assert.False(card.ScheduleElapsed);
+        Assert.Equal(4.00m, card.InputPerMillion);
+        Assert.Equal(20.00m, card.OutputPerMillion);
+        Assert.Equal(0.40m, card.CachedInputPerMillion);
+        Assert.Equal(5.00m, card.CacheWritePerMillion);
+        Assert.Equal(new LongContextPricing(272_000, 8.00m, 30.00m, 0.80m, 10.00m), card.LongContext);
+        Assert.Equal(2.0m, ModelPricingService.ResolveServiceTierMultiplier(card, "fast", null));
+        Assert.Equal(0.5m, ModelPricingService.ResolveServiceTierMultiplier(card, "flex", null));
+    }
+
+    [Fact]
+    public void ResolveDefault_Gpt56Sol_AfterThePromotion_ResolvesTheScheduledCard()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(_metadataService, db);
+
+        var card = service.ResolveDefault("OpenAI", "gpt-5.6-sol", new DateOnly(2026, 12, 1));
+
+        Assert.NotNull(card);
+        Assert.True(card.ScheduleElapsed);
+        Assert.Equal(5.00m, card.InputPerMillion);
+        Assert.Equal(30.00m, card.OutputPerMillion);
+        Assert.Equal(0.50m, card.CachedInputPerMillion);
+        Assert.Equal(6.25m, card.CacheWritePerMillion);
+        Assert.Equal(new LongContextPricing(272_000, 10.00m, 45.00m, 1.00m, 12.50m), card.LongContext);
+        Assert.Equal(2.0m, ModelPricingService.ResolveServiceTierMultiplier(card, "fast", null));
+        Assert.Equal(0.5m, ModelPricingService.ResolveServiceTierMultiplier(card, "flex", null));
+    }
+
+    [Fact]
+    public void ResolveDefault_Gpt61Sol_PricesUltrafastAtSixTimes()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(_metadataService, db);
+
+        var card = service.ResolveDefault("OpenAI", "gpt-6.1-sol", new DateOnly(2026, 11, 17));
+
+        Assert.NotNull(card);
+        Assert.Equal(6.0m, ModelPricingService.ResolveServiceTierMultiplier(card, "ultrafast", null));
+    }
+
+    [Fact]
+    public void ComputeCost_Gpt62AstraServedUltrafast_IsThreeTimesDefault_AtShortAndLongContext()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(_metadataService, db);
+        var card = service.ResolveDefault("OpenAI", "gpt-6.2-astra", new DateOnly(2026, 11, 17));
+        Assert.NotNull(card);
+
+        foreach (var call in new[] { Call(100_000, 2_000, cacheRead: 20_000), Call(300_000, 2_000, cacheRead: 20_000) })
+        {
+            var calls = new List<TokenUsageReport> { call };
+            decimal standard = ModelPricingService.ComputeCost(card, calls, actualServiceTier: "default");
+            decimal ultrafast = ModelPricingService.ComputeCost(card, calls, actualServiceTier: "ultrafast");
+
+            Assert.True(standard > 0m);
+            Assert.Equal(standard * 3.0m, ultrafast);
+        }
+    }
+
+    [Fact]
+    public async Task ResolveForRunAsync_SnapshotWithAnUltrafastMultiplier_CostsAServedUltrafastCallAtSixTimes()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(_metadataService, db);
+
+        var run = new BenchmarkRun
+        {
+            PricingSnapshotJson = """
+            {
+              "candidate": {
+                "inputPerMillion": 2.00,
+                "outputPerMillion": 10.00,
+                "source": "catalog",
+                "asOf": "2026-11-17",
+                "serviceTierMultipliers": { "fast": 2.0, "ultrafast": 6.0 }
+              }
+            }
+            """
+        };
+
+        var pricing = await service.ResolveForRunAsync(run);
+
+        Assert.NotNull(pricing.Candidate);
+        var calls = new List<TokenUsageReport> { Call(10_000, 1_000) };
+        decimal standard = ModelPricingService.ComputeCost(pricing.Candidate, calls, actualServiceTier: "default");
+        decimal ultrafast = ModelPricingService.ComputeCost(pricing.Candidate, calls, actualServiceTier: "ultrafast");
+        Assert.Equal(standard * 6.0m, ultrafast);
+    }
+
+    [Fact]
+    public void ScheduleAffects_RatesAndLongContext_AffectEveryTier()
+    {
+        var rates = new ScheduledPricingChange(new DateOnly(2027, 1, 1), 5.00m, 30.00m);
+        var longContext = new ScheduledPricingChange(
+            new DateOnly(2027, 1, 1), null, null, LongContext: new LongContextPricing(272_000, 10.00m, 45.00m));
+
+        foreach (var tier in new[] { null, "default", "ultrafast" })
+        {
+            Assert.True(ModelPricingService.ScheduleAffects(rates, tier));
+            Assert.True(ModelPricingService.ScheduleAffects(longContext, tier));
+        }
+    }
+
+    [Fact]
+    public void ScheduleAffects_TierOnly_AffectsOnlyItsTier()
+    {
+        var change = new ScheduledPricingChange(
+            new DateOnly(2027, 3, 1), null, null,
+            ServiceTierMultipliers: new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase) { ["ultrafast"] = 6.0m });
+
+        Assert.True(ModelPricingService.ScheduleAffects(change, "ultrafast"));
+        Assert.True(ModelPricingService.ScheduleAffects(change, "SERVICE_TIER_ULTRAFAST"));
+        Assert.False(ModelPricingService.ScheduleAffects(change, "default"));
+        Assert.False(ModelPricingService.ScheduleAffects(change, null));
+    }
+
+    [Fact]
+    public void ResolveDefault_ReviewCorrections_ProModelsAndGpt55()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(_metadataService, db);
+        var day = new DateOnly(2026, 11, 17);
+
+        var gpt55 = service.ResolveDefault("OpenAI", "gpt-5.5", day);
+        Assert.NotNull(gpt55);
+        Assert.Equal(2.5m, ModelPricingService.ResolveServiceTierMultiplier(gpt55, "priority", null));
+        Assert.Equal(2.5m, ModelPricingService.ResolveServiceTierMultiplier(gpt55, "fast", null));
+        Assert.NotNull(gpt55.LongContext);
+        Assert.Equal(1.00m, gpt55.LongContext.CachedInputPerMillion);
+
+        var gpt55Pro = service.ResolveDefault("OpenAI", "gpt-5.5-pro", day);
+        Assert.NotNull(gpt55Pro);
+        Assert.Null(gpt55Pro.CachedInputPerMillion);
+        Assert.Equal(new LongContextPricing(272_000, 60.00m, 270.00m), gpt55Pro.LongContext);
+
+        var gpt54Pro = service.ResolveDefault("OpenAI", "gpt-5.4-pro", day);
+        Assert.NotNull(gpt54Pro);
+        Assert.Null(gpt54Pro.CachedInputPerMillion);
+    }
+
+    [Fact]
+    public void ResolveDefault_LongContextCacheRates_OfTheAuditedEntries()
+    {
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(_metadataService, db);
+        var day = new DateOnly(2026, 11, 17);
+
+        var gpt54 = service.ResolveDefault("OpenAI", "gpt-5.4", day)?.LongContext;
+        Assert.NotNull(gpt54);
+        Assert.Equal(0.50m, gpt54.CachedInputPerMillion);
+
+        var terra = service.ResolveDefault("OpenAI", "gpt-5.6-terra", day)?.LongContext;
+        Assert.NotNull(terra);
+        Assert.Equal(0.40m, terra.CachedInputPerMillion);
+        Assert.Equal(5.00m, terra.CacheWritePerMillion);
+
+        var luna = service.ResolveDefault("OpenAI", "gpt-5.6-luna", day)?.LongContext;
+        Assert.NotNull(luna);
+        Assert.Equal(0.04m, luna.CachedInputPerMillion);
+        Assert.Equal(0.50m, luna.CacheWritePerMillion);
     }
 
     // ---------------------------------------------------------------------------------------------
