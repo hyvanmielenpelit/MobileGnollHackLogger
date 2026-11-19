@@ -14,7 +14,8 @@ using Xunit;
 /// and its body-locator counterpart: a one-line "&lt;type tokens&gt; name(" function definition, and
 /// the closing line of a multi-line typedef block. Also pins the exclusions those additions must not
 /// widen into — extern/FDECL/OVL prototypes and bare call statements. Also covers an <c>enum</c> or
-/// <c>struct</c> head whose <c>{</c> is on the next line, and the look-alikes that must not match it.
+/// <c>struct</c> head whose <c>{</c> is on the next line, and the look-alikes that must not match it,
+/// and a prototype whose parameter list spans lines, which is never taken for the definition.
 /// </summary>
 public class SourceCodeServiceDefinitionMatcherTests : IDisposable
 {
@@ -93,6 +94,34 @@ public class SourceCodeServiceDefinitionMatcherTests : IDisposable
             "    {\r\n" +
             "        int scoped = 0;\r\n" +
             "    }\r\n" +
+            "}\r\n");
+
+        // A prototype whose parameter list spans two lines (the src/uhitm.c hmon_hitmon shape), an
+        // unrelated body defined before the real one, and a definition whose signature spans lines.
+        File.WriteAllText(Path.Combine(_sourceDir, "src", "protos.c"),
+            "/* protos.c */\r\n" +
+            "static boolean proto_split_fn(struct monst *, struct obj *, int,\r\n" +
+            "                                       int, boolean *);\r\n" +
+            "static int proto_other_fn(int);\r\n" +
+            "\r\n" +
+            "void\r\n" +
+            "proto_first_body(int x)\r\n" +
+            "{\r\n" +
+            "    first_body_marker(x);\r\n" +
+            "}\r\n" +
+            "\r\n" +
+            "static boolean\r\n" +
+            "proto_split_fn(struct monst *mon, struct obj *obj, int a, int b, boolean *d)\r\n" +
+            "{\r\n" +
+            "    split_body_marker(a);\r\n" +
+            "    return TRUE;\r\n" +
+            "}\r\n" +
+            "\r\n" +
+            "static int proto_def_split(int a,\r\n" +
+            "                           int b)\r\n" +
+            "{\r\n" +
+            "    def_split_marker(a);\r\n" +
+            "    return 0;\r\n" +
             "}\r\n");
     }
 
@@ -451,5 +480,80 @@ public class SourceCodeServiceDefinitionMatcherTests : IDisposable
             : service.FindDefinition(name, kind);
 
         Assert.Equal($"No definition found for '{name}' of kind '{kind}'.", result);
+    }
+
+    [Fact]
+    public void FindDefinition_MultiLinePrototype_IsNotADefinition()
+    {
+        using var service = CreateService();
+
+        string result = service.FindDefinition("proto_split_fn", "function");
+
+        Assert.StartsWith("--- src/protos.c:L13 ---", result);
+        Assert.Contains(">>> 13: proto_split_fn(struct monst *mon, struct obj *obj, int a, int b, boolean *d)", result);
+        Assert.DoesNotContain(">>> 2:", result);
+    }
+
+    [Fact]
+    public void GetFunctionBody_MultiLinePrototype_ReturnsTheRealBody()
+    {
+        using var service = CreateService();
+
+        string result = service.GetFunctionBody("proto_split_fn", "function");
+
+        Assert.StartsWith("--- src/protos.c:L11-", result);
+        Assert.Contains("split_body_marker", result);
+        Assert.DoesNotContain("first_body_marker", result);
+    }
+
+    [Fact]
+    public void GetFunctionBody_MultiLineDefinition_StillMatches()
+    {
+        using var service = CreateService();
+
+        string result = service.GetFunctionBody("proto_def_split", "function");
+
+        Assert.Contains("static int proto_def_split(int a,", result);
+        Assert.Contains("def_split_marker", result);
+    }
+
+    [Fact]
+    public void IsPrototypeDeclaration_SkipsCommentsAndStrings()
+    {
+        // A ';' in a comment after the list, with the body brace on the next line.
+        Assert.False(SourceCodeService.IsPrototypeDeclaration(new[]
+        {
+            "static int commented(int a) /* not a prototype; */",
+            "{"
+        }, 0));
+
+        // A ',' character literal inside the list.
+        Assert.False(SourceCodeService.IsPrototypeDeclaration(new[]
+        {
+            "static int literal(char a[sizeof ','],",
+            "                   int b)",
+            "{"
+        }, 0));
+
+        // A ")" and ";" inside a string literal inside the list.
+        Assert.False(SourceCodeService.IsPrototypeDeclaration(new[]
+        {
+            "static int quoted(char a[sizeof \");\"],",
+            "                  int b)",
+            "{"
+        }, 0));
+
+        Assert.True(SourceCodeService.IsPrototypeDeclaration(new[]
+        {
+            "static int spaced(int a,",
+            "                  int b) ;"
+        }, 0));
+
+        // A list that never closes.
+        Assert.False(SourceCodeService.IsPrototypeDeclaration(new[]
+        {
+            "static int unclosed(int a,",
+            "                    int b"
+        }, 0));
     }
 }

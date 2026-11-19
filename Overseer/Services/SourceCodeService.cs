@@ -1232,13 +1232,14 @@ namespace Overseer.Services
                     if ((kind == "any" || kind == "function") && isCFile)
                     {
                         // Function definition: match symbol at start of line followed by (
-                        if (functionRegex.IsMatch(line) && !line.TrimEnd().EndsWith(";"))
+                        if (functionRegex.IsMatch(line) && !line.TrimEnd().EndsWith(";")
+                            && !IsPrototypeDeclaration(doc.ContentLines, i))
                         {
                             match = true;
                             // For C functions, include the preceding line for the return type
                             contextLines = 8;
                         }
-                        else if (functionDeclRegex.IsMatch(line))
+                        else if (functionDeclRegex.IsMatch(line) && !IsPrototypeDeclaration(doc.ContentLines, i))
                         {
                             match = true;
                             contextLines = 8;
@@ -1347,6 +1348,74 @@ namespace Overseer.Services
         }
 
         /// <summary>
+        /// True when the declaration starting on <paramref name="line"/> is a prototype: once its
+        /// parameter list closes, the next significant character is ';' or ','. Comments and string
+        /// and character literals are skipped. Reads at most 40 lines. The list starts at the line's
+        /// first '(', which the definition patterns place right after the symbol.
+        /// </summary>
+        internal static bool IsPrototypeDeclaration(IReadOnlyList<string> lines, int line)
+        {
+            const int MaxLines = 40;
+            if (line < 0 || line >= lines.Count) return false;
+
+            int column = lines[line].IndexOf('(');
+            if (column < 0) return false;
+
+            int depth = 0;
+            bool listClosed = false;
+            bool inBlockComment = false;
+            int lastLine = Math.Min(lines.Count - 1, line + MaxLines - 1);
+
+            for (int l = line; l <= lastLine; l++)
+            {
+                string text = lines[l];
+                for (int c = l == line ? column : 0; c < text.Length; c++)
+                {
+                    char ch = text[c];
+                    char next = c + 1 < text.Length ? text[c + 1] : '\0';
+
+                    if (inBlockComment)
+                    {
+                        if (ch == '*' && next == '/')
+                        {
+                            inBlockComment = false;
+                            c++;
+                        }
+                        continue;
+                    }
+
+                    if (ch == '/' && next == '*')
+                    {
+                        inBlockComment = true;
+                        c++;
+                        continue;
+                    }
+                    if (ch == '/' && next == '/') break;
+
+                    if (ch == '"' || ch == '\'')
+                    {
+                        // A literal ends on its unescaped closing quote, or at the end of the line.
+                        for (c++; c < text.Length && text[c] != ch; c++)
+                        {
+                            if (text[c] == '\\') c++;
+                        }
+                        if (listClosed) return false;
+                        continue;
+                    }
+
+                    if (char.IsWhiteSpace(ch)) continue;
+
+                    if (listClosed) return ch == ';' || ch == ',';
+
+                    if (ch == '(') depth++;
+                    else if (ch == ')' && --depth == 0) listClosed = true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Shared helper: finds the first line in the index that matches a symbol of the given kind.
         /// Returns the document and 0-based line index, or (null, -1) if not found.
         /// </summary>
@@ -1385,8 +1454,9 @@ namespace Overseer.Services
 
                     if ((kind == "any" || kind == "function") && isCFile)
                     {
-                        if (functionRegex.IsMatch(line) && !line.TrimEnd().EndsWith(";")) match = true;
-                        else if (functionDeclRegex.IsMatch(line)) match = true;
+                        if (functionRegex.IsMatch(line) && !line.TrimEnd().EndsWith(";")
+                            && !IsPrototypeDeclaration(doc.ContentLines, i)) match = true;
+                        else if (functionDeclRegex.IsMatch(line) && !IsPrototypeDeclaration(doc.ContentLines, i)) match = true;
                     }
                     if ((kind == "any" || kind == "macro") && !match)
                     {

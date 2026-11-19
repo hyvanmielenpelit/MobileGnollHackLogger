@@ -224,11 +224,12 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsSixtyFive()
+    public void HarnessVersion_IsSixtySix()
     {
-        // Harness 65: get_item_stats reports exceptionality_eligible by the game's rule, and the
-        // damage, armor and wand notes reach the right items.
-        Assert.Equal("65", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 66: get_function_definition and search_definitions never take a prototype whose
+        // parameter list spans lines for the definition, and the report_feedback guide asks for
+        // English reports and a symptom in a tool_problem subject.
+        Assert.Equal("66", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     private static readonly IReadOnlyList<string> ConfiguredCandidateTools = new[]

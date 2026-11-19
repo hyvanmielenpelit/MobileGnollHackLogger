@@ -24,6 +24,10 @@ The code lives in `Overseer/Services/SourceCodeService.cs` and `Overseer/Service
 The files left out for their size are not logged one by one, but the published index records them and
 the dashboard lists them (§ 6).
 
+`search_definitions` and `get_function_definition` locate a function by its name line in a `.c` file,
+and never take a prototype for the definition: a declaration whose parameter list, once closed, is
+followed by `;` or `,` is skipped, also when the list spans lines (harness 66, 2026-11-19).
+
 ## 2. The pipeline
 
 `StartAsync` loads the flag descriptions, starts the first pass on the thread pool and the 10-minute

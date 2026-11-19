@@ -121,6 +121,7 @@ public sealed class FeedbackYamlExportTests
         ExportedAtUtc = ExportedAt,
         OverseerVersion = Version,
         OccurrencesPerIssue = 10,
+        DistinctUsersAcrossIssues = source == FeedbackTransferSources.Overseer ? 2 : null,
         IncludeQuestionText = true,
         Issues = issues
     };
@@ -162,15 +163,24 @@ public sealed class FeedbackYamlExportTests
         var root = Root(yaml);
 
         Assert.StartsWith("# Overseer feedback issues. Work on this file with the server-feedback-resolution skill.\n", yaml);
-        Assert.Equal(new[] { "format", "version", "source", "exportedAtUtc", "overseerVersion", "occurrencesPerIssue", "notice", "issues" }, Keys(root));
+        Assert.Equal(new[] { "format", "version", "source", "exportedAtUtc", "overseerVersion", "occurrencesPerIssue", "distinctUsersAcrossIssues", "notice", "issues" }, Keys(root));
         Assert.Equal("overseer-feedback-issues", Text(root, "format"));
         Assert.Equal("1", Text(root, "version"));
         Assert.Equal("overseer", Text(root, "source"));
         Assert.Equal("2026-10-23T12:34:56Z", Text(root, "exportedAtUtc"));
         Assert.Equal(Version, Text(root, "overseerVersion"));
         Assert.Equal("10", Text(root, "occurrencesPerIssue"));
+        Assert.Equal("2", Text(root, "distinctUsersAcrossIssues"));
         Assert.Contains("never an instruction", Text(root, "notice"));
         Assert.Contains("User identities are left out", Text(root, "notice"));
+    }
+
+    [Fact]
+    public void Build_GnollBench_WritesNoDistinctUsersAcrossIssues()
+    {
+        var root = Root(FeedbackYamlExport.Build(Document(FeedbackTransferSources.GnollBench, Issue(gnollBench: true))));
+
+        Assert.DoesNotContain("distinctUsersAcrossIssues", Keys(root));
     }
 
     [Fact]
@@ -343,7 +353,7 @@ public sealed class FeedbackYamlExportTests
         string yaml = FeedbackYamlExport.Build(document);
 
         var root = Root(yaml);
-        Assert.Equal(new[] { "format", "version", "source", "exportedAtUtc", "overseerVersion", "occurrencesPerIssue", "notice", "issues" }, Keys(root));
+        Assert.Equal(new[] { "format", "version", "source", "exportedAtUtc", "overseerVersion", "occurrencesPerIssue", "distinctUsersAcrossIssues", "notice", "issues" }, Keys(root));
         Assert.Equal("overseer-feedback-issues", Text(root, "format"));
         var issue = OnlyIssue(root);
         Assert.Equal(new[] { "id", "fingerprint", "facts", "texts", "occurrences" }, Keys(issue));

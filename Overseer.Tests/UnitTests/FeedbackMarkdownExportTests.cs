@@ -570,6 +570,84 @@ public sealed class FeedbackMarkdownExportTests : IDisposable
     }
 
     [Fact]
+    public async Task Export_Overseer_CountsDistinctUsersAcrossTheIssues_NotPerIssue()
+    {
+        var users = new[] { "user-a", "user-b", "user-c" }
+            .Select(id => new ApplicationUser { Id = id, UserName = id, NormalizedUserName = id.ToUpperInvariant() })
+            .ToArray();
+        _db.Users.AddRange(users);
+        var first = new OverseerFeedbackIssue { Fingerprint = Fp(1), Category = MissingInformation, Subject = "First", Summary = "First.", FirstSeenUtc = T0, LastSeenUtc = T0, OccurrenceCount = 2 };
+        var second = new OverseerFeedbackIssue { Fingerprint = Fp(2), Category = MissingInformation, Subject = "Second", Summary = "Second.", FirstSeenUtc = T0, LastSeenUtc = T0, OccurrenceCount = 2 };
+        _db.OverseerFeedbackIssues.AddRange(first, second);
+        await _db.SaveChangesAsync(Ct);
+        long session = 0;
+        foreach (var (issue, userId) in new[] { (first, "user-a"), (first, "user-b"), (second, "user-b"), (second, "user-c") })
+        {
+            _db.OverseerFeedbackReports.Add(new OverseerFeedbackReport
+            {
+                IssueId = issue.Id,
+                Fingerprint = issue.Fingerprint,
+                CreatedUtc = T0.AddHours(1),
+                Category = MissingInformation,
+                Subject = issue.Subject,
+                Summary = issue.Summary,
+                ChatSessionId = ++session,
+                AspNetUserId = userId
+            });
+        }
+        await _db.SaveChangesAsync(Ct);
+        var ids = new List<long> { first.Id, second.Id };
+
+        var markdown = await _service.ExportAsync(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = ids }, Version, Ct);
+        var yaml = await _service.ExportAsync(new AdminFeedbackExportRequestDto { Source = "overseer", IssueIds = ids, Format = "yaml" }, Version, Ct);
+
+        Assert.Equal(3, markdown.Document!.DistinctUsersAcrossIssues);
+        Assert.Contains("| Distinct users across these issues | 3 |", markdown.Export!.Content);
+        Assert.Contains("\ndistinctUsersAcrossIssues: 3\n", yaml.Export!.Content);
+        foreach (var id in users.Select(u => u.Id))
+        {
+            Assert.DoesNotContain(id, markdown.Export.Content);
+            Assert.DoesNotContain(id, yaml.Export.Content);
+        }
+    }
+
+    [Fact]
+    public async Task Export_GnollBench_HasNoDistinctUsersAcrossIssues()
+    {
+        var run = new BenchmarkRun
+        {
+            SuiteName = "Suite One",
+            BenchmarkSuiteIdUsed = 3,
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model("OpenAI", "model-a", displayName: "Model A"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model("Google", "grader"),
+            HarnessVersion = "60",
+            StartedAtUtc = T0
+        };
+        _db.BenchmarkRuns.Add(run);
+        var answer = new BenchmarkRunAnswer { BenchmarkRun = run, QuestionText = "Question?", AnswerText = "A.", BenchmarkQuestionIdUsed = 11, StartedAtUtc = T0.AddHours(1) };
+        _db.BenchmarkRunAnswers.Add(answer);
+        _db.BenchmarkRunAnswerSelfReports.Add(new BenchmarkRunAnswerSelfReport
+        {
+            BenchmarkRunAnswer = answer,
+            Fingerprint = Fp(7),
+            Accepted = true,
+            Category = MissingInformation,
+            Subject = "Gnoll lord speed",
+            Summary = "No speed."
+        });
+        await _db.SaveChangesAsync(Ct);
+        var request = new AdminFeedbackExportRequestDto { Source = "gnollbench", Fingerprints = new List<string> { Fp(7) } };
+
+        var markdown = await _service.ExportAsync(request, Version, Ct);
+        var yaml = await _service.ExportAsync(new AdminFeedbackExportRequestDto { Source = "gnollbench", Fingerprints = new List<string> { Fp(7) }, Format = "yaml" }, Version, Ct);
+
+        Assert.Equal(FeedbackExportOutcome.Exported, markdown.Outcome);
+        Assert.Null(markdown.Document!.DistinctUsersAcrossIssues);
+        Assert.DoesNotContain("Distinct users across these issues", markdown.Export!.Content);
+        Assert.DoesNotContain("distinctUsersAcrossIssues", yaml.Export!.Content);
+    }
+
+    [Fact]
     public async Task Export_Overseer_IsDeterministic_CutsTheTimeToTheSecond_AndListsMissingIds()
     {
         var (issue, _) = await SeedOverseerIssueAsync(reports: 7);

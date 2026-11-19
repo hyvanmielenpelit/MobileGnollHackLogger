@@ -570,6 +570,17 @@ public sealed class OverseerFeedbackQuery
         return dto;
     }
 
+    /// <summary>Distinct users among the retained reports of these issues. Only the count leaves the query.</summary>
+    public Task<int> DistinctUserCountAsync(IReadOnlyCollection<long> issueIds, CancellationToken ct)
+    {
+        var ids = issueIds.ToList();
+        return _db.OverseerFeedbackReports.AsNoTracking()
+            .Where(r => ids.Contains(r.IssueId) && r.AspNetUserId != null)
+            .Select(r => r.AspNetUserId)
+            .Distinct()
+            .CountAsync(ct);
+    }
+
     // --- Row DTOs ---
 
     /// <summary>

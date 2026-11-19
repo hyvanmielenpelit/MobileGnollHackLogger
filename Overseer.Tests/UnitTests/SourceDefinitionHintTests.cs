@@ -83,6 +83,35 @@ public class SourceDefinitionHintTests
     }
 
     [Fact]
+    public void ForSearchResult_MultiLinePrototype_ReturnsNull()
+    {
+        string content =
+            "--- src/protos.c:L2 ---\n" +
+            "    1: /* protos.c */\n" +
+            ">>> 2: static void split_proto(struct monst *mtmp, void (*fn)(int)\n" +
+            "    3:                         , int n);\n" +
+            "    4: static int other_proto(int);";
+
+        Assert.Null(SourceDefinitionHint.ForSearchResult(content));
+    }
+
+    [Fact]
+    public void ForSearchResult_MultiLineDefinition_NamesIt()
+    {
+        string content =
+            "--- src/protos.c:L2 ---\n" +
+            "    1: /* protos.c */\n" +
+            ">>> 2: static void split_def(struct monst *mtmp, void (*fn)(int)\n" +
+            "    3:                       , int n)\n" +
+            "    4: {";
+
+        string? hint = SourceDefinitionHint.ForSearchResult(content);
+
+        Assert.NotNull(hint);
+        Assert.StartsWith("[Definition: split_def() at src/protos.c:2.", hint);
+    }
+
+    [Fact]
     public void ForSearchResult_MacroTableRow_ReturnsNull()
     {
         Assert.Null(SourceDefinitionHint.ForSearchResult(ScrollTableSearch));

@@ -67,6 +67,9 @@ public sealed class FeedbackExportDocument
     /// <summary>The most occurrences shown per issue; null for all of them.</summary>
     public int? OccurrencesPerIssue { get; init; }
 
+    /// <summary>Overseer: the distinct users across the exported issues, over retained reports; null for GnollBench.</summary>
+    public int? DistinctUsersAcrossIssues { get; init; }
+
     /// <summary>GnollBench: whether each occurrence carries its question text.</summary>
     public bool IncludeQuestionText { get; init; } = true;
     public IReadOnlyList<FeedbackExportIssue> Issues { get; init; } = Array.Empty<FeedbackExportIssue>();
@@ -240,6 +243,8 @@ public static class FeedbackMarkdownExport
         Row(sb, "Occurrences per issue", document.OccurrencesPerIssue is int perIssue
             ? $"at most {perIssue.ToString(CultureInfo.InvariantCulture)}, newest first"
             : "all, newest first");
+        if (document.DistinctUsersAcrossIssues is int users)
+            Row(sb, "Distinct users across these issues", users.ToString(CultureInfo.InvariantCulture));
         if (gnollBench) Row(sb, "Question text", document.IncludeQuestionText ? "included" : "left out");
         Line(sb);
         Line(sb, $"Work on this file with the `{SkillName}` skill.");
@@ -912,6 +917,7 @@ public sealed class FeedbackExportService
             ExportedAtUtc = exportedAt,
             OverseerVersion = version,
             OccurrencesPerIssue = perIssue,
+            DistinctUsersAcrossIssues = await _overseer.DistinctUserCountAsync(foundIds, ct),
             Issues = exportIssues
         }, missing, new List<string>());
     }

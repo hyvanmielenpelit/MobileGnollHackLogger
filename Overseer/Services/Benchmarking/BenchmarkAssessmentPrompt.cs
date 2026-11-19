@@ -864,8 +864,13 @@ public static class BenchmarkAssessmentPrompt
     ///     a wand gets a wand note instead of the AC note. The ac_bonus note states how the entry stores the
     ///     value, and a plain weapon no longer gets it.
     ///     ScoringMethodVersion stays 14; ToolGuidesSha256 and CandidateSystemPromptSha256 do not move.
+    /// v66: get_function_definition and search_definitions never take a prototype for the definition, also when
+    ///     its parameter list spans lines, and the source_code_search definition pointer skips one. The
+    ///     report_feedback guide asks for reports in English and for a symptom in a tool_problem subject.
+    ///     ScoringMethodVersion stays 14; ToolGuidesSha256 moves with the report_feedback guide;
+    ///     CandidateSystemPromptSha256 does not move.
     /// </summary>
-    public const string HarnessVersion = "65";
+    public const string HarnessVersion = "66";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

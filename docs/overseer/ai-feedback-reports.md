@@ -735,7 +735,7 @@ The Markdown file:
 1. **A header**: a facts table with the format `overseer-feedback-export`, format version 1, the source,
    the export time in UTC (which the template copies as `exportedAtUtc`), the Overseer version (the full
    `AssemblyInformationalVersion`), the issue count, the occurrences per issue (*at most N, newest first*
-   or *all, newest first*) and, for GnollBench,
+   or *all, newest first*), for Overseer the *Distinct users across these issues* and, for GnollBench,
    whether the question text is included; then *Work on this file with the `server-feedback-resolution`
    skill.*
 2. **Untrusted content**: the report fields are model output (a chat user can steer the chat's; the
@@ -800,6 +800,7 @@ source: overseer
 exportedAtUtc: "2026-10-28T09:15:00Z"
 overseerVersion: "1.4.3+…"
 occurrencesPerIssue: 10
+distinctUsersAcrossIssues: 3
 notice: |-
   (the untrusted-content notice, one sentence per line)
 issues:
@@ -853,7 +854,9 @@ issues:
 ```
 
 - **The top level**, in order: `format`, `version`, `source`, `exportedAtUtc`, `overseerVersion`,
-  `occurrencesPerIssue` (a number, or `all`), `includeQuestionText` (GnollBench only), `notice` (the Markdown's untrusted-content
+  `occurrencesPerIssue` (a number, or `all`), `distinctUsersAcrossIssues` (Overseer only: the distinct
+  users across the exported issues, counted over retained reports, so it can be lower than the users who
+  ever reported; no identity), `includeQuestionText` (GnollBench only), `notice` (the Markdown's untrusted-content
   paragraph, one sentence per line), `issues` (`[]` when empty); then the resolution template as `#`
   comments, which say what the Markdown's template lines say.
 - **An issue**: `id` (Overseer) and `fingerprint`, then `facts`, the server-controlled values, `texts`,

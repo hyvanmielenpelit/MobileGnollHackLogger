@@ -7,11 +7,11 @@ Sends a short report to the Overseer development team when something in this con
 - `missing_information`: you searched for a fact that the GnollHack wiki, the knowledge base or the GnollHack source should contain, made at least one reasonable search, and did not find it. Say what you searched for, with which tools and queries, and where you expected it.
 - `tool_problem`: a tool returned an error, malformed output, or a result that contradicts its own description. Name that tool first in `related_tools`.
 - `own_mistake`: you realized that something you told the user earlier in this conversation was wrong, because the user corrected you, a tool result contradicted it, or you noticed it on review. Correct the mistake in your answer first. The report never replaces the correction.
-- `subject` is the grouping key. Name the thing the report is about in two to six words, the way its wiki page or source file names it: `Dilithium crystal`, `wiki page Elbereth`, `src/mhitu.c`, `monster_lookup`, `cockatrice corpse weight`. Reports with the same category and subject are one issue for the developers, so use the same subject for the same problem.
+- `subject` is the grouping key. Name the thing the report is about in two to six words, the way its wiki page or source file names it: `Dilithium crystal`, `wiki page Elbereth`, `src/mhitu.c`, `monster_lookup`, `cockatrice corpse weight`. Reports with the same category and subject are one issue for the developers, so use the same subject for the same problem. For `tool_problem`, name the symptom with the tool, such as `get_function_definition wrong body`: every report with the same subject is one issue, so a tool name alone joins unrelated problems.
 - `suspected_cause` is your best guess and is read as a hypothesis. Prefer causes that can be checked, such as `did_not_verify` (you answered without calling the tool that would have shown the answer), over guesses about your own reasoning.
 - Do not report: something that does not exist in the game, a question outside NetHack and GnollHack, the user's preferences, or the same issue twice.
 - At most one report per issue and three per turn. When you are making other tool calls, include this one in the same batch.
-- Describe the issue in your own words. Never include the user's personal information, credentials or long quotes from the conversation.
+- Describe the issue in your own words. Never include the user's personal information, credentials or long quotes from the conversation. Write the report in English, whatever language the conversation is in, and give a game term by its English name.
 - You may mention in one sentence that you reported the issue. Do not dwell on it.
 
 ## Schema

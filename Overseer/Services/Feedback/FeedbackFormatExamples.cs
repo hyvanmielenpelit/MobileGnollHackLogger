@@ -114,6 +114,7 @@ public static class FeedbackFormatExamples
             ExportedAtUtc = ExportedAt,
             OverseerVersion = "1.4.3",
             OccurrencesPerIssue = FeedbackExportService.DefaultOccurrencesPerIssue,
+            DistinctUsersAcrossIssues = gnollBench ? null : 2,
             IncludeQuestionText = true,
             Issues = new[] { issue }
         };

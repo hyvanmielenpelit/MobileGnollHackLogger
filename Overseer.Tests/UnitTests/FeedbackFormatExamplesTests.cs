@@ -72,7 +72,7 @@ public sealed class FeedbackFormatExamplesTests
         var root = Root(examples.Issues.Content);
         var expected = source == FeedbackTransferSources.GnollBench
             ? new[] { "format", "version", "source", "exportedAtUtc", "overseerVersion", "occurrencesPerIssue", "includeQuestionText", "notice", "issues" }
-            : new[] { "format", "version", "source", "exportedAtUtc", "overseerVersion", "occurrencesPerIssue", "notice", "issues" };
+            : new[] { "format", "version", "source", "exportedAtUtc", "overseerVersion", "occurrencesPerIssue", "distinctUsersAcrossIssues", "notice", "issues" };
         Assert.Equal(expected, Keys(root));
         Assert.Equal(FeedbackYamlExport.FormatName, ((YamlScalarNode)root.Children[new YamlScalarNode("format")]).Value);
         var issue = Assert.IsType<YamlMappingNode>(Assert.Single(((YamlSequenceNode)root.Children[new YamlScalarNode("issues")]).Children));

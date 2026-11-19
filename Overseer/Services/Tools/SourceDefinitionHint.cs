@@ -19,6 +19,7 @@ namespace Overseer.Services.Tools
 
         private static readonly Regex SearchHeaderRegex = new(@"^--- (.+?):L\d+ ---\s*$", RegexOptions.Compiled);
         private static readonly Regex SearchMarkedLineRegex = new(@"^>>> (\d+): (.*)$", RegexOptions.Compiled);
+        private static readonly Regex SearchContextLineRegex = new(@"^    \d+: (.*)$", RegexOptions.Compiled);
         private static readonly Regex ViewHeaderRegex = new(@"^--- (.+?):L\d+-L\d+ ---\s*$", RegexOptions.Compiled);
         private static readonly Regex ViewLineRegex = new(@"^(\d+): (.*)$", RegexOptions.Compiled);
 
@@ -40,28 +41,58 @@ namespace Overseer.Services.Tools
 
             var found = new List<(string Name, string Path, int Line)>();
             string? path = null;
+            // The current block's numbered lines, prefixes stripped; Marked holds the >>> line number.
+            var block = new List<(string Text, int? Marked)>();
             foreach (string raw in content.Split('\n'))
             {
                 string line = raw.TrimEnd('\r');
                 var header = SearchHeaderRegex.Match(line);
                 if (header.Success)
                 {
+                    if (CollectSearchBlock(path, block, found)) return Compose(found, repository);
                     path = header.Groups[1].Value;
+                    block.Clear();
                     continue;
                 }
 
                 if (path == null) continue;
                 var marked = SearchMarkedLineRegex.Match(line);
-                if (!marked.Success) continue;
+                if (marked.Success)
+                {
+                    block.Add((marked.Groups[2].Value, int.Parse(marked.Groups[1].Value)));
+                    continue;
+                }
 
-                string? name = DefinitionName(marked.Groups[2].Value);
-                if (name == null || !IsCFile(path)) continue;
-                if (found.Any(f => f.Name == name)) continue;
-                found.Add((name, path, int.Parse(marked.Groups[1].Value)));
-                if (found.Count == MaxNames) break;
+                var context = SearchContextLineRegex.Match(line);
+                if (context.Success) block.Add((context.Groups[1].Value, null));
             }
 
+            CollectSearchBlock(path, block, found);
             return Compose(found, repository);
+        }
+
+        /// <summary>
+        /// Adds the block's marked definition lines to <paramref name="found"/>, skipping a prototype
+        /// whose parameter list closes within the block. True once <see cref="MaxNames"/> are found.
+        /// </summary>
+        private static bool CollectSearchBlock(string? path, List<(string Text, int? Marked)> block, List<(string Name, string Path, int Line)> found)
+        {
+            if (path == null || !IsCFile(path)) return false;
+
+            var texts = block.Select(b => b.Text).ToList();
+            for (int i = 0; i < block.Count; i++)
+            {
+                if (block[i].Marked is not int lineNumber) continue;
+
+                string? name = DefinitionName(block[i].Text);
+                if (name == null) continue;
+                if (found.Any(f => f.Name == name)) continue;
+                if (SourceCodeService.IsPrototypeDeclaration(texts, i)) continue;
+                found.Add((name, path, lineNumber));
+                if (found.Count == MaxNames) return true;
+            }
+
+            return false;
         }
 
         /// <summary>

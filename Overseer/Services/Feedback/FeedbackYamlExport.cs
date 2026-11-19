@@ -43,6 +43,7 @@ public static class FeedbackYamlExport
         w.String(0, "overseerVersion", document.OverseerVersion);
         if (document.OccurrencesPerIssue is int perIssue) w.Number(0, "occurrencesPerIssue", perIssue);
         else w.Raw(0, "occurrencesPerIssue", "all");
+        if (document.DistinctUsersAcrossIssues is int users) w.Number(0, "distinctUsersAcrossIssues", users);
         if (gnollBench) w.Bool(0, "includeQuestionText", document.IncludeQuestionText);
         w.String(0, "notice", string.Join("\n", Notice(gnollBench)));
 
