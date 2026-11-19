@@ -171,6 +171,21 @@
       "asOf": "2026-11-12",
       "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 1.8 }
     }
+  },
+  {
+    "prefixes": ["gemini-4-neon"],
+    "displayName": "Gemini 4 Neon",
+    "releaseDate": "2026-11-18",
+    "thinkingLevels": ["low", "medium", "high", "xhigh"],
+    "contextWindowSize": 1048576,
+    "maxOutputTokens": 65536,
+    "pricing": {
+      "inputPerMillion": 3.00,
+      "outputPerMillion": 15.00,
+      "cachedInputPerMillion": 0.15,
+      "asOf": "2026-11-19",
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 1.8 }
+    }
   }
 ]
 
