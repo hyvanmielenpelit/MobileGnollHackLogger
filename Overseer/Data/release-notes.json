@@ -1,5 +1,52 @@
 [
   {
+    "version": "1.4.8",
+    "date": "2026-11-19T14:00:32Z",
+    "summary": "A release that makes replies easier to read and reuse, with copy buttons on code and quotes, a refreshed text font and a choice of how heavy bold text looks. It also adds two new OpenAI models and OpenAI's fastest processing option.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Code blocks and quotes in the Overseer's replies now have a copy button, so you can copy just that part of an answer with one click."
+      },
+      {
+        "type": "feature",
+        "text": "Added support for two new models: GPT-6.2 Astra and GPT-6.2 Sol."
+      },
+      {
+        "type": "feature",
+        "text": "You can now choose OpenAI's Ultrafast processing for GPT-6 Astra, GPT-6.1 Sol, GPT-6.2 Astra and GPT-6.2 Sol, for the quickest replies at a higher price."
+      },
+      {
+        "type": "feature",
+        "text": "Settings has a new option, Bold Text in Chat Responses, that sets how heavy bold text looks in the Overseer's replies, with a preview of each choice."
+      },
+      {
+        "type": "improvement",
+        "text": "The chat now uses the newer Lato 2.0 font, which also covers Greek letters and many math symbols, so more text displays in the same font."
+      },
+      {
+        "type": "improvement",
+        "text": "Each OpenAI model now offers only the processing options it actually supports, prices are more accurate for very long chats, and a model card tells you in advance when a price is scheduled to change."
+      },
+      {
+        "type": "improvement",
+        "text": "Quotes in replies have a darker, clearer background that sets them apart from the rest of the answer."
+      },
+      {
+        "type": "improvement",
+        "text": "The dropdown lists on the Settings page now match the Overseer's look."
+      },
+      {
+        "type": "fix",
+        "text": "Code blocks and displayed math inside a quote or a list item now appear correctly instead of breaking the formatting."
+      },
+      {
+        "type": "fix",
+        "text": "When the Overseer looks up a game function in the GnollHack source code, it no longer mistakes a declaration that spans several lines for the function itself, so it opens the right code."
+      }
+    ]
+  },
+  {
     "version": "1.4.7",
     "date": "2026-11-12T21:52:08Z",
     "summary": "A small release that brings another new AI model to the chat.",
