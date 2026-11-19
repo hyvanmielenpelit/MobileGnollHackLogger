@@ -108,16 +108,17 @@ Upload the source maps and bundle assets from `wwwroot` to Sentry under the spec
 - **Working Directory:** `Overseer/ClientApp`
 - **Command:**
   ```bash
-  npx sentry-cli sourcemaps upload --release <version> ../wwwroot
+  npx sentry-cli sourcemaps upload --org <org> --project <project> --release <version> ../wwwroot
   ```
-  *(Replace `<version>` with the version determined in Step 2, e.g. `1.0.17`)*
+  *(Replace `<org>` and `<project>` with the `org` and `project` values in `Overseer/.sentryclirc`, and `<version>` with the version determined in Step 2, e.g. `1.0.17`)*
+- **Always pass `--org` and `--project`.** sentry-cli lets the `SENTRY_ORG`, `SENTRY_PROJECT` and `SENTRY_AUTH_TOKEN` environment variables override `.sentryclirc`, and a machine that also uploads for another project (`SENTRY_PROJECT=gnollhack`) would otherwise send Overseer's bundle there. If the output's `Projects:` line does not name the project from `.sentryclirc`, upload again with the flags.
 
 ---
 
 ## Step 5: Verify & Report Results
 
 1. Check the output of `sentry-cli` for upload confirmation, including:
-   - Organization and project name
+   - Organization and project name (they must match `Overseer/.sentryclirc`)
    - Release version name
    - Number of source maps / bundle files uploaded
 2. Confirm to the user that:
